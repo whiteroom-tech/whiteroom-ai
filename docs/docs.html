@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-ZJG9MKHNP3"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-ZJG9MKHNP3');
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Docs — WhiteRoom</title>
+<meta name="description" content="WhiteRoom documentation — get started in under 60 seconds by setting one environment variable. Guides for Anthropic, OpenAI, LangChain, CrewAI, and direct API integration." />
+<link rel="canonical" href="https://whiteroom.tech/docs.html" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxNCIgZmlsbD0iIzA3MEIxNCIvPgogIDxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0ibGl0IiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN0FFQ0ZGIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjJDOEVDIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+CiAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTAuMCwxLjgpIHNjYWxlKDAuMjkzMykiPgogICAgPHJlY3QgeD0iNiIgeT0iNiIgd2lkdGg9IjE1MCIgaGVpZ2h0PSIyMDYiIHJ4PSIxNyIgZmlsbD0iI0VBRjFGRiIvPgogIDxyZWN0IHg9IjIzLjAiIHk9IjIzLjAiIHdpZHRoPSI1MS41IiBoZWlnaHQ9Ijc5LjUiIHJ4PSI1IiBmaWxsPSIjMEIxMDE4Ii8+CiAgPHJlY3QgeD0iODcuNSIgeT0iMjMuMCIgd2lkdGg9IjUxLjUiIGhlaWdodD0iNzkuNSIgcng9IjUiIGZpbGw9InVybCgjbGl0KSIvPgogIDxyZWN0IHg9IjIzLjAiIHk9IjExNS41IiB3aWR0aD0iNTEuNSIgaGVpZ2h0PSI3OS41IiByeD0iNSIgZmlsbD0iIzBCMTAxOCIvPgogIDxyZWN0IHg9Ijg3LjUiIHk9IjExNS41IiB3aWR0aD0iNTEuNSIgaGVpZ2h0PSI3OS41IiByeD0iNSIgZmlsbD0iIzBCMTAxOCIvPgogIDwvZz4KPC9zdmc+" />
+<meta name="theme-color" content="#070B14" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="WhiteRoom" />
+<meta property="og:title" content="Documentation — WhiteRoom" />
+<meta property="og:description" content="Get started with WhiteRoom in under 60 seconds. Guides for Anthropic, OpenAI, LangChain, CrewAI, and direct API integration." />
+<meta property="og:url" content="https://whiteroom.tech/docs.html" />
+<meta property="og:image" content="https://whiteroom.tech/whiteroom-og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Documentation — WhiteRoom" />
+<meta name="twitter:description" content="Get started with WhiteRoom in under 60 seconds. Guides for Anthropic, OpenAI, LangChain, CrewAI, and direct API integration." />
+<meta name="twitter:image" content="https://whiteroom.tech/whiteroom-og.png" />
+
+<!-- Structured data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "WhiteRoom Documentation — Quickstart Guide",
+  "description": "Get started with WhiteRoom in under 60 seconds by setting one environment variable.",
+  "datePublished": "2026-06-01",
+  "dateModified": "2026-07-01",
+  "publisher": {
+    "@type": "Organization",
+    "name": "WhiteRoom",
+    "url": "https://whiteroom.tech/",
+    "logo": "https://whiteroom.tech/favicon-180.png"
+  },
+  "mainEntityOfPage": "https://whiteroom.tech/docs.html"
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  :root{--bg:#070B14;--bg-2:#0A1020;--panel:#0D1424;--ink:#EAF1FF;--ink-2:#A9B8D4;--ink-3:#6B7C9E;--cyan:#38E1FF;--green:#2EE6A8;--amber:#FFB454;--line:#1B2740;--line-soft:#15203A;--on-accent:#04222B;--header-bg:rgba(7,11,20,.74)}
+  html[data-theme="light"]{--bg:#F6F9FD;--bg-2:#EEF3FA;--panel:#FFFFFF;--ink:#0B1626;--ink-2:#44556E;--ink-3:#5E708B;--cyan:#0A82A1;--green:#0B8A5E;--amber:#B0700C;--line:#D7E0EC;--line-soft:#E5EBF4;--on-accent:#FFFFFF;--header-bg:rgba(255,255,255,.82)}
+  *{margin:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--cyan);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+  .doc-content{max-width:780px}
+
+  header{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:var(--header-bg);border-bottom:1px solid var(--line-soft)}
+  header nav{display:flex;align-items:center;justify-content:space-between;height:66px}
+  nav{display:flex;align-items:center;justify-content:space-between;height:66px;max-width:1180px;margin:0 auto;padding:0 28px}
+  .brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none}
+  .brand .logo-icon{width:30px;height:42px;flex-shrink:0}
+  .brand .logo-text{font-family:'Inter',sans-serif;font-weight:900;font-size:32px;letter-spacing:-.02em;line-height:1}
+  .brand .logo-w{color:var(--ink)}
+  .brand .logo-r{color:var(--cyan)}
+  .navlinks{display:flex;align-items:center;gap:20px}
+  .navlinks a{font-size:14px;color:var(--ink-2);text-decoration:none}
+  .navlinks a:hover{color:var(--ink)}
+  .navlinks a.btn-primary{color:var(--on-accent)}
+  .navlinks a.btn-primary:hover{color:var(--on-accent)}
+  .navlinks a.btn-ghost{color:var(--ink)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 20px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;transition:.2s}
+  .btn-primary{background:var(--cyan);color:var(--on-accent);position:relative;overflow:hidden}
+  .btn-primary:hover{opacity:.88;text-decoration:none}
+  .btn-ghost{border:1px solid var(--line);color:var(--ink);background:transparent}
+  .btn-ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  .page-hero{padding:60px 0 40px;border-bottom:1px solid var(--line-soft)}
+  .page-hero .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan)}
+  .page-hero h1{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(30px,5vw,44px);margin:14px 0 0;letter-spacing:-.01em}
+  .page-hero p{color:var(--ink-2);font-size:17px;margin-top:16px;max-width:54ch}
+  .page-date{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-3);letter-spacing:.08em;margin-top:12px}
+
+  section{padding:44px 0}
+  section + section{border-top:1px solid var(--line-soft)}
+  h2{font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:22px;margin:0 0 14px;letter-spacing:-.01em}
+  h3{font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:17px;margin:28px 0 10px;color:var(--ink)}
+  p,li{color:var(--ink-2);margin:10px 0;font-size:15.5px}
+  ul,ol{padding-left:20px}
+  li{margin:8px 0}
+  strong{color:var(--ink);font-weight:600}
+
+  .code-block{background:var(--bg-2);border:1px solid var(--line-soft);border-radius:10px;padding:18px 22px;margin:16px 0;overflow-x:auto}
+  .code-block code{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-2);white-space:pre;display:block;line-height:1.7}
+  .code-block .comment{color:var(--ink-3)}
+  .code-block .keyword{color:var(--green)}
+  .code-block .string{color:var(--cyan)}
+  .code-block .label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;display:block}
+
+  .step-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
+  .step-card{background:var(--bg-2);border:1px solid var(--line-soft);border-radius:10px;padding:22px}
+  .step-card .step-num{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--cyan);margin-bottom:8px}
+  .step-card h3{margin:0 0 8px;font-size:16px}
+  .step-card p{margin:0;font-size:14px}
+
+  .provider-grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;margin-top:16px}
+  .provider{background:var(--bg-2);border:1px solid var(--line-soft);border-radius:8px;padding:14px 16px;text-align:center;font-size:14px;color:var(--ink-2);transition:border-color .2s}
+  .provider:hover{border-color:var(--cyan)}
+  .provider strong{display:block;color:var(--ink);margin-bottom:4px}
+
+  .note{background:rgba(255,180,84,.06);border:1px solid rgba(255,180,84,.2);border-radius:8px;padding:16px 20px;margin:20px 0;font-size:14px;color:var(--ink-2)}
+  .note strong{color:var(--amber)}
+
+  footer{border-top:1px solid var(--line-soft);padding:60px 0 30px}
+  .foot{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap;align-items:flex-start}
+  .foot .brand{margin-bottom:14px}
+  .foot .brand .logo-icon{width:26px;height:36px}
+  .foot .brand .logo-text{font-size:28px}
+  .foot p{color:var(--ink-3);font-size:13px;max-width:300px}
+  .foot .cols{display:flex;gap:60px;flex-wrap:wrap}
+  .foot .col h5{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+  .foot .col a{display:block;color:var(--ink-2);font-size:13.5px;margin-bottom:9px;transition:color .2s;text-decoration:none}
+  .foot .col a:hover{color:var(--cyan)}
+  .foot-bottom{margin-top:40px;padding-top:22px;border-top:1px solid var(--line-soft);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3)}
+  .foot-bottom .mono{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--ink-3)}
+
+  @media(max-width:560px){
+    .foot{flex-direction:column}
+    .foot-bottom{flex-direction:column;gap:8px;text-align:center}
+    .brand .logo-text{font-size:26px}
+    .brand .logo-icon{width:26px;height:36px}
+    .step-grid{grid-template-columns:1fr}
+    .provider-grid{grid-template-columns:1fr 1fr}
+  }
+</style>
+<script>(function(){var t='dark';try{var s=localStorage.getItem('wr-theme');if(s==='light'||s==='dark')t=s;}catch(e){}document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <nav>
+      <a href="/" class="brand" aria-label="WhiteRoom home"><svg class="logo-icon" viewBox="0 0 22 30" fill="none"><defs><linearGradient id="wr-lit" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7AECFF"/><stop offset="1" stop-color="#22C8EC"/></linearGradient></defs><rect x=".5" y=".5" width="21" height="29" rx="3" fill="#EAF1FF"/><rect x="3" y="3" width="7" height="11" fill="#0B1018"/><rect x="12" y="3" width="7" height="11" fill="url(#wr-lit)"/><rect x="3" y="16" width="7" height="11" fill="#0B1018"/><rect x="12" y="16" width="7" height="11" fill="#0B1018"/></svg><span class="logo-text"><span class="logo-w">White</span><span class="logo-r">Room</span></span></a>
+      <div class="navlinks">
+        <a href="/#how">How it works</a>
+        <a href="/#why">Why it matters</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/docs.html" class="btn btn-ghost">Docs</a>
+        <a href="https://app.whiteroom.tech/sign-in" class="btn btn-primary">Try it instantly</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap doc-content">
+  <div class="page-hero">
+    <span class="eyebrow">Documentation</span>
+    <h1>Get started in under 60 seconds.</h1>
+    <p>WhiteRoom governs your autonomous agents by sitting between your code and the LLM API. Set one environment variable &mdash; no SDK, no code changes.</p>
+    <div class="page-date">Updated July 2026</div>
+  </div>
+
+  <div style="margin:40px 0;padding:28px 32px;border-radius:14px;border:1px solid rgba(56,225,255,.2);background:rgba(56,225,255,.04);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px">
+    <div>
+      <p style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:18px;color:var(--ink);margin:0">Ready to get your API key?</p>
+      <p style="font-size:14px;color:var(--ink-2);margin:6px 0 0">Sign in with Google to provision your fleet and get started instantly.</p>
+    </div>
+    <a href="https://app.whiteroom.tech/sign-in" class="btn btn-primary" style="white-space:nowrap">Sign in &amp; get your key</a>
+  </div>
+
+  <section id="quickstart">
+    <h2>How do I set up WhiteRoom?</h2>
+    <p>WhiteRoom works by redirecting your LLM API calls through the WhiteRoom proxy. Your agent framework continues to run unchanged &mdash; governance is applied transparently.</p>
+
+    <div class="step-grid">
+      <div class="step-card">
+        <div class="step-num">Step 01</div>
+        <h3>Set one variable</h3>
+        <p>Point your LLM base URL at WhiteRoom. Your existing API key stays the same.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">Step 02</div>
+        <h3>Run your agent</h3>
+        <p>No code changes needed. WhiteRoom intercepts calls, applies governance, and forwards to the LLM.</p>
+      </div>
+    </div>
+
+    <h3>Anthropic (Claude)</h3>
+    <div class="code-block">
+      <span class="label">Terminal</span>
+      <code><span class="keyword">export</span> <span class="string">ANTHROPIC_BASE_URL</span>=https://proxy.whiteroom.tech</code>
+    </div>
+
+    <h3>OpenAI</h3>
+    <div class="code-block">
+      <span class="label">Terminal</span>
+      <code><span class="keyword">export</span> <span class="string">OPENAI_BASE_URL</span>=https://proxy.whiteroom.tech/v1</code>
+    </div>
+
+    <div class="note">
+      <strong>Bring your own key.</strong> WhiteRoom uses your existing API key &mdash; it never stores or accesses your credentials. The proxy intercepts requests to apply governance and forwards them to your provider.
+    </div>
+  </section>
+
+  <section id="frameworks">
+    <h2>Which frameworks does WhiteRoom support?</h2>
+    <p>WhiteRoom is framework-agnostic. It works at the API level, so any framework that calls an LLM API is automatically governed once you set the base URL.</p>
+
+    <h3>LangChain</h3>
+    <div class="code-block">
+      <span class="label">Python</span>
+      <code><span class="comment"># Set the env variable, then use LangChain as normal</span>
+<span class="keyword">import</span> os
+os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string">"https://proxy.whiteroom.tech/v1"</span>
+
+<span class="keyword">from</span> langchain_openai <span class="keyword">import</span> ChatOpenAI
+llm = ChatOpenAI(model=<span class="string">"gpt-4o"</span>)
+<span class="comment"># All calls are now governed by WhiteRoom</span></code>
+    </div>
+
+    <h3>CrewAI</h3>
+    <div class="code-block">
+      <span class="label">Python</span>
+      <code><span class="comment"># Set before importing CrewAI</span>
+<span class="keyword">import</span> os
+os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string">"https://proxy.whiteroom.tech/v1"</span>
+
+<span class="keyword">from</span> crewai <span class="keyword">import</span> Agent, Task, Crew
+<span class="comment"># Agents are automatically governed</span></code>
+    </div>
+
+    <h3>Direct API (Python)</h3>
+    <div class="code-block">
+      <span class="label">Python</span>
+      <code><span class="keyword">import</span> anthropic
+
+client = anthropic.Anthropic(
+    base_url=<span class="string">"https://proxy.whiteroom.tech"</span>
+)
+<span class="comment"># Your existing API key is used automatically</span></code>
+    </div>
+  </section>
+
+  <section id="providers">
+    <h2>Which LLM providers are supported?</h2>
+    <p>WhiteRoom works with any provider that uses the OpenAI or Anthropic API format, plus native integrations for major cloud platforms.</p>
+
+    <div class="provider-grid">
+      <div class="provider"><strong>Anthropic</strong>Claude</div>
+      <div class="provider"><strong>OpenAI</strong>GPT</div>
+      <div class="provider"><strong>Google</strong>Gemini</div>
+      <div class="provider"><strong>AWS</strong>Bedrock</div>
+      <div class="provider"><strong>Azure</strong>OpenAI</div>
+      <div class="provider"><strong>Mistral</strong>Mistral AI</div>
+    </div>
+  </section>
+
+  <section id="governance">
+    <h2>What governance does WhiteRoom apply?</h2>
+    <p>Once connected, WhiteRoom automatically applies three governance controls to every agent session.</p>
+
+    <h3>Session boundaries</h3>
+    <p>Each agent session is scoped with configurable limits. When a session approaches its boundary, WhiteRoom manages the transition automatically &mdash; keeping agents focused and preventing unbounded token accumulation.</p>
+
+    <h3>Token optimization</h3>
+    <p>WhiteRoom's proprietary optimization engine automatically reduces token usage &mdash; typically by 40&ndash;80% depending on the workload. See the <a href="/benchmark.html">benchmark</a> for detailed A/B test results.</p>
+
+    <h3>Audit trail</h3>
+    <p>Every agent action, token usage event, and session boundary is logged to a hash-chained, tamper-evident audit trail. Each entry is cryptographically linked to the previous one, making any modification or deletion detectable. The audit trail streams in real time.</p>
+  </section>
+
+  <section id="api-ref">
+    <h2>API reference</h2>
+    <p>WhiteRoom exposes two endpoints. The governance API manages fleets, agents, watches, and handovers. The proxy endpoint forwards LLM requests through the governance layer.</p>
+    <h3>POST /api/white-room</h3>
+    <p>All governance actions use a single endpoint with an <code>action</code> field in the JSON body. Auth via <code>x-api-key</code> or <code>Authorization: Bearer</code> header.</p>
+    <table>
+      <tr><th>Action</th><th>Required fields</th><th>Description</th></tr>
+      <tr><td><code>register_agent</code></td><td>agent_id</td><td>Register an agent in a fleet and receive a fleet token</td></tr>
+      <tr><td><code>start_watch</code></td><td>agent_id</td><td>Start a bounded work session</td></tr>
+      <tr><td><code>complete_task</code></td><td>agent_id, task_name</td><td>Record a completed task with time and token usage</td></tr>
+      <tr><td><code>check_watch</code></td><td>agent_id</td><td>Check remaining time and whether handover is needed</td></tr>
+      <tr><td><code>initiate_handover</code></td><td>agent_id, to_agent</td><td>Hand off context from outgoing to incoming agent</td></tr>
+      <tr><td><code>fleet_report</code></td><td>&mdash;</td><td>Full fleet status, totals, compliance, and recent audit</td></tr>
+      <tr><td><code>audit_log</code></td><td>&mdash;</td><td>Query the tamper-evident audit trail</td></tr>
+      <tr><td><code>token_login</code></td><td>fleet_token</td><td>Authenticate with a fleet token (dashboard login)</td></tr>
+    </table>
+    <h3>POST /v1/messages</h3>
+    <p>Anthropic Messages API proxy. Sends <code>x-api-key</code> and receives full governance: watch enforcement, automatic handovers, and audit logging. Governance blocks return <code>429</code> with a <code>whiteroom</code> object.</p>
+    <p style="margin-top:16px"><a href="/openapi.yaml" class="btn btn-ghost">Download OpenAPI spec (YAML)</a></p>
+  </section>
+
+  <section id="sdk">
+    <h2>SDK &amp; CLI</h2>
+    <p>For programmatic governance control, use the TypeScript SDK. For terminal-based fleet management, use the CLI.</p>
+    <h3>SDK</h3>
+    <pre><code>npm install @whiteroom-ai/sdk</code></pre>
+    <pre><code>import { WhiteRoomClient } from "@whiteroom-ai/sdk";
+
+const wr = new WhiteRoomClient({
+  baseUrl: "https://proxy.whiteroom.tech",
+  apiKey: process.env.WHITEROOM_API_KEY!,
+});
+
+await wr.registerAgent("agent-1", "default");
+await wr.startWatch("agent-1");
+const status = await wr.checkWatch("agent-1");
+console.log(status);</code></pre>
+    <h3>CLI</h3>
+    <pre><code>npx @whiteroom-ai/cli health --url https://proxy.whiteroom.tech
+npx @whiteroom-ai/cli register --url https://proxy.whiteroom.tech --key $API_KEY agent-1
+npx @whiteroom-ai/cli start --url https://proxy.whiteroom.tech --key $API_KEY agent-1
+npx @whiteroom-ai/cli check --url https://proxy.whiteroom.tech --key $API_KEY agent-1
+npx @whiteroom-ai/cli report --url https://proxy.whiteroom.tech --key $API_KEY</code></pre>
+    <p>Set <code>WHITEROOM_URL</code> and <code>WHITEROOM_API_KEY</code> environment variables to skip the flags.</p>
+  </section>
+
+  <section id="help">
+    <h2>Need help?</h2>
+    <p>We are actively onboarding design partners and early customers. If you have questions or want hands-on integration support, reach out directly.</p>
+    <p style="margin-top:20px"><a href="mailto:info@whiteroom.tech" class="btn btn-primary">info@whiteroom.tech</a></p>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a href="/" class="brand" aria-label="WhiteRoom home"><svg class="logo-icon" viewBox="0 0 22 30" fill="none"><defs><linearGradient id="wr-lit" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7AECFF"/><stop offset="1" stop-color="#22C8EC"/></linearGradient></defs><rect x=".5" y=".5" width="21" height="29" rx="3" fill="#EAF1FF"/><rect x="3" y="3" width="7" height="11" fill="#0B1018"/><rect x="12" y="3" width="7" height="11" fill="url(#wr-lit)"/><rect x="3" y="16" width="7" height="11" fill="#0B1018"/><rect x="12" y="16" width="7" height="11" fill="#0B1018"/></svg><span class="logo-text"><span class="logo-w">White</span><span class="logo-r">Room</span></span></a>
+        <p>Operational governance for the agent internet.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h5>Product</h5>
+          <a href="/#how">How it works</a>
+          <a href="/#why">Why it matters</a>
+        </div>
+        <div class="col">
+          <h5>Resources</h5>
+          <a href="/docs.html">Docs</a>
+          <a href="/#pricing">Pricing</a>
+          <a href="/benchmark.html">Benchmark</a>
+        </div>
+        <div class="col">
+          <h5>Company</h5>
+          <a href="/about.html">About</a>
+          <a href="/#contact">Contact</a>
+        </div>
+        <div class="col">
+          <h5>Legal</h5>
+          <a href="/privacy.html">Privacy</a>
+          <a href="/terms.html">Terms</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>&copy; 2026 Whiteroom AI Technology, Inc. &middot; whiteroom.tech &middot; Patent Pending</span>
+      <span class="mono">govern &middot; optimize &middot; audit</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

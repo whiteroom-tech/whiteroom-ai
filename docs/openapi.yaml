@@ -1,0 +1,1088 @@
+openapi: 3.1.0
+info:
+  title: WhiteRoom API
+  version: 1.1.0
+  description: >
+    Work/Rest Governance Layer for AI Agents. Maritime-inspired labor
+    scheduling: watch cycles, mandatory handovers, and rest periods.
+  contact:
+    name: Nyari Nain
+  license:
+    name: BSL-1.1
+    identifier: BSL-1.1
+
+security: []
+
+servers:
+  - url: https://proxy.whiteroom.tech
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+
+paths:
+  /:
+    get:
+      operationId: getAppInfo
+      summary: Application info
+      security: []
+      responses:
+        "200":
+          description: Basic application metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app:
+                    type: string
+                    example: White Room
+                  version:
+                    type: string
+                    example: 1.1.0
+                  description:
+                    type: string
+                  author:
+                    type: string
+                  endpoints:
+                    type: array
+                    items:
+                      type: string
+                    example: ["/health", "/api/white-room"]
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, app, version]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  app:
+                    type: string
+                    example: white-room
+                  version:
+                    type: string
+                    example: 1.1.0
+
+  /v1/messages:
+    post:
+      operationId: proxyMessages
+      summary: Anthropic Messages API proxy with watch governance
+      security:
+        - ApiKeyHeader: []
+      description: >
+        Proxies requests to the upstream Anthropic Messages API while enforcing
+        WhiteRoom watch/rest governance. Agents are auto-registered and
+        auto-paired on first call. When a watch limit is hit, the proxy
+        auto-compresses context via a handover document before resting or
+        handing off to a paired partner.
+      parameters:
+        - name: x-whiteroom-agent
+          in: header
+          required: false
+          description: >
+            Explicit agent identifier. If omitted, the proxy infers an ID from
+            the system prompt.
+          schema:
+            type: string
+        - name: x-whiteroom-fleet
+          in: header
+          required: false
+          description: Fleet identifier. Defaults to "default".
+          schema:
+            type: string
+            default: default
+        - name: anthropic-version
+          in: header
+          required: false
+          description: Anthropic API version string.
+          schema:
+            type: string
+            default: "2023-06-01"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagesRequest"
+      responses:
+        "200":
+          description: Proxied response from the upstream LLM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesResponse"
+        "401":
+          description: Missing x-api-key header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: >
+            Governance block — agent is resting, mid-handover, waiting for
+            partner, or has exceeded its watch limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceBlock"
+        "500":
+          description: Internal server error or upstream failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/white-room:
+    post:
+      operationId: whiteRoomAction
+      summary: Action dispatch endpoint
+      security:
+        - ApiKeyHeader: []
+        - BearerAuth: []
+        - {}
+      description: >
+        Single endpoint for all WhiteRoom management operations. The `action`
+        field in the request body selects the operation. Auth (x-api-key or
+        Bearer token) is required for sensitive actions: register_agent,
+        check_watch, get_handover, generate_handover, store_handover,
+        fleet_report, initiate_handover, fire_alarm. The actions token_login,
+        pair_agents, auto_pair, start_watch, and complete_task do not require
+        auth. list_fleets filters results to fleets owned by the caller's key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/TokenLoginRequest"
+                - $ref: "#/components/schemas/RegisterAgentRequest"
+                - $ref: "#/components/schemas/PairAgentsRequest"
+                - $ref: "#/components/schemas/AutoPairRequest"
+                - $ref: "#/components/schemas/StartWatchRequest"
+                - $ref: "#/components/schemas/CompleteTaskRequest"
+                - $ref: "#/components/schemas/CheckWatchRequest"
+                - $ref: "#/components/schemas/InitiateHandoverRequest"
+                - $ref: "#/components/schemas/GenerateHandoverRequest"
+                - $ref: "#/components/schemas/StoreHandoverRequest"
+                - $ref: "#/components/schemas/GetHandoverRequest"
+                - $ref: "#/components/schemas/FireAlarmRequest"
+                - $ref: "#/components/schemas/FleetReportRequest"
+                - $ref: "#/components/schemas/ListFleetsRequest"
+              discriminator:
+                propertyName: action
+                mapping:
+                  token_login: "#/components/schemas/TokenLoginRequest"
+                  register_agent: "#/components/schemas/RegisterAgentRequest"
+                  pair_agents: "#/components/schemas/PairAgentsRequest"
+                  auto_pair: "#/components/schemas/AutoPairRequest"
+                  start_watch: "#/components/schemas/StartWatchRequest"
+                  complete_task: "#/components/schemas/CompleteTaskRequest"
+                  check_watch: "#/components/schemas/CheckWatchRequest"
+                  initiate_handover: "#/components/schemas/InitiateHandoverRequest"
+                  generate_handover: "#/components/schemas/GenerateHandoverRequest"
+                  store_handover: "#/components/schemas/StoreHandoverRequest"
+                  get_handover: "#/components/schemas/GetHandoverRequest"
+                  fire_alarm: "#/components/schemas/FireAlarmRequest"
+                  fleet_report: "#/components/schemas/FleetReportRequest"
+                  list_fleets: "#/components/schemas/ListFleetsRequest"
+      responses:
+        "200":
+          description: >
+            Action result. On success, shape varies by action. On state
+            conflict (e.g. agent already registered, not on watch), returns
+            ActionError with HTTP 200.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ActionError"
+                  - $ref: "#/components/schemas/TokenLoginResponse"
+                  - $ref: "#/components/schemas/RegisterAgentResponse"
+                  - $ref: "#/components/schemas/PairAgentsResponse"
+                  - $ref: "#/components/schemas/AutoPairResponse"
+                  - $ref: "#/components/schemas/StartWatchResponse"
+                  - $ref: "#/components/schemas/CompleteTaskResponse"
+                  - $ref: "#/components/schemas/CheckWatchResponse"
+                  - $ref: "#/components/schemas/InitiateHandoverResponse"
+                  - $ref: "#/components/schemas/GenerateHandoverResponse"
+                  - $ref: "#/components/schemas/StoreHandoverResponse"
+                  - $ref: "#/components/schemas/GetHandoverResponse"
+                  - $ref: "#/components/schemas/FireAlarmResponse"
+                  - $ref: "#/components/schemas/FleetReportResponse"
+                  - $ref: "#/components/schemas/ListFleetsResponse"
+        "400":
+          description: Missing required fields or unknown action
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized — API key does not match the fleet's registered key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: x-api-key
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+
+    # ── Shared types ─────────────────────────────────────────
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+
+    ActionError:
+      type: object
+      description: >
+        Returned with HTTP 200 when an action fails due to state conflicts
+        (e.g. agent already registered, agent not on watch, agent is resting).
+      required: [error]
+      properties:
+        error:
+          type: string
+          examples:
+            - "Agent 'alpha' already registered in fleet 'default'."
+            - "Agent 'alpha' is not on watch (status: idle)."
+            - "Agent 'alpha' is resting. Alarm at 2026-07-02T12:00:00Z."
+
+    GovernanceBlock:
+      type: object
+      required: [type, error, whiteroom]
+      properties:
+        type:
+          type: string
+          const: error
+        error:
+          type: object
+          required: [type, message]
+          properties:
+            type:
+              type: string
+              const: rate_limit_error
+            message:
+              type: string
+        whiteroom:
+          type: object
+          required: [reason, agentId, message]
+          properties:
+            reason:
+              type: string
+              enum:
+                - resting
+                - handover_in_progress
+                - watch_limit_exceeded
+                - waiting_for_partner
+            agentId:
+              type: string
+            restRemaining:
+              type: string
+            alarmAt:
+              type: string
+              format: date-time
+            waitingOn:
+              type: string
+            handoverGenerated:
+              type: boolean
+            status:
+              type: string
+            pairedWith:
+              type: string
+            retrieveWith:
+              type: object
+              properties:
+                action:
+                  type: string
+                fleet_id:
+                  type: string
+                agent_id:
+                  type: string
+            message:
+              type: string
+
+    Agent:
+      type: object
+      properties:
+        agentId:
+          type: string
+        role:
+          type: string
+          enum: [worker, supervisor]
+        status:
+          type: string
+          enum: [idle, working, handover_out, handover_in, resting, alarm]
+        watchMinutes:
+          type: integer
+        restMinutes:
+          type: integer
+        handoverMinutes:
+          type: integer
+        watchCount:
+          type: integer
+        totalWorkMinutes:
+          type: number
+        totalTokens:
+          type: integer
+        totalTasks:
+          type: integer
+        pairedWith:
+          type:
+            - string
+            - "null"
+        alarmAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    WatchProgress:
+      type: object
+      properties:
+        minutesWorked:
+          type: number
+        minutesRemaining:
+          type: number
+        percentComplete:
+          type: string
+          example: "75.0"
+
+    Task:
+      type: object
+      properties:
+        taskId:
+          type: string
+        taskName:
+          type: string
+        minutesSpent:
+          type: number
+        tokensUsed:
+          type: integer
+        completedAt:
+          type: string
+          format: date-time
+
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        type:
+          type: string
+
+    HandoverDocument:
+      type: object
+      description: >
+        Compressed context document generated during handover. Contains
+        decisions, current state, pending tasks, warnings, and exact data
+        extracted from the work session.
+      properties:
+        decisions:
+          type: array
+          items:
+            type: object
+            properties:
+              what:
+                type: string
+              why:
+                type: string
+              final:
+                type: boolean
+        state:
+          type: string
+        pending:
+          type: array
+          items:
+            type: object
+            properties:
+              task:
+                type: string
+              priority:
+                type: string
+                enum: [HIGH, NORMAL, LOW]
+        warnings:
+          type: array
+          items:
+            type: string
+        exact_data:
+          type: object
+          properties:
+            numbers:
+              type: array
+              items:
+                type: string
+            urls:
+              type: array
+              items:
+                type: string
+            names:
+              type: array
+              items:
+                type: string
+            ids:
+              type: array
+              items:
+                type: string
+        generated_at:
+          type: string
+          format: date-time
+        watch_summary:
+          type: object
+          properties:
+            tasks_completed:
+              type: integer
+            tokens_used:
+              type: integer
+            duration_minutes:
+              type: number
+
+    # ── Messages proxy types ─────────────────────────────────
+
+    MessagesRequest:
+      type: object
+      required: [model, messages, max_tokens]
+      properties:
+        model:
+          type: string
+          example: claude-sonnet-4-20250514
+        messages:
+          type: array
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+        system:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+        max_tokens:
+          type: integer
+        metadata:
+          type: object
+          properties:
+            task_name:
+              type: string
+
+    MessagesResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: message
+        role:
+          type: string
+          const: assistant
+        content:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              text:
+                type: string
+        model:
+          type: string
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
+
+    # ── Action request schemas ───────────────────────────────
+
+    AgentId:
+      type: string
+      maxLength: 64
+      pattern: "^[a-zA-Z0-9._-]+$"
+
+    FleetId:
+      type: string
+      maxLength: 64
+      pattern: "^[a-zA-Z0-9._-]+$"
+
+    ActionBase:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+        fleet_id:
+          $ref: "#/components/schemas/FleetId"
+
+    TokenLoginRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, fleet_token]
+          properties:
+            action:
+              const: token_login
+            fleet_token:
+              type: string
+              maxLength: 128
+              pattern: "^wr_"
+
+    RegisterAgentRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id]
+          properties:
+            action:
+              const: register_agent
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+            agent_role:
+              type: string
+              default: worker
+            llm_endpoint:
+              type: string
+              format: uri
+
+    PairAgentsRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id, paired_with]
+          properties:
+            action:
+              const: pair_agents
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+            paired_with:
+              $ref: "#/components/schemas/AgentId"
+
+    AutoPairRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action]
+          properties:
+            action:
+              const: auto_pair
+
+    StartWatchRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id]
+          properties:
+            action:
+              const: start_watch
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+
+    CompleteTaskRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id, task_name]
+          properties:
+            action:
+              const: complete_task
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+            task_name:
+              type: string
+            minutes_spent:
+              type: number
+              default: 30
+            tokens_used:
+              type: integer
+              default: 0
+
+    CheckWatchRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id]
+          properties:
+            action:
+              const: check_watch
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+
+    InitiateHandoverRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id, to_agent]
+          properties:
+            action:
+              const: initiate_handover
+            agent_id:
+              description: Outgoing agent (ending its watch)
+              $ref: "#/components/schemas/AgentId"
+            to_agent:
+              description: Incoming agent (starting its watch)
+              $ref: "#/components/schemas/AgentId"
+            context_summary:
+              type: string
+            pending_tasks:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+
+    GenerateHandoverRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id]
+          properties:
+            action:
+              const: generate_handover
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+
+    StoreHandoverRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id, handover_doc]
+          properties:
+            action:
+              const: store_handover
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+            handover_doc:
+              $ref: "#/components/schemas/HandoverDocument"
+
+    GetHandoverRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id]
+          properties:
+            action:
+              const: get_handover
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+
+    FireAlarmRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action, agent_id]
+          properties:
+            action:
+              const: fire_alarm
+            agent_id:
+              $ref: "#/components/schemas/AgentId"
+
+    FleetReportRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action]
+          properties:
+            action:
+              const: fleet_report
+
+    ListFleetsRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [action]
+          properties:
+            action:
+              const: list_fleets
+
+    # ── Action response schemas ──────────────────────────────
+
+    TokenLoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        fleetId:
+          type: string
+        report:
+          $ref: "#/components/schemas/FleetReportResponse"
+
+    RegisterAgentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        agent:
+          $ref: "#/components/schemas/Agent"
+        fleetToken:
+          type: string
+          description: >
+            One-time fleet token for dashboard login. Save this value.
+        message:
+          type: string
+
+    PairAgentsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        pair:
+          type: object
+          properties:
+            agentA:
+              type: string
+            agentB:
+              type: string
+
+    AutoPairResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        pairs:
+          type: array
+          items:
+            type: object
+            properties:
+              agentA:
+                type: string
+              agentB:
+                type: string
+        solo:
+          type:
+            - string
+            - "null"
+          description: Unpaired agent if agent count is odd
+
+    StartWatchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        agentId:
+          type: string
+        watchNumber:
+          type: integer
+        watchLimit:
+          type: integer
+          description: Watch duration in minutes
+        message:
+          type: string
+
+    CompleteTaskResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        task:
+          $ref: "#/components/schemas/Task"
+        watchProgress:
+          $ref: "#/components/schemas/WatchProgress"
+        alert:
+          type: string
+          enum: [WATCH_LIMIT_REACHED]
+          description: Present only when the watch limit has been exceeded
+        reliefAgent:
+          type: string
+          description: Paired agent to hand over to (if paired)
+        action:
+          type: string
+          description: Suggested next action (if paired)
+        message:
+          type: string
+
+    CheckWatchResponse:
+      type: object
+      properties:
+        agentId:
+          type: string
+        status:
+          type: string
+          enum: [idle, working, handover_out, handover_in, resting, alarm]
+        watchNumber:
+          type: integer
+        minutesWorked:
+          type: number
+        minutesRemaining:
+          type: number
+        percentComplete:
+          type: string
+        tasksCompleted:
+          type: integer
+        tokensUsed:
+          type: integer
+        needsHandover:
+          type: boolean
+        restRemaining:
+          type: string
+          description: Present when status is resting
+        alarmAt:
+          type: string
+          format: date-time
+          description: Present when status is resting
+        message:
+          type: string
+
+    InitiateHandoverResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        handover:
+          type: object
+          properties:
+            handoverId:
+              type: string
+            from:
+              type: string
+            to:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+            durationMinutes:
+              type: integer
+            outgoingWatch:
+              type: object
+              properties:
+                watchNumber:
+                  type: integer
+                minutesWorked:
+                  type: number
+                tokensUsed:
+                  type: integer
+                tasksCompleted:
+                  type: array
+                  items:
+                    type: string
+            contextSummary:
+              type: string
+            pendingTasks:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            keyFindings:
+              type: array
+              items:
+                type: string
+        outgoingAgent:
+          type: object
+          properties:
+            agentId:
+              type: string
+            status:
+              type: string
+              const: resting
+            alarmAt:
+              type: string
+              format: date-time
+            message:
+              type: string
+        incomingAgent:
+          type: object
+          properties:
+            agentId:
+              type: string
+            status:
+              type: string
+              const: working
+            watchNumber:
+              type: integer
+            message:
+              type: string
+        energySavings:
+          type: object
+          properties:
+            contextCleared:
+              type: string
+            freshContext:
+              type: string
+            reduction:
+              type: string
+            note:
+              type: string
+
+    GenerateHandoverResponse:
+      type: object
+      properties:
+        taskHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        existingDoc:
+          oneOf:
+            - $ref: "#/components/schemas/HandoverDocument"
+            - type: "null"
+        agentId:
+          type: string
+        fleetId:
+          type: string
+        message:
+          type: string
+
+    StoreHandoverResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+
+    GetHandoverResponse:
+      type: object
+      properties:
+        agentId:
+          type: string
+        fleetId:
+          type: string
+        handoverDoc:
+          oneOf:
+            - $ref: "#/components/schemas/HandoverDocument"
+            - type: "null"
+
+    FireAlarmResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        agentId:
+          type: string
+        status:
+          type: string
+          const: idle
+        message:
+          type: string
+        totalWatches:
+          type: integer
+        totalWorkMinutes:
+          type: number
+        totalTokens:
+          type: integer
+
+    FleetReportResponse:
+      type: object
+      properties:
+        fleetId:
+          type: string
+        agentCount:
+          type: integer
+        status:
+          type: object
+          properties:
+            working:
+              type: array
+              items:
+                type: string
+            resting:
+              type: array
+              items:
+                type: string
+            idle:
+              type: array
+              items:
+                type: string
+        totals:
+          type: object
+          properties:
+            workMinutes:
+              type: number
+            tokens:
+              type: integer
+            tasks:
+              type: integer
+            handovers:
+              type: integer
+        energySavings:
+          type: object
+          properties:
+            estimatedTokensSaved:
+              type: integer
+            estimatedCostSaved:
+              type: string
+            estimatedEnergySaved:
+              type: string
+            formula:
+              type: string
+        compliance:
+          type: object
+          properties:
+            allAgentsWithinLimits:
+              type: boolean
+            restingAgentsCount:
+              type: integer
+            laborScore:
+              type: string
+        recentAudit:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+
+    ListFleetsResponse:
+      type: object
+      properties:
+        fleets:
+          type: array
+          items:
+            type: object
+            properties:
+              fleetId:
+                type: string
+              agentCount:
+                type: integer
+              agents:
+                type: array
+                items:
+                  type: string
