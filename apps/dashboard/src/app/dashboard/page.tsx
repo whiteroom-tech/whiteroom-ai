@@ -29,11 +29,13 @@ async function provisionFleet(apiKey: string, fleetId: string) {
   return res.json();
 }
 
-async function getFleetReport(apiKey: string, fleetId: string) {
+// Report via fleet token — the token is scoped to this fleet regardless of
+// which API key the fleet is bound to on the proxy side.
+async function getFleetReport(fleetToken: string) {
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ action: 'fleet_report', fleet_id: fleetId }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'token_login', fleet_token: fleetToken }),
   });
   return res.json();
 }
@@ -74,10 +76,10 @@ export default function DashboardPage() {
       }
 
       let report = null;
-      if (!isNew) {
+      if (!isNew && fleetToken) {
         try {
-          const r = await getFleetReport(apiKey, fleetId);
-          if (r.fleetId) report = r;
+          const r = await getFleetReport(fleetToken);
+          if (r.success && r.report) report = r.report;
         } catch {}
       }
 
