@@ -253,15 +253,15 @@ client = anthropic.Anthropic(
 
   <section id="providers">
     <h2>Which LLM providers are supported?</h2>
-    <p>WhiteRoom works with any provider that uses the OpenAI or Anthropic API format, plus native integrations for major cloud platforms.</p>
+    <p>WhiteRoom supports the Anthropic and OpenAI API formats. Any provider exposing an OpenAI-compatible endpoint works through the same proxy. Requests run non-streaming &mdash; disable streaming in your framework config.</p>
 
     <div class="provider-grid">
       <div class="provider"><strong>Anthropic</strong>Claude</div>
       <div class="provider"><strong>OpenAI</strong>GPT</div>
-      <div class="provider"><strong>Google</strong>Gemini</div>
-      <div class="provider"><strong>AWS</strong>Bedrock</div>
-      <div class="provider"><strong>Azure</strong>OpenAI</div>
       <div class="provider"><strong>Mistral</strong>Mistral AI</div>
+      <div class="provider"><strong>Groq</strong>OpenAI-compatible</div>
+      <div class="provider"><strong>Together AI</strong>OpenAI-compatible</div>
+      <div class="provider"><strong>OpenRouter</strong>OpenAI-compatible</div>
     </div>
   </section>
 
@@ -276,7 +276,7 @@ client = anthropic.Anthropic(
     <p>WhiteRoom's proprietary optimization engine automatically reduces token usage &mdash; typically by 40&ndash;80% depending on the workload. See the <a href="/benchmark.html">benchmark</a> for detailed A/B test results.</p>
 
     <h3>Audit trail</h3>
-    <p>Every agent action, token usage event, and session boundary is logged to a hash-chained, tamper-evident audit trail. Each entry is cryptographically linked to the previous one, making any modification or deletion detectable. The audit trail streams in real time.</p>
+    <p>Every agent action, token usage event, and session boundary is logged to an append-only audit trail with per-event timestamps, persisted to the database and streamed to the dashboard in real time.</p>
   </section>
 
   <section id="api-ref">
@@ -292,7 +292,7 @@ client = anthropic.Anthropic(
       <tr><td><code>check_watch</code></td><td>agent_id</td><td>Check remaining time and whether handover is needed</td></tr>
       <tr><td><code>initiate_handover</code></td><td>agent_id, to_agent</td><td>Hand off context from outgoing to incoming agent</td></tr>
       <tr><td><code>fleet_report</code></td><td>&mdash;</td><td>Full fleet status, totals, compliance, and recent audit</td></tr>
-      <tr><td><code>audit_log</code></td><td>&mdash;</td><td>Query the tamper-evident audit trail</td></tr>
+      <tr><td><code>audit_log</code></td><td>&mdash;</td><td>Query the audit trail</td></tr>
       <tr><td><code>token_login</code></td><td>fleet_token</td><td>Authenticate with a fleet token (dashboard login)</td></tr>
     </table>
     <h3>POST /v1/messages</h3>
