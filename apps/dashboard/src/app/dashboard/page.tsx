@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Onboarding } from './onboarding';
+import { posthog, initAnalytics } from '@/lib/analytics';
 
 const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -51,7 +52,10 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
 
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
+    // getSession reads the cached local session (no network) so returning
+    // users render instantly; the fleet report fills in when it arrives.
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const user = session?.user;
       if (!user) { router.push('/sign-in'); return; }
 
       const email = user.email || '';
@@ -75,16 +79,21 @@ export default function DashboardPage() {
         isNew = true;
       }
 
-      let report = null;
+      setProps({ name, email, apiKey, fleetId, fleetToken, report: null, isNew });
+      setLoading(false);
+
+      initAnalytics();
+      posthog.identify(user.id, { email });
+      posthog.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
+
       if (!isNew && fleetToken) {
         try {
           const r = await getFleetReport(fleetToken);
-          if (r.success && r.report) report = r.report;
+          if (r.success && r.report) {
+            setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
+          }
         } catch {}
       }
-
-      setProps({ name, email, apiKey, fleetId, fleetToken, report, isNew });
-      setLoading(false);
     });
   }, [router]);
 

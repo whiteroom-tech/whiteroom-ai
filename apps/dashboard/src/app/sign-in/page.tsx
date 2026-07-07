@@ -1,6 +1,7 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
+import { posthog, initAnalytics } from '@/lib/analytics';
 import { useState } from 'react';
 
 export default function SignInPage() {
@@ -43,6 +44,8 @@ export default function SignInPage() {
       setError(error.message);
     } else {
       setLinkSent(true);
+      initAnalytics();
+      posthog.capture('magic_link_requested');
     }
   }
 
