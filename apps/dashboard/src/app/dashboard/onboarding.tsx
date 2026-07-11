@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface Props {
   name: string;
@@ -12,21 +12,26 @@ interface Props {
   isNew: boolean;
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
   const [copied, setCopied] = useState(false);
 
   return (
     <button
+      disabled={disabled}
       onClick={() => {
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        if (disabled) return;
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
       }}
-      className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all cursor-pointer"
+      className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all"
       style={{
         borderColor: copied ? '#3FE0A0' : '#1B2740',
-        color: copied ? '#3FE0A0' : '#A9B8D4',
+        color: disabled ? '#334155' : copied ? '#3FE0A0' : '#A9B8D4',
         background: copied ? 'rgba(63,224,160,.08)' : 'transparent',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
       }}
     >
       {copied ? 'Copied' : 'Copy'}
@@ -58,9 +63,9 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, isNew }: Props) {
   const [showKey, setShowKey] = useState(isNew);
 
-  if (typeof window !== 'undefined' && fleetToken) {
-    localStorage.setItem('wr_fleet_token', fleetToken);
-  }
+  useEffect(() => {
+    if (fleetToken) localStorage.setItem('wr_fleet_token', fleetToken);
+  }, [fleetToken]);
 
   return (
     <div className="min-h-screen font-sans" style={{ background: '#070B14', color: '#EAF1FF' }}>
@@ -157,7 +162,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
             <code className="text-sm font-mono flex-1 break-all" style={{ color: '#FFB454' }}>
               {showKey ? apiKey : '•'.repeat(46)}
             </code>
-            <CopyButton text={apiKey} />
+            <CopyButton text={apiKey} disabled={!showKey} />
           </div>
         </section>
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
+import { clearFleetCredentials } from '@/lib/fleet-credentials';
 
 interface AgentInfo {
   agentId: string;
@@ -184,9 +185,7 @@ export default function FleetDashboard() {
       const data = await res.json();
       if (data.error) {
         if (data.error.toLowerCase().includes('unauthorized') || data.error.toLowerCase().includes('invalid')) {
-          localStorage.removeItem('wr_token');
-          localStorage.removeItem('wr_fleet');
-          localStorage.removeItem('wr_fleet_token');
+          clearFleetCredentials();
           setAuthenticated(false);
           setLoginError(data.error);
         } else {
@@ -301,9 +300,7 @@ export default function FleetDashboard() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('wr_token');
-    localStorage.removeItem('wr_fleet');
-    localStorage.removeItem('wr_fleet_token');
+    clearFleetCredentials();
     setAuthenticated(false);
   }
 
@@ -369,7 +366,7 @@ export default function FleetDashboard() {
               </label>
               <input
                 id="fleet-token"
-                type="text"
+                type="password"
                 value={loginToken}
                 onChange={(e) => setLoginToken(e.target.value)}
                 placeholder="wr_... or sk-ant-..."

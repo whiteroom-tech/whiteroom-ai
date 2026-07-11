@@ -27,6 +27,7 @@ async function provisionFleet(apiKey: string, fleetId: string) {
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
     body: JSON.stringify({ action: 'register_agent', fleet_id: fleetId, agent_id: 'setup-agent', agent_role: 'worker' }),
   });
+  if (!res.ok) return { error: `HTTP ${res.status}` };
   return res.json();
 }
 
@@ -44,6 +45,7 @@ async function getFleetReport(fleetToken: string) {
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
   const [props, setProps] = useState<{
     name: string; email: string; apiKey: string; fleetId: string;
     fleetToken: string | null; report: Record<string, unknown> | null; isNew: boolean;
@@ -69,9 +71,15 @@ export default function DashboardPage() {
       if (!apiKey) {
         apiKey = generateApiKey();
         try {
-          const result = await provisionFleet(apiKey, fleetId);
-          fleetToken = result.fleetToken || null;
-        } catch {}
+          const res = await provisionFleet(apiKey, fleetId);
+          if (res.error) {
+            setProvisionError(`Fleet provisioning failed: ${res.error}`);
+          } else {
+            fleetToken = res.fleetToken || null;
+          }
+        } catch (err) {
+          setProvisionError(`Fleet provisioning failed: ${err instanceof Error ? err.message : 'network error'}`);
+        }
 
         await supabase.auth.updateUser({
           data: { whiteroom_api_key: apiKey, whiteroom_fleet_id: fleetId, whiteroom_fleet_token: fleetToken },
@@ -101,6 +109,23 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
         <p className="text-sm font-mono" style={{ color: '#6B7C9E' }}>Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  if (provisionError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
+        <div className="text-center space-y-4" style={{ maxWidth: 400 }}>
+          <p className="text-sm font-mono" style={{ color: '#ef4444' }}>{provisionError}</p>
+          <button
+            onClick={() => { setProvisionError(null); setLoading(true); window.location.reload(); }}
+            className="px-6 py-2 rounded-lg text-sm font-semibold cursor-pointer"
+            style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' }}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

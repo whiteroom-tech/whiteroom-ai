@@ -2,9 +2,11 @@
 
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { clearFleetCredentials } from '@/lib/fleet-credentials';
 
 export default function SignOut() {
   useEffect(() => {
+    clearFleetCredentials();
     const supabase = createClient();
     supabase.auth.signOut().then(() => {
       window.location.href = 'https://whiteroom.tech';
