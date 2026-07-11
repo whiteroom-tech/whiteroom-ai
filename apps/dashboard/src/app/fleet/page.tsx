@@ -413,7 +413,7 @@ export default function FleetDashboard() {
   // Current-watch stats from agent details
   const watchTasks = agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
   const watchTokens = agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
-  const watchHandovers = agents.filter(a => a.status === 'resting').length;
+  const watchHandovers = report?.totals?.handovers || 0;
   const perWatchSaved = t.handovers > 0 ? (es.estimatedTokensSaved || 0) / t.handovers : 0;
   const watchWithoutWR = watchTokens + perWatchSaved;
   const watchSaved = perWatchSaved;
