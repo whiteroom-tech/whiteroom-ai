@@ -58,6 +58,10 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, isNew }: Props) {
   const [showKey, setShowKey] = useState(isNew);
 
+  if (typeof window !== 'undefined' && fleetToken) {
+    localStorage.setItem('wr_fleet_token', fleetToken);
+  }
+
   return (
     <div className="min-h-screen font-sans" style={{ background: '#070B14', color: '#EAF1FF' }}>
       {/* Header */}
@@ -105,9 +109,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
         {/* Live Dashboard + Fleet Status row */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
           <a
-            href={fleetToken
-              ? `https://whiteroom.tech/dashboard.html#token=${encodeURIComponent(fleetToken)}`
-              : 'https://whiteroom.tech/dashboard.html'}
+            href="/fleet"
             className="rounded-xl p-6 flex items-center gap-4 transition-all group"
             style={{ background: '#0A1020', border: '1px solid #1B2740', textDecoration: 'none' }}
           >
@@ -199,7 +201,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                   <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
                   <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
                 </div>
-                <CodeBlock label="Open in your browser" code={fleetToken ? `https://whiteroom.tech/dashboard.html#token=${fleetToken}` : 'https://whiteroom.tech/dashboard.html'} />
+                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/fleet" />
               </div>
             </div>
           </div>
