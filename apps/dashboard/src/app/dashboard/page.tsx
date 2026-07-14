@@ -54,12 +54,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
 
-    // getSession reads the cached local session (no network) so returning
-    // users render instantly; the fleet report fills in when it arrives.
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const user = session?.user;
-      if (!user) { router.push('/sign-in'); return; }
-
+    async function handleUser(user: NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']>) {
       const email = user.email || '';
       const name = user.user_metadata?.full_name || email.split('@')[0];
       const fleetId = emailToFleetId(email);
@@ -101,6 +96,14 @@ export default function DashboardPage() {
             setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
           }
         } catch {}
+      }
+    }
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        handleUser(user);
+      } else {
+        router.push('/sign-in');
       }
     });
   }, [router]);

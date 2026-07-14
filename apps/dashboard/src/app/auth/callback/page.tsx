@@ -9,21 +9,37 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN') {
-        router.push('/dashboard');
+    let navigated = false;
+
+    function go(path: string) {
+      if (navigated) return;
+      navigated = true;
+      router.push(path);
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        go('/dashboard');
       }
     });
 
     const url = new URL(window.location.href);
     const code = url.searchParams.get('code');
+
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) router.push('/sign-in?error=auth_failed');
+        if (error) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) go('/dashboard');
+            else go('/sign-in');
+          });
+        }
       });
-    } else {
-      router.push('/sign-in');
+    } else if (!window.location.hash.includes('access_token')) {
+      go('/sign-in');
     }
+
+    return () => subscription.unsubscribe();
   }, [router]);
 
   return (
