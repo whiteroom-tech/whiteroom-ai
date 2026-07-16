@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
+
+const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
 interface Props {
   name: string;
@@ -57,6 +60,85 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
       <p className="text-[11px] font-mono tracking-[.12em] uppercase" style={{ color: '#6B7C9E' }}>{label}</p>
       <p className="text-2xl font-display font-bold mt-1" style={{ color: '#EAF1FF' }}>{value}</p>
     </div>
+  );
+}
+
+// BYOK: rebind this fleet from the dashboard's placeholder key to the
+// customer's real Anthropic key, so real governed agents can run against it.
+// The engine stores only a hash of the key — it never leaves the customer's
+// control except as a per-request forward to Anthropic (standard BYOK).
+function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
+  const [connected, setConnected] = useState(false);
+  const [value, setValue] = useState('');
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.user_metadata?.whiteroom_byok) setConnected(true);
+    });
+  }, []);
+
+  async function connect() {
+    const key = value.trim();
+    if (!/^sk-/.test(key) || key.length < 12) { setStatus('error'); setMsg('That does not look like an Anthropic API key (sk-ant-…).'); return; }
+    setStatus('saving'); setMsg('');
+    try {
+      // Authenticate the rebind with the fleet's CURRENT key (this dashboard key).
+      const res = await fetch(`${PROXY_URL}/api/white-room`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({ action: 'rebind_fleet_key', fleet_id: fleetId, new_api_key: key }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) { setStatus('error'); setMsg(body.error || `Rebind failed (HTTP ${res.status}).`); return; }
+      // Persist only a flag — never the raw provider key — in the account.
+      await createClient().auth.updateUser({ data: { whiteroom_byok: true } });
+      setConnected(true); setValue('');
+    } catch (e) {
+      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
+    }
+  }
+
+  return (
+    <section className="rounded-xl p-6 space-y-3" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+      <div>
+        <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Bring Your Own Key</h3>
+        <p className="text-xs mt-1" style={{ color: '#4E607F' }}>
+          {connected
+            ? 'Your fleet is bound to your own Anthropic key — real governed agents can run against it. Use that key as ANTHROPIC_API_KEY when you run agents.'
+            : 'Connect your Anthropic key so real agents can run on this fleet. We store only a hash — the key stays yours.'}
+        </p>
+      </div>
+      {connected ? (
+        <div className="flex items-center gap-2 rounded-lg px-4 py-3" style={{ background: 'rgba(63,224,160,.06)', border: '1px solid rgba(63,224,160,.2)' }}>
+          <span style={{ color: '#3FE0A0' }}>✓</span>
+          <span className="text-sm" style={{ color: '#3FE0A0' }}>Provider key connected</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={value}
+              onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
+              placeholder="sk-ant-…"
+              className="flex-1 rounded-lg px-4 py-3 text-sm font-mono"
+              style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
+            />
+            <button
+              onClick={connect}
+              disabled={status === 'saving'}
+              className="shrink-0 px-5 py-3 rounded-lg text-sm font-semibold cursor-pointer"
+              style={{ background: '#132038', color: '#38E1FF', border: '1px solid #1B2740', opacity: status === 'saving' ? 0.6 : 1 }}
+            >
+              {status === 'saving' ? 'Connecting…' : 'Connect'}
+            </button>
+          </div>
+          {status === 'error' && <p className="text-xs" style={{ color: '#ef4444' }}>{msg}</p>}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -165,6 +247,9 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
             <CopyButton text={apiKey} disabled={!showKey} />
           </div>
         </section>
+
+        {/* Bring Your Own Key */}
+        <ByokCard apiKey={apiKey} fleetId={fleetId} />
 
         {/* Getting Started */}
         <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
