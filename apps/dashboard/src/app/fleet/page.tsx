@@ -3,66 +3,9 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-
-interface AgentInfo {
-  agentId: string;
-  status: string;
-  watchNumber?: number;
-  minutesWorked?: number;
-  minutesRemaining?: number;
-  percentComplete?: string;
-  tasksCompleted?: number;
-  tokensUsed?: number;
-  needsHandover?: boolean;
-  restRemaining?: string;
-  restStartedAt?: string;
-  alarmAt?: string;
-  restPercent?: string;
-  watchMinutes?: number;
-  restMinutes?: number;
-  handoverMinutes?: number;
-}
-
-interface HandoverDoc {
-  state?: string;
-  pending?: Array<{ task: string }>;
-  warnings?: string[];
-  session_stats?: { tasks_completed: number; total_tokens: number };
-}
-
-interface FleetReport {
-  fleetId: string;
-  agentCount: number;
-  status: { working: string[]; resting: string[]; idle: string[]; handover_out?: string[] };
-  totals: { workMinutes: number; tokens: number; tasks: number; handovers: number };
-  energySavings: { estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };
-  compliance: { allAgentsWithinLimits: boolean; restingAgentsCount: number; laborScore: string };
-}
-
-interface ToolDetail { name: string; args: string }
-
-interface AuditEntry {
-  id: string;
-  timestamp: string;
-  type: string;
-  agentId?: string;
-  taskId?: string;
-  taskName?: string;
-  watchNumber?: number;
-  tokensUsed?: number;
-  minutesSpent?: number;
-  remaining?: number;
-  details?: ToolDetail[];
-  [key: string]: unknown;
-}
-
-interface AuditLogResponse {
-  fleetId: string;
-  total: number;
-  limit: number;
-  filters: { agentIds: string[]; types: string[] };
-  entries: AuditEntry[];
-}
+import { auditLog, checkWatch, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
+import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; badgeBd: string; bar: string }> = {
   working:      { border: '#22c55e', badgeBg: '#052e16', badgeTx: '#4ade80', badgeBd: '#22c55e', bar: '#22c55e' },
@@ -74,8 +17,6 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
 function estimateCost(tokensSaved: number): number {
   return tokensSaved * 0.8 * 0.0000008 + tokensSaved * 0.2 * 0.000004;
 }
-const FONT_DISPLAY = "'Chakra Petch', sans-serif";
-const FONT_MONO = "'JetBrains Mono', monospace";
 
 function feedAccent(type: string): string {
   if (type === 'task_complete') return '#22c55e';
@@ -87,8 +28,6 @@ function feedAccent(type: string): string {
 
 function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
-
-const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
 export default function FleetDashboard() {
   const [report, setReport] = useState<FleetReport | null>(null);
@@ -123,15 +62,10 @@ export default function FleetDashboard() {
   const token = typeof window !== 'undefined' ? localStorage.getItem('wr_token') : null;
   const fleetToken = typeof window !== 'undefined' ? localStorage.getItem('wr_fleet_token') : null;
 
-  function authHeaders(): Record<string, string> {
-    const h: Record<string, string> = { 'Content-Type': 'application/json' };
-    const authKey = token || fleetToken;
-    if (authKey) {
-      if (authKey.startsWith('sk-')) h['x-api-key'] = authKey;
-      else h['Authorization'] = `Bearer ${authKey}`;
-    }
-    return h;
-  }
+  // The credential used to authenticate proxy calls once signed in: prefer the
+  // stored login token, fall back to the fleet token. The client applies the
+  // x-api-key vs Bearer rule based on the key's prefix.
+  const authKey = token || fleetToken || undefined;
 
   async function handleFleetLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -142,29 +76,20 @@ export default function FleetDashboard() {
       let resolvedFleetId: string;
 
       if (isApiKey) {
-        const listRes = await fetch(`${PROXY_URL}/api/white-room`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': loginToken },
-          body: JSON.stringify({ action: 'list_fleets' }),
-        });
-        const listData = await listRes.json();
-        if (!listData.fleets?.length) {
+        const listData = await listFleets(loginToken);
+        const fleets = listData.fleets ?? [];
+        if (!fleets.length) {
           setLoginError('No fleets found for this API key. Register an agent first.');
           return;
         }
-        resolvedFleetId = listData.fleets[0].fleetId;
+        resolvedFleetId = fleets[0].fleetId;
       } else {
-        const res = await fetch(`${PROXY_URL}/api/white-room`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'token_login', fleet_token: loginToken }),
-        });
-        const data = await res.json();
+        const data = await tokenLogin(loginToken);
         if (data.error) {
           setLoginError(data.error);
           return;
         }
-        resolvedFleetId = data.fleetId;
+        resolvedFleetId = data.fleetId ?? '';
       }
 
       localStorage.setItem('wr_token', loginToken);
@@ -181,8 +106,7 @@ export default function FleetDashboard() {
   const fetchReport = useCallback(async () => {
     if (!fleetId) return;
     try {
-      const res = await fetch(`${PROXY_URL}/api/white-room`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'fleet_report', fleet_id: fleetId }) });
-      const data = await res.json();
+      const data = await fleetReport(fleetId, authKey);
       if (data.error) {
         if (data.error.toLowerCase().includes('unauthorized') || data.error.toLowerCase().includes('invalid')) {
           clearFleetCredentials();
@@ -198,8 +122,7 @@ export default function FleetDashboard() {
       const allIds = [...(data.status.working || []), ...(data.status.resting || []), ...(data.status.idle || []), ...(data.status.handover_out || [])];
       const details: AgentInfo[] = await Promise.all(
         allIds.map(async (id: string) => {
-          const r = await fetch(`${PROXY_URL}/api/white-room`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'check_watch', agent_id: id, fleet_id: fleetId }) });
-          const d = await r.json();
+          const d = await checkWatch(id, fleetId, authKey);
           return { ...d, agentId: d.agentId || id };
         })
       );
@@ -224,8 +147,7 @@ export default function FleetDashboard() {
       const docs: Record<string, HandoverDoc> = {};
       await Promise.all(details.filter((d) => d.status === 'resting').map(async (d) => {
         try {
-          const r = await fetch(`${PROXY_URL}/api/white-room`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'get_handover', agent_id: d.agentId, fleet_id: fleetId }) });
-          const hd = await r.json();
+          const hd = await getHandover(d.agentId, fleetId, authKey);
           if (hd.handoverDoc) docs[d.agentId] = hd.handoverDoc;
         } catch { /* ignore */ }
       }));
@@ -236,11 +158,7 @@ export default function FleetDashboard() {
   const fetchAudit = useCallback(async () => {
     if (!fleetId) return;
     try {
-      const res = await fetch(`${PROXY_URL}/api/white-room`, {
-        method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ action: 'audit_log', fleet_id: fleetId, agent_id: filterAgent || undefined, type: filterType || undefined, search: searchText || undefined, limit: 200 }),
-      });
-      const data: AuditLogResponse = await res.json();
+      const data = await auditLog({ fleetId, agentId: filterAgent || undefined, type: filterType || undefined, search: searchText || undefined, limit: 200 }, authKey);
       if ('error' in data) return;
       setAuditEntries(data.entries);
       setAuditTotal(data.total);
@@ -251,11 +169,7 @@ export default function FleetDashboard() {
   const fetchAllEntries = useCallback(async () => {
     if (!fleetId) return;
     try {
-      const res = await fetch(`${PROXY_URL}/api/white-room`, {
-        method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ action: 'audit_log', fleet_id: fleetId, limit: 2000 }),
-      });
-      const data: AuditLogResponse = await res.json();
+      const data = await auditLog({ fleetId, limit: 2000 }, authKey);
       if ('error' in data) return;
       setAllEntries(data.entries);
     } catch { /* ignore */ }
@@ -265,10 +179,7 @@ export default function FleetDashboard() {
     if (!token && !fleetToken) { setAuthenticated(false); return; }
 
     if (!fleetId && fleetToken) {
-      fetch(`${PROXY_URL}/api/white-room`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'token_login', fleet_token: fleetToken }),
-      }).then(r => r.json()).then(data => {
+      tokenLogin(fleetToken).then(data => {
         if (data.fleetId) {
           localStorage.setItem('wr_fleet', data.fleetId);
           localStorage.setItem('wr_token', fleetToken);
@@ -334,8 +245,7 @@ export default function FleetDashboard() {
   async function exportWorkbook() {
     if (!fleetId) return;
     try {
-      const res = await fetch(`${PROXY_URL}/api/white-room`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'audit_log', fleet_id: fleetId, agent_id: filterAgent || undefined, search: searchText || undefined, limit: 1000 }) });
-      const data: AuditLogResponse = await res.json();
+      const data = await auditLog({ fleetId, agentId: filterAgent || undefined, search: searchText || undefined, limit: 1000 }, authKey);
       if ('error' in data || !data.entries?.length) return;
       const entries = data.entries;
       const tasks = entries.filter((e) => e.type === 'task_complete');
@@ -356,7 +266,7 @@ export default function FleetDashboard() {
       <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#070B14', fontFamily: "'Inter', system-ui, sans-serif" }}>
         <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
           <div className="flex items-center justify-center gap-2.5 mb-1">
-            <svg className="shrink-0" width="22" height="30" viewBox="0 0 22 30" fill="none"><defs><linearGradient id="wr-l" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7AECFF"/><stop offset="1" stopColor="#22C8EC"/></linearGradient></defs><rect x=".5" y=".5" width="21" height="29" rx="3" fill="#EAF1FF"/><rect x="3" y="3" width="7" height="11" fill="#0B1018"/><rect x="12" y="3" width="7" height="11" fill="url(#wr-l)"/><rect x="3" y="16" width="7" height="11" fill="#0B1018"/><rect x="12" y="16" width="7" height="11" fill="#0B1018"/></svg>
+            <Logo width={22} height={30} gradientId="wr-l" />
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, letterSpacing: 3, color: '#EAF1FF' }}>WHITE ROOM</span>
           </div>
           <p style={{ fontSize: 10, letterSpacing: 1, color: '#6B7C9E', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
@@ -864,24 +774,6 @@ export default function FleetDashboard() {
       </div>
 
       <style>{`@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 12px #22c55e; } 50% { box-shadow: 0 0 24px #22c55e; } }`}</style>
-    </div>
-  );
-}
-
-function BannerMetric({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 10, letterSpacing: 1.5, marginBottom: 4, color: '#64748b' }}>{label}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color, transition: 'all 0.3s' }}>{value}</div>
-    </div>
-  );
-}
-
-function StatBox({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div style={{ borderRadius: 4, textAlign: 'center', padding: '4px 6px', background: '#050810', border: '1px solid #0f172a' }}>
-      <div style={{ fontSize: 9, letterSpacing: 0.5, marginBottom: 2, color: '#475569' }}>{label}</div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color }}>{value}</div>
     </div>
   );
 }

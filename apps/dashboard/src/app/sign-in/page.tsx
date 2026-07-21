@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/client';
 import { posthog, initAnalytics } from '@/lib/analytics';
 import { useState } from 'react';
+import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
 
 export default function SignInPage() {
   const [loading, setLoading] = useState(false);
@@ -54,19 +55,13 @@ export default function SignInPage() {
       {/* Header — matches whiteroom.tech */}
       <header className="sticky top-0 z-50" style={{ background: 'rgba(7,11,20,.74)', backdropFilter: 'blur(16px)', borderBottom: '1px solid #15203A' }}>
         <nav className="max-w-[1200px] mx-auto flex items-center justify-between h-[66px] px-7">
-          <a href="https://whiteroom.tech" className="flex items-center gap-2.5" style={{ textDecoration: 'none' }}>
-            <svg className="shrink-0" width="30" height="42" viewBox="0 0 22 30" fill="none"><defs><linearGradient id="wr-lit" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7AECFF"/><stop offset="1" stopColor="#22C8EC"/></linearGradient></defs><rect x=".5" y=".5" width="21" height="29" rx="3" fill="#EAF1FF"/><rect x="3" y="3" width="7" height="11" fill="#0B1018"/><rect x="12" y="3" width="7" height="11" fill="url(#wr-lit)"/><rect x="3" y="16" width="7" height="11" fill="#0B1018"/><rect x="12" y="16" width="7" height="11" fill="#0B1018"/></svg>
-            <span className="font-sans font-black text-[32px] leading-none" style={{ letterSpacing: '-.02em' }}>
-              <span style={{ color: '#EAF1FF' }}>White</span>
-              <span style={{ color: '#38E1FF' }}>Room</span>
-            </span>
-          </a>
+          <BrandLink />
           <div className="flex items-center gap-6">
             <a href="https://whiteroom.tech/#how" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>How it works</a>
             <a href="https://whiteroom.tech/#why" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>Why it matters</a>
             <a href="https://whiteroom.tech/#pricing" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>Pricing</a>
-            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ border: '1px solid #1B2740', color: '#EAF1FF', textDecoration: 'none', fontFamily: "'Chakra Petch', sans-serif" }}>Docs</a>
-            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ background: '#38E1FF', color: '#04222B', textDecoration: 'none', fontFamily: "'Chakra Petch', sans-serif" }}>Try it instantly</a>
+            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ border: '1px solid #1B2740', color: '#EAF1FF', textDecoration: 'none', fontFamily: FONT_DISPLAY }}>Docs</a>
+            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ background: '#38E1FF', color: '#04222B', textDecoration: 'none', fontFamily: FONT_DISPLAY }}>Try it instantly</a>
           </div>
         </nav>
       </header>
@@ -135,7 +130,7 @@ export default function SignInPage() {
                     type="submit"
                     disabled={emailLoading || !email.trim()}
                     className="w-full rounded-lg px-6 py-3 text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
-                    style={{ background: '#38E1FF', color: '#04222B', fontFamily: "'Chakra Petch', sans-serif" }}
+                    style={{ background: '#38E1FF', color: '#04222B', fontFamily: FONT_DISPLAY }}
                   >
                     {emailLoading ? 'Sending link...' : 'Email me a sign-in link'}
                   </button>

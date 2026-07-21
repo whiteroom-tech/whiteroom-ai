@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
-
-const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
+import { registerAgent, tokenLogin } from '@/lib/whiteroom/client';
+import type { FleetReport } from '@/lib/whiteroom/types';
 
 function generateApiKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -21,34 +21,13 @@ function emailToFleetId(email: string) {
   return email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 }
 
-async function provisionFleet(apiKey: string, fleetId: string) {
-  const res = await fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ action: 'register_agent', fleet_id: fleetId, agent_id: 'setup-agent', agent_role: 'worker' }),
-  });
-  if (!res.ok) return { error: `HTTP ${res.status}` };
-  return res.json();
-}
-
-// Report via fleet token — the token is scoped to this fleet regardless of
-// which API key the fleet is bound to on the proxy side.
-async function getFleetReport(fleetToken: string) {
-  const res = await fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'token_login', fleet_token: fleetToken }),
-  });
-  return res.json();
-}
-
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [props, setProps] = useState<{
     name: string; email: string; apiKey: string; fleetId: string;
-    fleetToken: string | null; report: Record<string, unknown> | null; isNew: boolean;
+    fleetToken: string | null; report: FleetReport | null; isNew: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -71,7 +50,7 @@ export default function DashboardPage() {
       if (!apiKey) {
         apiKey = generateApiKey();
         try {
-          const res = await provisionFleet(apiKey, fleetId);
+          const res = await registerAgent(fleetId, apiKey);
           if (res.error) {
             setProvisionError(`Fleet provisioning failed: ${res.error}`);
           } else {
@@ -96,9 +75,10 @@ export default function DashboardPage() {
 
       if (!isNew && fleetToken) {
         try {
-          const r = await getFleetReport(fleetToken);
+          const r = await tokenLogin(fleetToken);
           if (r.success && r.report) {
-            setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
+            const report = r.report;
+            setProps((prev) => (prev ? { ...prev, report } : prev));
           }
         } catch {}
       }

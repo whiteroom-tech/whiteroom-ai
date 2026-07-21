@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-
-const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
+import { rebindFleetKey } from '@/lib/whiteroom/client';
+import type { FleetReport } from '@/lib/whiteroom/types';
+import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@whiteroom/ui';
 
 interface Props {
   name: string;
@@ -11,56 +12,8 @@ interface Props {
   apiKey: string;
   fleetId: string;
   fleetToken: string | null;
-  report: Record<string, unknown> | null;
+  report: FleetReport | null;
   isNew: boolean;
-}
-
-function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <button
-      disabled={disabled}
-      onClick={() => {
-        if (disabled) return;
-        navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
-      }}
-      className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all"
-      style={{
-        borderColor: copied ? '#3FE0A0' : '#1B2740',
-        color: disabled ? '#334155' : copied ? '#3FE0A0' : '#A9B8D4',
-        background: copied ? 'rgba(63,224,160,.08)' : 'transparent',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  );
-}
-
-function CodeBlock({ label, code }: { label: string; code: string }) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-[11px] font-mono tracking-[.12em] uppercase" style={{ color: '#6B7C9E' }}>{label}</p>
-      <div className="flex items-center rounded-lg px-4 py-3" style={{ background: '#070B14', border: '1px solid #15203A' }}>
-        <code className="text-sm font-mono flex-1 break-all" style={{ color: '#38E1FF' }}>{code}</code>
-        <CopyButton text={code} />
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-lg p-4" style={{ background: '#070B14', border: '1px solid #15203A' }}>
-      <p className="text-[11px] font-mono tracking-[.12em] uppercase" style={{ color: '#6B7C9E' }}>{label}</p>
-      <p className="text-2xl font-display font-bold mt-1" style={{ color: '#EAF1FF' }}>{value}</p>
-    </div>
-  );
 }
 
 // BYOK: rebind this fleet from the dashboard's placeholder key to the
@@ -85,13 +38,8 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
     setStatus('saving'); setMsg('');
     try {
       // Authenticate the rebind with the fleet's CURRENT key (this dashboard key).
-      const res = await fetch(`${PROXY_URL}/api/white-room`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-        body: JSON.stringify({ action: 'rebind_fleet_key', fleet_id: fleetId, new_api_key: key }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.success) { setStatus('error'); setMsg(body.error || `Rebind failed (HTTP ${res.status}).`); return; }
+      const result = await rebindFleetKey(fleetId, key, apiKey);
+      if (!result.success) { setStatus('error'); setMsg(result.error || 'Rebind failed.'); return; }
       // Persist only a flag — never the raw provider key — in the account.
       await createClient().auth.updateUser({ data: { whiteroom_byok: true } });
       setConnected(true); setValue('');
@@ -154,13 +102,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
       {/* Header */}
       <header className="sticky top-0 z-50" style={{ background: 'rgba(7,11,20,.74)', backdropFilter: 'blur(16px)', borderBottom: '1px solid #15203A' }}>
         <nav className="max-w-[1200px] mx-auto flex items-center justify-between h-[66px] px-7">
-          <a href="https://whiteroom.tech" className="flex items-center gap-2.5" style={{ textDecoration: 'none' }}>
-            <svg className="shrink-0" width="30" height="42" viewBox="0 0 22 30" fill="none"><defs><linearGradient id="wr-lit" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7AECFF"/><stop offset="1" stopColor="#22C8EC"/></linearGradient></defs><rect x=".5" y=".5" width="21" height="29" rx="3" fill="#EAF1FF"/><rect x="3" y="3" width="7" height="11" fill="#0B1018"/><rect x="12" y="3" width="7" height="11" fill="url(#wr-lit)"/><rect x="3" y="16" width="7" height="11" fill="#0B1018"/><rect x="12" y="16" width="7" height="11" fill="#0B1018"/></svg>
-            <span className="font-sans font-black text-[32px] leading-none" style={{ letterSpacing: '-.02em' }}>
-              <span style={{ color: '#EAF1FF' }}>White</span>
-              <span style={{ color: '#38E1FF' }}>Room</span>
-            </span>
-          </a>
+          <BrandLink />
           <div className="flex items-center gap-6">
             <a href="https://whiteroom.tech/#how" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>How it works</a>
             <a href="https://whiteroom.tech/docs.html" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>Docs</a>
@@ -168,7 +110,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
             <a
               href="/auth/sign-out"
               className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all hover:border-[#38E1FF] hover:text-[#38E1FF]"
-              style={{ border: '1px solid #1B2740', color: '#EAF1FF', textDecoration: 'none', fontFamily: "'Chakra Petch', sans-serif" }}
+              style={{ border: '1px solid #1B2740', color: '#EAF1FF', textDecoration: 'none', fontFamily: FONT_DISPLAY }}
             >
               Sign out
             </a>
@@ -214,11 +156,11 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
             <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
               <p className="text-[11px] font-mono tracking-[.28em] uppercase font-medium mb-3" style={{ color: '#A9B8D4' }}>Fleet Status</p>
               <div className="grid grid-cols-3 gap-3">
-                <StatCard label="Agents" value={(report as Record<string, unknown>).agentCount as number ?? 0} />
-                <StatCard label="Tasks" value={((report as Record<string, Record<string, number>>).totals?.tasks) ?? 0} />
+                <StatCard label="Agents" value={report.agentCount ?? 0} />
+                <StatCard label="Tasks" value={report.totals?.tasks ?? 0} />
                 <StatCard
                   label="Tokens"
-                  value={`${(((report as Record<string, Record<string, number>>).totals?.tokens ?? 0) / 1000).toFixed(1)}K`}
+                  value={`${((report.totals?.tokens ?? 0) / 1000).toFixed(1)}K`}
                 />
               </div>
             </div>
