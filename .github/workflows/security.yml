@@ -62,13 +62,13 @@ jobs:
     # PR-only: diffs the dependency graph between base and head to block newly
     # introduced vulnerable or disallowed-license dependencies before merge.
     # Requires the repo "Dependency graph" setting (Settings → Security & analysis).
-    # Advisory (continue-on-error) until that is enabled so it can't block the gate.
-    # Once Dependency graph is on, remove continue-on-error and add this job as a
-    # required status check to make it enforcing.
-    if: github.event_name == 'pull_request'
+    # Gated behind a repo variable so it stays *skipped* (not failed) until you turn
+    # it on. To enable and enforce: enable Dependency graph, then set a repo variable
+    # (Settings → Secrets and variables → Actions → Variables):
+    #   ENABLE_DEPENDENCY_REVIEW = true
+    if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
