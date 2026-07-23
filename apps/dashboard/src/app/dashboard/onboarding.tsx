@@ -3,6 +3,16 @@
 import { useState, useEffect } from 'react';
 import { addUserFleet } from '@/lib/user-fleets';
 
+const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
+
+interface ManagedKey {
+  wrKey: string;
+  provider: string;
+  keyHint: string;
+  proxyUrl?: string;
+  createdAt?: string;
+}
+
 interface Props {
   name: string;
   email: string;
@@ -11,6 +21,7 @@ interface Props {
   fleetToken: string | null;
   report: Record<string, unknown> | null;
   isNew: boolean;
+  managedKeys: ManagedKey[];
 }
 
 function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
@@ -61,8 +72,33 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, isNew }: Props) {
+export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, isNew, managedKeys: initialKeys }: Props) {
   const [showKey, setShowKey] = useState(isNew);
+  const [managedKeys, setManagedKeys] = useState<ManagedKey[]>(initialKeys);
+  const [newKeyInput, setNewKeyInput] = useState('');
+  const [addingKey, setAddingKey] = useState(false);
+  const [keyError, setKeyError] = useState('');
+  const [showAddKey, setShowAddKey] = useState(false);
+
+  async function handleAddKey(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newKeyInput.trim()) return;
+    setAddingKey(true);
+    setKeyError('');
+    try {
+      const res = await fetch(`${PROXY_URL}/api/white-room`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({ action: 'store_key', fleet_id: fleetId, api_key: newKeyInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.error) { setKeyError(data.error); return; }
+      setManagedKeys(prev => [...prev, { wrKey: data.proxyKey, provider: data.provider, keyHint: data.keyHint, proxyUrl: data.proxyUrl }]);
+      setNewKeyInput('');
+      setShowAddKey(false);
+    } catch { setKeyError('Failed to connect to server.'); }
+    finally { setAddingKey(false); }
+  }
 
   useEffect(() => {
     if (fleetToken) {
@@ -152,32 +188,67 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           )}
         </div>
 
-        {/* API Key */}
-        <section className="rounded-xl p-6 space-y-3" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+        {/* API Keys */}
+        <section className="rounded-xl p-6 space-y-4" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Your API Key</h3>
-              <p className="text-xs mt-1" style={{ color: '#4E607F' }}>Use this key to authenticate all CLI commands and API requests.</p>
+              <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Your API Keys</h3>
+              <p className="text-xs mt-1" style={{ color: '#4E607F' }}>Register your LLM keys to get a personalized proxy URL. Your actual key is never stored.</p>
             </div>
-            <button
-              onClick={() => setShowKey(!showKey)}
-              className="text-xs font-mono transition-colors cursor-pointer"
-              style={{ color: '#6B7C9E' }}
-            >
-              {showKey ? 'Hide' : 'Reveal'}
-            </button>
+            {managedKeys.length > 0 && !showAddKey && (
+              <button onClick={() => setShowAddKey(true)} className="text-xs font-mono cursor-pointer" style={{ color: '#38E1FF' }}>+ Add key</button>
+            )}
           </div>
-          <div className="flex items-center rounded-lg px-4 py-3" style={{ background: '#070B14', border: '1px solid #15203A' }}>
-            <code className="text-sm font-mono flex-1 break-all" style={{ color: '#FFB454' }}>
-              {showKey ? apiKey : '•'.repeat(46)}
-            </code>
-            <CopyButton text={apiKey} disabled={!showKey} />
-          </div>
+
+          {managedKeys.length === 0 && !showAddKey ? (
+            <div className="rounded-lg p-5 text-center space-y-3" style={{ background: '#070B14', border: '1px dashed #1B2740' }}>
+              <p className="text-sm" style={{ color: '#6B7C9E' }}>Add your Anthropic or OpenAI API key to get started.</p>
+              <p className="text-xs" style={{ color: '#4E607F' }}>We only store a secure hash — your actual key is never saved.</p>
+              <button onClick={() => setShowAddKey(true)} className="px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: '#38E1FF', color: '#04222B' }}>
+                Add API Key
+              </button>
+            </div>
+          ) : (
+            <>
+              {managedKeys.map((k, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg px-4 py-3" style={{ background: '#070B14', border: '1px solid #15203A' }}>
+                  <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 rounded" style={{ background: k.provider === 'anthropic' ? 'rgba(56,225,255,.1)' : 'rgba(99,102,241,.1)', color: k.provider === 'anthropic' ? '#38E1FF' : '#818cf8', border: `1px solid ${k.provider === 'anthropic' ? 'rgba(56,225,255,.2)' : 'rgba(99,102,241,.2)'}` }}>
+                    {k.provider}
+                  </span>
+                  <code className="text-sm font-mono" style={{ color: '#6B7C9E' }}>••••{k.keyHint}</code>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded" style={{ background: 'rgba(34,197,94,.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,.2)' }}>Active</span>
+                  <span className="text-[10px] font-mono ml-auto" style={{ color: '#334155' }}>{k.wrKey.length > 14 ? k.wrKey.slice(0, 10) + '...' : k.wrKey}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {showAddKey && (
+            <form onSubmit={handleAddKey} className="space-y-3">
+              <input
+                type="password"
+                value={newKeyInput}
+                onChange={(e) => setNewKeyInput(e.target.value)}
+                placeholder="sk-ant-... or sk-..."
+                className="w-full rounded-lg px-4 py-3 text-sm font-mono outline-none"
+                style={{ background: '#070B14', border: '1px solid #1B2740', color: '#EAF1FF' }}
+              />
+              <div className="flex gap-2">
+                <button type="submit" disabled={addingKey || !newKeyInput.trim()} className="px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer disabled:opacity-50" style={{ background: '#38E1FF', color: '#04222B' }}>
+                  {addingKey ? 'Adding...' : 'Add Key'}
+                </button>
+                <button type="button" onClick={() => { setShowAddKey(false); setKeyError(''); setNewKeyInput(''); }} className="px-5 py-2 rounded-lg text-sm cursor-pointer" style={{ color: '#6B7C9E', border: '1px solid #1B2740' }}>
+                  Cancel
+                </button>
+              </div>
+              {keyError && <p className="text-xs font-mono" style={{ color: '#FF6B7A' }}>{keyError}</p>}
+            </form>
+          )}
         </section>
 
         {/* Getting Started */}
         <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
+          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 2 Steps</h3>
 
           <div className="space-y-8">
             {/* Step 1 */}
@@ -185,13 +256,24 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
               <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
               <div className="flex-1 space-y-3">
                 <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Point your agent at WhiteRoom</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Change one URL so your agent&apos;s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.</p>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Add one line to your .env file</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Your existing API key and code stay exactly the same. WhiteRoom intercepts every call automatically.</p>
                 </div>
-                <div className="space-y-2">
-                  <CodeBlock label="Add to your .env file (Anthropic / Claude)" code="ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
-                  <CodeBlock label="Add to your .env file (OpenAI / GPT)" code="OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
-                </div>
+                {managedKeys.length > 0 ? (
+                  <div className="space-y-2">
+                    {managedKeys.map((k, i) => (
+                      <CodeBlock
+                        key={i}
+                        label={`Your personalized ${k.provider} proxy URL`}
+                        code={`${k.provider === 'anthropic' ? 'ANTHROPIC_BASE_URL' : 'OPENAI_BASE_URL'}=${k.proxyUrl || `https://proxy.whiteroom.tech/${k.wrKey}`}`}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg p-3" style={{ background: '#070B14', border: '1px dashed #1B2740' }}>
+                    <p className="text-xs font-mono" style={{ color: '#4E607F' }}>Add an API key above to get your personalized proxy URL</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -201,21 +283,9 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
               <div className="flex-1 space-y-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and starts governance automatically when your first API call flows through the proxy.</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers and starts governance when your first API call flows through the proxy.</p>
                 </div>
                 <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>3</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
-                </div>
-                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/fleet" />
               </div>
             </div>
           </div>

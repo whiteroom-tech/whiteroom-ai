@@ -42,6 +42,15 @@ async function getFleetReport(fleetToken: string) {
   return res.json();
 }
 
+async function listManagedKeys(apiKey: string, fleetId: string) {
+  const res = await fetch(`${PROXY_URL}/api/white-room`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ action: 'list_keys', fleet_id: fleetId }),
+  });
+  return res.json();
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -49,6 +58,7 @@ export default function DashboardPage() {
   const [props, setProps] = useState<{
     name: string; email: string; apiKey: string; fleetId: string;
     fleetToken: string | null; report: Record<string, unknown> | null; isNew: boolean;
+    managedKeys: Array<{ wrKey: string; provider: string; keyHint: string }>;
   } | null>(null);
 
   useEffect(() => {
@@ -82,7 +92,13 @@ export default function DashboardPage() {
         isNew = true;
       }
 
-      setProps({ name, email, apiKey, fleetId, fleetToken, report: null, isNew });
+      let managedKeys: Array<{ wrKey: string; provider: string; keyHint: string }> = [];
+      try {
+        const keysRes = await listManagedKeys(apiKey, fleetId);
+        if (keysRes.success && keysRes.keys) managedKeys = keysRes.keys;
+      } catch {}
+
+      setProps({ name, email, apiKey, fleetId, fleetToken, report: null, isNew, managedKeys });
       setLoading(false);
 
       initAnalytics();
