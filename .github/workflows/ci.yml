@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: sdk
+            dir: packages/sdk
+          - name: cli
+            dir: packages/cli
+          - name: dashboard
+            dir: apps/dashboard
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: "**/package-lock.json"
+      - name: Install
+        working-directory: ${{ matrix.dir }}
+        # Prefer reproducible installs; fall back to `npm install` when there is no
+        # lockfile (cli) or the lockfile is out of sync with package.json (dashboard).
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Typecheck
+        working-directory: ${{ matrix.dir }}
+        run: npm run typecheck --if-present
+      - name: Lint
+        working-directory: ${{ matrix.dir }}
+        run: npm run lint --if-present
+      - name: Build
+        working-directory: ${{ matrix.dir }}
+        # Non-secret placeholder public env so the Next.js dashboard build resolves
+        # NEXT_PUBLIC_* at build time. These are inert defaults, never real credentials.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_PROXY_URL: http://localhost:8080
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build --if-present
+      - name: Test
+        working-directory: ${{ matrix.dir }}
+        run: npm test --if-present

@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/whiteroom-tech/whiteroom-ai/security/advisories/new
+    about: Please report security issues privately — do not open a public issue.
+  # Re-enable this once GitHub Discussions is turned on for the repo
+  # (Settings → General → Features → Discussions):
+  # - name: Questions & discussion
+  #   url: https://github.com/whiteroom-tech/whiteroom-ai/discussions
+  #   about: Ask questions and discuss ideas with the community.

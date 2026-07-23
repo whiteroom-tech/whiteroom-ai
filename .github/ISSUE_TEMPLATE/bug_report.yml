@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a problem with the SDK, CLI, or dashboard
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! Please do **not** include API keys or credentials.
+        For security vulnerabilities, follow [SECURITY.md](../blob/main/SECURITY.md) instead.
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected package
+      options:
+        - "@whiteroom-ai/sdk"
+        - "@whiteroom-ai/cli"
+        - dashboard
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps (redact any secrets).
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Package version and Node.js version.
+      placeholder: "sdk 1.1.1, node 20.11"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output (redact secrets). Rendered as code.
+      render: shell
+    validations:
+      required: false
