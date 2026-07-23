@@ -194,7 +194,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Your API Keys</h3>
-              <p className="text-xs mt-1" style={{ color: '#4E607F' }}>Register your LLM keys to get a personalized proxy URL. Your actual key is never stored.</p>
+              <p className="text-xs mt-1" style={{ color: '#4E607F' }}>Register your LLM keys to get a personalized proxy URL. We only save a secure hash and the last 4 characters — your full key is never stored.</p>
             </div>
             {managedKeys.length > 0 && !showAddKey && (
               <button onClick={() => setShowAddKey(true)} className="text-xs font-mono cursor-pointer" style={{ color: '#38E1FF' }}>+ Add key</button>
@@ -204,7 +204,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           {managedKeys.length === 0 && !showAddKey ? (
             <div className="rounded-lg p-5 text-center space-y-3" style={{ background: '#070B14', border: '1px dashed #1B2740' }}>
               <p className="text-sm" style={{ color: '#6B7C9E' }}>Add your Anthropic or OpenAI API key to get started.</p>
-              <p className="text-xs" style={{ color: '#4E607F' }}>We only store a secure hash — your actual key is never saved.</p>
+              <p className="text-xs" style={{ color: '#4E607F' }}>We save a secure hash and the last 4 characters for identification — your full key is never stored.</p>
               <button onClick={() => setShowAddKey(true)} className="px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: '#38E1FF', color: '#04222B' }}>
                 Add API Key
               </button>
