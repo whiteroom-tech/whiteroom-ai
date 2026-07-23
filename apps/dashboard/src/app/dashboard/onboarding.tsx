@@ -189,8 +189,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                   <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Change one URL so your agent&apos;s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.</p>
                 </div>
                 <div className="space-y-2">
-                  <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
-                  <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
+                  <CodeBlock label="Add to your .env file (Anthropic / Claude)" code="ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
+                  <CodeBlock label="Add to your .env file (OpenAI / GPT)" code="OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
                 </div>
               </div>
             </div>

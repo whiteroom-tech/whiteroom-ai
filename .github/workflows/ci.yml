@@ -59,3 +59,13 @@ jobs:
       - name: Test
         working-directory: ${{ matrix.dir }}
         run: npm test --if-present
+
+  deploy-dashboard:
+    name: Deploy dashboard to Netlify
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger Netlify build
+        run: curl -s -X POST "${{ secrets.NETLIFY_BUILD_HOOK }}"
