@@ -42,10 +42,10 @@ async function getFleetReport(fleetToken: string) {
   return res.json();
 }
 
-async function listManagedKeys(apiKey: string, fleetId: string) {
+async function listManagedKeys(authKey: string, fleetId: string) {
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': authKey },
     body: JSON.stringify({ action: 'list_keys', fleet_id: fleetId }),
   });
   return res.json();
@@ -94,7 +94,7 @@ export default function DashboardPage() {
 
       let managedKeys: Array<{ wrKey: string; provider: string; keyHint: string }> = [];
       try {
-        const keysRes = await listManagedKeys(apiKey, fleetId);
+        const keysRes = await listManagedKeys(fleetToken || apiKey, fleetId);
         if (keysRes.success && keysRes.keys) managedKeys = keysRes.keys;
       } catch {}
 

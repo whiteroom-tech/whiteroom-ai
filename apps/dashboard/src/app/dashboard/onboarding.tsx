@@ -86,9 +86,10 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
     setAddingKey(true);
     setKeyError('');
     try {
+      const authKey = fleetToken || apiKey;
       const res = await fetch(`${PROXY_URL}/api/white-room`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': authKey },
         body: JSON.stringify({ action: 'store_key', fleet_id: fleetId, api_key: newKeyInput.trim() }),
       });
       const data = await res.json();
