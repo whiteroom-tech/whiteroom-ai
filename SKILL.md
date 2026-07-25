@@ -34,8 +34,15 @@ proxy. No CLI commands needed.
     python my_agent.py    # or node agent.js, etc.
 
 ### 3. View your dashboard
-Watch your agents in real time — tasks completed, token savings, handover
-history, and the full audit trail. Sign in with your WhiteRoom key (shown
-below the setup steps at https://whiteroom.tech):
+Register your LLM key at https://whiteroom.tech to view your fleet — WhiteRoom
+stores only a secure hash and the last 4 characters, never your full key. Watch
+your agents in real time — tasks completed, token savings, handover history,
+and the full audit trail:
 
     https://app.whiteroom.tech/fleet
+
+If one API key holds multiple fleets, pin the fleet so the dashboard shows the
+right one:
+
+    x-whiteroom-fleet: <fleet_id>     — assign this agent's traffic to a fleet
+    x-whiteroom-agent: <agent_id>     — pin a stable agent identity
