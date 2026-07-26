@@ -579,6 +579,8 @@ export default function FleetDashboard() {
     tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
   }), { tasks: 0, used: 0, saved: 0, handovers: 0 });
 
+  const rangeWorkMinutes = scopedEntries.filter(e => e.type === 'task_complete').reduce((s, e) => s + (e.minutesSpent ?? 0), 0);
+
   const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
 
   return (
@@ -645,7 +647,7 @@ export default function FleetDashboard() {
       </div>
 
       {/* Banner — 6 metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${activeTab === 'analytics' ? 7 : 6}, 1fr)`, gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${activeTab === 'analytics' ? 8 : 6}, 1fr)`, gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
         {activeTab === 'live' ? (<>
           <BannerMetric label="TASKS COMPLETED" value={watchTasks ? String(watchTasks) : '—'} color="#f8fafc" />
           <BannerMetric label="TOKENS (W/ WHITEROOM)" value={watchTokens > 0 ? fmtK(watchTokens) : '—'} color="#86efac" />
@@ -660,6 +662,7 @@ export default function FleetDashboard() {
           <BannerMetric label="TOKENS SAVED" value={rangeTotals.saved > 0 ? fmtK(rangeTotals.saved) : '—'} color="#4ade80" />
           <BannerMetric label="SAVINGS %" value={rangeTotals.used + rangeTotals.saved > 0 ? pctOf(rangeTotals.used, rangeTotals.saved).toFixed(1) + '%' : '—'} color="#4ade80" />
           <BannerMetric label="COST SAVED" value={rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(2)}` : '—'} color="#4ade80" />
+          <BannerMetric label="WORK TIME" value={rangeWorkMinutes > 0 ? (rangeWorkMinutes >= 60 ? `${(rangeWorkMinutes / 60).toFixed(1)}h` : `${Math.round(rangeWorkMinutes)}m`) : '—'} color="#f8fafc" />
           <BannerMetric label="HANDOVERS" value={rangeTotals.handovers ? String(rangeTotals.handovers) : '—'} color="#818cf8" />
         </>)}
       </div>
@@ -881,39 +884,59 @@ export default function FleetDashboard() {
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#94a3b8' }}>DAILY TOKENS — W/ WHITEROOM vs W/O WHITEROOM</span>
             <span style={{ fontSize: 10, color: '#475569' }}>click a day to scope</span>
           </div>
-          <div className="flex items-end" style={{ height: 150, padding: '0 4px 4px', gap: 14 }}>
-            {dailyStats.length === 0 ? (
-              <div style={{ flex: 1, textAlign: 'center', paddingTop: 40, fontSize: 11 }}>
-                <div style={{ color: '#475569' }}>No data {analyticsRange === 'today' ? 'today' : 'in range'}</div>
-                {allEntries.length > 0 && analyticsRange !== 'recent' && (
-                  <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 8, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
-                    Last activity: {new Date(allEntries[0].timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — view recent →
-                  </button>
-                )}
-              </div>
-            ) : dailyStats.map(([day, d]) => {
-              const withoutWR = d.used + d.saved;
-              const barMax = Math.max(...dailyStats.map(([, v]) => v.used + v.saved), 1);
-              const usedH = Math.max(2, (d.used / barMax) * 110);
-              const withoutH = Math.max(2, (withoutWR / barMax) * 110);
-              const pct = pctOf(d.used, d.saved);
-              const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-              const isSel = scopedDay === day;
-              return (
-                <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? '#0c4a6e' : undefined, outline: isSel ? '1px solid #0369a1' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
-                  <span style={{ fontSize: 9, color: '#4ade80', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
-                  <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
-                    <div style={{ width: 16, height: usedH, background: '#22c55e', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                    <div style={{ width: 16, height: withoutH, background: '#ef4444', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                  </div>
-                  <span style={{ fontSize: 9, color: '#475569', marginTop: 5 }}>{label}</span>
+          <div style={{ position: 'relative', height: 150, padding: '0 4px 4px', overflow: 'hidden' }}>
+            <div className="flex items-end" style={{ height: '100%', gap: 14 }}>
+              {dailyStats.length === 0 ? (
+                <div style={{ flex: 1, textAlign: 'center', paddingTop: 40, fontSize: 11 }}>
+                  <div style={{ color: '#475569' }}>No data {analyticsRange === 'today' ? 'today' : 'in range'}</div>
+                  {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                    <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 8, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                      Last activity: {new Date(allEntries[0].timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — view recent →
+                    </button>
+                  )}
                 </div>
+              ) : dailyStats.map(([day, d]) => {
+                const withoutWR = d.used + d.saved;
+                const barMax = Math.max(...dailyStats.map(([, v]) => v.used + v.saved), 1);
+                const usedH = Math.max(2, (d.used / barMax) * 110);
+                const withoutH = Math.max(2, (withoutWR / barMax) * 110);
+                const pct = pctOf(d.used, d.saved);
+                const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+                const isSel = scopedDay === day;
+                return (
+                  <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? '#0c4a6e' : undefined, outline: isSel ? '1px solid #0369a1' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
+                    <span style={{ fontSize: 9, color: '#4ade80', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
+                    <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
+                      <div style={{ width: 16, height: usedH, background: '#22c55e', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                      <div style={{ width: 16, height: withoutH, background: '#ef4444', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 9, color: '#475569', marginTop: 5 }}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {dailyStats.length > 1 && (() => {
+              const n = dailyStats.length;
+              const points = dailyStats.map(([, d], i) => {
+                const pct = pctOf(d.used, d.saved);
+                const xPct = ((i + 0.5) / n) * 100;
+                const yPct = 100 - pct;
+                return { xPct, yPct };
+              });
+              return (
+                <svg style={{ position: 'absolute', inset: '18px 4px 22px 4px', pointerEvents: 'none', overflow: 'visible' }}>
+                  <polyline fill="none" stroke="#facc15" strokeWidth="1.5" strokeLinejoin="round" points={points.map(p => `${p.xPct}%,${p.yPct}%`).join(' ')} />
+                  {points.map((p, i) => (
+                    <circle key={i} cx={`${p.xPct}%`} cy={`${p.yPct}%`} r="3" fill="#facc15" />
+                  ))}
+                </svg>
               );
-            })}
+            })()}
           </div>
           <div className="flex items-center gap-4" style={{ fontSize: 10, color: '#64748b', marginTop: 8, paddingLeft: 4 }}>
             <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#22c55e' }} /> TOKENS (W/ WHITEROOM)</span>
             <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#ef4444' }} /> TOKENS (W/O WHITEROOM)</span>
+            <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 2, borderRadius: 1, background: '#facc15' }} /> SAVINGS %</span>
           </div>
         </div>
 
