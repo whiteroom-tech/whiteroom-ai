@@ -105,6 +105,7 @@ export default function FleetDashboard() {
   const [filterType, setFilterType] = useState('task_complete');
   const [searchText, setSearchText] = useState('');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [expandedWatches, setExpandedWatches] = useState<Set<string>>(new Set());
   const [railWidth, setRailWidth] = useState(typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 720);
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 720);
   const [authenticated, setAuthenticated] = useState(false);
@@ -324,6 +325,9 @@ export default function FleetDashboard() {
 
   function toggleExpanded(taskId: string) {
     setExpandedTasks((prev: Set<string>) => { const next = new Set(prev); if (next.has(taskId)) next.delete(taskId); else next.add(taskId); return next; });
+  }
+  function toggleWatch(key: string) {
+    setExpandedWatches((prev: Set<string>) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   }
 
   useEffect(() => {
@@ -767,49 +771,87 @@ export default function FleetDashboard() {
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {auditEntries.length === 0 ? (
               <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', marginTop: 32 }}>No events yet</p>
-            ) : auditEntries.map((entry) => {
-              const isTask = entry.type === 'task_complete';
-              const details = Array.isArray(entry.details) ? entry.details : [];
-              const canExpand = details.length > 0;
-              const isOpen = entry.taskId ? expandedTasks.has(entry.taskId) : false;
-              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-              return (
-                <div key={entry.id} style={{ borderLeft: `3px solid ${feedAccent(entry.type)}`, padding: '6px 8px', background: '#0b1220', borderRadius: '0 6px 6px 0', marginBottom: 6 }}>
-                  <div style={{ cursor: canExpand ? 'pointer' : 'default' }} onClick={canExpand && entry.taskId ? () => toggleExpanded(entry.taskId!) : undefined}>
-                    <div style={{ fontSize: 12, color: '#f1f5f9', wordBreak: 'break-word' as const }}>
-                      {canExpand && <span style={{ color: '#38bdf8' }}>{isOpen ? '▾' : '▸'} </span>}
-                      {isTask ? (entry.taskName || 'task') : <span style={{ textTransform: 'uppercase' as const, letterSpacing: 1, color: '#94a3b8', fontSize: 11 }}>{entry.type}</span>}
-                      {canExpand && <span style={{ color: '#475569' }}> ({details.length})</span>}
+            ) : (() => {
+              const watchGroups: { key: string; agentId: string; watchNumber: number; entries: AuditEntry[]; totalTokens: number; taskCount: number; firstTime: string; lastTime: string }[] = [];
+              const groupMap = new Map<string, typeof watchGroups[0]>();
+              auditEntries.forEach(entry => {
+                const wn = entry.watchNumber ?? 0;
+                const aid = entry.agentId || 'unknown';
+                const gk = `${aid}:${wn}`;
+                let g = groupMap.get(gk);
+                if (!g) { g = { key: gk, agentId: aid, watchNumber: wn, entries: [], totalTokens: 0, taskCount: 0, firstTime: entry.timestamp, lastTime: entry.timestamp }; groupMap.set(gk, g); watchGroups.push(g); }
+                g.entries.push(entry);
+                if (entry.type === 'task_complete') { g.taskCount++; g.totalTokens += entry.tokensUsed ?? 0; }
+                g.lastTime = entry.timestamp;
+                if (entry.timestamp < g.firstTime) g.firstTime = entry.timestamp;
+              });
+              return watchGroups.map((g, gi) => {
+                const isWatchOpen = expandedWatches.size === 0 ? gi === 0 : expandedWatches.has(g.key);
+                const timeRange = new Date(g.firstTime).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) + ' – ' + new Date(g.lastTime).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+                return (
+                  <div key={g.key} style={{ marginBottom: 8 }}>
+                    <div onClick={() => toggleWatch(g.key)} style={{ cursor: 'pointer', padding: '8px 10px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: '#38bdf8', fontSize: 11, marginRight: 6 }}>{isWatchOpen ? '▾' : '▸'}</span>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: '#e2e8f0', letterSpacing: 0.5 }}>Watch #{g.watchNumber}</span>
+                        <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>{g.agentId}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10, color: '#94a3b8' }}>
+                        <span>{g.taskCount} task{g.taskCount !== 1 ? 's' : ''}</span>
+                        <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{fmtK(g.totalTokens)}</span>
+                        <span>{timeRange}</span>
+                      </div>
                     </div>
-                    <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
-                      {isTask ? (
-                        <Fragment>
-                          <span style={{ color: '#e2e8f0' }}>{((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K</span>
-                          {(entry as Record<string, unknown>).inputTokens != null && (
-                            <span style={{ color: '#475569' }}> ({((entry as Record<string, unknown>).inputTokens as number / 1000).toFixed(1)}K in · {((entry as Record<string, unknown>).outputTokens as number / 1000).toFixed(1)}K out)</span>
-                          )}
-                          {' · '}{entry.minutesSpent != null && <>{entry.minutesSpent}min · </>}
-                          watch #{entry.watchNumber}{' · '}
-                          <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{Math.round(((entry.remaining ?? 0) + Number.EPSILON) * 10) / 10}min left</span>
-                        </Fragment>
-                      ) : (entry.agentId || '')}
-                      {' · '}{time}
-                    </div>
+                    {isWatchOpen && (
+                      <div style={{ marginLeft: 4, borderLeft: '2px solid #1e293b', paddingLeft: 8, marginTop: 4 }}>
+                        {g.entries.map(entry => {
+                          const isTask = entry.type === 'task_complete';
+                          const details = Array.isArray(entry.details) ? entry.details : [];
+                          const canExpand = details.length > 0;
+                          const isOpen = entry.taskId ? expandedTasks.has(entry.taskId) : false;
+                          const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
+                          return (
+                            <div key={entry.id} style={{ borderLeft: `3px solid ${feedAccent(entry.type)}`, padding: '5px 8px', background: '#0b1220', borderRadius: '0 6px 6px 0', marginBottom: 4 }}>
+                              <div style={{ cursor: canExpand ? 'pointer' : 'default' }} onClick={canExpand && entry.taskId ? () => toggleExpanded(entry.taskId!) : undefined}>
+                                <div style={{ fontSize: 12, color: '#f1f5f9', wordBreak: 'break-word' as const }}>
+                                  {canExpand && <span style={{ color: '#38bdf8' }}>{isOpen ? '▾' : '▸'} </span>}
+                                  {isTask ? (entry.taskName || 'task') : <span style={{ textTransform: 'uppercase' as const, letterSpacing: 1, color: '#94a3b8', fontSize: 11 }}>{entry.type}</span>}
+                                  {canExpand && <span style={{ color: '#475569' }}> ({details.length})</span>}
+                                </div>
+                                <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
+                                  {isTask ? (
+                                    <Fragment>
+                                      <span style={{ color: '#e2e8f0' }}>{((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K</span>
+                                      {(entry as Record<string, unknown>).inputTokens != null && (
+                                        <span style={{ color: '#475569' }}> ({((entry as Record<string, unknown>).inputTokens as number / 1000).toFixed(1)}K in · {((entry as Record<string, unknown>).outputTokens as number / 1000).toFixed(1)}K out)</span>
+                                      )}
+                                      {' · '}{entry.minutesSpent != null && <>{entry.minutesSpent}min · </>}
+                                      <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{Math.round(((entry.remaining ?? 0) + Number.EPSILON) * 10) / 10}min left</span>
+                                    </Fragment>
+                                  ) : (entry.agentId || '')}
+                                  {' · '}{time}
+                                </div>
+                              </div>
+                              {canExpand && isOpen && (
+                                <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #1e293b' }}>
+                                  <div style={{ fontSize: 10, color: '#475569', letterSpacing: '.05em', marginBottom: 3 }}>TOOL CALLS</div>
+                                  {details.map((d, i) => (
+                                    <div key={i} style={{ fontSize: 11, padding: '2px 0', wordBreak: 'break-word' as const }}>
+                                      <span style={{ color: '#7dd3fc', fontWeight: 600 }}>{d.name}</span>
+                                      {d.args && <span style={{ color: '#94a3b8' }}> &mdash; {d.args}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  {canExpand && isOpen && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #1e293b' }}>
-                      <div style={{ fontSize: 10, color: '#475569', letterSpacing: '.05em', marginBottom: 3 }}>TOOL CALLS</div>
-                      {details.map((d, i) => (
-                        <div key={i} style={{ fontSize: 11, padding: '2px 0', wordBreak: 'break-word' as const }}>
-                          <span style={{ color: '#7dd3fc', fontWeight: 600 }}>{d.name}</span>
-                          {d.args && <span style={{ color: '#94a3b8' }}> &mdash; {d.args}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
       </div>
