@@ -691,7 +691,7 @@ export default function FleetDashboard() {
                   <div style={{ marginBottom: 6 }}>
                     <div className="flex justify-between" style={{ fontSize: 10, color: '#475569', marginBottom: 2 }}>
                       <span>{status === 'resting' ? 'Rest progress' : 'Watch progress'}</span>
-                      <span style={{ color: '#94a3b8' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${agent.minutesRemaining || 0}min left`}</span>
+                      <span style={{ color: '#94a3b8' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${Math.round(((agent.minutesRemaining || 0) + Number.EPSILON) * 10) / 10}min left`}</span>
                     </div>
                     <div style={{ height: 4, borderRadius: 99, background: '#1e293b', overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 99, transition: 'all 1s', width: `${watchDisplay}%`, background: watchBarColor }} />
@@ -738,7 +738,7 @@ export default function FleetDashboard() {
             )}
           </div>
 
-          <div style={{ marginTop: 12, textAlign: 'center', fontSize: 10, color: '#475569' }}>Labor Score: {report.compliance.laborScore}</div>
+          {/* Labor Score removed — unexplained metric erodes trust */}
         </div>
 
         {/* Splitter */}
@@ -785,7 +785,7 @@ export default function FleetDashboard() {
                       {isTask ? (
                         <Fragment>
                           {((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K · watch #{entry.watchNumber}{' · '}
-                          <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{entry.remaining}min left</span>
+                          <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{Math.round(((entry.remaining ?? 0) + Number.EPSILON) * 10) / 10}min left</span>
                         </Fragment>
                       ) : (entry.agentId || '')}
                       {' · '}{time}
@@ -836,7 +836,14 @@ export default function FleetDashboard() {
           </div>
           <div className="flex items-end" style={{ height: 150, padding: '0 4px 4px', gap: 14 }}>
             {dailyStats.length === 0 ? (
-              <div style={{ flex: 1, textAlign: 'center', color: '#475569', paddingTop: 50, fontSize: 11 }}>No data in range</div>
+              <div style={{ flex: 1, textAlign: 'center', paddingTop: 40, fontSize: 11 }}>
+                <div style={{ color: '#475569' }}>No data {analyticsRange === 'today' ? 'today' : 'in range'}</div>
+                {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                  <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 8, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                    Last activity: {new Date(allEntries[0].timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — view recent →
+                  </button>
+                )}
+              </div>
             ) : dailyStats.map(([day, d]) => {
               const withoutWR = d.used + d.saved;
               const barMax = Math.max(...dailyStats.map(([, v]) => v.used + v.saved), 1);
@@ -879,7 +886,14 @@ export default function FleetDashboard() {
             </thead>
             <tbody>
               {agentBreakdown.length === 0 ? (
-                <tr><td colSpan={6} style={{ color: '#475569', padding: 14, textAlign: 'center', fontSize: 11 }}>No events in scope.</td></tr>
+                <tr><td colSpan={6} style={{ padding: 14, textAlign: 'center', fontSize: 11 }}>
+                  <div style={{ color: '#475569' }}>No events {analyticsRange === 'today' ? 'today' : 'in scope'}</div>
+                  {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                    <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 6, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                      View recent activity →
+                    </button>
+                  )}
+                </td></tr>
               ) : agentBreakdown.map(([agent, v]) => {
                 const pct = pctOf(v.used, v.saved);
                 return (
@@ -921,7 +935,14 @@ export default function FleetDashboard() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {dailyStats.length === 0 ? (
-              <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', padding: 20 }}>No events in range</p>
+              <div style={{ textAlign: 'center', padding: 20, fontSize: 11 }}>
+                <div style={{ color: '#475569' }}>No events {analyticsRange === 'today' ? 'today' : 'in range'}</div>
+                {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                  <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 8, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                    View recent activity →
+                  </button>
+                )}
+              </div>
             ) : [...dailyStats].reverse().map(([day, d]) => {
               const dayOpen = openDays.has(day);
               const dayLabel = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
