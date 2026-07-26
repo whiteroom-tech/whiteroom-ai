@@ -573,7 +573,7 @@ export default function FleetDashboard() {
       if (preceding) a.saved = handoverSaved(preceding);
     }
   });
-  const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
+  const agentBreakdown = [...agentMap.entries()].filter(([, a]) => a.tasks > 0 || a.used > 0).sort(([, a], [, b]) => b.used - a.used);
 
   const rangeTotals = (scopedDay ? [dailyStats.find(([k]) => k === scopedDay)].filter(Boolean) as [string, typeof dailyStats[0][1]][] : dailyStats).reduce((acc, [, d]) => ({
     tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
@@ -645,7 +645,7 @@ export default function FleetDashboard() {
       </div>
 
       {/* Banner — 6 metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${activeTab === 'analytics' ? 7 : 6}, 1fr)`, gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
         {activeTab === 'live' ? (<>
           <BannerMetric label="TASKS COMPLETED" value={watchTasks ? String(watchTasks) : '—'} color="#f8fafc" />
           <BannerMetric label="TOKENS (W/ WHITEROOM)" value={watchTokens > 0 ? fmtK(watchTokens) : '—'} color="#86efac" />
@@ -659,7 +659,7 @@ export default function FleetDashboard() {
           <BannerMetric label="TOKENS (W/O WHITEROOM)" value={rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'} color="#fca5a5" />
           <BannerMetric label="TOKENS SAVED" value={rangeTotals.saved > 0 ? fmtK(rangeTotals.saved) : '—'} color="#4ade80" />
           <BannerMetric label="SAVINGS %" value={rangeTotals.used + rangeTotals.saved > 0 ? pctOf(rangeTotals.used, rangeTotals.saved).toFixed(1) + '%' : '—'} color="#4ade80" />
-          <BannerMetric label="COST SAVED" value={rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(4)}` : '—'} color="#4ade80" />
+          <BannerMetric label="COST SAVED" value={rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(2)}` : '—'} color="#4ade80" />
           <BannerMetric label="HANDOVERS" value={rangeTotals.handovers ? String(rangeTotals.handovers) : '—'} color="#818cf8" />
         </>)}
       </div>
