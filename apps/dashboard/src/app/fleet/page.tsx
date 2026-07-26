@@ -105,8 +105,8 @@ export default function FleetDashboard() {
   const [filterType, setFilterType] = useState('task_complete');
   const [searchText, setSearchText] = useState('');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const [railWidth, setRailWidth] = useState(360);
-  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
+  const [railWidth, setRailWidth] = useState(typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 720);
+  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 720);
   const [authenticated, setAuthenticated] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -784,7 +784,12 @@ export default function FleetDashboard() {
                     <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
                       {isTask ? (
                         <Fragment>
-                          {((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K · watch #{entry.watchNumber}{' · '}
+                          <span style={{ color: '#e2e8f0' }}>{((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K</span>
+                          {(entry as Record<string, unknown>).inputTokens != null && (
+                            <span style={{ color: '#475569' }}> ({((entry as Record<string, unknown>).inputTokens as number / 1000).toFixed(1)}K in · {((entry as Record<string, unknown>).outputTokens as number / 1000).toFixed(1)}K out)</span>
+                          )}
+                          {' · '}{entry.minutesSpent != null && <>{entry.minutesSpent}min · </>}
+                          watch #{entry.watchNumber}{' · '}
                           <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{Math.round(((entry.remaining ?? 0) + Number.EPSILON) * 10) / 10}min left</span>
                         </Fragment>
                       ) : (entry.agentId || '')}
