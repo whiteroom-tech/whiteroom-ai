@@ -13,36 +13,34 @@ https://whiteroom.tech
 
 ## How to use it
 
-### 1. Point your agent at WhiteRoom
-Add one URL to your agent's environment variables so its API calls flow
-through WhiteRoom. No code changes needed — your agent runs exactly as
-before, but now with governance.
+### 1. Sign in & get your proxy URL
+Sign in at https://app.whiteroom.tech, register your LLM API key, and copy
+your personalized proxy URL. We never store the full key — only a secure
+hash and the last 4 characters.
+
+### 2. Run your agent
+Set one env variable, then run as normal. Your code stays exactly the same.
 
 If you use Anthropic (Claude):
 
-    export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech
+    export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech/sk-wr-xxxxx
 
 If you use OpenAI (GPT):
 
-    export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1
+    export OPENAI_BASE_URL=https://proxy.whiteroom.tech/sk-wr-xxxxx/v1
 
-### 2. Run your agent
-Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and
-starts governance automatically when your first API call flows through the
-proxy. No CLI commands needed.
+Then run your agent:
 
     python my_agent.py    # or node agent.js, etc.
 
-### 3. View your dashboard
-Register your LLM key at https://whiteroom.tech to view your fleet — WhiteRoom
-stores only a secure hash and the last 4 characters, never your full key. Watch
-your agents in real time — tasks completed, token savings, handover history,
-and the full audit trail:
+WhiteRoom auto-registers your agent and starts governance on the first API
+call. No CLI commands needed.
 
-    https://app.whiteroom.tech/fleet
+### 3. Watch your fleet
+Open https://app.whiteroom.tech/fleet to monitor your agents in real time —
+tasks completed, token savings, watch progress, and the full audit trail.
 
-If one API key holds multiple fleets, pin the fleet so the dashboard shows the
-right one:
+If one API key runs multiple fleets, pin the fleet with a header:
 
     x-whiteroom-fleet: <fleet_id>     — assign this agent's traffic to a fleet
     x-whiteroom-agent: <agent_id>     — pin a stable agent identity
