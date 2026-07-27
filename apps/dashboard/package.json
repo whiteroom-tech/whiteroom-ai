@@ -29,12 +29,12 @@
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.12",
     "@tailwindcss/postcss": "^4.1.8",
-    "@types/node": "^22.15.21",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.1.4",
     "@types/react-dom": "^19.1.5",
     "postcss": "^8.5.22",
     "tailwindcss": "^4.1.8",
-    "typescript": "^5.8.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
