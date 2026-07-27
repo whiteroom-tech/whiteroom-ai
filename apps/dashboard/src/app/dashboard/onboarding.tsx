@@ -5,6 +5,14 @@ import { addUserFleet } from '@/lib/user-fleets';
 
 const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
+const PROVIDER_ENDPOINTS: Record<string, string | undefined> = {
+  'auto': undefined,
+  'mistral': 'https://api.mistral.ai',
+  'groq': 'https://api.groq.com',
+  'together': 'https://api.together.xyz',
+  'openrouter': 'https://api.openrouter.ai',
+};
+
 interface ManagedKey {
   wrKey: string;
   provider: string;
@@ -76,6 +84,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
   const [showKey, setShowKey] = useState(isNew);
   const [managedKeys, setManagedKeys] = useState<ManagedKey[]>(initialKeys);
   const [newKeyInput, setNewKeyInput] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('auto');
   const [addingKey, setAddingKey] = useState(false);
   const [keyError, setKeyError] = useState('');
   const [showAddKey, setShowAddKey] = useState(false);
@@ -90,12 +99,13 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
       const res = await fetch(`${PROXY_URL}/api/white-room`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': authKey },
-        body: JSON.stringify({ action: 'store_key', fleet_id: fleetId, api_key: newKeyInput.trim() }),
+        body: JSON.stringify({ action: 'store_key', fleet_id: fleetId, api_key: newKeyInput.trim(), ...(PROVIDER_ENDPOINTS[selectedProvider] && { llm_endpoint: PROVIDER_ENDPOINTS[selectedProvider] }) }),
       });
       const data = await res.json();
       if (data.error) { setKeyError(data.error); return; }
       setManagedKeys(prev => [...prev, { wrKey: data.proxyKey, provider: data.provider, keyHint: data.keyHint, proxyUrl: data.proxyUrl }]);
       setNewKeyInput('');
+      setSelectedProvider('auto');
       setShowAddKey(false);
     } catch { setKeyError('Failed to connect to server.'); }
     finally { setAddingKey(false); }
@@ -163,7 +173,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
               <div className="flex-1 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Enter your Anthropic or OpenAI API key</p>
+                    <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Enter your LLM API key</p>
                     <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>We save a secure hash and the last 4 characters — your full key is never stored.</p>
                   </div>
                   {managedKeys.length > 0 && !showAddKey && (
@@ -195,11 +205,23 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
 
                 {showAddKey && (
                   <form onSubmit={handleAddKey} className="space-y-3">
+                    <select
+                      value={selectedProvider}
+                      onChange={(e) => setSelectedProvider(e.target.value)}
+                      className="w-full rounded-lg px-4 py-3 text-sm font-mono outline-none cursor-pointer"
+                      style={{ background: '#070B14', border: '1px solid #1B2740', color: '#EAF1FF' }}
+                    >
+                      <option value="auto">Anthropic / OpenAI (auto-detect)</option>
+                      <option value="mistral">Mistral AI</option>
+                      <option value="groq">Groq</option>
+                      <option value="together">Together AI</option>
+                      <option value="openrouter">OpenRouter</option>
+                    </select>
                     <input
                       type="password"
                       value={newKeyInput}
                       onChange={(e) => setNewKeyInput(e.target.value)}
-                      placeholder="sk-ant-... or sk-..."
+                      placeholder={selectedProvider === 'auto' ? 'sk-ant-... or sk-...' : 'Paste your API key'}
                       className="w-full rounded-lg px-4 py-3 text-sm font-mono outline-none"
                       style={{ background: '#070B14', border: '1px solid #1B2740', color: '#EAF1FF' }}
                     />
@@ -207,7 +229,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                       <button type="submit" disabled={addingKey || !newKeyInput.trim()} className="px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer disabled:opacity-50" style={{ background: '#38E1FF', color: '#04222B' }}>
                         {addingKey ? 'Adding...' : 'Add Key'}
                       </button>
-                      <button type="button" onClick={() => { setShowAddKey(false); setKeyError(''); setNewKeyInput(''); }} className="px-5 py-2 rounded-lg text-sm cursor-pointer" style={{ color: '#6B7C9E', border: '1px solid #1B2740' }}>
+                      <button type="button" onClick={() => { setShowAddKey(false); setKeyError(''); setNewKeyInput(''); setSelectedProvider('auto'); }} className="px-5 py-2 rounded-lg text-sm cursor-pointer" style={{ color: '#6B7C9E', border: '1px solid #1B2740' }}>
                         Cancel
                       </button>
                     </div>
