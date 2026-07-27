@@ -154,7 +154,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
 
         {/* 3-Step Getting Started */}
         <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
+          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 4 Steps</h3>
 
           <div className="space-y-8">
             {/* Step 1: Enter API key */}
@@ -254,45 +254,50 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                 <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
               </div>
             </div>
-          </div>
-        </section>
+            {/* Step 4: Watch your fleet */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>4</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Watch your fleet</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Monitor agents, track token usage, and review governance compliance in real time.</p>
+                </div>
+                <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
+                  <a
+                    href="/fleet"
+                    className="rounded-lg p-4 flex items-center gap-4 transition-all group"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(56,225,255,.12) 0%, rgba(56,225,255,.04) 100%)',
+                      border: '1.5px solid rgba(56,225,255,.4)',
+                      textDecoration: 'none',
+                      boxShadow: '0 0 24px rgba(56,225,255,.08), inset 0 1px 0 rgba(56,225,255,.1)',
+                    }}
+                  >
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(56,225,255,.15)' }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold transition-colors" style={{ color: '#38E1FF' }}>Open Live Dashboard</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#A9B8D4' }}>Real-time fleet monitoring</p>
+                    </div>
+                    <svg className="ml-auto shrink-0 group-hover:translate-x-1 transition-transform" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  </a>
 
-        {/* Live Dashboard + Fleet Status */}
-        <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
-          <a
-            href="/fleet"
-            className="rounded-xl p-6 flex items-center gap-4 transition-all group relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, rgba(56,225,255,.12) 0%, rgba(56,225,255,.04) 100%)',
-              border: '1.5px solid rgba(56,225,255,.4)',
-              textDecoration: 'none',
-              boxShadow: '0 0 24px rgba(56,225,255,.08), inset 0 1px 0 rgba(56,225,255,.1)',
-            }}
-          >
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(56,225,255,.15)' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            </div>
-            <div>
-              <p className="text-base font-semibold transition-colors" style={{ color: '#38E1FF' }}>Live Dashboard</p>
-              <p className="text-sm mt-0.5" style={{ color: '#A9B8D4' }}>Monitor your agents in real time</p>
-            </div>
-            <svg className="ml-auto shrink-0 group-hover:translate-x-1 transition-transform" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          </a>
-
-          {report && (
-            <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-              <p className="text-[11px] font-mono tracking-[.28em] uppercase font-medium mb-3" style={{ color: '#A9B8D4' }}>Fleet Status</p>
-              <div className="grid grid-cols-3 gap-3">
-                <StatCard label="Agents" value={(report as Record<string, unknown>).agentCount as number ?? 0} />
-                <StatCard label="Tasks" value={((report as Record<string, Record<string, number>>).totals?.tasks) ?? 0} />
-                <StatCard
-                  label="Tokens"
-                  value={`${(((report as Record<string, Record<string, number>>).totals?.tokens ?? 0) / 1000).toFixed(1)}K`}
-                />
+                  {report && (
+                    <div className="rounded-lg p-4" style={{ background: '#070B14', border: '1px solid #15203A' }}>
+                      <p className="text-[10px] font-mono tracking-[.2em] uppercase font-medium mb-2" style={{ color: '#6B7C9E' }}>Fleet Status</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <StatCard label="Agents" value={(report as Record<string, unknown>).agentCount as number ?? 0} />
+                        <StatCard label="Tasks" value={((report as Record<string, Record<string, number>>).totals?.tasks) ?? 0} />
+                        <StatCard label="Tokens" value={`${(((report as Record<string, Record<string, number>>).totals?.tokens ?? 0) / 1000).toFixed(1)}K`} />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
 
         {/* Footer links */}
         <footer className="flex items-center gap-6 pt-4 pb-8">
