@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { getUserFleets, addUserFleet, removeUserFleet, type UserFleet } from '@/lib/user-fleets';
+import { getUserFleets, removeUserFleet, type UserFleet } from '@/lib/user-fleets';
 
 interface AgentInfo {
   agentId: string;
@@ -119,11 +119,6 @@ export default function FleetDashboard() {
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
   const [userFleets, setUserFleets] = useState<UserFleet[]>([]);
-  const [showAddFleet, setShowAddFleet] = useState(false);
-  const [addFleetToken, setAddFleetToken] = useState('');
-  const [addFleetLabel, setAddFleetLabel] = useState('');
-  const [addFleetError, setAddFleetError] = useState('');
-  const [addFleetLoading, setAddFleetLoading] = useState(false);
   const [showFleetMenu, setShowFleetMenu] = useState(false);
   const router = useRouter();
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -346,38 +341,6 @@ export default function FleetDashboard() {
     else localStorage.removeItem('wr_fleet');
     setShowFleetMenu(false);
     window.location.reload();
-  }
-
-  async function handleAddFleet(e: React.FormEvent) {
-    e.preventDefault();
-    setAddFleetError('');
-    setAddFleetLoading(true);
-    try {
-      const res = await fetch(`${PROXY_URL}/api/white-room`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'token_login', fleet_token: addFleetToken.trim() }),
-      });
-      const data = await res.json();
-      if (data.error || !data.fleetId) {
-        setAddFleetError(data.error || 'Invalid fleet token');
-        return;
-      }
-      const result = await addUserFleet(addFleetToken.trim(), data.fleetId, addFleetLabel.trim() || data.fleetId);
-      if (!result.ok) {
-        setAddFleetError(result.error || 'Failed to save');
-        return;
-      }
-      setShowAddFleet(false);
-      setAddFleetToken('');
-      setAddFleetLabel('');
-      const fleets = await getUserFleets();
-      setUserFleets(fleets);
-    } catch {
-      setAddFleetError('Could not connect to WhiteRoom server');
-    } finally {
-      setAddFleetLoading(false);
-    }
   }
 
   async function handleRemoveFleet(id: string) {
@@ -613,7 +576,6 @@ export default function FleetDashboard() {
                     )}
                   </div>
                 ))}
-                <button onClick={() => { setShowFleetMenu(false); setShowAddFleet(true); setAddFleetError(''); }} style={{ width: '100%', padding: '10px 12px', background: 'none', border: 'none', color: '#38E1FF', fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>+ Add Fleet</button>
               </div>
             )}
           </div>
@@ -1084,53 +1046,6 @@ export default function FleetDashboard() {
         </div>
       </div>
       </>
-      )}
-
-      {/* Add Fleet Modal */}
-      {showAddFleet && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div onClick={() => setShowAddFleet(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)' }} />
-          <div style={{ position: 'relative', width: 420, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 28, boxShadow: '0 12px 40px rgba(0,0,0,.5)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 2, color: '#EAF1FF', margin: 0 }}>ADD FLEET</h3>
-              <button onClick={() => setShowAddFleet(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 18, cursor: 'pointer', padding: '2px 6px' }}>✕</button>
-            </div>
-            <form onSubmit={handleAddFleet} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 10, letterSpacing: 1, color: '#6B7C9E', marginBottom: 6, fontFamily: FONT_MONO }}>FLEET TOKEN</label>
-                <input
-                  type="text"
-                  value={addFleetToken}
-                  onChange={e => setAddFleetToken(e.target.value)}
-                  placeholder="wr_..."
-                  required
-                  style={{ width: '100%', background: '#070B14', border: '1px solid #1B2740', borderRadius: 8, padding: '10px 14px', color: '#EAF1FF', fontSize: 13, fontFamily: FONT_MONO, outline: 'none' }}
-                />
-                <p style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>Paste the fleet token from your onboarding page or another account.</p>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 10, letterSpacing: 1, color: '#6B7C9E', marginBottom: 6, fontFamily: FONT_MONO }}>LABEL (OPTIONAL)</label>
-                <input
-                  type="text"
-                  value={addFleetLabel}
-                  onChange={e => setAddFleetLabel(e.target.value)}
-                  placeholder="e.g. Production, Staging..."
-                  style={{ width: '100%', background: '#070B14', border: '1px solid #1B2740', borderRadius: 8, padding: '10px 14px', color: '#EAF1FF', fontSize: 13, fontFamily: FONT_MONO, outline: 'none' }}
-                />
-              </div>
-              {addFleetError && (
-                <p style={{ color: '#ef4444', fontSize: 12, margin: 0 }}>{addFleetError}</p>
-              )}
-              <button
-                type="submit"
-                disabled={addFleetLoading || !addFleetToken.trim()}
-                style={{ width: '100%', background: '#38E1FF', color: '#070B14', borderRadius: 8, padding: '10px 0', fontWeight: 700, fontSize: 13, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: addFleetLoading || !addFleetToken.trim() ? 'not-allowed' : 'pointer', opacity: addFleetLoading || !addFleetToken.trim() ? 0.4 : 1, transition: 'opacity .15s' }}
-              >
-                {addFleetLoading ? 'VALIDATING...' : 'ADD FLEET'}
-              </button>
-            </form>
-          </div>
-        </div>
       )}
 
       {/* Footer */}
