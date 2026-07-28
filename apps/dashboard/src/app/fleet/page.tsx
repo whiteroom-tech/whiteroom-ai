@@ -350,9 +350,9 @@ export default function FleetDashboard() {
 
   function handleSplitterDown(e: React.MouseEvent) {
     e.preventDefault();
-    const container = mainRef.current;
-    if (!container) return;
-    const onMove = (ev: MouseEvent) => setRailWidth(Math.min(760, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
+    const startX = e.clientX;
+    const startWidth = railWidth;
+    const onMove = (ev: MouseEvent) => setRailWidth(Math.min(760, Math.max(240, startWidth - (ev.clientX - startX))));
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
@@ -363,9 +363,9 @@ export default function FleetDashboard() {
   const analyticsGridRef = useRef<HTMLDivElement>(null);
   function handleAnalyticsSplitterDown(e: React.MouseEvent) {
     e.preventDefault();
-    const container = analyticsGridRef.current;
-    if (!container) return;
-    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(760, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
+    const startX = e.clientX;
+    const startWidth = analyticsFeedWidth;
+    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(760, Math.max(240, startWidth - (ev.clientX - startX))));
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
