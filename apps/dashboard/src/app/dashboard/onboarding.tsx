@@ -242,6 +242,7 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
 
         {/* Live Dashboard + Fleet Status */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
+          {report ? (
           <a
             href="/fleet"
             className="rounded-xl p-6 flex items-center gap-4 transition-all group relative overflow-hidden"
@@ -261,6 +262,25 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
             </div>
             <svg className="ml-auto shrink-0 group-hover:translate-x-1 transition-transform" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </a>
+          ) : (
+          <div
+            className="rounded-xl p-6 flex items-center gap-4 relative overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, rgba(107,124,158,.08) 0%, rgba(107,124,158,.03) 100%)',
+              border: '1.5px solid rgba(107,124,158,.25)',
+              opacity: 0.5,
+              cursor: 'not-allowed',
+            }}
+          >
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(107,124,158,.1)' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7C9E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            </div>
+            <div>
+              <p className="text-base font-semibold" style={{ color: '#6B7C9E' }}>Live Dashboard</p>
+              <p className="text-sm mt-0.5" style={{ color: '#4E607F' }}>Link your fleet first (step 3)</p>
+            </div>
+          </div>
+          )}
 
           {report && (
             <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
