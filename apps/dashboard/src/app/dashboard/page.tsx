@@ -3,36 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { getUserFleets, removeUserFleet } from '@/lib/user-fleets';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
 
 const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
-function generateApiKey() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let key = 'sk-wr-';
-  for (let i = 0; i < 40; i++) {
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return key;
-}
-
-function emailToFleetId(email: string) {
-  return email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-}
-
-async function provisionFleet(apiKey: string, fleetId: string) {
-  const res = await fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ action: 'register_agent', fleet_id: fleetId, agent_id: 'setup-agent', agent_role: 'worker' }),
-  });
-  if (!res.ok) return { error: `HTTP ${res.status}` };
-  return res.json();
-}
-
-// Report via fleet token — the token is scoped to this fleet regardless of
-// which API key the fleet is bound to on the proxy side.
 async function getFleetReport(fleetToken: string) {
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
@@ -42,23 +18,12 @@ async function getFleetReport(fleetToken: string) {
   return res.json();
 }
 
-async function listManagedKeys(authKey: string, fleetId: string) {
-  const res = await fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': authKey },
-    body: JSON.stringify({ action: 'list_keys', fleet_id: fleetId }),
-  });
-  return res.json();
-}
-
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [provisionError, setProvisionError] = useState<string | null>(null);
   const [props, setProps] = useState<{
-    name: string; email: string; apiKey: string; fleetId: string;
+    name: string; email: string; fleetId: string;
     fleetToken: string | null; report: Record<string, unknown> | null; isNew: boolean;
-    managedKeys: Array<{ wrKey: string; provider: string; keyHint: string }>;
   } | null>(null);
 
   useEffect(() => {
@@ -67,52 +32,43 @@ export default function DashboardPage() {
     async function handleUser(user: NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']>) {
       const email = user.email || '';
       const name = user.user_metadata?.full_name || email.split('@')[0];
-      const fleetId = emailToFleetId(email);
-
-      let apiKey = user.user_metadata?.whiteroom_api_key;
-      let fleetToken = user.user_metadata?.whiteroom_fleet_token || null;
-      let isNew = false;
-
-      if (!apiKey) {
-        apiKey = generateApiKey();
-        try {
-          const res = await provisionFleet(apiKey, fleetId);
-          if (res.error) {
-            setProvisionError(`Fleet provisioning failed: ${res.error}`);
-          } else {
-            fleetToken = res.fleetToken || null;
-          }
-        } catch (err) {
-          setProvisionError(`Fleet provisioning failed: ${err instanceof Error ? err.message : 'network error'}`);
-        }
-
-        await supabase.auth.updateUser({
-          data: { whiteroom_api_key: apiKey, whiteroom_fleet_id: fleetId, whiteroom_fleet_token: fleetToken },
-        });
-        isNew = true;
-      }
-
-      let managedKeys: Array<{ wrKey: string; provider: string; keyHint: string }> = [];
-      try {
-        const keysRes = await listManagedKeys(fleetToken || apiKey, fleetId);
-        if (keysRes.success && keysRes.keys) managedKeys = keysRes.keys;
-      } catch {}
-
-      setProps({ name, email, apiKey, fleetId, fleetToken, report: null, isNew, managedKeys });
-      setLoading(false);
 
       initAnalytics();
       posthog.identify(user.id, { email });
-      posthog.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
 
-      if (!isNew && fleetToken) {
+      const userFleets = await getUserFleets();
+
+      let validFleet: typeof userFleets[0] | null = null;
+      let validReport: Record<string, unknown> | null = null;
+      for (const fleet of userFleets) {
         try {
-          const r = await getFleetReport(fleetToken);
+          const r = await getFleetReport(fleet.fleet_token);
           if (r.success && r.report) {
-            setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
+            validFleet = fleet;
+            validReport = r.report;
+            break;
           }
-        } catch {}
+          await removeUserFleet(fleet.id);
+        } catch {
+          await removeUserFleet(fleet.id);
+        }
       }
+
+      if (!validFleet) {
+        localStorage.removeItem('wr_fleet_token');
+        posthog.capture('signed_in', { fleet_id: null });
+        setProps({ name, email, fleetId: '', fleetToken: null, report: null, isNew: true });
+        setLoading(false);
+        return;
+      }
+
+      const fleetToken = validFleet.fleet_token;
+      const fleetId = validFleet.fleet_id || '';
+      localStorage.setItem('wr_fleet_token', fleetToken);
+
+      posthog.capture('signed_in', { fleet_id: fleetId });
+      setProps({ name, email, fleetId, fleetToken, report: validReport, isNew: false });
+      setLoading(false);
     }
 
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -128,23 +84,6 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
         <p className="text-sm font-mono" style={{ color: '#6B7C9E' }}>Loading dashboard...</p>
-      </div>
-    );
-  }
-
-  if (provisionError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
-        <div className="text-center space-y-4" style={{ maxWidth: 400 }}>
-          <p className="text-sm font-mono" style={{ color: '#ef4444' }}>{provisionError}</p>
-          <button
-            onClick={() => { setProvisionError(null); setLoading(true); window.location.reload(); }}
-            className="px-6 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' }}
-          >
-            Retry
-          </button>
-        </div>
       </div>
     );
   }
