@@ -13,9 +13,10 @@ https://whiteroom.tech
 
 ## How to use it
 
-### 1. Add one line to your .env file
-Your existing API key and code stay exactly the same. WhiteRoom intercepts
-every call automatically.
+### 1. Add one line to your environment variable
+Point your agent at WhiteRoom by setting a base-URL environment variable —
+in your .env file, your shell, or wherever you configure env vars. Your
+existing API key and code stay exactly the same.
 
 If you use Anthropic (Claude):
 
@@ -33,8 +34,8 @@ governance when your first API call flows through the proxy.
 
 ### 3. Link your fleet
 Sign in at https://app.whiteroom.tech and enter your API key to connect
-your agent's fleet to the dashboard. We only save a secure hash and the last
-4 characters — your full key is never stored.
+your agent's fleet to the dashboard. Your key is used once to find your
+fleet and is never stored.
 
 Once linked, the Live Dashboard unlocks — monitor your agents in real time
 at https://app.whiteroom.tech/fleet with tasks completed, token savings,

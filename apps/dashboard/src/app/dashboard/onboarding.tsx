@@ -229,7 +229,7 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
                         {linkStatus === 'loading' ? 'Linking…' : 'Link'}
                       </button>
                     </div>
-                    <p className="text-[11px]" style={{ color: '#4A5B7A' }}>Your key is used only to find your fleet. It is never stored on our servers.</p>
+                    <p className="text-sm font-medium mt-2" style={{ color: '#38E1FF' }}>🔒 Your key is used once to find your fleet and is never stored.</p>
                     {linkError && (
                       <p className="text-xs" style={{ color: '#FF6B6B' }}>{linkError}</p>
                     )}

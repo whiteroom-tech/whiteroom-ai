@@ -432,9 +432,8 @@ export default function FleetDashboard() {
             </button>
           </form>
 
-          <p style={{ color: '#4E607F', fontSize: 10, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
-            Your key is never stored or sent to any third party.<br />
-            It is used only to identify your fleet in this session.
+          <p style={{ color: '#38E1FF', fontSize: 13, fontWeight: 500, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+            🔒 Your key is used once to find your fleet and is never stored.
           </p>
         </div>
       </div>
