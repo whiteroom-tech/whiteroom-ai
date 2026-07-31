@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
+    "@whiteroom/ui": "file:../../packages/ui",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.8",
     "clsx": "^2.1.1",

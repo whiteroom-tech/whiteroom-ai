@@ -1,59 +1,91 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { addUserFleet } from '@/lib/user-fleets';
+import { createClient } from '@/lib/supabase/client';
+import { rebindFleetKey } from '@/lib/whiteroom/client';
+import type { FleetReport } from '@/lib/whiteroom/types';
+import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@whiteroom/ui';
 
 interface Props {
   name: string;
   email: string;
   fleetId: string;
   fleetToken: string | null;
-  report: Record<string, unknown> | null;
+  report: FleetReport | null;
   isNew: boolean;
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+// BYOK: rebind this fleet from the dashboard's placeholder key to the
+// customer's real Anthropic key, so real governed agents can run against it.
+// The engine stores only a hash of the key — it never leaves the customer's
+// control except as a per-request forward to Anthropic (standard BYOK).
+function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
+  const [connected, setConnected] = useState(false);
+  const [value, setValue] = useState('');
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.user_metadata?.whiteroom_byok) setConnected(true);
+    });
+  }, []);
+
+  async function connect() {
+    const key = value.trim();
+    if (!/^sk-/.test(key) || key.length < 12) { setStatus('error'); setMsg('That does not look like an Anthropic API key (sk-ant-…).'); return; }
+    setStatus('saving'); setMsg('');
+    try {
+      // Authenticate the rebind with the fleet's CURRENT key (this dashboard key).
+      const result = await rebindFleetKey(fleetId, key, apiKey);
+      if (!result.success) { setStatus('error'); setMsg(result.error || 'Rebind failed.'); return; }
+      // Persist only a flag — never the raw provider key — in the account.
+      await createClient().auth.updateUser({ data: { whiteroom_byok: true } });
+      setConnected(true); setValue('');
+    } catch (e) {
+      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
+    }
+  }
 
   return (
-    <button
-      onClick={() => {
-        navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
-      }}
-      className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all"
-      style={{
-        borderColor: copied ? '#3FE0A0' : '#1B2740',
-        color: copied ? '#3FE0A0' : '#A9B8D4',
-        background: copied ? 'rgba(63,224,160,.08)' : 'transparent',
-        cursor: 'pointer',
-      }}
-    >
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  );
-}
-
-function CodeBlock({ label, code }: { label: string; code: string }) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-[11px] font-mono tracking-[.12em] uppercase" style={{ color: '#6B7C9E' }}>{label}</p>
-      <div className="flex items-center rounded-lg px-4 py-3" style={{ background: '#070B14', border: '1px solid #15203A' }}>
-        <code className="text-sm font-mono flex-1 break-all" style={{ color: '#38E1FF' }}>{code}</code>
-        <CopyButton text={code} />
+    <section className="rounded-xl p-6 space-y-3" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+      <div>
+        <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Bring Your Own Key</h3>
+        <p className="text-xs mt-1" style={{ color: '#4E607F' }}>
+          {connected
+            ? 'Your fleet is bound to your own Anthropic key — real governed agents can run against it. Use that key as ANTHROPIC_API_KEY when you run agents.'
+            : 'Connect your Anthropic key so real agents can run on this fleet. We store only a hash — the key stays yours.'}
+        </p>
       </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-lg p-4" style={{ background: '#070B14', border: '1px solid #15203A' }}>
-      <p className="text-[11px] font-mono tracking-[.12em] uppercase" style={{ color: '#6B7C9E' }}>{label}</p>
-      <p className="text-2xl font-display font-bold mt-1" style={{ color: '#EAF1FF' }}>{value}</p>
-    </div>
+      {connected ? (
+        <div className="flex items-center gap-2 rounded-lg px-4 py-3" style={{ background: 'rgba(63,224,160,.06)', border: '1px solid rgba(63,224,160,.2)' }}>
+          <span style={{ color: '#3FE0A0' }}>✓</span>
+          <span className="text-sm" style={{ color: '#3FE0A0' }}>Provider key connected</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={value}
+              onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
+              placeholder="sk-ant-…"
+              className="flex-1 rounded-lg px-4 py-3 text-sm font-mono"
+              style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
+            />
+            <button
+              onClick={connect}
+              disabled={status === 'saving'}
+              className="shrink-0 px-5 py-3 rounded-lg text-sm font-semibold cursor-pointer"
+              style={{ background: '#132038', color: '#38E1FF', border: '1px solid #1B2740', opacity: status === 'saving' ? 0.6 : 1 }}
+            >
+              {status === 'saving' ? 'Connecting…' : 'Connect'}
+            </button>
+          </div>
+          {status === 'error' && <p className="text-xs" style={{ color: '#ef4444' }}>{msg}</p>}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -114,13 +146,7 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
       {/* Header */}
       <header className="sticky top-0 z-50" style={{ background: 'rgba(7,11,20,.74)', backdropFilter: 'blur(16px)', borderBottom: '1px solid #15203A' }}>
         <nav className="max-w-[1200px] mx-auto flex items-center justify-between h-[66px] px-7">
-          <a href="https://whiteroom.tech" className="flex items-center gap-2.5" style={{ textDecoration: 'none' }}>
-            <svg className="shrink-0" width="30" height="42" viewBox="0 0 22 30" fill="none"><defs><linearGradient id="wr-lit" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7AECFF"/><stop offset="1" stopColor="#22C8EC"/></linearGradient></defs><rect x=".5" y=".5" width="21" height="29" rx="3" fill="#EAF1FF"/><rect x="3" y="3" width="7" height="11" fill="#0B1018"/><rect x="12" y="3" width="7" height="11" fill="url(#wr-lit)"/><rect x="3" y="16" width="7" height="11" fill="#0B1018"/><rect x="12" y="16" width="7" height="11" fill="#0B1018"/></svg>
-            <span className="font-sans font-black text-[32px] leading-none" style={{ letterSpacing: '-.02em' }}>
-              <span style={{ color: '#EAF1FF' }}>White</span>
-              <span style={{ color: '#38E1FF' }}>Room</span>
-            </span>
-          </a>
+          <BrandLink />
           <div className="flex items-center gap-6">
             <a href="https://whiteroom.tech/#how" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>How it works</a>
             <a href="https://whiteroom.tech/docs.html" className="text-sm transition-colors hover:text-[#EAF1FF]" style={{ color: '#A9B8D4', textDecoration: 'none' }}>Docs</a>
@@ -128,7 +154,7 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
             <a
               href="/auth/sign-out"
               className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all hover:border-[#38E1FF] hover:text-[#38E1FF]"
-              style={{ border: '1px solid #1B2740', color: '#EAF1FF', textDecoration: 'none', fontFamily: "'Chakra Petch', sans-serif" }}
+              style={{ border: '1px solid #1B2740', color: '#EAF1FF', textDecoration: 'none', fontFamily: FONT_DISPLAY }}
             >
               Sign out
             </a>
@@ -286,13 +312,88 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
             <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
               <p className="text-[11px] font-mono tracking-[.28em] uppercase font-medium mb-3" style={{ color: '#A9B8D4' }}>Fleet Status</p>
               <div className="grid grid-cols-3 gap-3">
-                <StatCard label="Agents" value={(report as Record<string, unknown>).agentCount as number ?? 0} />
-                <StatCard label="Tasks" value={((report as Record<string, Record<string, number>>).totals?.tasks) ?? 0} />
-                <StatCard label="Tokens" value={`${(((report as Record<string, Record<string, number>>).totals?.tokens ?? 0) / 1000).toFixed(1)}K`} />
+                <StatCard label="Agents" value={report.agentCount ?? 0} />
+                <StatCard label="Tasks" value={report.totals?.tasks ?? 0} />
+                <StatCard
+                  label="Tokens"
+                  value={`${((report.totals?.tokens ?? 0) / 1000).toFixed(1)}K`}
+                />
               </div>
             </div>
           )}
         </div>
+
+        {/* API Key */}
+        <section className="rounded-xl p-6 space-y-3" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Your API Key</h3>
+              <p className="text-xs mt-1" style={{ color: '#4E607F' }}>Use this key to authenticate all CLI commands and API requests.</p>
+            </div>
+            <button
+              onClick={() => setShowKey(!showKey)}
+              className="text-xs font-mono transition-colors cursor-pointer"
+              style={{ color: '#6B7C9E' }}
+            >
+              {showKey ? 'Hide' : 'Reveal'}
+            </button>
+          </div>
+          <div className="flex items-center rounded-lg px-4 py-3" style={{ background: '#070B14', border: '1px solid #15203A' }}>
+            <code className="text-sm font-mono flex-1 break-all" style={{ color: '#FFB454' }}>
+              {showKey ? apiKey : '•'.repeat(46)}
+            </code>
+            <CopyButton text={apiKey} disabled={!showKey} />
+          </div>
+        </section>
+
+        {/* Bring Your Own Key */}
+        <ByokCard apiKey={apiKey} fleetId={fleetId} />
+
+        {/* Getting Started */}
+        <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
+
+          <div className="space-y-8">
+            {/* Step 1 */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Point your agent at WhiteRoom</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Change one URL so your agent&apos;s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.</p>
+                </div>
+                <div className="space-y-2">
+                  <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
+                  <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>2</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and starts governance automatically when your first API call flows through the proxy.</p>
+                </div>
+                <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>3</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
+                </div>
+                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/fleet" />
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Footer links */}
         <footer className="flex items-center gap-6 pt-4 pb-8">
