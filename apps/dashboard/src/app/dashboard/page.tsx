@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { getUserFleets, removeUserFleet } from '@/lib/user-fleets';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
 import { registerAgent, tokenLogin } from '@/lib/whiteroom/client';
@@ -24,7 +25,6 @@ function emailToFleetId(email: string) {
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [provisionError, setProvisionError] = useState<string | null>(null);
   const [props, setProps] = useState<{
     name: string; email: string; apiKey: string; fleetId: string;
     fleetToken: string | null; report: FleetReport | null; isNew: boolean;
@@ -33,12 +33,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
 
-    // getSession reads the cached local session (no network) so returning
-    // users render instantly; the fleet report fills in when it arrives.
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const user = session?.user;
-      if (!user) { router.push('/sign-in'); return; }
-
+    async function handleUser(user: NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']>) {
       const email = user.email || '';
       const name = user.user_metadata?.full_name || email.split('@')[0];
       const fleetId = emailToFleetId(email);
@@ -71,16 +66,46 @@ export default function DashboardPage() {
 
       initAnalytics();
       posthog.identify(user.id, { email });
-      posthog.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
 
-      if (!isNew && fleetToken) {
+      const userFleets = await getUserFleets();
+
+      let validFleet: typeof userFleets[0] | null = null;
+      let validReport: Record<string, unknown> | null = null;
+      for (const fleet of userFleets) {
         try {
           const r = await tokenLogin(fleetToken);
           if (r.success && r.report) {
             const report = r.report;
             setProps((prev) => (prev ? { ...prev, report } : prev));
           }
-        } catch {}
+          await removeUserFleet(fleet.id);
+        } catch {
+          await removeUserFleet(fleet.id);
+        }
+      }
+
+      if (!validFleet) {
+        localStorage.removeItem('wr_fleet_token');
+        posthog.capture('signed_in', { fleet_id: null });
+        setProps({ name, email, fleetId: '', fleetToken: null, report: null, isNew: true });
+        setLoading(false);
+        return;
+      }
+
+      const fleetToken = validFleet.fleet_token;
+      const fleetId = validFleet.fleet_id || '';
+      localStorage.setItem('wr_fleet_token', fleetToken);
+
+      posthog.capture('signed_in', { fleet_id: fleetId });
+      setProps({ name, email, fleetId, fleetToken, report: validReport, isNew: false });
+      setLoading(false);
+    }
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        handleUser(user);
+      } else {
+        router.push('/sign-in');
       }
     });
   }, [router]);
@@ -89,23 +114,6 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
         <p className="text-sm font-mono" style={{ color: '#6B7C9E' }}>Loading dashboard...</p>
-      </div>
-    );
-  }
-
-  if (provisionError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
-        <div className="text-center space-y-4" style={{ maxWidth: 400 }}>
-          <p className="text-sm font-mono" style={{ color: '#ef4444' }}>{provisionError}</p>
-          <button
-            onClick={() => { setProvisionError(null); setLoading(true); window.location.reload(); }}
-            className="px-6 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' }}
-          >
-            Retry
-          </button>
-        </div>
       </div>
     );
   }

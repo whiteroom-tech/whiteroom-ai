@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
@@ -42,8 +43,9 @@ export default function FleetDashboard() {
   const [filterType, setFilterType] = useState('task_complete');
   const [searchText, setSearchText] = useState('');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const [railWidth, setRailWidth] = useState(360);
-  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
+  const [expandedWatches, setExpandedWatches] = useState<Set<string>>(new Set());
+  const [railWidth, setRailWidth] = useState(typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 720);
+  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 720);
   const [authenticated, setAuthenticated] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -54,6 +56,8 @@ export default function FleetDashboard() {
   const [scopedDay, setScopedDay] = useState<string | null>(null);
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
+  const [userFleets, setUserFleets] = useState<UserFleet[]>([]);
+  const [showFleetMenu, setShowFleetMenu] = useState(false);
   const router = useRouter();
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -176,7 +180,23 @@ export default function FleetDashboard() {
   }, [fleetId]);
 
   useEffect(() => {
-    if (!token && !fleetToken) { setAuthenticated(false); return; }
+    if (!token && !fleetToken) {
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        const savedToken = user?.user_metadata?.whiteroom_fleet_token;
+        const savedKey = user?.user_metadata?.whiteroom_api_key;
+        const savedFleet = user?.user_metadata?.whiteroom_fleet_id;
+        if (savedToken || savedKey) {
+          if (savedToken) localStorage.setItem('wr_fleet_token', savedToken);
+          if (savedKey) localStorage.setItem('wr_token', savedKey);
+          if (savedFleet) localStorage.setItem('wr_fleet', savedFleet);
+          window.location.reload();
+        } else {
+          setAuthenticated(false);
+        }
+      }).catch(() => { setAuthenticated(false); });
+      return;
+    }
 
     if (!fleetId && fleetToken) {
       tokenLogin(fleetToken).then(data => {
@@ -211,17 +231,38 @@ export default function FleetDashboard() {
   function toggleExpanded(taskId: string) {
     setExpandedTasks((prev: Set<string>) => { const next = new Set(prev); if (next.has(taskId)) next.delete(taskId); else next.add(taskId); return next; });
   }
+  function toggleWatch(key: string) {
+    setExpandedWatches((prev: Set<string>) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  }
+
+  useEffect(() => {
+    if (authenticated) getUserFleets().then(setUserFleets);
+  }, [authenticated]);
 
   function handleLogout() {
     clearFleetCredentials();
     setAuthenticated(false);
   }
 
+  function switchFleet(uf: UserFleet) {
+    localStorage.setItem('wr_token', uf.fleet_token);
+    localStorage.setItem('wr_fleet_token', uf.fleet_token);
+    if (uf.fleet_id) localStorage.setItem('wr_fleet', uf.fleet_id);
+    else localStorage.removeItem('wr_fleet');
+    setShowFleetMenu(false);
+    window.location.reload();
+  }
+
+  async function handleRemoveFleet(id: string) {
+    await removeUserFleet(id);
+    setUserFleets(await getUserFleets());
+  }
+
   function handleSplitterDown(e: React.MouseEvent) {
     e.preventDefault();
-    const container = mainRef.current;
-    if (!container) return;
-    const onMove = (ev: MouseEvent) => setRailWidth(Math.min(760, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
+    const startX = e.clientX;
+    const startWidth = railWidth;
+    const onMove = (ev: MouseEvent) => setRailWidth(Math.min(760, Math.max(240, startWidth - (ev.clientX - startX))));
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
@@ -232,9 +273,9 @@ export default function FleetDashboard() {
   const analyticsGridRef = useRef<HTMLDivElement>(null);
   function handleAnalyticsSplitterDown(e: React.MouseEvent) {
     e.preventDefault();
-    const container = analyticsGridRef.current;
-    if (!container) return;
-    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(760, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
+    const startX = e.clientX;
+    const startWidth = analyticsFeedWidth;
+    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(760, Math.max(240, startWidth - (ev.clientX - startX))));
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
@@ -300,9 +341,8 @@ export default function FleetDashboard() {
             </button>
           </form>
 
-          <p style={{ color: '#4E607F', fontSize: 10, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
-            Your key is never stored or sent to any third party.<br />
-            It is used only to identify your fleet in this session.
+          <p style={{ color: '#38E1FF', fontSize: 13, fontWeight: 500, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+            🔒 Your key is used once to find your fleet and is never stored.
           </p>
         </div>
       </div>
@@ -323,11 +363,17 @@ export default function FleetDashboard() {
   // Current-watch stats from agent details
   const watchTasks = agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
   const watchTokens = agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
-  const watchHandovers = report?.totals?.handovers || 0;
-  const perWatchSaved = t.handovers > 0 ? (es.estimatedTokensSaved || 0) / t.handovers : 0;
-  const watchWithoutWR = watchTokens + perWatchSaved;
-  const watchSaved = perWatchSaved;
-  const watchSavingsPct = pctOf(watchTokens, watchSaved);
+  const watchHandoverAgents = report?.status?.handover_out?.length || 0;
+  // Savings from the most recent handover that actually compressed context
+  const lastRealHandover = allEntries.find(e =>
+    (e.type === 'handover' || e.type === 'self_handover') &&
+    ((e as Record<string, unknown>).contextTokens as number || 0) > 0
+  );
+  const lastCtx = lastRealHandover ? ((lastRealHandover as Record<string, unknown>).contextTokens as number || 0) : 0;
+  const lastDoc = lastRealHandover ? ((lastRealHandover as Record<string, unknown>).handoverDocTokens as number || 0) : 0;
+  const watchSaved = Math.max(0, lastCtx - lastDoc);
+  const watchWithoutWR = watchTokens + watchSaved;
+  const watchSavingsPct = watchTokens > 0 && watchSaved > 0 ? pctOf(watchTokens, watchSaved) : 0;
 
   // --- Analytics computation (UTC throughout) ---
   const nowMs = Date.now();
@@ -359,6 +405,18 @@ export default function FleetDashboard() {
     }
     dayMap.set(day, d);
   });
+  // For days with tasks but no savings from their own handovers,
+  // attribute savings from the preceding handover that compressed context
+  dayMap.forEach((d, day) => {
+    if (d.tasks > 0 && d.saved === 0) {
+      const preceding = allEntries.find(e =>
+        (e.type === 'handover' || e.type === 'self_handover') &&
+        e.timestamp.slice(0, 10) <= day &&
+        ((e as Record<string, unknown>).contextTokens as number || 0) > 0
+      );
+      if (preceding) d.saved = handoverSaved(preceding);
+    }
+  });
   const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
   const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
 
@@ -376,11 +434,23 @@ export default function FleetDashboard() {
     }
     agentMap.set(aid, a);
   });
-  const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
+  // Attribute preceding handover savings to agents with tasks but no savings
+  agentMap.forEach(a => {
+    if (a.tasks > 0 && a.saved === 0) {
+      const preceding = allEntries.find(e =>
+        (e.type === 'handover' || e.type === 'self_handover') &&
+        ((e as Record<string, unknown>).contextTokens as number || 0) > 0
+      );
+      if (preceding) a.saved = handoverSaved(preceding);
+    }
+  });
+  const agentBreakdown = [...agentMap.entries()].filter(([, a]) => a.tasks > 0 || a.used > 0).sort(([, a], [, b]) => b.used - a.used);
 
   const rangeTotals = (scopedDay ? [dailyStats.find(([k]) => k === scopedDay)].filter(Boolean) as [string, typeof dailyStats[0][1]][] : dailyStats).reduce((acc, [, d]) => ({
     tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
   }), { tasks: 0, used: 0, saved: 0, handovers: 0 });
+
+  const rangeWorkMinutes = scopedEntries.filter(e => e.type === 'task_complete').reduce((s, e) => s + (e.minutesSpent ?? 0), 0);
 
   const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
 
@@ -396,7 +466,27 @@ export default function FleetDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <span style={{ fontSize: 10, color: '#22c55e', background: '#052e16', border: '1px solid #166534', borderRadius: 4, padding: '2px 8px' }}>● CONNECTED</span>
-          <span style={{ fontSize: 10, color: '#64748b' }}>Fleet: {report.fleetId}</span>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowFleetMenu(!showFleetMenu)} style={{ fontSize: 10, color: '#64748b', background: 'transparent', border: '1px solid #1e293b', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              Fleet: {userFleets.find(f => f.fleet_token === (token || fleetToken))?.label || report.fleetId}
+              <span style={{ fontSize: 8 }}>▼</span>
+            </button>
+            {showFleetMenu && (
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, minWidth: 220, zIndex: 100, boxShadow: '0 8px 24px rgba(0,0,0,.5)' }}>
+                {userFleets.map(uf => (
+                  <div key={uf.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderBottom: '1px solid #1e293b' }}>
+                    <button onClick={() => switchFleet(uf)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', color: uf.fleet_token === (token || fleetToken) ? '#38E1FF' : '#e2e8f0', fontSize: 12, cursor: 'pointer', padding: 0 }}>
+                      {uf.label}
+                      <span style={{ display: 'block', fontSize: 9, color: '#475569', marginTop: 2 }}>{uf.fleet_id}</span>
+                    </button>
+                    {userFleets.length > 1 && (
+                      <button onClick={() => handleRemoveFleet(uf.id)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 11, cursor: 'pointer', padding: '2px 4px' }} title="Remove">✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: report.compliance.allAgentsWithinLimits ? '#052e16' : '#1c0f0f', color: report.compliance.allAgentsWithinLimits ? '#22c55e' : '#ef4444', border: `1px solid ${report.compliance.allAgentsWithinLimits ? '#166534' : '#7f1d1d'}` }}>
             {report.compliance.allAgentsWithinLimits ? 'COMPLIANT' : 'VIOLATION'}
           </span>
@@ -427,21 +517,22 @@ export default function FleetDashboard() {
       </div>
 
       {/* Banner — 6 metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${activeTab === 'analytics' ? 8 : 6}, 1fr)`, gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
         {activeTab === 'live' ? (<>
           <BannerMetric label="TASKS COMPLETED" value={watchTasks ? String(watchTasks) : '—'} color="#f8fafc" />
           <BannerMetric label="TOKENS (W/ WHITEROOM)" value={watchTokens > 0 ? fmtK(watchTokens) : '—'} color="#86efac" />
-          <BannerMetric label="TOKENS (W/O WHITEROOM)" value={watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'} color="#fca5a5" />
-          <BannerMetric label="TOKENS SAVED" value={watchSaved > 0 ? fmtK(watchSaved) : '—'} color="#4ade80" />
-          <BannerMetric label="SAVINGS" value={watchSavingsPct > 0 ? watchSavingsPct.toFixed(1) + '%' : '—'} color="#4ade80" />
-          <BannerMetric label="HANDOVERS" value={watchHandovers ? String(watchHandovers) : '—'} color="#818cf8" />
+          <BannerMetric label="TOKENS (W/O WHITEROOM)" value={watchTokens > 0 && watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'} color="#fca5a5" />
+          <BannerMetric label="TOKENS SAVED" value={watchTokens > 0 && watchSaved > 0 ? fmtK(watchSaved) : '—'} color="#4ade80" />
+          <BannerMetric label="SAVINGS" value={watchTokens > 0 && watchSavingsPct > 0 ? watchSavingsPct.toFixed(1) + '%' : '—'} color="#4ade80" />
+          <BannerMetric label="HANDOVERS (ACTIVE)" value={watchHandoverAgents ? String(watchHandoverAgents) : '—'} color="#818cf8" />
         </>) : (<>
           <BannerMetric label="TASKS COMPLETED" value={rangeTotals.tasks ? String(rangeTotals.tasks) : '—'} color="#f8fafc" />
           <BannerMetric label="TOKENS (W/ WHITEROOM)" value={rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'} color="#86efac" />
           <BannerMetric label="TOKENS (W/O WHITEROOM)" value={rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'} color="#fca5a5" />
           <BannerMetric label="TOKENS SAVED" value={rangeTotals.saved > 0 ? fmtK(rangeTotals.saved) : '—'} color="#4ade80" />
           <BannerMetric label="SAVINGS %" value={rangeTotals.used + rangeTotals.saved > 0 ? pctOf(rangeTotals.used, rangeTotals.saved).toFixed(1) + '%' : '—'} color="#4ade80" />
-          <BannerMetric label="COST SAVED" value={rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(4)}` : '—'} color="#4ade80" />
+          <BannerMetric label="COST SAVED" value={rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(2)}` : '—'} color="#4ade80" />
+          <BannerMetric label="WORK TIME" value={rangeWorkMinutes > 0 ? (rangeWorkMinutes >= 60 ? `${(rangeWorkMinutes / 60).toFixed(1)}h` : `${Math.round(rangeWorkMinutes)}m`) : '—'} color="#f8fafc" />
           <BannerMetric label="HANDOVERS" value={rangeTotals.handovers ? String(rangeTotals.handovers) : '—'} color="#818cf8" />
         </>)}
       </div>
@@ -477,7 +568,7 @@ export default function FleetDashboard() {
                   <div style={{ marginBottom: 6 }}>
                     <div className="flex justify-between" style={{ fontSize: 10, color: '#475569', marginBottom: 2 }}>
                       <span>{status === 'resting' ? 'Rest progress' : 'Watch progress'}</span>
-                      <span style={{ color: '#94a3b8' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${agent.minutesRemaining || 0}min left`}</span>
+                      <span style={{ color: '#94a3b8' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${Math.round(((agent.minutesRemaining || 0) + Number.EPSILON) * 10) / 10}min left`}</span>
                     </div>
                     <div style={{ height: 4, borderRadius: 99, background: '#1e293b', overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 99, transition: 'all 1s', width: `${watchDisplay}%`, background: watchBarColor }} />
@@ -507,10 +598,24 @@ export default function FleetDashboard() {
                 </div>
               );
             })}
-            {agents.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#475569', padding: '40px 0', fontSize: 12 }}>No agents connected yet</div>}
+            {agents.length === 0 && (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px' }}>
+                <div style={{ fontSize: 40, marginBottom: 16 }}>⚓</div>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>No agents connected yet</p>
+                <p style={{ fontSize: 12, color: '#475569', maxWidth: 360, margin: '0 auto 20px' }}>
+                  Point your agent at WhiteRoom by adding one line to your .env file, then run it as usual. It will appear here automatically.
+                </p>
+                <a
+                  href="/dashboard"
+                  style={{ display: 'inline-block', fontSize: 12, fontWeight: 600, color: '#38E1FF', textDecoration: 'none', border: '1px solid rgba(56,225,255,.3)', borderRadius: 8, padding: '8px 20px' }}
+                >
+                  View setup instructions →
+                </a>
+              </div>
+            )}
           </div>
 
-          <div style={{ marginTop: 12, textAlign: 'center', fontSize: 10, color: '#475569' }}>Labor Score: {report.compliance.laborScore}</div>
+          {/* Labor Score removed — unexplained metric erodes trust */}
         </div>
 
         {/* Splitter */}
@@ -539,44 +644,87 @@ export default function FleetDashboard() {
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {auditEntries.length === 0 ? (
               <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', marginTop: 32 }}>No events yet</p>
-            ) : auditEntries.map((entry) => {
-              const isTask = entry.type === 'task_complete';
-              const details = Array.isArray(entry.details) ? entry.details : [];
-              const canExpand = details.length > 0;
-              const isOpen = entry.taskId ? expandedTasks.has(entry.taskId) : false;
-              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-              return (
-                <div key={entry.id} style={{ borderLeft: `3px solid ${feedAccent(entry.type)}`, padding: '6px 8px', background: '#0b1220', borderRadius: '0 6px 6px 0', marginBottom: 6 }}>
-                  <div style={{ cursor: canExpand ? 'pointer' : 'default' }} onClick={canExpand && entry.taskId ? () => toggleExpanded(entry.taskId!) : undefined}>
-                    <div style={{ fontSize: 12, color: '#f1f5f9', wordBreak: 'break-word' as const }}>
-                      {canExpand && <span style={{ color: '#38bdf8' }}>{isOpen ? '▾' : '▸'} </span>}
-                      {isTask ? (entry.taskName || 'task') : <span style={{ textTransform: 'uppercase' as const, letterSpacing: 1, color: '#94a3b8', fontSize: 11 }}>{entry.type}</span>}
-                      {canExpand && <span style={{ color: '#475569' }}> ({details.length})</span>}
+            ) : (() => {
+              const watchGroups: { key: string; agentId: string; watchNumber: number; entries: AuditEntry[]; totalTokens: number; taskCount: number; firstTime: string; lastTime: string }[] = [];
+              const groupMap = new Map<string, typeof watchGroups[0]>();
+              auditEntries.forEach(entry => {
+                const wn = entry.watchNumber ?? 0;
+                const aid = entry.agentId || 'unknown';
+                const gk = `${aid}:${wn}`;
+                let g = groupMap.get(gk);
+                if (!g) { g = { key: gk, agentId: aid, watchNumber: wn, entries: [], totalTokens: 0, taskCount: 0, firstTime: entry.timestamp, lastTime: entry.timestamp }; groupMap.set(gk, g); watchGroups.push(g); }
+                g.entries.push(entry);
+                if (entry.type === 'task_complete') { g.taskCount++; g.totalTokens += entry.tokensUsed ?? 0; }
+                g.lastTime = entry.timestamp;
+                if (entry.timestamp < g.firstTime) g.firstTime = entry.timestamp;
+              });
+              return watchGroups.map((g, gi) => {
+                const isWatchOpen = expandedWatches.size === 0 ? gi === 0 : expandedWatches.has(g.key);
+                const timeRange = new Date(g.firstTime).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) + ' – ' + new Date(g.lastTime).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+                return (
+                  <div key={g.key} style={{ marginBottom: 8 }}>
+                    <div onClick={() => toggleWatch(g.key)} style={{ cursor: 'pointer', padding: '8px 10px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: '#38bdf8', fontSize: 11, marginRight: 6 }}>{isWatchOpen ? '▾' : '▸'}</span>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: '#e2e8f0', letterSpacing: 0.5 }}>Watch #{g.watchNumber}</span>
+                        <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>{g.agentId}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10, color: '#94a3b8' }}>
+                        <span>{g.taskCount} task{g.taskCount !== 1 ? 's' : ''}</span>
+                        <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{fmtK(g.totalTokens)}</span>
+                        <span>{timeRange}</span>
+                      </div>
                     </div>
-                    <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
-                      {isTask ? (
-                        <Fragment>
-                          {((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K · watch #{entry.watchNumber}{' · '}
-                          <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{entry.remaining}min left</span>
-                        </Fragment>
-                      ) : (entry.agentId || '')}
-                      {' · '}{time}
-                    </div>
+                    {isWatchOpen && (
+                      <div style={{ marginLeft: 4, borderLeft: '2px solid #1e293b', paddingLeft: 8, marginTop: 4 }}>
+                        {g.entries.map(entry => {
+                          const isTask = entry.type === 'task_complete';
+                          const details = Array.isArray(entry.details) ? entry.details : [];
+                          const canExpand = details.length > 0;
+                          const isOpen = entry.taskId ? expandedTasks.has(entry.taskId) : false;
+                          const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
+                          return (
+                            <div key={entry.id} style={{ borderLeft: `3px solid ${feedAccent(entry.type)}`, padding: '5px 8px', background: '#0b1220', borderRadius: '0 6px 6px 0', marginBottom: 4 }}>
+                              <div style={{ cursor: canExpand ? 'pointer' : 'default' }} onClick={canExpand && entry.taskId ? () => toggleExpanded(entry.taskId!) : undefined}>
+                                <div style={{ fontSize: 12, color: '#f1f5f9', wordBreak: 'break-word' as const }}>
+                                  {canExpand && <span style={{ color: '#38bdf8' }}>{isOpen ? '▾' : '▸'} </span>}
+                                  {isTask ? (entry.taskName || 'task') : <span style={{ textTransform: 'uppercase' as const, letterSpacing: 1, color: '#94a3b8', fontSize: 11 }}>{entry.type}</span>}
+                                  {canExpand && <span style={{ color: '#475569' }}> ({details.length})</span>}
+                                </div>
+                                <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
+                                  {isTask ? (
+                                    <Fragment>
+                                      <span style={{ color: '#e2e8f0' }}>{((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K</span>
+                                      {(entry as Record<string, unknown>).inputTokens != null && (
+                                        <span style={{ color: '#475569' }}> ({((entry as Record<string, unknown>).inputTokens as number / 1000).toFixed(1)}K in · {((entry as Record<string, unknown>).outputTokens as number / 1000).toFixed(1)}K out)</span>
+                                      )}
+                                      {' · '}{entry.minutesSpent != null && <>{entry.minutesSpent}min · </>}
+                                      <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{Math.round(((entry.remaining ?? 0) + Number.EPSILON) * 10) / 10}min left</span>
+                                    </Fragment>
+                                  ) : (entry.agentId || '')}
+                                  {' · '}{time}
+                                </div>
+                              </div>
+                              {canExpand && isOpen && (
+                                <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #1e293b' }}>
+                                  <div style={{ fontSize: 10, color: '#475569', letterSpacing: '.05em', marginBottom: 3 }}>TOOL CALLS</div>
+                                  {details.map((d, i) => (
+                                    <div key={i} style={{ fontSize: 11, padding: '2px 0', wordBreak: 'break-word' as const }}>
+                                      <span style={{ color: '#7dd3fc', fontWeight: 600 }}>{d.name}</span>
+                                      {d.args && <span style={{ color: '#94a3b8' }}> &mdash; {d.args}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  {canExpand && isOpen && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #1e293b' }}>
-                      <div style={{ fontSize: 10, color: '#475569', letterSpacing: '.05em', marginBottom: 3 }}>TOOL CALLS</div>
-                      {details.map((d, i) => (
-                        <div key={i} style={{ fontSize: 11, padding: '2px 0', wordBreak: 'break-word' as const }}>
-                          <span style={{ color: '#7dd3fc', fontWeight: 600 }}>{d.name}</span>
-                          {d.args && <span style={{ color: '#94a3b8' }}> &mdash; {d.args}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
       </div>
@@ -606,32 +754,59 @@ export default function FleetDashboard() {
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#94a3b8' }}>DAILY TOKENS — W/ WHITEROOM vs W/O WHITEROOM</span>
             <span style={{ fontSize: 10, color: '#475569' }}>click a day to scope</span>
           </div>
-          <div className="flex items-end" style={{ height: 150, padding: '0 4px 4px', gap: 14 }}>
-            {dailyStats.length === 0 ? (
-              <div style={{ flex: 1, textAlign: 'center', color: '#475569', paddingTop: 50, fontSize: 11 }}>No data in range</div>
-            ) : dailyStats.map(([day, d]) => {
-              const withoutWR = d.used + d.saved;
-              const barMax = Math.max(...dailyStats.map(([, v]) => v.used + v.saved), 1);
-              const usedH = Math.max(2, (d.used / barMax) * 110);
-              const withoutH = Math.max(2, (withoutWR / barMax) * 110);
-              const pct = pctOf(d.used, d.saved);
-              const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-              const isSel = scopedDay === day;
-              return (
-                <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? '#0c4a6e' : undefined, outline: isSel ? '1px solid #0369a1' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
-                  <span style={{ fontSize: 9, color: '#4ade80', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
-                  <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
-                    <div style={{ width: 16, height: usedH, background: '#22c55e', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                    <div style={{ width: 16, height: withoutH, background: '#ef4444', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                  </div>
-                  <span style={{ fontSize: 9, color: '#475569', marginTop: 5 }}>{label}</span>
+          <div style={{ position: 'relative', height: 150, padding: '0 4px 4px', overflow: 'hidden' }}>
+            <div className="flex items-end" style={{ height: '100%', gap: 14 }}>
+              {dailyStats.length === 0 ? (
+                <div style={{ flex: 1, textAlign: 'center', paddingTop: 40, fontSize: 11 }}>
+                  <div style={{ color: '#475569' }}>No data {analyticsRange === 'today' ? 'today' : 'in range'}</div>
+                  {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                    <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 8, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                      Last activity: {new Date(allEntries[0].timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — view recent →
+                    </button>
+                  )}
                 </div>
+              ) : dailyStats.map(([day, d]) => {
+                const withoutWR = d.used + d.saved;
+                const barMax = Math.max(...dailyStats.map(([, v]) => v.used + v.saved), 1);
+                const usedH = Math.max(2, (d.used / barMax) * 110);
+                const withoutH = Math.max(2, (withoutWR / barMax) * 110);
+                const pct = pctOf(d.used, d.saved);
+                const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+                const isSel = scopedDay === day;
+                return (
+                  <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? '#0c4a6e' : undefined, outline: isSel ? '1px solid #0369a1' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
+                    <span style={{ fontSize: 9, color: '#4ade80', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
+                    <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
+                      <div style={{ width: 16, height: usedH, background: '#22c55e', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                      <div style={{ width: 16, height: withoutH, background: '#ef4444', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 9, color: '#475569', marginTop: 5 }}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {dailyStats.length > 1 && (() => {
+              const n = dailyStats.length;
+              const points = dailyStats.map(([, d], i) => {
+                const pct = pctOf(d.used, d.saved);
+                const xPct = ((i + 0.5) / n) * 100;
+                const yPct = 100 - pct;
+                return { xPct, yPct };
+              });
+              return (
+                <svg style={{ position: 'absolute', inset: '18px 4px 22px 4px', pointerEvents: 'none', overflow: 'visible' }}>
+                  <polyline fill="none" stroke="#facc15" strokeWidth="1.5" strokeLinejoin="round" points={points.map(p => `${p.xPct}%,${p.yPct}%`).join(' ')} />
+                  {points.map((p, i) => (
+                    <circle key={i} cx={`${p.xPct}%`} cy={`${p.yPct}%`} r="3" fill="#facc15" />
+                  ))}
+                </svg>
               );
-            })}
+            })()}
           </div>
           <div className="flex items-center gap-4" style={{ fontSize: 10, color: '#64748b', marginTop: 8, paddingLeft: 4 }}>
             <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#22c55e' }} /> TOKENS (W/ WHITEROOM)</span>
             <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#ef4444' }} /> TOKENS (W/O WHITEROOM)</span>
+            <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 2, borderRadius: 1, background: '#facc15' }} /> SAVINGS %</span>
           </div>
         </div>
 
@@ -651,7 +826,14 @@ export default function FleetDashboard() {
             </thead>
             <tbody>
               {agentBreakdown.length === 0 ? (
-                <tr><td colSpan={6} style={{ color: '#475569', padding: 14, textAlign: 'center', fontSize: 11 }}>No events in scope.</td></tr>
+                <tr><td colSpan={6} style={{ padding: 14, textAlign: 'center', fontSize: 11 }}>
+                  <div style={{ color: '#475569' }}>No events {analyticsRange === 'today' ? 'today' : 'in scope'}</div>
+                  {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                    <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 6, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                      View recent activity →
+                    </button>
+                  )}
+                </td></tr>
               ) : agentBreakdown.map(([agent, v]) => {
                 const pct = pctOf(v.used, v.saved);
                 return (
@@ -693,7 +875,14 @@ export default function FleetDashboard() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {dailyStats.length === 0 ? (
-              <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', padding: 20 }}>No events in range</p>
+              <div style={{ textAlign: 'center', padding: 20, fontSize: 11 }}>
+                <div style={{ color: '#475569' }}>No events {analyticsRange === 'today' ? 'today' : 'in range'}</div>
+                {allEntries.length > 0 && analyticsRange !== 'recent' && (
+                  <button onClick={() => setAnalyticsRange('recent')} style={{ marginTop: 8, background: 'none', border: '1px solid #334155', borderRadius: 4, color: '#38bdf8', fontSize: 10, padding: '4px 10px', cursor: 'pointer' }}>
+                    View recent activity →
+                  </button>
+                )}
+              </div>
             ) : [...dailyStats].reverse().map(([day, d]) => {
               const dayOpen = openDays.has(day);
               const dayLabel = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();

@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # GitHub Actions pinned by SHA in the workflows — keep them current
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/packages/sdk"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+    groups:
+      all:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/packages/cli"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+    groups:
+      all:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/apps/dashboard"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels: ["dependencies"]
+    groups:
+      production:
+        dependency-type: production
+      development:
+        dependency-type: development
