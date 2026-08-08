@@ -9,6 +9,7 @@ import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@white
 interface Props {
   name: string;
   email: string;
+  apiKey: string;
   fleetId: string;
   fleetToken: string | null;
   report: FleetReport | null;
@@ -89,57 +90,12 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
   );
 }
 
-const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
-
-async function linkFleet(input: string): Promise<{ success: boolean; fleetId?: string; fleetToken?: string; error?: string }> {
-  if (input.startsWith('wr_')) {
-    const res = await fetch(`${PROXY_URL}/api/white-room`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'token_login', fleet_token: input }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) return { success: false, error: data.error || 'Invalid fleet token.' };
-    return { success: true, fleetId: data.fleetId, fleetToken: input };
-  }
-  const res = await fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'find_fleet', api_key: input }),
-  });
-  const data = await res.json();
-  if (!res.ok) return { success: false, error: data.error || 'Failed to find fleet.' };
-  return { success: true, fleetId: data.fleetId, fleetToken: data.fleetToken };
-}
-
-export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: Props) {
-  const [linkInput, setLinkInput] = useState('');
-  const [linkStatus, setLinkStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [linkError, setLinkError] = useState('');
-  const [showAddFleet, setShowAddFleet] = useState(false);
+export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, isNew }: Props) {
+  const [showKey, setShowKey] = useState(isNew);
 
   useEffect(() => {
-    if (fleetToken) {
-      localStorage.setItem('wr_fleet_token', fleetToken);
-      if (isNew) addUserFleet(fleetToken, fleetId, 'My Fleet');
-    }
-  }, [fleetToken, fleetId, isNew]);
-
-  const handleLinkFleet = async () => {
-    const trimmed = linkInput.trim();
-    if (!trimmed) return;
-    setLinkStatus('loading');
-    setLinkError('');
-    const result = await linkFleet(trimmed);
-    if (result.success && result.fleetToken && result.fleetId) {
-      localStorage.setItem('wr_fleet_token', result.fleetToken);
-      await addUserFleet(result.fleetToken, result.fleetId, result.fleetId || 'My Fleet');
-      window.location.reload();
-    } else {
-      setLinkStatus('error');
-      setLinkError(result.error || 'Fleet not found. Make sure you\'ve run your agent at least once.');
-    }
-  };
+    if (fleetToken) localStorage.setItem('wr_fleet_token', fleetToken);
+  }, [fleetToken]);
 
   return (
     <div className="min-h-screen font-sans" style={{ background: '#070B14', color: '#EAF1FF' }}>
@@ -179,134 +135,22 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
           </div>
         )}
 
-        {/* 2-Step Getting Started */}
-        <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
-
-          <div className="space-y-8">
-            {/* Step 1: Add .env line */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Add one line to your .env file</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Your existing API key and code stay exactly the same. WhiteRoom intercepts every call automatically.</p>
-                </div>
-                <CodeBlock label="Anthropic (Claude)" code="ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
-                <CodeBlock label="OpenAI (GPT)" code="OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
-              </div>
-            </div>
-
-            {/* Step 2: Run your agent */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>2</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers and starts governance when your first API call flows through the proxy.</p>
-                </div>
-                <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
-              </div>
-            </div>
-
-            {/* Step 3: Link your fleet */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: report ? 'rgba(63,224,160,.15)' : 'rgba(56,225,255,.1)', color: report ? '#3FE0A0' : '#38E1FF' }}>{report ? '✓' : '3'}</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Link your fleet</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>
-                    {report ? 'Fleet linked successfully.' : 'Enter your API key to connect your agent\'s fleet to this dashboard.'} We never save or store your API key.
-                  </p>
-                </div>
-                {report && !showAddFleet && (
-                  <button
-                    onClick={() => setShowAddFleet(true)}
-                    className="text-xs font-mono transition-colors hover:text-[#38E1FF]"
-                    style={{ color: '#6B7C9E', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
-                  >
-                    + Add another fleet
-                  </button>
-                )}
-                {(!report || showAddFleet) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="password"
-                        value={linkInput}
-                        onChange={(e) => { setLinkInput(e.target.value); setLinkStatus('idle'); setLinkError(''); }}
-                        onKeyDown={(e) => e.key === 'Enter' && handleLinkFleet()}
-                        placeholder="API key or fleet token (wr_...)"
-                        className="flex-1 rounded-lg px-4 py-2.5 text-sm font-mono outline-none transition-all"
-                        style={{ background: '#070B14', border: '1px solid #1B2740', color: '#38E1FF' }}
-                      />
-                      <button
-                        onClick={handleLinkFleet}
-                        disabled={linkStatus === 'loading' || !linkInput.trim()}
-                        className="shrink-0 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
-                        style={{
-                          background: linkInput.trim() ? 'rgba(56,225,255,.12)' : 'transparent',
-                          border: '1px solid rgba(56,225,255,.4)',
-                          color: '#38E1FF',
-                          cursor: linkInput.trim() ? 'pointer' : 'default',
-                          opacity: linkInput.trim() ? 1 : 0.4,
-                        }}
-                      >
-                        {linkStatus === 'loading' ? 'Linking…' : 'Link'}
-                      </button>
-                    </div>
-                    <p className="text-sm font-medium mt-2" style={{ color: '#38E1FF' }}>🔒 Your key is used once to find your fleet and is never stored.</p>
-                    {linkError && (
-                      <p className="text-xs" style={{ color: '#FF6B6B' }}>{linkError}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Live Dashboard + Fleet Status */}
+        {/* Live Dashboard + Fleet Status row */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
-          {report ? (
           <a
             href="/fleet"
-            className="rounded-xl p-6 flex items-center gap-4 transition-all group relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, rgba(56,225,255,.12) 0%, rgba(56,225,255,.04) 100%)',
-              border: '1.5px solid rgba(56,225,255,.4)',
-              textDecoration: 'none',
-              boxShadow: '0 0 24px rgba(56,225,255,.08), inset 0 1px 0 rgba(56,225,255,.1)',
-            }}
+            className="rounded-xl p-6 flex items-center gap-4 transition-all group"
+            style={{ background: '#0A1020', border: '1px solid #1B2740', textDecoration: 'none' }}
           >
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(56,225,255,.15)' }}>
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(56,225,255,.1)' }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             </div>
             <div>
-              <p className="text-base font-semibold transition-colors" style={{ color: '#38E1FF' }}>Live Dashboard</p>
-              <p className="text-sm mt-0.5" style={{ color: '#A9B8D4' }}>Monitor your agents in real time</p>
+              <p className="text-base font-semibold group-hover:text-[#38E1FF] transition-colors" style={{ color: '#EAF1FF' }}>Live Dashboard</p>
+              <p className="text-sm mt-0.5" style={{ color: '#6B7C9E' }}>Monitor your agents in real time</p>
             </div>
-            <svg className="ml-auto shrink-0 group-hover:translate-x-1 transition-transform" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            <svg className="ml-auto shrink-0 opacity-40 group-hover:opacity-100 transition-opacity" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </a>
-          ) : (
-          <div
-            className="rounded-xl p-6 flex items-center gap-4 relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, rgba(107,124,158,.08) 0%, rgba(107,124,158,.03) 100%)',
-              border: '1.5px solid rgba(107,124,158,.25)',
-              opacity: 0.5,
-              cursor: 'not-allowed',
-            }}
-          >
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(107,124,158,.1)' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7C9E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            </div>
-            <div>
-              <p className="text-base font-semibold" style={{ color: '#6B7C9E' }}>Live Dashboard</p>
-              <p className="text-sm mt-0.5" style={{ color: '#4E607F' }}>Link your fleet first (step 3)</p>
-            </div>
-          </div>
-          )}
 
           {report && (
             <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
@@ -401,7 +245,7 @@ export function Onboarding({ name, email, fleetId, fleetToken, report, isNew }: 
             { label: 'Docs', href: 'https://whiteroom.tech/docs.html' },
             { label: 'SDK', href: 'https://whiteroom.tech/docs.html#sdk' },
             { label: 'OpenAPI', href: 'https://whiteroom.tech/openapi.yaml' },
-            { label: 'GitHub', href: 'https://github.com/whiteroom-tech/whiteroom-ai' },
+            { label: 'GitHub', href: 'https://github.com/rashadhaque/whiteroom-ai' },
           ].map(link => (
             <a
               key={link.label}
