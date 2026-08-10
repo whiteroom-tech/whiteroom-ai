@@ -12,6 +12,7 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   resting:      { border: '#0ea5e9', badgeBg: '#0c4a6e', badgeTx: '#38bdf8', badgeBd: '#0ea5e9', bar: '#0ea5e9' },
   idle:         { border: '#475569', badgeBg: '#1e293b', badgeTx: '#94a3b8', badgeBd: '#475569', bar: '#475569' },
   handover_out: { border: '#a78bfa', badgeBg: '#2e1065', badgeTx: '#c4b5fd', badgeBd: '#a78bfa', bar: '#a78bfa' },
+  stale:        { border: '#f97316', badgeBg: '#431407', badgeTx: '#fb923c', badgeBd: '#f97316', bar: '#f97316' },
 };
 
 function estimateCost(tokensSaved: number): number {
@@ -61,9 +62,9 @@ export default function FleetDashboard() {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
-  const fleetId = typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null;
-  const token = typeof window !== 'undefined' ? localStorage.getItem('wr_token') : null;
-  const fleetToken = typeof window !== 'undefined' ? localStorage.getItem('wr_fleet_token') : null;
+  const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
+  const [token, setToken] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_token') : null);
+  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet_token') : null);
 
   // The credential used to authenticate proxy calls once signed in: prefer the
   // stored login token, fall back to the fleet token. The client applies the
@@ -95,8 +96,12 @@ export default function FleetDashboard() {
         resolvedFleetId = data.fleetId ?? '';
       }
 
+      clearFleetCredentials();
       localStorage.setItem('wr_token', loginToken);
       localStorage.setItem('wr_fleet', resolvedFleetId);
+      setToken(loginToken);
+      setFleetId(resolvedFleetId);
+      setFleetToken(null);
       setAuthenticated(true);
       window.location.reload();
     } catch {
@@ -156,7 +161,7 @@ export default function FleetDashboard() {
       }));
       setHandoverDocs(docs);
     } catch { setError('Connection lost'); }
-  }, [fleetId]);
+  }, [fleetId, authKey]);
 
   const fetchAudit = useCallback(async () => {
     if (!fleetId) return;
@@ -167,7 +172,7 @@ export default function FleetDashboard() {
       setAuditTotal(data.total);
       if (data.filters?.agentIds) setAgentIds(data.filters.agentIds);
     } catch { /* ignore */ }
-  }, [fleetId, filterAgent, filterType, searchText]);
+  }, [fleetId, filterAgent, filterType, searchText, authKey]);
 
   const fetchAllEntries = useCallback(async () => {
     if (!fleetId) return;
@@ -176,7 +181,7 @@ export default function FleetDashboard() {
       if ('error' in data) return;
       setAllEntries(data.entries);
     } catch { /* ignore */ }
-  }, [fleetId]);
+  }, [fleetId, authKey]);
 
   useEffect(() => {
     if (!token && !fleetToken) { setAuthenticated(false); return; }
@@ -217,6 +222,9 @@ export default function FleetDashboard() {
 
   function handleLogout() {
     clearFleetCredentials();
+    setToken(null);
+    setFleetId(null);
+    setFleetToken(null);
     setAuthenticated(false);
   }
 
@@ -482,7 +490,7 @@ export default function FleetDashboard() {
         <div style={{ overflowY: 'auto', padding: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {agents.map((agent) => {
-              const status = agent.status || 'idle';
+              const status = agent.stale ? 'stale' : (agent.status || 'idle');
               const sc = SC[status] || SC.idle;
               const pct = parseFloat((agent.percentComplete || '0').toString().replace('%', '')) || 0;
               const h = agentHealth[agent.agentId] || { health: 100 };
