@@ -26,6 +26,7 @@ export interface AgentInfo {
   restMinutes?: number;
   handoverMinutes?: number;
   stale?: boolean;
+  disconnected?: boolean;
 }
 
 export interface HandoverDoc {

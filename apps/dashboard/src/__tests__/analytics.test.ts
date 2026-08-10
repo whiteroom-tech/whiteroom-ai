@@ -164,6 +164,18 @@ describe("fleet helpers — deriveDisplayStatus", () => {
   it("resting agent with 0 minutes remaining stays resting", () => {
     expect(deriveDisplayStatus("resting", false, 0)).toBe("resting");
   });
+
+  it("disconnected agent shows disconnected regardless of other flags", () => {
+    expect(deriveDisplayStatus("working", false, 5, true)).toBe("disconnected");
+  });
+
+  it("disconnected takes priority over stale", () => {
+    expect(deriveDisplayStatus("working", true, 5, true)).toBe("disconnected");
+  });
+
+  it("non-disconnected agent with stale still shows stale", () => {
+    expect(deriveDisplayStatus("working", true, 5, false)).toBe("stale");
+  });
 });
 
 describe("fleet helpers — resolveAuthKey", () => {

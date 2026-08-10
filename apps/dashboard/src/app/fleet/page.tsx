@@ -14,6 +14,7 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   idle:         { border: '#475569', badgeBg: '#1e293b', badgeTx: '#94a3b8', badgeBd: '#475569', bar: '#475569' },
   handover_out: { border: '#a78bfa', badgeBg: '#2e1065', badgeTx: '#c4b5fd', badgeBd: '#a78bfa', bar: '#a78bfa' },
   stale:        { border: '#f97316', badgeBg: '#431407', badgeTx: '#fb923c', badgeBd: '#f97316', bar: '#f97316' },
+  disconnected: { border: '#ef4444', badgeBg: '#450a0a', badgeTx: '#f87171', badgeBd: '#ef4444', bar: '#ef4444' },
 };
 
 function estimateCost(tokensSaved: number): number {
@@ -461,7 +462,7 @@ export default function FleetDashboard() {
         <div style={{ overflowY: 'auto', padding: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {agents.map((agent) => {
-              const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining);
+              const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
               const sc = SC[status] || SC.idle;
               const pct = parseFloat((agent.percentComplete || '0').toString().replace('%', '')) || 0;
               const h = agentHealth[agent.agentId] || { health: 100 };

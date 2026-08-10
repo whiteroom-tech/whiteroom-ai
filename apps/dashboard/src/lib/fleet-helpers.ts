@@ -2,7 +2,9 @@ export function deriveDisplayStatus(
   status: string,
   stale?: boolean,
   minutesRemaining?: number,
+  disconnected?: boolean,
 ): string {
+  if (disconnected) return 'disconnected';
   if (stale) return 'stale';
   if (status === 'working' && minutesRemaining !== undefined && minutesRemaining <= 0) return 'idle';
   return status || 'idle';
