@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { auditLog, checkWatch, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -60,23 +61,20 @@ export default function FleetDashboard() {
   const mainRef = useRef<HTMLDivElement>(null);
 
   const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
-  const [token, setToken] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_token') : null);
-  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet_token') : null);
+  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? (localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token')) : null);
 
-  // The credential used to authenticate proxy calls once signed in: prefer the
-  // stored login token, fall back to the fleet token. The client applies the
-  // x-api-key vs Bearer rule based on the key's prefix.
-  const authKey = token || fleetToken || undefined;
+  const authKey = resolveAuthKey(fleetToken);
 
   async function handleFleetLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoginError('');
     setLoginLoading(true);
     try {
-      const isApiKey = loginToken.startsWith('sk-');
+      const apiKeyLogin = isApiKey(loginToken);
       let resolvedFleetId: string;
+      let resolvedFleetToken: string;
 
-      if (isApiKey) {
+      if (apiKeyLogin) {
         const listData = await listFleets(loginToken);
         const fleets = listData.fleets ?? [];
         if (!fleets.length) {
@@ -84,6 +82,12 @@ export default function FleetDashboard() {
           return;
         }
         resolvedFleetId = fleets[0].fleetId;
+        const claim = await claimFleet(resolvedFleetId);
+        if (claim.error || !claim.fleetToken) {
+          setLoginError(claim.error || 'Could not retrieve fleet token.');
+          return;
+        }
+        resolvedFleetToken = claim.fleetToken;
       } else {
         const data = await tokenLogin(loginToken);
         if (data.error) {
@@ -91,14 +95,14 @@ export default function FleetDashboard() {
           return;
         }
         resolvedFleetId = data.fleetId ?? '';
+        resolvedFleetToken = loginToken;
       }
 
       clearFleetCredentials();
-      localStorage.setItem('wr_token', loginToken);
       localStorage.setItem('wr_fleet', resolvedFleetId);
-      setToken(loginToken);
+      localStorage.setItem('wr_fleet_token', resolvedFleetToken);
       setFleetId(resolvedFleetId);
-      setFleetToken(null);
+      setFleetToken(resolvedFleetToken);
       setAuthenticated(true);
       window.location.reload();
     } catch {
@@ -179,13 +183,12 @@ export default function FleetDashboard() {
   }, [fleetId, authKey]);
 
   useEffect(() => {
-    if (!token && !fleetToken) { setAuthenticated(false); return; }
+    if (!fleetToken) { setAuthenticated(false); return; }
 
     if (!fleetId && fleetToken) {
       tokenLogin(fleetToken).then(data => {
         if (data.fleetId) {
           localStorage.setItem('wr_fleet', data.fleetId);
-          localStorage.setItem('wr_token', fleetToken);
           window.location.reload();
         } else {
           resetSession('Fleet token invalid. Please enter your API key.');
@@ -198,7 +201,7 @@ export default function FleetDashboard() {
     fetchReport(); fetchAudit(); fetchAllEntries();
     const interval = setInterval(() => { fetchReport(); fetchAudit(); }, 10000);
     return () => clearInterval(interval);
-  }, [token, fleetToken, router, fetchReport, fetchAudit, fetchAllEntries]);
+  }, [fleetToken, router, fetchReport, fetchAudit, fetchAllEntries]);
 
   useEffect(() => { fetchAudit(); }, [filterAgent, filterType, fetchAudit]);
 
@@ -216,7 +219,6 @@ export default function FleetDashboard() {
 
   function resetSession(loginError?: string) {
     clearFleetCredentials();
-    setToken(null);
     setFleetId(null);
     setFleetToken(null);
     setAuthenticated(false);
@@ -459,7 +461,7 @@ export default function FleetDashboard() {
         <div style={{ overflowY: 'auto', padding: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {agents.map((agent) => {
-              const status = agent.stale ? 'stale' : (agent.status || 'idle');
+              const status = deriveDisplayStatus(agent.status, agent.stale);
               const sc = SC[status] || SC.idle;
               const pct = parseFloat((agent.percentComplete || '0').toString().replace('%', '')) || 0;
               const h = agentHealth[agent.agentId] || { health: 100 };

@@ -8,6 +8,7 @@
 import type {
   AgentInfo,
   AuditLogResponse,
+  ClaimFleetResult,
   FleetReport,
   GetHandoverResult,
   ListFleetsResult,
@@ -62,6 +63,10 @@ export async function registerAgent(
 
 export function tokenLogin(fleetToken: string): Promise<TokenLoginResult> {
   return apiCall<TokenLoginResult>({ action: 'token_login', fleet_token: fleetToken });
+}
+
+export function claimFleet(fleetId: string): Promise<ClaimFleetResult> {
+  return apiCall<ClaimFleetResult>({ action: 'claim_fleet', fleet_id: fleetId });
 }
 
 export function listFleets(apiKey: string): Promise<ListFleetsResult> {

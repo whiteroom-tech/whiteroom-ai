@@ -91,6 +91,13 @@ export interface GetHandoverResult {
   error?: string;
 }
 
+export interface ClaimFleetResult {
+  success?: boolean;
+  fleetId?: string;
+  fleetToken?: string;
+  error?: string;
+}
+
 export interface RebindResult {
   success: boolean;
   error?: string;

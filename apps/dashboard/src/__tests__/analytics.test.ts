@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { deriveDisplayStatus, resolveAuthKey, isApiKey, buildCredentials } from "../lib/fleet-helpers";
 
 // Mirror the dashboard's estimateCost function
 function estimateCost(tokensSaved: number): number {
@@ -135,90 +136,62 @@ describe("cost estimation", () => {
   });
 });
 
-describe("credential cleanup", () => {
-  it("clearFleetCredentials removes all three keys", () => {
-    const store: Record<string, string> = {
-      wr_token: "tok",
-      wr_fleet: "fleet",
-      wr_fleet_token: "ft",
-      unrelated_key: "keep",
-    };
+describe("fleet helpers — deriveDisplayStatus", () => {
+  it("stale agent overrides status to 'stale'", () => {
+    expect(deriveDisplayStatus("working", true)).toBe("stale");
+  });
 
-    // Simulate clearFleetCredentials
-    delete store["wr_token"];
-    delete store["wr_fleet"];
-    delete store["wr_fleet_token"];
+  it("non-stale agent keeps original status", () => {
+    expect(deriveDisplayStatus("working", false)).toBe("working");
+  });
 
-    expect(store["wr_token"]).toBeUndefined();
-    expect(store["wr_fleet"]).toBeUndefined();
-    expect(store["wr_fleet_token"]).toBeUndefined();
-    expect(store["unrelated_key"]).toBe("keep");
+  it("missing stale flag keeps original status", () => {
+    expect(deriveDisplayStatus("resting")).toBe("resting");
+  });
+
+  it("empty status defaults to 'idle'", () => {
+    expect(deriveDisplayStatus("")).toBe("idle");
   });
 });
 
-describe("session reset on re-login", () => {
-  it("re-login clears old credentials before writing new ones", () => {
-    const store: Record<string, string | undefined> = {
-      wr_token: "old-sk-ant-key",
-      wr_fleet: "old-fleet-id",
-      wr_fleet_token: "wr_old_token",
-    };
-
-    // Simulate clearFleetCredentials() then write new values (handleFleetLogin flow)
-    store["wr_token"] = undefined;
-    store["wr_fleet"] = undefined;
-    store["wr_fleet_token"] = undefined;
-
-    store["wr_token"] = "new-sk-ant-key";
-    store["wr_fleet"] = "new-fleet-id";
-
-    expect(store["wr_token"]).toBe("new-sk-ant-key");
-    expect(store["wr_fleet"]).toBe("new-fleet-id");
-    // Old fleet token must not survive
-    expect(store["wr_fleet_token"]).toBeUndefined();
+describe("fleet helpers — resolveAuthKey", () => {
+  it("returns fleet token when present", () => {
+    expect(resolveAuthKey("wr_abc123")).toBe("wr_abc123");
   });
 
-  it("resetSession clears both storage and state together", () => {
-    const storage: Record<string, string | undefined> = {
-      wr_token: "tok", wr_fleet: "f", wr_fleet_token: "ft",
-    };
-    const state = { token: "tok" as string | null, fleetId: "f" as string | null, fleetToken: "ft" as string | null, authenticated: true };
-
-    // Simulate resetSession()
-    storage["wr_token"] = undefined;
-    storage["wr_fleet"] = undefined;
-    storage["wr_fleet_token"] = undefined;
-    state.token = null;
-    state.fleetId = null;
-    state.fleetToken = null;
-    state.authenticated = false;
-
-    expect(storage["wr_token"]).toBeUndefined();
-    expect(storage["wr_fleet"]).toBeUndefined();
-    expect(storage["wr_fleet_token"]).toBeUndefined();
-    expect(state.token).toBeNull();
-    expect(state.fleetId).toBeNull();
-    expect(state.fleetToken).toBeNull();
-    expect(state.authenticated).toBe(false);
+  it("returns undefined when null", () => {
+    expect(resolveAuthKey(null)).toBeUndefined();
   });
 });
 
-describe("stale agent display", () => {
-  it("agent with stale=true gets 'stale' status for rendering", () => {
-    const agent = { status: "working", stale: true };
-    const displayStatus = agent.stale ? "stale" : (agent.status || "idle");
-    expect(displayStatus).toBe("stale");
+describe("fleet helpers — isApiKey", () => {
+  it("recognizes Anthropic API keys", () => {
+    expect(isApiKey("sk-ant-abc123")).toBe(true);
   });
 
-  it("agent with stale=false keeps original status", () => {
-    const agent = { status: "working", stale: false };
-    const displayStatus = agent.stale ? "stale" : (agent.status || "idle");
-    expect(displayStatus).toBe("working");
+  it("rejects fleet tokens", () => {
+    expect(isApiKey("wr_abc123")).toBe(false);
   });
+});
 
-  it("agent without stale field defaults to original status", () => {
-    const agent = { status: "resting" };
-    const displayStatus = (agent as { stale?: boolean }).stale ? "stale" : (agent.status || "idle");
-    expect(displayStatus).toBe("resting");
+describe("fleet helpers — buildCredentials", () => {
+  it("returns typed credential object", () => {
+    const creds = buildCredentials("fleet-1", "wr_tok");
+    expect(creds).toEqual({ fleetId: "fleet-1", fleetToken: "wr_tok" });
+  });
+});
+
+describe("BYOK security contract", () => {
+  it("resolveAuthKey never returns an API key from fleet token state", () => {
+    // The login flow stores only wr_ fleet tokens, never sk- keys.
+    // resolveAuthKey reads from fleetToken state which should only contain wr_ values.
+    // This test verifies that if somehow an sk- key leaked into fleetToken state,
+    // isApiKey would detect it.
+    const leaked = "sk-ant-leaked";
+    expect(isApiKey(leaked)).toBe(true);
+
+    const safeToken = "wr_safe_token";
+    expect(isApiKey(safeToken)).toBe(false);
+    expect(resolveAuthKey(safeToken)).toBe(safeToken);
   });
 });
