@@ -1,5 +1,11 @@
-export function deriveDisplayStatus(status: string, stale?: boolean): string {
-  return stale ? 'stale' : (status || 'idle');
+export function deriveDisplayStatus(
+  status: string,
+  stale?: boolean,
+  minutesRemaining?: number,
+): string {
+  if (stale) return 'stale';
+  if (status === 'working' && minutesRemaining !== undefined && minutesRemaining <= 0) return 'idle';
+  return status || 'idle';
 }
 
 export function resolveAuthKey(fleetToken: string | null): string | undefined {

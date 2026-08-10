@@ -142,7 +142,7 @@ describe("fleet helpers — deriveDisplayStatus", () => {
   });
 
   it("non-stale agent keeps original status", () => {
-    expect(deriveDisplayStatus("working", false)).toBe("working");
+    expect(deriveDisplayStatus("working", false, 5)).toBe("working");
   });
 
   it("missing stale flag keeps original status", () => {
@@ -151,6 +151,18 @@ describe("fleet helpers — deriveDisplayStatus", () => {
 
   it("empty status defaults to 'idle'", () => {
     expect(deriveDisplayStatus("")).toBe("idle");
+  });
+
+  it("working agent with 0 minutes remaining shows idle", () => {
+    expect(deriveDisplayStatus("working", false, 0)).toBe("idle");
+  });
+
+  it("working agent with negative minutes remaining shows idle", () => {
+    expect(deriveDisplayStatus("working", false, -2)).toBe("idle");
+  });
+
+  it("resting agent with 0 minutes remaining stays resting", () => {
+    expect(deriveDisplayStatus("resting", false, 0)).toBe("resting");
   });
 });
 

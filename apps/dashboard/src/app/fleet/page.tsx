@@ -461,7 +461,7 @@ export default function FleetDashboard() {
         <div style={{ overflowY: 'auto', padding: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {agents.map((agent) => {
-              const status = deriveDisplayStatus(agent.status, agent.stale);
+              const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining);
               const sc = SC[status] || SC.idle;
               const pct = parseFloat((agent.percentComplete || '0').toString().replace('%', '')) || 0;
               const h = agentHealth[agent.agentId] || { health: 100 };
