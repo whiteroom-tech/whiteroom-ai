@@ -25,6 +25,7 @@ export interface AgentInfo {
   watchMinutes?: number;
   restMinutes?: number;
   handoverMinutes?: number;
+  stale?: boolean;
 }
 
 export interface HandoverDoc {
@@ -87,6 +88,13 @@ export interface ListFleetsResult {
 
 export interface GetHandoverResult {
   handoverDoc?: HandoverDoc;
+  error?: string;
+}
+
+export interface ClaimFleetResult {
+  success?: boolean;
+  fleetId?: string;
+  fleetToken?: string;
   error?: string;
 }
 

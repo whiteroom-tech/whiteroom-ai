@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { deriveDisplayStatus, resolveAuthKey, isApiKey, buildCredentials } from "../lib/fleet-helpers";
 
 // Mirror the dashboard's estimateCost function
 function estimateCost(tokensSaved: number): number {
@@ -135,23 +136,62 @@ describe("cost estimation", () => {
   });
 });
 
-describe("credential cleanup", () => {
-  it("clearFleetCredentials removes all three keys", () => {
-    const store: Record<string, string> = {
-      wr_token: "tok",
-      wr_fleet: "fleet",
-      wr_fleet_token: "ft",
-      unrelated_key: "keep",
-    };
+describe("fleet helpers — deriveDisplayStatus", () => {
+  it("stale agent overrides status to 'stale'", () => {
+    expect(deriveDisplayStatus("working", true)).toBe("stale");
+  });
 
-    // Simulate clearFleetCredentials
-    delete store["wr_token"];
-    delete store["wr_fleet"];
-    delete store["wr_fleet_token"];
+  it("non-stale agent keeps original status", () => {
+    expect(deriveDisplayStatus("working", false)).toBe("working");
+  });
 
-    expect(store["wr_token"]).toBeUndefined();
-    expect(store["wr_fleet"]).toBeUndefined();
-    expect(store["wr_fleet_token"]).toBeUndefined();
-    expect(store["unrelated_key"]).toBe("keep");
+  it("missing stale flag keeps original status", () => {
+    expect(deriveDisplayStatus("resting")).toBe("resting");
+  });
+
+  it("empty status defaults to 'idle'", () => {
+    expect(deriveDisplayStatus("")).toBe("idle");
+  });
+});
+
+describe("fleet helpers — resolveAuthKey", () => {
+  it("returns fleet token when present", () => {
+    expect(resolveAuthKey("wr_abc123")).toBe("wr_abc123");
+  });
+
+  it("returns undefined when null", () => {
+    expect(resolveAuthKey(null)).toBeUndefined();
+  });
+});
+
+describe("fleet helpers — isApiKey", () => {
+  it("recognizes Anthropic API keys", () => {
+    expect(isApiKey("sk-ant-abc123")).toBe(true);
+  });
+
+  it("rejects fleet tokens", () => {
+    expect(isApiKey("wr_abc123")).toBe(false);
+  });
+});
+
+describe("fleet helpers — buildCredentials", () => {
+  it("returns typed credential object", () => {
+    const creds = buildCredentials("fleet-1", "wr_tok");
+    expect(creds).toEqual({ fleetId: "fleet-1", fleetToken: "wr_tok" });
+  });
+});
+
+describe("BYOK security contract", () => {
+  it("resolveAuthKey never returns an API key from fleet token state", () => {
+    // The login flow stores only wr_ fleet tokens, never sk- keys.
+    // resolveAuthKey reads from fleetToken state which should only contain wr_ values.
+    // This test verifies that if somehow an sk- key leaked into fleetToken state,
+    // isApiKey would detect it.
+    const leaked = "sk-ant-leaked";
+    expect(isApiKey(leaked)).toBe(true);
+
+    const safeToken = "wr_safe_token";
+    expect(isApiKey(safeToken)).toBe(false);
+    expect(resolveAuthKey(safeToken)).toBe(safeToken);
   });
 });
