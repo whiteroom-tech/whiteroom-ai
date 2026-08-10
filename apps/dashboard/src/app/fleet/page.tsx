@@ -12,6 +12,7 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   resting:      { border: '#0ea5e9', badgeBg: '#0c4a6e', badgeTx: '#38bdf8', badgeBd: '#0ea5e9', bar: '#0ea5e9' },
   idle:         { border: '#475569', badgeBg: '#1e293b', badgeTx: '#94a3b8', badgeBd: '#475569', bar: '#475569' },
   handover_out: { border: '#a78bfa', badgeBg: '#2e1065', badgeTx: '#c4b5fd', badgeBd: '#a78bfa', bar: '#a78bfa' },
+  stale:        { border: '#f97316', badgeBg: '#431407', badgeTx: '#fb923c', badgeBd: '#f97316', bar: '#f97316' },
 };
 
 function estimateCost(tokensSaved: number): number {
@@ -58,9 +59,9 @@ export default function FleetDashboard() {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
-  const fleetId = typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null;
-  const token = typeof window !== 'undefined' ? localStorage.getItem('wr_token') : null;
-  const fleetToken = typeof window !== 'undefined' ? localStorage.getItem('wr_fleet_token') : null;
+  const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
+  const [token, setToken] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_token') : null);
+  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet_token') : null);
 
   // The credential used to authenticate proxy calls once signed in: prefer the
   // stored login token, fall back to the fleet token. The client applies the
@@ -92,8 +93,12 @@ export default function FleetDashboard() {
         resolvedFleetId = data.fleetId ?? '';
       }
 
+      clearFleetCredentials();
       localStorage.setItem('wr_token', loginToken);
       localStorage.setItem('wr_fleet', resolvedFleetId);
+      setToken(loginToken);
+      setFleetId(resolvedFleetId);
+      setFleetToken(null);
       setAuthenticated(true);
       window.location.reload();
     } catch {
@@ -109,9 +114,7 @@ export default function FleetDashboard() {
       const data = await fleetReport(fleetId, authKey);
       if (data.error) {
         if (data.error.toLowerCase().includes('unauthorized') || data.error.toLowerCase().includes('invalid')) {
-          clearFleetCredentials();
-          setAuthenticated(false);
-          setLoginError(data.error);
+          resetSession(data.error);
         } else {
           setError(data.error);
         }
@@ -153,7 +156,7 @@ export default function FleetDashboard() {
       }));
       setHandoverDocs(docs);
     } catch { setError('Connection lost'); }
-  }, [fleetId]);
+  }, [fleetId, authKey]);
 
   const fetchAudit = useCallback(async () => {
     if (!fleetId) return;
@@ -164,7 +167,7 @@ export default function FleetDashboard() {
       setAuditTotal(data.total);
       if (data.filters?.agentIds) setAgentIds(data.filters.agentIds);
     } catch { /* ignore */ }
-  }, [fleetId, filterAgent, filterType, searchText]);
+  }, [fleetId, filterAgent, filterType, searchText, authKey]);
 
   const fetchAllEntries = useCallback(async () => {
     if (!fleetId) return;
@@ -173,7 +176,7 @@ export default function FleetDashboard() {
       if ('error' in data) return;
       setAllEntries(data.entries);
     } catch { /* ignore */ }
-  }, [fleetId]);
+  }, [fleetId, authKey]);
 
   useEffect(() => {
     if (!token && !fleetToken) { setAuthenticated(false); return; }
@@ -185,10 +188,9 @@ export default function FleetDashboard() {
           localStorage.setItem('wr_token', fleetToken);
           window.location.reload();
         } else {
-          setAuthenticated(false);
-          setLoginError('Fleet token invalid. Please enter your API key.');
+          resetSession('Fleet token invalid. Please enter your API key.');
         }
-      }).catch(() => { setAuthenticated(false); });
+      }).catch(() => { resetSession(); });
       return;
     }
 
@@ -212,9 +214,13 @@ export default function FleetDashboard() {
     setExpandedTasks((prev: Set<string>) => { const next = new Set(prev); if (next.has(taskId)) next.delete(taskId); else next.add(taskId); return next; });
   }
 
-  function handleLogout() {
+  function resetSession(loginError?: string) {
     clearFleetCredentials();
+    setToken(null);
+    setFleetId(null);
+    setFleetToken(null);
     setAuthenticated(false);
+    if (loginError) setLoginError(loginError);
   }
 
   function handleSplitterDown(e: React.MouseEvent) {
@@ -400,7 +406,7 @@ export default function FleetDashboard() {
           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: report.compliance.allAgentsWithinLimits ? '#052e16' : '#1c0f0f', color: report.compliance.allAgentsWithinLimits ? '#22c55e' : '#ef4444', border: `1px solid ${report.compliance.allAgentsWithinLimits ? '#166534' : '#7f1d1d'}` }}>
             {report.compliance.allAgentsWithinLimits ? 'COMPLIANT' : 'VIOLATION'}
           </span>
-          <button onClick={handleLogout} style={{ fontSize: 11, color: '#64748b', border: '1px solid #1e293b', borderRadius: 4, padding: '4px 12px', background: 'transparent', cursor: 'pointer' }}>Sign Out</button>
+          <button onClick={() => resetSession()} style={{ fontSize: 11, color: '#64748b', border: '1px solid #1e293b', borderRadius: 4, padding: '4px 12px', background: 'transparent', cursor: 'pointer' }}>Sign Out</button>
         </div>
       </header>
 
@@ -453,7 +459,7 @@ export default function FleetDashboard() {
         <div style={{ overflowY: 'auto', padding: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             {agents.map((agent) => {
-              const status = agent.status || 'idle';
+              const status = agent.stale ? 'stale' : (agent.status || 'idle');
               const sc = SC[status] || SC.idle;
               const pct = parseFloat((agent.percentComplete || '0').toString().replace('%', '')) || 0;
               const h = agentHealth[agent.agentId] || { health: 100 };

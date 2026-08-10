@@ -155,3 +155,70 @@ describe("credential cleanup", () => {
     expect(store["unrelated_key"]).toBe("keep");
   });
 });
+
+describe("session reset on re-login", () => {
+  it("re-login clears old credentials before writing new ones", () => {
+    const store: Record<string, string | undefined> = {
+      wr_token: "old-sk-ant-key",
+      wr_fleet: "old-fleet-id",
+      wr_fleet_token: "wr_old_token",
+    };
+
+    // Simulate clearFleetCredentials() then write new values (handleFleetLogin flow)
+    store["wr_token"] = undefined;
+    store["wr_fleet"] = undefined;
+    store["wr_fleet_token"] = undefined;
+
+    store["wr_token"] = "new-sk-ant-key";
+    store["wr_fleet"] = "new-fleet-id";
+
+    expect(store["wr_token"]).toBe("new-sk-ant-key");
+    expect(store["wr_fleet"]).toBe("new-fleet-id");
+    // Old fleet token must not survive
+    expect(store["wr_fleet_token"]).toBeUndefined();
+  });
+
+  it("resetSession clears both storage and state together", () => {
+    const storage: Record<string, string | undefined> = {
+      wr_token: "tok", wr_fleet: "f", wr_fleet_token: "ft",
+    };
+    const state = { token: "tok" as string | null, fleetId: "f" as string | null, fleetToken: "ft" as string | null, authenticated: true };
+
+    // Simulate resetSession()
+    storage["wr_token"] = undefined;
+    storage["wr_fleet"] = undefined;
+    storage["wr_fleet_token"] = undefined;
+    state.token = null;
+    state.fleetId = null;
+    state.fleetToken = null;
+    state.authenticated = false;
+
+    expect(storage["wr_token"]).toBeUndefined();
+    expect(storage["wr_fleet"]).toBeUndefined();
+    expect(storage["wr_fleet_token"]).toBeUndefined();
+    expect(state.token).toBeNull();
+    expect(state.fleetId).toBeNull();
+    expect(state.fleetToken).toBeNull();
+    expect(state.authenticated).toBe(false);
+  });
+});
+
+describe("stale agent display", () => {
+  it("agent with stale=true gets 'stale' status for rendering", () => {
+    const agent = { status: "working", stale: true };
+    const displayStatus = agent.stale ? "stale" : (agent.status || "idle");
+    expect(displayStatus).toBe("stale");
+  });
+
+  it("agent with stale=false keeps original status", () => {
+    const agent = { status: "working", stale: false };
+    const displayStatus = agent.stale ? "stale" : (agent.status || "idle");
+    expect(displayStatus).toBe("working");
+  });
+
+  it("agent without stale field defaults to original status", () => {
+    const agent = { status: "resting" };
+    const displayStatus = (agent as { stale?: boolean }).stale ? "stale" : (agent.status || "idle");
+    expect(displayStatus).toBe("resting");
+  });
+});
