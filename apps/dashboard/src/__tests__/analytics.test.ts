@@ -1,35 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { deriveDisplayStatus, resolveAuthKey, isApiKey, buildCredentials } from "../lib/fleet-helpers";
-
-// Mirror the dashboard's estimateCost function
-function estimateCost(tokensSaved: number): number {
-  return tokensSaved * 0.8 * 0.0000008 + tokensSaved * 0.2 * 0.000004;
-}
-
-// Mirror the dashboard's date range cutoff logic
-function getCutoff(range: string, nowMs: number): string {
-  const DAY_MS = 86400000;
-  const todayKey = new Date(nowMs).toISOString().slice(0, 10);
-  return range === "today"
-    ? todayKey
-    : range === "7d"
-      ? new Date(nowMs - 6 * DAY_MS).toISOString().slice(0, 10)
-      : range === "30d"
-        ? new Date(nowMs - 29 * DAY_MS).toISOString().slice(0, 10)
-        : "1970-01-01";
-}
-
-// Mirror the dashboard's handover savings extraction
-function handoverSaved(e: { contextTokens?: number; handoverDocTokens?: number }): number {
-  const ctx = e.contextTokens || 0;
-  const doc = e.handoverDocTokens || 300;
-  return Math.max(0, ctx - doc);
-}
-
-// Mirror the dashboard's composite watch key
-function watchKey(day: string, agentId: string, watchNumber: number): string {
-  return `${day}:${agentId}:${watchNumber}`;
-}
+// Import the REAL analytics math the dashboard uses, so these tests guard the
+// actual implementation instead of a hand-mirrored copy that can silently drift.
+import { estimateCost, getCutoff, handoverSaved, watchKey } from "../lib/analytics-metrics";
 
 describe("date range boundaries", () => {
   it("'today' includes only today (UTC)", () => {
