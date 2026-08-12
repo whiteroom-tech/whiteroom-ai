@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
+import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKey } from '@/lib/analytics-metrics';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -16,10 +17,6 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   stale:        { border: '#f97316', badgeBg: '#431407', badgeTx: '#fb923c', badgeBd: '#f97316', bar: '#f97316' },
   disconnected: { border: '#ef4444', badgeBg: '#450a0a', badgeTx: '#f87171', badgeBd: '#ef4444', bar: '#ef4444' },
 };
-
-function estimateCost(tokensSaved: number): number {
-  return tokensSaved * 0.8 * 0.0000008 + tokensSaved * 0.2 * 0.000004;
-}
 
 function feedAccent(type: string): string {
   if (type === 'task_complete') return '#22c55e';
@@ -339,21 +336,14 @@ export default function FleetDashboard() {
   const watchSavingsPct = pctOf(watchTokens, watchSaved);
 
   // --- Analytics computation (UTC throughout) ---
-  const nowMs = Date.now();
-  const todayKey = new Date(nowMs).toISOString().slice(0, 10);
-  const DAY_MS = 86400000;
-  const cutoff = analyticsRange === 'today' ? todayKey
-    : analyticsRange === '7d' ? new Date(nowMs - 6 * DAY_MS).toISOString().slice(0, 10)
-    : analyticsRange === '30d' ? new Date(nowMs - 29 * DAY_MS).toISOString().slice(0, 10)
-    : '1970-01-01';
+  const cutoff = getCutoff(analyticsRange, Date.now());
 
   const rangedEntries = allEntries.filter(e => e.timestamp.slice(0, 10) >= cutoff);
 
-  const handoverSaved = (e: AuditEntry) => {
-    const ctx = (e as Record<string, unknown>).contextTokens as number || 0;
-    const doc = (e as Record<string, unknown>).handoverDocTokens as number || 300;
-    return Math.max(0, ctx - doc);
-  };
+  const handoverSaved = (e: AuditEntry) => computeHandoverSaved({
+    contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
+    handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
+  });
   const handoverAgent = (e: AuditEntry) => (e as Record<string, unknown>).from as string || e.agentId || '';
 
   const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[] }>();
@@ -620,9 +610,8 @@ export default function FleetDashboard() {
               <div style={{ flex: 1, textAlign: 'center', color: '#475569', paddingTop: 50, fontSize: 11 }}>No data in range</div>
             ) : dailyStats.map(([day, d]) => {
               const withoutWR = d.used + d.saved;
-              const barMax = Math.max(...dailyStats.map(([, v]) => v.used + v.saved), 1);
-              const usedH = Math.max(2, (d.used / barMax) * 110);
-              const withoutH = Math.max(2, (withoutWR / barMax) * 110);
+              const usedH = Math.max(2, (d.used / chartMax) * 110);
+              const withoutH = Math.max(2, (withoutWR / chartMax) * 110);
               const pct = pctOf(d.used, d.saved);
               const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
               const isSel = scopedDay === day;
@@ -711,7 +700,7 @@ export default function FleetDashboard() {
               d.entries.forEach(e => {
                 const wn = e.watchNumber || 0;
                 const aid = e.agentId || (e as Record<string, unknown>).from as string || '';
-                const key = `${day}:${aid}:${wn}`;
+                const key = watchKey(day, aid, wn);
                 const group = watchMap.get(key) || { wn, aid, entries: [] };
                 group.entries.push(e);
                 watchMap.set(key, group);
