@@ -48,24 +48,16 @@ jobs:
         run: npm run lint --if-present
       - name: Build
         working-directory: ${{ matrix.dir }}
-        # Non-secret placeholder public env so the Next.js dashboard build resolves
-        # NEXT_PUBLIC_* at build time. These are inert defaults, never real credentials.
+        # Non-secret placeholder env so the Next.js dashboard build resolves at
+        # build time. These are inert defaults, never real credentials — the
+        # DB client is constructed lazily, so no DB_* vars are needed here.
         env:
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          AUTH_GOOGLE_ID: placeholder.apps.googleusercontent.com
+          AUTH_GOOGLE_SECRET: placeholder-secret
+          AUTH_SECRET: placeholder-secret
           NEXT_PUBLIC_PROXY_URL: http://localhost:8080
           NEXT_TELEMETRY_DISABLED: "1"
         run: npm run build --if-present
       - name: Test
         working-directory: ${{ matrix.dir }}
         run: npm test --if-present
-
-  deploy-dashboard:
-    name: Deploy dashboard to Netlify
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Trigger Netlify build
-        run: curl -s -X POST "${{ secrets.NETLIFY_BUILD_HOOK }}"

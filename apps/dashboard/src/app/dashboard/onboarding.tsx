@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { getUserProvisioning, setByok } from '@/lib/users';
 import { rebindFleetKey } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
 import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@whiteroom/ui';
@@ -27,8 +27,8 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    createClient().auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.user_metadata?.whiteroom_byok) setConnected(true);
+    getUserProvisioning().then((provisioning) => {
+      if (provisioning.byok) setConnected(true);
     });
   }, []);
 
@@ -41,7 +41,7 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
       const result = await rebindFleetKey(fleetId, key, apiKey);
       if (!result.success) { setStatus('error'); setMsg(result.error || 'Rebind failed.'); return; }
       // Persist only a flag — never the raw provider key — in the account.
-      await createClient().auth.updateUser({ data: { whiteroom_byok: true } });
+      await setByok(true);
       setConnected(true); setValue('');
     } catch (e) {
       setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');

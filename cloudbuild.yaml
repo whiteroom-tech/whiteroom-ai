@@ -1,0 +1,14 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'apps/dashboard/Dockerfile'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard:latest'
+      - '.'
+images:
+  - 'us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard:latest'
+options:
+  machineType: 'E2_HIGHCPU_8'
+timeout: '1800s'

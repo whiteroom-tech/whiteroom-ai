@@ -1,4 +1,7 @@
-import { createClient } from '@/lib/supabase/client';
+'use server';
+
+import { auth } from '@/auth';
+import { db } from '@/lib/db';
 
 export interface UserFleet {
   id: string;
@@ -8,15 +11,23 @@ export interface UserFleet {
   created_at: string;
 }
 
-const supabase = createClient();
+async function requireUserId(): Promise<string> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Not authenticated');
+  return session.user.id;
+}
 
 export async function getUserFleets(): Promise<UserFleet[]> {
-  const { data, error } = await supabase
-    .from('user_fleets')
-    .select('*')
-    .order('created_at', { ascending: true });
-  if (error) return [];
-  return data ?? [];
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return [];
+
+  const { rows } = await db().query(
+    `SELECT id, fleet_token, fleet_id, label, created_at::text
+     FROM user_fleets WHERE user_id = $1 ORDER BY created_at ASC`,
+    [userId],
+  );
+  return rows;
 }
 
 export async function addUserFleet(
@@ -24,27 +35,32 @@ export async function addUserFleet(
   fleetId: string | null,
   label: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Not authenticated' };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, error: 'Not authenticated' };
 
-  const { error } = await supabase.from('user_fleets').insert({
-    user_id: user.id,
-    fleet_token: fleetToken,
-    fleet_id: fleetId,
-    label,
-  });
-
-  if (error) {
-    if (error.code === '23505') return { ok: false, error: 'Fleet already linked' };
-    return { ok: false, error: error.message };
+  try {
+    await db().query(
+      `INSERT INTO user_fleets (user_id, fleet_token, fleet_id, label) VALUES ($1, $2, $3, $4)`,
+      [userId, fleetToken, fleetId, label],
+    );
+    return { ok: true };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === '23505') return { ok: false, error: 'Fleet already linked' };
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to add fleet' };
   }
-  return { ok: true };
 }
 
 export async function removeUserFleet(id: string): Promise<void> {
-  await supabase.from('user_fleets').delete().eq('id', id);
+  const userId = await requireUserId();
+  await db().query(`DELETE FROM user_fleets WHERE id = $1 AND user_id = $2`, [id, userId]);
 }
 
 export async function updateFleetLabel(id: string, label: string): Promise<void> {
-  await supabase.from('user_fleets').update({ label }).eq('id', id);
+  const userId = await requireUserId();
+  await db().query(
+    `UPDATE user_fleets SET label = $3 WHERE id = $1 AND user_id = $2`,
+    [id, userId, label],
+  );
 }

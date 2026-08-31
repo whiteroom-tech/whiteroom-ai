@@ -1,16 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { signOut } from 'next-auth/react';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 
 export default function SignOut() {
   useEffect(() => {
     clearFleetCredentials();
-    const supabase = createClient();
-    supabase.auth.signOut().then(() => {
-      window.location.href = 'https://whiteroom.tech';
-    });
+    signOut({ callbackUrl: 'https://whiteroom.tech' });
   }, []);
 
   return (
