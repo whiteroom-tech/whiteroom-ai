@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@auth/pg-adapter": "^1.11.3",
     "@opentelemetry/api": "^1.9.1",
     "@whiteroom/ui": "file:../../packages/ui",
     "clsx": "^2.1.1",

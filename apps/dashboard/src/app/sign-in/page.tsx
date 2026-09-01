@@ -7,6 +7,9 @@ import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
 export default function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
 
   async function signInWithGoogle() {
     setLoading(true);
@@ -16,6 +19,26 @@ export default function SignInPage() {
     } catch {
       setError('Could not start sign-in. Please try again.');
       setLoading(false);
+    }
+  }
+
+  async function signInWithEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setEmailLoading(true);
+    setError(null);
+    // redirect:false so the "check your inbox" state renders here rather than
+    // bouncing through Auth.js's default verify-request page.
+    const res = await signIn('resend', {
+      email: email.trim(),
+      callbackUrl: '/dashboard',
+      redirect: false,
+    });
+    setEmailLoading(false);
+    if (res?.error) {
+      setError('Could not send the sign-in link. Please try again.');
+    } else {
+      setLinkSent(true);
     }
   }
 
@@ -61,6 +84,52 @@ export default function SignInPage() {
               </svg>
               {loading ? 'Redirecting...' : 'Continue with Google'}
             </button>
+
+            {linkSent ? (
+              <div className="space-y-2 text-center">
+                <p className="text-sm font-semibold">Check your inbox</p>
+                <p className="text-xs" style={{ color: '#6B7C9E' }}>
+                  We sent a sign-in link to <span style={{ color: '#EAF1FF' }}>{email.trim()}</span>. It expires in 24 hours.
+                </p>
+                <button
+                  onClick={() => { setLinkSent(false); setError(null); }}
+                  className="text-xs underline cursor-pointer"
+                  style={{ color: '#6B7C9E' }}
+                >
+                  Use a different email
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1" style={{ background: '#1B2740' }} />
+                  <span className="text-xs" style={{ color: '#6B7C9E' }}>or</span>
+                  <div className="h-px flex-1" style={{ background: '#1B2740' }} />
+                </div>
+
+                <form onSubmit={signInWithEmail} className="space-y-3">
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    autoComplete="email"
+                    className="w-full rounded-lg px-4 py-3 text-sm outline-none"
+                    style={{ background: '#070B14', border: '1px solid #1B2740', color: '#EAF1FF' }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={emailLoading || !email.trim()}
+                    className="w-full rounded-lg px-6 py-3 text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                    style={{ background: '#38E1FF', color: '#04222B', fontFamily: FONT_DISPLAY }}
+                  >
+                    {emailLoading ? 'Sending...' : 'Email me a sign-in link'}
+                  </button>
+                </form>
+              </>
+            )}
+
             {error && <p className="text-xs font-mono" style={{ color: '#FF6B7A' }}>{error}</p>}
           </div>
         </div>
