@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKey } from '@/lib/analytics-metrics';
+import { isFeedVariant, type FeedVariant } from '@/lib/activity';
+import { ActivityFeed } from '@/components/ActivityFeed';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -18,14 +20,6 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   disconnected: { border: '#ef4444', badgeBg: '#450a0a', badgeTx: '#f87171', badgeBd: '#ef4444', bar: '#ef4444' },
 };
 
-function feedAccent(type: string): string {
-  if (type === 'task_complete') return '#22c55e';
-  if (type.includes('handover')) return '#a855f7';
-  if (type === 'watch_start' || type === 'alarm') return '#38bdf8';
-  if (type.includes('rest') || type === 'watch_end') return '#0ea5e9';
-  return '#475569';
-}
-
 function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
@@ -36,12 +30,17 @@ export default function FleetDashboard() {
   const [handoverDocs, setHandoverDocs] = useState<Record<string, HandoverDoc>>({});
   const [error, setError] = useState('');
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
-  const [auditTotal, setAuditTotal] = useState(0);
   const [agentIds, setAgentIds] = useState<string[]>([]);
   const [filterAgent, setFilterAgent] = useState('');
   const [filterType, setFilterType] = useState('task_complete');
   const [searchText, setSearchText] = useState('');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [feedPage, setFeedPage] = useState(0);
+  const [feedVariant, setFeedVariant] = useState<FeedVariant>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_feed_variant') : null;
+    return isFeedVariant(saved) ? saved : 'log';
+  });
+  const [technical, setTechnical] = useState(() => typeof window !== 'undefined' && localStorage.getItem('wr_feed_technical') === '1');
   const [railWidth, setRailWidth] = useState(360);
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
   const [authenticated, setAuthenticated] = useState(false);
@@ -166,7 +165,6 @@ export default function FleetDashboard() {
       const data = await auditLog({ fleetId, agentId: filterAgent || undefined, type: filterType || undefined, search: searchText || undefined, limit: 200 }, authKey);
       if ('error' in data) return;
       setAuditEntries(data.entries);
-      setAuditTotal(data.total);
       if (data.filters?.agentIds) setAgentIds(data.filters.agentIds);
     } catch { /* ignore */ }
   }, [fleetId, filterAgent, filterType, searchText, authKey]);
@@ -207,8 +205,34 @@ export default function FleetDashboard() {
 
   function handleSearchChange(value: string) {
     setSearchText(value);
+    setFeedPage(0);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => fetchAudit(), 300);
+  }
+
+  // Narrowing the result set changes what "page 3" means, so each filter
+  // change returns to the newest page.
+  function changeFilterAgent(value: string) {
+    setFilterAgent(value);
+    setFeedPage(0);
+  }
+
+  function changeFilterType(value: string) {
+    setFilterType(value);
+    setFeedPage(0);
+  }
+
+  function changeFeedVariant(v: string) {
+    if (!isFeedVariant(v)) return;
+    setFeedVariant(v);
+    localStorage.setItem('wr_feed_variant', v);
+  }
+
+  function toggleTechnical() {
+    setTechnical((prev) => {
+      localStorage.setItem('wr_feed_technical', prev ? '0' : '1');
+      return !prev;
+    });
   }
 
   function toggleExpanded(taskId: string) {
@@ -518,65 +542,52 @@ export default function FleetDashboard() {
         {/* Right: Audit Feed */}
         <div className="flex flex-col min-w-0">
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid #1e293b' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: '#94a3b8', textTransform: 'uppercase' as const }}>Task / Event Feed</span>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: '#94a3b8', textTransform: 'uppercase' as const }}>Activity</span>
             <div className="flex items-center gap-2">
-              <span style={{ fontSize: 10, color: '#475569' }}>{auditTotal} event{auditTotal !== 1 ? 's' : ''}</span>
-              <button onClick={exportWorkbook} style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155', cursor: 'pointer' }} title="Export to Excel">⬇ Export .xlsx</button>
+              <select
+                aria-label="Activity row style"
+                value={feedVariant}
+                onChange={(e) => changeFeedVariant(e.target.value)}
+                style={{ borderRadius: 4, padding: '3px 6px', fontSize: 10, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}
+              >
+                <option value="log">▤ Log</option>
+                <option value="tape">⛓ Tape</option>
+                <option value="manifest">▦ Manifest</option>
+              </select>
+              <button
+                onClick={toggleTechnical}
+                aria-pressed={technical}
+                title="Show raw event types, token counts and tool arguments"
+                style={{
+                  borderRadius: 4, padding: '4px 8px', fontSize: 10, fontWeight: 600, letterSpacing: 0.3, cursor: 'pointer',
+                  border: `1px solid ${technical ? '#0369a1' : '#334155'}`, background: technical ? '#0c4a6e' : '#0f172a', color: technical ? '#7dd3fc' : '#94a3b8',
+                }}
+              >
+                Tech
+              </button>
+              <button onClick={exportWorkbook} style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155', cursor: 'pointer' }} title="Export to Excel">⬇ .xlsx</button>
             </div>
           </div>
           <div className="flex gap-1.5 flex-wrap" style={{ padding: '8px 12px', borderBottom: '1px solid #1e293b' }}>
-            <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} style={{ flex: 1, minWidth: 110, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}>
+            <select value={filterAgent} onChange={(e) => changeFilterAgent(e.target.value)} style={{ flex: 1, minWidth: 110, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}>
               <option value="">All agents</option>
               {agentIds.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}>
+            <select value={filterType} onChange={(e) => changeFilterType(e.target.value)} style={{ borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}>
               <option value="">All events</option>
               <option value="task_complete">Tasks only</option>
             </select>
             <input value={searchText} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 90, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }} />
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-            {auditEntries.length === 0 ? (
-              <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', marginTop: 32 }}>No events yet</p>
-            ) : auditEntries.map((entry) => {
-              const isTask = entry.type === 'task_complete';
-              const details = Array.isArray(entry.details) ? entry.details : [];
-              const canExpand = details.length > 0;
-              const isOpen = entry.taskId ? expandedTasks.has(entry.taskId) : false;
-              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-              return (
-                <div key={entry.id} style={{ borderLeft: `3px solid ${feedAccent(entry.type)}`, padding: '6px 8px', background: '#0b1220', borderRadius: '0 6px 6px 0', marginBottom: 6 }}>
-                  <div style={{ cursor: canExpand ? 'pointer' : 'default' }} onClick={canExpand && entry.taskId ? () => toggleExpanded(entry.taskId!) : undefined}>
-                    <div style={{ fontSize: 12, color: '#f1f5f9', wordBreak: 'break-word' as const }}>
-                      {canExpand && <span style={{ color: '#38bdf8' }}>{isOpen ? '▾' : '▸'} </span>}
-                      {isTask ? (entry.taskName || 'task') : <span style={{ textTransform: 'uppercase' as const, letterSpacing: 1, color: '#94a3b8', fontSize: 11 }}>{entry.type}</span>}
-                      {canExpand && <span style={{ color: '#475569' }}> ({details.length})</span>}
-                    </div>
-                    <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
-                      {isTask ? (
-                        <Fragment>
-                          {((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K · watch #{entry.watchNumber}{' · '}
-                          <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{entry.remaining}min left</span>
-                        </Fragment>
-                      ) : (entry.agentId || '')}
-                      {' · '}{time}
-                    </div>
-                  </div>
-                  {canExpand && isOpen && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #1e293b' }}>
-                      <div style={{ fontSize: 10, color: '#475569', letterSpacing: '.05em', marginBottom: 3 }}>TOOL CALLS</div>
-                      {details.map((d, i) => (
-                        <div key={i} style={{ fontSize: 11, padding: '2px 0', wordBreak: 'break-word' as const }}>
-                          <span style={{ color: '#7dd3fc', fontWeight: 600 }}>{d.name}</span>
-                          {d.args && <span style={{ color: '#94a3b8' }}> &mdash; {d.args}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <ActivityFeed
+            entries={auditEntries}
+            page={feedPage}
+            onPageChange={setFeedPage}
+            variant={feedVariant}
+            technical={technical}
+            expanded={expandedTasks}
+            onToggleExpanded={toggleExpanded}
+          />
         </div>
       </div>
       ) : (
