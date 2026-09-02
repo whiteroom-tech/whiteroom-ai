@@ -20,6 +20,17 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   disconnected: { border: '#ef4444', badgeBg: '#450a0a', badgeTx: '#f87171', badgeBd: '#ef4444', bar: '#ef4444' },
 };
 
+const AGENT_VIEWS = ['cards', 'compact', 'list'] as const;
+type AgentView = (typeof AGENT_VIEWS)[number];
+function isAgentView(v: unknown): v is AgentView {
+  return typeof v === 'string' && (AGENT_VIEWS as readonly string[]).includes(v);
+}
+const AGENT_GRID_COLS: Record<AgentView, string> = {
+  cards: '1fr 1fr',
+  compact: '1fr 1fr 1fr',
+  list: '1fr',
+};
+
 function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
@@ -41,6 +52,10 @@ export default function FleetDashboard() {
     return isFeedVariant(saved) ? saved : 'log';
   });
   const [technical, setTechnical] = useState(() => typeof window !== 'undefined' && localStorage.getItem('wr_feed_technical') === '1');
+  const [agentView, setAgentView] = useState<AgentView>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_agent_view') : null;
+    return isAgentView(saved) ? saved : 'cards';
+  });
   const [railWidth, setRailWidth] = useState(360);
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
   const [authenticated, setAuthenticated] = useState(false);
@@ -233,6 +248,12 @@ export default function FleetDashboard() {
       localStorage.setItem('wr_feed_technical', prev ? '0' : '1');
       return !prev;
     });
+  }
+
+  function changeAgentView(v: string) {
+    if (!isAgentView(v)) return;
+    setAgentView(v);
+    localStorage.setItem('wr_agent_view', v);
   }
 
   function toggleExpanded(taskId: string) {
@@ -474,7 +495,33 @@ export default function FleetDashboard() {
       <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px` }}>
         {/* Left: Agents + Comparison */}
         <div style={{ overflowY: 'auto', padding: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: '#94a3b8', textTransform: 'uppercase' as const }}>Agents</span>
+            <select
+              aria-label="Agent card style"
+              value={agentView}
+              onChange={(e) => changeAgentView(e.target.value)}
+              style={{ borderRadius: 4, padding: '3px 6px', fontSize: 10, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}
+            >
+              <option value="cards">▦ Cards</option>
+              <option value="compact">▤ Compact</option>
+              <option value="list">☰ List</option>
+            </select>
+          </div>
+
+          {agentView === 'list' && agents.length > 0 && (
+            <div className="flex items-center gap-3" style={{ padding: '0 4px 4px', fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#475569' }}>
+              <span style={{ width: 8, flexShrink: 0 }} />
+              <span style={{ minWidth: 100 }}>AGENT</span>
+              <span style={{ minWidth: 76, textAlign: 'center' as const }}>STATUS</span>
+              <span style={{ flex: 1 }}>PROGRESS</span>
+              <span style={{ width: 36, textAlign: 'right' as const }}>WATCH</span>
+              <span style={{ width: 36, textAlign: 'right' as const }}>HLTH</span>
+              <span style={{ width: 56, textAlign: 'right' as const }}>TOKENS</span>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: AGENT_GRID_COLS[agentView], gap: agentView === 'list' ? 0 : 8, marginBottom: 12 }}>
             {agents.map((agent) => {
               const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
               const sc = SC[status] || SC.idle;
@@ -487,6 +534,40 @@ export default function FleetDashboard() {
               const watchDisplay = status === 'resting' ? restPct : pct;
               const tokens = agent.tokensUsed || 0;
               const hdoc = handoverDocs[agent.agentId];
+
+              if (agentView === 'list') {
+                return (
+                  <div key={agent.agentId} className="flex items-center gap-3" style={{ borderBottom: '1px solid #1e293b', padding: '6px 4px' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: sc.border, flexShrink: 0 }} />
+                    <span style={{ minWidth: 100, fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
+                    <span style={{ minWidth: 76, textAlign: 'center' as const, fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                    <div style={{ flex: 1, height: 4, borderRadius: 99, background: '#1e293b', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
+                    </div>
+                    <span style={{ width: 36, textAlign: 'right' as const, fontSize: 10, color: '#94a3b8' }}>{watchDisplay.toFixed(0)}%</span>
+                    <span style={{ width: 36, textAlign: 'right' as const, fontSize: 10, color: healthColor }}>{health.toFixed(0)}%</span>
+                    <span style={{ width: 56, textAlign: 'right' as const, fontSize: 10, color: '#e2e8f0' }}>{fmtK(tokens)}</span>
+                  </div>
+                );
+              }
+
+              if (agentView === 'compact') {
+                return (
+                  <div key={agent.agentId} style={{ background: '#0a0f1a', border: '1px solid #1e293b', borderLeft: `3px solid ${sc.border}`, borderRadius: 6, padding: 8 }}>
+                    <div className="flex justify-between items-center" style={{ marginBottom: 4 }}>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                    </div>
+                    <div style={{ height: 3, borderRadius: 99, background: '#1e293b', overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
+                    </div>
+                    <div className="flex justify-between" style={{ fontSize: 9, color: '#64748b' }}>
+                      <span>W{agent.watchNumber || 1} · {fmtK(tokens)} tok</span>
+                      <span style={{ color: healthColor }}>{health.toFixed(0)}% hlth</span>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div key={agent.agentId} style={{ background: '#0a0f1a', border: '1px solid #1e293b', borderLeft: `3px solid ${sc.border}`, borderRadius: 8, padding: 12 }}>
