@@ -449,7 +449,13 @@ export default function FleetDashboard() {
   // Visualization board needs.
   const vizAgents = agents.map((agent) => {
     const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
-    return { agentId: agent.agentId, status, color: (SC[status] || SC.idle).bar };
+    return {
+      agentId: agent.agentId,
+      status,
+      color: (SC[status] || SC.idle).bar,
+      tokensUsed: agent.tokensUsed || 0,
+      tasksCompleted: agent.tasksCompleted || 0,
+    };
   });
 
   return (
@@ -943,6 +949,17 @@ export default function FleetDashboard() {
           @keyframes beacon-breathe {
             0%, 100% { transform: scale(1); opacity: 0.85; }
             50% { transform: scale(1.08); opacity: 1; }
+          }
+          /* Visualization tab: a result popping off a node as it lands. */
+          @keyframes float-up {
+            0% { transform: translateY(4px) scale(0.9); opacity: 0; }
+            15% { transform: translateY(0) scale(1); opacity: 1; }
+            75% { opacity: 1; }
+            100% { transform: translateY(-22px) scale(1); opacity: 0; }
+          }
+          @keyframes bar-sheen {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(220%); }
           }
         }
       `}</style>
