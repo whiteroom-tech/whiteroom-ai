@@ -9,6 +9,7 @@ import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKe
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { RingGauge, Beacon } from '@/components/AgentGauge';
+import { FleetVisualization } from '@/components/FleetVisualization';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -68,7 +69,7 @@ export default function FleetDashboard() {
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'analytics'>('live');
+  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>('live');
   const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('today');
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [scopedDay, setScopedDay] = useState<string | null>(null);
@@ -223,6 +224,16 @@ export default function FleetDashboard() {
   useEffect(() => { fetchAudit(); }, [filterAgent, filterType, fetchAudit]);
 
   useEffect(() => { if (activeTab === 'analytics') fetchAllEntries(); }, [activeTab, fetchAllEntries]);
+
+  // Visualization is a "right now" board, not a historical range like
+  // Analytics — it wants its own faster, always-on poll while it's the
+  // active tab, not just the one fetch Analytics gets on open.
+  useEffect(() => {
+    if (activeTab !== 'visualization') return;
+    fetchAllEntries();
+    const id = setInterval(fetchAllEntries, 4000);
+    return () => clearInterval(id);
+  }, [activeTab, fetchAllEntries]);
 
   function handleSearchChange(value: string) {
     setSearchText(value);
@@ -434,6 +445,13 @@ export default function FleetDashboard() {
 
   const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
 
+  // Same status→color mapping as the agent cards, reduced to what the
+  // Visualization board needs.
+  const vizAgents = agents.map((agent) => {
+    const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
+    return { agentId: agent.agentId, status, color: (SC[status] || SC.idle).bar };
+  });
+
   return (
     <div className="flex flex-col h-screen" style={{ background: '#070B14', color: '#EAF1FF', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13 }}>
       {/* Header */}
@@ -471,14 +489,17 @@ export default function FleetDashboard() {
             ))}
           </div>
         )}
+        <button onClick={() => setActiveTab('visualization')} style={{ padding: '8px 20px', fontSize: 11, fontWeight: 700, letterSpacing: 1.5, cursor: 'pointer', border: 'none', borderBottom: activeTab === 'visualization' ? '2px solid #38E1FF' : '2px solid transparent', background: 'transparent', color: activeTab === 'visualization' ? '#38E1FF' : '#64748b', transition: 'all .15s' }}>
+          VISUALIZATION
+        </button>
         <span style={{ marginLeft: 'auto', paddingRight: 16, fontSize: 10, color: '#475569' }}>
-          {activeTab === 'live' ? 'Real-time fleet monitoring' : 'Historical audit — trends, per-agent attribution'}
+          {activeTab === 'live' ? 'Real-time fleet monitoring' : activeTab === 'visualization' ? 'What each agent is doing, live' : 'Historical audit — trends, per-agent attribution'}
         </span>
       </div>
 
       {/* Banner — 6 metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
-        {activeTab === 'live' ? (<>
+        {activeTab !== 'analytics' ? (<>
           <BannerMetric label="TASKS COMPLETED" value={watchTasks ? String(watchTasks) : '—'} color="#f8fafc" />
           <BannerMetric label="TOKENS (W/ WHITEROOM)" value={watchTokens > 0 ? fmtK(watchTokens) : '—'} color="#86efac" />
           <BannerMetric label="TOKENS (W/O WHITEROOM)" value={watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'} color="#fca5a5" />
@@ -711,6 +732,8 @@ export default function FleetDashboard() {
           />
         </div>
       </div>
+      ) : activeTab === 'visualization' ? (
+        <FleetVisualization agents={vizAgents} entries={allEntries} />
       ) : (
       /* Analytics tab — matches v3 design */
       <>
