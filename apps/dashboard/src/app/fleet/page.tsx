@@ -8,6 +8,7 @@ import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpe
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKey } from '@/lib/analytics-metrics';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import { ActivityFeed } from '@/components/ActivityFeed';
+import { RingGauge, Beacon } from '@/components/AgentGauge';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -20,7 +21,7 @@ const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; bad
   disconnected: { border: '#ef4444', badgeBg: '#450a0a', badgeTx: '#f87171', badgeBd: '#ef4444', bar: '#ef4444' },
 };
 
-const AGENT_VIEWS = ['cards', 'compact', 'list'] as const;
+const AGENT_VIEWS = ['cards', 'compact', 'list', 'rings', 'beacon'] as const;
 type AgentView = (typeof AGENT_VIEWS)[number];
 function isAgentView(v: unknown): v is AgentView {
   return typeof v === 'string' && (AGENT_VIEWS as readonly string[]).includes(v);
@@ -29,6 +30,11 @@ const AGENT_GRID_COLS: Record<AgentView, string> = {
   cards: '1fr 1fr',
   compact: '1fr 1fr 1fr',
   list: '1fr',
+  rings: 'repeat(auto-fill, minmax(104px, 1fr))',
+  beacon: 'repeat(auto-fill, minmax(84px, 1fr))',
+};
+const AGENT_GRID_GAP: Record<AgentView, number> = {
+  cards: 8, compact: 8, list: 0, rings: 14, beacon: 14,
 };
 
 function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
@@ -506,6 +512,8 @@ export default function FleetDashboard() {
               <option value="cards">▦ Cards</option>
               <option value="compact">▤ Compact</option>
               <option value="list">☰ List</option>
+              <option value="rings">◎ Rings</option>
+              <option value="beacon">◉ Beacon</option>
             </select>
           </div>
 
@@ -521,7 +529,7 @@ export default function FleetDashboard() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: AGENT_GRID_COLS[agentView], gap: agentView === 'list' ? 0 : 8, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: AGENT_GRID_COLS[agentView], gap: AGENT_GRID_GAP[agentView], marginBottom: 12 }}>
             {agents.map((agent) => {
               const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
               const sc = SC[status] || SC.idle;
@@ -534,6 +542,38 @@ export default function FleetDashboard() {
               const watchDisplay = status === 'resting' ? restPct : pct;
               const tokens = agent.tokensUsed || 0;
               const hdoc = handoverDocs[agent.agentId];
+
+              if (agentView === 'rings') {
+                const animate = status === 'working';
+                return (
+                  <div key={agent.agentId} className="flex flex-col items-center" style={{ gap: 6, background: '#0a0f1a', border: '1px solid #1e293b', borderRadius: 8, padding: '12px 6px' }}>
+                    <div style={{ position: 'relative', width: 72, height: 72 }}>
+                      <RingGauge progress={watchDisplay} progressColor={watchBarColor} health={health} healthColor={healthColor} animate={animate} />
+                      <div className="flex items-center justify-center" style={{ position: 'absolute', inset: 0 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>{watchDisplay.toFixed(0)}%</span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'center' as const }}>
+                      <div style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
+                      <div style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>{status.toUpperCase()} · {fmtK(tokens)}</div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (agentView === 'beacon') {
+                const animate = status === 'working';
+                const breathe = status === 'resting';
+                return (
+                  <div key={agent.agentId} className="flex flex-col items-center" style={{ gap: 6, padding: '10px 4px' }}>
+                    <Beacon color={sc.bar} animate={animate} breathe={breathe} />
+                    <div style={{ textAlign: 'center' as const }}>
+                      <div style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
+                      <div style={{ fontSize: 9, color: '#64748b' }}>{status.toUpperCase()} · {watchDisplay.toFixed(0)}%</div>
+                    </div>
+                  </div>
+                );
+              }
 
               if (agentView === 'list') {
                 return (
@@ -863,7 +903,26 @@ export default function FleetDashboard() {
         <span>© 2026 WhiteRoom</span>
       </div>
 
-      <style>{`@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 12px #22c55e; } 50% { box-shadow: 0 0 24px #22c55e; } }`}</style>
+      <style>{`
+        @keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 12px #22c55e; } 50% { box-shadow: 0 0 24px #22c55e; } }
+        /* Rings/Beacon motion is a status signal (a working agent earns it), not
+           decoration — registered only when the viewer hasn't asked for less motion. */
+        @media (prefers-reduced-motion: no-preference) {
+          @keyframes ring-glow {
+            0%, 100% { filter: brightness(1) drop-shadow(0 0 1px rgba(255,255,255,0.1)); }
+            50% { filter: brightness(1.18) drop-shadow(0 0 7px rgba(255,255,255,0.35)); }
+          }
+          @keyframes beacon-ping {
+            0% { transform: scale(0.6); opacity: 0.85; }
+            70% { opacity: 0; }
+            100% { transform: scale(2.1); opacity: 0; }
+          }
+          @keyframes beacon-breathe {
+            0%, 100% { transform: scale(1); opacity: 0.85; }
+            50% { transform: scale(1.08); opacity: 1; }
+          }
+        }
+      `}</style>
     </div>
   );
 }
