@@ -105,3 +105,40 @@ export interface RebindResult {
   success: boolean;
   error?: string;
 }
+
+// -- Provider keys (BYOK) --
+//
+// A fleet can hold several provider keys at once — one per key the account
+// connects — so these are lists, not a single value. The engine stores only a
+// hash and the last four characters of each; the raw key never comes back.
+
+export interface ProviderKey {
+  /** Truncated identifier, e.g. "sk-wr-1a2b..." — enough to delete by prefix. */
+  wrKey: string;
+  provider: string;
+  keyHint: string;
+  createdAt: string;
+  endpoint?: string;
+}
+
+export interface ListKeysResult {
+  success?: boolean;
+  keys?: ProviderKey[];
+  error?: string;
+}
+
+export interface StoreKeyResult {
+  success?: boolean;
+  /** Full proxy key — returned once, at creation, and never listed again. */
+  proxyKey?: string;
+  provider?: string;
+  keyHint?: string;
+  proxyUrl?: string;
+  error?: string;
+}
+
+export interface DeleteKeyResult {
+  success?: boolean;
+  removed?: { provider: string; keyHint: string };
+  error?: string;
+}

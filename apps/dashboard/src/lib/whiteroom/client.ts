@@ -9,11 +9,14 @@ import type {
   AgentInfo,
   AuditLogResponse,
   ClaimFleetResult,
+  DeleteKeyResult,
   FleetReport,
   GetHandoverResult,
   ListFleetsResult,
+  ListKeysResult,
   RebindResult,
   RegisterResult,
+  StoreKeyResult,
   TokenLoginResult,
 } from './types';
 
@@ -122,4 +125,55 @@ export function auditLog(
     },
     key,
   );
+}
+
+// -- Provider keys (BYOK) --
+//
+// The engine scopes provider keys to a fleet and allows several per fleet, so
+// one account can connect an Anthropic key, an OpenAI key, and more, each
+// getting its own proxy URL. Only a hash and the last four characters are
+// stored server-side.
+
+export interface FleetAuth {
+  fleetId: string;
+  apiKey: string;
+  fleetToken: string | null;
+}
+
+// Prefer the fleet token: the engine authenticates it against the fleet it was
+// issued for and resolves fleet_id from it, so these calls keep working even
+// once the fleet is no longer bound to the dashboard's sk-wr- key. Fall back
+// to the api key (with an explicit fleet_id) for users provisioned before
+// fleet tokens were handed back.
+function keyCall<T>(auth: FleetAuth, body: Record<string, unknown>): Promise<T> {
+  return auth.fleetToken
+    ? apiCall<T>(body, auth.fleetToken)
+    : apiCall<T>({ ...body, fleet_id: auth.fleetId }, auth.apiKey);
+}
+
+export function listProviderKeys(auth: FleetAuth): Promise<ListKeysResult> {
+  return keyCall<ListKeysResult>(auth, { action: 'list_keys' });
+}
+
+export function storeProviderKey(
+  auth: FleetAuth,
+  providerKey: string,
+  endpoint?: string,
+): Promise<StoreKeyResult> {
+  return keyCall<StoreKeyResult>(auth, {
+    action: 'store_key',
+    api_key: providerKey,
+    ...(endpoint && { llm_endpoint: endpoint }),
+  });
+}
+
+/**
+ * `keyPrefix` comes from a listed key's `wrKey`, which the engine truncates
+ * with a trailing "..." — strip it, since the match is a literal startsWith.
+ */
+export function deleteProviderKey(auth: FleetAuth, keyPrefix: string): Promise<DeleteKeyResult> {
+  return keyCall<DeleteKeyResult>(auth, {
+    action: 'delete_key',
+    key_prefix: keyPrefix.replace(/\.+$/, ''),
+  });
 }
