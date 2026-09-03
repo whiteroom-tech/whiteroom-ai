@@ -58,7 +58,7 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
       <path d={area} fill={color} fillOpacity={0.1} stroke="none" />
       <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" style={{ transition: 'd .5s ease' }} />
-      <circle cx={ex} cy={ey} r={2.6} fill={color} stroke="#0a0f1a" strokeWidth={1.5} />
+      <circle cx={ex} cy={ey} r={2.6} fill={color} stroke="var(--card)" strokeWidth={1.5} />
     </svg>
   );
 }
@@ -125,7 +125,7 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
 
   if (agents.length === 0) {
     return (
-      <div className="flex-1 min-h-0" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: 12 }}>
+      <div className="flex-1 min-h-0" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tx3)', fontSize: 12 }}>
         No agents connected yet
       </div>
     );
@@ -135,15 +135,15 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
     <div className="flex-1 min-h-0" style={{ overflowY: 'auto', padding: '20px 24px 28px' }}>
       {/* ── Leaderboard: who's ahead right now ── */}
       <div style={{ marginBottom: 26 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, color: '#94a3b8', textTransform: 'uppercase' as const, marginBottom: 8 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>
           Leaderboard — tasks this watch
         </div>
         <div className="flex flex-col" style={{ gap: 5 }}>
           {leaderboard.map((a, i) => (
             <div key={a.agentId} className="flex items-center gap-3">
-              <span style={{ width: 14, textAlign: 'right' as const, fontFamily: FONT_MONO, fontSize: 10, color: i === 0 ? a.color : '#475569', fontWeight: 700 }}>{i + 1}</span>
-              <span style={{ width: 78, fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: '#e2e8f0' }}>{a.agentId.toUpperCase()}</span>
-              <div style={{ position: 'relative', flex: 1, height: 8, borderRadius: 99, background: '#1e293b', overflow: 'hidden' }}>
+              <span style={{ width: 14, textAlign: 'right' as const, fontFamily: FONT_MONO, fontSize: 10, color: i === 0 ? a.color : 'var(--tx3)', fontWeight: 700 }}>{i + 1}</span>
+              <span style={{ width: 78, fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>{a.agentId.toUpperCase()}</span>
+              <div style={{ position: 'relative', flex: 1, height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
                 <div
                   style={{
                     position: 'relative', height: '100%', borderRadius: 99, overflow: 'hidden',
@@ -163,7 +163,7 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
                   )}
                 </div>
               </div>
-              <span style={{ width: 118, textAlign: 'right' as const, fontSize: 10, color: '#64748b' }}>{a.tasksCompleted} tasks · {fmtK(a.tokensUsed)}</span>
+              <span style={{ width: 118, textAlign: 'right' as const, fontSize: 10, color: 'var(--tx2)' }}>{a.tasksCompleted} tasks · {fmtK(a.tokensUsed)}</span>
             </div>
           ))}
         </div>
@@ -210,11 +210,11 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
                 )}
               </div>
               <div style={{ textAlign: 'center' as const }}>
-                <div style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: '#e2e8f0' }}>{a.agentId.toUpperCase()}</div>
-                <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 4, minHeight: 28, lineHeight: 1.4 }}>
-                  {model ? <>{model.icon} {model.who} {model.said}</> : <span style={{ color: '#475569' }}>No activity yet</span>}
+                <div style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: 'var(--tx)' }}>{a.agentId.toUpperCase()}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--tx2)', marginTop: 4, minHeight: 28, lineHeight: 1.4 }}>
+                  {model ? <>{model.icon} {model.who} {model.said}</> : <span style={{ color: 'var(--tx3)' }}>No activity yet</span>}
                 </div>
-                {last && <div style={{ fontSize: 9, color: '#475569', marginTop: 1 }}>{relTime(last.timestamp)}</div>}
+                {last && <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 1 }}>{relTime(last.timestamp)}</div>}
               </div>
               <Sparkline points={history.map((s) => s.tokens)} color={a.color} />
             </div>

@@ -25,3 +25,22 @@
   --font-mono: 'JetBrains Mono', monospace;
   --font-display: 'Chakra Petch', sans-serif;
 }
+
+/* Fleet dashboard's sidebar-shell palette — scoped to .wr-shell rather than
+   folded into the tokens above, since it's a distinct visual system for
+   /fleet only (sign-in, onboarding, etc. keep the navy palette above).
+   --info/--info-bg is our own addition: the shell's four semantic colors
+   (ok/bad/warn/ho) don't cover a "resting" agent, so this fills that gap
+   using the same naming convention. */
+.wr-shell {
+  --bg: #080d16; --card: #101a28; --raised: #131d2c; --sunk: #0a1220;
+  --line: #1e2a3c; --line2: #2a3a50;
+  --tx: #dce6f2; --tx2: #8fa3ba; --tx3: #5f7188;
+  --brand: #4AD8F5; --brand2: #0D7797; --brand-dim: rgba(74, 216, 245, .12);
+  --ok: #34d399; --ok-bg: #0a2e22;
+  --bad: #f87171; --bad-bg: #2e1216; --bad-line: #4a2029;
+  --warn: #fbbf24; --warn-bg: #2e2410; --warn-line: #4a3a15;
+  --ho: #a78bfa; --ho-bg: #221540;
+  --info: #38bdf8; --info-bg: #0c4a6e;
+  --track: #1a2434;
+}
