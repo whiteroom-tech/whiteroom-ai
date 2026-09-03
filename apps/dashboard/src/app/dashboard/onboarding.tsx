@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { getUserProvisioning, setByok } from '@/lib/users';
-import { rebindFleetKey } from '@/lib/whiteroom/client';
-import type { FleetReport } from '@/lib/whiteroom/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { setByok } from '@/lib/users';
+import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
+import type { FleetAuth } from '@/lib/whiteroom/client';
+import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
 import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@whiteroom/ui';
 
 interface Props {
@@ -16,33 +17,77 @@ interface Props {
   isNew: boolean;
 }
 
-// BYOK: rebind this fleet from the dashboard's placeholder key to the
-// customer's real Anthropic key, so real governed agents can run against it.
-// The engine stores only a hash of the key — it never leaves the customer's
-// control except as a per-request forward to Anthropic (standard BYOK).
-function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
-  const [connected, setConnected] = useState(false);
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+};
+
+// BYOK: one account can connect several provider keys at once. The engine
+// keeps them per fleet as a list and issues each key its own proxy URL, so an
+// Anthropic key and an OpenAI key (or two Anthropic keys for different
+// projects) sit side by side rather than one replacing the other. Only a hash
+// and the last four characters are stored — the raw key never leaves the
+// customer's control except as a per-request forward to the provider.
+function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: string; fleetToken: string | null }) {
+  const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
+  const [keys, setKeys] = useState<ProviderKey[] | null>(null);
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [msg, setMsg] = useState('');
+  // The full proxy URL comes back once, at creation, and is never listed
+  // again — surface it immediately or it is lost.
+  const [issued, setIssued] = useState<{ proxyUrl: string; keyHint: string; provider: string } | null>(null);
+
+  const refresh = useCallback(async (): Promise<ProviderKey[]> => {
+    const res = await listProviderKeys(auth);
+    const list = res.keys ?? [];
+    setKeys(list);
+    return list;
+  }, [auth]);
 
   useEffect(() => {
-    getUserProvisioning().then((provisioning) => {
-      if (provisioning.byok) setConnected(true);
-    });
-  }, []);
+    refresh().catch(() => setKeys([]));
+  }, [refresh]);
 
   async function connect() {
     const key = value.trim();
-    if (!/^sk-/.test(key) || key.length < 12) { setStatus('error'); setMsg('That does not look like an Anthropic API key (sk-ant-…).'); return; }
+    if (!/^sk-/.test(key) || key.length < 12) {
+      setStatus('error');
+      setMsg('That does not look like a provider API key (sk-ant-… for Anthropic, sk-… for OpenAI).');
+      return;
+    }
     setStatus('saving'); setMsg('');
     try {
-      // Authenticate the rebind with the fleet's CURRENT key (this dashboard key).
-      const result = await rebindFleetKey(fleetId, key, apiKey);
-      if (!result.success) { setStatus('error'); setMsg(result.error || 'Rebind failed.'); return; }
-      // Persist only a flag — never the raw provider key — in the account.
+      const result = await storeProviderKey(auth, key);
+      if (!result.success || !result.proxyUrl) {
+        setStatus('error'); setMsg(result.error || 'Could not connect that key.'); return;
+      }
+      setIssued({
+        proxyUrl: result.proxyUrl,
+        keyHint: result.keyHint ?? key.slice(-4),
+        provider: result.provider ?? (key.startsWith('sk-ant-') ? 'anthropic' : 'openai'),
+      });
+      setValue(''); setStatus('idle');
+      await refresh();
+      // Persist only the flag — never the raw provider key — on the account.
       await setByok(true);
-      setConnected(true); setValue('');
+    } catch (e) {
+      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
+    }
+  }
+
+  async function disconnect(k: ProviderKey) {
+    const prefix = k.wrKey.replace(/\.+$/, '');
+    setStatus('saving'); setMsg('');
+    try {
+      const result = await deleteProviderKey(auth, prefix);
+      if (!result.success) {
+        setStatus('error'); setMsg(result.error || 'Could not remove that key.'); return;
+      }
+      if (issued?.proxyUrl.includes(prefix)) setIssued(null);
+      const remaining = await refresh();
+      setStatus('idle');
+      await setByok(remaining.length > 0);
     } catch (e) {
       setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
     }
@@ -53,39 +98,79 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
       <div>
         <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Bring Your Own Key</h3>
         <p className="text-xs mt-1" style={{ color: '#4E607F' }}>
-          {connected
-            ? 'Your fleet is bound to your own Anthropic key — real governed agents can run against it. Use that key as ANTHROPIC_API_KEY when you run agents.'
-            : 'Connect your Anthropic key so real agents can run on this fleet. We store only a hash — the key stays yours.'}
+          Connect as many provider keys as you need — Anthropic, OpenAI, or several of each. Every key gets its own
+          proxy URL, and we store only a hash. The key stays yours.
         </p>
       </div>
-      {connected ? (
-        <div className="flex items-center gap-2 rounded-lg px-4 py-3" style={{ background: 'rgba(63,224,160,.06)', border: '1px solid rgba(63,224,160,.2)' }}>
-          <span style={{ color: '#3FE0A0' }}>✓</span>
-          <span className="text-sm" style={{ color: '#3FE0A0' }}>Provider key connected</span>
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={value}
-              onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
-              placeholder="sk-ant-…"
-              className="flex-1 rounded-lg px-4 py-3 text-sm font-mono"
-              style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
-            />
-            <button
-              onClick={connect}
-              disabled={status === 'saving'}
-              className="shrink-0 px-5 py-3 rounded-lg text-sm font-semibold cursor-pointer"
-              style={{ background: '#132038', color: '#38E1FF', border: '1px solid #1B2740', opacity: status === 'saving' ? 0.6 : 1 }}
-            >
-              {status === 'saving' ? 'Connecting…' : 'Connect'}
-            </button>
+
+      {issued && (
+        <div className="rounded-lg px-4 py-3 space-y-2" style={{ background: 'rgba(63,224,160,.06)', border: '1px solid rgba(63,224,160,.2)' }}>
+          <p className="text-xs" style={{ color: '#3FE0A0' }}>
+            Key ending ••••{issued.keyHint} connected. Point your agent at the URL below — it is shown once.
+          </p>
+          <div className="flex items-center rounded-lg px-3 py-2" style={{ background: '#070B14', border: '1px solid #15203A' }}>
+            <code className="text-xs font-mono flex-1 break-all" style={{ color: '#38E1FF' }}>{issued.proxyUrl}</code>
+            <CopyButton text={issued.proxyUrl} />
           </div>
-          {status === 'error' && <p className="text-xs" style={{ color: '#ef4444' }}>{msg}</p>}
-        </>
+          <p className="text-[11px] font-mono break-all" style={{ color: '#4E607F' }}>
+            {issued.provider === 'openai'
+              ? `export OPENAI_BASE_URL=${issued.proxyUrl}/v1`
+              : `export ANTHROPIC_BASE_URL=${issued.proxyUrl}`}
+          </p>
+        </div>
       )}
+
+      {keys === null ? (
+        <p className="text-xs font-mono" style={{ color: '#4E607F' }}>Loading connected keys…</p>
+      ) : keys.length > 0 ? (
+        <ul className="space-y-2">
+          {keys.map((k) => (
+            <li
+              key={`${k.wrKey}-${k.createdAt}`}
+              className="flex items-center gap-3 rounded-lg px-4 py-3"
+              style={{ background: '#070B14', border: '1px solid #15203A' }}
+            >
+              <span className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>
+                {PROVIDER_LABELS[k.provider] ?? k.provider}
+              </span>
+              <code className="text-sm font-mono" style={{ color: '#FFB454' }}>••••{k.keyHint}</code>
+              <span className="text-xs" style={{ color: '#4E607F' }}>
+                added {new Date(k.createdAt).toLocaleDateString()}
+              </span>
+              <button
+                onClick={() => disconnect(k)}
+                disabled={status === 'saving'}
+                className="ml-auto shrink-0 text-xs font-mono transition-colors cursor-pointer"
+                style={{ color: '#6B7C9E', opacity: status === 'saving' ? 0.5 : 1 }}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs" style={{ color: '#4E607F' }}>No provider keys connected yet.</p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
+          placeholder={keys && keys.length > 0 ? 'Add another key — sk-ant-… or sk-…' : 'sk-ant-…'}
+          className="flex-1 rounded-lg px-4 py-3 text-sm font-mono"
+          style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
+        />
+        <button
+          onClick={connect}
+          disabled={status === 'saving'}
+          className="shrink-0 px-5 py-3 rounded-lg text-sm font-semibold cursor-pointer"
+          style={{ background: '#132038', color: '#38E1FF', border: '1px solid #1B2740', opacity: status === 'saving' ? 0.6 : 1 }}
+        >
+          {status === 'saving' ? 'Working…' : 'Connect'}
+        </button>
+      </div>
+      {status === 'error' && <p className="text-xs" style={{ color: '#ef4444' }}>{msg}</p>}
     </section>
   );
 }
@@ -182,7 +267,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
         </section>
 
         {/* Bring Your Own Key */}
-        <ByokCard apiKey={apiKey} fleetId={fleetId} />
+        <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />
 
         {/* Live Dashboard + Fleet Status row */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
