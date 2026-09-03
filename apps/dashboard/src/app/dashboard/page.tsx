@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
+import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
 import { registerAgent, tokenLogin } from '@/lib/whiteroom/client';
@@ -23,28 +24,32 @@ function emailToFleetId(email: string) {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(true);
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [props, setProps] = useState<{
     name: string; email: string; apiKey: string; fleetId: string;
     fleetToken: string | null; report: FleetReport | null; isNew: boolean;
   } | null>(null);
+  const started = useRef(false);
 
   useEffect(() => {
-    const supabase = createClient();
+    if (status === 'loading') return;
+    if (status === 'unauthenticated') {
+      router.push('/sign-in');
+      return;
+    }
+    if (started.current || !session?.user) return;
+    started.current = true;
 
-    // getSession reads the cached local session (no network) so returning
-    // users render instantly; the fleet report fills in when it arrives.
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const user = session?.user;
-      if (!user) { router.push('/sign-in'); return; }
-
+    async function handleUser(user: NonNullable<typeof session>['user']) {
       const email = user.email || '';
-      const name = user.user_metadata?.full_name || email.split('@')[0];
+      const name = user.name || email.split('@')[0];
       const fleetId = emailToFleetId(email);
 
-      let apiKey = user.user_metadata?.whiteroom_api_key;
-      let fleetToken = user.user_metadata?.whiteroom_fleet_token || null;
+      const provisioning = await getUserProvisioning();
+      let apiKey = provisioning.apiKey;
+      let fleetToken = provisioning.fleetToken;
       let isNew = false;
 
       if (!apiKey) {
@@ -60,9 +65,7 @@ export default function DashboardPage() {
           setProvisionError(`Fleet provisioning failed: ${err instanceof Error ? err.message : 'network error'}`);
         }
 
-        await supabase.auth.updateUser({
-          data: { whiteroom_api_key: apiKey, whiteroom_fleet_id: fleetId, whiteroom_fleet_token: fleetToken },
-        });
+        await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
         isNew = true;
       }
 
@@ -82,8 +85,10 @@ export default function DashboardPage() {
           }
         } catch {}
       }
-    });
-  }, [router]);
+    }
+
+    handleUser(session.user);
+  }, [status, session, router]);
 
   if (loading) {
     return (

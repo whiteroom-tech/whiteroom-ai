@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { getUserProvisioning, setByok } from '@/lib/users';
 import { rebindFleetKey } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
 import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@whiteroom/ui';
@@ -27,8 +27,8 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    createClient().auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.user_metadata?.whiteroom_byok) setConnected(true);
+    getUserProvisioning().then((provisioning) => {
+      if (provisioning.byok) setConnected(true);
     });
   }, []);
 
@@ -41,7 +41,7 @@ function ByokCard({ apiKey, fleetId }: { apiKey: string; fleetId: string }) {
       const result = await rebindFleetKey(fleetId, key, apiKey);
       if (!result.success) { setStatus('error'); setMsg(result.error || 'Rebind failed.'); return; }
       // Persist only a flag — never the raw provider key — in the account.
-      await createClient().auth.updateUser({ data: { whiteroom_byok: true } });
+      await setByok(true);
       setConnected(true); setValue('');
     } catch (e) {
       setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
@@ -135,6 +135,55 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           </div>
         )}
 
+        {/* Getting Started */}
+        <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
+
+          <div className="space-y-8">
+            {/* Step 1 */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Point your agent at WhiteRoom</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Change one URL so your agent&apos;s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.</p>
+                </div>
+                <div className="space-y-2">
+                  <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
+                  <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>2</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and starts governance automatically when your first API call flows through the proxy.</p>
+                </div>
+                <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>3</div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
+                </div>
+                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/fleet" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Bring Your Own Key */}
+        <ByokCard apiKey={apiKey} fleetId={fleetId} />
+
         {/* Live Dashboard + Fleet Status row */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
           <a
@@ -187,55 +236,6 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
               {showKey ? apiKey : '•'.repeat(46)}
             </code>
             <CopyButton text={apiKey} disabled={!showKey} />
-          </div>
-        </section>
-
-        {/* Bring Your Own Key */}
-        <ByokCard apiKey={apiKey} fleetId={fleetId} />
-
-        {/* Getting Started */}
-        <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
-
-          <div className="space-y-8">
-            {/* Step 1 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Point your agent at WhiteRoom</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Change one URL so your agent&apos;s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.</p>
-                </div>
-                <div className="space-y-2">
-                  <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
-                  <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
-                </div>
-              </div>
-            </div>
-
-            {/* Step 2 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>2</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and starts governance automatically when your first API call flows through the proxy.</p>
-                </div>
-                <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>3</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
-                </div>
-                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/fleet" />
-              </div>
-            </div>
           </div>
         </section>
 

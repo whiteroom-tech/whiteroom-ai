@@ -2,8 +2,7 @@ import type { NextConfig } from 'next';
 import path from 'node:path';
 
 const nextConfig: NextConfig = {
-  output: 'export',
-  trailingSlash: true,
+  output: 'standalone',
   // @whiteroom/ui ships raw .ts/.tsx source over a local file: link, so Next
   // has to transpile it rather than treat it as pre-built node_modules code.
   transpilePackages: ['@whiteroom/ui'],
@@ -13,6 +12,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname, '..', '..'),
   },
+  // Same reasoning as turbopack.root, but for the production build's file
+  // tracer (used by output: 'standalone' to bundle only what's needed).
+  outputFileTracingRoot: path.join(__dirname, '..', '..'),
 };
 
 export default nextConfig;

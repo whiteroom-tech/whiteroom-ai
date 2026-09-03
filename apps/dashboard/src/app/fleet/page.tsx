@@ -1,30 +1,43 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKey } from '@/lib/analytics-metrics';
+import { isFeedVariant, type FeedVariant } from '@/lib/activity';
+import { ActivityFeed } from '@/components/ActivityFeed';
+import { RingGauge, Beacon } from '@/components/AgentGauge';
+import { FleetVisualization } from '@/components/FleetVisualization';
+import { Sidebar } from '@/components/Sidebar';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
-import { Logo, BannerMetric, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { Logo, StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; badgeBd: string; bar: string }> = {
-  working:      { border: '#22c55e', badgeBg: '#052e16', badgeTx: '#4ade80', badgeBd: '#22c55e', bar: '#22c55e' },
-  resting:      { border: '#0ea5e9', badgeBg: '#0c4a6e', badgeTx: '#38bdf8', badgeBd: '#0ea5e9', bar: '#0ea5e9' },
-  idle:         { border: '#475569', badgeBg: '#1e293b', badgeTx: '#94a3b8', badgeBd: '#475569', bar: '#475569' },
-  handover_out: { border: '#a78bfa', badgeBg: '#2e1065', badgeTx: '#c4b5fd', badgeBd: '#a78bfa', bar: '#a78bfa' },
-  stale:        { border: '#f97316', badgeBg: '#431407', badgeTx: '#fb923c', badgeBd: '#f97316', bar: '#f97316' },
-  disconnected: { border: '#ef4444', badgeBg: '#450a0a', badgeTx: '#f87171', badgeBd: '#ef4444', bar: '#ef4444' },
+  working:      { border: 'var(--ok)', badgeBg: 'var(--ok-bg)', badgeTx: 'var(--ok)', badgeBd: 'var(--ok)', bar: 'var(--ok)' },
+  resting:      { border: 'var(--info)', badgeBg: 'var(--info-bg)', badgeTx: 'var(--info)', badgeBd: 'var(--info)', bar: 'var(--info)' },
+  idle:         { border: 'var(--tx3)', badgeBg: 'var(--line)', badgeTx: 'var(--tx2)', badgeBd: 'var(--tx3)', bar: 'var(--tx3)' },
+  handover_out: { border: 'var(--ho)', badgeBg: 'var(--ho-bg)', badgeTx: 'var(--ho)', badgeBd: 'var(--ho)', bar: 'var(--ho)' },
+  stale:        { border: 'var(--warn)', badgeBg: 'var(--warn-bg)', badgeTx: 'var(--warn)', badgeBd: 'var(--warn)', bar: 'var(--warn)' },
+  disconnected: { border: 'var(--bad)', badgeBg: 'var(--bad-bg)', badgeTx: 'var(--bad)', badgeBd: 'var(--bad)', bar: 'var(--bad)' },
 };
 
-function feedAccent(type: string): string {
-  if (type === 'task_complete') return '#22c55e';
-  if (type.includes('handover')) return '#a855f7';
-  if (type === 'watch_start' || type === 'alarm') return '#38bdf8';
-  if (type.includes('rest') || type === 'watch_end') return '#0ea5e9';
-  return '#475569';
+const AGENT_VIEWS = ['cards', 'compact', 'list', 'rings', 'beacon'] as const;
+type AgentView = (typeof AGENT_VIEWS)[number];
+function isAgentView(v: unknown): v is AgentView {
+  return typeof v === 'string' && (AGENT_VIEWS as readonly string[]).includes(v);
 }
+const AGENT_GRID_COLS: Record<AgentView, string> = {
+  cards: '1fr 1fr',
+  compact: '1fr 1fr 1fr',
+  list: '1fr',
+  rings: 'repeat(auto-fill, minmax(104px, 1fr))',
+  beacon: 'repeat(auto-fill, minmax(84px, 1fr))',
+};
+const AGENT_GRID_GAP: Record<AgentView, number> = {
+  cards: 8, compact: 8, list: 0, rings: 14, beacon: 14,
+};
 
 function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
@@ -36,19 +49,28 @@ export default function FleetDashboard() {
   const [handoverDocs, setHandoverDocs] = useState<Record<string, HandoverDoc>>({});
   const [error, setError] = useState('');
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
-  const [auditTotal, setAuditTotal] = useState(0);
   const [agentIds, setAgentIds] = useState<string[]>([]);
   const [filterAgent, setFilterAgent] = useState('');
   const [filterType, setFilterType] = useState('task_complete');
   const [searchText, setSearchText] = useState('');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [feedPage, setFeedPage] = useState(0);
+  const [feedVariant, setFeedVariant] = useState<FeedVariant>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_feed_variant') : null;
+    return isFeedVariant(saved) ? saved : 'log';
+  });
+  const [technical, setTechnical] = useState(() => typeof window !== 'undefined' && localStorage.getItem('wr_feed_technical') === '1');
+  const [agentView, setAgentView] = useState<AgentView>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_agent_view') : null;
+    return isAgentView(saved) ? saved : 'cards';
+  });
   const [railWidth, setRailWidth] = useState(360);
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
   const [authenticated, setAuthenticated] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'analytics'>('live');
+  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>('live');
   const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('today');
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [scopedDay, setScopedDay] = useState<string | null>(null);
@@ -166,7 +188,6 @@ export default function FleetDashboard() {
       const data = await auditLog({ fleetId, agentId: filterAgent || undefined, type: filterType || undefined, search: searchText || undefined, limit: 200 }, authKey);
       if ('error' in data) return;
       setAuditEntries(data.entries);
-      setAuditTotal(data.total);
       if (data.filters?.agentIds) setAgentIds(data.filters.agentIds);
     } catch { /* ignore */ }
   }, [fleetId, filterAgent, filterType, searchText, authKey]);
@@ -205,10 +226,52 @@ export default function FleetDashboard() {
 
   useEffect(() => { if (activeTab === 'analytics') fetchAllEntries(); }, [activeTab, fetchAllEntries]);
 
+  // Visualization is a "right now" board, not a historical range like
+  // Analytics — it wants its own faster, always-on poll while it's the
+  // active tab, not just the one fetch Analytics gets on open.
+  useEffect(() => {
+    if (activeTab !== 'visualization') return;
+    fetchAllEntries();
+    const id = setInterval(fetchAllEntries, 4000);
+    return () => clearInterval(id);
+  }, [activeTab, fetchAllEntries]);
+
   function handleSearchChange(value: string) {
     setSearchText(value);
+    setFeedPage(0);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => fetchAudit(), 300);
+  }
+
+  // Narrowing the result set changes what "page 3" means, so each filter
+  // change returns to the newest page.
+  function changeFilterAgent(value: string) {
+    setFilterAgent(value);
+    setFeedPage(0);
+  }
+
+  function changeFilterType(value: string) {
+    setFilterType(value);
+    setFeedPage(0);
+  }
+
+  function changeFeedVariant(v: string) {
+    if (!isFeedVariant(v)) return;
+    setFeedVariant(v);
+    localStorage.setItem('wr_feed_variant', v);
+  }
+
+  function toggleTechnical() {
+    setTechnical((prev) => {
+      localStorage.setItem('wr_feed_technical', prev ? '0' : '1');
+      return !prev;
+    });
+  }
+
+  function changeAgentView(v: string) {
+    if (!isAgentView(v)) return;
+    setAgentView(v);
+    localStorage.setItem('wr_agent_view', v);
   }
 
   function toggleExpanded(taskId: string) {
@@ -269,17 +332,17 @@ export default function FleetDashboard() {
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#070B14', fontFamily: "'Inter', system-ui, sans-serif" }}>
-        <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+      <div className="wr-shell min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+        <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
           <div className="flex items-center justify-center gap-2.5 mb-1">
             <Logo width={22} height={30} gradientId="wr-l" />
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, letterSpacing: 3, color: '#EAF1FF' }}>WHITE ROOM</span>
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, letterSpacing: 3, color: 'var(--tx)' }}>WHITE ROOM</span>
           </div>
-          <p style={{ fontSize: 10, letterSpacing: 1, color: '#6B7C9E', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+          <p style={{ fontSize: 10, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
 
           <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
             <div>
-              <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 10, color: '#6B7C9E', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
+              <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 10, color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
                 YOUR API KEY OR FLEET TOKEN
               </label>
               <input
@@ -289,24 +352,24 @@ export default function FleetDashboard() {
                 onChange={(e) => setLoginToken(e.target.value)}
                 placeholder="wr_... or sk-ant-..."
                 required
-                style={{ width: '100%', background: '#070B14', border: '1px solid #1B2740', borderRadius: 8, padding: '12px 16px', color: '#EAF1FF', fontSize: 13, fontFamily: FONT_MONO, outline: 'none' }}
+                style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 13, fontFamily: FONT_MONO, outline: 'none' }}
               />
             </div>
 
             {loginError && (
-              <p style={{ color: '#ef4444', fontSize: 13 }}>{loginError}</p>
+              <p style={{ color: 'var(--bad)', fontSize: 13 }}>{loginError}</p>
             )}
 
             <button
               type="submit"
               disabled={loginLoading || !loginToken}
-              style={{ width: '100%', background: '#38E1FF', color: '#070B14', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 14, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
+              style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 14, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
             >
               {loginLoading ? 'CONNECTING...' : 'CONNECT TO MY FLEET →'}
             </button>
           </form>
 
-          <p style={{ color: '#4E607F', fontSize: 10, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+          <p style={{ color: 'var(--tx3)', fontSize: 10, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
             Your key is never stored or sent to any third party.<br />
             It is used only to identify your fleet in this session.
           </p>
@@ -317,8 +380,8 @@ export default function FleetDashboard() {
 
   if (!report) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
-        <p className="text-sm font-mono" style={{ color: '#6B7C9E' }}>{error || 'Loading fleet...'}</p>
+      <div className="wr-shell min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <p className="text-sm font-mono" style={{ color: 'var(--tx3)' }}>{error || 'Loading fleet...'}</p>
       </div>
     );
   }
@@ -383,231 +446,351 @@ export default function FleetDashboard() {
 
   const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
 
+  // Same status→color mapping as the agent cards, reduced to what the
+  // Visualization board needs.
+  const vizAgents = agents.map((agent) => {
+    const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
+    return {
+      agentId: agent.agentId,
+      status,
+      color: (SC[status] || SC.idle).bar,
+      tokensUsed: agent.tokensUsed || 0,
+      tasksCompleted: agent.tasksCompleted || 0,
+    };
+  });
+
   return (
-    <div className="flex flex-col h-screen" style={{ background: '#070B14', color: '#EAF1FF', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13 }}>
-      {/* Header */}
-      <header className="flex items-center justify-between px-5 py-2.5" style={{ background: '#0a0f1a', borderBottom: '1px solid #1e293b' }}>
-        <div className="flex items-center gap-2.5">
-          <div className="w-2 h-2 rounded-full" style={{ background: '#22c55e', boxShadow: '0 0 12px #22c55e', animation: 'pulse-dot 2s infinite' }} />
-          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 3 }}>WHITE ROOM</span>
-          <span style={{ fontSize: 10, color: '#475569', borderLeft: '1px solid #334155', paddingLeft: 10 }}>{agents.length > 0 && agents[0].watchMinutes ? `${agents[0].watchMinutes}min ON / ${agents[0].handoverMinutes || 5}min HANDOVER / ${agents[0].restMinutes || 10}min REST` : 'Loading config...'}</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: '#7dd3fc', background: '#0c4a6e', border: '1px solid #0369a1', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span style={{ fontSize: 10, color: '#22c55e', background: '#052e16', border: '1px solid #166534', borderRadius: 4, padding: '2px 8px' }}>● CONNECTED</span>
-          <span style={{ fontSize: 10, color: '#64748b' }}>Fleet: {report.fleetId}</span>
-          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: report.compliance.allAgentsWithinLimits ? '#052e16' : '#1c0f0f', color: report.compliance.allAgentsWithinLimits ? '#22c55e' : '#ef4444', border: `1px solid ${report.compliance.allAgentsWithinLimits ? '#166534' : '#7f1d1d'}` }}>
+    <div className="wr-shell" style={{ background: 'var(--bg)', color: 'var(--tx)', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13, display: 'grid', gridTemplateColumns: '212px 1fr', gridTemplateRows: 'minmax(0, 1fr)', height: '100vh', overflow: 'hidden' }}>
+      <Sidebar active={activeTab} onNavigate={setActiveTab} fleetId={report.fleetId} />
+
+      <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0 }}>
+        {/* Top bar */}
+        <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--tx3)' }}>
+            <b style={{ color: 'var(--tx)', fontWeight: 600 }}>{activeTab === 'live' ? 'Fleet' : activeTab === 'analytics' ? 'Analytics' : 'Visualization'}</b> / {report.fleetId}
+          </span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
+          <span style={{ marginLeft: 'auto' }} />
+          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ok)', background: 'var(--ok-bg)', border: '1px solid var(--ok)', borderRadius: 6, padding: '5px 11px' }}>● connected</span>
+          <span style={{ fontSize: 10, fontWeight: 600, padding: '5px 11px', borderRadius: 6, background: report.compliance.allAgentsWithinLimits ? 'var(--ok-bg)' : 'var(--bad-bg)', color: report.compliance.allAgentsWithinLimits ? 'var(--ok)' : 'var(--bad)' }}>
             {report.compliance.allAgentsWithinLimits ? 'COMPLIANT' : 'VIOLATION'}
           </span>
-          <button onClick={() => resetSession()} style={{ fontSize: 11, color: '#64748b', border: '1px solid #1e293b', borderRadius: 4, padding: '4px 12px', background: 'transparent', cursor: 'pointer' }}>Sign Out</button>
+          <button onClick={() => resetSession()} style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
         </div>
-      </header>
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-0" style={{ borderBottom: '1px solid #1e293b', background: '#0a0f1a' }}>
-        <button onClick={() => setActiveTab('live')} style={{ padding: '8px 20px', fontSize: 11, fontWeight: 700, letterSpacing: 1.5, cursor: 'pointer', border: 'none', borderBottom: activeTab === 'live' ? '2px solid #38E1FF' : '2px solid transparent', background: 'transparent', color: activeTab === 'live' ? '#38E1FF' : '#64748b', transition: 'all .15s' }}>
-          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#22c55e', marginRight: 6, boxShadow: '0 0 6px #22c55e' }} />LIVE FLEET
-        </button>
-        <button onClick={() => setActiveTab('analytics')} style={{ padding: '8px 20px', fontSize: 11, fontWeight: 700, letterSpacing: 1.5, cursor: 'pointer', border: 'none', borderBottom: activeTab === 'analytics' ? '2px solid #38E1FF' : '2px solid transparent', background: 'transparent', color: activeTab === 'analytics' ? '#38E1FF' : '#64748b', transition: 'all .15s' }}>
-          ANALYTICS
-        </button>
-        {activeTab === 'analytics' && (
-          <div className="flex items-center gap-1" style={{ marginLeft: 14 }}>
-            {(['today', '7d', '30d', 'recent'] as const).map(r => (
-              <button key={r} onClick={() => setAnalyticsRange(r)} style={{ padding: '3px 10px', fontSize: 10, fontWeight: 600, letterSpacing: 1, borderRadius: 4, cursor: 'pointer', border: analyticsRange === r ? '1px solid #38E1FF' : '1px solid #334155', background: analyticsRange === r ? 'rgba(56,225,255,.1)' : 'transparent', color: analyticsRange === r ? '#38E1FF' : '#94a3b8', transition: 'all .15s' }}>
-                {r.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        )}
-        <span style={{ marginLeft: 'auto', paddingRight: 16, fontSize: 10, color: '#475569' }}>
-          {activeTab === 'live' ? 'Real-time fleet monitoring' : 'Historical audit — trends, per-agent attribution'}
-        </span>
-      </div>
-
-      {/* Banner — 6 metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, padding: '14px 20px', borderBottom: '1px solid #1e293b', background: 'linear-gradient(90deg, #052e16 0%, #0a0f1a 40%, #0c4a6e 100%)' }}>
-        {activeTab === 'live' ? (<>
-          <BannerMetric label="TASKS COMPLETED" value={watchTasks ? String(watchTasks) : '—'} color="#f8fafc" />
-          <BannerMetric label="TOKENS (W/ WHITEROOM)" value={watchTokens > 0 ? fmtK(watchTokens) : '—'} color="#86efac" />
-          <BannerMetric label="TOKENS (W/O WHITEROOM)" value={watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'} color="#fca5a5" />
-          <BannerMetric label="TOKENS SAVED" value={watchSaved > 0 ? fmtK(watchSaved) : '—'} color="#4ade80" />
-          <BannerMetric label="SAVINGS" value={watchSavingsPct > 0 ? watchSavingsPct.toFixed(1) + '%' : '—'} color="#4ade80" />
-          <BannerMetric label="HANDOVERS" value={watchHandovers ? String(watchHandovers) : '—'} color="#818cf8" />
-        </>) : (<>
-          <BannerMetric label="TASKS COMPLETED" value={rangeTotals.tasks ? String(rangeTotals.tasks) : '—'} color="#f8fafc" />
-          <BannerMetric label="TOKENS (W/ WHITEROOM)" value={rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'} color="#86efac" />
-          <BannerMetric label="TOKENS (W/O WHITEROOM)" value={rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'} color="#fca5a5" />
-          <BannerMetric label="TOKENS SAVED" value={rangeTotals.saved > 0 ? fmtK(rangeTotals.saved) : '—'} color="#4ade80" />
-          <BannerMetric label="SAVINGS %" value={rangeTotals.used + rangeTotals.saved > 0 ? pctOf(rangeTotals.used, rangeTotals.saved).toFixed(1) + '%' : '—'} color="#4ade80" />
-          <BannerMetric label="COST SAVED" value={rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(4)}` : '—'} color="#4ade80" />
-          <BannerMetric label="HANDOVERS" value={rangeTotals.handovers ? String(rangeTotals.handovers) : '—'} color="#818cf8" />
-        </>)}
-      </div>
-
-      {/* Main grid — Live tab */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* Main grid — Live page */}
       {activeTab === 'live' ? (
-      <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px` }}>
+      <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 11, padding: '14px 20px 0' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tasks completed</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5 }}>{watchTasks ? String(watchTasks) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/ WhiteRoom</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{watchTokens > 0 ? fmtK(watchTokens) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/o WhiteRoom</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--bad)' }}>{watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{watchSaved > 0 ? fmtK(watchSaved) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Savings</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{watchSavingsPct > 0 ? watchSavingsPct.toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ho)' }}>{watchHandovers ? String(watchHandovers) : '—'}</div>
+        </div>
+      </div>
+      <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px`, gridTemplateRows: 'minmax(0, 1fr)', padding: '12px 20px 0' }}>
         {/* Left: Agents + Comparison */}
         <div style={{ overflowY: 'auto', padding: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agents</span>
+            <select
+              aria-label="Agent card style"
+              value={agentView}
+              onChange={(e) => changeAgentView(e.target.value)}
+              style={{ borderRadius: 4, padding: '3px 6px', fontSize: 10, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}
+            >
+              <option value="cards">▦ Cards</option>
+              <option value="compact">▤ Compact</option>
+              <option value="list">☰ List</option>
+              <option value="rings">◎ Rings</option>
+              <option value="beacon">◉ Beacon</option>
+            </select>
+          </div>
+
+          {agentView === 'list' && agents.length > 0 && (
+            <div className="flex items-center gap-3" style={{ padding: '0 4px 4px', fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)' }}>
+              <span style={{ width: 8, flexShrink: 0 }} />
+              <span style={{ minWidth: 100 }}>AGENT</span>
+              <span style={{ minWidth: 76, textAlign: 'center' as const }}>STATUS</span>
+              <span style={{ flex: 1 }}>PROGRESS</span>
+              <span style={{ width: 36, textAlign: 'right' as const }}>WATCH</span>
+              <span style={{ width: 36, textAlign: 'right' as const }}>HLTH</span>
+              <span style={{ width: 56, textAlign: 'right' as const }}>TOKENS</span>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: AGENT_GRID_COLS[agentView], gap: AGENT_GRID_GAP[agentView], marginBottom: 12 }}>
             {agents.map((agent) => {
               const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
               const sc = SC[status] || SC.idle;
               const pct = parseFloat((agent.percentComplete || '0').toString().replace('%', '')) || 0;
               const h = agentHealth[agent.agentId] || { health: 100 };
               const health = h.health;
-              const healthColor = health >= 80 ? '#22c55e' : health >= 55 ? '#4ade80' : health >= 35 ? '#f59e0b' : '#ef4444';
+              const healthColor = health >= 80 ? 'var(--ok)' : health >= 55 ? 'var(--ok)' : health >= 35 ? 'var(--warn)' : 'var(--bad)';
               const restPct = parseFloat((agent.restPercent || '0').replace('%', '')) || 0;
-              const watchBarColor = pct > 85 && status !== 'resting' ? '#f59e0b' : sc.bar;
+              const watchBarColor = pct > 85 && status !== 'resting' ? 'var(--warn)' : sc.bar;
               const watchDisplay = status === 'resting' ? restPct : pct;
               const tokens = agent.tokensUsed || 0;
               const hdoc = handoverDocs[agent.agentId];
 
+              if (agentView === 'rings') {
+                const animate = status === 'working';
+                return (
+                  <div key={agent.agentId} className="flex flex-col items-center" style={{ gap: 6, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 6px' }}>
+                    <div style={{ position: 'relative', width: 72, height: 72 }}>
+                      <RingGauge progress={watchDisplay} progressColor={watchBarColor} health={health} healthColor={healthColor} animate={animate} />
+                      <div className="flex items-center justify-center" style={{ position: 'absolute', inset: 0 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)' }}>{watchDisplay.toFixed(0)}%</span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'center' as const }}>
+                      <div style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
+                      <div style={{ fontSize: 9, color: 'var(--tx2)', marginTop: 1 }}>{status.toUpperCase()} · {fmtK(tokens)}</div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (agentView === 'beacon') {
+                const animate = status === 'working';
+                const breathe = status === 'resting';
+                return (
+                  <div key={agent.agentId} className="flex flex-col items-center" style={{ gap: 6, padding: '10px 4px' }}>
+                    <Beacon color={sc.bar} animate={animate} breathe={breathe} />
+                    <div style={{ textAlign: 'center' as const }}>
+                      <div style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
+                      <div style={{ fontSize: 9, color: 'var(--tx2)' }}>{status.toUpperCase()} · {watchDisplay.toFixed(0)}%</div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (agentView === 'list') {
+                return (
+                  <div key={agent.agentId} className="flex items-center gap-3" style={{ borderBottom: '1px solid var(--line)', padding: '6px 4px' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: sc.border, flexShrink: 0 }} />
+                    <span style={{ minWidth: 100, fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
+                    <span style={{ minWidth: 76, textAlign: 'center' as const, fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                    <div style={{ flex: 1, height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
+                    </div>
+                    <span style={{ width: 36, textAlign: 'right' as const, fontSize: 10, color: 'var(--tx2)' }}>{watchDisplay.toFixed(0)}%</span>
+                    <span style={{ width: 36, textAlign: 'right' as const, fontSize: 10, color: healthColor }}>{health.toFixed(0)}%</span>
+                    <span style={{ width: 56, textAlign: 'right' as const, fontSize: 10, color: 'var(--tx)' }}>{fmtK(tokens)}</span>
+                  </div>
+                );
+              }
+
+              if (agentView === 'compact') {
+                return (
+                  <div key={agent.agentId} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderLeft: `3px solid ${sc.border}`, borderRadius: 6, padding: 8 }}>
+                    <div className="flex justify-between items-center" style={{ marginBottom: 4 }}>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                    </div>
+                    <div style={{ height: 3, borderRadius: 99, background: 'var(--line)', overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
+                    </div>
+                    <div className="flex justify-between" style={{ fontSize: 9, color: 'var(--tx2)' }}>
+                      <span>W{agent.watchNumber || 1} · {fmtK(tokens)} tok</span>
+                      <span style={{ color: healthColor }}>{health.toFixed(0)}% hlth</span>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <div key={agent.agentId} style={{ background: '#0a0f1a', border: '1px solid #1e293b', borderLeft: `3px solid ${sc.border}`, borderRadius: 8, padding: 12 }}>
+                <div key={agent.agentId} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderLeft: `3px solid ${sc.border}`, borderRadius: 8, padding: 12 }}>
                   <div className="flex justify-between items-start" style={{ marginBottom: 8 }}>
                     <div>
                       <div style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, letterSpacing: 1 }}>{agent.agentId.toUpperCase()}</div>
-                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Watch #{agent.watchNumber || 1} · {agent.tasksCompleted || 0} tasks · {agent.minutesWorked || 0}min worked</div>
+                      <div style={{ fontSize: 10, color: 'var(--tx2)', marginTop: 2 }}>Watch #{agent.watchNumber || 1} · {agent.tasksCompleted || 0} tasks · {agent.minutesWorked || 0}min worked</div>
                     </div>
                     <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, letterSpacing: 1, whiteSpace: 'nowrap', background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
                   </div>
                   <div style={{ marginBottom: 6 }}>
-                    <div className="flex justify-between" style={{ fontSize: 10, color: '#475569', marginBottom: 2 }}>
+                    <div className="flex justify-between" style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 2 }}>
                       <span>{status === 'resting' ? 'Rest progress' : 'Watch progress'}</span>
-                      <span style={{ color: '#94a3b8' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${agent.minutesRemaining || 0}min left`}</span>
+                      <span style={{ color: 'var(--tx2)' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${agent.minutesRemaining || 0}min left`}</span>
                     </div>
-                    <div style={{ height: 4, borderRadius: 99, background: '#1e293b', overflow: 'hidden' }}>
+                    <div style={{ height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 99, transition: 'all 1s', width: `${watchDisplay}%`, background: watchBarColor }} />
                     </div>
-                    <div className="flex justify-between" style={{ fontSize: 10, color: '#475569', marginTop: 4, marginBottom: 2 }}>
+                    <div className="flex justify-between" style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 4, marginBottom: 2 }}>
                       <span>Health {health < 50 ? '⚠' : ''}</span>
                       <span style={{ color: healthColor }}>{health.toFixed(0)}%</span>
                     </div>
-                    <div style={{ height: 4, borderRadius: 99, background: '#1e293b', overflow: 'hidden' }}>
+                    <div style={{ height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 99, transition: 'all 1s', width: `${health}%`, background: healthColor }} />
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginTop: 6 }}>
-                    <StatBox label="TOKENS USED" value={fmtK(tokens)} color={tokens > 20000 ? '#f59e0b' : '#e2e8f0'} />
-                    <StatBox label="WATCH %" value={`${pct.toFixed(0)}%`} color={pct > 80 ? '#f59e0b' : '#e2e8f0'} />
-                    <StatBox label="WATCH #" value={String(agent.watchNumber || 1)} color="#818cf8" />
+                    <StatBox label="TOKENS USED" value={fmtK(tokens)} color={tokens > 20000 ? 'var(--warn)' : 'var(--tx)'} />
+                    <StatBox label="WATCH %" value={`${pct.toFixed(0)}%`} color={pct > 80 ? 'var(--warn)' : 'var(--tx)'} />
+                    <StatBox label="WATCH #" value={String(agent.watchNumber || 1)} color="var(--ho)" />
                   </div>
                   {hdoc && (
-                    <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: '#050810', border: '1px solid #1e293b', fontSize: 10 }}>
-                      <div style={{ fontWeight: 700, letterSpacing: 1, marginBottom: 4, color: '#818cf8' }}>HANDOVER DOCUMENT — COMPRESSED CONTEXT</div>
-                      {hdoc.state && <div style={{ color: '#64748b', marginBottom: 2 }}>STATE: <span style={{ color: '#94a3b8' }}>{hdoc.state.slice(0, 120)}...</span></div>}
-                      {hdoc.pending && hdoc.pending.length > 0 && <div style={{ color: '#64748b', marginBottom: 2 }}>PENDING: <span style={{ color: '#94a3b8' }}>{hdoc.pending.map((p) => p.task).slice(0, 2).join(', ')}</span></div>}
-                      {hdoc.warnings && hdoc.warnings.length > 0 && <div style={{ color: '#64748b' }}>⚠ {hdoc.warnings[0].slice(0, 100)}</div>}
-                      {hdoc.session_stats && <div style={{ color: '#64748b' }}>COMPRESSED: {hdoc.session_stats.tasks_completed} tasks, {fmtK(hdoc.session_stats.total_tokens)} tokens → summary</div>}
+                    <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: 'var(--sunk)', border: '1px solid var(--line)', fontSize: 10 }}>
+                      <div style={{ fontWeight: 700, letterSpacing: 1, marginBottom: 4, color: 'var(--ho)' }}>HANDOVER DOCUMENT — COMPRESSED CONTEXT</div>
+                      {hdoc.state && <div style={{ color: 'var(--tx2)', marginBottom: 2 }}>STATE: <span style={{ color: 'var(--tx2)' }}>{hdoc.state.slice(0, 120)}...</span></div>}
+                      {hdoc.pending && hdoc.pending.length > 0 && <div style={{ color: 'var(--tx2)', marginBottom: 2 }}>PENDING: <span style={{ color: 'var(--tx2)' }}>{hdoc.pending.map((p) => p.task).slice(0, 2).join(', ')}</span></div>}
+                      {hdoc.warnings && hdoc.warnings.length > 0 && <div style={{ color: 'var(--tx2)' }}>⚠ {hdoc.warnings[0].slice(0, 100)}</div>}
+                      {hdoc.session_stats && <div style={{ color: 'var(--tx2)' }}>COMPRESSED: {hdoc.session_stats.tasks_completed} tasks, {fmtK(hdoc.session_stats.total_tokens)} tokens → summary</div>}
                     </div>
                   )}
                 </div>
               );
             })}
-            {agents.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#475569', padding: '40px 0', fontSize: 12 }}>No agents connected yet</div>}
+            {agents.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--tx3)', padding: '40px 0', fontSize: 12 }}>No agents connected yet</div>}
           </div>
 
-          <div style={{ marginTop: 12, textAlign: 'center', fontSize: 10, color: '#475569' }}>Labor Score: {report.compliance.laborScore}</div>
+          <div style={{ marginTop: 12, textAlign: 'center', fontSize: 10, color: 'var(--tx3)' }}>Labor Score: {report.compliance.laborScore}</div>
         </div>
 
         {/* Splitter */}
-        <div onMouseDown={handleSplitterDown} style={{ background: '#1e293b', cursor: 'col-resize' }} title="Drag to resize the feed" />
+        <div onMouseDown={handleSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
 
         {/* Right: Audit Feed */}
-        <div className="flex flex-col min-w-0">
-          <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid #1e293b' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: '#94a3b8', textTransform: 'uppercase' as const }}>Task / Event Feed</span>
+        <div className="flex flex-col min-w-0" style={{ minHeight: 0 }}>
+          <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
             <div className="flex items-center gap-2">
-              <span style={{ fontSize: 10, color: '#475569' }}>{auditTotal} event{auditTotal !== 1 ? 's' : ''}</span>
-              <button onClick={exportWorkbook} style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155', cursor: 'pointer' }} title="Export to Excel">⬇ Export .xlsx</button>
+              <select
+                aria-label="Activity row style"
+                value={feedVariant}
+                onChange={(e) => changeFeedVariant(e.target.value)}
+                style={{ borderRadius: 4, padding: '3px 6px', fontSize: 10, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}
+              >
+                <option value="log">▤ Log</option>
+                <option value="tape">⛓ Tape</option>
+                <option value="manifest">▦ Manifest</option>
+              </select>
+              <button
+                onClick={toggleTechnical}
+                aria-pressed={technical}
+                title="Show raw event types, token counts and tool arguments"
+                style={{
+                  borderRadius: 4, padding: '4px 8px', fontSize: 10, fontWeight: 600, letterSpacing: 0.3, cursor: 'pointer',
+                  border: `1px solid ${technical ? 'var(--info)' : 'var(--line2)'}`, background: technical ? 'var(--info-bg)' : 'var(--sunk)', color: technical ? 'var(--info)' : 'var(--tx2)',
+                }}
+              >
+                Tech
+              </button>
+              <button onClick={exportWorkbook} style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Export to Excel">⬇ .xlsx</button>
             </div>
           </div>
-          <div className="flex gap-1.5 flex-wrap" style={{ padding: '8px 12px', borderBottom: '1px solid #1e293b' }}>
-            <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} style={{ flex: 1, minWidth: 110, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}>
+          <div className="flex gap-1.5 flex-wrap" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
+            <select value={filterAgent} onChange={(e) => changeFilterAgent(e.target.value)} style={{ flex: 1, minWidth: 110, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
               <option value="">All agents</option>
               {agentIds.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }}>
+            <select value={filterType} onChange={(e) => changeFilterType(e.target.value)} style={{ borderRadius: 6, padding: '4px 8px', fontSize: 11, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
               <option value="">All events</option>
               <option value="task_complete">Tasks only</option>
             </select>
-            <input value={searchText} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 90, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: '#0f172a', color: '#cbd5e1', border: '1px solid #334155' }} />
+            <input value={searchText} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 90, borderRadius: 6, padding: '4px 8px', fontSize: 11, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }} />
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-            {auditEntries.length === 0 ? (
-              <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', marginTop: 32 }}>No events yet</p>
-            ) : auditEntries.map((entry) => {
-              const isTask = entry.type === 'task_complete';
-              const details = Array.isArray(entry.details) ? entry.details : [];
-              const canExpand = details.length > 0;
-              const isOpen = entry.taskId ? expandedTasks.has(entry.taskId) : false;
-              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-              return (
-                <div key={entry.id} style={{ borderLeft: `3px solid ${feedAccent(entry.type)}`, padding: '6px 8px', background: '#0b1220', borderRadius: '0 6px 6px 0', marginBottom: 6 }}>
-                  <div style={{ cursor: canExpand ? 'pointer' : 'default' }} onClick={canExpand && entry.taskId ? () => toggleExpanded(entry.taskId!) : undefined}>
-                    <div style={{ fontSize: 12, color: '#f1f5f9', wordBreak: 'break-word' as const }}>
-                      {canExpand && <span style={{ color: '#38bdf8' }}>{isOpen ? '▾' : '▸'} </span>}
-                      {isTask ? (entry.taskName || 'task') : <span style={{ textTransform: 'uppercase' as const, letterSpacing: 1, color: '#94a3b8', fontSize: 11 }}>{entry.type}</span>}
-                      {canExpand && <span style={{ color: '#475569' }}> ({details.length})</span>}
-                    </div>
-                    <div style={{ marginTop: 2, color: '#64748b', fontSize: 11 }}>
-                      {isTask ? (
-                        <Fragment>
-                          {((entry.tokensUsed ?? 0) / 1000).toFixed(1)}K · watch #{entry.watchNumber}{' · '}
-                          <span style={{ color: (entry.remaining ?? 0) < 0 ? '#ef4444' : '#64748b' }}>{entry.remaining}min left</span>
-                        </Fragment>
-                      ) : (entry.agentId || '')}
-                      {' · '}{time}
-                    </div>
-                  </div>
-                  {canExpand && isOpen && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #1e293b' }}>
-                      <div style={{ fontSize: 10, color: '#475569', letterSpacing: '.05em', marginBottom: 3 }}>TOOL CALLS</div>
-                      {details.map((d, i) => (
-                        <div key={i} style={{ fontSize: 11, padding: '2px 0', wordBreak: 'break-word' as const }}>
-                          <span style={{ color: '#7dd3fc', fontWeight: 600 }}>{d.name}</span>
-                          {d.args && <span style={{ color: '#94a3b8' }}> &mdash; {d.args}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <ActivityFeed
+            entries={auditEntries}
+            page={feedPage}
+            onPageChange={setFeedPage}
+            variant={feedVariant}
+            technical={technical}
+            expanded={expandedTasks}
+            onToggleExpanded={toggleExpanded}
+          />
         </div>
       </div>
+      </>
+      ) : activeTab === 'visualization' ? (
+        <FleetVisualization agents={vizAgents} entries={allEntries} />
       ) : (
-      /* Analytics tab — matches v3 design */
+      /* Analytics page — matches the sidebar-shell mockup */
       <>
-      {/* Scope row */}
-      <div className="flex items-center gap-2.5" style={{ background: '#0a0f1a', borderBottom: '1px solid #1e293b', padding: '6px 20px', fontSize: 10, color: '#64748b' }}>
-        <span>METRIC SCOPE:</span>
-        {scopedDay ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#0c4a6e', border: '1px solid #0369a1', color: '#7dd3fc', borderRadius: 12, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>
-            VIEWING: {scopeLabel}
-            <button onClick={() => setScopedDay(null)} style={{ background: 'none', border: 'none', color: '#7dd3fc', fontSize: 11, padding: 0, cursor: 'pointer' }}>✕</button>
-          </span>
-        ) : (
-          <span style={{ color: '#94a3b8' }}>{analyticsRange.toUpperCase()}</span>
-        )}
-        <span style={{ color: '#475569' }}>· click a chart day to scope</span>
+      <div className="flex items-center gap-3" style={{ padding: '14px 20px 0' }}>
+        <div className="flex items-center" style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, padding: 3 }}>
+          {(['today', '7d', '30d', 'recent'] as const).map((r) => (
+            <button key={r} onClick={() => setAnalyticsRange(r)} style={{ padding: '5px 12px', fontSize: 10.5, fontWeight: 600, borderRadius: 4, border: 'none', background: analyticsRange === r ? 'var(--card)' : 'transparent', color: analyticsRange === r ? 'var(--brand)' : 'var(--tx3)', boxShadow: analyticsRange === r ? 'inset 0 0 0 1px var(--line2)' : 'none' }}>
+              {r.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <span style={{ marginLeft: 'auto' }} />
       </div>
 
-      <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${analyticsFeedWidth}px` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tasks</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5 }}>{rangeTotals.tasks ? String(rangeTotals.tasks) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/ WhiteRoom</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/o WhiteRoom</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? pctOf(rangeTotals.used, rangeTotals.saved).toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Cost saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(4)}` : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ho)' }}>{rangeTotals.handovers ? String(rangeTotals.handovers) : '—'}</div>
+        </div>
+      </div>
+
+      {/* Scope row */}
+      <div className="flex items-center gap-2.5" style={{ padding: '12px 20px 0', fontSize: 10, color: 'var(--tx2)' }}>
+        <span>METRIC SCOPE:</span>
+        {scopedDay ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--info-bg)', border: '1px solid var(--info)', color: 'var(--info)', borderRadius: 12, padding: '3px 10px', fontSize: 10, fontWeight: 700 }}>
+            VIEWING: {scopeLabel}
+            <button onClick={() => setScopedDay(null)} style={{ background: 'none', border: 'none', color: 'var(--info)', fontSize: 11, padding: 0, cursor: 'pointer' }}>✕</button>
+          </span>
+        ) : (
+          <span style={{ color: 'var(--tx2)' }}>{analyticsRange.toUpperCase()}</span>
+        )}
+        <span style={{ color: 'var(--tx3)' }}>· click a chart day to scope</span>
+      </div>
+
+      <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${analyticsFeedWidth}px`, gridTemplateRows: 'minmax(0, 1fr)' }}>
         {/* Left: Chart + Breakdown */}
         <div style={{ overflowY: 'auto', padding: 12 }}>
         {/* Daily Tokens Chart */}
-        <div style={{ background: '#0a0f1a', border: '1px solid #1e293b', borderRadius: 8, padding: 12, marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
           <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#94a3b8' }}>DAILY TOKENS — W/ WHITEROOM vs W/O WHITEROOM</span>
-            <span style={{ fontSize: 10, color: '#475569' }}>click a day to scope</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>DAILY TOKENS — W/ WHITEROOM vs W/O WHITEROOM</span>
+            <span style={{ fontSize: 10, color: 'var(--tx3)' }}>click a day to scope</span>
           </div>
           <div className="flex items-end" style={{ height: 150, padding: '0 4px 4px', gap: 14 }}>
             {dailyStats.length === 0 ? (
-              <div style={{ flex: 1, textAlign: 'center', color: '#475569', paddingTop: 50, fontSize: 11 }}>No data in range</div>
+              <div style={{ flex: 1, textAlign: 'center', color: 'var(--tx3)', paddingTop: 50, fontSize: 11 }}>No data in range</div>
             ) : dailyStats.map(([day, d]) => {
               const withoutWR = d.used + d.saved;
               const usedH = Math.max(2, (d.used / chartMax) * 110);
@@ -616,58 +799,58 @@ export default function FleetDashboard() {
               const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
               const isSel = scopedDay === day;
               return (
-                <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? '#0c4a6e' : undefined, outline: isSel ? '1px solid #0369a1' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
-                  <span style={{ fontSize: 9, color: '#4ade80', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
+                <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? 'var(--info-bg)' : undefined, outline: isSel ? '1px solid var(--info)' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
+                  <span style={{ fontSize: 9, color: 'var(--ok)', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
                   <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
-                    <div style={{ width: 16, height: usedH, background: '#22c55e', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                    <div style={{ width: 16, height: withoutH, background: '#ef4444', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                    <div style={{ width: 16, height: usedH, background: 'var(--ok)', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                    <div style={{ width: 16, height: withoutH, background: 'var(--bad)', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
                   </div>
-                  <span style={{ fontSize: 9, color: '#475569', marginTop: 5 }}>{label}</span>
+                  <span style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 5 }}>{label}</span>
                 </div>
               );
             })}
           </div>
-          <div className="flex items-center gap-4" style={{ fontSize: 10, color: '#64748b', marginTop: 8, paddingLeft: 4 }}>
-            <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#22c55e' }} /> TOKENS (W/ WHITEROOM)</span>
-            <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#ef4444' }} /> TOKENS (W/O WHITEROOM)</span>
+          <div className="flex items-center gap-4" style={{ fontSize: 10, color: 'var(--tx2)', marginTop: 8, paddingLeft: 4 }}>
+            <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: 'var(--ok)' }} /> TOKENS (W/ WHITEROOM)</span>
+            <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: 'var(--bad)' }} /> TOKENS (W/O WHITEROOM)</span>
           </div>
         </div>
 
         {/* Per-Agent Breakdown */}
-        <div style={{ background: '#0a0f1a', border: '1px solid #1e293b', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
           <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#94a3b8' }}>PER-AGENT BREAKDOWN</span>
-            <span style={{ fontSize: 10, color: '#475569' }}>scope: {scopeLabel || analyticsRange} · saved = own handovers only</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>PER-AGENT BREAKDOWN</span>
+            <span style={{ fontSize: 10, color: 'var(--tx3)' }}>scope: {scopeLabel || analyticsRange} · saved = own handovers only</span>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid #1e293b' }}>
+              <tr style={{ borderBottom: '1px solid var(--line)' }}>
                 {['AGENT', 'TASKS', 'TOKENS', 'HANDOVERS', 'SAVED', 'SAVINGS %'].map(h => (
-                  <th key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#64748b', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>{h}</th>
+                  <th key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {agentBreakdown.length === 0 ? (
-                <tr><td colSpan={6} style={{ color: '#475569', padding: 14, textAlign: 'center', fontSize: 11 }}>No events in scope.</td></tr>
+                <tr><td colSpan={6} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 11 }}>No events in scope.</td></tr>
               ) : agentBreakdown.map(([agent, v]) => {
                 const pct = pctOf(v.used, v.saved);
                 return (
-                  <tr key={agent} style={{ borderBottom: '1px solid #0f172a' }}>
+                  <tr key={agent} style={{ borderBottom: '1px solid var(--sunk)' }}>
                     <td style={{ padding: '6px 8px', fontWeight: 700, fontFamily: FONT_MONO, fontSize: 11 }}>{agent.toUpperCase()}</td>
                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>{v.tasks}</td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#38bdf8' }}>{fmtK(v.used)}</td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#818cf8' }}>{v.handovers || '—'}</td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#4ade80' }}>{v.handovers ? fmtK(v.saved) : '—'}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--info)' }}>{fmtK(v.used)}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ho)' }}>{v.handovers || '—'}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ok)' }}>{v.handovers ? fmtK(v.saved) : '—'}</td>
                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                       {v.handovers ? (
                         <div>
-                          <span style={{ color: '#4ade80', fontWeight: 700 }}>{pct.toFixed(1)}%</span>
-                          <div style={{ height: 3, borderRadius: 2, background: '#1e293b', overflow: 'hidden', marginTop: 3 }}>
-                            <div style={{ height: '100%', background: '#22c55e', width: `${Math.min(100, pct)}%` }} />
+                          <span style={{ color: 'var(--ok)', fontWeight: 700 }}>{pct.toFixed(1)}%</span>
+                          <div style={{ height: 3, borderRadius: 2, background: 'var(--line)', overflow: 'hidden', marginTop: 3 }}>
+                            <div style={{ height: '100%', background: 'var(--ok)', width: `${Math.min(100, pct)}%` }} />
                           </div>
                         </div>
-                      ) : <span style={{ color: '#334155' }}>—</span>}
+                      ) : <span style={{ color: 'var(--line2)' }}>—</span>}
                     </td>
                   </tr>
                 );
@@ -678,20 +861,20 @@ export default function FleetDashboard() {
         </div>
 
         {/* Splitter */}
-        <div onMouseDown={handleAnalyticsSplitterDown} style={{ background: '#1e293b', cursor: 'col-resize' }} title="Drag to resize the feed" />
+        <div onMouseDown={handleAnalyticsSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
 
         {/* Right: Grouped Event Feed */}
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div className="flex items-center justify-between" style={{ padding: '10px 12px', borderBottom: '1px solid #1e293b', fontSize: 10, fontWeight: 700, color: '#94a3b8', letterSpacing: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+          <div className="flex items-center justify-between" style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', fontSize: 10, fontWeight: 700, color: 'var(--tx2)', letterSpacing: 1 }}>
             <span>TASK / EVENT FEED — GROUPED</span>
-            <span style={{ fontWeight: 400, color: '#475569' }}>{rangedEntries.length} in range</span>
+            <span style={{ fontWeight: 400, color: 'var(--tx3)' }}>{rangedEntries.length} in range</span>
           </div>
-          <div style={{ fontSize: 9, color: '#475569', padding: '4px 12px', borderBottom: '1px solid #1e293b' }}>
+          <div style={{ fontSize: 9, color: 'var(--tx3)', padding: '4px 12px', borderBottom: '1px solid var(--line)' }}>
             ▸ days roll up · click to expand
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {dailyStats.length === 0 ? (
-              <p style={{ color: '#475569', fontSize: 11, textAlign: 'center', padding: 20 }}>No events in range</p>
+              <p style={{ color: 'var(--tx3)', fontSize: 11, textAlign: 'center', padding: 20 }}>No events in range</p>
             ) : [...dailyStats].reverse().map(([day, d]) => {
               const dayOpen = openDays.has(day);
               const dayLabel = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
@@ -709,15 +892,15 @@ export default function FleetDashboard() {
 
               return (
                 <div key={day} style={{ marginBottom: 6 }}>
-                  <div onClick={() => setOpenDays(prev => { const n = new Set(prev); n.has(day) ? n.delete(day) : n.add(day); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1e293b', border: '1px solid #1e293b', borderRadius: 6, padding: '7px 10px', cursor: 'pointer', userSelect: 'none' as const }}>
-                    <span style={{ fontSize: 9, color: '#64748b', width: 10 }}>{dayOpen ? '▾' : '▸'}</span>
+                  <div onClick={() => setOpenDays(prev => { const n = new Set(prev); n.has(day) ? n.delete(day) : n.add(day); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 6, padding: '7px 10px', cursor: 'pointer', userSelect: 'none' as const }}>
+                    <span style={{ fontSize: 9, color: 'var(--tx2)', width: 10 }}>{dayOpen ? '▾' : '▸'}</span>
                     <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, flex: 1 }}>{dayLabel}</span>
-                    <span className="flex gap-2" style={{ fontSize: 9, color: '#64748b', whiteSpace: 'nowrap' as const }}>
-                      <span><b style={{ color: '#94a3b8' }}>{watches.length}</b> watches</span>
-                      <span><b style={{ color: '#94a3b8' }}>{d.tasks}</b> tasks</span>
-                      <span><b style={{ color: '#94a3b8' }}>{fmtK(d.used)}</b> tok</span>
-                      {d.saved > 0 && <span style={{ color: '#4ade80' }}><b>{fmtK(d.saved)}</b> saved</span>}
-                      {dayPct > 0 && <span style={{ color: '#4ade80' }}>{dayPct.toFixed(1)}%</span>}
+                    <span className="flex gap-2" style={{ fontSize: 9, color: 'var(--tx2)', whiteSpace: 'nowrap' as const }}>
+                      <span><b style={{ color: 'var(--tx2)' }}>{watches.length}</b> watches</span>
+                      <span><b style={{ color: 'var(--tx2)' }}>{d.tasks}</b> tasks</span>
+                      <span><b style={{ color: 'var(--tx2)' }}>{fmtK(d.used)}</b> tok</span>
+                      {d.saved > 0 && <span style={{ color: 'var(--ok)' }}><b>{fmtK(d.saved)}</b> saved</span>}
+                      {dayPct > 0 && <span style={{ color: 'var(--ok)' }}>{dayPct.toFixed(1)}%</span>}
                     </span>
                   </div>
                   {dayOpen && watches.map(([wKey, wGroup]) => {
@@ -726,13 +909,13 @@ export default function FleetDashboard() {
                     const wTokens = wGroup.entries.filter(e => e.type === 'task_complete').reduce((s, e) => s + (e.tokensUsed || 0), 0);
                     return (
                       <div key={wKey} style={{ margin: '4px 0 4px 14px' }}>
-                        <div onClick={() => setOpenWatches(prev => { const n = new Set(prev); n.has(wKey) ? n.delete(wKey) : n.add(wKey); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0a0f1a', border: '1px solid #1e293b', borderLeft: '2px solid #334155', borderRadius: 5, padding: '6px 8px', cursor: 'pointer', userSelect: 'none' as const }}>
-                          <span style={{ fontSize: 9, color: '#64748b', width: 9 }}>{wOpen ? '▾' : '▸'}</span>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: '#cbd5e1' }}>WATCH #{wGroup.wn || '?'}</span>
-                          <span style={{ fontSize: 9, color: '#475569', flex: 1 }}>{wGroup.aid || ''}</span>
-                          <span className="flex gap-2" style={{ fontSize: 9, color: '#64748b', whiteSpace: 'nowrap' as const }}>
-                            <span><b style={{ color: '#94a3b8' }}>{wTasks}</b> tasks</span>
-                            <span><b style={{ color: '#94a3b8' }}>{fmtK(wTokens)}</b> tok</span>
+                        <div onClick={() => setOpenWatches(prev => { const n = new Set(prev); n.has(wKey) ? n.delete(wKey) : n.add(wKey); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--line)', borderLeft: '2px solid var(--line2)', borderRadius: 5, padding: '6px 8px', cursor: 'pointer', userSelect: 'none' as const }}>
+                          <span style={{ fontSize: 9, color: 'var(--tx2)', width: 9 }}>{wOpen ? '▾' : '▸'}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx2)' }}>WATCH #{wGroup.wn || '?'}</span>
+                          <span style={{ fontSize: 9, color: 'var(--tx3)', flex: 1 }}>{wGroup.aid || ''}</span>
+                          <span className="flex gap-2" style={{ fontSize: 9, color: 'var(--tx2)', whiteSpace: 'nowrap' as const }}>
+                            <span><b style={{ color: 'var(--tx2)' }}>{wTasks}</b> tasks</span>
+                            <span><b style={{ color: 'var(--tx2)' }}>{fmtK(wTokens)}</b> tok</span>
                           </span>
                         </div>
                         {wOpen && (
@@ -741,13 +924,13 @@ export default function FleetDashboard() {
                               const isTask = entry.type === 'task_complete';
                               const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
                               return (
-                                <div key={entry.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '3px 0', fontSize: 10, borderBottom: '1px solid #0f172a' }}>
-                                  <span style={{ color: '#475569', minWidth: 52 }}>{time}</span>
-                                  <span style={{ color: '#64748b', minWidth: 70 }}>{entry.agentId || ''}</span>
-                                  <span style={{ color: isTask ? '#e2e8f0' : '#94a3b8', flex: 1, wordBreak: 'break-word' as const }}>
+                                <div key={entry.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '3px 0', fontSize: 10, borderBottom: '1px solid var(--sunk)' }}>
+                                  <span style={{ color: 'var(--tx3)', minWidth: 52 }}>{time}</span>
+                                  <span style={{ color: 'var(--tx2)', minWidth: 70 }}>{entry.agentId || ''}</span>
+                                  <span style={{ color: isTask ? 'var(--tx)' : 'var(--tx2)', flex: 1, wordBreak: 'break-word' as const }}>
                                     {isTask ? `✓ ${entry.taskName || 'task'}` : (entry.type || '').toUpperCase()}
                                   </span>
-                                  <span style={{ color: '#38bdf8', minWidth: 40, textAlign: 'right' as const }}>{isTask && entry.tokensUsed ? fmtK(entry.tokensUsed) : ''}</span>
+                                  <span style={{ color: 'var(--info)', minWidth: 40, textAlign: 'right' as const }}>{isTask && entry.tokensUsed ? fmtK(entry.tokensUsed) : ''}</span>
                                 </div>
                               );
                             })}
@@ -764,14 +947,46 @@ export default function FleetDashboard() {
       </div>
       </>
       )}
+        </div>
 
-      {/* Footer */}
-      <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid #1e293b', background: '#050810', fontSize: 10, color: '#475569' }}>
-        <span>White Room v1.1 Beta</span>
-        <span>© 2026 WhiteRoom</span>
+        {/* Footer */}
+        <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 10, color: 'var(--tx3)', flexShrink: 0 }}>
+          <span>White Room v1.1 Beta</span>
+          <span>© 2026 WhiteRoom</span>
+        </div>
       </div>
 
-      <style>{`@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 12px #22c55e; } 50% { box-shadow: 0 0 24px #22c55e; } }`}</style>
+      <style>{`
+        @keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 12px var(--ok); } 50% { box-shadow: 0 0 24px var(--ok); } }
+        /* Rings/Beacon motion is a status signal (a working agent earns it), not
+           decoration — registered only when the viewer hasn't asked for less motion. */
+        @media (prefers-reduced-motion: no-preference) {
+          @keyframes ring-glow {
+            0%, 100% { filter: brightness(1) drop-shadow(0 0 1px rgba(255,255,255,0.1)); }
+            50% { filter: brightness(1.18) drop-shadow(0 0 7px rgba(255,255,255,0.35)); }
+          }
+          @keyframes beacon-ping {
+            0% { transform: scale(0.6); opacity: 0.85; }
+            70% { opacity: 0; }
+            100% { transform: scale(2.1); opacity: 0; }
+          }
+          @keyframes beacon-breathe {
+            0%, 100% { transform: scale(1); opacity: 0.85; }
+            50% { transform: scale(1.08); opacity: 1; }
+          }
+          /* Visualization tab: a result popping off a node as it lands. */
+          @keyframes float-up {
+            0% { transform: translateY(4px) scale(0.9); opacity: 0; }
+            15% { transform: translateY(0) scale(1); opacity: 1; }
+            75% { opacity: 1; }
+            100% { transform: translateY(-22px) scale(1); opacity: 0; }
+          }
+          @keyframes bar-sheen {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(220%); }
+          }
+        }
+      `}</style>
     </div>
   );
 }

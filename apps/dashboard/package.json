@@ -9,14 +9,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@auth/pg-adapter": "^1.11.3",
     "@opentelemetry/api": "^1.9.1",
     "@whiteroom/ui": "file:../../packages/ui",
-    "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.49.8",
     "clsx": "^2.1.1",
     "framer-motion": "^12.12.2",
     "lucide-react": "^0.511.0",
     "next": "^16.2.11",
+    "next-auth": "5.0.0-beta.32",
+    "pg": "^8.23.0",
     "posthog-js": "^1.398.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -28,9 +29,9 @@
     "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "^5.15.12",
     "@tailwindcss/postcss": "^4.1.8",
     "@types/node": "^22.15.21",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.1.4",
     "@types/react-dom": "^19.1.5",
     "postcss": "^8.5.22",

@@ -57,6 +57,8 @@ export interface AuditEntry {
   minutesSpent?: number;
   remaining?: number;
   details?: ToolDetail[];
+  toAgent?: string;
+  fromAgent?: string;
   [key: string]: unknown;
 }
 

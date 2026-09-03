@@ -2,17 +2,16 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
 
 export default function Home() {
   const router = useRouter();
+  const { status } = useSession();
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      router.push(user ? '/dashboard' : '/sign-in');
-    });
-  }, [router]);
+    if (status === 'loading') return;
+    router.push(status === 'authenticated' ? '/dashboard' : '/sign-in');
+  }, [status, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
