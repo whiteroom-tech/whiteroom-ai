@@ -50,7 +50,7 @@ The dashboard:
 ```bash
 cd apps/dashboard
 npm ci
-cp .env.example .env.local   # fill in your own Supabase / proxy values
+cp .env.example .env.local   # fill in your own Cloud SQL / auth / proxy values
 npm run dev
 npm test
 ```

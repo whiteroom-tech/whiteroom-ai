@@ -7,5 +7,5 @@ Shared presentational components and typography tokens for the dashboard
 Tailwind scans these files for utility classes.
 
 Only domain-agnostic pieces live here. App-specific composites that depend on
-Supabase, the WhiteRoom client, or page state (e.g. `ByokCard`, the fleet
+the account store, the WhiteRoom client, or page state (e.g. `ByokCard`, the fleet
 agent cards) stay in `apps/dashboard`.

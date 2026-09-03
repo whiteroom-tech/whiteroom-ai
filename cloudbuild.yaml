@@ -1,14 +1,48 @@
+# Build and deploy the dashboard (app.whiteroom.tech) to Cloud Run.
+# Wired to a push trigger on main; images are tagged by commit so the tag in
+# Cloud Run always identifies exactly what is serving.
+#
+# To run by hand, pass the commit yourself:
+#   gcloud builds submit --substitutions=COMMIT_SHA=$(git rev-parse HEAD)
+
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard
+  _SERVICE: whiteroom-dashboard
+  _REGION: us-central1
+
 steps:
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: Build
+    name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-f'
       - 'apps/dashboard/Dockerfile'
       - '-t'
-      - 'us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard:latest'
+      - '${_IMAGE}:${COMMIT_SHA}'
       - '.'
+
+  - id: Push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE}:${COMMIT_SHA}']
+
+  - id: Deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'services'
+      - 'update'
+      - '${_SERVICE}'
+      - '--platform=managed'
+      - '--region=${_REGION}'
+      - '--image=${_IMAGE}:${COMMIT_SHA}'
+      - '--labels=managed-by=cloud-build,commit-sha=${COMMIT_SHA}'
+      - '--quiet'
+
 images:
-  - 'us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard:latest'
+  - '${_IMAGE}:${COMMIT_SHA}'
+
 options:
   machineType: 'E2_HIGHCPU_8'
+
 timeout: '1800s'
