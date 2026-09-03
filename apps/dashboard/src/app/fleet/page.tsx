@@ -460,7 +460,7 @@ export default function FleetDashboard() {
   });
 
   return (
-    <div className="wr-shell" style={{ background: 'var(--bg)', color: 'var(--tx)', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13, display: 'grid', gridTemplateColumns: '212px 1fr', height: '100vh' }}>
+    <div className="wr-shell" style={{ background: 'var(--bg)', color: 'var(--tx)', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13, display: 'grid', gridTemplateColumns: '212px 1fr', gridTemplateRows: 'minmax(0, 1fr)', height: '100vh', overflow: 'hidden' }}>
       <Sidebar active={activeTab} onNavigate={setActiveTab} fleetId={report.fleetId} />
 
       <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0 }}>
@@ -508,7 +508,7 @@ export default function FleetDashboard() {
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ho)' }}>{watchHandovers ? String(watchHandovers) : '—'}</div>
         </div>
       </div>
-      <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px`, padding: '12px 20px 0' }}>
+      <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px`, gridTemplateRows: 'minmax(0, 1fr)', padding: '12px 20px 0' }}>
         {/* Left: Agents + Comparison */}
         <div style={{ overflowY: 'auto', padding: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
@@ -671,7 +671,7 @@ export default function FleetDashboard() {
         <div onMouseDown={handleSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
 
         {/* Right: Audit Feed */}
-        <div className="flex flex-col min-w-0">
+        <div className="flex flex-col min-w-0" style={{ minHeight: 0 }}>
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
             <div className="flex items-center gap-2">
@@ -779,7 +779,7 @@ export default function FleetDashboard() {
         <span style={{ color: 'var(--tx3)' }}>· click a chart day to scope</span>
       </div>
 
-      <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${analyticsFeedWidth}px` }}>
+      <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${analyticsFeedWidth}px`, gridTemplateRows: 'minmax(0, 1fr)' }}>
         {/* Left: Chart + Breakdown */}
         <div style={{ overflowY: 'auto', padding: 12 }}>
         {/* Daily Tokens Chart */}
@@ -864,7 +864,7 @@ export default function FleetDashboard() {
         <div onMouseDown={handleAnalyticsSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
 
         {/* Right: Grouped Event Feed */}
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           <div className="flex items-center justify-between" style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', fontSize: 10, fontWeight: 700, color: 'var(--tx2)', letterSpacing: 1 }}>
             <span>TASK / EVENT FEED — GROUPED</span>
             <span style={{ fontWeight: 400, color: 'var(--tx3)' }}>{rangedEntries.length} in range</span>

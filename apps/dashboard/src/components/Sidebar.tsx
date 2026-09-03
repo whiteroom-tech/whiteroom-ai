@@ -49,7 +49,7 @@ const SOON_ITEMS: SoonItem[] = [
 export function Sidebar({ active, onNavigate, fleetId }: { active: FleetPage; onNavigate: (page: FleetPage) => void; fleetId: string }) {
   let lastGroup: string | undefined;
   return (
-    <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)' }}>
+    <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
       <div className="flex items-center gap-2.5" style={{ padding: '5px 10px 18px' }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 9px var(--ok)', animation: 'pulse-dot 2s infinite' }} />
         <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 13.5, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' as const }}>WHITE ROOM</span>
