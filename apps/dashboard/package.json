@@ -30,13 +30,13 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.8",
-    "@types/node": "^22.15.21",
+    "@types/node": "^26.4.0",
     "@types/pg": "^8.23.1",
-    "@types/react": "^19.1.4",
-    "@types/react-dom": "^19.1.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "postcss": "^8.5.22",
     "tailwindcss": "^4.1.8",
-    "typescript": "^5.8.3",
-    "vitest": "^4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }
