@@ -46,6 +46,23 @@ async function apiCall<T>(body: Record<string, unknown>, key?: string): Promise<
 
 // -- Fleet provisioning & login --
 
+/**
+ * Creates the fleet without registering a placeholder agent.
+ *
+ * register_agent also creates a fleet, but only as a side effect of adding an
+ * agent — which left an idle "setup-agent" in every operator's grid purely
+ * from signing in. Real agents register themselves on their first proxied
+ * call, so the dashboard should never invent one.
+ *
+ * Idempotent, so it is safe to assert on every load: a repeat call from the
+ * owner returns the same token.
+ */
+export async function createFleet(fleetId: string, apiKey: string): Promise<RegisterResult> {
+  const res = await postRaw({ action: 'create_fleet', fleet_id: fleetId }, apiKey);
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  return res.json();
+}
+
 export async function registerAgent(
   fleetId: string,
   apiKey: string,

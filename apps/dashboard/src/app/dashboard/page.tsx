@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
-import { registerAgent, tokenLogin, fleetProvisioned } from '@/lib/whiteroom/client';
+import { createFleet, tokenLogin, fleetProvisioned } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
 
 function generateApiKey() {
@@ -54,8 +54,13 @@ export default function DashboardPage() {
 
       // Assert the fleet on EVERY load, not just the first sign-in.
       //
-      // register_agent is idempotent, and fleetProvisioned() explains why the
+      // create_fleet is idempotent, and fleetProvisioned() explains why the
       // response has to be read by its token rather than its error field.
+      //
+      // Deliberately NOT register_agent: that would invent a placeholder agent
+      // ("setup-agent") just to bootstrap the fleet, which then sits idle in
+      // the operator's grid forever. Real agents register themselves on their
+      // first proxied call.
       //
       // Calling it unconditionally is what makes this self-healing: if the
       // fleet disappears from under us — data loss, a database migration, or
@@ -65,7 +70,7 @@ export default function DashboardPage() {
       let registered = false;
       let regError = '';
       try {
-        const res = await registerAgent(fleetId, apiKey);
+        const res = await createFleet(fleetId, apiKey);
         if (fleetProvisioned(res)) {
           fleetToken = res.fleetToken;
           registered = true;
