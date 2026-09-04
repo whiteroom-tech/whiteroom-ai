@@ -7,7 +7,7 @@ import { fleetProvisioned } from "../lib/whiteroom/client";
 // engine (proxy.whiteroom.tech), so these cases document actual API behaviour
 // rather than an assumed contract.
 describe("fleetProvisioned", () => {
-  it("accepts a fresh registration", () => {
+  it("accepts a fresh create_fleet response", () => {
     expect(
       fleetProvisioned({
         fleetToken: "wr_cf39d6e8-f597-48dc-996b-2c9de1f028e0",
@@ -15,10 +15,11 @@ describe("fleetProvisioned", () => {
     ).toBe(true);
   });
 
-  // The regression that stranded four accounts: register_agent is idempotent,
-  // so re-registering an existing fleet answers HTTP 200 with an "already
-  // registered" error AND a usable token. Reading `error` as failure made the
-  // dashboard treat a healthy fleet as broken.
+  // create_fleet answers cleanly on repeat calls, but register_agent — which
+  // provisioning used to call, and which other callers still use — returns
+  // HTTP 200 with an "already registered" error AND a usable token. Reading
+  // `error` as failure is what made the dashboard treat a healthy fleet as
+  // broken, so the helper must keep tolerating that shape.
   it("accepts 'already registered', which carries an error AND a token", () => {
     expect(
       fleetProvisioned({
