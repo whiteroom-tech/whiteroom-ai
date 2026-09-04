@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
-import { registerAgent, tokenLogin } from '@/lib/whiteroom/client';
+import { registerAgent, tokenLogin, claimFleet } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
 
 function generateApiKey() {
@@ -97,10 +97,22 @@ export default function DashboardPage() {
             const res = await registerAgent(fleetId, apiKey);
             if (res.fleetToken) {
               fleetToken = res.fleetToken;
-              await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
-              setProps((prev) => prev ? { ...prev, fleetToken } : prev);
             }
           } catch {}
+
+          if (!fleetToken) {
+            try {
+              const claim = await claimFleet(fleetId);
+              if (claim.fleetToken) {
+                fleetToken = claim.fleetToken;
+              }
+            } catch {}
+          }
+
+          if (fleetToken) {
+            await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
+            setProps((prev) => prev ? { ...prev, fleetToken } : prev);
+          }
         }
       }
     }
