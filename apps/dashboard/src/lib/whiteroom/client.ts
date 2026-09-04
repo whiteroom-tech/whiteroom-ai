@@ -64,6 +64,24 @@ export async function registerAgent(
   return res.json();
 }
 
+/**
+ * Whether a register_agent response means the fleet is usable.
+ *
+ * Deliberately checks for the token rather than the absence of `error`: the
+ * engine answers HTTP 200 with BOTH a populated `error` ("Agent 'setup-agent'
+ * already registered in fleet '…'") AND a valid `fleetToken` when the fleet
+ * already exists, because register_agent is idempotent. Treating `error` as
+ * failure therefore misreads a perfectly healthy fleet as broken.
+ *
+ * A genuine failure — the fleet being bound to a different API key — returns
+ * 401 with no token at all, so the token is the only reliable signal.
+ */
+export function fleetProvisioned(
+  res: RegisterResult,
+): res is RegisterResult & { fleetToken: string } {
+  return typeof res.fleetToken === 'string' && res.fleetToken.length > 0;
+}
+
 export function tokenLogin(fleetToken: string): Promise<TokenLoginResult> {
   return apiCall<TokenLoginResult>({ action: 'token_login', fleet_token: fleetToken });
 }
