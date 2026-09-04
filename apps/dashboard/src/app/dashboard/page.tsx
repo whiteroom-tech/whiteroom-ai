@@ -76,14 +76,32 @@ export default function DashboardPage() {
       posthog.identify(user.id, { email });
       posthog.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
 
-      if (!isNew && fleetToken) {
-        try {
-          const r = await tokenLogin(fleetToken);
-          if (r.success && r.report) {
-            const report = r.report;
-            setProps((prev) => (prev ? { ...prev, report } : prev));
+      if (!isNew) {
+        let needsReRegister = !fleetToken;
+
+        if (fleetToken) {
+          try {
+            const r = await tokenLogin(fleetToken);
+            if (r.success && r.report) {
+              setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
+            } else {
+              needsReRegister = true;
+            }
+          } catch {
+            needsReRegister = true;
           }
-        } catch {}
+        }
+
+        if (needsReRegister) {
+          try {
+            const res = await registerAgent(fleetId, apiKey);
+            if (res.fleetToken) {
+              fleetToken = res.fleetToken;
+              await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
+              setProps((prev) => prev ? { ...prev, fleetToken } : prev);
+            }
+          } catch {}
+        }
       }
     }
 
