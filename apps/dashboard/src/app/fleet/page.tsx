@@ -389,13 +389,12 @@ export default function FleetDashboard() {
   const t = report.totals;
   const es = report.energySavings;
 
-  // Current-watch stats from agent details
+  // Fleet-level token stats (cumulative across all watches, not just current)
   const watchTasks = agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
-  const watchTokens = agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
+  const watchTokens = t.tokens || agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
   const watchHandovers = report?.totals?.handovers || 0;
-  const perWatchSaved = t.handovers > 0 ? (es.estimatedTokensSaved || 0) / t.handovers : 0;
-  const watchWithoutWR = watchTokens + perWatchSaved;
-  const watchSaved = perWatchSaved;
+  const watchSaved = es.estimatedTokensSaved || 0;
+  const watchWithoutWR = watchTokens + watchSaved;
   const watchSavingsPct = pctOf(watchTokens, watchSaved);
 
   // --- Analytics computation (UTC throughout) ---
@@ -403,10 +402,11 @@ export default function FleetDashboard() {
 
   const rangedEntries = allEntries.filter(e => e.timestamp.slice(0, 10) >= cutoff);
 
+  const avgCallsPerWatch = t.handovers > 0 ? Math.max(Math.ceil(t.tasks / (t.handovers + 1)), 1) : 1;
   const handoverSaved = (e: AuditEntry) => computeHandoverSaved({
     contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
     handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
-  });
+  }) * avgCallsPerWatch;
   const handoverAgent = (e: AuditEntry) => (e as Record<string, unknown>).from as string || e.agentId || '';
 
   const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[] }>();
