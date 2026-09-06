@@ -111,7 +111,7 @@ export default function DashboardPage() {
           try {
             const r = await tokenLogin(fleetToken);
             if (r.success && r.report) {
-              setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
+              setProps((prev) => (prev ? { ...prev, report: r.report ?? null } : prev));
             } else {
               needsReRegister = true;
             }
