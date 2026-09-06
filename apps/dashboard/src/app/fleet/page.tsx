@@ -528,9 +528,9 @@ export default function FleetDashboard() {
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ho)' }}>{watchHandovers ? String(watchHandovers) : '—'}</div>
         </div>
       </div>
-      <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px`, gridTemplateRows: 'minmax(0, 1fr)', padding: '12px 20px 0' }}>
-        {/* Left: Agents + Comparison */}
-        <div style={{ overflowY: 'auto', padding: 12 }}>
+      <div ref={mainRef} className="flex-1 min-h-0" style={{ overflowY: 'auto', padding: '12px 20px 0' }}>
+        {/* Agents */}
+        <div style={{ padding: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agents</span>
             <select
@@ -687,11 +687,8 @@ export default function FleetDashboard() {
           <div style={{ marginTop: 12, textAlign: 'center', fontSize: 10, color: 'var(--tx3)' }}>Labor Score: {report.compliance.laborScore}</div>
         </div>
 
-        {/* Splitter */}
-        <div onMouseDown={handleSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
-
-        {/* Right: Audit Feed */}
-        <div className="flex flex-col min-w-0" style={{ minHeight: 0 }}>
+        {/* Activity Feed */}
+        <div className="flex flex-col" style={{ marginTop: 16, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--card)', overflow: 'hidden' }}>
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
             <div className="flex items-center gap-2">
