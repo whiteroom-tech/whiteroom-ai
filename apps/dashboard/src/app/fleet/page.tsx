@@ -463,15 +463,22 @@ export default function FleetDashboard() {
 
   return (
     <div className="wr-shell" style={{ background: 'var(--bg)', color: 'var(--tx)', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13, display: 'grid', gridTemplateColumns: '212px 1fr', gridTemplateRows: 'minmax(0, 1fr)', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar active={activeTab} onNavigate={setActiveTab} fleetId={report.fleetId} />
+      <Sidebar fleetId={report.fleetId} />
 
       <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0 }}>
         {/* Top bar */}
         <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
           <span style={{ fontSize: 12.5, color: 'var(--tx3)' }}>
-            <b style={{ color: 'var(--tx)', fontWeight: 600 }}>{activeTab === 'live' ? 'Fleet' : activeTab === 'analytics' ? 'Analytics' : 'Visualization'}</b> / {report.fleetId}
+            <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Fleet</b> / {report.fleetId}
           </span>
           <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
+          <div className="flex items-center gap-1" style={{ marginLeft: 16 }}>
+            {(['live', 'analytics', 'visualization'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 5, background: activeTab === tab ? 'var(--brand-dim)' : 'transparent', color: activeTab === tab ? 'var(--brand)' : 'var(--tx3)', cursor: 'pointer', border: 'none' }}>
+                {tab === 'live' ? 'Live' : tab === 'analytics' ? 'Analytics' : 'Viz'}
+              </button>
+            ))}
+          </div>
           <span style={{ marginLeft: 'auto' }} />
           <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ok)', background: 'var(--ok-bg)', border: '1px solid var(--ok)', borderRadius: 6, padding: '5px 11px' }}>● connected</span>
           <span style={{ fontSize: 10, fontWeight: 600, padding: '5px 11px', borderRadius: 6, background: report.compliance.allAgentsWithinLimits ? 'var(--ok-bg)' : 'var(--bad-bg)', color: report.compliance.allAgentsWithinLimits ? 'var(--ok)' : 'var(--bad)' }}>

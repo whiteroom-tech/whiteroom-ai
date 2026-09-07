@@ -1,14 +1,17 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 
 export type FleetPage = 'live' | 'analytics' | 'visualization';
 
 interface NavItem {
-  page: FleetPage;
+  href: string;
   label: string;
   icon: React.ReactNode;
+  match?: (path: string) => boolean;
 }
 
 interface SoonItem {
@@ -21,6 +24,7 @@ const ICONS = {
   fleet: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>,
   analytics: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 20V10M12 20V4M6 20v-6" /></svg>,
   viz: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 5v2M12 17v2M5 12h2M17 12h2" /></svg>,
+  sandbox: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" /><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" /></svg>,
   watch: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="9" /></svg>,
   triage: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>,
   compliance: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3 8-8" /><path d="M21 12v6a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h11" /></svg>,
@@ -30,15 +34,13 @@ const ICONS = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { page: 'live', label: 'Fleet', icon: ICONS.fleet },
-  { page: 'analytics', label: 'Analytics', icon: ICONS.analytics },
-  { page: 'visualization', label: 'Visualization', icon: ICONS.viz },
+  { href: '/fleet', label: 'Fleet', icon: ICONS.fleet, match: (p) => p.startsWith('/fleet') },
+  { href: '/sandbox', label: 'Sandbox', icon: ICONS.sandbox, match: (p) => p.startsWith('/sandbox') },
 ];
 
-// These don't exist yet — no page, no data. Shown dimmed as a roadmap
-// preview rather than dropped, per product's call; deliberately not
-// clickable so nothing pretends to be a working page.
 const SOON_ITEMS: SoonItem[] = [
+  { label: 'Analytics', icon: ICONS.analytics },
+  { label: 'Visualization', icon: ICONS.viz },
   { label: 'Watch trace', icon: ICONS.watch },
   { label: 'Triage', icon: ICONS.triage },
   { label: 'Compliance', icon: ICONS.compliance },
@@ -47,8 +49,13 @@ const SOON_ITEMS: SoonItem[] = [
   { label: 'Settings', icon: ICONS.settings, group: 'Manage' },
 ];
 
-export function Sidebar({ active, onNavigate, fleetId }: { active: FleetPage; onNavigate: (page: FleetPage) => void; fleetId: string }) {
+export function Sidebar({ fleetId }: { fleetId?: string } & (
+  | { active: FleetPage; onNavigate: (page: FleetPage) => void }
+  | { active?: never; onNavigate?: never }
+)) {
+  const pathname = usePathname();
   const [roadmapOpen, setRoadmapOpen] = useState(false);
+
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
       <div className="flex items-center gap-2.5" style={{ padding: '5px 10px 18px' }}>
@@ -56,21 +63,25 @@ export function Sidebar({ active, onNavigate, fleetId }: { active: FleetPage; on
         <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 13.5, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' as const }}>WHITE ROOM</span>
       </div>
 
-      {NAV_ITEMS.map((item) => (
-        <button
-          key={item.page}
-          onClick={() => onNavigate(item.page)}
-          className="flex items-center gap-2.5"
-          style={{
-            padding: '8px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: 600, textAlign: 'left' as const, width: '100%',
-            background: active === item.page ? 'var(--brand-dim)' : 'transparent',
-            color: active === item.page ? 'var(--brand)' : 'var(--tx2)',
-          }}
-        >
-          {item.icon}
-          <span>{item.label}</span>
-        </button>
-      ))}
+      {NAV_ITEMS.map((item) => {
+        const isActive = item.match ? item.match(pathname) : pathname === item.href;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex items-center gap-2.5"
+            style={{
+              padding: '8px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: 600, textAlign: 'left' as const, width: '100%',
+              textDecoration: 'none',
+              background: isActive ? 'var(--brand-dim)' : 'transparent',
+              color: isActive ? 'var(--brand)' : 'var(--tx2)',
+            }}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
 
       <button
         onClick={() => setRoadmapOpen((p) => !p)}
@@ -95,7 +106,7 @@ export function Sidebar({ active, onNavigate, fleetId }: { active: FleetPage; on
 
       <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 10.5, color: 'var(--tx3)' }}>
         White Room Beta
-        <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand2)', fontSize: 10, marginTop: 2 }}>{fleetId}</div>
+        {fleetId && <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand2)', fontSize: 10, marginTop: 2 }}>{fleetId}</div>}
       </div>
     </aside>
   );
