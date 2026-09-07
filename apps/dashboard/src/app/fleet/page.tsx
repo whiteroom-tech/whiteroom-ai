@@ -390,7 +390,7 @@ export default function FleetDashboard() {
   const es = report.energySavings;
 
   // Fleet-level token stats (cumulative across all watches, not just current)
-  const watchTasks = agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
+  const watchTasks = t.tasks || agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
   const watchTokens = t.tokens || agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
   const watchHandovers = report?.totals?.handovers || 0;
   const watchSaved = es.estimatedTokensSaved || 0;
@@ -426,15 +426,17 @@ export default function FleetDashboard() {
 
   const scopedEntries = scopedDay ? rangedEntries.filter(e => e.timestamp.slice(0, 10) === scopedDay) : rangedEntries;
 
-  const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number }>();
+  const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number }>();
   scopedEntries.forEach(e => {
     const aid = e.type === 'handover' || e.type === 'self_handover' ? handoverAgent(e) : e.agentId;
     if (!aid) return;
-    const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0 };
+    const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0 };
     if (e.type === 'task_complete') { a.tasks++; a.used += e.tokensUsed || 0; }
     if (e.type === 'handover' || e.type === 'self_handover') {
       a.handovers++;
       a.saved += handoverSaved(e);
+      a.ctxTokens += ((e as Record<string, unknown>).contextTokens as number) || 0;
+      a.hdTokens += ((e as Record<string, unknown>).handoverDocTokens as number) || 0;
     }
     agentMap.set(aid, a);
   });
@@ -482,35 +484,53 @@ export default function FleetDashboard() {
       {/* Main grid — Live page */}
       {activeTab === 'live' ? (
       <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 11, padding: '14px 20px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 11, padding: '14px 20px 0' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+            <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx={36} cy={36} r={30} fill="none" stroke="var(--line)" strokeWidth={6} />
+              <circle cx={36} cy={36} r={30} fill="none" stroke="var(--ok)" strokeWidth={6}
+                strokeDasharray={2 * Math.PI * 30}
+                strokeDashoffset={2 * Math.PI * 30 * (1 - Math.min((es.compressionRatio ?? 0), 100) / 100)}
+                strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s' }} />
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 16, color: 'var(--ok)' }}>
+                {(es.compressionRatio ?? 0) > 0 ? Math.round(es.compressionRatio as number) + '%' : '—'}
+              </span>
+            </div>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 32, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
+              {(es.compressionRatio ?? 0) > 0 ? (es.compressionRatio as number).toFixed(1) + '%' : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 3 }}>
+              {(es.compressionRatio ?? 0) > 0 ? `${Math.round(es.compressionRatio as number)}% smaller context at each handover` : 'No handovers yet'}
+            </div>
+          </div>
+        </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tasks completed</span>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5 }}>{watchTasks ? String(watchTasks) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/ WhiteRoom</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{watchTokens > 0 ? fmtK(watchTokens) : '—'}</div>
-        </div>
-        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/o WhiteRoom</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--bad)' }}>{watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'}</div>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens used</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5 }}>{watchTokens > 0 ? fmtK(watchTokens) : '—'}</div>
+          <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>baseline: {watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens saved</span>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{watchSaved > 0 ? fmtK(watchSaved) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Savings</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{watchSavingsPct > 0 ? watchSavingsPct.toFixed(1) + '%' : '—'}</div>
-        </div>
-        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ho)' }}>{watchHandovers ? String(watchHandovers) : '—'}</div>
         </div>
       </div>
-      <div ref={mainRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${railWidth}px`, gridTemplateRows: 'minmax(0, 1fr)', padding: '12px 20px 0' }}>
-        {/* Left: Agents + Comparison */}
-        <div style={{ overflowY: 'auto', padding: 12 }}>
+      <div ref={mainRef} className="flex-1 min-h-0" style={{ overflowY: 'auto', padding: '12px 20px 0' }}>
+        {/* Agents */}
+        <div style={{ padding: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agents</span>
             <select
@@ -667,11 +687,8 @@ export default function FleetDashboard() {
           <div style={{ marginTop: 12, textAlign: 'center', fontSize: 10, color: 'var(--tx3)' }}>Labor Score: {report.compliance.laborScore}</div>
         </div>
 
-        {/* Splitter */}
-        <div onMouseDown={handleSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
-
-        {/* Right: Audit Feed */}
-        <div className="flex flex-col min-w-0" style={{ minHeight: 0 }}>
+        {/* Activity Feed */}
+        <div className="flex flex-col" style={{ marginTop: 16, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--card)', overflow: 'hidden' }}>
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
             <div className="flex items-center gap-2">
@@ -738,26 +755,45 @@ export default function FleetDashboard() {
         <span style={{ marginLeft: 'auto' }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 11, padding: '12px 20px 0' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+            <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx={36} cy={36} r={30} fill="none" stroke="var(--line)" strokeWidth={6} />
+              <circle cx={36} cy={36} r={30} fill="none" stroke="var(--ok)" strokeWidth={6}
+                strokeDasharray={2 * Math.PI * 30}
+                strokeDashoffset={2 * Math.PI * 30 * (1 - Math.min((es.compressionRatio ?? 0), 100) / 100)}
+                strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s' }} />
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 16, color: 'var(--ok)' }}>
+                {(es.compressionRatio ?? 0) > 0 ? Math.round(es.compressionRatio as number) + '%' : '—'}
+              </span>
+            </div>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 32, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
+              {(es.compressionRatio ?? 0) > 0 ? (es.compressionRatio as number).toFixed(1) + '%' : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 3 }}>
+              {(es.compressionRatio ?? 0) > 0 ? `${Math.round(es.compressionRatio as number)}% smaller at each handover` : 'No handovers yet'}
+            </div>
+          </div>
+        </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tasks</span>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5 }}>{rangeTotals.tasks ? String(rangeTotals.tasks) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/ WhiteRoom</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'}</div>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens used</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5 }}>{rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'}</div>
+          <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>baseline: {rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens · w/o WhiteRoom</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'}</div>
-        </div>
-        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Saved</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? pctOf(rangeTotals.used, rangeTotals.saved).toFixed(1) + '%' : '—'}</div>
-        </div>
-        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Cost saved</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(4)}` : '—'}</div>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? fmtK(rangeTotals.saved) : '—'}</div>
+          <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>{rangeTotals.saved > 0 ? `$${estimateCost(rangeTotals.saved).toFixed(2)}` : ''}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
@@ -825,7 +861,7 @@ export default function FleetDashboard() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                {['AGENT', 'TASKS', 'TOKENS', 'HANDOVERS', 'SAVED', 'SAVINGS %'].map(h => (
+                {['AGENT', 'TASKS', 'TOKENS', 'HANDOVERS', 'SAVED', 'COMPRESSION'].map(h => (
                   <th key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>{h}</th>
                 ))}
               </tr>
@@ -834,7 +870,7 @@ export default function FleetDashboard() {
               {agentBreakdown.length === 0 ? (
                 <tr><td colSpan={6} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 11 }}>No events in scope.</td></tr>
               ) : agentBreakdown.map(([agent, v]) => {
-                const pct = pctOf(v.used, v.saved);
+                const pct = v.ctxTokens > 0 ? (1 - v.hdTokens / v.ctxTokens) * 100 : 0;
                 return (
                   <tr key={agent} style={{ borderBottom: '1px solid var(--sunk)' }}>
                     <td style={{ padding: '6px 8px', fontWeight: 700, fontFamily: FONT_MONO, fontSize: 11 }}>{agent.toUpperCase()}</td>

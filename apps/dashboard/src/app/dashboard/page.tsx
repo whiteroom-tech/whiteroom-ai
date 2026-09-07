@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { posthog, initAnalytics } from '@/lib/analytics';
-import { registerAgent, tokenLogin, claimFleet } from '@/lib/whiteroom/client';
+import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
 
 function generateApiKey() {
@@ -48,25 +48,53 @@ export default function DashboardPage() {
       const fleetId = emailToFleetId(email);
 
       const provisioning = await getUserProvisioning();
-      let apiKey = provisioning.apiKey;
+      const isNew = !provisioning.apiKey;
+      const apiKey = provisioning.apiKey ?? generateApiKey();
       let fleetToken = provisioning.fleetToken;
-      let isNew = false;
 
-      if (!apiKey) {
-        apiKey = generateApiKey();
-        try {
-          const res = await registerAgent(fleetId, apiKey);
-          if (res.error) {
-            setProvisionError(`Fleet provisioning failed: ${res.error}`);
-          } else {
-            fleetToken = res.fleetToken || null;
-          }
-        } catch (err) {
-          setProvisionError(`Fleet provisioning failed: ${err instanceof Error ? err.message : 'network error'}`);
+      // Assert the fleet on EVERY load, not just the first sign-in.
+      //
+      // create_fleet is idempotent, and fleetProvisioned() explains why the
+      // response has to be read by its token rather than its error field.
+      //
+      // Deliberately NOT register_agent: that would invent a placeholder agent
+      // ("setup-agent") just to bootstrap the fleet, which then sits idle in
+      // the operator's grid forever. Real agents register themselves on their
+      // first proxied call.
+      //
+      // Calling it unconditionally is what makes this self-healing: if the
+      // fleet disappears from under us — data loss, a database migration, or
+      // an engine outage during someone's first sign-in — it gets recreated
+      // instead of leaving the account permanently stuck on "Fleet not found
+      // or not initialized", with no code path that ever retries.
+      let registered = false;
+      let regError = '';
+      try {
+        const res = await createFleet(fleetId, apiKey);
+        if (fleetProvisioned(res)) {
+          fleetToken = res.fleetToken;
+          registered = true;
+        } else {
+          regError = res.error ?? 'unknown error';
         }
+      } catch (err) {
+        regError = err instanceof Error ? err.message : 'network error';
+      }
 
+      // A stored fleet token authenticates even when the API key does not, so
+      // only treat this as fatal when the account has no working path at all.
+      if (!registered && !fleetToken) {
+        setProvisionError(`Fleet provisioning failed: ${regError}`);
+        setLoading(false);
+        return;
+      }
+
+      // Persist only once the engine has accepted the key — the previous code
+      // saved it unconditionally, which is how accounts ended up holding a key
+      // the engine had never seen. Also re-sync the fleet token, which drifts
+      // whenever a fleet is recreated.
+      if (registered && (isNew || fleetToken !== provisioning.fleetToken)) {
         await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
-        isNew = true;
       }
 
       setProps({ name, email, apiKey, fleetId, fleetToken, report: null, isNew });
@@ -83,7 +111,7 @@ export default function DashboardPage() {
           try {
             const r = await tokenLogin(fleetToken);
             if (r.success && r.report) {
-              setProps((prev) => (prev ? { ...prev, report: r.report } : prev));
+              setProps((prev) => (prev ? { ...prev, report: r.report ?? null } : prev));
             } else {
               needsReRegister = true;
             }

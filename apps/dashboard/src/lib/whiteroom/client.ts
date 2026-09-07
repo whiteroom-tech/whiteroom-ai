@@ -46,6 +46,23 @@ async function apiCall<T>(body: Record<string, unknown>, key?: string): Promise<
 
 // -- Fleet provisioning & login --
 
+/**
+ * Creates the fleet without registering a placeholder agent.
+ *
+ * register_agent also creates a fleet, but only as a side effect of adding an
+ * agent — which left an idle "setup-agent" in every operator's grid purely
+ * from signing in. Real agents register themselves on their first proxied
+ * call, so the dashboard should never invent one.
+ *
+ * Idempotent, so it is safe to assert on every load: a repeat call from the
+ * owner returns the same token.
+ */
+export async function createFleet(fleetId: string, apiKey: string): Promise<RegisterResult> {
+  const res = await postRaw({ action: 'create_fleet', fleet_id: fleetId }, apiKey);
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  return res.json();
+}
+
 export async function registerAgent(
   fleetId: string,
   apiKey: string,
@@ -62,6 +79,24 @@ export async function registerAgent(
   );
   if (!res.ok) return { error: `HTTP ${res.status}` };
   return res.json();
+}
+
+/**
+ * Whether a register_agent response means the fleet is usable.
+ *
+ * Deliberately checks for the token rather than the absence of `error`: the
+ * engine answers HTTP 200 with BOTH a populated `error` ("Agent 'setup-agent'
+ * already registered in fleet '…'") AND a valid `fleetToken` when the fleet
+ * already exists, because register_agent is idempotent. Treating `error` as
+ * failure therefore misreads a perfectly healthy fleet as broken.
+ *
+ * A genuine failure — the fleet being bound to a different API key — returns
+ * 401 with no token at all, so the token is the only reliable signal.
+ */
+export function fleetProvisioned(
+  res: RegisterResult,
+): res is RegisterResult & { fleetToken: string } {
+  return typeof res.fleetToken === 'string' && res.fleetToken.length > 0;
 }
 
 export function tokenLogin(fleetToken: string): Promise<TokenLoginResult> {

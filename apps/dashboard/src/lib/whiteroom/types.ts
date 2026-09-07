@@ -41,7 +41,7 @@ export interface FleetReport {
   agentCount: number;
   status: { working: string[]; resting: string[]; idle: string[]; handover_out?: string[] };
   totals: { workMinutes: number; tokens: number; tasks: number; handovers: number };
-  energySavings: { estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };
+  energySavings: { compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };
   compliance: { allAgentsWithinLimits: boolean; restingAgentsCount: number; laborScore: string };
 }
 

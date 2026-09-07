@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 
 export type FleetPage = 'live' | 'analytics' | 'visualization';
@@ -47,7 +48,7 @@ const SOON_ITEMS: SoonItem[] = [
 ];
 
 export function Sidebar({ active, onNavigate, fleetId }: { active: FleetPage; onNavigate: (page: FleetPage) => void; fleetId: string }) {
-  let lastGroup: string | undefined;
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
       <div className="flex items-center gap-2.5" style={{ padding: '5px 10px 18px' }}>
@@ -71,25 +72,26 @@ export function Sidebar({ active, onNavigate, fleetId }: { active: FleetPage; on
         </button>
       ))}
 
-      {SOON_ITEMS.map((item) => {
-        const groupHeader = item.group && item.group !== lastGroup ? item.group : null;
-        lastGroup = item.group ?? lastGroup;
-        return (
-          <div key={item.label}>
-            {groupHeader && (
-              <div style={{ padding: '15px 10px 5px', fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>{groupHeader}</div>
-            )}
-            <div
-              className="flex items-center gap-2.5"
-              style={{ padding: '8px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--tx3)', opacity: 0.6, cursor: 'default' }}
-            >
-              {item.icon}
-              <span style={{ flex: 1 }}>{item.label}</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, background: 'var(--sunk)', color: 'var(--tx3)', border: '1px solid var(--line)', borderRadius: 99, padding: '1px 6px' }}>SOON</span>
-            </div>
-          </div>
-        );
-      })}
+      <button
+        onClick={() => setRoadmapOpen((p) => !p)}
+        className="flex items-center gap-2.5"
+        style={{ padding: '8px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, textAlign: 'left' as const, width: '100%', color: 'var(--tx3)', marginTop: 8, background: 'transparent' }}
+      >
+        <span style={{ fontSize: 9, width: 14, textAlign: 'center' as const }}>{roadmapOpen ? '▾' : '▸'}</span>
+        <span>Coming Soon</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, background: 'var(--sunk)', color: 'var(--tx3)', border: '1px solid var(--line)', borderRadius: 99, padding: '1px 6px', marginLeft: 'auto' }}>{SOON_ITEMS.length}</span>
+      </button>
+
+      {roadmapOpen && SOON_ITEMS.map((item) => (
+        <div
+          key={item.label}
+          className="flex items-center gap-2.5"
+          style={{ padding: '6px 10px 6px 24px', fontSize: 11.5, fontWeight: 600, color: 'var(--tx3)', opacity: 0.5, cursor: 'default' }}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </div>
+      ))}
 
       <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 10.5, color: 'var(--tx3)' }}>
         White Room Beta
