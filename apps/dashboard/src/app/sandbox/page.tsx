@@ -12,10 +12,13 @@ import {
   pauseSandboxAgent,
   resumeSandboxAgent,
   resetSandboxSession,
+  startDemo,
+  sandboxHistory as fetchHistory,
   PROXY_URL,
   type CreateSandboxResult,
   type SandboxStatusResult,
   type SandboxReportResult,
+  type SandboxHistoryEntry,
 } from '@/lib/whiteroom/client';
 
 type Phase = 'interstitial' | 'setup' | 'checklist' | 'go-live' | 'expired';
@@ -25,6 +28,9 @@ const ASSERTION_LABELS: Record<string, { label: string; hint: string; required: 
   watch_expiry: { label: 'Handoff created', hint: 'Watch expired and handover doc generated', required: true },
   handover_roundtrip: { label: 'Resumed after handoff', hint: 'New watch started with compressed context', required: true },
   context_compression: { label: 'Compression working', hint: 'Handover doc has compression ratio', required: false },
+  compliance_gate: { label: 'Rest enforced', hint: 'Agent call rejected during mandatory rest period', required: false },
+  graceful_disconnect: { label: 'Disconnect handled', hint: 'Agent went silent and watchdog recovered it', required: false },
+  multi_agent_relay: { label: 'Multi-agent relay', hint: 'Paired agents handed off work to each other', required: false },
 };
 
 function AssertionIcon({ status }: { status: string }) {
@@ -45,6 +51,8 @@ export default function SandboxPage() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showHelp, setShowHelp] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [history, setHistory] = useState<SandboxHistoryEntry[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startPolling = useCallback((sbxUserId: string) => {
@@ -71,6 +79,8 @@ export default function SandboxPage() {
         setPhase('checklist');
         startPolling(userId);
       }
+      const h = await fetchHistory(userId);
+      if (h.sessions) setHistory(h.sessions);
     }
     checkExisting();
   }, [userId, startPolling]);
@@ -126,6 +136,14 @@ export default function SandboxPage() {
     setLoading(false);
   };
 
+  const handleStartDemo = async () => {
+    if (!sandbox?.sandboxId) return;
+    setDemoRunning(true);
+    const result = await startDemo(sandbox.sandboxId);
+    if (result.error) setError(result.error);
+    setTimeout(() => setDemoRunning(false), 20000);
+  };
+
   const handleGoLive = () => setPhase('go-live');
 
   const handleExportReport = async () => {
@@ -139,6 +157,20 @@ export default function SandboxPage() {
     a.download = `whiteroom-sandbox-report-${sandbox.sandboxId}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handlePrintReport = async () => {
+    if (!sandbox?.sandboxId) return;
+    const res = await fetch(`${PROXY_URL}/api/white-room`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'test_report_html', sandbox_id: sandbox.sandboxId }),
+    });
+    const html = await res.text();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (w) setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
   const proxyUrl = sandbox?.proxyKey ? `${PROXY_URL}/${sandbox.proxyKey}` : '';
@@ -212,6 +244,26 @@ export default function SandboxPage() {
                     Use my key
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* HISTORY — shown on interstitial */}
+          {phase === 'interstitial' && history.length > 0 && (
+            <div style={{ maxWidth: 520, margin: '40px auto 0' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Past Sessions</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {history.map(s => (
+                  <div key={s.sandboxId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--line)', fontSize: 12 }}>
+                    <span style={{ width: 56, fontWeight: 600, color: s.overall === 'pass' ? '#22c55e' : s.overall === 'fail' ? 'var(--bad)' : 'var(--tx3)' }}>
+                      {s.overall === 'pass' ? 'PASS' : s.overall === 'fail' ? 'FAIL' : 'PARTIAL'}
+                    </span>
+                    <span style={{ flex: 1, fontFamily: FONT_MONO, fontSize: 10, color: 'var(--tx3)' }}>{s.sandboxId.slice(0, 20)}...</span>
+                    <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{new Date(s.destroyedAt).toLocaleDateString()}</span>
+                    <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{s.totalTasks} tasks</span>
+                    {s.isTrial && <span style={{ fontSize: 9, fontFamily: FONT_MONO, color: 'var(--info)', border: '1px solid var(--info)', borderRadius: 3, padding: '1px 4px' }}>TRIAL</span>}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -307,6 +359,7 @@ export default function SandboxPage() {
                     <button onClick={handlePause} disabled={loading} style={{ padding: '8px 16px', borderRadius: 6, background: '#d97706', color: '#fff', fontWeight: 600, fontSize: 12, border: 'none', cursor: 'pointer' }}>Pause</button>
                   )
                 ) : null}
+                <button onClick={handleStartDemo} disabled={loading || demoRunning} style={{ padding: '8px 16px', borderRadius: 6, background: demoRunning ? 'var(--sunk)' : '#6366f1', color: demoRunning ? 'var(--tx3)' : '#fff', fontWeight: 600, fontSize: 12, border: demoRunning ? '1px solid var(--line2)' : 'none', cursor: demoRunning ? 'not-allowed' : 'pointer' }}>{demoRunning ? 'Demo running...' : 'Run demo agent'}</button>
                 <button onClick={handleReset} disabled={loading} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Start over</button>
                 <button onClick={handleExportReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Export JSON</button>
                 <span style={{ flex: 1 }} />
@@ -321,11 +374,12 @@ export default function SandboxPage() {
 
           {/* GO LIVE */}
           {phase === 'go-live' && (
-            <div style={{ maxWidth: 520, margin: '40px auto' }}>
+            <div style={{ maxWidth: 600, margin: '40px auto' }}>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 1, marginBottom: 12, color: '#22c55e' }}>READY FOR PRODUCTION</div>
               <p style={{ color: 'var(--tx2)', fontSize: 12, marginBottom: 20, lineHeight: 1.6 }}>
-                All required checks passed. Your agent is ready for production governance.
+                All required checks passed. Follow the cutover guide below to switch to production.
               </p>
+
               <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', marginBottom: 6 }}>Sandbox Summary</div>
                 {Object.entries(assertions).map(([key, val]) => (
@@ -336,11 +390,41 @@ export default function SandboxPage() {
                   </div>
                 ))}
               </div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
-                Switch your agent&apos;s base URL to the production proxy to start routing real traffic through WhiteRoom.
-              </p>
+
+              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '16px', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Cutover Guide</div>
+                <ol style={{ paddingLeft: 18, fontSize: 12, color: 'var(--tx2)', lineHeight: 1.8, margin: 0 }}>
+                  <li>Replace your sandbox proxy URL with the production URL:
+                    <pre style={{ fontFamily: FONT_MONO, fontSize: 10.5, background: 'var(--sunk)', padding: 8, borderRadius: 4, overflowX: 'auto', margin: '6px 0' }}>ANTHROPIC_BASE_URL={PROXY_URL}/sk-wr-YOUR_KEY/v1/messages</pre>
+                  </li>
+                  <li>Ensure your production API key is stored via the dashboard&apos;s BYOK setup.</li>
+                  <li>Deploy your agent. WhiteRoom will auto-register it on first proxied call.</li>
+                  <li>Monitor the Fleet page for the first watch cycle to confirm governance is active.</li>
+                </ol>
+              </div>
+
+              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '16px', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>First Hour Checklist</div>
+                <div style={{ fontSize: 12, color: 'var(--tx2)', lineHeight: 1.8 }}>
+                  {[
+                    'Agent appears on Fleet page with "working" status',
+                    'First task completes and appears in audit log',
+                    'Watch timer counts down correctly',
+                    'Handover triggers at watch expiry',
+                    'Agent resumes after rest period',
+                    'Handover doc is populated with context summary',
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ color: 'var(--tx3)', fontSize: 11, flexShrink: 0, width: 16, textAlign: 'right' }}>{i + 1}.</span>
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={handleExportReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>View full report</button>
+                <button onClick={handleExportReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Export JSON</button>
+                <button onClick={handlePrintReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Print report</button>
                 <button onClick={() => { handleDestroy(); }} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Close sandbox</button>
               </div>
             </div>

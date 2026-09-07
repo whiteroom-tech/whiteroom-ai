@@ -277,3 +277,54 @@ export function resumeSandboxAgent(fleetId: string, agentId: string, key?: strin
 export function resetSandboxSession(sandboxId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return apiCall<{ success?: boolean; error?: string }>({ action: 'reset_session', sandbox_id: sandboxId }, key);
 }
+
+export function startDemo(sandboxId: string, key?: string): Promise<{ success?: boolean; message?: string; error?: string }> {
+  return apiCall<{ success?: boolean; message?: string; error?: string }>({ action: 'start_demo', sandbox_id: sandboxId }, key);
+}
+
+export interface ParityCheckResult {
+  success?: boolean;
+  parity?: boolean;
+  drifts?: Array<{ field: string; sandbox: unknown; production: unknown }>;
+  error?: string;
+}
+
+export function parityCheck(sandboxId: string, productionFleetId: string, key?: string): Promise<ParityCheckResult> {
+  return apiCall<ParityCheckResult>({ action: 'parity_check', sandbox_id: sandboxId, production_fleet_id: productionFleetId }, key);
+}
+
+export function stopProductionAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return apiCall<{ success?: boolean; error?: string }>({ action: 'stop_agent', fleet_id: fleetId, agent_id: agentId }, key);
+}
+
+export function resumeProductionAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return apiCall<{ success?: boolean; error?: string }>({ action: 'resume_stopped_agent', fleet_id: fleetId, agent_id: agentId }, key);
+}
+
+export function stopAllAgents(fleetId: string, key?: string): Promise<{ success?: boolean; stoppedCount?: number; error?: string }> {
+  return apiCall<{ success?: boolean; stoppedCount?: number; error?: string }>({ action: 'stop_all', fleet_id: fleetId }, key);
+}
+
+export function resumeAllAgents(fleetId: string, key?: string): Promise<{ success?: boolean; resumedCount?: number; error?: string }> {
+  return apiCall<{ success?: boolean; resumedCount?: number; error?: string }>({ action: 'resume_all', fleet_id: fleetId }, key);
+}
+
+export interface SandboxHistoryEntry {
+  sandboxId: string;
+  userId: string;
+  createdAt: string;
+  destroyedAt: string;
+  assertions: Record<string, { status: string; observedAt?: string; metric?: number }>;
+  overall: 'pass' | 'fail' | 'in_progress';
+  agentCount: number;
+  totalTasks: number;
+  isTrial: boolean;
+}
+
+export function sandboxHistory(userId: string, key?: string): Promise<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }> {
+  return apiCall<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }>({ action: 'sandbox_history', user_id: userId }, key);
+}
+
+export function sandboxAnalytics(key?: string): Promise<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }> {
+  return apiCall<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }>({ action: 'sandbox_analytics' }, key);
+}
