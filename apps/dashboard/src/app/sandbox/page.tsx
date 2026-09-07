@@ -34,10 +34,19 @@ const ASSERTION_LABELS: Record<string, { label: string; hint: string; required: 
 };
 
 function AssertionIcon({ status }: { status: string }) {
-  if (status === 'observed') return <span style={{ color: '#22c55e', fontSize: 16 }}>✓</span>;
-  if (status === 'failed') return <span style={{ color: '#ef4444', fontSize: 16 }}>✗</span>;
-  return <span style={{ color: 'var(--tx3)', fontSize: 16 }}>○</span>;
+  if (status === 'observed') return <span style={{ color: 'var(--ok)', fontSize: 14, fontWeight: 700 }}>✓</span>;
+  if (status === 'failed') return <span style={{ color: 'var(--bad)', fontSize: 14, fontWeight: 700 }}>✗</span>;
+  return <span style={{ color: 'var(--tx3)', fontSize: 14 }}>○</span>;
 }
+
+const BTN = {
+  primary: { padding: '6px 14px', borderRadius: 6, background: 'var(--brand)', color: 'var(--bg)', fontWeight: 600, fontSize: 11, border: 'none', cursor: 'pointer' } as const,
+  secondary: { padding: '6px 14px', borderRadius: 6, background: 'var(--card)', color: 'var(--tx2)', fontWeight: 600, fontSize: 11, border: '1px solid var(--line2)', cursor: 'pointer' } as const,
+  ghost: { padding: '6px 14px', borderRadius: 6, background: 'transparent', color: 'var(--tx3)', fontWeight: 600, fontSize: 11, border: '1px solid var(--line)', cursor: 'pointer' } as const,
+  success: { padding: '6px 14px', borderRadius: 6, background: 'var(--ok)', color: 'var(--bg)', fontWeight: 700, fontSize: 11, border: 'none', cursor: 'pointer' } as const,
+  warn: { padding: '6px 14px', borderRadius: 6, background: 'var(--warn)', color: 'var(--bg)', fontWeight: 600, fontSize: 11, border: 'none', cursor: 'pointer' } as const,
+  danger: { fontSize: 11, color: 'var(--bad)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 } as const,
+};
 
 export default function SandboxPage() {
   const { data: session } = useSession();
@@ -185,61 +194,62 @@ export default function SandboxPage() {
       <Sidebar />
 
       <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0 }}>
+        {/* Top bar — matches fleet page */}
         <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
           <span style={{ fontSize: 12.5, color: 'var(--tx3)' }}>
             <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Sandbox</b>
             {sandbox?.sandboxId && <span style={{ marginLeft: 8, fontFamily: FONT_MONO, fontSize: 10, color: 'var(--tx3)' }}>/ {sandbox.sandboxId}</span>}
           </span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: '#d97706', background: 'rgba(217,119,6,0.1)', border: '1px solid #d97706', borderRadius: 4, padding: '2px 8px' }}>TEST ENV</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 4, padding: '2px 8px' }}>TEST ENV</span>
           {sandbox?.isTrial && <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>TRIAL</span>}
-          {paused && <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: '#d97706', background: 'rgba(217,119,6,0.15)', border: '1px solid #d97706', borderRadius: 4, padding: '2px 8px' }}>PAUSED</span>}
+          {paused && <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 4, padding: '2px 8px' }}>PAUSED</span>}
           <span style={{ marginLeft: 'auto' }} />
           {expiresIn !== null && expiresIn > 0 && (
-            <span style={{ fontSize: 10, fontFamily: FONT_MONO, color: expiresIn < 600 ? '#d97706' : 'var(--tx3)' }}>
+            <span style={{ fontSize: 10, fontFamily: FONT_MONO, color: expiresIn < 600 ? 'var(--warn)' : 'var(--tx3)' }}>
               {Math.floor(expiresIn / 60)}m {expiresIn % 60}s remaining
             </span>
           )}
         </div>
 
         {paused && (
-          <div style={{ padding: '10px 20px', background: 'rgba(217,119,6,0.08)', borderBottom: '1px solid #d97706', fontSize: 12, color: '#d97706' }}>
+          <div style={{ padding: '10px 20px', background: 'var(--warn-bg)', borderBottom: '1px solid var(--warn-line)', fontSize: 11, color: 'var(--warn)' }}>
             Paused — your agent is receiving hold responses. Calls are not being forwarded to the LLM.
           </div>
         )}
 
-        <div className="flex-1" style={{ overflowY: 'auto', padding: '24px 32px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px' }}>
           {error && (
-            <div style={{ padding: '10px 14px', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 6, color: 'var(--bad)', fontSize: 12, marginBottom: 16 }}>{error}</div>
+            <div style={{ padding: '10px 14px', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 6, color: 'var(--bad)', fontSize: 11, marginBottom: 16 }}>{error}</div>
           )}
 
           {/* INTERSTITIAL */}
           {phase === 'interstitial' && (
-            <div style={{ maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>TEST YOUR AGENT</div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 32, lineHeight: 1.6 }}>
+            <div style={{ maxWidth: 440, margin: '48px auto', textAlign: 'center' }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, letterSpacing: 1.5, marginBottom: 6 }}>TEST YOUR AGENT</div>
+              <p style={{ color: 'var(--tx2)', fontSize: 11.5, marginBottom: 28, lineHeight: 1.6 }}>
                 Spin up a sandbox environment to validate that WhiteRoom governance works with your agent before going to production.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <button
                   onClick={() => handleCreateSandbox({ isTrial: true })}
                   disabled={loading}
-                  style={{ padding: '12px 20px', borderRadius: 8, background: '#d97706', color: '#fff', fontWeight: 600, fontSize: 13, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
+                  style={{ ...BTN.primary, padding: '10px 20px', fontSize: 12, opacity: loading ? 0.5 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
                 >
                   {loading ? 'Creating...' : 'Use trial credits (no API key needed)'}
                 </button>
-                <div style={{ fontSize: 11, color: 'var(--tx3)', margin: '4px 0' }}>or</div>
+                <div style={{ fontSize: 10, color: 'var(--tx3)', letterSpacing: 0.5 }}>or</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     type="password"
                     value={apiKeyInput}
                     onChange={(e) => setApiKeyInput(e.target.value)}
                     placeholder="sk-ant-... or sk-..."
-                    style={{ flex: 1, padding: '10px 12px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', color: 'var(--tx)', fontSize: 12, fontFamily: FONT_MONO }}
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', color: 'var(--tx)', fontSize: 11, fontFamily: FONT_MONO }}
                   />
                   <button
                     onClick={() => handleCreateSandbox({ apiKey: apiKeyInput })}
                     disabled={loading || !apiKeyInput}
-                    style={{ padding: '10px 16px', borderRadius: 6, background: 'var(--brand)', color: '#fff', fontWeight: 600, fontSize: 12, border: 'none', cursor: loading || !apiKeyInput ? 'not-allowed' : 'pointer', opacity: loading || !apiKeyInput ? 0.6 : 1 }}
+                    style={{ ...BTN.secondary, opacity: loading || !apiKeyInput ? 0.4 : 1, cursor: loading || !apiKeyInput ? 'not-allowed' : 'pointer' }}
                   >
                     Use my key
                   </button>
@@ -250,18 +260,18 @@ export default function SandboxPage() {
 
           {/* HISTORY — shown on interstitial */}
           {phase === 'interstitial' && history.length > 0 && (
-            <div style={{ maxWidth: 520, margin: '40px auto 0' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Past Sessions</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ maxWidth: 480, margin: '32px auto 0' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>Past Sessions</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {history.map(s => (
-                  <div key={s.sandboxId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--line)', fontSize: 12 }}>
-                    <span style={{ width: 56, fontWeight: 600, color: s.overall === 'pass' ? '#22c55e' : s.overall === 'fail' ? 'var(--bad)' : 'var(--tx3)' }}>
+                  <div key={s.sandboxId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--line)', fontSize: 11 }}>
+                    <span style={{ width: 48, fontWeight: 700, fontSize: 10, letterSpacing: 0.5, color: s.overall === 'pass' ? 'var(--ok)' : s.overall === 'fail' ? 'var(--bad)' : 'var(--tx3)' }}>
                       {s.overall === 'pass' ? 'PASS' : s.overall === 'fail' ? 'FAIL' : 'PARTIAL'}
                     </span>
                     <span style={{ flex: 1, fontFamily: FONT_MONO, fontSize: 10, color: 'var(--tx3)' }}>{s.sandboxId.slice(0, 20)}...</span>
                     <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{new Date(s.destroyedAt).toLocaleDateString()}</span>
                     <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{s.totalTasks} tasks</span>
-                    {s.isTrial && <span style={{ fontSize: 9, fontFamily: FONT_MONO, color: 'var(--info)', border: '1px solid var(--info)', borderRadius: 3, padding: '1px 4px' }}>TRIAL</span>}
+                    {s.isTrial && <span style={{ fontSize: 9, fontFamily: FONT_MONO, color: 'var(--info)', border: '1px solid var(--info)', borderRadius: 3, padding: '1px 5px' }}>TRIAL</span>}
                   </div>
                 ))}
               </div>
@@ -270,27 +280,27 @@ export default function SandboxPage() {
 
           {/* SETUP RAIL */}
           {phase === 'setup' && sandbox && (
-            <div style={{ maxWidth: 520, margin: '40px auto' }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 1, marginBottom: 16 }}>SETUP</div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12, marginBottom: 20, lineHeight: 1.6 }}>
+            <div style={{ maxWidth: 480, margin: '36px auto' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 16 }}>Setup</div>
+              <p style={{ color: 'var(--tx2)', fontSize: 11.5, marginBottom: 18, lineHeight: 1.6 }}>
                 Point your agent at this proxy URL. All LLM calls through it are governed by WhiteRoom.
               </p>
-              <div style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px 16px', fontFamily: FONT_MONO, fontSize: 11.5, wordBreak: 'break-all', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ flex: 1 }}>{proxyUrl}/v1/messages</span>
+              <div style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px', fontFamily: FONT_MONO, fontSize: 11, wordBreak: 'break-all', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: 1, color: 'var(--brand)' }}>{proxyUrl}/v1/messages</span>
                 <button
                   onClick={() => navigator.clipboard.writeText(`${proxyUrl}/v1/messages`)}
-                  style={{ padding: '4px 10px', borderRadius: 4, background: 'var(--brand)', color: '#fff', fontSize: 10, fontWeight: 600, border: 'none', cursor: 'pointer', flexShrink: 0 }}
+                  style={{ ...BTN.primary, padding: '4px 10px', fontSize: 10, flexShrink: 0 }}
                 >
                   Copy
                 </button>
               </div>
-              <button onClick={() => setShowHelp(!showHelp)} style={{ fontSize: 11, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: showHelp ? 10 : 20 }}>
+              <button onClick={() => setShowHelp(!showHelp)} style={{ fontSize: 11, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: showHelp ? 10 : 18 }}>
                 {showHelp ? '▾ Hide help' : '▸ Help me connect'}
               </button>
               {showHelp && (
-                <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', fontSize: 11.5, color: 'var(--tx2)', lineHeight: 1.7, marginBottom: 20 }}>
+                <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', fontSize: 11, color: 'var(--tx2)', lineHeight: 1.7, marginBottom: 18 }}>
                   <p>Replace your LLM base URL with the proxy URL above. For example:</p>
-                  <pre style={{ fontFamily: FONT_MONO, fontSize: 10.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '8px 0' }}>
+                  <pre style={{ fontFamily: FONT_MONO, fontSize: 10.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '8px 0', color: 'var(--brand)' }}>
 {`ANTHROPIC_BASE_URL=${proxyUrl}`}
                   </pre>
                   <p>Your API key stays the same — WhiteRoom proxies the call through to the provider.</p>
@@ -298,7 +308,7 @@ export default function SandboxPage() {
               )}
               <button
                 onClick={() => { setPhase('checklist'); startPolling(userId); }}
-                style={{ padding: '10px 20px', borderRadius: 6, background: 'var(--brand)', color: '#fff', fontWeight: 600, fontSize: 12, border: 'none', cursor: 'pointer' }}
+                style={{ ...BTN.primary, padding: '8px 18px', fontSize: 12 }}
               >
                 I&apos;m connected — start the test
               </button>
@@ -307,29 +317,29 @@ export default function SandboxPage() {
 
           {/* CHECKLIST */}
           {phase === 'checklist' && (
-            <div style={{ maxWidth: 520, margin: '20px auto' }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>
-                {status?.agents?.length ? 'RUNNING CHECKS' : 'LISTENING FOR CONNECTIONS...'}
+            <div style={{ maxWidth: 520, margin: '16px auto' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                {status?.agents?.length ? 'Running Checks' : 'Listening for Connections'}
               </div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12, marginBottom: 20 }}>
+              <p style={{ color: 'var(--tx2)', fontSize: 11, marginBottom: 18 }}>
                 {status?.agents?.length ? 'Your agent is connected. Watching governance events.' : 'Start your agent and point it at the sandbox proxy URL.'}
               </p>
 
-              <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 24 }}>
+              <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 20 }}>
                 {Object.entries(ASSERTION_LABELS).map(([key, { label, hint, required }]) => {
                   const a = assertions[key];
                   const s = a?.status ?? 'waiting';
                   return (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--line)' }}>
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 6, background: 'var(--card)', border: `1px solid ${s === 'observed' ? 'var(--ok)' : s === 'failed' ? 'var(--bad)' : 'var(--line)'}`, transition: 'border-color 0.3s' }}>
                       <AssertionIcon status={s} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                        <div style={{ fontWeight: 600, fontSize: 11.5 }}>
                           {label}
-                          {!required && <span style={{ fontSize: 10, color: 'var(--tx3)', marginLeft: 6 }}>optional</span>}
+                          {!required && <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 6, fontWeight: 500 }}>optional</span>}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 1 }}>{hint}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 1 }}>{hint}</div>
                         {s === 'failed' && a?.diagnostic && (
-                          <div style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>{a.diagnostic}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--bad)', marginTop: 3 }}>{a.diagnostic}</div>
                         )}
                         {s === 'observed' && a?.metric !== undefined && (
                           <div style={{ fontSize: 10, color: 'var(--ok)', marginTop: 2, fontFamily: FONT_MONO }}>{a.metric}% compression</div>
@@ -340,62 +350,61 @@ export default function SandboxPage() {
                 })}
               </div>
 
-              <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 20 }}>
+              <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 16, fontFamily: FONT_MONO }}>
                 {(() => {
                   const req = Object.entries(assertions).filter(([k]) => ASSERTION_LABELS[k]?.required);
                   const reqPassed = req.filter(([, v]) => v.status === 'observed').length;
                   const opt = Object.entries(assertions).filter(([k]) => !ASSERTION_LABELS[k]?.required);
                   const optPassed = opt.filter(([, v]) => v.status === 'observed').length;
-                  return `${reqPassed} of ${req.length} required checks passed · ${optPassed} of ${opt.length} optional`;
+                  return `${reqPassed} of ${req.length} required · ${optPassed} of ${opt.length} optional`;
                 })()}
               </div>
 
-              {/* Controls */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 14 }}>
                 {status?.agents?.length ? (
                   paused ? (
-                    <button onClick={handleResume} disabled={loading} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--brand)', color: '#fff', fontWeight: 600, fontSize: 12, border: 'none', cursor: 'pointer' }}>Resume</button>
+                    <button onClick={handleResume} disabled={loading} style={BTN.primary}>Resume</button>
                   ) : (
-                    <button onClick={handlePause} disabled={loading} style={{ padding: '8px 16px', borderRadius: 6, background: '#d97706', color: '#fff', fontWeight: 600, fontSize: 12, border: 'none', cursor: 'pointer' }}>Pause</button>
+                    <button onClick={handlePause} disabled={loading} style={BTN.warn}>Pause</button>
                   )
                 ) : null}
-                <button onClick={handleStartDemo} disabled={loading || demoRunning} style={{ padding: '8px 16px', borderRadius: 6, background: demoRunning ? 'var(--sunk)' : '#6366f1', color: demoRunning ? 'var(--tx3)' : '#fff', fontWeight: 600, fontSize: 12, border: demoRunning ? '1px solid var(--line2)' : 'none', cursor: demoRunning ? 'not-allowed' : 'pointer' }}>{demoRunning ? 'Demo running...' : 'Run demo agent'}</button>
-                <button onClick={handleReset} disabled={loading} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Start over</button>
-                <button onClick={handleExportReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Export JSON</button>
+                <button onClick={handleStartDemo} disabled={loading || demoRunning} style={demoRunning ? { ...BTN.ghost, opacity: 0.5, cursor: 'not-allowed' } : { ...BTN.secondary, background: 'var(--ho-bg)', color: 'var(--ho)', border: '1px solid var(--ho)' }}>{demoRunning ? 'Demo running...' : 'Run demo agent'}</button>
+                <button onClick={handleReset} disabled={loading} style={BTN.ghost}>Start over</button>
+                <button onClick={handleExportReport} style={BTN.ghost}>Export JSON</button>
                 <span style={{ flex: 1 }} />
                 {requiredPassed && (
-                  <button onClick={handleGoLive} style={{ padding: '8px 20px', borderRadius: 6, background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 12, border: 'none', cursor: 'pointer' }}>Go live →</button>
+                  <button onClick={handleGoLive} style={{ ...BTN.success, padding: '6px 18px' }}>Go live →</button>
                 )}
               </div>
 
-              <button onClick={handleDestroy} style={{ fontSize: 11, color: 'var(--bad)', background: 'none', border: 'none', cursor: 'pointer' }}>Destroy sandbox</button>
+              <button onClick={handleDestroy} style={BTN.danger}>Destroy sandbox</button>
             </div>
           )}
 
           {/* GO LIVE */}
           {phase === 'go-live' && (
-            <div style={{ maxWidth: 600, margin: '40px auto' }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 1, marginBottom: 12, color: '#22c55e' }}>READY FOR PRODUCTION</div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12, marginBottom: 20, lineHeight: 1.6 }}>
+            <div style={{ maxWidth: 560, margin: '32px auto' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--ok)', textTransform: 'uppercase' as const, marginBottom: 4 }}>Ready for Production</div>
+              <p style={{ color: 'var(--tx2)', fontSize: 11, marginBottom: 18, lineHeight: 1.6 }}>
                 All required checks passed. Follow the cutover guide below to switch to production.
               </p>
 
-              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', marginBottom: 6 }}>Sandbox Summary</div>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>Sandbox Summary</div>
                 {Object.entries(assertions).map(([key, val]) => (
-                  <div key={key} style={{ fontSize: 11, display: 'flex', gap: 6, marginBottom: 2 }}>
+                  <div key={key} style={{ fontSize: 11, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
                     <AssertionIcon status={val.status} />
-                    <span>{ASSERTION_LABELS[key]?.label ?? key}</span>
-                    {val.metric !== undefined && <span style={{ fontFamily: FONT_MONO, color: 'var(--tx3)' }}>{val.metric}%</span>}
+                    <span style={{ color: 'var(--tx2)' }}>{ASSERTION_LABELS[key]?.label ?? key}</span>
+                    {val.metric !== undefined && <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: 'var(--tx3)' }}>{val.metric}%</span>}
                   </div>
                 ))}
               </div>
 
-              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '16px', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Cutover Guide</div>
-                <ol style={{ paddingLeft: 18, fontSize: 12, color: 'var(--tx2)', lineHeight: 1.8, margin: 0 }}>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 10 }}>Cutover Guide</div>
+                <ol style={{ paddingLeft: 18, fontSize: 11, color: 'var(--tx2)', lineHeight: 1.8, margin: 0 }}>
                   <li>Replace your sandbox proxy URL with the production URL:
-                    <pre style={{ fontFamily: FONT_MONO, fontSize: 10.5, background: 'var(--sunk)', padding: 8, borderRadius: 4, overflowX: 'auto', margin: '6px 0' }}>ANTHROPIC_BASE_URL={PROXY_URL}/sk-wr-YOUR_KEY/v1/messages</pre>
+                    <pre style={{ fontFamily: FONT_MONO, fontSize: 10, background: 'var(--sunk)', padding: 8, borderRadius: 4, overflowX: 'auto', margin: '6px 0', color: 'var(--brand)' }}>ANTHROPIC_BASE_URL={PROXY_URL}/sk-wr-YOUR_KEY/v1/messages</pre>
                   </li>
                   <li>Ensure your production API key is stored via the dashboard&apos;s BYOK setup.</li>
                   <li>Deploy your agent. WhiteRoom will auto-register it on first proxied call.</li>
@@ -404,8 +413,8 @@ export default function SandboxPage() {
               </div>
 
               <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '16px', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>First Hour Checklist</div>
-                <div style={{ fontSize: 12, color: 'var(--tx2)', lineHeight: 1.8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 10 }}>First Hour Checklist</div>
+                <div style={{ fontSize: 11, color: 'var(--tx2)', lineHeight: 1.8 }}>
                   {[
                     'Agent appears on Fleet page with "working" status',
                     'First task completes and appears in audit log',
@@ -415,32 +424,38 @@ export default function SandboxPage() {
                     'Handover doc is populated with context summary',
                   ].map((item, i) => (
                     <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <span style={{ color: 'var(--tx3)', fontSize: 11, flexShrink: 0, width: 16, textAlign: 'right' }}>{i + 1}.</span>
+                      <span style={{ color: 'var(--tx3)', fontSize: 10, flexShrink: 0, width: 14, textAlign: 'right' as const, fontFamily: FONT_MONO }}>{i + 1}.</span>
                       <span>{item}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={handleExportReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Export JSON</button>
-                <button onClick={handlePrintReport} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Print report</button>
-                <button onClick={() => { handleDestroy(); }} style={{ padding: '8px 16px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Close sandbox</button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={handleExportReport} style={BTN.secondary}>Export JSON</button>
+                <button onClick={handlePrintReport} style={BTN.secondary}>Print report</button>
+                <button onClick={() => { handleDestroy(); }} style={BTN.secondary}>Close sandbox</button>
               </div>
             </div>
           )}
 
           {/* EXPIRED */}
           {phase === 'expired' && (
-            <div style={{ maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>SANDBOX EXPIRED</div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12, marginBottom: 24 }}>Your sandbox session has ended. You can view your test report or create a new sandbox.</p>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                <button onClick={handleExportReport} style={{ padding: '10px 18px', borderRadius: 6, background: 'var(--brand)', color: '#fff', fontWeight: 600, fontSize: 12, border: 'none', cursor: 'pointer' }}>View report</button>
-                <button onClick={() => { setSandbox(null); setStatus(null); setPhase('interstitial'); }} style={{ padding: '10px 18px', borderRadius: 6, background: 'var(--sunk)', color: 'var(--tx2)', fontWeight: 600, fontSize: 12, border: '1px solid var(--line2)', cursor: 'pointer' }}>Create new sandbox</button>
+            <div style={{ maxWidth: 440, margin: '48px auto', textAlign: 'center' }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: 1.5, marginBottom: 8 }}>SANDBOX EXPIRED</div>
+              <p style={{ color: 'var(--tx2)', fontSize: 11, marginBottom: 20 }}>Your sandbox session has ended. You can view your test report or create a new sandbox.</p>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                <button onClick={handleExportReport} style={BTN.primary}>View report</button>
+                <button onClick={() => { setSandbox(null); setStatus(null); setPhase('interstitial'); }} style={BTN.secondary}>Create new sandbox</button>
               </div>
             </div>
           )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 10, color: 'var(--tx3)', flexShrink: 0 }}>
+          <span>White Room v1.1 Beta</span>
+          <span>&copy; 2026 WhiteRoom</span>
         </div>
       </div>
     </div>

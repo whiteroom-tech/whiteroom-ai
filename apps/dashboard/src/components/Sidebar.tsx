@@ -1,9 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { FONT_DISPLAY } from '@whiteroom/ui';
+
+type WrTheme = 'system' | 'light' | 'dark';
+
+function applyTheme(theme: WrTheme) {
+  const shell = document.querySelector('.wr-shell');
+  if (!shell) return;
+  if (theme === 'system') shell.removeAttribute('data-theme');
+  else shell.setAttribute('data-theme', theme);
+}
+
+const THEME_ICON: Record<WrTheme, React.ReactNode> = {
+  system: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>,
+  light: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>,
+  dark: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" /></svg>,
+};
 
 export type FleetPage = 'live' | 'analytics' | 'visualization';
 
@@ -34,12 +49,12 @@ const ICONS = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/fleet', label: 'Fleet', icon: ICONS.fleet, match: (p) => p.startsWith('/fleet') },
+  { href: '/fleet', label: 'Fleet', icon: ICONS.fleet, match: (p) => p === '/fleet' || (p.startsWith('/fleet') && !p.includes('tab=analytics')) },
+  { href: '/fleet?tab=analytics', label: 'Analytics', icon: ICONS.analytics, match: (p) => p.includes('tab=analytics') },
   { href: '/sandbox', label: 'Sandbox', icon: ICONS.sandbox, match: (p) => p.startsWith('/sandbox') },
 ];
 
 const SOON_ITEMS: SoonItem[] = [
-  { label: 'Analytics', icon: ICONS.analytics },
   { label: 'Visualization', icon: ICONS.viz },
   { label: 'Watch trace', icon: ICONS.watch },
   { label: 'Triage', icon: ICONS.triage },
@@ -54,7 +69,27 @@ export function Sidebar({ fleetId }: { fleetId?: string } & (
   | { active?: never; onNavigate?: never }
 )) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const fullPath = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '');
   const [roadmapOpen, setRoadmapOpen] = useState(false);
+  const [theme, setTheme] = useState<WrTheme>('system');
+
+  useEffect(() => {
+    const stored = localStorage.getItem('wr_theme') as WrTheme | null;
+    if (stored && (stored === 'light' || stored === 'dark')) {
+      setTheme(stored);
+      applyTheme(stored);
+    }
+  }, []);
+
+  function cycleTheme() {
+    const order: WrTheme[] = ['system', 'light', 'dark'];
+    const next = order[(order.indexOf(theme) + 1) % order.length];
+    setTheme(next);
+    if (next === 'system') localStorage.removeItem('wr_theme');
+    else localStorage.setItem('wr_theme', next);
+    applyTheme(next);
+  }
 
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
@@ -64,7 +99,7 @@ export function Sidebar({ fleetId }: { fleetId?: string } & (
       </div>
 
       {NAV_ITEMS.map((item) => {
-        const isActive = item.match ? item.match(pathname) : pathname === item.href;
+        const isActive = item.match ? item.match(fullPath) : fullPath === item.href;
         return (
           <Link
             key={item.href}
@@ -105,7 +140,16 @@ export function Sidebar({ fleetId }: { fleetId?: string } & (
       ))}
 
       <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 10.5, color: 'var(--tx3)' }}>
-        White Room Beta
+        <div className="flex items-center justify-between" style={{ marginBottom: fleetId ? 0 : undefined }}>
+          <span>White Room Beta</span>
+          <button
+            onClick={cycleTheme}
+            title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
+            style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 5, padding: '3px 7px', cursor: 'pointer', color: 'var(--tx3)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            {THEME_ICON[theme]}
+          </button>
+        </div>
         {fleetId && <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand2)', fontSize: 10, marginTop: 2 }}>{fleetId}</div>}
       </div>
     </aside>

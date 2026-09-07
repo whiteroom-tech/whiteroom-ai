@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
@@ -43,6 +43,13 @@ function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
 export default function FleetDashboard() {
+  useEffect(() => {
+    const stored = localStorage.getItem('wr_theme');
+    if (stored === 'light' || stored === 'dark') {
+      document.querySelector('.wr-shell')?.setAttribute('data-theme', stored);
+    }
+  }, []);
+
   const [report, setReport] = useState<FleetReport | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentHealth, setAgentHealth] = useState<Record<string, { health: number; lastStatus: string }>>({});
@@ -70,7 +77,9 @@ export default function FleetDashboard() {
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>('live');
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'analytics' ? 'analytics' : searchParams.get('tab') === 'visualization' ? 'visualization' : 'live';
+  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>(initialTab);
   const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('today');
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [scopedDay, setScopedDay] = useState<string | null>(null);
