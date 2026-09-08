@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
@@ -43,6 +43,13 @@ function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
 export default function FleetDashboard() {
+  useEffect(() => {
+    const stored = localStorage.getItem('wr_theme');
+    if (stored === 'light' || stored === 'dark') {
+      document.querySelector('.wr-shell')?.setAttribute('data-theme', stored);
+    }
+  }, []);
+
   const [report, setReport] = useState<FleetReport | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentHealth, setAgentHealth] = useState<Record<string, { health: number; lastStatus: string }>>({});
@@ -70,7 +77,9 @@ export default function FleetDashboard() {
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>('live');
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'analytics' ? 'analytics' : searchParams.get('tab') === 'visualization' ? 'visualization' : 'live';
+  const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>(initialTab);
   const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('today');
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [scopedDay, setScopedDay] = useState<string | null>(null);
@@ -463,15 +472,22 @@ export default function FleetDashboard() {
 
   return (
     <div className="wr-shell" style={{ background: 'var(--bg)', color: 'var(--tx)', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13, display: 'grid', gridTemplateColumns: '212px 1fr', gridTemplateRows: 'minmax(0, 1fr)', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar active={activeTab} onNavigate={setActiveTab} fleetId={report.fleetId} />
+      <Sidebar fleetId={report.fleetId} />
 
       <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0 }}>
         {/* Top bar */}
         <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
           <span style={{ fontSize: 12.5, color: 'var(--tx3)' }}>
-            <b style={{ color: 'var(--tx)', fontWeight: 600 }}>{activeTab === 'live' ? 'Fleet' : activeTab === 'analytics' ? 'Analytics' : 'Visualization'}</b> / {report.fleetId}
+            <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Fleet</b> / {report.fleetId}
           </span>
           <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
+          <div className="flex items-center gap-1" style={{ marginLeft: 16 }}>
+            {(['live', 'analytics', 'visualization'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 5, background: activeTab === tab ? 'var(--brand-dim)' : 'transparent', color: activeTab === tab ? 'var(--brand)' : 'var(--tx3)', cursor: 'pointer', border: 'none' }}>
+                {tab === 'live' ? 'Live' : tab === 'analytics' ? 'Analytics' : 'Viz'}
+              </button>
+            ))}
+          </div>
           <span style={{ marginLeft: 'auto' }} />
           <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ok)', background: 'var(--ok-bg)', border: '1px solid var(--ok)', borderRadius: 6, padding: '5px 11px' }}>● connected</span>
           <span style={{ fontSize: 10, fontWeight: 600, padding: '5px 11px', borderRadius: 6, background: report.compliance.allAgentsWithinLimits ? 'var(--ok-bg)' : 'var(--bad-bg)', color: report.compliance.allAgentsWithinLimits ? 'var(--ok)' : 'var(--bad)' }}>
