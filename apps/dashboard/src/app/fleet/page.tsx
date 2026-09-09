@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
-import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKey } from '@/lib/analytics-metrics';
+import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { RingGauge, Beacon } from '@/components/AgentGauge';
@@ -444,37 +444,43 @@ export default function FleetDashboard() {
   // --- Analytics computation (UTC throughout) ---
   const cutoff = getCutoff(analyticsRange, Date.now());
 
-  const rangedEntries = allEntries.filter(e => e.timestamp.slice(0, 10) >= cutoff);
+  const rangedEntries = allEntries.filter(e => localDayFromTs(e.timestamp) >= cutoff);
 
-  const avgCallsPerWatch = t.handovers > 0 ? Math.max(Math.ceil(t.tasks / (t.handovers + 1)), 1) : 1;
   const handoverSaved = (e: AuditEntry) => computeHandoverSaved({
     contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
     handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
-  }) * avgCallsPerWatch;
+  });
   const handoverAgent = (e: AuditEntry) => (e as Record<string, unknown>).from as string || e.agentId || '';
 
   const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[] }>();
   rangedEntries.forEach(e => {
-    const day = e.timestamp.slice(0, 10);
+    const day = localDayFromTs(e.timestamp);
     const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [] };
     d.entries.push(e);
     if (e.type === 'task_complete') { d.tasks++; d.used += e.tokensUsed || 0; }
-    if (e.type === 'handover' || e.type === 'self_handover') {
+    const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+    if (isHandover) {
       d.handovers++;
       d.saved += handoverSaved(e);
+    }
+    if (e.type === 'context_offload') {
+      const ctx = ((e as Record<string, unknown>).contextTokens as number) || 0;
+      const ret = ((e as Record<string, unknown>).returnedTokens as number) || 0;
+      d.saved += Math.max(0, ctx - ret);
     }
     dayMap.set(day, d);
   });
   const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
   const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
 
-  const scopedEntries = scopedDay ? rangedEntries.filter(e => e.timestamp.slice(0, 10) === scopedDay) : rangedEntries;
+  const scopedEntries = scopedDay ? rangedEntries.filter(e => localDayFromTs(e.timestamp) === scopedDay) : rangedEntries;
 
   const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number }>();
   scopedEntries.forEach(e => {
     const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-    const aid = isHandover ? handoverAgent(e) : e.agentId;
-    if (!aid) return;
+    const rawAid = isHandover ? handoverAgent(e) : e.agentId;
+    if (!rawAid) return;
+    const aid = rawAid.toLowerCase();
     const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0 };
     if (e.type === 'task_complete') { a.tasks++; a.used += e.tokensUsed || 0; }
     if (isHandover) {
@@ -484,9 +490,18 @@ export default function FleetDashboard() {
       const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 0;
       if (ctx > hd) { a.ctxTokens += ctx; a.hdTokens += hd; }
     }
+    if (e.type === 'context_offload') {
+      const ctx = ((e as Record<string, unknown>).contextTokens as number) || 0;
+      const ret = ((e as Record<string, unknown>).returnedTokens as number) || 0;
+      a.saved += Math.max(0, ctx - ret);
+    }
     agentMap.set(aid, a);
   });
   const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
+
+  const scopedCtxTokens = agentBreakdown.reduce((s, [, v]) => s + v.ctxTokens, 0);
+  const scopedHdTokens = agentBreakdown.reduce((s, [, v]) => s + v.hdTokens, 0);
+  const scopedCompression = scopedCtxTokens > 0 ? Math.max(0, Math.min(100, (1 - scopedHdTokens / scopedCtxTokens) * 100)) : 0;
 
   const rangeTotals = (scopedDay ? [dailyStats.find(([k]) => k === scopedDay)].filter(Boolean) as [string, typeof dailyStats[0][1]][] : dailyStats).reduce((acc, [, d]) => ({
     tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
@@ -836,22 +851,22 @@ export default function FleetDashboard() {
               <circle cx={36} cy={36} r={30} fill="none" stroke="var(--line)" strokeWidth={6} />
               <circle cx={36} cy={36} r={30} fill="none" stroke="var(--ok)" strokeWidth={6}
                 strokeDasharray={2 * Math.PI * 30}
-                strokeDashoffset={2 * Math.PI * 30 * (1 - Math.min((es.compressionRatio ?? 0), 100) / 100)}
+                strokeDashoffset={2 * Math.PI * 30 * (1 - Math.min(scopedCompression, 100) / 100)}
                 strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s' }} />
             </svg>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 19, color: 'var(--ok)' }}>
-                {(es.compressionRatio ?? 0) > 0 ? Math.round(es.compressionRatio as number) + '%' : '—'}
+                {scopedCompression > 0 ? Math.round(scopedCompression) + '%' : '—'}
               </span>
             </div>
           </div>
           <div>
             <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 34, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
-              {(es.compressionRatio ?? 0) > 0 ? (es.compressionRatio as number).toFixed(1) + '%' : '—'}
+              {scopedCompression > 0 ? scopedCompression.toFixed(1) + '%' : '—'}
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 3 }}>
-              {(es.compressionRatio ?? 0) > 0 ? `${Math.round(es.compressionRatio as number)}% smaller at each handover` : 'No handovers yet'}
+              {scopedCompression > 0 ? `${Math.round(scopedCompression)}% smaller at each handover` : 'No handovers yet'}
             </div>
           </div>
         </div>
@@ -928,7 +943,7 @@ export default function FleetDashboard() {
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
           <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>PER-AGENT BREAKDOWN</span>
-            <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>scope: {scopeLabel || analyticsRange} · saved = own handovers only</span>
+            <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>scope: {scopeLabel || analyticsRange} · saved = handovers + offloads</span>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>

@@ -9,16 +9,24 @@ export function estimateCost(tokensSaved: number): number {
   return tokensSaved * 0.8 * 0.0000008 + tokensSaved * 0.2 * 0.000004;
 }
 
+/** YYYY-MM-DD in the browser's local timezone. */
+export function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Local YYYY-MM-DD from an ISO timestamp string. */
+export function localDayFromTs(ts: string): string {
+  return localDay(new Date(ts));
+}
+
 /**
- * UTC date cutoff (YYYY-MM-DD) for an analytics range. An entry is in range
- * when its own YYYY-MM-DD is >= the returned cutoff — lexical comparison is
- * safe for ISO date strings.
+ * Local-date cutoff (YYYY-MM-DD) for an analytics range. An entry is in range
+ * when its local YYYY-MM-DD is >= the returned cutoff.
  */
 export function getCutoff(range: string, nowMs: number): string {
-  const todayKey = new Date(nowMs).toISOString().slice(0, 10);
-  if (range === 'today') return todayKey;
-  if (range === '7d') return new Date(nowMs - 6 * DAY_MS).toISOString().slice(0, 10);
-  if (range === '30d') return new Date(nowMs - 29 * DAY_MS).toISOString().slice(0, 10);
+  if (range === 'today') return localDay(new Date(nowMs));
+  if (range === '7d') return localDay(new Date(nowMs - 6 * DAY_MS));
+  if (range === '30d') return localDay(new Date(nowMs - 29 * DAY_MS));
   return '1970-01-01';
 }
 
