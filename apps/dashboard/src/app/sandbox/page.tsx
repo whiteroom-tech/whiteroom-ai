@@ -66,6 +66,8 @@ export default function SandboxPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showHelp, setShowHelp] = useState(false);
+  const [showConnect, setShowConnect] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [paused, setPaused] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [demoRunning, setDemoRunning] = useState(false);
@@ -423,16 +425,42 @@ export default function SandboxPage() {
                 Creates a sandbox and runs a simulated agent lifecycle — no API key or setup needed.
               </p>
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-                <button
-                  onClick={() => handleCreateSandbox({ isTrial: false })}
-                  disabled={loading}
-                  style={{ ...BTN.ghost, fontSize: 12.5, opacity: loading ? 0.5 : 1 }}
-                >
-                  Or connect your own agent →
-                </button>
-                <p style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 6 }}>
-                  For testing with a real agent. We&apos;ll give you the proxy URL and headers to configure.
-                </p>
+                {!showConnect ? (
+                  <>
+                    <button
+                      onClick={() => setShowConnect(true)}
+                      style={{ ...BTN.ghost, fontSize: 12.5 }}
+                    >
+                      Or connect your own agent →
+                    </button>
+                    <p style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 6 }}>
+                      For testing with a real agent. We&apos;ll give you the proxy URL and headers to configure.
+                    </p>
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'left' }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--tx2)' }}>
+                      Your Anthropic API key
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="sk-ant-..."
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', color: 'var(--tx)', fontFamily: FONT_MONO, fontSize: 12, boxSizing: 'border-box' }}
+                    />
+                    <p style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 4, marginBottom: 12 }}>
+                      Used to forward calls to Anthropic. Never stored — only a hash is kept for ownership verification.
+                    </p>
+                    <button
+                      onClick={() => handleCreateSandbox({ isTrial: false, apiKey: apiKeyInput || undefined })}
+                      disabled={loading || !apiKeyInput.startsWith('sk-')}
+                      style={{ ...BTN.primary, width: '100%', opacity: (loading || !apiKeyInput.startsWith('sk-')) ? 0.5 : 1, cursor: (loading || !apiKeyInput.startsWith('sk-')) ? 'not-allowed' : 'pointer' }}
+                    >
+                      {loading ? 'Creating sandbox...' : 'Create sandbox'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -468,12 +496,12 @@ export default function SandboxPage() {
               <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 12, fontSize: 12 }}>
                 <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--tx)' }}>Quick start — copy into your terminal</div>
                 <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 8px', color: 'var(--brand)', lineHeight: 1.6 }}>
-{`export ANTHROPIC_BASE_URL=${proxyUrl}/v1
+{`export ANTHROPIC_BASE_URL=${proxyUrl}
 export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                 </pre>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
-                    onClick={() => navigator.clipboard.writeText(`export ANTHROPIC_BASE_URL=${proxyUrl}/v1\nexport X_WHITEROOM_FLEET=${sandboxFleetId}`)}
+                    onClick={() => navigator.clipboard.writeText(`export ANTHROPIC_BASE_URL=${proxyUrl}\nexport X_WHITEROOM_FLEET=${sandboxFleetId}`)}
                     style={{ ...BTN.primary, padding: '4px 10px', fontSize: 10.5 }}
                   >
                     Copy both
@@ -492,7 +520,7 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                   <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--tx)' }}>Python (Anthropic SDK)</div>
                   <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 12px', color: 'var(--brand)' }}>
 {`client = anthropic.Anthropic(
-    base_url="${proxyUrl}/v1",
+    base_url="${proxyUrl}",
     default_headers={
         "x-whiteroom-fleet": "${sandboxFleetId}"
     }
@@ -739,12 +767,12 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                   Your base URL stays the same. Just swap the fleet header from your sandbox to your production fleet:
                 </p>
                 <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 8px', color: 'var(--brand)', lineHeight: 1.6 }}>
-{`export ANTHROPIC_BASE_URL=${PROXY_URL}/v1
+{`export ANTHROPIC_BASE_URL=${PROXY_URL}
 export X_WHITEROOM_FLEET=${prodFleetId}`}
                 </pre>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   <button
-                    onClick={() => navigator.clipboard.writeText(`export ANTHROPIC_BASE_URL=${PROXY_URL}/v1\nexport X_WHITEROOM_FLEET=${prodFleetId}`)}
+                    onClick={() => navigator.clipboard.writeText(`export ANTHROPIC_BASE_URL=${PROXY_URL}\nexport X_WHITEROOM_FLEET=${prodFleetId}`)}
                     style={{ ...BTN.primary, padding: '4px 10px', fontSize: 10.5 }}
                   >
                     Copy production config
