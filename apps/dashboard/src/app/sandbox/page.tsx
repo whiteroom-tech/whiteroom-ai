@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ActivityFeed } from '@/components/ActivityFeed';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
   createSandbox,
@@ -15,6 +16,7 @@ import {
   resetSandboxSession,
   startDemo,
   sandboxHistory as fetchHistory,
+  auditLog,
   PROXY_URL,
   type CreateSandboxResult,
   type SandboxStatusResult,
@@ -24,6 +26,8 @@ import {
   type SandboxAgentInfo,
   type SandboxAuditEntry,
 } from '@/lib/whiteroom/client';
+import type { AuditEntry } from '@/lib/whiteroom/types';
+import type { FeedVariant } from '@/lib/activity';
 
 type Phase = 'interstitial' | 'setup' | 'checklist' | 'go-live' | 'expired';
 
@@ -68,20 +72,33 @@ export default function SandboxPage() {
   const [history, setHistory] = useState<SandboxHistoryEntry[]>([]);
   const [demoSteps, setDemoSteps] = useState<DemoStep[]>([]);
   const [visibleSteps, setVisibleSteps] = useState(0);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [feedPage, setFeedPage] = useState(0);
+  const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
+  const [feedTechnical, setFeedTechnical] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startPolling = useCallback((sbxUserId: string) => {
+  const fetchAudit = useCallback(async (sandboxId: string) => {
+    const fleetId = `sandbox-${sandboxId}`;
+    const data = await auditLog({ fleetId, limit: 200 });
+    if (data.entries) setAuditEntries(data.entries);
+  }, []);
+
+  const startPolling = useCallback((sbxUserId: string, sandboxId?: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       const s = await sandboxStatus(sbxUserId);
       if (s.error) return;
       setStatus(s);
+      const sbxId = sandboxId || s.sandboxId;
+      if (sbxId) fetchAudit(sbxId);
       if (s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0) {
         setPhase('expired');
         if (pollRef.current) clearInterval(pollRef.current);
       }
     }, 3000);
-  }, []);
+  }, [fetchAudit]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -96,14 +113,15 @@ export default function SandboxPage() {
           setSandbox({ success: true, sandboxId: s.sandboxId, expiresAt: s.expiresAt });
           setStatus(s);
           setPhase('checklist');
-          startPolling(userId);
+          fetchAudit(s.sandboxId);
+          startPolling(userId, s.sandboxId);
         }
       }
       const h = await fetchHistory(userId);
       if (h.sessions) setHistory(h.sessions);
     }
     checkExisting();
-  }, [userId, startPolling]);
+  }, [userId, startPolling, fetchAudit]);
 
   const runDemo = async (sbxId: string) => {
     setDemoRunning(true);
@@ -132,7 +150,7 @@ export default function SandboxPage() {
     setSandbox(result);
     if (opts.isTrial) {
       setPhase('checklist');
-      startPolling(userId);
+      startPolling(userId, result.sandboxId);
       setLoading(false);
       runDemo(result.sandboxId!);
     } else {
@@ -163,7 +181,8 @@ export default function SandboxPage() {
     setVisibleSteps(0);
     setPhase('checklist');
     setLoading(false);
-    startPolling(userId);
+    setAuditEntries([]);
+    startPolling(userId, sandbox.sandboxId);
   };
 
   const handlePauseAgent = async (agentId: string) => {
@@ -304,10 +323,10 @@ export default function SandboxPage() {
           </div>
         )}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 32px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: phase === 'checklist' ? 'hidden' : 'auto', padding: phase === 'checklist' ? 0 : '24px 32px', display: 'flex', flexDirection: 'column' }}>
           {/* Step indicator */}
           {phase !== 'expired' && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginBottom: 24, maxWidth: 480, margin: '0 auto 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, maxWidth: 480, margin: phase === 'checklist' ? '16px auto 12px' : '0 auto 24px', padding: phase === 'checklist' ? '0 24px' : 0, flexShrink: 0 }}>
               {(['interstitial', 'setup', 'checklist', 'go-live'] as const).map((step, i, arr) => {
                 const labels = { interstitial: 'Create', setup: 'Setup', checklist: 'Test', 'go-live': 'Go Live' };
                 const stepOrder = arr.indexOf(step);
@@ -340,7 +359,7 @@ export default function SandboxPage() {
           )}
 
           {error && (
-            <div style={{ padding: '10px 14px', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 6, color: 'var(--bad)', fontSize: 12.5, marginBottom: 16 }}>{error}</div>
+            <div style={{ padding: '10px 14px', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 6, color: 'var(--bad)', fontSize: 12.5, marginBottom: 16, marginLeft: phase === 'checklist' ? 24 : 0, marginRight: phase === 'checklist' ? 24 : 0, flexShrink: 0 }}>{error}</div>
           )}
 
           {/* INTERSTITIAL */}
@@ -448,14 +467,14 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <button
-                  onClick={() => { setPhase('checklist'); startPolling(userId); }}
+                  onClick={() => { setPhase('checklist'); startPolling(userId, sandbox?.sandboxId); }}
                   style={{ ...BTN.primary, padding: '8px 18px', fontSize: 13.5 }}
                 >
                   Start monitoring
                 </button>
                 <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>or</span>
                 <button
-                  onClick={() => { setPhase('checklist'); startPolling(userId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
+                  onClick={() => { setPhase('checklist'); startPolling(userId, sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
                   style={{ ...BTN.ghost, fontSize: 12.5 }}
                 >
                   Skip — watch the demo instead
@@ -464,175 +483,189 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
             </div>
           )}
 
-          {/* CHECKLIST */}
+          {/* CHECKLIST — split panel */}
           {phase === 'checklist' && (
-            <div style={{ maxWidth: 520, margin: '16px auto' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
-                {demoRunning ? 'Running Demo' : requiredPassed ? 'All Checks Passed' : status?.agents?.length ? 'Running Checks' : demoSteps.length > 0 ? 'Demo Complete' : 'Waiting for Activity'}
-              </div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 18 }}>
-                {demoRunning
-                  ? 'Simulating a full agent lifecycle — watch the checks light up below.'
-                  : requiredPassed
-                    ? 'All required governance checks passed. You can go live or run more tests.'
-                    : status?.agents?.length
-                      ? 'Your agent is connected. Watching governance events.'
-                      : demoSteps.length > 0
-                        ? 'Demo finished. Review the results below, then go live or run again.'
-                        : 'Click "Run demo agent" below, or connect your own agent to begin testing.'}
-              </p>
-
-              <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 20 }}>
-                {Object.entries(ASSERTION_LABELS).map(([key, { label, hint, required }]) => {
-                  const a = assertions[key];
-                  const s = a?.status ?? 'waiting';
-                  return (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 6, background: 'var(--card)', border: `1px solid ${s === 'observed' ? 'var(--ok)' : s === 'failed' ? 'var(--bad)' : 'var(--line)'}`, transition: 'border-color 0.3s' }}>
-                      <AssertionIcon status={s} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>
-                          {label}
-                          {!required && <span style={{ fontSize: 11, color: 'var(--tx3)', marginLeft: 6, fontWeight: 500 }}>optional</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--tx3)', marginTop: 1 }}>{hint}</div>
-                        {s === 'failed' && a?.diagnostic && (
-                          <div style={{ fontSize: 12, color: 'var(--bad)', marginTop: 3 }}>{a.diagnostic}</div>
-                        )}
-                        {s === 'observed' && a?.metric !== undefined && (
-                          <div style={{ fontSize: 11.5, color: 'var(--ok)', marginTop: 2, fontFamily: FONT_MONO }}>{a.metric}% compression</div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 16, fontFamily: FONT_MONO }}>
-                {(() => {
-                  const req = Object.entries(assertions).filter(([k]) => ASSERTION_LABELS[k]?.required);
-                  const reqPassed = req.filter(([, v]) => v.status === 'observed').length;
-                  const opt = Object.entries(assertions).filter(([k]) => !ASSERTION_LABELS[k]?.required);
-                  const optPassed = opt.filter(([, v]) => v.status === 'observed').length;
-                  return `${reqPassed} of ${req.length} required · ${optPassed} of ${opt.length} optional`;
-                })()}
-              </div>
-
-              {/* Activity Log — shown after demo runs */}
-              {demoSteps.length > 0 && (
-                <div style={{ marginBottom: 16, background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px', maxHeight: 220, overflowY: 'auto' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', textTransform: 'uppercase' as const, marginBottom: 8 }}>Activity Log</div>
-                  {demoSteps.slice(0, visibleSteps).map((s) => (
-                    <div key={s.step} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4, animation: 'fadeIn 0.3s ease-in' }}>
-                      <span style={{ flexShrink: 0, width: 14, fontSize: 11.5, fontFamily: FONT_MONO, color: 'var(--tx3)', textAlign: 'right' as const }}>{s.step}.</span>
-                      <span style={{
-                        flexShrink: 0, width: 6, height: 6, borderRadius: '50%', marginTop: 4,
-                        background: s.action === 'assertion_pass' ? 'var(--ok)' : s.action === 'register_agent' ? 'var(--brand)' : s.action.startsWith('complete') ? 'var(--info)' : 'var(--tx3)',
-                      }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: 12, color: 'var(--tx)', fontWeight: 500 }}>{s.detail}</span>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 1 }}>
-                          <span style={{ fontSize: 10.5, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>{s.action}</span>
-                          {s.assertion && <span style={{ fontSize: 10.5, fontFamily: FONT_MONO, color: 'var(--ok)' }}>✓ {s.assertion}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {visibleSteps < demoSteps.length && (
-                    <div style={{ fontSize: 11.5, color: 'var(--tx3)', fontFamily: FONT_MONO, marginTop: 4 }}>running...</div>
-                  )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, flex: 1, minHeight: 0 }}>
+              {/* LEFT: System & Integration */}
+              <div style={{ overflowY: 'auto', padding: '20px 24px', borderRight: '1px solid var(--line)' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                  {demoRunning ? 'Running Demo' : requiredPassed ? 'All Checks Passed' : status?.agents?.length ? 'Running Checks' : demoSteps.length > 0 ? 'Demo Complete' : 'Waiting for Activity'}
                 </div>
-              )}
+                <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 18 }}>
+                  {demoRunning
+                    ? 'Simulating a full agent lifecycle — watch the checks light up.'
+                    : requiredPassed
+                      ? 'All required governance checks passed. You can go live or run more tests.'
+                      : status?.agents?.length
+                        ? 'Your agent is connected. Watching governance events.'
+                        : demoSteps.length > 0
+                          ? 'Demo finished. Review the results, then go live or run again.'
+                          : 'Click "Run demo agent" below, or connect your own agent to begin testing.'}
+                </p>
 
-              {/* Fleet State — shown when agents exist */}
-              {status?.agents && status.agents.length > 0 && (
-                <div style={{ marginBottom: 16, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Sandbox Fleet</div>
-                    {status.agents.length > 1 && (
-                      <button onClick={toggleSelectAll} style={{ fontSize: 10.5, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                        {selected.size === status.agents.length ? 'Deselect all' : 'Select all'}
-                      </button>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {status.agents.map((a: SandboxAgentInfo) => {
-                      const agentPaused = paused.has(a.agentId) || a.status === 'resting';
-                      const isSelected = selected.has(a.agentId);
-                      return (
-                      <div key={a.agentId} onClick={() => toggleSelect(a.agentId)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 6, background: isSelected ? 'var(--brand-bg, rgba(0,210,211,0.08))' : 'var(--sunk)', border: `1px solid ${isSelected ? 'var(--brand)' : agentPaused ? 'var(--warn)' : 'var(--line)'}`, cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s' }}>
-                        <input type="checkbox" checked={isSelected} onChange={() => {}} style={{ accentColor: 'var(--brand)', width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }} />
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: a.status === 'working' ? 'var(--ok)' : a.status === 'resting' ? 'var(--warn)' : 'var(--tx3)' }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 600, fontFamily: FONT_MONO }}>{a.agentId}</div>
-                          <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 1 }}>
-                            {a.role} · {a.status}{a.pairedWith ? ` · paired → ${a.pairedWith}` : ''}
+                {/* Governance Checks */}
+                <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const, marginBottom: 6 }}>Governance Checks</div>
+                <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+                  {Object.entries(ASSERTION_LABELS).map(([key, { label, hint, required }]) => {
+                    const a = assertions[key];
+                    const s = a?.status ?? 'waiting';
+                    return (
+                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--card)', border: `1px solid ${s === 'observed' ? 'var(--ok)' : s === 'failed' ? 'var(--bad)' : 'var(--line)'}`, transition: 'border-color 0.3s' }}>
+                        <AssertionIcon status={s} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                            {label}
+                            {!required && <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 6, fontWeight: 500 }}>optional</span>}
                           </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <div style={{ display: 'flex', gap: 12, fontSize: 11.5, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>
-                            <span title="Tasks">{a.totalTasks} tasks</span>
-                            <span title="Tokens">{a.totalTokens.toLocaleString()} tok</span>
-                            <span title="Watches">{a.watchCount} watches</span>
-                          </div>
-                          {agentPaused ? (
-                            <button onClick={() => handleResumeAgent(a.agentId)} style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 4, background: 'var(--ok)', color: 'var(--bg)', border: 'none', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' as const }}>Resume</button>
-                          ) : (
-                            <button onClick={() => handlePauseAgent(a.agentId)} style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 4, background: 'var(--warn)', color: 'var(--bg)', border: 'none', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' as const }}>Pause</button>
+                          <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 1 }}>{hint}</div>
+                          {s === 'failed' && a?.diagnostic && (
+                            <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 3 }}>{a.diagnostic}</div>
+                          )}
+                          {s === 'observed' && a?.metric !== undefined && (
+                            <div style={{ fontSize: 11, color: 'var(--ok)', marginTop: 2, fontFamily: FONT_MONO }}>{a.metric}% compression</div>
                           )}
                         </div>
                       </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Audit trail */}
-                  {status.auditLog && status.auditLog.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const, marginBottom: 4 }}>Recent Events</div>
-                      <div style={{ maxHeight: 120, overflowY: 'auto' }}>
-                        {status.auditLog.slice().reverse().map((e: SandboxAuditEntry) => (
-                          <div key={e.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0', fontSize: 11, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>
-                            <span style={{ width: 56, flexShrink: 0 }}>{new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                            <span style={{ color: 'var(--tx2)', fontWeight: 500 }}>{e.type}</span>
-                            {e.agentId && <span style={{ color: 'var(--tx3)' }}>({e.agentId})</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
-              )}
 
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const, marginBottom: 14 }}>
-                {selected.size > 0 ? (
-                  <>
-                    <button onClick={handlePauseSelected} disabled={loading} style={BTN.warn}>Pause selected ({selected.size})</button>
-                    <button onClick={handleResumeSelected} disabled={loading} style={BTN.primary}>Resume selected ({selected.size})</button>
-                    <button onClick={() => setSelected(new Set())} style={BTN.ghost}>Clear selection</button>
-                  </>
-                ) : status?.agents && status.agents.length > 1 ? (
-                  paused.size === status.agents.length ? (
-                    <button onClick={handleResumeAll} disabled={loading} style={BTN.primary}>Resume all</button>
-                  ) : (
-                    <button onClick={handlePauseAll} disabled={loading} style={BTN.warn}>Pause all</button>
-                  )
-                ) : status?.agents?.length === 1 ? (
-                  paused.has(status.agents[0].agentId) || status.agents[0].status === 'resting' ? (
-                    <button onClick={() => handleResumeAgent(status.agents![0].agentId)} disabled={loading} style={BTN.primary}>Resume</button>
-                  ) : (
-                    <button onClick={() => handlePauseAgent(status.agents![0].agentId)} disabled={loading} style={BTN.warn}>Pause</button>
-                  )
-                ) : null}
-                <button onClick={handleStartDemo} disabled={loading || demoRunning} style={demoRunning ? { ...BTN.ghost, opacity: 0.5, cursor: 'not-allowed' } : { ...BTN.secondary, background: 'var(--ho-bg)', color: 'var(--ho)', border: '1px solid var(--ho)' }}>{demoRunning ? 'Demo running...' : 'Run demo agent'}</button>
-                <button onClick={handleReset} disabled={loading} style={BTN.ghost}>Start over</button>
-                <button onClick={handleExportReport} style={BTN.ghost}>Export JSON</button>
-                <span style={{ flex: 1 }} />
-                {requiredPassed && (
-                  <button onClick={handleGoLive} style={{ ...BTN.success, padding: '6px 18px' }}>Go live →</button>
+                <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 16, fontFamily: FONT_MONO }}>
+                  {(() => {
+                    const req = Object.entries(assertions).filter(([k]) => ASSERTION_LABELS[k]?.required);
+                    const reqPassed = req.filter(([, v]) => v.status === 'observed').length;
+                    const opt = Object.entries(assertions).filter(([k]) => !ASSERTION_LABELS[k]?.required);
+                    const optPassed = opt.filter(([, v]) => v.status === 'observed').length;
+                    return `${reqPassed} of ${req.length} required · ${optPassed} of ${opt.length} optional`;
+                  })()}
+                </div>
+
+                {/* Fleet Agents */}
+                {status?.agents && status.agents.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Sandbox Fleet</div>
+                      {status.agents.length > 1 && (
+                        <button onClick={toggleSelectAll} style={{ fontSize: 10.5, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                          {selected.size === status.agents.length ? 'Deselect all' : 'Select all'}
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {status.agents.map((a: SandboxAgentInfo) => {
+                        const agentPaused = paused.has(a.agentId) || a.status === 'resting';
+                        const isSelected = selected.has(a.agentId);
+                        return (
+                        <div key={a.agentId} onClick={() => toggleSelect(a.agentId)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 6, background: isSelected ? 'var(--brand-bg, rgba(0,210,211,0.08))' : 'var(--card)', border: `1px solid ${isSelected ? 'var(--brand)' : agentPaused ? 'var(--warn)' : 'var(--line)'}`, cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s' }}>
+                          <input type="checkbox" checked={isSelected} onChange={() => {}} style={{ accentColor: 'var(--brand)', width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }} />
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: a.status === 'working' ? 'var(--ok)' : a.status === 'resting' ? 'var(--warn)' : 'var(--tx3)' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 600, fontFamily: FONT_MONO }}>{a.agentId}</div>
+                            <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 1 }}>
+                              {a.role} · {a.status}{a.pairedWith ? ` · paired → ${a.pairedWith}` : ''}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: 10, fontSize: 11, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>
+                              <span>{a.totalTasks} tasks</span>
+                              <span>{a.totalTokens.toLocaleString()} tok</span>
+                              <span>{a.watchCount} watches</span>
+                            </div>
+                            {agentPaused ? (
+                              <button onClick={(ev) => { ev.stopPropagation(); handleResumeAgent(a.agentId); }} style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 4, background: 'var(--ok)', color: 'var(--bg)', border: 'none', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' as const }}>Resume</button>
+                            ) : (
+                              <button onClick={(ev) => { ev.stopPropagation(); handlePauseAgent(a.agentId); }} style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 4, background: 'var(--warn)', color: 'var(--bg)', border: 'none', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' as const }}>Pause</button>
+                            )}
+                          </div>
+                        </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const, marginBottom: 14 }}>
+                  {selected.size > 0 ? (
+                    <>
+                      <button onClick={handlePauseSelected} disabled={loading} style={BTN.warn}>Pause selected ({selected.size})</button>
+                      <button onClick={handleResumeSelected} disabled={loading} style={BTN.primary}>Resume selected ({selected.size})</button>
+                      <button onClick={() => setSelected(new Set())} style={BTN.ghost}>Clear selection</button>
+                    </>
+                  ) : status?.agents && status.agents.length > 1 ? (
+                    paused.size === status.agents.length ? (
+                      <button onClick={handleResumeAll} disabled={loading} style={BTN.primary}>Resume all</button>
+                    ) : (
+                      <button onClick={handlePauseAll} disabled={loading} style={BTN.warn}>Pause all</button>
+                    )
+                  ) : status?.agents?.length === 1 ? (
+                    paused.has(status.agents[0].agentId) || status.agents[0].status === 'resting' ? (
+                      <button onClick={() => handleResumeAgent(status.agents![0].agentId)} disabled={loading} style={BTN.primary}>Resume</button>
+                    ) : (
+                      <button onClick={() => handlePauseAgent(status.agents![0].agentId)} disabled={loading} style={BTN.warn}>Pause</button>
+                    )
+                  ) : null}
+                  <button onClick={handleStartDemo} disabled={loading || demoRunning} style={demoRunning ? { ...BTN.ghost, opacity: 0.5, cursor: 'not-allowed' } : { ...BTN.secondary, background: 'var(--ho-bg)', color: 'var(--ho)', border: '1px solid var(--ho)' }}>{demoRunning ? 'Demo running...' : 'Run demo agent'}</button>
+                  <button onClick={handleReset} disabled={loading} style={BTN.ghost}>Start over</button>
+                  <button onClick={handleExportReport} style={BTN.ghost}>Export JSON</button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {requiredPassed && (
+                    <button onClick={handleGoLive} style={{ ...BTN.success, padding: '8px 20px' }}>Go live →</button>
+                  )}
+                  <button onClick={handleDestroy} style={BTN.danger}>Destroy sandbox</button>
+                </div>
               </div>
 
-              <button onClick={handleDestroy} style={BTN.danger}>Destroy sandbox</button>
+              {/* RIGHT: Agent Activity Feed */}
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--sunk)' }}>
+                <div className="flex items-center gap-2" style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agent Activity</span>
+                  <span style={{ flex: 1 }} />
+                  <select
+                    value={feedVariant}
+                    onChange={(e) => setFeedVariant(e.target.value as FeedVariant)}
+                    style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}
+                  >
+                    <option value="log">▤ Log</option>
+                    <option value="tape">⛓ Tape</option>
+                    <option value="manifest">▦ Manifest</option>
+                  </select>
+                  <button
+                    onClick={() => setFeedTechnical(v => !v)}
+                    style={{
+                      borderRadius: 4, padding: '4px 8px', fontSize: 11.5, fontWeight: 600, letterSpacing: 0.3, cursor: 'pointer',
+                      border: `1px solid ${feedTechnical ? 'var(--info)' : 'var(--line2)'}`, background: feedTechnical ? 'var(--info-bg)' : 'var(--sunk)', color: feedTechnical ? 'var(--info)' : 'var(--tx2)',
+                    }}
+                  >
+                    Tech
+                  </button>
+                  <span style={{ fontSize: 11.5, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>
+                    {auditEntries.length} events
+                  </span>
+                </div>
+
+                {/* Demo narrative steps — compact banner when demo is running */}
+                {demoSteps.length > 0 && visibleSteps < demoSteps.length && (
+                  <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--line)', background: 'var(--brand-bg, rgba(0,210,211,0.06))', flexShrink: 0 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--brand)', fontFamily: FONT_MONO }}>● Demo running... step {visibleSteps} of {demoSteps.length}</div>
+                  </div>
+                )}
+
+                {/* Rich activity feed — same component as fleet page */}
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <ActivityFeed
+                    entries={auditEntries}
+                    page={feedPage}
+                    onPageChange={setFeedPage}
+                    variant={feedVariant}
+                    technical={feedTechnical}
+                    expanded={expandedTasks}
+                    onToggleExpanded={(key) => setExpandedTasks(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
