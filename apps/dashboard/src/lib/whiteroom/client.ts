@@ -321,20 +321,12 @@ export function parityCheck(sandboxId: string, productionFleetId: string, key?: 
   return apiCall<ParityCheckResult>({ action: 'parity_check', sandbox_id: sandboxId, production_fleet_id: productionFleetId }, key);
 }
 
-export function stopProductionAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'stop_agent', fleet_id: fleetId, agent_id: agentId }, key);
+export function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key);
 }
 
-export function resumeProductionAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'resume_stopped_agent', fleet_id: fleetId, agent_id: agentId }, key);
-}
-
-export function stopAllAgents(fleetId: string, key?: string): Promise<{ success?: boolean; stoppedCount?: number; error?: string }> {
-  return apiCall<{ success?: boolean; stoppedCount?: number; error?: string }>({ action: 'stop_all', fleet_id: fleetId }, key);
-}
-
-export function resumeAllAgents(fleetId: string, key?: string): Promise<{ success?: boolean; resumedCount?: number; error?: string }> {
-  return apiCall<{ success?: boolean; resumedCount?: number; error?: string }>({ action: 'resume_all', fleet_id: fleetId }, key);
+export function resumeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key);
 }
 
 export interface SandboxHistoryEntry {

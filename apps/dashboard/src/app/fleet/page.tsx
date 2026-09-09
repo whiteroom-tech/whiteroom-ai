@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, watchKey } from '@/lib/analytics-metrics';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
@@ -96,6 +96,7 @@ export default function FleetDashboard() {
   const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? (localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token')) : null);
 
   const authKey = resolveAuthKey(fleetToken);
+  const [agentActionLoading, setAgentActionLoading] = useState<Record<string, boolean>>({});
 
   async function handleFleetLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -193,6 +194,37 @@ export default function FleetDashboard() {
       setHandoverDocs(docs);
     } catch { setError('Connection lost'); }
   }, [fleetId, authKey]);
+
+  const handlePauseAgent = useCallback(async (agentId: string) => {
+    if (!fleetId) return;
+    setAgentActionLoading(prev => ({ ...prev, [agentId]: true }));
+    setAgents(prev => prev.map(a => a.agentId === agentId ? { ...a, status: 'resting' } : a));
+    try {
+      await pauseAgentApi(fleetId, agentId, authKey);
+    } finally {
+      await fetchReport();
+      setAgentActionLoading(prev => ({ ...prev, [agentId]: false }));
+    }
+  }, [fleetId, authKey, fetchReport]);
+
+  const handleResumeAgent = useCallback(async (agentId: string) => {
+    if (!fleetId) return;
+    setAgentActionLoading(prev => ({ ...prev, [agentId]: true }));
+    setAgents(prev => prev.map(a => a.agentId === agentId ? { ...a, status: 'working' } : a));
+    try {
+      await resumeAgentApi(fleetId, agentId, authKey);
+    } finally {
+      await fetchReport();
+      setAgentActionLoading(prev => ({ ...prev, [agentId]: false }));
+    }
+  }, [fleetId, authKey, fetchReport]);
+
+  const handleStopAll = useCallback(async () => {
+    if (!fleetId || !agents.length) return;
+    const working = agents.filter(a => deriveDisplayStatus(a.status, a.stale, a.minutesRemaining, a.disconnected) === 'working');
+    await Promise.all(working.map(a => pauseAgentApi(fleetId, a.agentId, authKey)));
+    await fetchReport();
+  }, [fleetId, agents, authKey, fetchReport]);
 
   const fetchAudit = useCallback(async () => {
     if (!fleetId) return;
@@ -486,18 +518,16 @@ export default function FleetDashboard() {
             <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Fleet</b> / {report.fleetId}
           </span>
           <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
-          <div className="flex items-center gap-1" style={{ marginLeft: 16 }}>
-            {(['live', 'analytics', 'visualization'] as const).map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 5, background: activeTab === tab ? 'var(--brand-dim)' : 'transparent', color: activeTab === tab ? 'var(--brand)' : 'var(--tx3)', cursor: 'pointer', border: 'none' }}>
-                {tab === 'live' ? 'Live' : tab === 'analytics' ? 'Analytics' : 'Viz'}
-              </button>
-            ))}
-          </div>
           <span style={{ marginLeft: 'auto' }} />
           <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ok)', background: 'var(--ok-bg)', border: '1px solid var(--ok)', borderRadius: 6, padding: '5px 11px' }}>● connected</span>
           <span style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 6, background: report.compliance.allAgentsWithinLimits ? 'var(--ok-bg)' : 'var(--bad-bg)', color: report.compliance.allAgentsWithinLimits ? 'var(--ok)' : 'var(--bad)' }}>
             {report.compliance.allAgentsWithinLimits ? 'COMPLIANT' : 'VIOLATION'}
           </span>
+          {activeTab === 'live' && agents.some(a => deriveDisplayStatus(a.status, a.stale, a.minutesRemaining, a.disconnected) === 'working') && (
+            <button onClick={handleStopAll} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--bad)', border: '1px solid var(--bad)', borderRadius: 6, padding: '5px 11px', background: 'transparent', cursor: 'pointer' }}>
+              ■ Stop All
+            </button>
+          )}
           <ThemeToggle />
           <button onClick={() => resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
         </div>
@@ -638,6 +668,11 @@ export default function FleetDashboard() {
                     <span style={{ width: 36, textAlign: 'right' as const, fontSize: 11.5, color: 'var(--tx2)' }}>{watchDisplay.toFixed(0)}%</span>
                     <span style={{ width: 36, textAlign: 'right' as const, fontSize: 11.5, color: healthColor }}>{health.toFixed(0)}%</span>
                     <span style={{ width: 56, textAlign: 'right' as const, fontSize: 11.5, color: 'var(--tx)' }}>{fmtK(tokens)}</span>
+                    {status === 'working' ? (
+                      <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ width: 28, fontSize: 9.5, fontWeight: 600, padding: '1px 0', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
+                    ) : status === 'resting' ? (
+                      <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ width: 28, fontSize: 9.5, fontWeight: 600, padding: '1px 0', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>▶</button>
+                    ) : <span style={{ width: 28 }} />}
                   </div>
                 );
               }
@@ -647,7 +682,14 @@ export default function FleetDashboard() {
                   <div key={agent.agentId} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderLeft: `3px solid ${sc.border}`, borderRadius: 6, padding: 8 }}>
                     <div className="flex justify-between items-center" style={{ marginBottom: 4 }}>
                       <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
-                      <span style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                      <div className="flex items-center gap-1">
+                        <span style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                        {status === 'working' ? (
+                          <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
+                        ) : status === 'resting' ? (
+                          <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>▶</button>
+                        ) : null}
+                      </div>
                     </div>
                     <div style={{ height: 3, borderRadius: 99, background: 'var(--line)', overflow: 'hidden', marginBottom: 4 }}>
                       <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
@@ -667,7 +709,18 @@ export default function FleetDashboard() {
                       <div style={{ fontFamily: FONT_MONO, fontSize: 15, fontWeight: 600, letterSpacing: 1 }}>{agent.agentId.toUpperCase()}</div>
                       <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 2 }}>Watch #{agent.watchNumber || 1} · {agent.tasksCompleted || 0} tasks · {Math.round((agent.minutesWorked || 0) * 10) / 10}min worked</div>
                     </div>
-                    <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, letterSpacing: 1, whiteSpace: 'nowrap', background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, letterSpacing: 1, whiteSpace: 'nowrap', background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
+                      {status === 'working' ? (
+                        <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>
+                          {agentActionLoading[agent.agentId] ? '...' : 'Stop'}
+                        </button>
+                      ) : status === 'resting' ? (
+                        <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>
+                          {agentActionLoading[agent.agentId] ? '...' : 'Start'}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div style={{ marginBottom: 6 }}>
                     <div className="flex justify-between" style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 2 }}>
