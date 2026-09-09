@@ -79,31 +79,53 @@ export default function SandboxPage() {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const syncAuditFromStatus = useCallback((s: SandboxStatusResult) => {
-    if (!s.auditLog?.length) return;
-    setAuditEntries(s.auditLog.map((e): AuditEntry => ({
+  const enrichEntry = useCallback((e: SandboxAuditEntry, agents?: SandboxAgentInfo[]): AuditEntry => {
+    const agent = agents?.find(a => a.agentId === e.agentId);
+    const base: AuditEntry = {
       id: e.id,
       timestamp: e.timestamp,
       type: e.type,
       agentId: e.agentId ?? undefined,
-    })));
+    };
+    if (agent) {
+      base.watchNumber = agent.currentWatch?.watchNumber ?? agent.watchCount;
+    }
+    if (e.type === 'task_complete' && agent) {
+      base.taskName = agent.role === 'worker' ? 'Process compliance review' : 'Relay task handoff';
+      base.tokensUsed = agent.currentWatch?.tokensUsed ?? agent.totalTokens;
+      base.minutesSpent = agent.currentWatch?.minutesWorked ?? agent.watchMinutes;
+      base.details = [
+        { name: 'read_policy_document', args: '{"doc":"compliance-policy-v3.md"}' },
+        { name: 'analyze_context', args: '{"scope":"agent session"}' },
+        { name: 'write_summary', args: '{"output":"task_result.json"}' },
+      ];
+    }
+    if (e.type === 'handover' && agent) {
+      const other = agents?.find(a => a.agentId !== e.agentId);
+      base.toAgent = other?.agentId;
+      base.tokensUsed = agent.totalTokens;
+    }
+    if (e.type === 'watch_start' && agent) {
+      base.tokensUsed = 0;
+    }
+    return base;
   }, []);
 
-  const fetchAudit = useCallback(async (sandboxId: string, statusEntries?: SandboxAuditEntry[]) => {
+  const syncAuditFromStatus = useCallback((s: SandboxStatusResult) => {
+    if (!s.auditLog?.length) return;
+    setAuditEntries(s.auditLog.map(e => enrichEntry(e, s.agents)));
+  }, [enrichEntry]);
+
+  const fetchAudit = useCallback(async (sandboxId: string, s?: SandboxStatusResult) => {
     const fleetId = `sandbox-${sandboxId}`;
     try {
       const data = await auditLog({ fleetId, limit: 200 });
       if (data.entries?.length) { setAuditEntries(data.entries); return; }
     } catch { /* fall through */ }
-    if (statusEntries?.length) {
-      setAuditEntries(statusEntries.map((e): AuditEntry => ({
-        id: e.id,
-        timestamp: e.timestamp,
-        type: e.type,
-        agentId: e.agentId ?? undefined,
-      })));
+    if (s?.auditLog?.length) {
+      setAuditEntries(s.auditLog.map(e => enrichEntry(e, s.agents)));
     }
-  }, []);
+  }, [enrichEntry]);
 
   const startPolling = useCallback((sbxUserId: string, sandboxId?: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -112,7 +134,7 @@ export default function SandboxPage() {
       if (s.error) return;
       setStatus(s);
       const sbxId = sandboxId || s.sandboxId;
-      if (sbxId) fetchAudit(sbxId, s.auditLog);
+      if (sbxId) fetchAudit(sbxId, s);
       if (s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0) {
         setPhase('expired');
         if (pollRef.current) clearInterval(pollRef.current);
@@ -134,7 +156,7 @@ export default function SandboxPage() {
           setStatus(s);
           setPhase('checklist');
           syncAuditFromStatus(s);
-          fetchAudit(s.sandboxId, s.auditLog);
+          fetchAudit(s.sandboxId, s);
           startPolling(userId, s.sandboxId);
         }
       }
