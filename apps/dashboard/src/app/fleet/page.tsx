@@ -83,7 +83,7 @@ export default function FleetDashboard() {
   const [activeTab, setActiveTab] = useState<'live' | 'analytics' | 'visualization'>(tabParam);
 
   useEffect(() => { setActiveTab(tabParam); }, [tabParam]);
-  const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('today');
+  const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('7d');
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [scopedDay, setScopedDay] = useState<string | null>(null);
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
@@ -433,13 +433,13 @@ export default function FleetDashboard() {
   const t = report.totals;
   const es = report.energySavings;
 
-  // Fleet-level token stats (cumulative across all watches, not just current)
   const watchTasks = t.tasks || agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
   const watchTokens = t.tokens || agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
-  const watchHandovers = report?.totals?.handovers || 0;
+  const watchHandovers = t.handovers || 0;
   const watchSaved = es.estimatedTokensSaved || 0;
   const watchWithoutWR = watchTokens + watchSaved;
-  const watchSavingsPct = pctOf(watchTokens, watchSaved);
+  const watchCostSaved = es.estimatedCostSaved || '$0';
+  const watchEnergySaved = es.estimatedEnergySaved || '0 kWh';
 
   // --- Analytics computation (UTC throughout) ---
   const cutoff = getCutoff(analyticsRange, Date.now());
@@ -457,15 +457,16 @@ export default function FleetDashboard() {
     const day = localDayFromTs(e.timestamp);
     const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [] };
     d.entries.push(e);
-    if (e.type === 'task_complete') { d.tasks++; d.used += e.tokensUsed || 0; }
+    if (e.type === 'task_complete') d.tasks++;
+    if (e.tokensUsed) d.used += e.tokensUsed;
     const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
     if (isHandover) {
       d.handovers++;
       d.saved += handoverSaved(e);
     }
     if (e.type === 'context_offload') {
-      const ctx = ((e as Record<string, unknown>).contextTokens as number) || 0;
-      const ret = ((e as Record<string, unknown>).returnedTokens as number) || 0;
+      const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+      const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
       d.saved += Math.max(0, ctx - ret);
     }
     dayMap.set(day, d);
@@ -482,17 +483,18 @@ export default function FleetDashboard() {
     if (!rawAid) return;
     const aid = rawAid.toLowerCase();
     const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0 };
-    if (e.type === 'task_complete') { a.tasks++; a.used += e.tokensUsed || 0; }
+    if (e.type === 'task_complete') a.tasks++;
+    if (e.tokensUsed) a.used += e.tokensUsed;
     if (isHandover) {
       a.handovers++;
       a.saved += handoverSaved(e);
-      const ctx = ((e as Record<string, unknown>).contextTokens as number) || 0;
-      const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 0;
+      const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+      const hd = ((e as Record<string, unknown>).handoverDocTokens as number) ?? 0;
       if (ctx > hd) { a.ctxTokens += ctx; a.hdTokens += hd; }
     }
     if (e.type === 'context_offload') {
-      const ctx = ((e as Record<string, unknown>).contextTokens as number) || 0;
-      const ret = ((e as Record<string, unknown>).returnedTokens as number) || 0;
+      const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+      const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
       a.saved += Math.max(0, ctx - ret);
     }
     agentMap.set(aid, a);
@@ -551,7 +553,7 @@ export default function FleetDashboard() {
       {/* Main grid — Live page */}
       {activeTab === 'live' ? (
       <>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(5, 1fr)', gap: 11, padding: '14px 20px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(7, 1fr)', gap: 11, padding: '14px 20px 0' }}>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
             <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
@@ -592,6 +594,14 @@ export default function FleetDashboard() {
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ho)' }}>{watchHandovers ? String(watchHandovers) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchCostSaved !== '$0' ? watchCostSaved : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchEnergySaved !== '0 kWh' ? watchEnergySaved : '—'}</div>
         </div>
       </div>
       <div ref={mainRef} className="flex-1 min-h-0" style={{ overflowY: 'auto', padding: '12px 20px 0' }}>
@@ -844,7 +854,7 @@ export default function FleetDashboard() {
         <span style={{ marginLeft: 'auto' }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(5, 1fr)', gap: 11, padding: '12px 20px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(7, 1fr)', gap: 11, padding: '12px 20px 0' }}>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
             <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
@@ -885,6 +895,14 @@ export default function FleetDashboard() {
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ho)' }}>{rangeTotals.handovers ? String(rangeTotals.handovers) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? '$' + estimateCost(rangeTotals.saved).toFixed(4) : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * 0.0000004).toFixed(4) + ' kWh' : '—'}</div>
         </div>
       </div>
 

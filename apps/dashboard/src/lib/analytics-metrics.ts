@@ -32,8 +32,8 @@ export function getCutoff(range: string, nowMs: number): string {
 
 /** Tokens saved by a handover: compressed context minus the handover doc (default 300). */
 export function handoverSaved(e: { contextTokens?: number; handoverDocTokens?: number }): number {
-  const ctx = e.contextTokens || 0;
-  const doc = e.handoverDocTokens || 300;
+  const ctx = e.contextTokens ?? 0;
+  const doc = e.handoverDocTokens ?? 300;
   return Math.max(0, ctx - doc);
 }
 
