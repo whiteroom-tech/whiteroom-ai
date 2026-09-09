@@ -40,25 +40,25 @@ function RowDetail({ m, open, technical }: { m: EventModel; open: boolean; techn
   return (
     <>
       {tech && (
-        <div style={{ marginTop: 4, borderLeft: '2px solid var(--line)', paddingLeft: 6, fontSize: 10, wordBreak: 'break-word', color: 'var(--tx2)' }}>
+        <div style={{ marginTop: 4, borderLeft: '2px solid var(--line)', paddingLeft: 6, fontSize: 11.5, wordBreak: 'break-word', color: 'var(--tx2)' }}>
           {tech}
         </div>
       )}
       {open && (
         <div style={{ marginTop: 6, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
-          <div style={{ marginBottom: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx3)' }}>WHAT IT DID</div>
+          <div style={{ marginBottom: 4, fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx3)' }}>WHAT IT DID</div>
           {m.details.map((d, i) => {
             const kind = classifyAction(d?.name);
             const arg = shortArg(d?.args);
             return (
               <div key={i}>
-                <div className="flex items-baseline gap-1.5" style={{ padding: '2px 0', fontSize: 11 }}>
+                <div className="flex items-baseline gap-1.5" style={{ padding: '2px 0', fontSize: 12.5 }}>
                   <span aria-hidden>{kind.icon}</span>
                   <span style={{ flexShrink: 0, fontWeight: 600, color: 'var(--info)' }}>{kind.label}</span>
                   <span style={{ minWidth: 0, wordBreak: 'break-word', color: 'var(--tx2)' }}>{arg || prettyToolName(d?.name)}</span>
                 </div>
                 {technical && (
-                  <div style={{ marginLeft: 24, fontSize: 10, wordBreak: 'break-all', color: 'var(--tx3)' }}>
+                  <div style={{ marginLeft: 24, fontSize: 11.5, wordBreak: 'break-all', color: 'var(--tx3)' }}>
                     {String(d?.name ?? '')}({String(d?.args ?? '')})
                   </div>
                 )}
@@ -83,8 +83,8 @@ function LogRow({ m, open, technical, onToggle }: RowProps) {
   return (
     <div className="grid" style={{ gridTemplateColumns: '44px 14px 1fr', borderBottom: '1px solid var(--line)', paddingRight: 8, paddingBottom: 8, marginBottom: 8 }}>
       <div style={{ paddingRight: 8, paddingTop: 6, textAlign: 'right' }}>
-        <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--tx2)' }}>{m.clock}</div>
-        <div style={{ marginTop: 2, fontSize: 8.5, letterSpacing: 1, color: 'var(--tx3)' }}>{m.watch}</div>
+        <div style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--tx2)' }}>{m.clock}</div>
+        <div style={{ marginTop: 2, fontSize: 10, letterSpacing: 1, color: 'var(--tx3)' }}>{m.watch}</div>
       </div>
       <div style={{ position: 'relative' }}>
         <div style={{ position: 'absolute', left: '50%', top: -8, bottom: -8, width: 1, transform: 'translateX(-50%)', background: 'var(--line)' }} />
@@ -92,10 +92,10 @@ function LogRow({ m, open, technical, onToggle }: RowProps) {
       </div>
       <div style={{ minWidth: 0, paddingLeft: 6, paddingTop: 6 }}>
         <div style={{ cursor: m.canExpand ? 'pointer' : 'default' }} onClick={m.canExpand ? onToggle : undefined}>
-          <div style={{ fontSize: 12, lineHeight: 1.4, wordBreak: 'break-word', color: 'var(--tx)' }}>
+          <div style={{ fontSize: 13.5, lineHeight: 1.4, wordBreak: 'break-word', color: 'var(--tx)' }}>
             <Headline m={m} open={open} />
           </div>
-          <div style={{ marginTop: 2, fontSize: 10.5, color: 'var(--tx2)' }}>{eventSubtitle(m)}</div>
+          <div style={{ marginTop: 2, fontSize: 12, color: 'var(--tx2)' }}>{eventSubtitle(m)}</div>
         </div>
         <RowDetail m={m} open={open} technical={technical} />
       </div>
@@ -118,14 +118,14 @@ function TapeRow({ m, open, technical, onToggle }: RowProps) {
       </div>
       <div style={{ minWidth: 0, borderRadius: '0 8px 8px 0', border: '1px solid var(--line)', borderLeft: `2px solid ${m.accent}`, background: 'var(--raised)', padding: '6px 10px' }}>
         <div style={{ cursor: m.canExpand ? 'pointer' : 'default' }} onClick={m.canExpand ? onToggle : undefined}>
-          <div className="flex items-baseline gap-1.5" style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--tx)' }}>
+          <div className="flex items-baseline gap-1.5" style={{ fontSize: 13.5, lineHeight: 1.4, color: 'var(--tx)' }}>
             <span aria-hidden style={{ flexShrink: 0 }}>{m.icon}</span>
             <span style={{ minWidth: 0, flex: 1, wordBreak: 'break-word' }}>
               <Headline m={m} open={open} />
             </span>
-            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 10, color: 'var(--tx3)' }}>{m.clock}</span>
+            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 11.5, color: 'var(--tx3)' }}>{m.clock}</span>
           </div>
-          <div style={{ marginTop: 2, fontSize: 10.5, color: 'var(--tx2)' }}>{eventSubtitle(m)}</div>
+          <div style={{ marginTop: 2, fontSize: 12, color: 'var(--tx2)' }}>{eventSubtitle(m)}</div>
         </div>
         <RowDetail m={m} open={open} technical={technical} />
       </div>
@@ -137,18 +137,18 @@ function TapeRow({ m, open, technical, onToggle }: RowProps) {
 function ManifestRow({ m, open, technical, onToggle }: RowProps) {
   return (
     <div className="grid items-start gap-2" style={{ gridTemplateColumns: '36px 1fr', borderTop: '1px solid var(--line)', padding: 8 }}>
-      <div style={{ borderRadius: 4, border: `1px solid ${m.accent}`, padding: '3px 0', textAlign: 'center', fontSize: 8.5, fontWeight: 800, letterSpacing: 0.6, color: m.accent, background: m.accentBg }}>
+      <div style={{ borderRadius: 4, border: `1px solid ${m.accent}`, padding: '3px 0', textAlign: 'center', fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: m.accent, background: m.accentBg }}>
         {m.code}
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ cursor: m.canExpand ? 'pointer' : 'default' }} onClick={m.canExpand ? onToggle : undefined}>
-          <div className="flex items-baseline gap-2" style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--tx)' }}>
+          <div className="flex items-baseline gap-2" style={{ fontSize: 13.5, lineHeight: 1.4, color: 'var(--tx)' }}>
             <span style={{ minWidth: 0, flex: 1, wordBreak: 'break-word' }}>
               <Headline m={m} open={open} />
             </span>
-            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 10, color: 'var(--tx3)' }}>{m.clock}</span>
+            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 11.5, color: 'var(--tx3)' }}>{m.clock}</span>
           </div>
-          <div style={{ marginTop: 2, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)' }}>{eventSubtitle(m)}</div>
+          <div style={{ marginTop: 2, fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)' }}>{eventSubtitle(m)}</div>
         </div>
         <RowDetail m={m} open={open} technical={technical} />
       </div>
@@ -172,13 +172,13 @@ function Pager({ page, pageCount: total, onChange, onFirst, summary }: {
   const atFirst = page <= 0;
   const atLast = page >= total - 1;
   const btnStyle = (disabled: boolean): React.CSSProperties => ({
-    borderRadius: 4, border: '1px solid var(--line2)', background: 'var(--sunk)', padding: '4px 10px', fontSize: 11,
+    borderRadius: 4, border: '1px solid var(--line2)', background: 'var(--sunk)', padding: '4px 10px', fontSize: 12.5,
     color: 'var(--tx2)', whiteSpace: 'nowrap', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.3 : 1,
   });
   return (
     <div className="flex items-center justify-between gap-1.5" style={{ borderTop: '1px solid var(--line)', background: 'var(--card)', padding: '6px 10px' }}>
       <button type="button" style={btnStyle(atFirst)} onClick={() => onChange(page - 1)} disabled={atFirst}>◀ Newer</button>
-      <span style={{ minWidth: 0, flex: 1, textAlign: 'center', fontSize: 10.5, color: 'var(--tx2)' }}>{summary}</span>
+      <span style={{ minWidth: 0, flex: 1, textAlign: 'center', fontSize: 12, color: 'var(--tx2)' }}>{summary}</span>
       {onFirst && !atFirst && (
         <button type="button" style={{ ...btnStyle(false), borderColor: 'var(--ok)', background: 'var(--ok-bg)', color: 'var(--ok)' }} onClick={onFirst}>⤒ Latest</button>
       )}
@@ -226,7 +226,7 @@ export function ActivityFeed({
   if (total === 0) {
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-        <p style={{ marginTop: 32, textAlign: 'center', fontSize: 11, lineHeight: 1.6, color: 'var(--tx3)' }}>
+        <p style={{ marginTop: 32, textAlign: 'center', fontSize: 12.5, lineHeight: 1.6, color: 'var(--tx3)' }}>
           No activity yet.
           <br />
           Events appear here as your agents work.
@@ -245,7 +245,7 @@ export function ActivityFeed({
           <div key={model.key}>
             {day && (
               <div className="flex items-center gap-2" style={{ marginTop: 12, marginBottom: 6 }}>
-                <span style={{ whiteSpace: 'nowrap', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)' }}>{day}</span>
+                <span style={{ whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)' }}>{day}</span>
                 <span style={{ height: 1, flex: 1, background: 'var(--line)' }} />
               </div>
             )}

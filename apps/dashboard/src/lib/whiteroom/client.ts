@@ -225,6 +225,25 @@ export interface CreateSandboxResult {
   error?: string;
 }
 
+export interface SandboxAgentInfo {
+  agentId: string;
+  role: string;
+  status: string;
+  watchMinutes: number;
+  watchCount: number;
+  totalTasks: number;
+  totalTokens: number;
+  pairedWith: string | null;
+  currentWatch: { watchNumber: number; minutesWorked: number; tokensUsed: number; tasksCompleted: number } | null;
+}
+
+export interface SandboxAuditEntry {
+  id: string;
+  timestamp: string;
+  type: string;
+  agentId: string | null;
+}
+
 export interface SandboxStatusResult {
   success?: boolean;
   sandboxId?: string;
@@ -232,7 +251,8 @@ export interface SandboxStatusResult {
   expiresAt?: string;
   expiresInSeconds?: number | null;
   assertionStates?: Record<string, { status: string; observedAt?: string; failedAt?: string; diagnostic?: string; metric?: number }>;
-  agents?: Array<{ agentId: string; status: string; watchCount: number; totalTasks: number; totalTokens: number }>;
+  agents?: SandboxAgentInfo[];
+  auditLog?: SandboxAuditEntry[];
   error?: string;
 }
 
@@ -278,8 +298,16 @@ export function resetSandboxSession(sandboxId: string, key?: string): Promise<{ 
   return apiCall<{ success?: boolean; error?: string }>({ action: 'reset_session', sandbox_id: sandboxId }, key);
 }
 
-export function startDemo(sandboxId: string, key?: string): Promise<{ success?: boolean; message?: string; error?: string }> {
-  return apiCall<{ success?: boolean; message?: string; error?: string }>({ action: 'start_demo', sandbox_id: sandboxId }, key);
+export interface DemoStep {
+  step: number;
+  action: string;
+  detail: string;
+  assertion?: string;
+  timestamp: string;
+}
+
+export function startDemo(sandboxId: string, key?: string): Promise<{ success?: boolean; message?: string; steps?: DemoStep[]; error?: string }> {
+  return apiCall<{ success?: boolean; message?: string; steps?: DemoStep[]; error?: string }>({ action: 'start_demo', sandbox_id: sandboxId }, key);
 }
 
 export interface ParityCheckResult {

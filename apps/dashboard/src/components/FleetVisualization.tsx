@@ -125,7 +125,7 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
 
   if (agents.length === 0) {
     return (
-      <div className="flex-1 min-h-0" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tx3)', fontSize: 12 }}>
+      <div className="flex-1 min-h-0" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tx3)', fontSize: 13.5 }}>
         No agents connected yet
       </div>
     );
@@ -135,14 +135,14 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
     <div className="flex-1 min-h-0" style={{ overflowY: 'auto', padding: '20px 24px 28px' }}>
       {/* ── Leaderboard: who's ahead right now ── */}
       <div style={{ marginBottom: 26 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>
           Leaderboard — tasks this watch
         </div>
         <div className="flex flex-col" style={{ gap: 5 }}>
           {leaderboard.map((a, i) => (
             <div key={a.agentId} className="flex items-center gap-3">
-              <span style={{ width: 14, textAlign: 'right' as const, fontFamily: FONT_MONO, fontSize: 10, color: i === 0 ? a.color : 'var(--tx3)', fontWeight: 700 }}>{i + 1}</span>
-              <span style={{ width: 78, fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>{a.agentId.toUpperCase()}</span>
+              <span style={{ width: 14, textAlign: 'right' as const, fontFamily: FONT_MONO, fontSize: 11.5, color: i === 0 ? a.color : 'var(--tx3)', fontWeight: 700 }}>{i + 1}</span>
+              <span style={{ width: 78, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600, color: 'var(--tx)' }}>{a.agentId.toUpperCase()}</span>
               <div style={{ position: 'relative', flex: 1, height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
                 <div
                   style={{
@@ -163,7 +163,7 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
                   )}
                 </div>
               </div>
-              <span style={{ width: 118, textAlign: 'right' as const, fontSize: 10, color: 'var(--tx2)' }}>{a.tasksCompleted} tasks · {fmtK(a.tokensUsed)}</span>
+              <span style={{ width: 118, textAlign: 'right' as const, fontSize: 11.5, color: 'var(--tx2)' }}>{a.tasksCompleted} tasks · {fmtK(a.tokensUsed)}</span>
             </div>
           ))}
         </div>
@@ -201,7 +201,7 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
                     key={`pop-${burst}`}
                     aria-hidden
                     style={{
-                      position: 'absolute', top: -6, fontFamily: FONT_MONO, fontSize: 10.5, fontWeight: 700,
+                      position: 'absolute', top: -6, fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700,
                       color: a.color, whiteSpace: 'nowrap' as const, animation: 'float-up 1.2s ease-out',
                     }}
                   >
@@ -210,11 +210,11 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
                 )}
               </div>
               <div style={{ textAlign: 'center' as const }}>
-                <div style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: 'var(--tx)' }}>{a.agentId.toUpperCase()}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--tx2)', marginTop: 4, minHeight: 28, lineHeight: 1.4 }}>
+                <div style={{ fontFamily: FONT_MONO, fontSize: 13.5, fontWeight: 700, color: 'var(--tx)' }}>{a.agentId.toUpperCase()}</div>
+                <div style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 4, minHeight: 28, lineHeight: 1.4 }}>
                   {model ? <>{model.icon} {model.who} {model.said}</> : <span style={{ color: 'var(--tx3)' }}>No activity yet</span>}
                 </div>
-                {last && <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 1 }}>{relTime(last.timestamp)}</div>}
+                {last && <div style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 1 }}>{relTime(last.timestamp)}</div>}
               </div>
               <Sparkline points={history.map((s) => s.tokens)} color={a.color} />
             </div>
