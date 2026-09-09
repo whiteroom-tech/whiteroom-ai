@@ -79,10 +79,30 @@ export default function SandboxPage() {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchAudit = useCallback(async (sandboxId: string) => {
+  const syncAuditFromStatus = useCallback((s: SandboxStatusResult) => {
+    if (!s.auditLog?.length) return;
+    setAuditEntries(s.auditLog.map((e): AuditEntry => ({
+      id: e.id,
+      timestamp: e.timestamp,
+      type: e.type,
+      agentId: e.agentId ?? undefined,
+    })));
+  }, []);
+
+  const fetchAudit = useCallback(async (sandboxId: string, statusEntries?: SandboxAuditEntry[]) => {
     const fleetId = `sandbox-${sandboxId}`;
-    const data = await auditLog({ fleetId, limit: 200 });
-    if (data.entries) setAuditEntries(data.entries);
+    try {
+      const data = await auditLog({ fleetId, limit: 200 });
+      if (data.entries?.length) { setAuditEntries(data.entries); return; }
+    } catch { /* fall through */ }
+    if (statusEntries?.length) {
+      setAuditEntries(statusEntries.map((e): AuditEntry => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        type: e.type,
+        agentId: e.agentId ?? undefined,
+      })));
+    }
   }, []);
 
   const startPolling = useCallback((sbxUserId: string, sandboxId?: string) => {
@@ -92,7 +112,7 @@ export default function SandboxPage() {
       if (s.error) return;
       setStatus(s);
       const sbxId = sandboxId || s.sandboxId;
-      if (sbxId) fetchAudit(sbxId);
+      if (sbxId) fetchAudit(sbxId, s.auditLog);
       if (s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0) {
         setPhase('expired');
         if (pollRef.current) clearInterval(pollRef.current);
@@ -113,7 +133,8 @@ export default function SandboxPage() {
           setSandbox({ success: true, sandboxId: s.sandboxId, expiresAt: s.expiresAt });
           setStatus(s);
           setPhase('checklist');
-          fetchAudit(s.sandboxId);
+          syncAuditFromStatus(s);
+          fetchAudit(s.sandboxId, s.auditLog);
           startPolling(userId, s.sandboxId);
         }
       }
@@ -121,7 +142,7 @@ export default function SandboxPage() {
       if (h.sessions) setHistory(h.sessions);
     }
     checkExisting();
-  }, [userId, startPolling, fetchAudit]);
+  }, [userId, startPolling, fetchAudit, syncAuditFromStatus]);
 
   const runDemo = async (sbxId: string) => {
     setDemoRunning(true);
