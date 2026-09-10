@@ -162,6 +162,10 @@ export function auditLog(
   );
 }
 
+export function clearAuditLog(fleetId: string, key?: string): Promise<{ success?: boolean; cleared?: number; error?: string }> {
+  return apiCall({ action: 'clear_audit', fleet_id: fleetId }, key);
+}
+
 // -- Provider keys (BYOK) --
 //
 // The engine scopes provider keys to a fleet and allows several per fleet, so

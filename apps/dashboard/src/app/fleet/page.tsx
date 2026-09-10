@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { auditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
+import { auditLog, clearAuditLog, checkWatch, claimFleet, fleetReport, getHandover, listFleets, tokenLogin, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus, resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
@@ -310,6 +310,15 @@ export default function FleetDashboard() {
       localStorage.setItem('wr_feed_technical', prev ? '0' : '1');
       return !prev;
     });
+  }
+
+  async function handleClearAudit() {
+    if (!fleetId || !confirm('Clear all audit log entries? This cannot be undone.')) return;
+    await clearAuditLog(fleetId, authKey);
+    setAuditEntries([]);
+    setAllEntries([]);
+    fetchAudit();
+    fetchAllEntries();
   }
 
   function changeAgentView(v: string) {
@@ -813,6 +822,7 @@ export default function FleetDashboard() {
                 Tech
               </button>
               <button onClick={exportWorkbook} style={{ fontSize: 11.5, padding: '4px 8px', borderRadius: 4, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Export to Excel">⬇ .xlsx</button>
+              <button onClick={handleClearAudit} style={{ fontSize: 11.5, padding: '4px 8px', borderRadius: 4, background: 'var(--line)', color: 'var(--bad, #ef4444)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Clear all audit entries">Clear</button>
             </div>
           </div>
           <div className="flex gap-1.5 flex-wrap" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
