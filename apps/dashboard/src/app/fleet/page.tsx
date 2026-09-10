@@ -115,7 +115,7 @@ export default function FleetDashboard() {
           return;
         }
         resolvedFleetId = fleets[0].fleetId;
-        const claim = await claimFleet(resolvedFleetId);
+        const claim = await claimFleet(resolvedFleetId, loginToken);
         if (claim.error || !claim.fleetToken) {
           setLoginError(claim.error || 'Could not retrieve fleet token.');
           return;

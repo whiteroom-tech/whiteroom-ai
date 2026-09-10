@@ -130,7 +130,7 @@ export default function DashboardPage() {
 
           if (!fleetToken) {
             try {
-              const claim = await claimFleet(fleetId);
+              const claim = await claimFleet(fleetId, apiKey);
               if (claim.fleetToken) {
                 fleetToken = claim.fleetToken;
               }
