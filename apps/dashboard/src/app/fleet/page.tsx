@@ -461,42 +461,46 @@ export default function FleetDashboard() {
   });
   const handoverAgent = (e: AuditEntry) => (e as Record<string, unknown>).from as string || e.agentId || '';
 
-  const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[] }>();
+  const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[]; hSaved: number; oSaved: number }>();
   rangedEntries.forEach(e => {
     const day = localDayFromTs(e.timestamp);
-    const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [] };
+    const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [], hSaved: 0, oSaved: 0 };
     d.entries.push(e);
     if (e.type === 'task_complete') d.tasks++;
     if (e.tokensUsed) d.used += e.tokensUsed;
     const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
     if (isHandover) {
       d.handovers++;
-      d.saved += handoverSaved(e);
+      d.hSaved += handoverSaved(e);
     }
     if (e.type === 'context_offload') {
       const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
       const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-      d.saved += Math.max(0, ctx - ret);
+      d.oSaved += Math.max(0, ctx - ret);
     }
     dayMap.set(day, d);
   });
+  for (const d of dayMap.values()) {
+    const avg = d.handovers > 0 ? Math.ceil(d.tasks / (d.handovers + 1)) : 0;
+    d.saved = d.hSaved * Math.max(avg, 1) + d.oSaved;
+  }
   const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
   const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
 
   const scopedEntries = scopedDay ? rangedEntries.filter(e => localDayFromTs(e.timestamp) === scopedDay) : rangedEntries;
 
-  const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number }>();
+  const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; hSaved: number; oSaved: number }>();
   scopedEntries.forEach(e => {
     const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
     const rawAid = isHandover ? handoverAgent(e) : e.agentId;
     if (!rawAid) return;
     const aid = rawAid.toLowerCase();
-    const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0 };
+    const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, hSaved: 0, oSaved: 0 };
     if (e.type === 'task_complete') a.tasks++;
     if (e.tokensUsed) a.used += e.tokensUsed;
     if (isHandover) {
       a.handovers++;
-      a.saved += handoverSaved(e);
+      a.hSaved += handoverSaved(e);
       const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
       const hd = ((e as Record<string, unknown>).handoverDocTokens as number) ?? 0;
       if (ctx > hd) { a.ctxTokens += ctx; a.hdTokens += hd; }
@@ -504,10 +508,14 @@ export default function FleetDashboard() {
     if (e.type === 'context_offload') {
       const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
       const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-      a.saved += Math.max(0, ctx - ret);
+      a.oSaved += Math.max(0, ctx - ret);
     }
     agentMap.set(aid, a);
   });
+  for (const a of agentMap.values()) {
+    const avg = a.handovers > 0 ? Math.ceil(a.tasks / (a.handovers + 1)) : 0;
+    a.saved = a.hSaved * Math.max(avg, 1) + a.oSaved;
+  }
   const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
 
   const scopedCtxTokens = agentBreakdown.reduce((s, [, v]) => s + v.ctxTokens, 0);
