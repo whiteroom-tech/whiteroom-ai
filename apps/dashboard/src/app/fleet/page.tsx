@@ -502,8 +502,8 @@ export default function FleetDashboard() {
       a.handovers++;
       a.hSaved += handoverSaved(e);
       const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-      const hd = ((e as Record<string, unknown>).handoverDocTokens as number) ?? 0;
-      if (ctx > hd) { a.ctxTokens += ctx; a.hdTokens += hd; }
+      const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 300;
+      if (ctx > 0) { a.ctxTokens += ctx; a.hdTokens += hd; }
     }
     if (e.type === 'context_offload') {
       const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
