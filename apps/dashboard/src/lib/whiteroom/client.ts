@@ -242,6 +242,15 @@ export interface SandboxAuditEntry {
   timestamp: string;
   type: string;
   agentId: string | null;
+  taskId?: string;
+  taskName?: string;
+  watchNumber?: number;
+  tokensUsed?: number;
+  minutesSpent?: number;
+  details?: Array<{ name: string; args: string }>;
+  toAgent?: string;
+  fromAgent?: string;
+  [key: string]: unknown;
 }
 
 export interface SandboxStatusResult {

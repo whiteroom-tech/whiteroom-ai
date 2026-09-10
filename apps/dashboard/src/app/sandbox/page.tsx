@@ -89,26 +89,21 @@ export default function SandboxPage() {
       type: e.type,
       agentId: e.agentId ?? undefined,
     };
-    if (agent) {
-      base.watchNumber = agent.currentWatch?.watchNumber ?? agent.watchCount;
+    if (e.watchNumber != null) base.watchNumber = e.watchNumber;
+    else if (agent) base.watchNumber = agent.currentWatch?.watchNumber ?? agent.watchCount;
+    if (e.type === 'task_complete') {
+      base.taskName = e.taskName ?? (agent?.role === 'worker' ? 'Process compliance review' : 'Relay task handoff');
+      base.taskId = e.taskId;
+      base.tokensUsed = e.tokensUsed ?? agent?.currentWatch?.tokensUsed ?? agent?.totalTokens;
+      base.minutesSpent = e.minutesSpent ?? agent?.currentWatch?.minutesWorked ?? agent?.watchMinutes;
+      if (e.details?.length) base.details = e.details;
     }
-    if (e.type === 'task_complete' && agent) {
-      base.taskName = agent.role === 'worker' ? 'Process compliance review' : 'Relay task handoff';
-      base.tokensUsed = agent.currentWatch?.tokensUsed ?? agent.totalTokens;
-      base.minutesSpent = agent.currentWatch?.minutesWorked ?? agent.watchMinutes;
-      base.details = [
-        { name: 'read_policy_document', args: '{"doc":"compliance-policy-v3.md"}' },
-        { name: 'analyze_context', args: '{"scope":"agent session"}' },
-        { name: 'write_summary', args: '{"output":"task_result.json"}' },
-      ];
+    if (e.type === 'handover') {
+      base.toAgent = e.toAgent ?? agents?.find(a => a.agentId !== e.agentId)?.agentId;
+      base.tokensUsed = e.tokensUsed ?? agent?.totalTokens;
     }
-    if (e.type === 'handover' && agent) {
-      const other = agents?.find(a => a.agentId !== e.agentId);
-      base.toAgent = other?.agentId;
-      base.tokensUsed = agent.totalTokens;
-    }
-    if (e.type === 'watch_start' && agent) {
-      base.tokensUsed = 0;
+    if (e.type === 'watch_start') {
+      base.tokensUsed = e.tokensUsed ?? 0;
     }
     return base;
   }, []);
