@@ -142,3 +142,97 @@ export interface DeleteKeyResult {
   removed?: { provider: string; keyHint: string };
   error?: string;
 }
+
+// -- Performance --
+
+export interface PerformanceModelSummary {
+  provider: string;
+  model: string | null;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costMicros: number;
+}
+
+export interface PerformanceRecommendation {
+  id: string;
+  detector: string;
+  agentId: string;
+  action: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface PerformanceIndexResult {
+  fleetId: string;
+  period: { start: string; end: string };
+  summary: {
+    totalCalls: number;
+    totalCost: number;
+    avgLatencyMs: number | null;
+    errorRate: number;
+    models: PerformanceModelSummary[];
+  };
+  recommendations: PerformanceRecommendation[];
+  priceInfo: { version: string; ageDays: number; stale: boolean; expired: boolean };
+  error?: string;
+}
+
+export interface HourlyDataPoint {
+  hour: string;
+  calls: number;
+  costMicros: number;
+  errorCount: number;
+  avgLatencyMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface AgentPerformanceResult {
+  fleetId: string;
+  agentId: string;
+  period: { start: string; end: string };
+  hourly: HourlyDataPoint[];
+  totals: {
+    calls: number;
+    costMicros: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    errorRate: number;
+    avgLatencyMs: number | null;
+  };
+  error?: string;
+}
+
+export interface PerformanceEvidenceResult {
+  finding: {
+    id: string;
+    detector: string;
+    agentId: string;
+    cohort: string;
+    windowStart: string;
+    windowEnd: string;
+    measures: Record<string, number>;
+    basis: string;
+    coverage: string;
+    limitations: string | null;
+    evidenceCallIds: string[];
+  } | null;
+  calls: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+export interface PerformanceFeedbackResult {
+  success: boolean;
+  status?: string;
+  error?: string;
+}
+
+export interface PerformanceHealthResult {
+  collection: boolean;
+  queue: { pending: number; totalEnqueued: number; totalFlushed: number; dropped: number; uncertainIntervals: unknown[] };
+  version: string;
+  error?: string;
+}

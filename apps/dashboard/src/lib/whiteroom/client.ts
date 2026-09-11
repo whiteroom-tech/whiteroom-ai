@@ -7,6 +7,7 @@
 
 import type {
   AgentInfo,
+  AgentPerformanceResult,
   AuditLogResponse,
   ClaimFleetResult,
   DeleteKeyResult,
@@ -14,6 +15,11 @@ import type {
   GetHandoverResult,
   ListFleetsResult,
   ListKeysResult,
+  PerformanceEvidenceResult,
+  PerformanceFeedbackResult,
+  PerformanceHealthResult,
+  PerformanceIndexResult,
+  PerformanceRecommendation,
   RebindResult,
   RegisterResult,
   StoreKeyResult,
@@ -360,4 +366,43 @@ export function sandboxHistory(userId: string, key?: string): Promise<{ success?
 
 export function sandboxAnalytics(key?: string): Promise<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }> {
   return apiCall<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }>({ action: 'sandbox_analytics' }, key);
+}
+
+// -- Performance --
+
+export function performanceIndex(fleetId: string, hoursBack?: number, key?: string): Promise<PerformanceIndexResult> {
+  return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, hours_back: hoursBack ?? 24 }, key);
+}
+
+export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
+  return apiCall<AgentPerformanceResult>({ action: 'performance_agent', fleet_id: fleetId, agent_id: agentId, hours_back: hoursBack ?? 24 }, key);
+}
+
+export function performanceRecommendations(fleetId: string, status?: string, key?: string): Promise<{ fleetId: string; recommendations: PerformanceRecommendation[] }> {
+  return apiCall<{ fleetId: string; recommendations: PerformanceRecommendation[] }>({ action: 'performance_recommendations', fleet_id: fleetId, status }, key);
+}
+
+export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {
+  return apiCall<PerformanceEvidenceResult>({ action: 'performance_evidence', fleet_id: fleetId, finding_id: findingId }, key);
+}
+
+export function performanceFeedback(
+  fleetId: string,
+  opts: { recommendationId: string; findingVersion: string; action: string; reason?: string; snoozeDays?: number; idempotencyKey: string },
+  key?: string,
+): Promise<PerformanceFeedbackResult> {
+  return apiCall<PerformanceFeedbackResult>({
+    action: 'performance_feedback',
+    fleet_id: fleetId,
+    recommendation_id: opts.recommendationId,
+    finding_version: opts.findingVersion,
+    feedback_action: opts.action,
+    reason: opts.reason,
+    snooze_days: opts.snoozeDays,
+    idempotency_key: opts.idempotencyKey,
+  }, key);
+}
+
+export function performanceHealth(fleetId: string, key?: string): Promise<PerformanceHealthResult> {
+  return apiCall<PerformanceHealthResult>({ action: 'performance_health', fleet_id: fleetId }, key);
 }

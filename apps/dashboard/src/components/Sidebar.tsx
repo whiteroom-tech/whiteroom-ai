@@ -31,11 +31,13 @@ const ICONS = {
   eval: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 20V10M12 20V4M6 20v-6" /></svg>,
   builder: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>,
   settings: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8" /></svg>,
+  performance: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
 };
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/fleet', label: 'Fleet', icon: ICONS.fleet, match: (p) => p === '/fleet' || (p.startsWith('/fleet') && !p.includes('tab=analytics')) },
   { href: '/fleet?tab=analytics', label: 'Analytics', icon: ICONS.analytics, match: (p) => p.includes('tab=analytics') },
+  { href: '/performance', label: 'Performance', icon: ICONS.performance, match: (p) => p.startsWith('/performance') },
   { href: '/sandbox', label: 'Sandbox', icon: ICONS.sandbox, match: (p) => p.startsWith('/sandbox') },
 ];
 
