@@ -20,6 +20,10 @@ import type {
   PerformanceHealthResult,
   PerformanceIndexResult,
   PerformanceRecommendation,
+  PaginatedRecommendationsResult,
+  RecommendationGetResult,
+  RecommendationBriefResult,
+  RecommendationExportMarkdownResult,
   RebindResult,
   RegisterResult,
   StoreKeyResult,
@@ -405,4 +409,48 @@ export function performanceFeedback(
 
 export function performanceHealth(fleetId: string, key?: string): Promise<PerformanceHealthResult> {
   return apiCall<PerformanceHealthResult>({ action: 'performance_health', fleet_id: fleetId }, key);
+}
+
+export function performanceRecommendationsList(
+  fleetId: string,
+  opts?: { status?: string; agentId?: string; cursor?: string; pageSize?: number },
+  key?: string,
+): Promise<PaginatedRecommendationsResult> {
+  return apiCall<PaginatedRecommendationsResult>({
+    action: 'performance_recommendations_list',
+    fleet_id: fleetId,
+    contract_version: '1',
+    status: opts?.status,
+    agent_id: opts?.agentId,
+    cursor: opts?.cursor,
+    page_size: opts?.pageSize,
+  }, key);
+}
+
+export function performanceRecommendationGet(
+  fleetId: string,
+  recommendationId: string,
+  key?: string,
+): Promise<RecommendationGetResult> {
+  return apiCall<RecommendationGetResult>({
+    action: 'performance_recommendations_get',
+    fleet_id: fleetId,
+    recommendation_id: recommendationId,
+    contract_version: '1',
+  }, key);
+}
+
+export function performanceRecommendationExport(
+  fleetId: string,
+  recommendationId: string,
+  format: 'json' | 'markdown' = 'json',
+  key?: string,
+): Promise<RecommendationBriefResult | RecommendationExportMarkdownResult> {
+  return apiCall<RecommendationBriefResult | RecommendationExportMarkdownResult>({
+    action: 'performance_recommendations_export',
+    fleet_id: fleetId,
+    recommendation_id: recommendationId,
+    contract_version: '1',
+    format,
+  }, key);
 }

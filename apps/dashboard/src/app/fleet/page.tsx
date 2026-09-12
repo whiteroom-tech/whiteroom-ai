@@ -441,14 +441,18 @@ export default function FleetDashboard() {
 
   const t = report.totals;
   const es = report.energySavings;
+  const cw = report.currentWatch;
 
-  const watchTasks = t.tasks || agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
-  const watchTokens = t.tokens || agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
+  const watchTasks = cw?.tasks ?? agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
+  const watchTokens = cw?.tokens ?? agents.reduce((s, a) => s + (a.tokensUsed || 0), 0);
   const watchHandovers = t.handovers || 0;
-  const watchSaved = es.estimatedTokensSaved || 0;
+  const lifetimeRatio = t.tokens > 0 ? (es.estimatedTokensSaved || 0) / t.tokens : 0;
+  const watchSaved = Math.round(watchTokens * lifetimeRatio);
   const watchWithoutWR = watchTokens + watchSaved;
-  const watchCostSaved = es.estimatedCostSaved || '$0';
-  const watchEnergySaved = es.estimatedEnergySaved || '0 kWh';
+  const savingsCost = watchSaved * 0.8 * 0.0000008 + watchSaved * 0.2 * 0.000004;
+  const watchCostSaved = watchSaved > 0 ? `$${savingsCost.toFixed(4)}` : '$0';
+  const kwhPerToken = 0.0000004;
+  const watchEnergySaved = watchSaved > 0 ? `${(watchSaved * kwhPerToken).toFixed(4)} kWh` : '0 kWh';
 
   // --- Analytics computation (UTC throughout) ---
   const cutoff = getCutoff(analyticsRange, Date.now());

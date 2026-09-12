@@ -41,6 +41,7 @@ export interface FleetReport {
   agentCount: number;
   status: { working: string[]; resting: string[]; idle: string[]; handover_out?: string[] };
   totals: { workMinutes: number; tokens: number; tasks: number; handovers: number };
+  currentWatch?: { tasks: number; tokens: number; workMinutes: number };
   energySavings: { compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };
   compliance: { allAgentsWithinLimits: boolean; restingAgentsCount: number; laborScore: string };
 }
@@ -234,5 +235,61 @@ export interface PerformanceHealthResult {
   collection: boolean;
   queue: { pending: number; totalEnqueued: number; totalFlushed: number; dropped: number; uncertainIntervals: unknown[] };
   version: string;
+  error?: string;
+}
+
+// -- Recommendations contract v1 --
+
+export interface RecommendationDetail {
+  id: string;
+  detector: string;
+  agentId: string;
+  source: string;
+  cohort: string;
+  action: string;
+  status: string;
+  verificationStatus: string;
+  currentFindingId: string | null;
+  feedbackCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaginatedRecommendationsResult {
+  contractVersion: string;
+  dataRevision: string;
+  fleetId: string;
+  recommendations: RecommendationDetail[];
+  cursor: string | null;
+  pageSize: number;
+  total: number;
+  error?: string;
+}
+
+export interface RecommendationGetResult {
+  contractVersion: string;
+  recommendation: RecommendationDetail | null;
+  finding: Record<string, unknown> | null;
+  error?: string;
+}
+
+export interface BriefSection {
+  heading: string;
+  content: string;
+}
+
+export interface RecommendationBriefResult {
+  contractVersion: string;
+  recommendationId: string;
+  title: string;
+  lane: string;
+  sections: BriefSection[];
+  generatedAt: string;
+  error?: string;
+}
+
+export interface RecommendationExportMarkdownResult {
+  contractVersion: string;
+  markdown: string;
   error?: string;
 }
