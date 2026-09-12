@@ -385,7 +385,7 @@ function IndexView({ data, fleetId, authKey, onSelectAgent, onSelectEvidence, on
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              <FeedbackBtn label="View evidence" onClick={() => onSelectEvidence(rec.id, rec.agentId, rec.id)} loading={false} />
+              <FeedbackBtn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
               {rec.status === 'open' && (
                 <>
                   <FeedbackBtn label="Snooze" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
