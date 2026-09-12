@@ -44,6 +44,7 @@ export interface FleetReport {
   currentWatch?: { tasks: number; tokens: number; workMinutes: number };
   energySavings: { compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };
   compliance: { allAgentsWithinLimits: boolean; restingAgentsCount: number; laborScore: string };
+  agentDetails?: Array<AgentInfo & { handoverDoc?: HandoverDoc }>;
 }
 
 export interface AuditEntry {

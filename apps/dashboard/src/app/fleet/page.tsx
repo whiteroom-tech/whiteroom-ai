@@ -159,13 +159,30 @@ export default function FleetDashboard() {
       }
       setReport(data);
 
-      const allIds = [...(data.status.working || []), ...(data.status.resting || []), ...(data.status.idle || []), ...(data.status.handover_out || [])];
-      const details: AgentInfo[] = await Promise.all(
-        allIds.map(async (id: string) => {
-          const d = await checkWatch(id, fleetId, authKey);
-          return { ...d, agentId: d.agentId || id };
-        })
-      );
+      let details: AgentInfo[];
+      const docs: Record<string, HandoverDoc> = {};
+
+      if (data.agentDetails?.length) {
+        details = data.agentDetails.map((d: AgentInfo & { handoverDoc?: HandoverDoc }) => {
+          if (d.handoverDoc) docs[d.agentId] = d.handoverDoc;
+          return d;
+        });
+      } else {
+        const allIds = [...(data.status.working || []), ...(data.status.resting || []), ...(data.status.idle || []), ...(data.status.handover_out || [])];
+        details = await Promise.all(
+          allIds.map(async (id: string) => {
+            const d = await checkWatch(id, fleetId, authKey);
+            return { ...d, agentId: d.agentId || id };
+          })
+        );
+        await Promise.all(details.filter((d) => d.status === 'resting').map(async (d) => {
+          try {
+            const hd = await getHandover(d.agentId, fleetId, authKey);
+            if (hd.handoverDoc) docs[d.agentId] = hd.handoverDoc;
+          } catch { /* ignore */ }
+        }));
+      }
+
       setAgents(details);
 
       setAgentHealth((prev: Record<string, { health: number; lastStatus: string }>) => {
@@ -184,13 +201,6 @@ export default function FleetDashboard() {
         return next;
       });
 
-      const docs: Record<string, HandoverDoc> = {};
-      await Promise.all(details.filter((d) => d.status === 'resting').map(async (d) => {
-        try {
-          const hd = await getHandover(d.agentId, fleetId, authKey);
-          if (hd.handoverDoc) docs[d.agentId] = hd.handoverDoc;
-        } catch { /* ignore */ }
-      }));
       setHandoverDocs(docs);
     } catch { setError('Connection lost'); }
   }, [fleetId, authKey]);
