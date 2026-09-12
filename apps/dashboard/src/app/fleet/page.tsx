@@ -276,7 +276,7 @@ export default function FleetDashboard() {
   useEffect(() => {
     if (activeTab !== 'visualization') return;
     fetchAllEntries();
-    const id = setInterval(fetchAllEntries, 4000);
+    const id = setInterval(fetchAllEntries, 15000);
     return () => clearInterval(id);
   }, [activeTab, fetchAllEntries]);
 
