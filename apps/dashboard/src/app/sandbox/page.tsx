@@ -39,6 +39,9 @@ const ASSERTION_LABELS: Record<string, { label: string; hint: string; required: 
   compliance_gate: { label: 'Rest enforced', hint: 'Agent call rejected during mandatory rest period', required: false },
   graceful_disconnect: { label: 'Disconnect handled', hint: 'Agent went silent and watchdog recovered it', required: false },
   multi_agent_relay: { label: 'Multi-agent relay', hint: 'Paired agents handed off work to each other', required: false },
+  policy_observed: { label: 'Policy observed', hint: 'Deny policy detected bash call in observe mode', required: false },
+  policy_enforced: { label: 'Policy enforced', hint: 'Enforce mode blocked bash call from response', required: false },
+  policy_decision_audited: { label: 'Decision audited', hint: 'Both decisions in verified audit chain', required: false },
 };
 
 function AssertionIcon({ status }: { status: string }) {
@@ -346,6 +349,11 @@ export default function SandboxPage() {
           <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 4, padding: '2px 8px' }}>TEST ENV</span>
           {sandbox?.isTrial && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>TRIAL</span>}
           {paused.size > 0 && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 4, padding: '2px 8px' }}>{paused.size === status?.agents?.length ? 'ALL PAUSED' : `${paused.size} PAUSED`}</span>}
+          {assertions.policy_observed && assertions.policy_observed.status !== 'waiting' && (
+            <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: assertions.policy_enforced?.status === 'observed' ? 'var(--bad)' : 'var(--warn)', background: assertions.policy_enforced?.status === 'observed' ? 'var(--bad-bg, rgba(239,68,68,0.1))' : 'var(--warn-bg)', border: `1px solid ${assertions.policy_enforced?.status === 'observed' ? 'var(--bad)' : 'var(--warn-line)'}`, borderRadius: 4, padding: '2px 8px' }}>
+              {assertions.policy_enforced?.status === 'observed' ? 'ENFORCE' : 'OBSERVE'}
+            </span>
+          )}
           <span style={{ marginLeft: 'auto' }} />
           {expiresIn !== null && expiresIn > 0 && (
             <span style={{ fontSize: 11.5, fontFamily: FONT_MONO, color: expiresIn < 600 ? 'var(--warn)' : 'var(--tx3)' }}>
