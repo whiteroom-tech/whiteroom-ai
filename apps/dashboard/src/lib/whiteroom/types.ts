@@ -294,3 +294,91 @@ export interface RecommendationExportMarkdownResult {
   markdown: string;
   error?: string;
 }
+
+// -- Control Builder types --
+
+export interface ExecutableRule {
+  ruleType: "tool_denylist";
+  params: { tools: string[] };
+}
+
+export interface ProposedRule {
+  ruleType: string;
+  params: Record<string, unknown>;
+}
+
+export type EvaluatorType = "assertion" | "detection" | "denylist" | "enforcement" | "audit";
+
+export interface EvidenceRecord {
+  status: "observed" | "failed";
+  timestamp: string;
+  diagnostic?: string;
+  metric?: number;
+  requestId: string;
+  testedRevision: number;
+  testedPolicyVersion: number;
+}
+
+export interface ControlResult {
+  liveEvidence?: EvidenceRecord;
+  demoEvidence?: EvidenceRecord;
+  liveIncomplete?: { droppedStatus: "observed" | "failed" };
+  demoIncomplete?: { droppedStatus: "observed" | "failed" };
+}
+
+export interface ControlDefinition {
+  controlId: string;
+  revision: number;
+  name: string;
+  description: string;
+  source: "core" | "catalog" | "custom";
+  evaluator: EvaluatorType;
+  requiredByUser: boolean;
+  required: boolean;
+  rules: ExecutableRule[];
+  proposedRules?: ProposedRule[];
+  testMethod: string;
+  capability: "supported" | "unsupported";
+  activation: "active" | "inactive" | "review";
+  result: ControlResult;
+  liveEligibility?: EligibleResult;
+  demoEligibility?: EligibleResult;
+}
+
+export interface EligibleResult {
+  eligible: boolean;
+  status?: "observed" | "failed";
+  reason?: string;
+}
+
+export interface ReadinessResult {
+  status: "pass" | "fail" | "partial" | "empty" | "blocked";
+  reason?: string;
+  blocking?: string[];
+}
+
+export interface ReadinessAssessment {
+  liveReady: boolean;
+  demoComplete: boolean;
+  overall: ReadinessResult;
+}
+
+export interface CatalogEntry {
+  controlId: string;
+  name: string;
+  description: string;
+  source: "core" | "catalog";
+  evaluator: EvaluatorType;
+  tier: "core" | "governance" | "policy";
+  defaultRequired: boolean;
+  rules: ExecutableRule[];
+  testMethod: string;
+}
+
+export interface CustomControlInput {
+  name: string;
+  description: string;
+  rules: Array<ExecutableRule | ProposedRule>;
+  requiredByUser?: boolean;
+  testMethod: string;
+}

@@ -9,7 +9,10 @@ import type {
   AgentInfo,
   AgentPerformanceResult,
   AuditLogResponse,
+  CatalogEntry,
   ClaimFleetResult,
+  ControlDefinition,
+  CustomControlInput,
   DeleteKeyResult,
   FleetReport,
   GetHandoverResult,
@@ -21,6 +24,8 @@ import type {
   PerformanceIndexResult,
   PerformanceRecommendation,
   PaginatedRecommendationsResult,
+  ReadinessAssessment,
+  ReadinessResult,
   RecommendationGetResult,
   RecommendationBriefResult,
   RecommendationExportMarkdownResult,
@@ -236,6 +241,8 @@ export interface CreateSandboxResult {
   proxyKey?: string;
   expiresAt?: string;
   isTrial?: boolean;
+  experience?: "legacy" | "new";
+  controls?: ControlDefinition[];
   error?: string;
 }
 
@@ -271,9 +278,16 @@ export interface SandboxStatusResult {
   success?: boolean;
   sandboxId?: string;
   environment?: string;
+  experience?: "legacy" | "new";
   expiresAt?: string;
   expiresInSeconds?: number | null;
   assertionStates?: Record<string, { status: string; observedAt?: string; failedAt?: string; diagnostic?: string; metric?: number }>;
+  controls?: ControlDefinition[];
+  policyMode?: "observe" | "enforce";
+  policyVersion?: number;
+  liveReady?: boolean;
+  demoComplete?: boolean;
+  overallControlResult?: ReadinessResult;
   agents?: SandboxAgentInfo[];
   auditLog?: SandboxAuditEntry[];
   error?: string;
@@ -287,13 +301,27 @@ export interface SandboxReportResult {
   error?: string;
 }
 
-export function createSandbox(opts: { userId: string; apiKey?: string; isTrial?: boolean; ttlMinutes?: number }, key?: string): Promise<CreateSandboxResult> {
+export function createSandbox(
+  opts: {
+    userId: string;
+    apiKey?: string;
+    isTrial?: boolean;
+    ttlMinutes?: number;
+    selectedCatalogIds?: string[];
+    customControls?: CustomControlInput[];
+    policyMode?: 'observe' | 'enforce';
+  },
+  key?: string,
+): Promise<CreateSandboxResult> {
   return apiCall<CreateSandboxResult>({
     action: 'create_sandbox',
     user_id: opts.userId,
     is_trial: opts.isTrial,
     api_key: opts.apiKey,
     ttl_minutes: opts.ttlMinutes,
+    selected_catalog_ids: opts.selectedCatalogIds,
+    custom_controls: opts.customControls,
+    policy_mode: opts.policyMode,
   }, key);
 }
 
@@ -370,6 +398,59 @@ export function sandboxHistory(userId: string, key?: string): Promise<{ success?
 
 export function sandboxAnalytics(key?: string): Promise<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }> {
   return apiCall<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }>({ action: 'sandbox_analytics' }, key);
+}
+
+// -- Control Builder --
+
+export function controlCatalog(key?: string): Promise<{ success?: boolean; catalog?: CatalogEntry[]; error?: string }> {
+  return apiCall<{ success?: boolean; catalog?: CatalogEntry[]; error?: string }>({ action: 'control_catalog' }, key);
+}
+
+export function defineControl(
+  sandboxId: string,
+  control: CustomControlInput,
+  key?: string,
+): Promise<{ success?: boolean; control?: ControlDefinition; controls?: ControlDefinition[]; policyVersion?: number; error?: string }> {
+  return apiCall({ action: 'define_control', sandbox_id: sandboxId, control }, key);
+}
+
+export function removeControl(
+  sandboxId: string,
+  controlId: string,
+  key?: string,
+): Promise<{ success?: boolean; controls?: ControlDefinition[]; policyVersion?: number; error?: string }> {
+  return apiCall({ action: 'remove_control', sandbox_id: sandboxId, control_id: controlId }, key);
+}
+
+export function listControls(
+  sandboxId: string,
+  key?: string,
+): Promise<{ success?: boolean; controls?: ControlDefinition[]; readiness?: ReadinessAssessment; error?: string }> {
+  return apiCall({ action: 'list_controls', sandbox_id: sandboxId }, key);
+}
+
+export function setControlRequired(
+  sandboxId: string,
+  controlId: string,
+  requiredByUser: boolean,
+  key?: string,
+): Promise<{ success?: boolean; control?: ControlDefinition; error?: string }> {
+  return apiCall({ action: 'set_control_required', sandbox_id: sandboxId, control_id: controlId, required_by_user: requiredByUser }, key);
+}
+
+export function resetControlEvidence(
+  sandboxId: string,
+  controlId: string,
+  key?: string,
+): Promise<{ success?: boolean; control?: ControlDefinition; error?: string }> {
+  return apiCall({ action: 'reset_control_evidence', sandbox_id: sandboxId, control_id: controlId }, key);
+}
+
+export function goLive(
+  sandboxId: string,
+  key?: string,
+): Promise<{ success?: boolean; readiness?: ReadinessAssessment; error?: string }> {
+  return apiCall({ action: 'go_live', sandbox_id: sandboxId }, key);
 }
 
 // -- Performance --
