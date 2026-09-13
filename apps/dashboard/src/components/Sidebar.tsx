@@ -39,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/fleet?tab=analytics', label: 'Analytics', icon: ICONS.analytics, match: (p) => p.includes('tab=analytics') },
   { href: '/performance', label: 'Performance', icon: ICONS.performance, match: (p) => p.startsWith('/performance') },
   { href: '/sandbox', label: 'Sandbox', icon: ICONS.sandbox, match: (p) => p.startsWith('/sandbox') },
+  { href: '/settings', label: 'Settings', icon: ICONS.settings, match: (p) => p.startsWith('/settings') },
 ];
 
 const SOON_ITEMS: SoonItem[] = [
@@ -48,7 +49,6 @@ const SOON_ITEMS: SoonItem[] = [
   { label: 'Compliance', icon: ICONS.compliance },
   { label: 'Eval results', icon: ICONS.eval, group: 'Evaluation' },
   { label: 'Builder', icon: ICONS.builder },
-  { label: 'Settings', icon: ICONS.settings, group: 'Manage' },
 ];
 
 export function Sidebar({ fleetId }: { fleetId?: string } & (

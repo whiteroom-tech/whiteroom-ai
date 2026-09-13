@@ -1,8 +1,24 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
+
+const ERRORS: Record<string, string> = {
+  Verification: 'That sign-in link has expired or was already used. Enter your email to get a new one.',
+  OAuthAccountNotLinked: 'That email is already registered with a different sign-in method. Use the one you signed up with.',
+  AccessDenied: 'That account is not allowed to sign in.',
+  Configuration: 'Sign-in is temporarily unavailable. Please try again shortly.',
+  Default: 'Something went wrong signing you in. Please try again.',
+};
+
+// Outcomes that land here deliberately, rather than failures. Settings
+// redirects to /sign-in after ending a session or deleting an account, and
+// without these the page would just look like an ordinary sign-out.
+const OUTCOMES: Record<string, string> = {
+  'signedOut=all': 'Signed out on every device. Sign in again to continue.',
+  'deleted=1': 'Your account has been deleted.',
+};
 
 export default function SignInPage() {
   const [loading, setLoading] = useState(false);
@@ -10,10 +26,40 @@ export default function SignInPage() {
   const [email, setEmail] = useState('');
   const [emailLoading, setEmailLoading] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // auth.ts points `pages.error` here, so a failed magic link arrives as
+  // /sign-in?error=Verification rather than dead-ending on Auth.js's built-in
+  // 403 page. Read it off the URL directly: useSearchParams would force this
+  // page behind a Suspense boundary for no benefit. The param is stripped
+  // afterwards so the warning doesn't outlive the attempt it describes.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const url = new URL(window.location.href);
+
+    const code = params.get('error');
+    if (code) {
+      setNotice(ERRORS[code] ?? ERRORS.Default);
+      url.searchParams.delete('error');
+    } else {
+      for (const [key, message] of Object.entries(OUTCOMES)) {
+        const [name, value] = key.split('=');
+        if (params.get(name) !== value) continue;
+        setNotice(message);
+        url.searchParams.delete(name);
+        break;
+      }
+    }
+
+    if (url.search !== window.location.search) {
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  }, []);
 
   async function signInWithGoogle() {
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
       await signIn('google', { callbackUrl: '/dashboard' });
     } catch {
@@ -27,6 +73,7 @@ export default function SignInPage() {
     if (!email.trim()) return;
     setEmailLoading(true);
     setError(null);
+    setNotice(null);
     // redirect:false so the "check your inbox" state renders here rather than
     // bouncing through Auth.js's default verify-request page.
     const res = await signIn('resend', {
@@ -71,6 +118,15 @@ export default function SignInPage() {
           </div>
 
           <div className="rounded-xl p-8 space-y-5" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+            {notice && (
+              <p
+                className="rounded-lg px-4 py-3 text-xs text-left"
+                style={{ background: 'rgba(255,107,122,.08)', border: '1px solid rgba(255,107,122,.35)', color: '#FF6B7A' }}
+              >
+                {notice}
+              </p>
+            )}
+
             <button
               onClick={signInWithGoogle}
               disabled={loading}
