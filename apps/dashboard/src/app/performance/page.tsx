@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, fleetReport, auditLog } from '@/lib/whiteroom/client';
 import { resolveAuthKey } from '@/lib/fleet-helpers';
+import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { Sidebar } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry } from '@/lib/whiteroom/types';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
@@ -208,7 +209,7 @@ function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, tr
   );
 }
 
-function MetricDrillDown({ metric, models, hourly }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[] }) {
+function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: { tokensSaved: number; costSaved: number } | null }) {
   const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' };
   const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 12, fontFamily: FONT_MONO, color: 'var(--tx)' };
   const TDR: React.CSSProperties = { ...TD, textAlign: 'right' };
@@ -365,16 +366,34 @@ function MetricDrillDown({ metric, models, hourly }: { metric: string; models: P
     const totalCost = hourly.reduce((s, h) => s + h.costMicros, 0);
     const cacheHitRate = (totalInput + totalCacheRead) > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0;
     const avgInputPrice = totalInput > 0 ? (totalCost / (totalInput + totalCacheRead * 0.1)) : 0;
-    const savingsMicros = totalCacheRead * avgInputPrice * 0.9;
+    const cacheMicros = totalCacheRead * avgInputPrice * 0.9;
+    const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
+    const govTokens = govSavings?.tokensSaved ?? 0;
+    const totalSavingsMicros = cacheMicros + govCostMicros;
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Savings Breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from prompt caching. Cache reads cost ~10% of input token price — savings represent the difference vs. processing all tokens as fresh input.</div>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and governance (handovers, context offloads).</div>
+
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
+          <div style={{ minWidth: 120 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total Saved</div>
+            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}</div>
+          </div>
+          <div style={{ minWidth: 120 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Cache</div>
+            <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(cacheMicros)}</div>
+          </div>
+          <div style={{ minWidth: 120 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Governance</div>
+            <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(govCostMicros)}</div>
+          </div>
+        </div>
 
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache Savings</div>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
-            { label: 'Est. Saved', value: fmtCost(savingsMicros), color: 'var(--ok)' },
+            { label: 'Est. Saved', value: fmtCost(cacheMicros), color: 'var(--ok)' },
             { label: 'Cache Hit Rate', value: `${(cacheHitRate * 100).toFixed(1)}%`, color: cacheHitRate > 0.3 ? 'var(--ok)' : 'var(--tx)' },
             { label: 'Cache Read Tokens', value: fmtTokens(totalCacheRead), color: 'var(--tx)' },
             { label: 'Cache Write Tokens', value: fmtTokens(totalCacheWrite), color: 'var(--tx)' },
@@ -382,13 +401,13 @@ function MetricDrillDown({ metric, models, hourly }: { metric: string; models: P
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 120 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
-              <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 14, fontFamily: FONT_MONO, fontWeight: 600, color: s.color }}>{s.value}</div>
             </div>
           ))}
         </div>
 
         {totalCacheRead > 0 && (
-          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
+          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <div style={{ width: '100%', height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden' }}>
                 <div style={{ width: `${(cacheHitRate * 100).toFixed(1)}%`, height: '100%', borderRadius: 4, background: 'var(--ok)' }} />
@@ -398,7 +417,29 @@ function MetricDrillDown({ metric, models, hourly }: { metric: string; models: P
             <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed.</span>
           </div>
         )}
-        {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No cache activity in the selected time window. Enable prompt caching to reduce input token costs.</div>}
+        {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Governance Savings</div>
+        {govTokens > 0 ? (
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
+            {[
+              { label: 'Est. Saved', value: fmtCost(govCostMicros), color: 'var(--ok)' },
+              { label: 'Tokens Saved', value: fmtTokens(govTokens), color: 'var(--tx)' },
+            ].map((s, i) => (
+              <div key={i} style={{ minWidth: 120 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 14, fontFamily: FONT_MONO, fontWeight: 600, color: s.color }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No governance savings detected. Handovers and context offloads reduce redundant token processing.</div>
+        )}
+        {govTokens > 0 && (
+          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
+            Governance savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model.
+          </div>
+        )}
       </div>
     );
   }
@@ -444,18 +485,46 @@ export default function PerformanceDashboard() {
   const [agentData, setAgentData] = useState<AgentPerformanceResult | null>(null);
   const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
+  const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
 
   const fetchIndex = useCallback(async () => {
     if (!fleetId) return;
     setLoading(true); setError('');
     try {
-      const [idx, hourly] = await Promise.all([
+      const [idx, hourly, report, audit] = await Promise.all([
         performanceIndex(fleetId, hoursBack, authKey),
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
+        fleetReport(fleetId, authKey).catch(() => null),
+        auditLog({ fleetId, limit: 2000 }, authKey).catch(() => null),
       ]);
       if (idx.error) { setError(idx.error); return; }
       setIndexData(idx);
       if (!hourly.error) setHourlyData(hourly);
+
+      if (report && !report.error && audit) {
+        let hSaved = 0, oSaved = 0, handoverCount = 0, taskCount = 0;
+        for (const e of audit.entries) {
+          const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+          if (isHandover) {
+            handoverCount++;
+            hSaved += computeHandoverSaved({
+              contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
+              handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
+            });
+          }
+          if (e.type === 'context_offload') {
+            const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+            const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
+            oSaved += Math.max(0, ctx - ret);
+          }
+          if (e.type === 'task_complete') taskCount++;
+        }
+        const avg = handoverCount > 0 ? Math.ceil(taskCount / (handoverCount + 1)) : 0;
+        const tokensSaved = hSaved * Math.max(avg, 1) + oSaved;
+        setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
+      } else {
+        setGovSavings(null);
+      }
     } catch { setError('Failed to load performance data.'); }
     finally { setLoading(false); }
   }, [fleetId, hoursBack, authKey]);
@@ -550,7 +619,7 @@ export default function PerformanceDashboard() {
         {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
         {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} fleetId={fleetId} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} fleetId={fleetId} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </main>
@@ -558,8 +627,8 @@ export default function PerformanceDashboard() {
   );
 }
 
-function IndexView({ data, hourlyData, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading }: {
-  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; fleetId: string; authKey?: string;
+function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading }: {
+  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
   onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => void;
@@ -603,21 +672,23 @@ function IndexView({ data, hourlyData, fleetId, authKey, onSelectAgent, onSelect
     const totalCacheRead = displayHourly.reduce((a, h) => a + h.cacheReadTokens, 0);
     const totalCost = displayHourly.reduce((a, h) => a + h.costMicros, 0);
     const avgInputPrice = totalInput > 0 ? (totalCost / (totalInput + totalCacheRead * 0.1)) : 0;
-    const micros = totalCacheRead * avgInputPrice * 0.9;
-    return { micros, cacheReadTokens: totalCacheRead };
-  }, [displayHourly]);
+    const cacheMicros = totalCacheRead * avgInputPrice * 0.9;
+    const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
+    const totalMicros = cacheMicros + govCostMicros;
+    return { totalMicros, cacheMicros, cacheReadTokens: totalCacheRead, govTokensSaved: govSavings?.tokensSaved ?? 0, govCostMicros };
+  }, [displayHourly, govSavings]);
 
   return (
     <>
       <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
         <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
         <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-        <MetricCard label="Est. Savings" value={fmtCost(savings.micros)} sub={savings.cacheReadTokens > 0 ? `${fmtTokens(savings.cacheReadTokens)} cached` : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+        <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? `cache + governance` : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
         <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
         <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
       </div>
 
-      {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} /></div>}
+      {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} /></div>}
 
       {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
 
