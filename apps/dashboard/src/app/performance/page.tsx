@@ -319,17 +319,19 @@ function MetricDrillDown({ metric, models, hourly }: { metric: string; models: P
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Error Rate Breakdown</h3>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Error rate = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as "Other".</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { label: 'Total Calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
-            { label: 'Complete', value: totalComplete.toLocaleString(), color: 'var(--brand)' },
-            { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)' },
-            { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)' },
+            { label: 'Complete', value: totalComplete.toLocaleString(), color: 'var(--brand)', desc: 'Successful responses' },
+            { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)', desc: 'API errors + interrupted' },
+            { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)', desc: 'Cancelled, blocked, unknown' },
             { label: 'Error Rate', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 100 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
               <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: s.color }}>{s.value}</div>
+              {'desc' in s && <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>{(s as { desc: string }).desc}</div>}
             </div>
           ))}
         </div>
@@ -352,6 +354,51 @@ function MetricDrillDown({ metric, models, hourly }: { metric: string; models: P
           </>
         )}
         {errorHours.length === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No errors in the selected time window.</div>}
+      </div>
+    );
+  }
+
+  if (metric === 'savings') {
+    const totalInput = hourly.reduce((s, h) => s + h.inputTokens, 0);
+    const totalCacheRead = hourly.reduce((s, h) => s + h.cacheReadTokens, 0);
+    const totalCacheWrite = hourly.reduce((s, h) => s + h.cacheWriteTokens, 0);
+    const totalCost = hourly.reduce((s, h) => s + h.costMicros, 0);
+    const cacheHitRate = (totalInput + totalCacheRead) > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0;
+    const avgInputPrice = totalInput > 0 ? (totalCost / (totalInput + totalCacheRead * 0.1)) : 0;
+    const savingsMicros = totalCacheRead * avgInputPrice * 0.9;
+    return (
+      <div style={{ ...CARD, marginBottom: 16 }}>
+        <h3 style={H3}>Savings Breakdown</h3>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from prompt caching. Cache reads cost ~10% of input token price — savings represent the difference vs. processing all tokens as fresh input.</div>
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache Savings</div>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16 }}>
+          {[
+            { label: 'Est. Saved', value: fmtCost(savingsMicros), color: 'var(--ok)' },
+            { label: 'Cache Hit Rate', value: `${(cacheHitRate * 100).toFixed(1)}%`, color: cacheHitRate > 0.3 ? 'var(--ok)' : 'var(--tx)' },
+            { label: 'Cache Read Tokens', value: fmtTokens(totalCacheRead), color: 'var(--tx)' },
+            { label: 'Cache Write Tokens', value: fmtTokens(totalCacheWrite), color: 'var(--tx)' },
+            { label: 'Fresh Input Tokens', value: fmtTokens(totalInput), color: 'var(--tx)' },
+          ].map((s, i) => (
+            <div key={i} style={{ minWidth: 120 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: s.color }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {totalCacheRead > 0 && (
+          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <div style={{ width: '100%', height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden' }}>
+                <div style={{ width: `${(cacheHitRate * 100).toFixed(1)}%`, height: '100%', borderRadius: 4, background: 'var(--ok)' }} />
+              </div>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11, whiteSpace: 'nowrap' }}>{(cacheHitRate * 100).toFixed(1)}%</span>
+            </div>
+            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed.</span>
+          </div>
+        )}
+        {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No cache activity in the selected time window. Enable prompt caching to reduce input token costs.</div>}
       </div>
     );
   }
@@ -551,11 +598,21 @@ function IndexView({ data, hourlyData, fleetId, authKey, onSelectAgent, onSelect
   const displayHourly = mid > 0 ? hourly.slice(mid) : hourly;
   const trends = useMemo(() => hourly.length > 1 ? computeTrends(hourly) : { calls: null, cost: null, latency: null, errorRate: null }, [hourly]);
 
+  const savings = useMemo(() => {
+    const totalInput = displayHourly.reduce((a, h) => a + h.inputTokens, 0);
+    const totalCacheRead = displayHourly.reduce((a, h) => a + h.cacheReadTokens, 0);
+    const totalCost = displayHourly.reduce((a, h) => a + h.costMicros, 0);
+    const avgInputPrice = totalInput > 0 ? (totalCost / (totalInput + totalCacheRead * 0.1)) : 0;
+    const micros = totalCacheRead * avgInputPrice * 0.9;
+    return { micros, cacheReadTokens: totalCacheRead };
+  }, [displayHourly]);
+
   return (
     <>
       <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
         <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
         <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+        <MetricCard label="Est. Savings" value={fmtCost(savings.micros)} sub={savings.cacheReadTokens > 0 ? `${fmtTokens(savings.cacheReadTokens)} cached` : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
         <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
         <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
       </div>
