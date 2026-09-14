@@ -2,6 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
+import { syncEntitlementsToEngine } from '@/lib/entitlements';
 
 export interface UserProvisioning {
   apiKey: string | null;
@@ -50,6 +51,11 @@ export async function upsertUserProvisioning(input: {
        updated_at = now()`,
     [userId, session?.user?.email ?? null, session?.user?.name ?? null, input.apiKey, input.fleetId, input.fleetToken],
   );
+
+  // The fleet provisioned at sign-in has no user_fleets row, so nothing else
+  // would ever tell the engine what it's entitled to. Without this a paying
+  // customer's main fleet silently runs on free limits.
+  await syncEntitlementsToEngine(userId);
 }
 
 export async function setByok(value: boolean): Promise<void> {
