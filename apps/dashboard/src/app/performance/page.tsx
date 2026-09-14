@@ -185,26 +185,178 @@ function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
 
 const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'evaluating', 'validated'] as const;
 
-function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert }: {
+function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, onClick, active }: {
   label: string; value: string; sub?: string; warn?: boolean;
   sparklineData?: (number | null)[]; sparklineColor?: string;
   trend?: number | null; trendInvert?: boolean;
+  onClick?: () => void; active?: boolean;
 }) {
   return (
-    <div style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0 }}>
+    <div onClick={onClick} style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0, cursor: onClick ? 'pointer' : undefined, borderColor: active ? 'var(--brand)' : 'var(--line)', transition: 'border-color 0.15s', position: 'relative', paddingBottom: sparklineData && sparklineData.length > 1 ? 48 : 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx3)' }}>{label}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--brand)' : 'var(--tx3)' }}>{label}</div>
         <TrendBadge value={trend ?? null} invert={trendInvert} />
       </div>
       <div style={{ fontSize: 24, fontWeight: 700, fontFamily: FONT_MONO, color: warn ? 'var(--warn)' : 'var(--tx)' }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
       {sparklineData && sparklineData.length > 1 && (
-        <div style={{ marginTop: 8, marginLeft: -20, marginRight: -20, marginBottom: -16 }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
           <Sparkline data={sparklineData} color={sparklineColor} />
         </div>
       )}
     </div>
   );
+}
+
+function MetricDrillDown({ metric, models, hourly }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[] }) {
+  const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' };
+  const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 12, fontFamily: FONT_MONO, color: 'var(--tx)' };
+  const TDR: React.CSSProperties = { ...TD, textAlign: 'right' };
+
+  if (metric === 'requests') {
+    const totalCalls = models.reduce((s, m) => s + m.calls, 0);
+    const peakHour = hourly.length > 0 ? hourly.reduce((a, b) => b.calls > a.calls ? b : a) : null;
+    return (
+      <div style={{ ...CARD, marginBottom: 16 }}>
+        <h3 style={H3}>Requests Breakdown</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 16 }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Input Tokens</th><th style={{ ...TH, textAlign: 'right' }}>Output Tokens</th></tr></thead>
+              <tbody>{models.sort((a, b) => b.calls - a.calls).map((m, i) => (
+                <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
+                  <td style={TD}>{m.model ?? 'unknown'}</td>
+                  <td style={TDR}>{m.calls.toLocaleString()}</td>
+                  <td style={TDR}>{totalCalls > 0 ? `${((m.calls / totalCalls) * 100).toFixed(1)}%` : '--'}</td>
+                  <td style={TDR}>{fmtTokens(m.inputTokens)}</td>
+                  <td style={TDR}>{fmtTokens(m.outputTokens)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          {peakHour && peakHour.calls > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--tx2)', minWidth: 140 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Peak Hour</div>
+              <div style={{ fontFamily: FONT_MONO }}>{new Date(peakHour.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: 'var(--tx)' }}>{peakHour.calls} calls</div>
+              <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Completion</div>
+              <div style={{ fontFamily: FONT_MONO }}>{peakHour.completeCount} complete · {peakHour.errorCount} errors</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (metric === 'spend') {
+    const totalCost = models.reduce((s, m) => s + m.costMicros, 0);
+    const totalInput = models.reduce((s, m) => s + m.inputTokens, 0);
+    const totalOutput = models.reduce((s, m) => s + m.outputTokens, 0);
+    return (
+      <div style={{ ...CARD, marginBottom: 16 }}>
+        <h3 style={H3}>Spend Breakdown</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Cost</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Input</th><th style={{ ...TH, textAlign: 'right' }}>Output</th><th style={{ ...TH, textAlign: 'right' }}>Cost/Call</th></tr></thead>
+            <tbody>{models.sort((a, b) => b.costMicros - a.costMicros).map((m, i) => (
+              <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
+                <td style={TD}>{m.model ?? 'unknown'}</td>
+                <td style={{ ...TDR, color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
+                <td style={TDR}>{totalCost > 0 ? `${((m.costMicros / totalCost) * 100).toFixed(1)}%` : '--'}</td>
+                <td style={TDR}>{m.calls.toLocaleString()}</td>
+                <td style={TDR}>{fmtTokens(m.inputTokens)}</td>
+                <td style={TDR}>{fmtTokens(m.outputTokens)}</td>
+                <td style={TDR}>{m.calls > 0 ? fmtCost(m.costMicros / m.calls) : '--'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <div style={{ display: 'flex', gap: 24, marginTop: 12, fontSize: 12, color: 'var(--tx2)' }}>
+          <span>Total tokens: {fmtTokens(totalInput + totalOutput)}</span>
+          <span>Input: {fmtTokens(totalInput)}</span>
+          <span>Output: {fmtTokens(totalOutput)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (metric === 'latency') {
+    const withLatency = hourly.filter(h => h.latencyP50Ms != null && h.latencyP50Ms > 0);
+    const min = withLatency.length > 0 ? Math.min(...withLatency.map(h => h.latencyP50Ms!)) : null;
+    const max = withLatency.length > 0 ? Math.max(...withLatency.map(h => h.latencyP50Ms!)) : null;
+    const totalWeight = withLatency.reduce((s, h) => s + h.latencyCount, 0);
+    const weightedAvg = totalWeight > 0 ? withLatency.reduce((s, h) => s + h.latencyP50Ms! * h.latencyCount, 0) / totalWeight : null;
+    const slowest = withLatency.length > 0 ? withLatency.reduce((a, b) => b.latencyP50Ms! > a.latencyP50Ms! ? b : a) : null;
+    const fastest = withLatency.length > 0 ? withLatency.reduce((a, b) => b.latencyP50Ms! < a.latencyP50Ms! ? b : a) : null;
+    return (
+      <div style={{ ...CARD, marginBottom: 16 }}>
+        <h3 style={H3}>Response Time Breakdown</h3>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Approximate p50 — weighted average of per-bucket medians, not a true fleet percentile.</div>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          {[
+            { label: 'Weighted Avg', value: fmtLatency(weightedAvg) },
+            { label: 'Fastest Hour', value: fastest ? `${fmtLatency(min)} at ${new Date(fastest.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '--' },
+            { label: 'Slowest Hour', value: slowest ? `${fmtLatency(max)} at ${new Date(slowest.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '--' },
+            { label: 'Hours with Data', value: `${withLatency.length} / ${hourly.length}` },
+            { label: 'Total Measured Calls', value: totalWeight.toLocaleString() },
+          ].map((s, i) => (
+            <div key={i} style={{ minWidth: 120 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 14, fontFamily: FONT_MONO, fontWeight: 600, color: 'var(--tx)' }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (metric === 'errors') {
+    const totalCalls = hourly.reduce((s, h) => s + h.calls, 0);
+    const totalErrors = hourly.reduce((s, h) => s + h.errorCount, 0);
+    const totalComplete = hourly.reduce((s, h) => s + h.completeCount, 0);
+    const totalOther = totalCalls - totalComplete - totalErrors;
+    const errorHours = hourly.filter(h => h.errorCount > 0).sort((a, b) => b.errorCount - a.errorCount);
+    return (
+      <div style={{ ...CARD, marginBottom: 16 }}>
+        <h3 style={H3}>Error Rate Breakdown</h3>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
+          {[
+            { label: 'Total Calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
+            { label: 'Complete', value: totalComplete.toLocaleString(), color: 'var(--brand)' },
+            { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)' },
+            { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)' },
+            { label: 'Error Rate', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
+          ].map((s, i) => (
+            <div key={i} style={{ minWidth: 100 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: s.color }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+        {errorHours.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 6 }}>Hours with Errors</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={TH}>Time</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Errors</th><th style={{ ...TH, textAlign: 'right' }}>Rate</th></tr></thead>
+                <tbody>{errorHours.slice(0, 10).map((h, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
+                    <td style={TD}>{new Date(h.hour).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td style={TDR}>{h.calls.toLocaleString()}</td>
+                    <td style={{ ...TDR, color: 'var(--bad)' }}>{h.errorCount}</td>
+                    <td style={{ ...TDR, color: 'var(--bad)' }}>{h.calls > 0 ? `${((h.errorCount / h.calls) * 100).toFixed(1)}%` : '--'}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </>
+        )}
+        {errorHours.length === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No errors in the selected time window.</div>}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function Btn({ label, onClick, loading, accent }: { label: string; onClick: () => void; loading: boolean; accent?: boolean }) {
@@ -391,6 +543,9 @@ function IndexView({ data, hourlyData, fleetId, authKey, onSelectAgent, onSelect
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
 
+  const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
+  const toggleMetric = (m: string) => setExpandedMetric(prev => prev === m ? null : m);
+
   const hourly = hourlyData?.hourly ?? [];
   const mid = Math.floor(hourly.length / 2);
   const displayHourly = mid > 0 ? hourly.slice(mid) : hourly;
@@ -398,12 +553,14 @@ function IndexView({ data, hourlyData, fleetId, authKey, onSelectAgent, onSelect
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} />
-        <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert />
-        <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert />
-        <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert />
+      <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
+        <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
+        <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+        <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
+        <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
       </div>
+
+      {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} /></div>}
 
       {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
 
