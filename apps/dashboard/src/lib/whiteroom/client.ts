@@ -29,6 +29,7 @@ import type {
   RecommendationGetResult,
   RecommendationBriefResult,
   RecommendationExportMarkdownResult,
+  FleetHourlyResult,
   RebindResult,
   RegisterResult,
   StoreKeyResult,
@@ -492,9 +493,21 @@ export function performanceHealth(fleetId: string, key?: string): Promise<Perfor
   return apiCall<PerformanceHealthResult>({ action: 'performance_health', fleet_id: fleetId }, key);
 }
 
+export function performanceFleetHourly(
+  fleetId: string,
+  hoursBack?: number,
+  key?: string,
+): Promise<FleetHourlyResult> {
+  return apiCall<FleetHourlyResult>({
+    action: 'performance_fleet_hourly',
+    fleet_id: fleetId,
+    hours_back: hoursBack,
+  }, key);
+}
+
 export function performanceRecommendationsList(
   fleetId: string,
-  opts?: { status?: string; agentId?: string; cursor?: string; pageSize?: number },
+  opts?: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean },
   key?: string,
 ): Promise<PaginatedRecommendationsResult> {
   return apiCall<PaginatedRecommendationsResult>({
@@ -505,6 +518,7 @@ export function performanceRecommendationsList(
     agent_id: opts?.agentId,
     cursor: opts?.cursor,
     page_size: opts?.pageSize,
+    include_summaries: opts?.includeSummaries,
   }, key);
 }
 

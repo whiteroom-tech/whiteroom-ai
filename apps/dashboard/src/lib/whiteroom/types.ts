@@ -254,6 +254,28 @@ export interface RecommendationDetail {
   feedbackCount: number;
   createdAt: string;
   updatedAt: string;
+  summary?: string | null;
+}
+
+export interface FleetHourlyDataPoint {
+  hour: string;
+  calls: number;
+  completeCount: number;
+  errorCount: number;
+  costMicros: number;
+  latencyP50Ms: number | null;
+  latencyCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+export interface FleetHourlyResult {
+  fleetId: string;
+  period: { start: string; end: string };
+  hourly: FleetHourlyDataPoint[];
+  error?: string;
 }
 
 export interface PaginatedRecommendationsResult {
