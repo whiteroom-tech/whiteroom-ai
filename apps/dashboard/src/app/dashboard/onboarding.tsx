@@ -20,7 +20,10 @@ interface Props {
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  azure: 'Azure OpenAI',
 };
+
+type ProviderTab = 'direct' | 'azure' | 'aws';
 
 // BYOK: one account can connect several provider keys at once. The engine
 // keeps them per fleet as a list and issues each key its own proxy URL, so an
@@ -28,14 +31,13 @@ const PROVIDER_LABELS: Record<string, string> = {
 // projects) sit side by side rather than one replacing the other. Only a hash
 // and the last four characters are stored — the raw key never leaves the
 // customer's control except as a per-request forward to the provider.
-function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: string; fleetToken: string | null }) {
+function ByokCard({ apiKey, fleetId, fleetToken, tab }: { apiKey: string; fleetId: string; fleetToken: string | null; tab: ProviderTab }) {
   const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
   const [keys, setKeys] = useState<ProviderKey[] | null>(null);
   const [value, setValue] = useState('');
+  const [endpoint, setEndpoint] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [msg, setMsg] = useState('');
-  // The full proxy URL comes back once, at creation, and is never listed
-  // again — surface it immediately or it is lost.
   const [issued, setIssued] = useState<{ proxyUrl: string; keyHint: string; provider: string } | null>(null);
 
   const refresh = useCallback(async (): Promise<ProviderKey[]> => {
@@ -49,27 +51,44 @@ function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: st
     refresh().catch(() => setKeys([]));
   }, [refresh]);
 
+  const isAzure = tab === 'azure';
+
   async function connect() {
     const key = value.trim();
-    if (!/^sk-/.test(key) || key.length < 12) {
-      setStatus('error');
-      setMsg('That does not look like a provider API key (sk-ant-… for Anthropic, sk-… for OpenAI).');
-      return;
+    if (isAzure) {
+      if (key.length < 12) {
+        setStatus('error');
+        setMsg('Enter your Azure API key (from the Azure portal → Keys and Endpoint).');
+        return;
+      }
+      const ep = endpoint.trim();
+      if (!ep) {
+        setStatus('error');
+        setMsg('Enter your Azure endpoint URL (e.g. https://myresource.openai.azure.com).');
+        return;
+      }
+      if (!/^https:\/\/.+\.(openai\.azure\.com|services\.ai\.azure\.com|cognitiveservices\.azure\.com)/.test(ep)) {
+        setStatus('error');
+        setMsg('Endpoint must be an Azure OpenAI URL (e.g. https://myresource.openai.azure.com).');
+        return;
+      }
+    } else {
+      if (!/^sk-/.test(key) || key.length < 12) {
+        setStatus('error');
+        setMsg('That does not look like a provider API key (sk-ant-… for Anthropic, sk-… for OpenAI).');
+        return;
+      }
     }
     setStatus('saving'); setMsg('');
     try {
-      const result = await storeProviderKey(auth, key);
+      const result = await storeProviderKey(auth, key, isAzure ? endpoint.trim() : undefined);
       if (!result.success || !result.proxyUrl) {
         setStatus('error'); setMsg(result.error || 'Could not connect that key.'); return;
       }
-      setIssued({
-        proxyUrl: result.proxyUrl,
-        keyHint: result.keyHint ?? key.slice(-4),
-        provider: result.provider ?? (key.startsWith('sk-ant-') ? 'anthropic' : 'openai'),
-      });
-      setValue(''); setStatus('idle');
+      const provider = isAzure ? 'azure' : (result.provider ?? (key.startsWith('sk-ant-') ? 'anthropic' : 'openai'));
+      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? key.slice(-4), provider });
+      setValue(''); setEndpoint(''); setStatus('idle');
       await refresh();
-      // Persist only the flag — never the raw provider key — on the account.
       await setByok(true);
     } catch (e) {
       setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
@@ -93,12 +112,18 @@ function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: st
     }
   }
 
+  function issuedEnvHint(p: string, url: string) {
+    if (p === 'azure') return `export AZURE_OPENAI_ENDPOINT=${url}`;
+    if (p === 'openai') return `export OPENAI_BASE_URL=${url}/v1`;
+    return `export ANTHROPIC_BASE_URL=${url}`;
+  }
+
   return (
     <section className="rounded-xl p-6 space-y-3" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
       <div>
         <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Bring Your Own Key</h3>
         <p className="text-xs mt-1" style={{ color: '#4E607F' }}>
-          Connect as many provider keys as you need — Anthropic, OpenAI, or several of each. Every key gets its own
+          Connect as many provider keys as you need — Anthropic, OpenAI, or Azure. Every key gets its own
           proxy URL, and we store only a hash. The key stays yours.
         </p>
       </div>
@@ -113,9 +138,7 @@ function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: st
             <CopyButton text={issued.proxyUrl} />
           </div>
           <p className="text-[11px] font-mono break-all" style={{ color: '#4E607F' }}>
-            {issued.provider === 'openai'
-              ? `export OPENAI_BASE_URL=${issued.proxyUrl}/v1`
-              : `export ANTHROPIC_BASE_URL=${issued.proxyUrl}`}
+            {issuedEnvHint(issued.provider, issued.proxyUrl)}
           </p>
         </div>
       )}
@@ -137,6 +160,11 @@ function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: st
               <span className="text-xs" style={{ color: '#4E607F' }}>
                 added {new Date(k.createdAt).toLocaleDateString()}
               </span>
+              {k.endpoint && (
+                <span className="text-xs font-mono truncate max-w-[200px]" style={{ color: '#4E607F' }} title={k.endpoint}>
+                  {k.endpoint}
+                </span>
+              )}
               <button
                 onClick={() => disconnect(k)}
                 disabled={status === 'saving'}
@@ -152,31 +180,80 @@ function ByokCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: st
         <p className="text-xs" style={{ color: '#4E607F' }}>No provider keys connected yet.</p>
       )}
 
-      <div className="flex items-center gap-2">
-        <input
-          type="password"
-          value={value}
-          onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
-          placeholder={keys && keys.length > 0 ? 'Add another key — sk-ant-… or sk-…' : 'sk-ant-…'}
-          className="flex-1 rounded-lg px-4 py-3 text-sm font-mono"
-          style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
-        />
-        <button
-          onClick={connect}
-          disabled={status === 'saving'}
-          className="shrink-0 px-5 py-3 rounded-lg text-sm font-semibold cursor-pointer"
-          style={{ background: '#132038', color: '#38E1FF', border: '1px solid #1B2740', opacity: status === 'saving' ? 0.6 : 1 }}
-        >
-          {status === 'saving' ? 'Working…' : 'Connect'}
-        </button>
+      <div className="space-y-2">
+        {isAzure && (
+          <input
+            type="text"
+            value={endpoint}
+            onChange={(e) => { setEndpoint(e.target.value); setStatus('idle'); }}
+            placeholder="Azure endpoint — https://myresource.openai.azure.com"
+            className="w-full rounded-lg px-4 py-3 text-sm font-mono"
+            style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <input
+            type="password"
+            value={value}
+            onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
+            placeholder={isAzure
+              ? 'Azure API key'
+              : (keys && keys.length > 0 ? 'Add another key — sk-ant-… or sk-…' : 'sk-ant-…')}
+            className="flex-1 rounded-lg px-4 py-3 text-sm font-mono"
+            style={{ background: '#070B14', border: '1px solid #15203A', color: '#EAF1FF' }}
+          />
+          <button
+            onClick={connect}
+            disabled={status === 'saving'}
+            className="shrink-0 px-5 py-3 rounded-lg text-sm font-semibold cursor-pointer"
+            style={{ background: '#132038', color: '#38E1FF', border: '1px solid #1B2740', opacity: status === 'saving' ? 0.6 : 1 }}
+          >
+            {status === 'saving' ? 'Working…' : 'Connect'}
+          </button>
+        </div>
       </div>
       {status === 'error' && <p className="text-xs" style={{ color: '#ef4444' }}>{msg}</p>}
     </section>
   );
 }
 
+const PROVIDER_TABS: { key: ProviderTab; label: string; soon?: boolean }[] = [
+  { key: 'direct', label: 'Anthropic / OpenAI' },
+  { key: 'azure', label: 'Azure OpenAI' },
+  { key: 'aws', label: 'AWS Bedrock', soon: true },
+];
+
+function ProviderPills({ value, onChange }: { value: ProviderTab; onChange: (v: ProviderTab) => void }) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {PROVIDER_TABS.map((t) => {
+        const active = value === t.key;
+        return (
+          <button
+            key={t.key}
+            onClick={() => !t.soon && onChange(t.key)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all cursor-pointer"
+            style={{
+              background: active ? 'rgba(56,225,255,.12)' : 'transparent',
+              border: `1px solid ${active ? 'rgba(56,225,255,.3)' : '#1B2740'}`,
+              color: active ? '#38E1FF' : (t.soon ? '#3A4660' : '#6B7C9E'),
+              cursor: t.soon ? 'default' : 'pointer',
+            }}
+          >
+            {t.label}
+            {t.soon && (
+              <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: '#3A4660' }}>Soon</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, isNew }: Props) {
   const [showKey, setShowKey] = useState(isNew);
+  const [tab, setTab] = useState<ProviderTab>('direct');
 
   useEffect(() => {
     if (fleetToken) localStorage.setItem('wr_fleet_token', fleetToken);
@@ -220,6 +297,9 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           </div>
         )}
 
+        {/* Provider selector */}
+        <ProviderPills value={tab} onChange={setTab} />
+
         {/* Getting Started */}
         <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
           <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
@@ -230,13 +310,27 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
               <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
               <div className="flex-1 space-y-3">
                 <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Point your agent at WhiteRoom</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Change one URL so your agent&apos;s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.</p>
+                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>
+                    {tab === 'azure' ? 'Connect your Azure key' : 'Point your agent at WhiteRoom'}
+                  </p>
+                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>
+                    {tab === 'azure'
+                      ? 'Add your Azure API key and endpoint in the Bring Your Own Key section below. You\'ll get a proxy URL to use in your agent.'
+                      : 'Change one URL so your agent’s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.'}
+                  </p>
                 </div>
-                <div className="space-y-2">
-                  <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
-                  <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
-                </div>
+                {tab === 'direct' && (
+                  <div className="space-y-2">
+                    <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
+                    <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
+                  </div>
+                )}
+                {tab === 'azure' && (
+                  <div className="space-y-2">
+                    <CodeBlock label="Set your proxy URL (you'll get this after connecting your key)" code="export AZURE_OPENAI_ENDPOINT=https://proxy.whiteroom.tech/<your-proxy-key>" />
+                    <CodeBlock label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -267,7 +361,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
         </section>
 
         {/* Bring Your Own Key */}
-        <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />
+        <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} />
 
         {/* Live Dashboard + Fleet Status row */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
