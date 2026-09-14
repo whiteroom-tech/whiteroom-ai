@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, fleetReport, auditLog } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, auditLog } from '@/lib/whiteroom/client';
 import { resolveAuthKey } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { Sidebar } from '@/components/Sidebar';
@@ -491,19 +491,20 @@ export default function PerformanceDashboard() {
     if (!fleetId) return;
     setLoading(true); setError('');
     try {
-      const [idx, hourly, report, audit] = await Promise.all([
+      const [idx, hourly, audit] = await Promise.all([
         performanceIndex(fleetId, hoursBack, authKey),
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
-        fleetReport(fleetId, authKey).catch(() => null),
         auditLog({ fleetId, limit: 2000 }, authKey).catch(() => null),
       ]);
       if (idx.error) { setError(idx.error); return; }
       setIndexData(idx);
       if (!hourly.error) setHourlyData(hourly);
 
-      if (report && !report.error && audit) {
+      if (audit) {
+        const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
         let hSaved = 0, oSaved = 0, handoverCount = 0, taskCount = 0;
         for (const e of audit.entries) {
+          if (new Date(e.timestamp).getTime() < cutoff) continue;
           const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
           if (isHandover) {
             handoverCount++;
