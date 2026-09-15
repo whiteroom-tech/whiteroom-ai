@@ -99,9 +99,12 @@ export function Sidebar() {
 
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
-      <div className="flex items-center gap-2.5" style={{ padding: '5px 10px 18px' }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 9px var(--ok)', animation: 'pulse-dot 2s infinite' }} />
-        <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' as const }}>WHITE ROOM</span>
+      <div style={{ padding: '5px 10px 18px' }}>
+        <div className="flex items-center gap-2.5">
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 9px var(--ok)', animation: 'pulse-dot 2s infinite' }} />
+          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' as const }}>WHITE ROOM</span>
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1.8, color: 'var(--tx3)', marginTop: 6, paddingLeft: 18, textTransform: 'uppercase' as const }}>Citadel — Control Panel</div>
       </div>
 
       {NAV_GROUPS.map((group) => (
