@@ -35,9 +35,15 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
   // Local development, and any deployment that hasn't split the hosts yet.
   // Nothing should change for them.
   it('lets everything through, /admin included', () => {
-    for (const path of ['/admin', '/admin/u-1', '/settings', '/fleet', '/']) {
+    for (const path of ['/admin', '/admin/u-1', '/settings', '/']) {
       expect(verdict(proxy(req(APP, path)))).toBe('pass');
     }
+  });
+
+  it('redirects legacy routes to Citadel equivalents', () => {
+    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/performance')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
   });
 
   it('treats an empty ADMIN_HOST as unset rather than as a host named ""', () => {
@@ -57,9 +63,16 @@ describe('the app host', () => {
 
   it('leaves the rest of the app alone', () => {
     process.env.ADMIN_HOST = ADMIN;
-    for (const path of ['/settings', '/fleet', '/performance', '/api/auth/session', '/']) {
+    for (const path of ['/settings', '/api/auth/session', '/']) {
       expect(verdict(proxy(req(APP, path)))).toBe('pass');
     }
+  });
+
+  it('redirects legacy routes even with ADMIN_HOST set', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/performance')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
   });
 
   // /administrators would start with "/admin" on a naive prefix check.
