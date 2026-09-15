@@ -1,17 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { FONT_DISPLAY } from '@whiteroom/ui';
-
-export type FleetPage = 'live' | 'analytics' | 'visualization';
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ReactNode;
-  match?: (path: string) => boolean;
+  match: (path: string, tab: string | null) => boolean;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
 }
 
 interface SoonItem {
@@ -34,12 +37,39 @@ const ICONS = {
   performance: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
 };
 
-const NAV_ITEMS: NavItem[] = [
-  { href: '/fleet', label: 'Fleet', icon: ICONS.fleet, match: (p) => p === '/fleet' || (p.startsWith('/fleet') && !p.includes('tab=analytics')) },
-  { href: '/fleet?tab=analytics', label: 'Analytics', icon: ICONS.analytics, match: (p) => p.includes('tab=analytics') },
-  { href: '/performance', label: 'Performance', icon: ICONS.performance, match: (p) => p.startsWith('/performance') },
-  { href: '/sandbox', label: 'Sandbox', icon: ICONS.sandbox, match: (p) => p.startsWith('/sandbox') },
-  { href: '/settings', label: 'Settings', icon: ICONS.settings, match: (p) => p.startsWith('/settings') },
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'AGENTS',
+    items: [
+      {
+        href: '/agents',
+        label: 'Overview',
+        icon: ICONS.fleet,
+        match: (path, tab) =>
+          (path === '/agents' && (tab === null || tab === 'overview' || (tab !== 'performance'))) ||
+          path === '/fleet',
+      },
+      {
+        href: '/agents?tab=performance',
+        label: 'Performance',
+        icon: ICONS.performance,
+        match: (path, tab) =>
+          (path === '/agents' && tab === 'performance') ||
+          path === '/performance',
+      },
+    ],
+  },
+  {
+    label: 'CONTROLS',
+    items: [
+      {
+        href: '/controls',
+        label: 'Test Runs',
+        icon: ICONS.sandbox,
+        match: (path) => path === '/controls' || path === '/sandbox',
+      },
+    ],
+  },
 ];
 
 const SOON_ITEMS: SoonItem[] = [
@@ -49,16 +79,23 @@ const SOON_ITEMS: SoonItem[] = [
   { label: 'Compliance', icon: ICONS.compliance },
   { label: 'Eval results', icon: ICONS.eval, group: 'Evaluation' },
   { label: 'Builder', icon: ICONS.builder },
+  { label: 'Settings', icon: ICONS.settings, group: 'Manage' },
 ];
 
-export function Sidebar({ fleetId }: { fleetId?: string } & (
-  | { active: FleetPage; onNavigate: (page: FleetPage) => void }
-  | { active?: never; onNavigate?: never }
-)) {
+export function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const fullPath = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '');
+  const tab = searchParams.get('tab');
   const [roadmapOpen, setRoadmapOpen] = useState(false);
+
+  const [fleetId, setFleetId] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setFleetId(localStorage.getItem('wr_fleet'));
+    read();
+    window.addEventListener('storage', read);
+    window.addEventListener('focus', read);
+    return () => { window.removeEventListener('storage', read); window.removeEventListener('focus', read); };
+  }, []);
 
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
@@ -67,25 +104,32 @@ export function Sidebar({ fleetId }: { fleetId?: string } & (
         <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' as const }}>WHITE ROOM</span>
       </div>
 
-      {NAV_ITEMS.map((item) => {
-        const isActive = item.match ? item.match(fullPath) : fullPath === item.href;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex items-center gap-2.5"
-            style={{
-              padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600, textAlign: 'left' as const, width: '100%',
-              textDecoration: 'none',
-              background: isActive ? 'var(--brand-dim)' : 'transparent',
-              color: isActive ? 'var(--brand)' : 'var(--tx2)',
-            }}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
+      {NAV_GROUPS.map((group) => (
+        <div key={group.label} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', padding: '8px 10px 4px', textTransform: 'uppercase' as const }}>
+            {group.label}
+          </div>
+          {group.items.map((item) => {
+            const isActive = item.match(pathname, tab);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center gap-2.5"
+                style={{
+                  padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600, textAlign: 'left' as const, width: '100%',
+                  textDecoration: 'none',
+                  background: isActive ? 'var(--brand-dim)' : 'transparent',
+                  color: isActive ? 'var(--brand)' : 'var(--tx2)',
+                }}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ))}
 
       <button
         onClick={() => setRoadmapOpen((p) => !p)}

@@ -354,7 +354,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                   <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
                   <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
                 </div>
-                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/fleet" />
+                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/agents" />
               </div>
             </div>
           </div>
@@ -366,7 +366,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
         {/* Live Dashboard + Fleet Status row */}
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
           <a
-            href="/fleet"
+            href="/agents"
             className="rounded-xl p-6 flex items-center gap-4 transition-all group"
             style={{ background: '#0A1020', border: '1px solid #1B2740', textDecoration: 'none' }}
           >
