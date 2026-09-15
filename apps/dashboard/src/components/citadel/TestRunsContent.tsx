@@ -15,6 +15,13 @@ import {
   startDemo,
   sandboxHistory as fetchHistory,
   auditLog,
+  controlCatalog,
+  defineControl,
+  removeControl,
+  listControls,
+  setControlRequired,
+  resetControlEvidence,
+  goLive,
   PROXY_URL,
   type CreateSandboxResult,
   type SandboxStatusResult,
@@ -24,10 +31,10 @@ import {
   type SandboxAgentInfo,
   type SandboxAuditEntry,
 } from '@/lib/whiteroom/client';
-import type { AuditEntry } from '@/lib/whiteroom/types';
+import type { AuditEntry, CatalogEntry, ControlDefinition, ReadinessAssessment, CustomControlInput } from '@/lib/whiteroom/types';
 import type { FeedVariant } from '@/lib/activity';
 
-type Phase = 'interstitial' | 'setup' | 'checklist' | 'go-live' | 'expired';
+type Phase = 'interstitial' | 'recommend' | 'configure' | 'connecting' | 'checklist' | 'go-live' | 'expired';
 
 const ASSERTION_LABELS: Record<string, { label: string; hint: string; required: boolean }> = {
   basic_connect: { label: 'Connected', hint: 'Agent registered and first call proxied', required: true },
@@ -42,9 +49,31 @@ const ASSERTION_LABELS: Record<string, { label: string; hint: string; required: 
   policy_decision_audited: { label: 'Decision audited', hint: 'Both decisions in verified audit chain', required: false },
 };
 
+const CONTROL_HINTS: Record<string, string> = {
+  'core.connect': 'Verifies your agent can reach the WhiteRoom proxy and that its first API call is successfully intercepted.',
+  'core.handoff': 'Confirms the agent produces a handover document when its watch timer expires, so context is preserved between shifts.',
+  'core.resume': 'Checks that an agent can pick up work using the compressed context from a prior handover — the continuity guarantee.',
+  'cat.compression': 'Measures context compression ratio during handovers. Enable to verify that handover docs are actually smaller than raw context.',
+  'cat.rest': 'Confirms agents are blocked from working during mandatory rest periods — the labor-compliance gate.',
+  'cat.disconnect': 'Tests that the watchdog detects a silent or crashed agent and recovers the session gracefully.',
+  'cat.relay': 'Validates multi-agent relay: paired agents can hand off tasks to each other mid-workflow.',
+  'cat.deny': 'Verifies the policy engine detects disallowed tool calls (e.g., bash) in observe mode and logs the violation.',
+  'cat.enforce': 'Confirms enforce mode actively strips disallowed tool calls from responses before they reach the agent.',
+  'cat.audit': 'Checks that every policy decision — observe and enforce — appears in the verified audit chain with correct outcomes.',
+};
+
 function AssertionIcon({ status }: { status: string }) {
   if (status === 'observed') return <span style={{ color: 'var(--ok)', fontSize: 15, fontWeight: 700 }}>✓</span>;
   if (status === 'failed') return <span style={{ color: 'var(--bad)', fontSize: 15, fontWeight: 700 }}>✗</span>;
+  return <span style={{ color: 'var(--tx3)', fontSize: 15 }}>○</span>;
+}
+
+function ControlIcon({ ctrl }: { ctrl: ControlDefinition }) {
+  const live = ctrl.liveEligibility;
+  if (live?.eligible && live.status === 'observed') return <span style={{ color: 'var(--ok)', fontSize: 15, fontWeight: 700 }}>✓</span>;
+  if (live?.eligible && live.status === 'failed') return <span style={{ color: 'var(--bad)', fontSize: 15, fontWeight: 700 }}>✗</span>;
+  if (ctrl.result.liveIncomplete) return <span style={{ color: 'var(--warn)', fontSize: 15, fontWeight: 700 }}>!</span>;
+  if (ctrl.capability === 'unsupported') return <span style={{ color: 'var(--tx3)', fontSize: 13 }}>⊘</span>;
   return <span style={{ color: 'var(--tx3)', fontSize: 15 }}>○</span>;
 }
 
@@ -81,6 +110,16 @@ export function TestRunsContent() {
   const [feedTechnical, setFeedTechnical] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phaseContentRef = useRef<HTMLDivElement>(null);
+
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [selectedCatalogIds, setSelectedCatalogIds] = useState<Set<string>>(new Set());
+  const [controls, setControls] = useState<ControlDefinition[]>([]);
+  const [readiness, setReadiness] = useState<ReadinessAssessment | null>(null);
+  const [policyMode, setPolicyMode] = useState<'observe' | 'enforce'>('observe');
+  const [experience, setExperience] = useState<'legacy' | 'new'>('legacy');
+  const [goLiveError, setGoLiveError] = useState('');
 
   const enrichEntry = useCallback((e: SandboxAuditEntry, agents?: SandboxAgentInfo[]): AuditEntry => {
     const agent = agents?.find(a => a.agentId === e.agentId);
@@ -131,6 +170,15 @@ export function TestRunsContent() {
       const s = await sandboxStatus(sbxUserId);
       if (s.error) return;
       setStatus(s);
+      if (s.experience) setExperience(s.experience);
+      if (s.controls) setControls(s.controls);
+      if (s.overallControlResult || s.liveReady !== undefined || s.demoComplete !== undefined) {
+        setReadiness({
+          liveReady: s.liveReady ?? false,
+          demoComplete: s.demoComplete ?? false,
+          overall: s.overallControlResult ?? { status: 'empty' },
+        });
+      }
       const sbxId = sandboxId || s.sandboxId;
       if (sbxId) fetchAudit(sbxId, s);
       if (s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0) {
@@ -140,7 +188,15 @@ export function TestRunsContent() {
     }, 3000);
   }, [fetchAudit]);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (connectPollRef.current) clearInterval(connectPollRef.current);
+  }, []);
+
+  const navigateToPhase = useCallback((target: Phase) => {
+    setPhase(target);
+    setTimeout(() => phaseContentRef.current?.focus(), 50);
+  }, []);
 
   useEffect(() => {
     async function checkExisting() {
@@ -152,6 +208,15 @@ export function TestRunsContent() {
         } else {
           setSandbox({ success: true, sandboxId: s.sandboxId, expiresAt: s.expiresAt });
           setStatus(s);
+          if (s.experience) setExperience(s.experience);
+          if (s.controls) setControls(s.controls);
+          if (s.overallControlResult || s.liveReady !== undefined) {
+            setReadiness({
+              liveReady: s.liveReady ?? false,
+              demoComplete: s.demoComplete ?? false,
+              overall: s.overallControlResult ?? { status: 'empty' },
+            });
+          }
           setPhase('checklist');
           syncAuditFromStatus(s);
           fetchAudit(s.sandboxId, s);
@@ -163,6 +228,16 @@ export function TestRunsContent() {
     }
     checkExisting();
   }, [userId, startPolling, fetchAudit, syncAuditFromStatus]);
+
+  useEffect(() => {
+    controlCatalog().then(res => {
+      if (res.catalog) {
+        setCatalog(res.catalog);
+        const defaults = new Set(res.catalog.filter(c => c.tier === 'core' || c.defaultRequired).map(c => c.controlId));
+        setSelectedCatalogIds(defaults);
+      }
+    });
+  }, []);
 
   const runDemo = async (sbxId: string) => {
     setDemoRunning(true);
@@ -181,21 +256,38 @@ export function TestRunsContent() {
   const handleCreateSandbox = async (opts: { isTrial?: boolean; apiKey?: string }) => {
     setLoading(true);
     setError('');
-    let result = await createSandbox({ userId, isTrial: opts.isTrial, apiKey: opts.apiKey });
+    const coreIds = new Set(catalog.filter(c => c.tier === 'core').map(c => c.controlId));
+    const nonCoreSelected = Array.from(selectedCatalogIds).filter(id => !coreIds.has(id));
+    const isNew = nonCoreSelected.length > 0 || policyMode !== 'observe';
+    let result = await createSandbox({
+      userId,
+      isTrial: opts.isTrial,
+      apiKey: opts.apiKey,
+      selectedCatalogIds: isNew ? nonCoreSelected : undefined,
+      policyMode: isNew ? policyMode : undefined,
+    });
     if (result.error?.includes('already have an active sandbox')) {
       const st = await sandboxStatus(userId);
       if (st.sandboxId) await destroySandboxApi(st.sandboxId);
-      result = await createSandbox({ userId, isTrial: opts.isTrial, apiKey: opts.apiKey });
+      result = await createSandbox({
+        userId,
+        isTrial: opts.isTrial,
+        apiKey: opts.apiKey,
+        selectedCatalogIds: isNew ? nonCoreSelected : undefined,
+        policyMode: isNew ? policyMode : undefined,
+      });
     }
     if (result.error) { setError(result.error); setLoading(false); return; }
     setSandbox(result);
+    if (result.experience) setExperience(result.experience);
+    if (result.controls) setControls(result.controls);
     if (opts.isTrial) {
-      setPhase('checklist');
+      navigateToPhase('checklist');
       startPolling(userId, result.sandboxId);
       setLoading(false);
       runDemo(result.sandboxId!);
     } else {
-      setPhase('setup');
+      navigateToPhase('connecting');
       setLoading(false);
     }
   };
@@ -206,7 +298,9 @@ export function TestRunsContent() {
     await destroySandboxApi(sandbox.sandboxId);
     setSandbox(null);
     setStatus(null);
-    setPhase('interstitial');
+    setControls([]);
+    setReadiness(null);
+    navigateToPhase('interstitial');
     setPaused(new Set());
     setLoading(false);
     if (pollRef.current) clearInterval(pollRef.current);
@@ -220,7 +314,7 @@ export function TestRunsContent() {
     setPaused(new Set());
     setDemoSteps([]);
     setVisibleSteps(0);
-    setPhase('checklist');
+    navigateToPhase('checklist');
     setLoading(false);
     setAuditEntries([]);
     startPolling(userId, sandbox.sandboxId);
@@ -296,7 +390,59 @@ export function TestRunsContent() {
     runDemo(sandbox.sandboxId);
   };
 
-  const handleGoLive = () => setPhase('go-live');
+  const handleGoLive = async () => {
+    if (!sandbox?.sandboxId) return;
+    setGoLiveError('');
+    if (experience === 'new') {
+      const result = await goLive(sandbox.sandboxId);
+      if (result.error) {
+        setGoLiveError(result.error);
+        return;
+      }
+      if (result.readiness) setReadiness(result.readiness);
+    }
+    navigateToPhase('go-live');
+  };
+
+  const handleDefineControl = async (control: CustomControlInput) => {
+    if (!sandbox?.sandboxId) return;
+    const result = await defineControl(sandbox.sandboxId, control);
+    if (result.error) { setError(result.error); return; }
+    if (result.controls) setControls(result.controls);
+  };
+
+  const handleRemoveControl = async (controlId: string) => {
+    if (!sandbox?.sandboxId) return;
+    const result = await removeControl(sandbox.sandboxId, controlId);
+    if (result.error) { setError(result.error); return; }
+    if (result.controls) setControls(result.controls);
+  };
+
+  const handleToggleRequired = async (controlId: string, requiredByUser: boolean) => {
+    if (!sandbox?.sandboxId) return;
+    const result = await setControlRequired(sandbox.sandboxId, controlId, requiredByUser);
+    if (result.error) { setError(result.error); return; }
+    if (result.control) {
+      setControls(prev => prev.map(c => c.controlId === controlId ? result.control! : c));
+    }
+  };
+
+  const handleResetEvidence = async (controlId: string) => {
+    if (!sandbox?.sandboxId) return;
+    const result = await resetControlEvidence(sandbox.sandboxId, controlId);
+    if (result.error) { setError(result.error); return; }
+    if (result.control) {
+      setControls(prev => prev.map(c => c.controlId === controlId ? result.control! : c));
+    }
+  };
+
+  const handleRefreshControls = async () => {
+    if (!sandbox?.sandboxId) return;
+    const result = await listControls(sandbox.sandboxId);
+    if (result.error) return;
+    if (result.controls) setControls(result.controls);
+    if (result.readiness) setReadiness(result.readiness);
+  };
 
   const handleExportReport = async () => {
     if (!sandbox?.sandboxId) return;
@@ -328,10 +474,34 @@ export function TestRunsContent() {
   const sandboxFleetId = sandbox?.sandboxId ? `sandbox-${sandbox.sandboxId}` : '';
   const proxyUrl = `${PROXY_URL}`;
   const assertions = status?.assertionStates ?? {};
-  const requiredPassed = Object.entries(assertions)
+  const legacyRequiredPassed = Object.entries(assertions)
     .filter(([k]) => ASSERTION_LABELS[k]?.required)
     .every(([, v]) => v.status === 'observed');
   const expiresIn = status?.expiresInSeconds ?? null;
+
+  const isNewFlow = experience === 'new' || phase === 'recommend' || phase === 'configure';
+  const PHASE_STEPS: { key: Phase; label: string }[] = isNewFlow
+    ? [
+        { key: 'interstitial', label: 'Create' },
+        { key: 'recommend', label: 'Controls' },
+        { key: 'configure', label: 'Configure' },
+        { key: 'connecting', label: 'Connect' },
+        { key: 'checklist', label: 'Test' },
+        { key: 'go-live', label: 'Go Live' },
+      ]
+    : [
+        { key: 'interstitial', label: 'Create' },
+        { key: 'connecting', label: 'Setup' },
+        { key: 'checklist', label: 'Test' },
+        { key: 'go-live', label: 'Go Live' },
+      ];
+
+  const phaseOrder = PHASE_STEPS.map(s => s.key);
+  const currentOrder = phaseOrder.indexOf(phase);
+
+  const canGoLive = experience === 'new'
+    ? (readiness?.liveReady ?? false)
+    : legacyRequiredPassed;
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
@@ -343,8 +513,14 @@ export function TestRunsContent() {
         </span>
         <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 4, padding: '2px 8px' }}>TEST ENV</span>
         {sandbox?.isTrial && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>TRIAL</span>}
+        {experience === 'new' && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--brand)', background: 'var(--brand-bg, rgba(0,210,211,0.08))', border: '1px solid var(--brand)', borderRadius: 4, padding: '2px 8px' }}>CONTROLS</span>}
         {paused.size > 0 && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 4, padding: '2px 8px' }}>{paused.size === status?.agents?.length ? 'ALL PAUSED' : `${paused.size} PAUSED`}</span>}
-        {assertions.policy_observed && assertions.policy_observed.status !== 'waiting' && (
+        {experience === 'new' && status?.policyMode && (
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: status.policyMode === 'enforce' ? 'var(--bad)' : 'var(--warn)', background: status.policyMode === 'enforce' ? 'var(--bad-bg, rgba(239,68,68,0.1))' : 'var(--warn-bg)', border: `1px solid ${status.policyMode === 'enforce' ? 'var(--bad)' : 'var(--warn-line)'}`, borderRadius: 4, padding: '2px 8px' }}>
+            {status.policyMode === 'enforce' ? 'ENFORCE' : 'OBSERVE'}
+          </span>
+        )}
+        {experience === 'legacy' && assertions.policy_observed && assertions.policy_observed.status !== 'waiting' && (
           <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: assertions.policy_enforced?.status === 'observed' ? 'var(--bad)' : 'var(--warn)', background: assertions.policy_enforced?.status === 'observed' ? 'var(--bad-bg, rgba(239,68,68,0.1))' : 'var(--warn-bg)', border: `1px solid ${assertions.policy_enforced?.status === 'observed' ? 'var(--bad)' : 'var(--warn-line)'}`, borderRadius: 4, padding: '2px 8px' }}>
             {assertions.policy_enforced?.status === 'observed' ? 'ENFORCE' : 'OBSERVE'}
           </span>
@@ -365,39 +541,50 @@ export function TestRunsContent() {
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: phase === 'checklist' ? 'hidden' : 'auto', padding: phase === 'checklist' ? 0 : '24px 32px', display: 'flex', flexDirection: 'column' }}>
+      <div ref={phaseContentRef} tabIndex={-1} style={{ flex: 1, minHeight: 0, overflowY: phase === 'checklist' ? 'hidden' : 'auto', padding: phase === 'checklist' ? 0 : '24px 32px', display: 'flex', flexDirection: 'column', outline: 'none' }}>
         {/* Step indicator */}
         {phase !== 'expired' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, maxWidth: 480, margin: phase === 'checklist' ? '16px auto 12px' : '0 auto 24px', padding: phase === 'checklist' ? '0 24px' : 0, flexShrink: 0 }}>
-            {(['interstitial', 'setup', 'checklist', 'go-live'] as const).map((step, i, arr) => {
-              const labels = { interstitial: 'Create', setup: 'Setup', checklist: 'Test', 'go-live': 'Go Live' };
-              const stepOrder = arr.indexOf(step);
-              const currentOrder = arr.indexOf(phase);
+          <nav aria-label="Test run progress" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, maxWidth: 580, margin: phase === 'checklist' ? '16px auto 12px' : '0 auto 24px', padding: phase === 'checklist' ? '0 24px' : 0, flexShrink: 0 }}>
+            {PHASE_STEPS.map((step, i, arr) => {
+              const stepOrder = phaseOrder.indexOf(step.key);
               const isDone = stepOrder < currentOrder;
-              const isCurrent = step === phase;
+              const isCurrent = step.key === phase;
+              const canClick = isDone && !sandbox?.sandboxId;
               return (
-                <div key={step} style={{ display: 'flex', alignItems: 'center', flex: i < arr.length - 1 ? 1 : undefined }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: i < arr.length - 1 ? 1 : undefined }}>
+                  <button
+                    onClick={() => canClick ? navigateToPhase(step.key) : undefined}
+                    disabled={!canClick}
+                    aria-current={isCurrent ? 'step' : undefined}
+                    title={canClick ? `Go back to ${step.label}` : undefined}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'none', border: 'none', padding: '4px 2px', margin: 0,
+                      cursor: canClick ? 'pointer' : 'default',
+                      opacity: 1,
+                    }}
+                  >
                     <span style={{
-                      width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 11.5, fontWeight: 700, fontFamily: FONT_MONO, flexShrink: 0,
                       background: isDone ? 'var(--ok)' : isCurrent ? 'var(--brand)' : 'var(--sunk)',
                       color: isDone || isCurrent ? 'var(--bg)' : 'var(--tx3)',
                       border: `1.5px solid ${isDone ? 'var(--ok)' : isCurrent ? 'var(--brand)' : 'var(--line2)'}`,
+                      transition: 'transform 0.15s',
                     }}>
                       {isDone ? '✓' : i + 1}
                     </span>
-                    <span style={{ fontSize: 12, fontWeight: isCurrent ? 700 : 500, color: isCurrent ? 'var(--tx)' : isDone ? 'var(--ok)' : 'var(--tx3)', whiteSpace: 'nowrap' }}>
-                      {labels[step]}
+                    <span style={{ fontSize: 12.5, fontWeight: isCurrent ? 700 : isDone ? 600 : 500, color: isCurrent ? 'var(--tx)' : isDone ? 'var(--ok)' : 'var(--tx3)', whiteSpace: 'nowrap', textDecoration: canClick ? 'underline' : 'none', textDecorationColor: 'var(--ok)', textUnderlineOffset: '2px' }}>
+                      {step.label}
                     </span>
-                  </div>
+                  </button>
                   {i < arr.length - 1 && (
-                    <div style={{ flex: 1, height: 1.5, background: isDone ? 'var(--ok)' : 'var(--line)', margin: '0 10px', borderRadius: 1 }} />
+                    <div style={{ flex: 1, height: 1.5, background: isDone ? 'var(--ok)' : 'var(--line)', margin: '0 8px', borderRadius: 1 }} />
                   )}
                 </div>
               );
             })}
-          </div>
+          </nav>
         )}
 
         {error && (
@@ -406,58 +593,37 @@ export function TestRunsContent() {
 
         {/* INTERSTITIAL */}
         {phase === 'interstitial' && (
-          <div style={{ maxWidth: 440, margin: '48px auto', textAlign: 'center' }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 21, fontWeight: 700, letterSpacing: 1.5, marginBottom: 6 }}>TEST WHITEROOM GOVERNANCE</div>
-            <p style={{ color: 'var(--tx2)', fontSize: 13, marginBottom: 28, lineHeight: 1.6 }}>
-              Watch WhiteRoom manage an AI agent in real time — governance, handoffs, context compression, and compliance checks.
+          <div style={{ maxWidth: 600, margin: '40px auto' }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, letterSpacing: 0.5, marginBottom: 4, textAlign: 'center' }}>Set Up Your Governance Sandbox</div>
+            <p style={{ color: 'var(--tx2)', fontSize: 13, marginBottom: 24, lineHeight: 1.6, textAlign: 'center', maxWidth: 460, margin: '0 auto 24px' }}>
+              Watch WhiteRoom manage an AI agent in real time, or build your own control configuration and connect a real agent.
             </p>
-            <button
-              onClick={() => handleCreateSandbox({ isTrial: true })}
-              disabled={loading}
-              style={{ ...BTN.primary, padding: '12px 28px', fontSize: 14.5, opacity: loading ? 0.5 : 1, cursor: loading ? 'not-allowed' : 'pointer', width: '100%', marginBottom: 14 }}
-            >
-              {loading ? 'Setting up...' : 'Watch the demo'}
-            </button>
-            <p style={{ fontSize: 12, color: 'var(--tx3)', lineHeight: 1.5, marginBottom: 0 }}>
-              Creates a sandbox and runs a simulated agent lifecycle — no API key or setup needed.
-            </p>
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-              {!showConnect ? (
-                <>
-                  <button
-                    onClick={() => setShowConnect(true)}
-                    style={{ ...BTN.ghost, fontSize: 12.5 }}
-                  >
-                    Or connect your own agent →
-                  </button>
-                  <p style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 6 }}>
-                    For testing with a real agent. We&apos;ll give you the proxy URL and headers to configure.
-                  </p>
-                </>
-              ) : (
-                <div style={{ textAlign: 'left' }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--tx2)' }}>
-                    Your Anthropic API key
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="sk-ant-..."
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', color: 'var(--tx)', fontFamily: FONT_MONO, fontSize: 12, boxSizing: 'border-box' }}
-                  />
-                  <p style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 4, marginBottom: 12 }}>
-                    Used to forward calls to Anthropic. Never stored — only a hash is kept for ownership verification.
-                  </p>
-                  <button
-                    onClick={() => handleCreateSandbox({ isTrial: false, apiKey: apiKeyInput || undefined })}
-                    disabled={loading || !apiKeyInput.startsWith('sk-')}
-                    style={{ ...BTN.primary, width: '100%', opacity: (loading || !apiKeyInput.startsWith('sk-')) ? 0.5 : 1, cursor: (loading || !apiKeyInput.startsWith('sk-')) ? 'not-allowed' : 'pointer' }}
-                  >
-                    {loading ? 'Creating sandbox...' : 'Create sandbox'}
-                  </button>
-                </div>
-              )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '20px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: 'var(--tx)' }}>Watch the demo</div>
+                <p style={{ fontSize: 12, color: 'var(--tx3)', lineHeight: 1.5, flex: 1, marginBottom: 14 }}>
+                  Creates a sandbox and runs a simulated agent lifecycle — no API key or setup needed.
+                </p>
+                <button
+                  onClick={() => handleCreateSandbox({ isTrial: true })}
+                  disabled={loading}
+                  style={{ ...BTN.secondary, padding: '10px 16px', fontSize: 13, width: '100%', opacity: loading ? 0.5 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+                >
+                  {loading ? 'Setting up...' : 'Watch the demo'}
+                </button>
+              </div>
+              <div style={{ background: 'var(--card)', border: '1.5px solid var(--brand)', borderRadius: 8, padding: '20px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: 'var(--tx)' }}>Build your controls</div>
+                <p style={{ fontSize: 12, color: 'var(--tx3)', lineHeight: 1.5, flex: 1, marginBottom: 14 }}>
+                  Choose governance controls, configure enforcement, then connect your own agent.
+                </p>
+                <button
+                  onClick={() => navigateToPhase('recommend')}
+                  style={{ ...BTN.primary, padding: '10px 16px', fontSize: 13, width: '100%' }}
+                >
+                  Set up controls
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -482,13 +648,284 @@ export function TestRunsContent() {
           </div>
         )}
 
-        {/* SETUP */}
-        {phase === 'setup' && sandbox && (
+        {/* RECOMMEND — Control catalog selection */}
+        {phase === 'recommend' && (() => {
+          const coreIds = new Set(catalog.filter(c => c.tier === 'core').map(c => c.controlId));
+          const nonCoreCount = Array.from(selectedCatalogIds).filter(id => !coreIds.has(id)).length;
+          const totalSelected = selectedCatalogIds.size;
+          const totalAvailable = catalog.length;
+          const applyPreset = (mode: 'recommended' | 'full' | 'minimal') => {
+            if (mode === 'full') {
+              setSelectedCatalogIds(new Set(catalog.map(c => c.controlId)));
+            } else if (mode === 'minimal') {
+              setSelectedCatalogIds(new Set(catalog.filter(c => c.tier === 'core').map(c => c.controlId)));
+            } else {
+              setSelectedCatalogIds(new Set(catalog.filter(c => c.tier === 'core' || c.defaultRequired).map(c => c.controlId)));
+            }
+          };
+          return (
+          <div style={{ maxWidth: 580, margin: '24px auto' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Select Controls</div>
+              <span style={{ fontSize: 12, fontFamily: FONT_MONO, color: 'var(--brand)', fontWeight: 600 }}>
+                {totalSelected} of {totalAvailable} selected
+              </span>
+            </div>
+            <p style={{ color: 'var(--tx3)', fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+              Choose which governance controls to enable. Core controls are always active. Toggle optional controls based on your requirements.
+            </p>
+
+            <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+              <button onClick={() => applyPreset('recommended')} style={{ ...BTN.ghost, fontSize: 11.5, padding: '4px 10px' }}>Recommended</button>
+              <button onClick={() => applyPreset('full')} style={{ ...BTN.ghost, fontSize: 11.5, padding: '4px 10px' }}>Full suite</button>
+              <button onClick={() => applyPreset('minimal')} style={{ ...BTN.ghost, fontSize: 11.5, padding: '4px 10px' }}>Core only</button>
+            </div>
+
+            {(['core', 'governance', 'policy'] as const).map(tier => {
+              const tierControls = catalog.filter(c => c.tier === tier);
+              if (tierControls.length === 0) return null;
+              const tierSelected = tierControls.filter(c => selectedCatalogIds.has(c.controlId)).length;
+              return (
+                <div key={tier} style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>
+                      {tier === 'core' ? 'Core (always active)' : tier === 'governance' ? 'Governance (optional)' : 'Policy (optional)'}
+                    </div>
+                    {tier !== 'core' && (
+                      <button
+                        onClick={() => {
+                          const allTierIds = tierControls.map(c => c.controlId);
+                          const allSelected = allTierIds.every(id => selectedCatalogIds.has(id));
+                          setSelectedCatalogIds(prev => {
+                            const next = new Set(prev);
+                            allTierIds.forEach(id => allSelected ? next.delete(id) : next.add(id));
+                            return next;
+                          });
+                        }}
+                        style={{ fontSize: 10.5, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {tierSelected === tierControls.length ? 'Clear all' : 'Select all'}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {tierControls.map(entry => {
+                      const isCore = tier === 'core';
+                      const isSelected = selectedCatalogIds.has(entry.controlId);
+                      const hint = CONTROL_HINTS[entry.controlId];
+                      return (
+                        <div
+                          key={entry.controlId}
+                          onClick={() => {
+                            if (isCore) return;
+                            setSelectedCatalogIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(entry.controlId)) next.delete(entry.controlId);
+                              else next.add(entry.controlId);
+                              return next;
+                            });
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 6,
+                            background: 'var(--card)', border: `1px solid ${isSelected ? 'var(--brand)' : 'var(--line)'}`,
+                            cursor: isCore ? 'default' : 'pointer', opacity: isCore ? 0.85 : 1,
+                            transition: 'border-color 0.15s',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={isCore}
+                            onChange={() => {}}
+                            style={{ accentColor: 'var(--brand)', width: 14, height: 14, flexShrink: 0, cursor: isCore ? 'default' : 'pointer', marginTop: 1 }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                              {entry.name}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 1 }}>{entry.description}</div>
+                            {hint && (
+                              <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 4, lineHeight: 1.5, paddingTop: 4, borderTop: '1px solid var(--line)' }}>
+                                {hint}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
+              <button onClick={() => navigateToPhase('configure')} style={{ ...BTN.primary, padding: '8px 20px' }}>
+                Next: Configure →
+              </button>
+              <button onClick={() => navigateToPhase('interstitial')} style={BTN.ghost}>Back</button>
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* CONFIGURE — API key + policy mode */}
+        {phase === 'configure' && (() => {
+          const keyValid = apiKeyInput.startsWith('sk-ant-');
+          const keyStarted = apiKeyInput.length > 0;
+          const keyLooksWrong = keyStarted && apiKeyInput.startsWith('sk-') && !apiKeyInput.startsWith('sk-ant-');
+          const keyTooShort = keyStarted && !apiKeyInput.startsWith('sk-');
+          const canCreate = keyValid && !loading;
+
+          const coreCatalog = catalog.filter(c => c.tier === 'core');
+          const govCatalog = catalog.filter(c => c.tier === 'governance');
+          const polCatalog = catalog.filter(c => c.tier === 'policy');
+          const selectedCore = coreCatalog.filter(c => selectedCatalogIds.has(c.controlId));
+          const selectedGov = govCatalog.filter(c => selectedCatalogIds.has(c.controlId));
+          const selectedPol = polCatalog.filter(c => selectedCatalogIds.has(c.controlId));
+
+          return (
+          <div style={{ maxWidth: 520, margin: '24px auto' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 6 }}>Configure Sandbox</div>
+            <p style={{ color: 'var(--tx3)', fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>
+              Set your API credentials and enforcement mode before creating the sandbox.
+            </p>
+
+            <div style={{ background: 'var(--card)', border: `1px solid ${keyValid ? 'var(--ok)' : keyTooShort || keyLooksWrong ? 'var(--bad)' : 'var(--line)'}`, borderRadius: 8, padding: '14px', marginBottom: 16, transition: 'border-color 0.2s' }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--tx2)' }}>
+                Your Anthropic API key
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="password"
+                  placeholder="sk-ant-..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', paddingRight: 32, borderRadius: 6, border: `1px solid ${keyValid ? 'var(--ok)' : keyTooShort || keyLooksWrong ? 'var(--bad)' : 'var(--line2)'}`, background: 'var(--sunk)', color: 'var(--tx)', fontFamily: FONT_MONO, fontSize: 12, boxSizing: 'border-box', transition: 'border-color 0.2s' }}
+                />
+                {keyValid && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ok)', fontSize: 14, fontWeight: 700 }}>✓</span>}
+              </div>
+              {keyLooksWrong && (
+                <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 4, fontWeight: 500 }}>
+                  This looks like a non-Anthropic key. WhiteRoom needs an Anthropic key starting with sk-ant-.
+                </div>
+              )}
+              {keyTooShort && (
+                <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 4 }}>
+                  Paste your Anthropic API key (starts with sk-ant-).
+                </div>
+              )}
+              {keyValid && (
+                <div style={{ fontSize: 11.5, color: 'var(--ok)', marginTop: 4, fontWeight: 500 }}>
+                  Key format valid.
+                </div>
+              )}
+              {!keyStarted && (
+                <p style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 4, marginBottom: 0 }}>
+                  Used to forward calls to Anthropic. Never stored — only a hash is kept for ownership verification.
+                </p>
+              )}
+            </div>
+
+            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--tx2)' }}>
+                Policy Mode
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setPolicyMode('observe')}
+                  style={{
+                    flex: 1, padding: '10px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    background: policyMode === 'observe' ? 'var(--warn-bg)' : 'var(--sunk)',
+                    color: policyMode === 'observe' ? 'var(--warn)' : 'var(--tx3)',
+                    border: `1.5px solid ${policyMode === 'observe' ? 'var(--warn)' : 'var(--line)'}`,
+                  }}
+                >
+                  Observe
+                  <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>Detect violations, log them, don&apos;t block</div>
+                </button>
+                <button
+                  onClick={() => setPolicyMode('enforce')}
+                  style={{
+                    flex: 1, padding: '10px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    background: policyMode === 'enforce' ? 'var(--bad-bg, rgba(239,68,68,0.1))' : 'var(--sunk)',
+                    color: policyMode === 'enforce' ? 'var(--bad)' : 'var(--tx3)',
+                    border: `1.5px solid ${policyMode === 'enforce' ? 'var(--bad)' : 'var(--line)'}`,
+                  }}
+                >
+                  Enforce
+                  <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>Detect violations and strip them from responses</div>
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx2)' }}>Selected Controls</div>
+                <button onClick={() => navigateToPhase('recommend')} style={{ color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600 }}>Edit selection</button>
+              </div>
+              {selectedCore.length > 0 && (
+                <div style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  <span style={{ color: 'var(--tx3)', fontWeight: 600 }}>Core:</span>{' '}
+                  <span style={{ color: 'var(--tx2)' }}>{selectedCore.map(c => c.name).join(', ')}</span>
+                </div>
+              )}
+              {selectedGov.length > 0 && (
+                <div style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  <span style={{ color: 'var(--tx3)', fontWeight: 600 }}>Governance:</span>{' '}
+                  <span style={{ color: 'var(--tx2)' }}>{selectedGov.map(c => c.name).join(', ')}</span>
+                </div>
+              )}
+              {selectedPol.length > 0 && (
+                <div style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  <span style={{ color: 'var(--tx3)', fontWeight: 600 }}>Policy:</span>{' '}
+                  <span style={{ color: 'var(--tx2)' }}>{selectedPol.map(c => c.name).join(', ')}</span>
+                </div>
+              )}
+              {selectedGov.length === 0 && selectedPol.length === 0 && (
+                <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Core controls only — no optional controls selected.</div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button
+                onClick={() => handleCreateSandbox({ isTrial: false, apiKey: apiKeyInput || undefined })}
+                disabled={!canCreate}
+                style={{ ...BTN.primary, padding: '8px 20px', opacity: canCreate ? 1 : 0.5, cursor: canCreate ? 'pointer' : 'not-allowed' }}
+              >
+                {loading ? 'Creating sandbox...' : 'Create sandbox'}
+              </button>
+              <button onClick={() => navigateToPhase('recommend')} style={BTN.ghost}>Back</button>
+              {!canCreate && !loading && (
+                <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>
+                  {keyStarted ? 'Enter a valid Anthropic key to continue' : 'Enter your API key to continue'}
+                </span>
+              )}
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* CONNECTING — auto-detects when agent connects */}
+        {phase === 'connecting' && sandbox && (() => {
+          if (!connectPollRef.current) {
+            connectPollRef.current = setInterval(async () => {
+              const s = await sandboxStatus(userId);
+              if (s.agents && s.agents.length > 0) {
+                if (connectPollRef.current) clearInterval(connectPollRef.current);
+                connectPollRef.current = null;
+                setStatus(s);
+                navigateToPhase('checklist');
+                startPolling(userId, sandbox?.sandboxId);
+              }
+            }, 3000);
+          }
+          return (
           <div style={{ maxWidth: 520, margin: '24px auto' }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 6 }}>Connect Your Agent</div>
             <p style={{ color: 'var(--tx3)', fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>
-              Add these two environment variables where your agent runs (terminal, .env file, or CI config), then start your agent. WhiteRoom will intercept its LLM calls and apply governance.
+              Add these environment variables where your agent runs, then start your agent. WhiteRoom will detect the connection automatically.
             </p>
+
             <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 12, fontSize: 12 }}>
               <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--tx)' }}>Quick start — copy into your terminal</div>
               <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 8px', color: 'var(--brand)', lineHeight: 1.6 }}>
@@ -507,103 +944,245 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                 Then run your agent as normal. Your Anthropic API key stays the same — WhiteRoom proxies calls to Anthropic.
               </div>
             </div>
-            <button onClick={() => setShowHelp(!showHelp)} style={{ fontSize: 12, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12 }}>
-              {showHelp ? '▾ Hide SDK examples' : '▸ Or configure in code (Python SDK, headers)'}
-            </button>
-            {showHelp && (
-              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', fontSize: 12, color: 'var(--tx2)', lineHeight: 1.7, marginBottom: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--tx)' }}>Python (Anthropic SDK)</div>
-                <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 12px', color: 'var(--brand)' }}>
+
+            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', fontSize: 12, color: 'var(--tx2)', lineHeight: 1.7, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={{ fontWeight: 600, color: 'var(--tx)' }}>Python (Anthropic SDK)</div>
+                <button onClick={() => setShowHelp(!showHelp)} style={{ fontSize: 11, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  {showHelp ? '▾ Less' : '▸ More examples'}
+                </button>
+              </div>
+              <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 4px', color: 'var(--brand)' }}>
 {`client = anthropic.Anthropic(
     base_url="${proxyUrl}",
     default_headers={
         "x-whiteroom-fleet": "${sandboxFleetId}"
     }
 )`}
-                </pre>
-                <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--tx)' }}>HTTP header (any language)</div>
-                <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: 0, color: 'var(--brand)' }}>
+              </pre>
+              {showHelp && (
+                <>
+                  <div style={{ fontWeight: 600, marginTop: 10, marginBottom: 6, color: 'var(--tx)' }}>HTTP header (any language)</div>
+                  <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: 0, color: 'var(--brand)' }}>
 {`x-whiteroom-fleet: ${sandboxFleetId}`}
-                </pre>
-                <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 6 }}>
-                  Add this header to every request your agent makes to the proxy base URL.
-                </div>
-              </div>
-            )}
+                  </pre>
+                  <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 6 }}>
+                    Add this header to every request your agent makes to the proxy base URL.
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--brand-bg, rgba(0,210,211,0.06))', borderRadius: 6, marginBottom: 14, border: '1px solid var(--brand)', fontSize: 12, color: 'var(--brand)' }}>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--brand)', animation: 'pulse 1.5s infinite' }} />
+              Listening for your agent... will auto-advance when connected.
+            </div>
+            <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
-                onClick={() => { setPhase('checklist'); startPolling(userId, sandbox?.sandboxId); }}
-                style={{ ...BTN.primary, padding: '8px 18px', fontSize: 13.5 }}
+                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); }}
+                style={{ ...BTN.primary, padding: '8px 18px', fontSize: 13 }}
               >
-                Start monitoring
+                Skip to monitoring
               </button>
-              <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>or</span>
               <button
-                onClick={() => { setPhase('checklist'); startPolling(userId, sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
+                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
                 style={{ ...BTN.ghost, fontSize: 12.5 }}
               >
-                Skip — watch the demo instead
+                Run demo instead
               </button>
             </div>
           </div>
-        )}
+          );
+        })()}
 
-        {/* CHECKLIST */}
+        {/* CHECKLIST — split panel */}
         {phase === 'checklist' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, flex: 1, minHeight: 0 }}>
-            {/* LEFT */}
+            {/* LEFT: Controls or legacy assertions */}
             <div style={{ overflowY: 'auto', padding: '20px 24px', borderRight: '1px solid var(--line)' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
-                {demoRunning ? 'Running Demo' : requiredPassed ? 'All Checks Passed' : status?.agents?.length ? 'Running Checks' : demoSteps.length > 0 ? 'Demo Complete' : 'Waiting for Activity'}
-              </div>
-              <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 18 }}>
-                {demoRunning
-                  ? 'Simulating a full agent lifecycle — watch the checks light up.'
-                  : requiredPassed
-                    ? 'All required governance checks passed. You can go live or run more tests.'
-                    : status?.agents?.length
-                      ? 'Your agent is connected. Watching governance events.'
-                      : demoSteps.length > 0
-                        ? 'Demo finished. Review the results, then go live or run again.'
-                        : 'Click "Run demo agent" below, or connect your own agent to begin testing.'}
-              </p>
+              {experience === 'new' ? (
+                <>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                    {demoRunning ? 'Running Demo' : readiness?.overall.status === 'pass' ? 'All Controls Passed' : controls.length > 0 ? 'Control Results' : 'Waiting for Activity'}
+                  </div>
+                  <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 14 }}>
+                    {demoRunning
+                      ? 'Simulating a full agent lifecycle — watch the controls update.'
+                      : readiness?.overall.status === 'pass'
+                        ? 'All required controls passed live verification. Ready to go live.'
+                        : controls.length > 0
+                          ? 'Watching governance events. Controls update as evidence is collected.'
+                          : 'Click "Run demo agent" below, or connect your own agent to begin testing.'}
+                  </p>
 
-              <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const, marginBottom: 6 }}>Governance Checks</div>
-              <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
-                {Object.entries(ASSERTION_LABELS).map(([key, { label, hint, required }]) => {
-                  const a = assertions[key];
-                  const s = a?.status ?? 'waiting';
-                  return (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--card)', border: `1px solid ${s === 'observed' ? 'var(--ok)' : s === 'failed' ? 'var(--bad)' : 'var(--line)'}`, transition: 'border-color 0.3s' }}>
-                      <AssertionIcon status={s} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 12.5 }}>
-                          {label}
-                          {!required && <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 6, fontWeight: 500 }}>optional</span>}
-                        </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 1 }}>{hint}</div>
-                        {s === 'failed' && a?.diagnostic && (
-                          <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 3 }}>{a.diagnostic}</div>
-                        )}
-                        {s === 'observed' && a?.metric !== undefined && (
-                          <div style={{ fontSize: 11, color: 'var(--ok)', marginTop: 2, fontFamily: FONT_MONO }}>{a.metric}% compression</div>
-                        )}
+                  {readiness && (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                      <div style={{ padding: '6px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, fontFamily: FONT_MONO, background: readiness.liveReady ? 'var(--ok-bg, rgba(34,197,94,0.1))' : 'var(--sunk)', color: readiness.liveReady ? 'var(--ok)' : 'var(--tx3)', border: `1px solid ${readiness.liveReady ? 'var(--ok)' : 'var(--line)'}` }}>
+                        LIVE: {readiness.liveReady ? 'READY' : readiness.overall.status.toUpperCase()}
+                      </div>
+                      <div style={{ padding: '6px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, fontFamily: FONT_MONO, background: readiness.demoComplete ? 'var(--info-bg)' : 'var(--sunk)', color: readiness.demoComplete ? 'var(--info)' : 'var(--tx3)', border: `1px solid ${readiness.demoComplete ? 'var(--info)' : 'var(--line)'}` }}>
+                        DEMO: {readiness.demoComplete ? 'COMPLETE' : 'PENDING'}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  )}
 
-              <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 16, fontFamily: FONT_MONO }}>
-                {(() => {
-                  const req = Object.entries(assertions).filter(([k]) => ASSERTION_LABELS[k]?.required);
-                  const reqPassed = req.filter(([, v]) => v.status === 'observed').length;
-                  const opt = Object.entries(assertions).filter(([k]) => !ASSERTION_LABELS[k]?.required);
-                  const optPassed = opt.filter(([, v]) => v.status === 'observed').length;
-                  return `${reqPassed} of ${req.length} required · ${optPassed} of ${opt.length} optional`;
-                })()}
-              </div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const, marginBottom: 6 }}>Controls</div>
+                  <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+                    {controls.map(ctrl => {
+                      const live = ctrl.liveEligibility;
+                      const demo = ctrl.demoEligibility;
+                      const hasLiveEvidence = ctrl.result.liveEvidence != null;
+                      const hasDemoEvidence = ctrl.result.demoEvidence != null;
+                      const isStale = live && !live.eligible && live.reason;
+                      const borderColor = live?.eligible && live.status === 'observed' ? 'var(--ok)'
+                        : live?.eligible && live.status === 'failed' ? 'var(--bad)'
+                        : ctrl.result.liveIncomplete ? 'var(--warn)'
+                        : 'var(--line)';
+                      return (
+                        <div key={ctrl.controlId} style={{ padding: '10px 12px', borderRadius: 6, background: 'var(--card)', border: `1px solid ${borderColor}`, transition: 'border-color 0.3s' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <ControlIcon ctrl={ctrl} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                                {ctrl.name}
+                                {!ctrl.required && <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 6, fontWeight: 500 }}>optional</span>}
+                                {ctrl.capability === 'unsupported' && <span style={{ fontSize: 10.5, color: 'var(--warn)', marginLeft: 6, fontWeight: 600 }}>unsupported</span>}
+                              </div>
+                              <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 1 }}>{ctrl.description}</div>
+                            </div>
+                            <span style={{ fontSize: 10, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>{ctrl.evaluator}</span>
+                          </div>
 
+                          <div style={{ display: 'flex', gap: 12, marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--line)' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx3)', letterSpacing: 0.5, marginBottom: 2 }} title="Verified by your connected agent's real traffic">LIVE <span style={{ fontWeight: 400, fontSize: 9.5 }}>agent</span></div>
+                              {hasLiveEvidence ? (
+                                <div style={{ fontSize: 11.5, color: ctrl.result.liveEvidence!.status === 'observed' ? 'var(--ok)' : 'var(--bad)' }}>
+                                  {ctrl.result.liveEvidence!.status === 'observed' ? '✓ Observed' : '✗ Failed'}
+                                  {ctrl.result.liveEvidence!.diagnostic && <span style={{ color: 'var(--tx3)', marginLeft: 4 }}>— {ctrl.result.liveEvidence!.diagnostic}</span>}
+                                </div>
+                              ) : ctrl.result.liveIncomplete ? (
+                                <div style={{ fontSize: 11.5, color: 'var(--warn)' }}>! Incomplete ({ctrl.result.liveIncomplete.droppedStatus})</div>
+                              ) : (
+                                <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>— No evidence</div>
+                              )}
+                              {isStale && <div style={{ fontSize: 10.5, color: 'var(--warn)', marginTop: 1 }}>{live!.reason}</div>}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx3)', letterSpacing: 0.5, marginBottom: 2 }} title="Simulated by the built-in demo agent">DEMO <span style={{ fontWeight: 400, fontSize: 9.5 }}>sim</span></div>
+                              {hasDemoEvidence ? (
+                                <div style={{ fontSize: 11.5, color: ctrl.result.demoEvidence!.status === 'observed' ? 'var(--info)' : 'var(--bad)' }}>
+                                  {ctrl.result.demoEvidence!.status === 'observed' ? '✓ Simulated' : '✗ Failed'}
+                                </div>
+                              ) : ctrl.result.demoIncomplete ? (
+                                <div style={{ fontSize: 11.5, color: 'var(--warn)' }}>! Incomplete</div>
+                              ) : (
+                                <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>— No evidence</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {ctrl.source !== 'core' && (
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                onClick={() => handleToggleRequired(ctrl.controlId, !ctrl.requiredByUser)}
+                                style={{ fontSize: 10.5, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                              >
+                                {ctrl.requiredByUser ? 'Make optional' : 'Make required'}
+                              </button>
+                              <span style={{ color: 'var(--line2)' }}>·</span>
+                              <button
+                                onClick={() => handleResetEvidence(ctrl.controlId)}
+                                style={{ fontSize: 10.5, color: 'var(--tx3)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                              >
+                                Reset evidence
+                              </button>
+                              {ctrl.source === 'custom' && (
+                                <>
+                                  <span style={{ color: 'var(--line2)' }}>·</span>
+                                  <button
+                                    onClick={() => handleRemoveControl(ctrl.controlId)}
+                                    style={{ fontSize: 10.5, color: 'var(--bad)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                                  >
+                                    Remove
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 16, fontFamily: FONT_MONO }}>
+                    {(() => {
+                      const req = controls.filter(c => c.required);
+                      const reqPassed = req.filter(c => c.liveEligibility?.eligible && c.liveEligibility.status === 'observed').length;
+                      const opt = controls.filter(c => !c.required);
+                      const optPassed = opt.filter(c => c.liveEligibility?.eligible && c.liveEligibility.status === 'observed').length;
+                      return `${reqPassed} of ${req.length} required · ${optPassed} of ${opt.length} optional`;
+                    })()}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                    {demoRunning ? 'Running Demo' : legacyRequiredPassed ? 'All Checks Passed' : status?.agents?.length ? 'Running Checks' : demoSteps.length > 0 ? 'Demo Complete' : 'Waiting for Activity'}
+                  </div>
+                  <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 18 }}>
+                    {demoRunning
+                      ? 'Simulating a full agent lifecycle — watch the checks light up.'
+                      : legacyRequiredPassed
+                        ? 'All required governance checks passed. You can go live or run more tests.'
+                        : status?.agents?.length
+                          ? 'Your agent is connected. Watching governance events.'
+                          : demoSteps.length > 0
+                            ? 'Demo finished. Review the results, then go live or run again.'
+                            : 'Click "Run demo agent" below, or connect your own agent to begin testing.'}
+                  </p>
+
+                  <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)', textTransform: 'uppercase' as const, marginBottom: 6 }}>Governance Checks</div>
+                  <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+                    {Object.entries(ASSERTION_LABELS).map(([key, { label, hint, required }]) => {
+                      const a = assertions[key];
+                      const s = a?.status ?? 'waiting';
+                      return (
+                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--card)', border: `1px solid ${s === 'observed' ? 'var(--ok)' : s === 'failed' ? 'var(--bad)' : 'var(--line)'}`, transition: 'border-color 0.3s' }}>
+                          <AssertionIcon status={s} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                              {label}
+                              {!required && <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 6, fontWeight: 500 }}>optional</span>}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 1 }}>{hint}</div>
+                            {s === 'failed' && a?.diagnostic && (
+                              <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 3 }}>{a.diagnostic}</div>
+                            )}
+                            {s === 'observed' && a?.metric !== undefined && (
+                              <div style={{ fontSize: 11, color: 'var(--ok)', marginTop: 2, fontFamily: FONT_MONO }}>{a.metric}% compression</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 16, fontFamily: FONT_MONO }}>
+                    {(() => {
+                      const req = Object.entries(assertions).filter(([k]) => ASSERTION_LABELS[k]?.required);
+                      const reqPassed = req.filter(([, v]) => v.status === 'observed').length;
+                      const opt = Object.entries(assertions).filter(([k]) => !ASSERTION_LABELS[k]?.required);
+                      const optPassed = opt.filter(([, v]) => v.status === 'observed').length;
+                      return `${reqPassed} of ${req.length} required · ${optPassed} of ${opt.length} optional`;
+                    })()}
+                  </div>
+                </>
+              )}
+
+              {/* Fleet Agents — shared between legacy and new */}
               {status?.agents && status.agents.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -647,6 +1226,7 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                 </div>
               )}
 
+              {/* Actions */}
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const, marginBottom: 14 }}>
                 {selected.size > 0 ? (
                   <>
@@ -672,15 +1252,19 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                 <button onClick={handleExportReport} style={BTN.ghost}>Export JSON</button>
               </div>
 
+              {goLiveError && (
+                <div style={{ padding: '8px 12px', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 6, color: 'var(--bad)', fontSize: 12, marginBottom: 10 }}>{goLiveError}</div>
+              )}
+
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                {requiredPassed && (
+                {canGoLive && (
                   <button onClick={handleGoLive} style={{ ...BTN.success, padding: '8px 20px' }}>Go live →</button>
                 )}
                 <button onClick={handleDestroy} style={BTN.danger}>Destroy sandbox</button>
               </div>
             </div>
 
-            {/* RIGHT */}
+            {/* RIGHT: Agent Activity Feed */}
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--sunk)' }}>
               <div className="flex items-center gap-2" style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agent Activity</span>
@@ -732,22 +1316,41 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
         {/* GO LIVE */}
         {phase === 'go-live' && (() => {
           const prodFleetId = userId.replace(/[^a-zA-Z0-9_\-.]/g, '-');
+          const passedCount = experience === 'new'
+            ? controls.filter(c => c.liveEligibility?.eligible && c.liveEligibility.status === 'observed').length
+            : Object.values(assertions).filter(a => a.status === 'observed').length;
+          const totalCount = experience === 'new' ? controls.length : Object.keys(assertions).length;
           return (
           <div style={{ maxWidth: 560, margin: '32px auto' }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--ok)', textTransform: 'uppercase' as const, marginBottom: 4 }}>Ready for Production</div>
-            <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 18, lineHeight: 1.6 }}>
-              All required checks passed. Update your agent&apos;s fleet header to switch from sandbox to production.
-            </p>
+            <div style={{ textAlign: 'center', marginBottom: 24, padding: '20px 0' }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 22, color: 'var(--bg)' }}>✓</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: 'var(--ok)', marginBottom: 4 }}>Ready for Production</div>
+              <div style={{ fontSize: 13, color: 'var(--tx2)' }}>
+                {passedCount} of {totalCount} {experience === 'new' ? 'controls' : 'checks'} passed
+              </div>
+            </div>
 
             <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '14px', marginBottom: 12 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>Sandbox Summary</div>
-              {Object.entries(assertions).map(([key, val]) => (
-                <div key={key} style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
-                  <AssertionIcon status={val.status} />
-                  <span style={{ color: 'var(--tx2)' }}>{ASSERTION_LABELS[key]?.label ?? key}</span>
-                  {val.metric !== undefined && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx3)' }}>{val.metric}%</span>}
-                </div>
-              ))}
+              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const, marginBottom: 8 }}>
+                {experience === 'new' ? 'Control Summary' : 'Sandbox Summary'}
+              </div>
+              {experience === 'new' ? (
+                controls.map(ctrl => (
+                  <div key={ctrl.controlId} style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
+                    <ControlIcon ctrl={ctrl} />
+                    <span style={{ color: 'var(--tx2)' }}>{ctrl.name}</span>
+                    {ctrl.required && <span style={{ fontSize: 10, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>required</span>}
+                  </div>
+                ))
+              ) : (
+                Object.entries(assertions).map(([key, val]) => (
+                  <div key={key} style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
+                    <AssertionIcon status={val.status} />
+                    <span style={{ color: 'var(--tx2)' }}>{ASSERTION_LABELS[key]?.label ?? key}</span>
+                    {val.metric !== undefined && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx3)' }}>{val.metric}%</span>}
+                  </div>
+                ))
+              )}
             </div>
 
             <div style={{ background: 'var(--card)', border: '1px solid var(--ok)', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
@@ -810,7 +1413,7 @@ export X_WHITEROOM_FLEET=${prodFleetId}`}
             <p style={{ color: 'var(--tx2)', fontSize: 12.5, marginBottom: 20 }}>Your sandbox session has ended. You can view your test report or create a new sandbox.</p>
             <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
               <button onClick={handleExportReport} style={BTN.primary}>View report</button>
-              <button onClick={() => { setSandbox(null); setStatus(null); setPhase('interstitial'); }} style={BTN.secondary}>Create new sandbox</button>
+              <button onClick={() => { setSandbox(null); setStatus(null); setControls([]); setReadiness(null); navigateToPhase('interstitial'); }} style={BTN.secondary}>Create new sandbox</button>
             </div>
           </div>
         )}
