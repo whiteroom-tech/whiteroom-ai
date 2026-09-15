@@ -1,0 +1,16 @@
+# gitleaks findings that are permanently baked into git history and cannot be
+# removed without rewriting published commits.
+#
+# A real WhiteRoom fleet token for a production fleet was committed to this
+# PUBLIC repo in apps/dashboard/src/__tests__/provisioning.test.ts and merged to
+# main on 2026-09-04 (PR #30). The working tree has been scrubbed, but the blob
+# stays reachable in history, so gitleaks re-reports it on every run.
+#
+# THE TOKEN MUST BE TREATED AS COMPROMISED AND ROTATED. These entries suppress
+# the history findings only; they are not a statement that the value was safe.
+#
+# Format: <commit>:<path>:<rule>:<startLine>
+e09ef176d57aeab504c280330c4f399113394049:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:13
+e09ef176d57aeab504c280330c4f399113394049:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:26
+2dc332e7cc02190f2927049b3ae28008aa85bf55:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:13
+2dc332e7cc02190f2927049b3ae28008aa85bf55:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:26
