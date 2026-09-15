@@ -17,7 +17,6 @@ function notFound(request: NextRequest) {
 
 const REDIRECTS: Record<string, string> = {
   '/sandbox': '/controls',
-  '/performance': '/agents?tab=performance',
 };
 
 export function proxy(request: NextRequest) {
@@ -40,7 +39,7 @@ export function proxy(request: NextRequest) {
     const tab = searchParams.get('tab');
     let target = '/agents';
     if (tab === 'analytics') {
-      target = '/agents?tab=performance';
+      target = '/runs';
     } else if (tab === 'visualization') {
       target = '/agents?tab=overview&view=visualization';
     } else if (tab === 'live') {

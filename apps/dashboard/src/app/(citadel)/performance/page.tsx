@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, auditLog } from '@/lib/whiteroom/client';
-import { resolveAuthKey } from '@/lib/fleet-helpers';
+import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
-import { Sidebar } from '@/components/Sidebar';
+import { clearFleetCredentials } from '@/lib/fleet-credentials';
+import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry } from '@/lib/whiteroom/types';
-import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
 
@@ -110,80 +111,6 @@ function computeTrends(hourly: FleetHourlyDataPoint[]) {
   };
 }
 
-function FleetActivityChart({ hourly }: { hourly: FleetHourlyDataPoint[] }) {
-  const maxCalls = Math.max(...hourly.map(h => h.calls), 1);
-  return (
-    <div style={CARD}>
-      <h3 style={H3}>Fleet Activity</h3>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 140 }}>
-        {hourly.map((h, i) => {
-          const cp = (h.completeCount / maxCalls) * 100;
-          const ep = (h.errorCount / maxCalls) * 100;
-          const op = ((h.calls - h.completeCount - h.errorCount) / maxCalls) * 100;
-          const t = new Date(h.hour);
-          return (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n${h.calls} calls, ${h.completeCount} complete, ${h.errorCount} errors`}>
-              {op > 0 && <div style={{ width: '100%', height: `${op}%`, background: 'var(--tx3)', opacity: 0.3 }} />}
-              {ep > 0 && <div style={{ width: '100%', height: `${ep}%`, background: 'var(--warn)', opacity: 0.85 }} />}
-              <div style={{ width: '100%', height: `${Math.max(cp, h.calls > 0 ? 1 : 0)}%`, background: 'var(--brand)', opacity: 0.75 }} />
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
-        <span>{hourly.length > 0 ? new Date(hourly[0].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-        <span>{hourly.length > 0 ? new Date(hourly[hourly.length - 1].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-      </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: 'var(--tx3)' }}>
-        {[['var(--brand)', 0.75, 'Complete'], ['var(--warn)', 0.85, 'Errors'], ['var(--tx3)', 0.3, 'Other']].map(([bg, op, label]) => (
-          <span key={label as string}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: bg as string, opacity: op as number, marginRight: 4 }} />{label as string}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
-  const total = models.reduce((s, m) => s + m.costMicros, 0);
-  if (total === 0) return null;
-  const colors = ['var(--brand)', 'var(--ok)', 'var(--warn)', 'var(--ho)', 'var(--info)', 'var(--bad)'];
-  const sz = 140, cx = sz / 2, cy = sz / 2, r = 52, sw = 14;
-  let cum = 0;
-  const arcs = models.map((m, i) => {
-    const pct = m.costMicros / total;
-    const sa = cum * 2 * Math.PI - Math.PI / 2;
-    cum += pct;
-    const ea = cum * 2 * Math.PI - Math.PI / 2;
-    const d = pct >= 0.999
-      ? `M ${cx + r},${cy} A ${r},${r} 0 1,1 ${cx - r},${cy} A ${r},${r} 0 1,1 ${cx + r},${cy}`
-      : `M ${cx + r * Math.cos(sa)},${cy + r * Math.sin(sa)} A ${r},${r} 0 ${pct > 0.5 ? 1 : 0},1 ${cx + r * Math.cos(ea)},${cy + r * Math.sin(ea)}`;
-    return { d, color: colors[i % colors.length], model: m, pct };
-  });
-
-  return (
-    <div style={CARD}>
-      <h3 style={H3}>Cost Breakdown</h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-        <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`}>
-          {arcs.map((a, i) => <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={sw} strokeLinecap="butt" />)}
-          <text x={cx} y={cy - 4} textAnchor="middle" fill="var(--tx)" fontSize="16" fontWeight="700" fontFamily={FONT_MONO}>{fmtCost(total)}</text>
-          <text x={cx} y={cy + 12} textAnchor="middle" fill="var(--tx3)" fontSize="10">total</text>
-        </svg>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {arcs.map((a, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
-              <span style={{ color: 'var(--tx2)', minWidth: 60 }}>{a.model.provider}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'evaluating', 'validated'] as const;
 
 function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, onClick, active }: {
@@ -251,8 +178,6 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
 
   if (metric === 'spend') {
     const totalCost = models.reduce((s, m) => s + m.costMicros, 0);
-    const totalInput = models.reduce((s, m) => s + m.inputTokens, 0);
-    const totalOutput = models.reduce((s, m) => s + m.outputTokens, 0);
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Spend Breakdown</h3>
@@ -273,9 +198,9 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
           </table>
         </div>
         <div style={{ display: 'flex', gap: 24, marginTop: 12, fontSize: 12, color: 'var(--tx2)' }}>
-          <span>Total tokens: {fmtTokens(totalInput + totalOutput)}</span>
-          <span>Input: {fmtTokens(totalInput)}</span>
-          <span>Output: {fmtTokens(totalOutput)}</span>
+          <span>Total tokens: {fmtTokens(models.reduce((s, m) => s + m.inputTokens + m.outputTokens, 0))}</span>
+          <span>Input: {fmtTokens(models.reduce((s, m) => s + m.inputTokens, 0))}</span>
+          <span>Output: {fmtTokens(models.reduce((s, m) => s + m.outputTokens, 0))}</span>
         </div>
       </div>
     );
@@ -320,7 +245,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Error Rate Breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Error rate = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as "Other".</div>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Error rate = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as &quot;Other&quot;.</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { label: 'Total Calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
@@ -457,177 +382,6 @@ function Btn({ label, onClick, loading, accent }: { label: string; onClick: () =
   );
 }
 
-export default function PerformanceDashboard() {
-  useEffect(() => {
-    const stored = localStorage.getItem('wr_theme');
-    if (stored === 'light' || stored === 'dark') document.querySelector('.wr-shell')?.setAttribute('data-theme', stored);
-  }, []);
-
-  const [fleetId, setFleetId] = useState<string | null>(null);
-  const [fleetToken, setFleetToken] = useState<string | null>(null);
-  const authKey = resolveAuthKey(fleetToken);
-
-  useEffect(() => {
-    setFleetId(localStorage.getItem('wr_fleet'));
-    setFleetToken(localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token'));
-  }, []);
-
-  const [view, setView] = useState<ViewMode>('index');
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
-  const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
-  const [hoursBack, setHoursBack] = useState(24);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(null);
-  const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(null);
-  const [agentData, setAgentData] = useState<AgentPerformanceResult | null>(null);
-  const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
-  const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
-  const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
-
-  const fetchIndex = useCallback(async () => {
-    if (!fleetId) return;
-    setLoading(true); setError('');
-    try {
-      const [idx, hourly, audit] = await Promise.all([
-        performanceIndex(fleetId, hoursBack, authKey),
-        performanceFleetHourly(fleetId, hoursBack * 2, authKey),
-        auditLog({ fleetId, limit: 2000 }, authKey).catch(() => null),
-      ]);
-      if (idx.error) { setError(idx.error); return; }
-      setIndexData(idx);
-      if (!hourly.error) setHourlyData(hourly);
-
-      if (audit) {
-        const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
-        let hSaved = 0, oSaved = 0, handoverCount = 0, taskCount = 0;
-        for (const e of audit.entries) {
-          if (new Date(e.timestamp).getTime() < cutoff) continue;
-          const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-          if (isHandover) {
-            handoverCount++;
-            hSaved += computeHandoverSaved({
-              contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
-              handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
-            });
-          }
-          if (e.type === 'context_offload') {
-            const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-            const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-            oSaved += Math.max(0, ctx - ret);
-          }
-          if (e.type === 'task_complete') taskCount++;
-        }
-        const avg = handoverCount > 0 ? Math.ceil(taskCount / (handoverCount + 1)) : 0;
-        const tokensSaved = hSaved * Math.max(avg, 1) + oSaved;
-        setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
-      } else {
-        setGovSavings(null);
-      }
-    } catch { setError('Failed to load performance data.'); }
-    finally { setLoading(false); }
-  }, [fleetId, hoursBack, authKey]);
-
-  const fetchAgent = useCallback(async (agentId: string) => {
-    if (!fleetId) return;
-    setLoading(true); setError('');
-    try {
-      const data = await performanceAgent(fleetId, agentId, hoursBack, authKey);
-      if (data.error) { setError(data.error); return; }
-      setAgentData(data);
-    } catch { setError('Failed to load agent performance data.'); }
-    finally { setLoading(false); }
-  }, [fleetId, hoursBack, authKey]);
-
-  const fetchEvidence = useCallback(async (findingId: string) => {
-    if (!fleetId) return;
-    setLoading(true);
-    try {
-      const data = await performanceEvidence(fleetId, findingId, authKey);
-      if (data.error) { setError(data.error); return; }
-      setEvidenceData(data);
-    } catch { setError('Failed to load evidence.'); }
-    finally { setLoading(false); }
-  }, [fleetId, authKey]);
-
-  useEffect(() => { if (view === 'index') fetchIndex(); }, [view, fetchIndex]);
-  useEffect(() => { if (view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [view, selectedAgent, fetchAgent]);
-  useEffect(() => { if (view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [view, selectedFindingId, fetchEvidence]);
-
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) {
-    if (!fleetId) return;
-    setFeedbackLoading(recId);
-    try {
-      await performanceFeedback(fleetId, {
-        recommendationId: recId, findingVersion, action, reason,
-        snoozeDays: action === 'snooze' ? 7 : undefined,
-        idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      }, authKey);
-      fetchIndex();
-    } catch { setError('Failed to submit feedback.'); }
-    finally { setFeedbackLoading(null); }
-  }
-
-  if (!fleetId || !fleetToken) {
-    return (
-      <div className="wr-shell" style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, system-ui, sans-serif' }}>
-        <Sidebar />
-        <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ textAlign: 'center', color: 'var(--tx2)' }}>
-            <p style={{ fontSize: 18, fontWeight: 600 }}>Sign in to view Performance</p>
-            <p style={{ fontSize: 14, marginTop: 8 }}>Enter your fleet token on the Fleet page first.</p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  return (
-    <div className="wr-shell" style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {view !== 'index' && (
-              <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Performance</button>
-            )}
-            {view === 'evidence' && selectedAgent && (
-              <>
-                <span style={{ color: 'var(--tx3)' }}>/</span>
-                <button onClick={() => { setView('agent'); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{selectedAgent}</button>
-              </>
-            )}
-            <span style={{ color: 'var(--tx3)' }}>{view !== 'index' ? '/' : ''}</span>
-            <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: 'var(--tx)', margin: 0 }}>
-              {view === 'index' ? 'Performance' : view === 'agent' ? selectedAgent : 'Evidence'}
-            </h1>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {([24, 72, 168] as const).map(h => (
-              <button key={h} onClick={() => setHoursBack(h)} style={{
-                fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                background: hoursBack === h ? 'var(--brand-dim)' : 'transparent',
-                color: hoursBack === h ? 'var(--brand)' : 'var(--tx3)',
-                border: `1px solid ${hoursBack === h ? 'var(--brand)' : 'var(--line)'}`,
-              }}>{h === 24 ? '24h' : h === 72 ? '3d' : '7d'}</button>
-            ))}
-            <ThemeToggle />
-          </div>
-        </div>
-
-        {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
-        {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
-
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} fleetId={fleetId} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} />}
-        {view === 'agent' && agentData && <AgentView data={agentData} />}
-        {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
-      </main>
-    </div>
-  );
-}
-
 function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
@@ -690,41 +444,6 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
       </div>
 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} /></div>}
-
-      {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
-
-      <div style={{ display: 'grid', gridTemplateColumns: s.models.length > 0 ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 24 }}>
-        {s.models.length > 0 && <CostDonut models={s.models} />}
-        {s.models.length > 0 && (
-          <div style={CARD}>
-            <h3 style={H3}>Traffic by Model</h3>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    <th style={{ padding: '6px 8px' }}>Model</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Calls</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Input</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Output</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.models.map((m, i) => (
-                    <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx)' }}>{m.model ?? 'unknown'}</td>
-                      <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{m.calls.toLocaleString()}</td>
-                      <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtTokens(m.inputTokens)}</td>
-                      <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtTokens(m.outputTokens)}</td>
-                      <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
 
       <div style={CARD}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -947,5 +666,290 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
         </>
       )}
     </>
+  );
+}
+
+export default function PerformancePage() {
+  const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
+  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? (localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token')) : null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loginToken, setLoginToken] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const authKey = resolveAuthKey(fleetToken);
+
+  useEffect(() => {
+    if (!fleetToken) { setAuthenticated(false); return; }
+    if (!fleetId && fleetToken) {
+      tokenLogin(fleetToken).then(data => {
+        if (data.fleetId) {
+          localStorage.setItem('wr_fleet', data.fleetId);
+          window.location.reload();
+        } else {
+          resetSession('Fleet token invalid. Please enter your API key.');
+        }
+      }).catch(() => { resetSession(); });
+      return;
+    }
+    setAuthenticated(true);
+  }, [fleetToken, fleetId]);
+
+  function resetSession(loginErr?: string) {
+    clearFleetCredentials();
+    setFleetId(null);
+    setFleetToken(null);
+    setAuthenticated(false);
+    if (loginErr) setLoginError(loginErr);
+  }
+
+  const handleAuthError = useCallback((msg: string) => {
+    resetSession(msg);
+  }, []);
+
+  async function handleFleetLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+    try {
+      const apiKeyLogin = isApiKey(loginToken);
+      let resolvedFleetId: string;
+      let resolvedFleetToken: string;
+
+      if (apiKeyLogin) {
+        const listData = await listFleets(loginToken);
+        const fleets = listData.fleets ?? [];
+        if (!fleets.length) {
+          setLoginError('No fleets found for this API key. Register an agent first.');
+          return;
+        }
+        resolvedFleetId = fleets[0].fleetId;
+        const claim = await claimFleet(resolvedFleetId, loginToken);
+        if (claim.error || !claim.fleetToken) {
+          setLoginError(claim.error || 'Could not retrieve fleet token.');
+          return;
+        }
+        resolvedFleetToken = claim.fleetToken;
+      } else {
+        const data = await tokenLogin(loginToken);
+        if (data.error) {
+          setLoginError(data.error);
+          return;
+        }
+        resolvedFleetId = data.fleetId ?? '';
+        resolvedFleetToken = loginToken;
+      }
+
+      clearFleetCredentials();
+      localStorage.setItem('wr_fleet', resolvedFleetId);
+      localStorage.setItem('wr_fleet_token', resolvedFleetToken);
+      setFleetId(resolvedFleetId);
+      setFleetToken(resolvedFleetToken);
+      setAuthenticated(true);
+      window.location.reload();
+    } catch {
+      setLoginError('Could not connect to WhiteRoom server');
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  const [view, setView] = useState<ViewMode>('index');
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
+  const [hoursBack, setHoursBack] = useState(168);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(null);
+  const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(null);
+  const [agentData, setAgentData] = useState<AgentPerformanceResult | null>(null);
+  const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
+  const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
+
+  const fetchIndex = useCallback(async () => {
+    if (!fleetId) return;
+    setLoading(true); setError('');
+    try {
+      const [idx, hourly, audit] = await Promise.all([
+        performanceIndex(fleetId, hoursBack, authKey),
+        performanceFleetHourly(fleetId, hoursBack * 2, authKey),
+        auditLog({ fleetId, limit: 2000 }, authKey).catch(() => null),
+      ]);
+      if (idx.error) { setError(idx.error); return; }
+      setIndexData(idx);
+      if (!hourly.error) setHourlyData(hourly);
+
+      if (audit) {
+        const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
+        let hSaved = 0, oSaved = 0, handoverCount = 0, taskCount = 0;
+        for (const e of audit.entries) {
+          if (new Date(e.timestamp).getTime() < cutoff) continue;
+          const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+          if (isHandover) {
+            handoverCount++;
+            hSaved += computeHandoverSaved({
+              contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
+              handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
+            });
+          }
+          if (e.type === 'context_offload') {
+            const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+            const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
+            oSaved += Math.max(0, ctx - ret);
+          }
+          if (e.type === 'task_complete') taskCount++;
+        }
+        const avg = handoverCount > 0 ? Math.ceil(taskCount / (handoverCount + 1)) : 0;
+        const tokensSaved = hSaved * Math.max(avg, 1) + oSaved;
+        setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
+      } else {
+        setGovSavings(null);
+      }
+    } catch { setError('Failed to load performance data.'); }
+    finally { setLoading(false); }
+  }, [fleetId, hoursBack, authKey]);
+
+  const fetchAgent = useCallback(async (agentId: string) => {
+    if (!fleetId) return;
+    setLoading(true); setError('');
+    try {
+      const data = await performanceAgent(fleetId, agentId, hoursBack, authKey);
+      if (data.error) { setError(data.error); return; }
+      setAgentData(data);
+    } catch { setError('Failed to load agent performance data.'); }
+    finally { setLoading(false); }
+  }, [fleetId, hoursBack, authKey]);
+
+  const fetchEvidence = useCallback(async (findingId: string) => {
+    if (!fleetId) return;
+    setLoading(true);
+    try {
+      const data = await performanceEvidence(fleetId, findingId, authKey);
+      if (data.error) { setError(data.error); return; }
+      setEvidenceData(data);
+    } catch { setError('Failed to load evidence.'); }
+    finally { setLoading(false); }
+  }, [fleetId, authKey]);
+
+  useEffect(() => { if (authenticated && view === 'index') fetchIndex(); }, [authenticated, view, fetchIndex]);
+  useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
+  useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
+
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) {
+    if (!fleetId) return;
+    setFeedbackLoading(recId);
+    try {
+      await performanceFeedback(fleetId, {
+        recommendationId: recId, findingVersion, action, reason,
+        snoozeDays: action === 'snooze' ? 7 : undefined,
+        idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      }, authKey);
+      fetchIndex();
+    } catch { setError('Failed to submit feedback.'); }
+    finally { setFeedbackLoading(null); }
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="flex items-center justify-center" style={{ flex: 1, padding: 16 }}>
+        <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+          <div className="flex items-center justify-center gap-2.5 mb-1">
+            <Logo width={22} height={30} gradientId="wr-perf" />
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 3, color: 'var(--tx)' }}>WHITE ROOM</span>
+          </div>
+          <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+
+          <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
+            <div>
+              <label htmlFor="fleet-token-perf" style={{ display: 'block', fontSize: 11.5, color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
+                YOUR API KEY OR FLEET TOKEN
+              </label>
+              <input
+                id="fleet-token-perf"
+                type="password"
+                value={loginToken}
+                onChange={(e) => setLoginToken(e.target.value)}
+                placeholder="wr_... or sk-ant-..."
+                required
+                style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 14.5, fontFamily: FONT_MONO, outline: 'none' }}
+              />
+            </div>
+
+            {loginError && (
+              <p style={{ color: 'var(--bad)', fontSize: 14.5 }}>{loginError}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loginLoading || !loginToken}
+              style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 15, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
+            >
+              {loginLoading ? 'CONNECTING...' : 'CONNECT TO MY FLEET →'}
+            </button>
+          </form>
+
+          <p style={{ color: 'var(--tx3)', fontSize: 11.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+            Your key is never stored or sent to any third party.<br />
+            It is used only to identify your fleet in this session.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
+      {/* Top bar */}
+      <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {view !== 'index' && (
+            <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Performance</button>
+          )}
+          {view === 'evidence' && selectedAgent && (
+            <>
+              <span style={{ color: 'var(--tx3)' }}>/</span>
+              <button onClick={() => { setView('agent'); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{selectedAgent}</button>
+            </>
+          )}
+          <span style={{ color: 'var(--tx3)' }}>{view !== 'index' ? '/' : ''}</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>
+            {view === 'index' ? 'Performance' : view === 'agent' ? selectedAgent : 'Evidence'}
+          </span>
+        </div>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
+        <span style={{ marginLeft: 'auto' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {([24, 72, 168] as const).map(h => (
+            <button key={h} onClick={() => setHoursBack(h)} style={{
+              fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+              background: hoursBack === h ? 'var(--brand-dim)' : 'transparent',
+              color: hoursBack === h ? 'var(--brand)' : 'var(--tx3)',
+              border: `1px solid ${hoursBack === h ? 'var(--brand)' : 'var(--line)'}`,
+            }}>{h === 24 ? '24h' : h === 72 ? '3d' : '7d'}</button>
+          ))}
+        </div>
+        <ThemeToggle />
+        <button onClick={() => resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
+        {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
+        {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
+
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} />}
+        {view === 'agent' && agentData && <AgentView data={agentData} />}
+        {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
+      </div>
+
+      {/* Footer */}
+      <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 11.5, color: 'var(--tx3)', flexShrink: 0 }}>
+        <span>White Room v1.1 Beta</span>
+        <span>© 2026 WhiteRoom</span>
+      </div>
+    </div>
   );
 }

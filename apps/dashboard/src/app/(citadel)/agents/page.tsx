@@ -7,16 +7,12 @@ import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OverviewContent } from '@/components/citadel/OverviewContent';
-import { UsageSavingsSection } from '@/components/citadel/UsageSavingsSection';
-import { ReliabilitySection } from '@/components/citadel/ReliabilitySection';
 import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 export default function AgentsPage() {
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get('tab');
   const viewParam = searchParams.get('view');
 
-  const activeTab = tabParam === 'performance' ? 'performance' : 'overview';
   const visualizationMode = viewParam === 'visualization';
 
   const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
@@ -166,49 +162,14 @@ export default function AgentsPage() {
         <button onClick={() => resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex items-center" style={{ borderBottom: '1px solid var(--line)', padding: '0 20px', flexShrink: 0 }}>
-        {([
-          { key: 'overview', label: 'Overview', href: '/agents' },
-          { key: 'performance', label: 'Performance', href: '/agents?tab=performance' },
-        ] as const).map(t => (
-          <a
-            key={t.key}
-            href={t.href}
-            style={{
-              padding: '10px 16px',
-              fontSize: 13.5,
-              fontWeight: 600,
-              textDecoration: 'none',
-              borderBottom: activeTab === t.key ? '2px solid var(--brand)' : '2px solid transparent',
-              color: activeTab === t.key ? 'var(--brand)' : 'var(--tx2)',
-              marginBottom: -1,
-            }}
-          >
-            {t.label}
-          </a>
-        ))}
-      </div>
-
       {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: activeTab === 'performance' ? 'auto' : undefined }}>
-        {activeTab === 'overview' ? (
-          <OverviewContent
-            fleetId={fleetId!}
-            authKey={authKey}
-            visualizationMode={visualizationMode}
-            onAuthError={handleAuthError}
-          />
-        ) : (
-          <>
-            <UsageSavingsSection fleetId={fleetId!} authKey={authKey} />
-            <div style={{ padding: '24px 20px 0' }}>
-              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 20 }}>
-                <ReliabilitySection fleetId={fleetId!} authKey={authKey} />
-              </div>
-            </div>
-          </>
-        )}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <OverviewContent
+          fleetId={fleetId!}
+          authKey={authKey}
+          visualizationMode={visualizationMode}
+          onAuthError={handleAuthError}
+        />
       </div>
 
       {/* Footer */}
