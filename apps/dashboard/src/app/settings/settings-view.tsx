@@ -500,7 +500,7 @@ function MethodsSection({
       <div style={{ display: 'grid', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
         {account.methods.map((m) => (
           <div
-            key={m.provider}
+            key={m.id}
             style={{
               background: 'var(--sunk)',
               padding: '13px 15px',
@@ -511,7 +511,17 @@ function MethodsSection({
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{PROVIDER_LABELS[m.provider] ?? m.provider}</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>
+                {PROVIDER_LABELS[m.provider] ?? m.provider}
+                {/* Several rows can share a provider — two Google accounts on
+                    one user is a real shape in production — so the account
+                    reference below is what tells them apart. */}
+                {account.methods.filter((o) => o.provider === m.provider).length > 1 && (
+                  <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--tx3)', marginLeft: 6 }}>
+                    account {account.methods.filter((o) => o.provider === m.provider).findIndex((o) => o.id === m.id) + 1}
+                  </span>
+                )}
+              </div>
               <div
                 style={{
                   fontFamily: FONT_MONO,
@@ -529,7 +539,7 @@ function MethodsSection({
               <button
                 style={button('ghost', pending)}
                 disabled={pending}
-                onClick={() => run(() => unlinkProvider(m.provider), `${PROVIDER_LABELS[m.provider] ?? m.provider} unlinked.`)}
+                onClick={() => run(() => unlinkProvider(m.id), `${PROVIDER_LABELS[m.provider] ?? m.provider} unlinked.`)}
               >
                 Unlink
               </button>
