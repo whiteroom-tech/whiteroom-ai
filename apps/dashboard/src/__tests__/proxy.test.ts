@@ -17,7 +17,8 @@ function req(host: string, pathname: string, { forwarded = true } = {}) {
 }
 
 /** What the proxy decided, read off the response it returned. */
-function verdict(res: Response): 'pass' | 'notFound' | string {
+function verdict(res: Response | undefined): 'pass' | 'notFound' | string {
+  if (!res) return 'pass';
   if (res.status === 404) return 'notFound';
   const rewrite = res.headers.get('x-middleware-rewrite');
   if (rewrite) return 'notFound';

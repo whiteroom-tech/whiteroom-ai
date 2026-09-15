@@ -586,7 +586,7 @@ export default function PerformanceDashboard() {
 
   return (
     <div className="wr-shell" style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <Sidebar fleetId={fleetId} />
+      <Sidebar />
       <main style={{ flex: 1, overflow: 'auto', padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
