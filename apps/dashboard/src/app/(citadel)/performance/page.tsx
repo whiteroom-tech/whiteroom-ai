@@ -111,6 +111,113 @@ function computeTrends(hourly: FleetHourlyDataPoint[]) {
   };
 }
 
+function FleetActivityChart({ hourly }: { hourly: FleetHourlyDataPoint[] }) {
+  const maxCalls = Math.max(...hourly.map(h => h.calls), 1);
+  return (
+    <div style={CARD}>
+      <h3 style={H3}>Fleet Activity</h3>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 140 }}>
+        {hourly.map((h, i) => {
+          const cp = (h.completeCount / maxCalls) * 100;
+          const ep = (h.errorCount / maxCalls) * 100;
+          const op = ((h.calls - h.completeCount - h.errorCount) / maxCalls) * 100;
+          const t = new Date(h.hour);
+          return (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n${h.calls} calls, ${h.completeCount} complete, ${h.errorCount} errors`}>
+              {op > 0 && <div style={{ width: '100%', height: `${op}%`, background: 'var(--tx3)', opacity: 0.3 }} />}
+              {ep > 0 && <div style={{ width: '100%', height: `${ep}%`, background: 'var(--warn)', opacity: 0.85 }} />}
+              <div style={{ width: '100%', height: `${Math.max(cp, h.calls > 0 ? 1 : 0)}%`, background: 'var(--brand)', opacity: 0.75 }} />
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
+        <span>{hourly.length > 0 ? new Date(hourly[0].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+        <span>{hourly.length > 0 ? new Date(hourly[hourly.length - 1].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: 'var(--tx3)' }}>
+        {[['var(--brand)', 0.75, 'Complete'], ['var(--warn)', 0.85, 'Errors'], ['var(--tx3)', 0.3, 'Other']].map(([bg, op, label]) => (
+          <span key={label as string}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: bg as string, opacity: op as number, marginRight: 4 }} />{label as string}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
+  const total = models.reduce((s, m) => s + m.costMicros, 0);
+  if (total === 0) return null;
+  const colors = ['var(--brand)', 'var(--ok)', 'var(--warn)', 'var(--ho)', 'var(--info)', 'var(--bad)'];
+  const sz = 140, cx = sz / 2, cy = sz / 2, r = 52, sw = 14;
+  let cum = 0;
+  const arcs = models.map((m, i) => {
+    const pct = m.costMicros / total;
+    const sa = cum * 2 * Math.PI - Math.PI / 2;
+    cum += pct;
+    const ea = cum * 2 * Math.PI - Math.PI / 2;
+    const d = pct >= 0.999
+      ? `M ${cx + r},${cy} A ${r},${r} 0 1,1 ${cx - r},${cy} A ${r},${r} 0 1,1 ${cx + r},${cy}`
+      : `M ${cx + r * Math.cos(sa)},${cy + r * Math.sin(sa)} A ${r},${r} 0 ${pct > 0.5 ? 1 : 0},1 ${cx + r * Math.cos(ea)},${cy + r * Math.sin(ea)}`;
+    return { d, color: colors[i % colors.length], model: m, pct };
+  });
+
+  return (
+    <div style={CARD}>
+      <h3 style={H3}>Cost Breakdown</h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+        <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`}>
+          {arcs.map((a, i) => <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={sw} strokeLinecap="butt" />)}
+          <text x={cx} y={cy - 4} textAnchor="middle" fill="var(--tx)" fontSize="16" fontWeight="700" fontFamily={FONT_MONO}>{fmtCost(total)}</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" fill="var(--tx3)" fontSize="10">total</text>
+        </svg>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {arcs.map((a, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
+              <span style={{ color: 'var(--tx2)', minWidth: 60 }}>{a.model.provider}</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
+  if (models.length === 0) return null;
+  return (
+    <div style={CARD}>
+      <h3 style={H3}>Traffic by Model</h3>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
+              <th style={{ padding: '6px 8px' }}>Model</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Calls</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Input</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Output</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {models.map((m, i) => (
+              <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
+                <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx)' }}>{m.model ?? 'unknown'}</td>
+                <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{m.calls.toLocaleString()}</td>
+                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtTokens(m.inputTokens)}</td>
+                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtTokens(m.outputTokens)}</td>
+                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'evaluating', 'validated'] as const;
 
 function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, onClick, active }: {
@@ -444,6 +551,13 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
       </div>
 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} /></div>}
+
+      {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
+
+      <div style={{ display: 'grid', gridTemplateColumns: s.models.length > 0 ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 24 }}>
+        {s.models.length > 0 && <CostDonut models={s.models} />}
+        {s.models.length > 0 && <TrafficByModel models={s.models} />}
+      </div>
 
       <div style={CARD}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
