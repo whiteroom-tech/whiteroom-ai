@@ -41,8 +41,11 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
   });
 
   it('redirects legacy routes to Citadel equivalents', () => {
+    // /performance is NOT a legacy route -- Sidebar.tsx links it directly and
+    // (citadel)/performance/page.tsx serves it live. Only /fleet and /sandbox
+    // were ever renamed.
     expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
-    expect(verdict(proxy(req(APP, '/performance')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/performance')))).toBe('pass');
     expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
   });
 
@@ -71,7 +74,7 @@ describe('the app host', () => {
   it('redirects legacy routes even with ADMIN_HOST set', () => {
     process.env.ADMIN_HOST = ADMIN;
     expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
-    expect(verdict(proxy(req(APP, '/performance')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/performance')))).toBe('pass');
     expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
   });
 
