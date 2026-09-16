@@ -22,6 +22,7 @@ import type {
   PerformanceFeedbackResult,
   PerformanceHealthResult,
   PerformanceIndexResult,
+  PerformanceLiveFeedResult,
   PerformanceRecommendation,
   PaginatedRecommendationsResult,
   ReadinessAssessment,
@@ -532,6 +533,27 @@ export function performanceRecommendationGet(
     fleet_id: fleetId,
     recommendation_id: recommendationId,
     contract_version: '1',
+  }, key);
+}
+
+/**
+ * Full-detail, un-redacted live feed — kept only for a short TTL (see
+ * PerformanceLiveFeedResult), unlike auditLog which returns the permanent,
+ * content-free record. Not fetched by default anywhere; callers should treat
+ * this as an explicit reveal, not part of the page's normal load.
+ */
+export function performanceLiveFeed(
+  fleetId: string,
+  opts?: { agentId?: string; type?: string; search?: string; limit?: number },
+  key?: string,
+): Promise<PerformanceLiveFeedResult> {
+  return apiCall<PerformanceLiveFeedResult>({
+    action: 'performance_live_feed',
+    fleet_id: fleetId,
+    agent_id: opts?.agentId,
+    type: opts?.type,
+    search: opts?.search,
+    limit: opts?.limit,
   }, key);
 }
 

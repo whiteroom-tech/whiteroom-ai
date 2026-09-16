@@ -72,6 +72,22 @@ export interface AuditLogResponse {
   entries: AuditEntry[];
 }
 
+/**
+ * The Performance tab's live feed (performance_live_feed action): full,
+ * un-redacted detail (real reply text, real tool-call argument values), kept
+ * only for `ttlHours` and then deleted. A different store from audit_log
+ * (which is the permanent, content-free record) — reuses AuditEntry's shape
+ * since the fields line up, but the content inside taskName/details here is
+ * genuinely raw, not a label.
+ */
+export interface PerformanceLiveFeedResult {
+  fleetId: string;
+  ttlHours: number;
+  total: number;
+  entries: AuditEntry[];
+  error?: string;
+}
+
 // -- Client helper result shapes (permissive: success + error fields coexist) --
 
 export interface RegisterResult {

@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, auditLog } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, auditLog } from '@/lib/whiteroom/client';
 import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ActivityFeed } from '@/components/ActivityFeed';
+import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry } from '@/lib/whiteroom/types';
 import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -214,6 +216,92 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The live feed: full, un-redacted detail (real reply text, real tool-call
+ * values) — a different store from the audit log, kept only a short while
+ * (ttlHours) and then deleted. Never fetched automatically; revealing it is
+ * a deliberate action since, unlike everything else on this page, it
+ * contains actual customer content rather than metrics.
+ */
+function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey?: string }) {
+  const [revealed, setRevealed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [ttlHours, setTtlHours] = useState<number | null>(null);
+  const [feedVariant, setFeedVariant] = useState<FeedVariant>(() => {
+    const v = typeof window !== 'undefined' ? localStorage.getItem('wr_perf_feed_variant') : null;
+    return isFeedVariant(v) ? v : 'log';
+  });
+  const [technical, setTechnical] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [feedPage, setFeedPage] = useState(0);
+
+  const fetchLiveFeed = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await performanceLiveFeed(fleetId, { limit: 100 }, authKey);
+      if (res.error) return;
+      setEntries(res.entries ?? []);
+      setTtlHours(res.ttlHours ?? null);
+    } catch {} finally { setLoading(false); }
+  }, [fleetId, authKey]);
+
+  function reveal() {
+    setRevealed(true);
+    fetchLiveFeed();
+  }
+
+  function changeVariant(v: string) {
+    if (!isFeedVariant(v)) return;
+    setFeedVariant(v);
+    localStorage.setItem('wr_perf_feed_variant', v);
+  }
+
+  return (
+    <div style={CARD}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: revealed ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={H3}>Live Feed</h3>
+          {revealed && (
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--info-bg)', color: 'var(--info)', fontFamily: FONT_MONO }}>
+              ◉ KEPT {ttlHours ?? 72}H · THEN DELETED
+            </span>
+          )}
+        </div>
+        {revealed ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select value={feedVariant} onChange={e => changeVariant(e.target.value)} style={{ fontSize: 11.5, borderRadius: 4, padding: '3px 6px', background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
+              <option value="log">▤ Log</option>
+              <option value="tape">⛓ Tape</option>
+              <option value="manifest">▦ Manifest</option>
+            </select>
+            <Btn label="Tech" onClick={() => setTechnical(v => !v)} loading={false} accent={technical} />
+            <Btn label={loading ? 'Refreshing...' : 'Refresh'} onClick={fetchLiveFeed} loading={loading} />
+          </div>
+        ) : (
+          <Btn label="Show live feed" onClick={reveal} loading={false} />
+        )}
+      </div>
+      {!revealed && (
+        <p style={{ fontSize: 12, color: 'var(--tx3)', margin: 0 }}>
+          Full, un-redacted detail of what agents actually said and did — unlike everything else on this page, this is real content, not a metric. Kept briefly, then deleted; never part of the permanent audit record.
+        </p>
+      )}
+      {revealed && (
+        <ActivityFeed
+          entries={entries}
+          page={feedPage}
+          onPageChange={setFeedPage}
+          variant={feedVariant}
+          technical={technical}
+          expanded={expanded}
+          onToggleExpanded={key => setExpanded(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+        />
+      )}
     </div>
   );
 }
@@ -617,6 +705,8 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
           </div>
         )}
       </div>
+
+      <LiveFeedSection fleetId={fleetId} authKey={authKey} />
     </>
   );
 }
