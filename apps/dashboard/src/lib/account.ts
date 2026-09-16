@@ -10,6 +10,16 @@ import { emailChangeEmail } from '@/lib/magic-link-email';
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
 
 export interface SignInMethod {
+  /**
+   * Stable per-row identity, and what unlinking acts on.
+   *
+   * One user can hold SEVERAL rows for the same provider — production has
+   * accounts with two distinct Google subs linked to one user, plus the
+   * backfill rows migration 001 created for pre-adapter users. Keying this
+   * list by provider alone collided those into one entry and made "unlink
+   * Google" delete every Google row at once.
+   */
+  id: string;
   provider: string;
   /** Google's `sub`, or the email for the magic-link provider. */
   accountRef: string;
@@ -84,7 +94,7 @@ export async function getAccountOverview(): Promise<AccountOverview> {
       [userId],
     ),
     db().query(
-      `SELECT provider, "providerAccountId" FROM accounts WHERE "userId" = $1 ORDER BY provider`,
+      `SELECT id, provider, "providerAccountId" FROM accounts WHERE "userId" = $1 ORDER BY provider, id`,
       [userId],
     ),
     db().query(
@@ -103,12 +113,14 @@ export async function getAccountOverview(): Promise<AccountOverview> {
   // address, so it has to be counted here or unlinking Google would look like
   // it locks the account out when it doesn't.
   const methods: SignInMethod[] = accountRes.rows.map((r) => ({
+    id: r.id,
     provider: r.provider,
     accountRef: r.providerAccountId,
     canUnlink: false,
   }));
   if (user.email) {
-    methods.push({ provider: 'email', accountRef: user.email, canUnlink: false });
+    // The magic-link provider has no accounts row, so it gets a synthetic id.
+    methods.push({ id: 'email', provider: 'email', accountRef: user.email, canUnlink: false });
   }
   const unlinkable = methods.length > 1;
   for (const m of methods) {
@@ -187,24 +199,26 @@ export async function signOutEverywhere(): Promise<void> {
 
 // -- Linked sign-in methods --
 
-export async function unlinkProvider(provider: string): Promise<ActionResult> {
+export async function unlinkProvider(accountId: string): Promise<ActionResult> {
   const userId = await requireUserId();
 
-  if (provider === 'email') {
+  if (accountId === 'email') {
     return { ok: false, error: 'Email sign-in cannot be removed. Change your email address instead.' };
   }
 
   // Re-derive the guard server-side rather than trusting the button that was
-  // clicked: canUnlink arrived over the wire and the row count may have
-  // changed since the page rendered.
+  // clicked: it arrived over the wire and the row count may have changed since
+  // the page rendered.
   const overview = await getAccountOverview();
-  const target = overview.methods.find((m) => m.provider === provider);
+  const target = overview.methods.find((m) => m.id === accountId);
   if (!target) return { ok: false, error: 'That sign-in method is not linked to this account.' };
   if (overview.methods.length <= 1) {
     return { ok: false, error: 'This is your only way to sign in. Link another method first.' };
   }
 
-  await db().query(`DELETE FROM accounts WHERE "userId" = $1 AND provider = $2`, [userId, provider]);
+  // Scoped to the one row. Deleting by provider would take every Google
+  // account the user has linked, not the one they picked.
+  await db().query(`DELETE FROM accounts WHERE id = $1 AND "userId" = $2`, [accountId, userId]);
   return { ok: true };
 }
 
