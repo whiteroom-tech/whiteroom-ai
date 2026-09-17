@@ -577,11 +577,20 @@ function Btn({ label, onClick, loading, accent }: { label: string; onClick: () =
   );
 }
 
+function ConfidenceDot({ level }: { level: string | null | undefined }) {
+  if (!level || level === 'high') return null;
+  const colors: Record<string, string> = { moderate: 'var(--warn)', low: 'var(--warn)', insufficient: 'var(--bad)' };
+  const labels: Record<string, string> = { moderate: 'Moderate confidence', low: 'Low confidence', insufficient: 'Insufficient data' };
+  return (
+    <span title={labels[level] ?? level} style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: colors[level] ?? 'var(--tx3)', marginLeft: 4, verticalAlign: 'middle' }} />
+  );
+}
+
 function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
-  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => void;
+  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, rowVersion?: number) => void;
   feedbackLoading: string | null;
 }) {
   const s = data.summary;
@@ -681,14 +690,14 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
                 <Btn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
                 {rec.status === 'open' && (
                   <>
-                    <Btn label="Snooze" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Dismiss" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Implemented" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
+                    <Btn label="Snooze" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze', undefined, rec.rowVersion)} loading={feedbackLoading === rec.id} />
+                    <Btn label="Dismiss" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it', rec.rowVersion)} loading={feedbackLoading === rec.id} />
+                    <Btn label="Implemented" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented', undefined, rec.rowVersion)} loading={feedbackLoading === rec.id} accent />
                   </>
                 )}
               </div>
             </div>
-            {rec.summary && <div style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 6, paddingLeft: 2, lineHeight: 1.5 }}>{rec.summary}</div>}
+            {rec.summary && <div style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 6, paddingLeft: 2, lineHeight: 1.5 }}>{rec.summary}<ConfidenceDot level={rec.summaryConfidence} /></div>}
           </div>
         )) : (
           <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
@@ -1042,15 +1051,19 @@ export default function PerformancePage() {
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) {
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, rowVersion?: number) {
     if (!fleetId) return;
     setFeedbackLoading(recId);
     try {
-      await performanceFeedback(fleetId, {
+      const result = await performanceFeedback(fleetId, {
         recommendationId: recId, findingVersion, action, reason,
         snoozeDays: action === 'snooze' ? 7 : undefined,
         idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        expectedRowVersion: rowVersion,
       }, authKey);
+      if (!result.success && result.error) {
+        setError(result.error);
+      }
       fetchIndex();
     } catch { setError('Failed to submit feedback.'); }
     finally { setFeedbackLoading(null); }

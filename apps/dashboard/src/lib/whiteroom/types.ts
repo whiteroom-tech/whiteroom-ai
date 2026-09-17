@@ -245,6 +245,7 @@ export interface PerformanceEvidenceResult {
 export interface PerformanceFeedbackResult {
   success: boolean;
   status?: string;
+  row_version?: number;
   error?: string;
 }
 
@@ -266,11 +267,15 @@ export interface RecommendationDetail {
   action: string;
   status: string;
   verificationStatus: string;
+  rowVersion: number;
   currentFindingId: string | null;
   feedbackCount: number;
+  snoozedUntil: string | null;
+  suppressedUntil: string | null;
   createdAt: string;
   updatedAt: string;
   summary?: string | null;
+  summaryConfidence?: string | null;
 }
 
 export interface FleetHourlyDataPoint {

@@ -56,8 +56,20 @@ async function postRaw(body: Record<string, unknown>, key?: string): Promise<Res
   });
 }
 
-async function apiCall<T>(body: Record<string, unknown>, key?: string): Promise<T> {
-  const res = await postRaw(body, key);
+async function apiCall<T>(body: Record<string, unknown>, key?: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${PROXY_URL}/api/white-room`, {
+    method: 'POST',
+    headers: authHeaders(key),
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let parsed: Record<string, unknown> | null = null;
+    try { parsed = JSON.parse(text); } catch {}
+    if (parsed && typeof parsed === 'object') return parsed as T;
+    return { error: `HTTP ${res.status}`, success: false } as T;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -305,7 +317,6 @@ export interface SandboxReportResult {
 
 export function createSandbox(
   opts: {
-    userId: string;
     apiKey?: string;
     isTrial?: boolean;
     ttlMinutes?: number;
@@ -317,7 +328,6 @@ export function createSandbox(
 ): Promise<CreateSandboxResult> {
   return apiCall<CreateSandboxResult>({
     action: 'create_sandbox',
-    user_id: opts.userId,
     is_trial: opts.isTrial,
     api_key: opts.apiKey,
     ttl_minutes: opts.ttlMinutes,
@@ -327,8 +337,10 @@ export function createSandbox(
   }, key);
 }
 
-export function sandboxStatus(userId: string, key?: string): Promise<SandboxStatusResult> {
-  return apiCall<SandboxStatusResult>({ action: 'sandbox_status', user_id: userId }, key);
+export function sandboxStatus(sandboxIdOrKey?: string, key?: string): Promise<SandboxStatusResult> {
+  const body: Record<string, unknown> = { action: 'sandbox_status' };
+  if (sandboxIdOrKey && !sandboxIdOrKey.startsWith('sk-')) body.sandbox_id = sandboxIdOrKey;
+  return apiCall<SandboxStatusResult>(body, key);
 }
 
 export function destroySandbox(sandboxId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
@@ -394,8 +406,8 @@ export interface SandboxHistoryEntry {
   isTrial: boolean;
 }
 
-export function sandboxHistory(userId: string, key?: string): Promise<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }> {
-  return apiCall<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }>({ action: 'sandbox_history', user_id: userId }, key);
+export function sandboxHistory(key?: string): Promise<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }> {
+  return apiCall<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }>({ action: 'sandbox_history' }, key);
 }
 
 export function sandboxAnalytics(key?: string): Promise<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }> {
@@ -475,7 +487,7 @@ export function performanceEvidence(fleetId: string, findingId: string, key?: st
 
 export function performanceFeedback(
   fleetId: string,
-  opts: { recommendationId: string; findingVersion: string; action: string; reason?: string; snoozeDays?: number; idempotencyKey: string },
+  opts: { recommendationId: string; findingVersion: string; action: string; reason?: string; snoozeDays?: number; idempotencyKey: string; expectedRowVersion?: number; changeNote?: string },
   key?: string,
 ): Promise<PerformanceFeedbackResult> {
   return apiCall<PerformanceFeedbackResult>({
@@ -487,6 +499,8 @@ export function performanceFeedback(
     reason: opts.reason,
     snooze_days: opts.snoozeDays,
     idempotency_key: opts.idempotencyKey,
+    expected_row_version: opts.expectedRowVersion,
+    change_note: opts.changeNote,
   }, key);
 }
 
