@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { PATH_HEADER } from '@/lib/callback-url';
 
 function adminHost(): string | undefined {
   return process.env.ADMIN_HOST?.toLowerCase().trim() || undefined;
@@ -13,6 +14,19 @@ function isUnder(pathname: string, prefix: string): boolean {
 
 function notFound(request: NextRequest) {
   return NextResponse.rewrite(new URL('/_admin_absent', request.url), { status: 404 });
+}
+
+/**
+ * Lets the request through, telling the app which path was asked for.
+ *
+ * The header is always set rather than merged: a client can send one itself,
+ * and overwriting it here unconditionally is the whole reason anything
+ * downstream may trust it.
+ */
+function forward(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set(PATH_HEADER, request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 const REDIRECTS: Record<string, string> = {
@@ -30,7 +44,7 @@ export function proxy(request: NextRequest) {
         return NextResponse.redirect(new URL('/admin', request.url));
       }
       if (!ADMIN_HOST_ALLOWED.some((p) => isUnder(pathname, p))) return notFound(request);
-      return NextResponse.next();
+      return forward(request);
     }
     if (isUnder(pathname, '/admin')) return notFound(request);
   }
@@ -58,6 +72,8 @@ export function proxy(request: NextRequest) {
     response.headers.set('Cache-Control', 'no-store');
     return response;
   }
+
+  return forward(request);
 }
 
 export const config = {

@@ -1,8 +1,45 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
+import { DEFAULT_DESTINATION, safeCallbackUrl } from '@/lib/callback-url';
+
+type Method = 'google' | 'email';
+
+/**
+ * Which method this browser signed in with last.
+ *
+ * Both providers are passwordless, so signing up and signing in are the same
+ * operation — a new address creates the account, a known one resumes it. The
+ * only thing a returning user actually loses is which of the two they picked,
+ * and getting that wrong is precisely what produces OAuthAccountNotLinked.
+ * Remembering it here is what makes one card serve both cases honestly.
+ */
+const LAST_METHOD_KEY = 'wr_last_method';
+const LAST_EMAIL_KEY = 'wr_last_email';
+
+/**
+ * Where this sign-in should land.
+ *
+ * Read at the moment of the click rather than held in state, so it cannot be
+ * stale and cannot be missing because an effect had not run yet.
+ *
+ * Almost always /dashboard. The exception is the admin host, which serves the
+ * panel and nothing else: /dashboard 404s there, so the admin gate sends
+ * people here with ?callbackUrl=/admin and this is what honours it.
+ * safeCallbackUrl() is what keeps that from being an open redirect.
+ */
+function destination(): string {
+  const raw = new URLSearchParams(window.location.search).get('callbackUrl');
+  return safeCallbackUrl(raw, DEFAULT_DESTINATION);
+}
+
+/** What to suggest when the method someone just tried turns out to be the wrong one. */
+const OTHER_METHOD: Record<Method, string> = {
+  google: 'the email sign-in link',
+  email: 'Continue with Google',
+};
 
 const ERRORS: Record<string, string> = {
   Verification: 'That sign-in link has expired or was already used. Enter your email to get a new one.',
@@ -20,6 +57,33 @@ const OUTCOMES: Record<string, string> = {
   'deleted=1': 'Your account has been deleted.',
 };
 
+// localStorage throws outright in some privacy modes rather than returning
+// null. Remembering the last method is a convenience; it must never be the
+// reason someone can't sign in.
+function readStore(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStore(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable — the hint is simply not shown next time */
+  }
+}
+
+function clearStore(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* as above */
+  }
+}
+
 export default function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,29 +91,80 @@ export default function SignInPage() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lastMethod, setLastMethod] = useState<Method | null>(null);
+  const [returning, setReturning] = useState(false);
+  const consumedParams = useRef(false);
 
   // auth.ts points `pages.error` here, so a failed magic link arrives as
   // /sign-in?error=Verification rather than dead-ending on Auth.js's built-in
   // 403 page. Read it off the URL directly: useSearchParams would force this
   // page behind a Suspense boundary for no benefit. The param is stripped
   // afterwards so the warning doesn't outlive the attempt it describes.
+  //
+  // The remembered method is read here too rather than during render: the
+  // server has no localStorage, so touching it any earlier is a hydration
+  // mismatch. The page therefore opens on the neutral framing and settles
+  // into "Welcome back" a frame later, the same way the notice banner does.
+  //
+  // Guarded to run exactly once. This effect reads one-shot URL parameters and
+  // then destroys them, so it is not safe to run twice — and React StrictMode
+  // (on by default in dev) invokes it twice on purpose. The second pass sees
+  // the already-stripped URL, concludes nobody was signed out, and resets
+  // `returning` to false. A conditional setState would paper over it; a guard
+  // says what is actually true, which is that consuming a param is a
+  // one-time act.
   useEffect(() => {
+    if (consumedParams.current) return;
+    consumedParams.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const url = new URL(window.location.href);
 
+    const stored = readStore(LAST_METHOD_KEY);
+    let remembered: Method | null = stored === 'google' || stored === 'email' ? stored : null;
+    let wasSignedOut = false;
+
     const code = params.get('error');
     if (code) {
-      setNotice(ERRORS[code] ?? ERRORS.Default);
+      if (code === 'OAuthAccountNotLinked' && remembered) {
+        // A sign-in that worked would have landed on its destination, so
+        // arriving back here means the remembered method just failed —
+        // which makes the other one the answer. Cleared afterwards so a stale
+        // "you last used X" can't outlive the attempt that disproved it.
+        setNotice(
+          `That email is already registered with a different sign-in method. Try ${OTHER_METHOD[remembered]} instead.`,
+        );
+        clearStore(LAST_METHOD_KEY);
+        remembered = null;
+      } else {
+        setNotice(ERRORS[code] ?? ERRORS.Default);
+      }
       url.searchParams.delete('error');
     } else {
       for (const [key, message] of Object.entries(OUTCOMES)) {
         const [name, value] = key.split('=');
         if (params.get(name) !== value) continue;
         setNotice(message);
+        if (name === 'deleted') {
+          // The opposite of a returning user: the account this pointed at is
+          // gone, and greeting them with "Welcome back" over the top of
+          // "Your account has been deleted" would be absurd.
+          clearStore(LAST_METHOD_KEY);
+          clearStore(LAST_EMAIL_KEY);
+          remembered = null;
+        } else {
+          wasSignedOut = true;
+        }
         url.searchParams.delete(name);
         break;
       }
     }
+
+    setLastMethod(remembered);
+    setReturning(remembered !== null || wasSignedOut);
+
+    const rememberedEmail = readStore(LAST_EMAIL_KEY);
+    if (remembered === 'email' && rememberedEmail) setEmail(rememberedEmail);
 
     if (url.search !== window.location.search) {
       window.history.replaceState(null, '', url.pathname + url.search);
@@ -60,8 +175,12 @@ export default function SignInPage() {
     setLoading(true);
     setError(null);
     setNotice(null);
+    // Recorded before the redirect rather than after success, because there is
+    // no "after" on this page — a working Google sign-in never comes back.
+    // The effect above is what reinterprets this value if it does.
+    writeStore(LAST_METHOD_KEY, 'google');
     try {
-      await signIn('google', { callbackUrl: '/dashboard' });
+      await signIn('google', { callbackUrl: destination() });
     } catch {
       setError('Could not start sign-in. Please try again.');
       setLoading(false);
@@ -78,16 +197,25 @@ export default function SignInPage() {
     // bouncing through Auth.js's default verify-request page.
     const res = await signIn('resend', {
       email: email.trim(),
-      callbackUrl: '/dashboard',
+      callbackUrl: destination(),
       redirect: false,
     });
     setEmailLoading(false);
     if (res?.error) {
       setError('Could not send the sign-in link. Please try again.');
     } else {
+      // Unlike Google, this path has a real success to observe, so it records
+      // one rather than an attempt.
+      writeStore(LAST_METHOD_KEY, 'email');
+      writeStore(LAST_EMAIL_KEY, email.trim());
       setLinkSent(true);
     }
   }
+
+  const heading = returning ? 'Welcome back' : 'Sign in to WhiteRoom';
+  const subheading = returning
+    ? 'Sign in to pick up where you left off.'
+    : 'New here? Signing in creates your account and provisions your fleet.';
 
   return (
     <div className="min-h-screen font-sans flex flex-col" style={{ background: '#070B14', color: '#EAF1FF' }}>
@@ -110,10 +238,10 @@ export default function SignInPage() {
         <div className="text-center space-y-8 w-full max-w-sm">
           <div>
             <h1 className="text-3xl font-display font-bold tracking-tight">
-              Get started
+              {heading}
             </h1>
             <p className="text-sm mt-2" style={{ color: '#6B7C9E' }}>
-              Sign in to provision your fleet and get your API key.
+              {subheading}
             </p>
           </div>
 
@@ -148,7 +276,7 @@ export default function SignInPage() {
                   We sent a sign-in link to <span style={{ color: '#EAF1FF' }}>{email.trim()}</span>. It expires in 24 hours.
                 </p>
                 <button
-                  onClick={() => { setLinkSent(false); setError(null); }}
+                  onClick={() => { setLinkSent(false); setError(null); setEmail(''); }}
                   className="text-xs underline cursor-pointer"
                   style={{ color: '#6B7C9E' }}
                 >
@@ -188,6 +316,17 @@ export default function SignInPage() {
 
             {error && <p className="text-xs font-mono" style={{ color: '#FF6B7A' }}>{error}</p>}
           </div>
+
+          {/* The one thing a returning passwordless user can actually get
+              wrong. Hidden once a link is on its way, when the instruction
+              that matters is "check your inbox". */}
+          {lastMethod && !linkSent && (
+            <p className="text-xs" style={{ color: '#6B7C9E' }}>
+              {lastMethod === 'google'
+                ? 'You last signed in with Google.'
+                : 'You last signed in with an email link.'}
+            </p>
+          )}
         </div>
       </div>
     </div>
