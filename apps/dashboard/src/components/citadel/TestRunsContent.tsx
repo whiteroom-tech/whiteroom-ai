@@ -88,7 +88,7 @@ const BTN = {
 
 export function TestRunsContent() {
   const { data: session } = useSession();
-  const userId = session?.user?.email ?? 'anon';
+  void session;
   const [phase, setPhase] = useState<Phase>('interstitial');
   const [sandbox, setSandbox] = useState<CreateSandboxResult | null>(null);
   const [status, setStatus] = useState<SandboxStatusResult | null>(null);
@@ -164,10 +164,10 @@ export function TestRunsContent() {
     }
   }, [enrichEntry]);
 
-  const startPolling = useCallback((sbxUserId: string, sandboxId?: string) => {
+  const startPolling = useCallback((sandboxId?: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
-      const s = await sandboxStatus(sbxUserId);
+      const s = await sandboxStatus(sandboxId);
       if (s.error) return;
       setStatus(s);
       if (s.experience) setExperience(s.experience);
@@ -200,7 +200,7 @@ export function TestRunsContent() {
 
   useEffect(() => {
     async function checkExisting() {
-      const s = await sandboxStatus(userId);
+      const s = await sandboxStatus();
       if (s.success && s.sandboxId) {
         const expired = s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0;
         if (expired) {
@@ -220,14 +220,14 @@ export function TestRunsContent() {
           setPhase('checklist');
           syncAuditFromStatus(s);
           fetchAudit(s.sandboxId, s);
-          startPolling(userId, s.sandboxId);
+          startPolling(s.sandboxId);
         }
       }
-      const h = await fetchHistory(userId);
+      const h = await fetchHistory();
       if (h.sessions) setHistory(h.sessions);
     }
     checkExisting();
-  }, [userId, startPolling, fetchAudit, syncAuditFromStatus]);
+  }, [startPolling, fetchAudit, syncAuditFromStatus]);
 
   useEffect(() => {
     controlCatalog().then(res => {
@@ -260,17 +260,15 @@ export function TestRunsContent() {
     const nonCoreSelected = Array.from(selectedCatalogIds).filter(id => !coreIds.has(id));
     const isNew = nonCoreSelected.length > 0 || policyMode !== 'observe';
     let result = await createSandbox({
-      userId,
       isTrial: opts.isTrial,
       apiKey: opts.apiKey,
       selectedCatalogIds: isNew ? nonCoreSelected : undefined,
       policyMode: isNew ? policyMode : undefined,
     });
     if (result.error?.includes('already have an active sandbox')) {
-      const st = await sandboxStatus(userId);
+      const st = await sandboxStatus();
       if (st.sandboxId) await destroySandboxApi(st.sandboxId);
       result = await createSandbox({
-        userId,
         isTrial: opts.isTrial,
         apiKey: opts.apiKey,
         selectedCatalogIds: isNew ? nonCoreSelected : undefined,
@@ -283,7 +281,7 @@ export function TestRunsContent() {
     if (result.controls) setControls(result.controls);
     if (opts.isTrial) {
       navigateToPhase('checklist');
-      startPolling(userId, result.sandboxId);
+      startPolling(result.sandboxId);
       setLoading(false);
       runDemo(result.sandboxId!);
     } else {
@@ -317,7 +315,7 @@ export function TestRunsContent() {
     navigateToPhase('checklist');
     setLoading(false);
     setAuditEntries([]);
-    startPolling(userId, sandbox.sandboxId);
+    startPolling(sandbox.sandboxId);
   };
 
   const handlePauseAgent = async (agentId: string) => {
@@ -909,13 +907,13 @@ export function TestRunsContent() {
         {phase === 'connecting' && sandbox && (() => {
           if (!connectPollRef.current) {
             connectPollRef.current = setInterval(async () => {
-              const s = await sandboxStatus(userId);
+              const s = await sandboxStatus(sandbox?.sandboxId);
               if (s.agents && s.agents.length > 0) {
                 if (connectPollRef.current) clearInterval(connectPollRef.current);
                 connectPollRef.current = null;
                 setStatus(s);
                 navigateToPhase('checklist');
-                startPolling(userId, sandbox?.sandboxId);
+                startPolling(sandbox?.sandboxId);
               }
             }, 3000);
           }
@@ -981,13 +979,13 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
 
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
-                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); }}
+                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(sandbox?.sandboxId); }}
                 style={{ ...BTN.primary, padding: '8px 18px', fontSize: 13 }}
               >
                 Skip to monitoring
               </button>
               <button
-                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
+                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
                 style={{ ...BTN.ghost, fontSize: 12.5 }}
               >
                 Run demo instead
@@ -1315,7 +1313,7 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
 
         {/* GO LIVE */}
         {phase === 'go-live' && (() => {
-          const prodFleetId = userId.replace(/[^a-zA-Z0-9_\-.]/g, '-');
+          const prodFleetId = sandbox?.sandboxId ? `prod-${sandbox.sandboxId.slice(0, 8)}` : 'my-fleet';
           const passedCount = experience === 'new'
             ? controls.filter(c => c.liveEligibility?.eligible && c.liveEligibility.status === 'observed').length
             : Object.values(assertions).filter(a => a.status === 'observed').length;
