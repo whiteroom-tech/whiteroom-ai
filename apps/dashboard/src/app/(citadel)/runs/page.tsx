@@ -219,7 +219,7 @@ export default function RunsPage() {
             <Logo width={22} height={30} gradientId="wr-runs" />
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 3, color: 'var(--tx)' }}>WHITE ROOM</span>
           </div>
-          <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+          <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>MONITORING DASHBOARD</p>
 
           <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
             <div>
