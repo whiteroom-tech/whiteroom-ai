@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { auditLog, claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import { auditLog, clearAuditLog, claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -197,6 +197,24 @@ export default function RunsPage() {
 
   const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
 
+  async function exportWorkbook() {
+    if (!rangedEntries.length) return;
+    const tasks = rangedEntries.filter((e) => e.type === 'task_complete');
+    const xlsx = buildXlsx(rangedEntries, tasks);
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const ab = new ArrayBuffer(xlsx.byteLength); new Uint8Array(ab).set(xlsx);
+    const blob = new Blob([ab], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `whiteroom-runs-${analyticsRange}-${ts}.xlsx`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+  }
+
+  async function handleClearAudit() {
+    if (!fleetId || !confirm('This will delete all audit entries, reset agent counters, clear current watch state, and reset agent status and alarm/rest fields. This cannot be undone.')) return;
+    await clearAuditLog(fleetId, authKey);
+    setAllEntries([]);
+    fetchAllEntries();
+  }
+
   // --- Splitter ---
   const analyticsGridRef = useRef<HTMLDivElement>(null);
   function handleAnalyticsSplitterDown(e: React.MouseEvent) {
@@ -284,6 +302,8 @@ export default function RunsPage() {
             ))}
           </div>
           <span style={{ marginLeft: 'auto' }} />
+          <button onClick={exportWorkbook} disabled={!rangedEntries.length} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: rangedEntries.length ? 'pointer' : 'not-allowed', opacity: rangedEntries.length ? 1 : 0.4 }} title="Export to Excel">⬇ .xlsx</button>
+          <button onClick={handleClearAudit} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--bad, #ef4444)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Clear all audit entries">Clear</button>
         </div>
 
         {/* 8-col metrics row */}
@@ -529,4 +549,62 @@ export default function RunsPage() {
       </div>
     </div>
   );
+}
+
+// --- Pure-JS XLSX export ---
+
+function crc32(bytes: Uint8Array): number {
+  const table: number[] = [];
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; table[n] = c >>> 0; }
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function zipStore(files: { name: string; bytes: Uint8Array }[]): Uint8Array {
+  const enc = new TextEncoder();
+  const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff];
+  const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff];
+  const parts: Uint8Array[] = []; const central: Uint8Array[] = []; let offset = 0;
+  files.forEach((f) => {
+    const name = enc.encode(f.name); const data = f.bytes; const c = crc32(data);
+    const local = ([] as number[]).concat(u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(c), u32(data.length), u32(data.length), u16(name.length), u16(0));
+    parts.push(new Uint8Array(local), name, data);
+    const cen = ([] as number[]).concat(u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(c), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset));
+    central.push(new Uint8Array(cen), name);
+    offset += local.length + name.length + data.length;
+  });
+  const cStart = offset; let cSize = 0; central.forEach((c) => (cSize += c.length));
+  parts.push(...central);
+  parts.push(new Uint8Array(([] as number[]).concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cSize), u32(cStart), u16(0))));
+  const total = parts.reduce((s, p) => s + p.length, 0); const out = new Uint8Array(total); let p = 0;
+  parts.forEach((part) => { out.set(part, p); p += part.length; }); return out;
+}
+
+function colLetter(i: number): string { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+const xesc = (s: unknown) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c] ?? c));
+
+function sheetXml(entries: AuditEntry[]): string {
+  const cols = ['Time', 'Agent', 'Watch', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
+  type Cell = { s?: string; n?: number };
+  const rowXml = (cells: Cell[], r: number) => `<row r="${r}">` + cells.map((c, i) => { const ref = colLetter(i) + r; if (c.n != null) return `<c r="${ref}"><v>${c.n}</v></c>`; return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xesc(c.s ?? '')}</t></is></c>`; }).join('') + '</row>';
+  let rows = rowXml(cols.map((s) => ({ s })), 1);
+  entries.forEach((e, idx) => {
+    const tools = (Array.isArray(e.details) ? e.details : []).map((d: { name: string; args?: string }) => (d.args ? `${d.name}(${d.args})` : d.name)).join('  |  ');
+    rows += rowXml([{ s: new Date(e.timestamp).toLocaleString('en-US', { hour12: false }) }, { s: e.agentId || '' }, { n: e.watchNumber }, { s: e.type || '' }, { s: e.type === 'task_complete' ? e.taskName || '' : '' }, { n: e.tokensUsed }, { n: e.minutesSpent }, { n: e.remaining }, { s: tools }], idx + 2);
+  });
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`;
+}
+
+function buildXlsx(entries: AuditEntry[], tasks: AuditEntry[]): Uint8Array {
+  const enc = new TextEncoder();
+  const file = (name: string, str: string) => ({ name, bytes: enc.encode(str) });
+  return zipStore([
+    file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
+    file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
+    file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="All Events" sheetId="1" r:id="rId1"/><sheet name="Tasks Only" sheetId="2" r:id="rId2"/></sheets></workbook>'),
+    file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>'),
+    file('xl/worksheets/sheet1.xml', sheetXml(entries)),
+    file('xl/worksheets/sheet2.xml', sheetXml(tasks)),
+  ]);
 }

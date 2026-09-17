@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { auditLog, clearAuditLog, checkWatch, fleetReport, getHandover, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, fleetReport, getHandover, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
-import { isFeedVariant, type FeedVariant } from '@/lib/activity';
-import { ActivityFeed } from '@/components/ActivityFeed';
 import { RingGauge, Beacon } from '@/components/AgentGauge';
 import { FleetVisualization } from '@/components/FleetVisualization';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
@@ -50,25 +48,13 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const [agentHealth, setAgentHealth] = useState<Record<string, { health: number; lastStatus: string }>>({});
   const [handoverDocs, setHandoverDocs] = useState<Record<string, HandoverDoc>>({});
   const [error, setError] = useState('');
-  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
-  const [agentIds, setAgentIds] = useState<string[]>([]);
-  const [filterAgent, setFilterAgent] = useState('');
-  const [filterType, setFilterType] = useState('task_complete');
-  const [searchText, setSearchText] = useState('');
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const [feedPage, setFeedPage] = useState(0);
-  const [feedVariant, setFeedVariant] = useState<FeedVariant>(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_feed_variant') : null;
-    return isFeedVariant(saved) ? saved : 'log';
-  });
-  const [technical, setTechnical] = useState(() => typeof window !== 'undefined' && localStorage.getItem('wr_feed_technical') === '1');
+  const [recentEntries, setRecentEntries] = useState<AuditEntry[]>([]);
   const [agentView, setAgentView] = useState<AgentView>(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_agent_view') : null;
     return isAgentView(saved) ? saved : 'cards';
   });
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [agentActionLoading, setAgentActionLoading] = useState<Record<string, boolean>>({});
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
   const fetchReport = useCallback(async () => {
@@ -162,15 +148,14 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     await fetchReport();
   }, [fleetId, agents, authKey, fetchReport]);
 
-  const fetchAudit = useCallback(async () => {
+  const fetchRecentActivity = useCallback(async () => {
     if (!fleetId) return;
     try {
-      const data = await auditLog({ fleetId, agentId: filterAgent || undefined, type: filterType || undefined, search: searchText || undefined, limit: 200 }, authKey);
+      const data = await auditLog({ fleetId, limit: 8 }, authKey);
       if ('error' in data) return;
-      setAuditEntries(data.entries);
-      if (data.filters?.agentIds) setAgentIds(data.filters.agentIds);
+      setRecentEntries(data.entries);
     } catch { /* ignore */ }
-  }, [fleetId, filterAgent, filterType, searchText, authKey]);
+  }, [fleetId, authKey]);
 
   const fetchAllEntries = useCallback(async () => {
     if (!fleetId) return;
@@ -182,12 +167,10 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   }, [fleetId, authKey]);
 
   useEffect(() => {
-    fetchReport(); fetchAudit();
-    const interval = setInterval(() => { fetchReport(); fetchAudit(); }, 10000);
+    fetchReport(); fetchRecentActivity();
+    const interval = setInterval(() => { fetchReport(); fetchRecentActivity(); }, 10000);
     return () => clearInterval(interval);
-  }, [fetchReport, fetchAudit]);
-
-  useEffect(() => { fetchAudit(); }, [filterAgent, filterType, fetchAudit]);
+  }, [fetchReport, fetchRecentActivity]);
 
   useEffect(() => {
     if (!visualizationMode) return;
@@ -196,72 +179,10 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     return () => clearInterval(id);
   }, [visualizationMode, fetchAllEntries]);
 
-  function handleSearchChange(value: string) {
-    setSearchText(value);
-    setFeedPage(0);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => fetchAudit(), 300);
-  }
-
-  function changeFilterAgent(value: string) {
-    setFilterAgent(value);
-    setFeedPage(0);
-  }
-
-  function changeFilterType(value: string) {
-    setFilterType(value);
-    setFeedPage(0);
-  }
-
-  function changeFeedVariant(v: string) {
-    if (!isFeedVariant(v)) return;
-    setFeedVariant(v);
-    localStorage.setItem('wr_feed_variant', v);
-  }
-
-  function toggleTechnical() {
-    setTechnical((prev) => {
-      localStorage.setItem('wr_feed_technical', prev ? '0' : '1');
-      return !prev;
-    });
-  }
-
-  async function handleClearAudit() {
-    if (!fleetId || !confirm('This will delete all audit entries, reset agent counters, clear current watch state, and reset agent status and alarm/rest fields. This cannot be undone.')) return;
-    await clearAuditLog(fleetId, authKey);
-    setAuditEntries([]);
-    setAllEntries([]);
-    fetchAudit();
-    fetchAllEntries();
-  }
-
   function changeAgentView(v: string) {
     if (!isAgentView(v)) return;
     setAgentView(v);
     localStorage.setItem('wr_agent_view', v);
-  }
-
-  function toggleExpanded(taskId: string) {
-    setExpandedTasks((prev: Set<string>) => { const next = new Set(prev); if (next.has(taskId)) next.delete(taskId); else next.add(taskId); return next; });
-  }
-
-  async function exportWorkbook() {
-    if (!fleetId) return;
-    try {
-      const data = await auditLog({ fleetId, agentId: filterAgent || undefined, search: searchText || undefined, limit: 1000 }, authKey);
-      if ('error' in data || !data.entries?.length) return;
-      const entries = data.entries;
-      const tasks = entries.filter((e) => e.type === 'task_complete');
-      const xlsx = buildXlsx(entries, tasks);
-      const distinct = [...new Set(entries.map((e) => e.agentId).filter(Boolean))];
-      const label = filterAgent || (distinct.length === 1 ? distinct[0] : 'all-agents');
-      const safe = (label ?? 'export').replace(/[^a-z0-9._-]+/gi, '_');
-      const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const ab = new ArrayBuffer(xlsx.byteLength); new Uint8Array(ab).set(xlsx);
-      const blob = new Blob([ab], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `whiteroom-audit-${safe}-${ts}.xlsx`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
-    } catch { /* ignore */ }
   }
 
   if (!report) {
@@ -550,53 +471,28 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
 
         <div className="flex flex-col" style={{ marginTop: 16, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--card)', overflow: 'hidden' }}>
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
-            <div className="flex items-center gap-2">
-              <select
-                aria-label="Activity row style"
-                value={feedVariant}
-                onChange={(e) => changeFeedVariant(e.target.value)}
-                style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}
-              >
-                <option value="log">▤ Log</option>
-                <option value="tape">⛓ Tape</option>
-                <option value="manifest">▦ Manifest</option>
-              </select>
-              <button
-                onClick={toggleTechnical}
-                aria-pressed={technical}
-                title="Show raw event types, token counts and tool arguments"
-                style={{
-                  borderRadius: 4, padding: '4px 8px', fontSize: 11.5, fontWeight: 600, letterSpacing: 0.3, cursor: 'pointer',
-                  border: `1px solid ${technical ? 'var(--info)' : 'var(--line2)'}`, background: technical ? 'var(--info-bg)' : 'var(--sunk)', color: technical ? 'var(--info)' : 'var(--tx2)',
-                }}
-              >
-                Tech
-              </button>
-              <button onClick={exportWorkbook} style={{ fontSize: 11.5, padding: '4px 8px', borderRadius: 4, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Export to Excel">⬇ .xlsx</button>
-              <button onClick={handleClearAudit} style={{ fontSize: 11.5, padding: '4px 8px', borderRadius: 4, background: 'var(--line)', color: 'var(--bad, #ef4444)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Clear all audit entries">Clear</button>
-            </div>
+            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Recent Activity</span>
+            <a href="/runs" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>View all runs →</a>
           </div>
-          <div className="flex gap-1.5 flex-wrap" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
-            <select value={filterAgent} onChange={(e) => changeFilterAgent(e.target.value)} style={{ flex: 1, minWidth: 110, borderRadius: 6, padding: '4px 8px', fontSize: 12.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
-              <option value="">All agents</option>
-              {agentIds.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-            <select value={filterType} onChange={(e) => changeFilterType(e.target.value)} style={{ borderRadius: 6, padding: '4px 8px', fontSize: 12.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
-              <option value="">All events</option>
-              <option value="task_complete">Tasks only</option>
-            </select>
-            <input value={searchText} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search..." style={{ flex: 1, minWidth: 90, borderRadius: 6, padding: '4px 8px', fontSize: 12.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }} />
+          <div style={{ padding: '4px 0' }}>
+            {recentEntries.slice(0, 8).map((entry) => {
+              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
+              const isTask = entry.type === 'task_complete';
+              return (
+                <div key={entry.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '5px 12px', borderBottom: '1px solid var(--sunk)', fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--tx3)', minWidth: 52, fontFamily: FONT_MONO, fontSize: 11.5 }}>{time}</span>
+                  <span style={{ color: 'var(--tx2)', minWidth: 70, fontFamily: FONT_MONO, fontSize: 11.5 }}>{(entry.agentId || '').toUpperCase()}</span>
+                  <span style={{ color: isTask ? 'var(--tx)' : 'var(--tx2)', flex: 1, wordBreak: 'break-word' as const }}>
+                    {isTask ? `✓ ${entry.taskName || 'task'}` : (entry.type || '').replace(/_/g, ' ').toUpperCase()}
+                  </span>
+                  {entry.tokensUsed ? <span style={{ color: 'var(--info)', fontFamily: FONT_MONO, fontSize: 11.5 }}>{fmtK(entry.tokensUsed)}</span> : null}
+                </div>
+              );
+            })}
+            {recentEntries.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--tx3)', padding: '20px 0', fontSize: 12.5 }}>No activity yet</div>
+            )}
           </div>
-          <ActivityFeed
-            entries={auditEntries}
-            page={feedPage}
-            onPageChange={setFeedPage}
-            variant={feedVariant}
-            technical={technical}
-            expanded={expandedTasks}
-            onToggleExpanded={toggleExpanded}
-          />
         </div>
       </div>
 
@@ -634,60 +530,3 @@ const KEYFRAMES_CSS = `
   }
 `;
 
-// --- Pure-JS XLSX export ---
-
-function crc32(bytes: Uint8Array): number {
-  const table: number[] = [];
-  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; table[n] = c >>> 0; }
-  let crc = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function zipStore(files: { name: string; bytes: Uint8Array }[]): Uint8Array {
-  const enc = new TextEncoder();
-  const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff];
-  const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff];
-  const parts: Uint8Array[] = []; const central: Uint8Array[] = []; let offset = 0;
-  files.forEach((f) => {
-    const name = enc.encode(f.name); const data = f.bytes; const c = crc32(data);
-    const local = ([] as number[]).concat(u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(c), u32(data.length), u32(data.length), u16(name.length), u16(0));
-    parts.push(new Uint8Array(local), name, data);
-    const cen = ([] as number[]).concat(u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(c), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset));
-    central.push(new Uint8Array(cen), name);
-    offset += local.length + name.length + data.length;
-  });
-  const cStart = offset; let cSize = 0; central.forEach((c) => (cSize += c.length));
-  parts.push(...central);
-  parts.push(new Uint8Array(([] as number[]).concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cSize), u32(cStart), u16(0))));
-  const total = parts.reduce((s, p) => s + p.length, 0); const out = new Uint8Array(total); let p = 0;
-  parts.forEach((part) => { out.set(part, p); p += part.length; }); return out;
-}
-
-function colLetter(i: number): string { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
-const xesc = (s: unknown) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c] ?? c));
-
-function sheetXml(entries: AuditEntry[]): string {
-  const cols = ['Time', 'Agent', 'Watch', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
-  type Cell = { s?: string; n?: number };
-  const rowXml = (cells: Cell[], r: number) => `<row r="${r}">` + cells.map((c, i) => { const ref = colLetter(i) + r; if (c.n != null) return `<c r="${ref}"><v>${c.n}</v></c>`; return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xesc(c.s ?? '')}</t></is></c>`; }).join('') + '</row>';
-  let rows = rowXml(cols.map((s) => ({ s })), 1);
-  entries.forEach((e, idx) => {
-    const tools = (Array.isArray(e.details) ? e.details : []).map((d) => (d.args ? `${d.name}(${d.args})` : d.name)).join('  |  ');
-    rows += rowXml([{ s: new Date(e.timestamp).toLocaleString('en-US', { hour12: false }) }, { s: e.agentId || '' }, { n: e.watchNumber }, { s: e.type || '' }, { s: e.type === 'task_complete' ? e.taskName || '' : '' }, { n: e.tokensUsed }, { n: e.minutesSpent }, { n: e.remaining }, { s: tools }], idx + 2);
-  });
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`;
-}
-
-function buildXlsx(entries: AuditEntry[], tasks: AuditEntry[]): Uint8Array {
-  const enc = new TextEncoder();
-  const file = (name: string, str: string) => ({ name, bytes: enc.encode(str) });
-  return zipStore([
-    file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
-    file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
-    file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="All Events" sheetId="1" r:id="rId1"/><sheet name="Tasks Only" sheetId="2" r:id="rId2"/></sheets></workbook>'),
-    file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>'),
-    file('xl/worksheets/sheet1.xml', sheetXml(entries)),
-    file('xl/worksheets/sheet2.xml', sheetXml(tasks)),
-  ]);
-}
