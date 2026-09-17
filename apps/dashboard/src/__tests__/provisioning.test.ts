@@ -3,14 +3,15 @@ import { describe, it, expect } from "vitest";
 // drift from the implementation.
 import { fleetProvisioned } from "../lib/whiteroom/client";
 
-// Every payload below is a verbatim response captured from the production
+// Every payload below mirrors a real response captured from the production
 // engine (proxy.whiteroom.tech), so these cases document actual API behaviour
-// rather than an assumed contract.
+// rather than an assumed contract. Tokens and fleet ids are placeholders —
+// keep them that way; this repo is public and gitleaks runs over full history.
 describe("fleetProvisioned", () => {
   it("accepts a fresh create_fleet response", () => {
     expect(
       fleetProvisioned({
-        fleetToken: "wr_cf39d6e8-f597-48dc-996b-2c9de1f028e0",
+        fleetToken: "wr_00000000-0000-0000-0000-000000000000",
       }),
     ).toBe(true);
   });
@@ -23,8 +24,8 @@ describe("fleetProvisioned", () => {
   it("accepts 'already registered', which carries an error AND a token", () => {
     expect(
       fleetProvisioned({
-        error: "Agent 'setup-agent' already registered in fleet 'alexnyan2004-gmail-com'.",
-        fleetToken: "wr_cf39d6e8-f597-48dc-996b-2c9de1f028e0",
+        error: "Agent 'setup-agent' already registered in fleet 'acme-example-com'.",
+        fleetToken: "wr_00000000-0000-0000-0000-000000000000",
       }),
     ).toBe(true);
   });
