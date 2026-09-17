@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { proxy } from '@/proxy';
+import { PATH_HEADER } from '@/lib/callback-url';
 
 const ADMIN = 'admin.whiteroom.tech';
 const APP = 'app.whiteroom.tech';
@@ -14,6 +15,16 @@ function req(host: string, pathname: string, { forwarded = true } = {}) {
   if (forwarded) headers.set('x-forwarded-host', host);
   else headers.set('host', host);
   return new NextRequest(`https://internal.run.app${pathname}`, { headers });
+}
+
+/**
+ * The request header the proxy added, read back off the response.
+ *
+ * Middleware cannot hand a header straight to the app; Next encodes overrides
+ * as x-middleware-request-* and replays them on the way through.
+ */
+function forwardedPath(res: Response | undefined): string | null {
+  return res?.headers.get(`x-middleware-request-${PATH_HEADER}`) ?? null;
 }
 
 /** What the proxy decided, read off the response it returned. */
@@ -113,6 +124,36 @@ describe('the admin host', () => {
     for (const path of ['/fleet', '/settings', '/performance', '/sandbox', '/dashboard']) {
       expect(verdict(proxy(req(ADMIN, path)))).toBe('notFound');
     }
+  });
+});
+
+describe('the requested path, forwarded to the app', () => {
+  // A layout has no pathname of its own, and the admin gate needs one to send
+  // an unauthenticated visitor back to where they were going.
+  it('rides along on requests the proxy lets through', () => {
+    expect(forwardedPath(proxy(req(APP, '/settings')))).toBe('/settings');
+    expect(forwardedPath(proxy(req(APP, '/admin/u-1')))).toBe('/admin/u-1');
+  });
+
+  it('rides along on the admin host too', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    expect(forwardedPath(proxy(req(ADMIN, '/admin')))).toBe('/admin');
+    expect(forwardedPath(proxy(req(ADMIN, '/admin/u-1')))).toBe('/admin/u-1');
+  });
+
+  // The header is a normal request header, so anyone can send one. Overwriting
+  // it unconditionally is the only reason the layout may trust it.
+  it('overwrites a value the caller supplied', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    const headers = new Headers({ 'x-forwarded-host': ADMIN, [PATH_HEADER]: 'https://evil.com' });
+    const r = new NextRequest('https://internal.run.app/admin/u-1', { headers });
+    expect(forwardedPath(proxy(r))).toBe('/admin/u-1');
+  });
+
+  it('is absent on a response that never reaches the app', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    expect(forwardedPath(proxy(req(APP, '/admin')))).toBe(null);
+    expect(forwardedPath(proxy(req(APP, '/fleet')))).toBe(null);
   });
 });
 
