@@ -363,17 +363,6 @@ export function startDemo(sandboxId: string, key?: string): Promise<{ success?: 
   return apiCall<{ success?: boolean; message?: string; steps?: DemoStep[]; error?: string }>({ action: 'start_demo', sandbox_id: sandboxId }, key);
 }
 
-export interface ParityCheckResult {
-  success?: boolean;
-  parity?: boolean;
-  drifts?: Array<{ field: string; sandbox: unknown; production: unknown }>;
-  error?: string;
-}
-
-export function parityCheck(sandboxId: string, productionFleetId: string, key?: string): Promise<ParityCheckResult> {
-  return apiCall<ParityCheckResult>({ action: 'parity_check', sandbox_id: sandboxId, production_fleet_id: productionFleetId }, key);
-}
-
 export function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key);
 }

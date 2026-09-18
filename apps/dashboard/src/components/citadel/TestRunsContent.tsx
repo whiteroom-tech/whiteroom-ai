@@ -5,15 +5,24 @@ import { useSession } from 'next-auth/react';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
-  createSandbox,
-  sandboxStatus,
-  destroySandbox as destroySandboxApi,
-  sandboxReport,
+  createRun,
+  getStatus as sandboxStatus,
+  destroyRun as destroySandboxApi,
+  getReport as sandboxReport,
+  resetRun as resetSandboxSession,
+  startDemo,
+  getHistory as fetchHistory,
+  type CreateRunResult,
+  type RunStatusResult,
+  type ReportResult,
+  type HistoryEntry as SandboxHistoryEntry,
+  type DemoStep,
+  type AgentInfo as SandboxAgentInfo,
+  type AuditEntry as SandboxAuditEntry,
+} from '@/lib/sandbox/api';
+import {
   pauseSandboxAgent,
   resumeSandboxAgent,
-  resetSandboxSession,
-  startDemo,
-  sandboxHistory as fetchHistory,
   auditLog,
   controlCatalog,
   defineControl,
@@ -21,15 +30,7 @@ import {
   listControls,
   setControlRequired,
   resetControlEvidence,
-  goLive,
   PROXY_URL,
-  type CreateSandboxResult,
-  type SandboxStatusResult,
-  type SandboxReportResult,
-  type SandboxHistoryEntry,
-  type DemoStep,
-  type SandboxAgentInfo,
-  type SandboxAuditEntry,
 } from '@/lib/whiteroom/client';
 import type { AuditEntry, CatalogEntry, ControlDefinition, ReadinessAssessment, CustomControlInput } from '@/lib/whiteroom/types';
 import type { FeedVariant } from '@/lib/activity';
@@ -88,11 +89,11 @@ const BTN = {
 
 export function TestRunsContent() {
   const { data: session } = useSession();
-  const userId = session?.user?.email ?? 'anon';
+  const userId = session?.user?.id ?? '';
   const [phase, setPhase] = useState<Phase>('interstitial');
-  const [sandbox, setSandbox] = useState<CreateSandboxResult | null>(null);
-  const [status, setStatus] = useState<SandboxStatusResult | null>(null);
-  const [report, setReport] = useState<SandboxReportResult | null>(null);
+  const [sandbox, setSandbox] = useState<CreateRunResult | null>(null);
+  const [status, setStatus] = useState<RunStatusResult | null>(null);
+  const [report, setReport] = useState<ReportResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showHelp, setShowHelp] = useState(false);
@@ -109,8 +110,9 @@ export function TestRunsContent() {
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
   const [feedTechnical, setFeedTechnical] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const connectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollFailures = useRef(0);
   const phaseContentRef = useRef<HTMLDivElement>(null);
 
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
@@ -119,7 +121,6 @@ export function TestRunsContent() {
   const [readiness, setReadiness] = useState<ReadinessAssessment | null>(null);
   const [policyMode, setPolicyMode] = useState<'observe' | 'enforce'>('observe');
   const [experience, setExperience] = useState<'legacy' | 'new'>('legacy');
-  const [goLiveError, setGoLiveError] = useState('');
 
   const enrichEntry = useCallback((e: SandboxAuditEntry, agents?: SandboxAgentInfo[]): AuditEntry => {
     const agent = agents?.find(a => a.agentId === e.agentId);
@@ -148,12 +149,12 @@ export function TestRunsContent() {
     return base;
   }, []);
 
-  const syncAuditFromStatus = useCallback((s: SandboxStatusResult) => {
+  const syncAuditFromStatus = useCallback((s: RunStatusResult) => {
     if (!s.auditLog?.length) return;
     setAuditEntries(s.auditLog.map(e => enrichEntry(e, s.agents)));
   }, [enrichEntry]);
 
-  const fetchAudit = useCallback(async (sandboxId: string, s?: SandboxStatusResult) => {
+  const fetchAudit = useCallback(async (sandboxId: string, s?: RunStatusResult) => {
     const fleetId = `sandbox-${sandboxId}`;
     try {
       const data = await auditLog({ fleetId, limit: 200 });
@@ -164,33 +165,42 @@ export function TestRunsContent() {
     }
   }, [enrichEntry]);
 
-  const startPolling = useCallback((sbxUserId: string, sandboxId?: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const s = await sandboxStatus(sbxUserId);
-      if (s.error) return;
-      setStatus(s);
-      if (s.experience) setExperience(s.experience);
-      if (s.controls) setControls(s.controls);
-      if (s.overallControlResult || s.liveReady !== undefined || s.demoComplete !== undefined) {
-        setReadiness({
-          liveReady: s.liveReady ?? false,
-          demoComplete: s.demoComplete ?? false,
-          overall: s.overallControlResult ?? { status: 'empty' },
-        });
-      }
-      const sbxId = sandboxId || s.sandboxId;
-      if (sbxId) fetchAudit(sbxId, s);
-      if (s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0) {
-        setPhase('expired');
-        if (pollRef.current) clearInterval(pollRef.current);
-      }
-    }, 3000);
+  const startPolling = useCallback((_sbxUserId: string, sandboxId?: string) => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollFailures.current = 0;
+    const tick = async () => {
+      try {
+        const s = await sandboxStatus();
+        if (s.error) { pollFailures.current++; } else {
+          pollFailures.current = 0;
+          setStatus(s);
+          if (s.experience) setExperience(s.experience);
+          if (s.controls) setControls(s.controls);
+          if (s.overallControlResult || s.liveReady !== undefined || s.demoComplete !== undefined) {
+            setReadiness({
+              liveReady: s.liveReady ?? false,
+              demoComplete: s.demoComplete ?? false,
+              overall: s.overallControlResult ?? { status: 'empty' },
+            });
+          }
+          const sbxId = sandboxId || s.sandboxId;
+          if (sbxId) fetchAudit(sbxId, s);
+          if (s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0) {
+            setPhase('expired');
+            return;
+          }
+        }
+      } catch { pollFailures.current++; }
+      if (document.hidden) return;
+      const delay = Math.min(30000, 3000 * Math.pow(2, pollFailures.current));
+      pollRef.current = setTimeout(tick, delay);
+    };
+    pollRef.current = setTimeout(tick, 3000);
   }, [fetchAudit]);
 
   useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (connectPollRef.current) clearInterval(connectPollRef.current);
+    if (pollRef.current) clearTimeout(pollRef.current);
+    if (connectPollRef.current) clearTimeout(connectPollRef.current);
   }, []);
 
   const navigateToPhase = useCallback((target: Phase) => {
@@ -200,7 +210,7 @@ export function TestRunsContent() {
 
   useEffect(() => {
     async function checkExisting() {
-      const s = await sandboxStatus(userId);
+      const s = await sandboxStatus();
       if (s.success && s.sandboxId) {
         const expired = s.expiresInSeconds !== null && s.expiresInSeconds !== undefined && s.expiresInSeconds <= 0;
         if (expired) {
@@ -223,7 +233,7 @@ export function TestRunsContent() {
           startPolling(userId, s.sandboxId);
         }
       }
-      const h = await fetchHistory(userId);
+      const h = await fetchHistory();
       if (h.sessions) setHistory(h.sessions);
     }
     checkExisting();
@@ -259,18 +269,16 @@ export function TestRunsContent() {
     const coreIds = new Set(catalog.filter(c => c.tier === 'core').map(c => c.controlId));
     const nonCoreSelected = Array.from(selectedCatalogIds).filter(id => !coreIds.has(id));
     const isNew = nonCoreSelected.length > 0 || policyMode !== 'observe';
-    let result = await createSandbox({
-      userId,
+    let result = await createRun({
       isTrial: opts.isTrial,
       apiKey: opts.apiKey,
       selectedCatalogIds: isNew ? nonCoreSelected : undefined,
       policyMode: isNew ? policyMode : undefined,
     });
     if (result.error?.includes('already have an active sandbox')) {
-      const st = await sandboxStatus(userId);
+      const st = await sandboxStatus();
       if (st.sandboxId) await destroySandboxApi(st.sandboxId);
-      result = await createSandbox({
-        userId,
+      result = await createRun({
         isTrial: opts.isTrial,
         apiKey: opts.apiKey,
         selectedCatalogIds: isNew ? nonCoreSelected : undefined,
@@ -303,7 +311,7 @@ export function TestRunsContent() {
     navigateToPhase('interstitial');
     setPaused(new Set());
     setLoading(false);
-    if (pollRef.current) clearInterval(pollRef.current);
+    if (pollRef.current) clearTimeout(pollRef.current);
   };
 
   const handleReset = async () => {
@@ -390,17 +398,7 @@ export function TestRunsContent() {
     runDemo(sandbox.sandboxId);
   };
 
-  const handleGoLive = async () => {
-    if (!sandbox?.sandboxId) return;
-    setGoLiveError('');
-    if (experience === 'new') {
-      const result = await goLive(sandbox.sandboxId);
-      if (result.error) {
-        setGoLiveError(result.error);
-        return;
-      }
-      if (result.readiness) setReadiness(result.readiness);
-    }
+  const handleGoLive = () => {
     navigateToPhase('go-live');
   };
 
@@ -908,16 +906,18 @@ export function TestRunsContent() {
         {/* CONNECTING — auto-detects when agent connects */}
         {phase === 'connecting' && sandbox && (() => {
           if (!connectPollRef.current) {
-            connectPollRef.current = setInterval(async () => {
-              const s = await sandboxStatus(userId);
+            const pollConnect = async () => {
+              const s = await sandboxStatus();
               if (s.agents && s.agents.length > 0) {
-                if (connectPollRef.current) clearInterval(connectPollRef.current);
                 connectPollRef.current = null;
                 setStatus(s);
                 navigateToPhase('checklist');
                 startPolling(userId, sandbox?.sandboxId);
+              } else {
+                connectPollRef.current = setTimeout(pollConnect, 3000);
               }
-            }, 3000);
+            };
+            connectPollRef.current = setTimeout(pollConnect, 3000);
           }
           return (
           <div style={{ maxWidth: 520, margin: '24px auto' }}>
@@ -981,13 +981,13 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
 
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
-                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); }}
+                onClick={() => { if (connectPollRef.current) { clearTimeout(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); }}
                 style={{ ...BTN.primary, padding: '8px 18px', fontSize: 13 }}
               >
                 Skip to monitoring
               </button>
               <button
-                onClick={() => { if (connectPollRef.current) { clearInterval(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
+                onClick={() => { if (connectPollRef.current) { clearTimeout(connectPollRef.current); connectPollRef.current = null; } navigateToPhase('checklist'); startPolling(userId, sandbox?.sandboxId); if (sandbox?.sandboxId) runDemo(sandbox.sandboxId); }}
                 style={{ ...BTN.ghost, fontSize: 12.5 }}
               >
                 Run demo instead
@@ -1252,13 +1252,9 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
                 <button onClick={handleExportReport} style={BTN.ghost}>Export JSON</button>
               </div>
 
-              {goLiveError && (
-                <div style={{ padding: '8px 12px', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 6, color: 'var(--bad)', fontSize: 12, marginBottom: 10 }}>{goLiveError}</div>
-              )}
-
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 {canGoLive && (
-                  <button onClick={handleGoLive} style={{ ...BTN.success, padding: '8px 20px' }}>Go live →</button>
+                  <button onClick={handleGoLive} style={{ ...BTN.success, padding: '8px 20px' }}>Review production setup →</button>
                 )}
                 <button onClick={handleDestroy} style={BTN.danger}>Destroy sandbox</button>
               </div>
@@ -1313,9 +1309,8 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
           </div>
         )}
 
-        {/* GO LIVE */}
+        {/* REVIEW PRODUCTION SETUP */}
         {phase === 'go-live' && (() => {
-          const prodFleetId = userId.replace(/[^a-zA-Z0-9_\-.]/g, '-');
           const passedCount = experience === 'new'
             ? controls.filter(c => c.liveEligibility?.eligible && c.liveEligibility.status === 'observed').length
             : Object.values(assertions).filter(a => a.status === 'observed').length;
@@ -1324,7 +1319,7 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
           <div style={{ maxWidth: 560, margin: '32px auto' }}>
             <div style={{ textAlign: 'center', marginBottom: 24, padding: '20px 0' }}>
               <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 22, color: 'var(--bg)' }}>✓</div>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: 'var(--ok)', marginBottom: 4 }}>Ready for Production</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: 'var(--ok)', marginBottom: 4 }}>Review Production Setup</div>
               <div style={{ fontSize: 13, color: 'var(--tx2)' }}>
                 {passedCount} of {totalCount} {experience === 'new' ? 'controls' : 'checks'} passed
               </div>
@@ -1353,47 +1348,13 @@ export X_WHITEROOM_FLEET=${sandboxFleetId}`}
               )}
             </div>
 
-            <div style={{ background: 'var(--card)', border: '1px solid var(--ok)', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10, color: 'var(--ok)' }}>Switch to Production</div>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--brand)', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10, color: 'var(--brand)' }}>Next: Set Up Production Fleet</div>
               <p style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 10, lineHeight: 1.5 }}>
-                Your base URL stays the same. Just swap the fleet header from your sandbox to your production fleet:
+                Your sandbox tests have passed. To move to production, create a fleet on the Fleet page and configure your agent to use it.
               </p>
-              <pre style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: 'var(--sunk)', padding: 10, borderRadius: 4, overflowX: 'auto', margin: '0 0 8px', color: 'var(--brand)', lineHeight: 1.6 }}>
-{`export ANTHROPIC_BASE_URL=${PROXY_URL}
-export X_WHITEROOM_FLEET=${prodFleetId}`}
-              </pre>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <button
-                  onClick={() => navigator.clipboard.writeText(`export ANTHROPIC_BASE_URL=${PROXY_URL}\nexport X_WHITEROOM_FLEET=${prodFleetId}`)}
-                  style={{ ...BTN.primary, padding: '4px 10px', fontSize: 10.5 }}
-                >
-                  Copy production config
-                </button>
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--tx3)', lineHeight: 1.5 }}>
-                Your Anthropic API key stays the same. WhiteRoom auto-registers your agent on first call.
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>After You Deploy</div>
-              <div style={{ fontSize: 12.5, color: 'var(--tx2)', lineHeight: 1.8 }}>
-                {[
-                  { text: 'Agent appears on Agents page with "working" status' },
-                  { text: 'First task completes and appears in audit log' },
-                  { text: 'Watch timer counts down correctly' },
-                  { text: 'Handover triggers at watch expiry' },
-                  { text: 'Agent resumes after rest period' },
-                  { text: 'Handover doc is populated with context summary' },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                    <span style={{ color: 'var(--tx3)', fontSize: 11.5, flexShrink: 0, width: 14, textAlign: 'right' as const, fontFamily: FONT_MONO }}>{i + 1}.</span>
-                    <span>{item.text}</span>
-                  </div>
-                ))}
-              </div>
-              <a href="/agents" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--brand)', fontWeight: 600, textDecoration: 'none' }}>
-                Open Agents page →
+              <a href="/fleet" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 6, background: 'var(--brand)', color: 'var(--bg)', fontWeight: 600, fontSize: 13, textDecoration: 'none' }}>
+                Go to Fleet setup →
               </a>
             </div>
 

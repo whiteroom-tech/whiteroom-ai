@@ -67,10 +67,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'CONTROLS',
     items: [
       {
-        href: '/controls',
+        href: '/sandbox',
         label: 'Test Runs',
         icon: ICONS.sandbox,
-        match: (path) => path === '/controls' || path === '/sandbox',
+        match: (path) => path === '/sandbox' || path === '/controls',
       },
     ],
   },
