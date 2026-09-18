@@ -6,6 +6,8 @@ import { auditLog, clearAuditLog, claimFleet, listFleets, tokenLogin } from '@/l
 import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ActivityFeed } from '@/components/ActivityFeed';
+import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -26,6 +28,10 @@ export default function RunsPage() {
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
+  const [feedExpandedTasks, setFeedExpandedTasks] = useState<Set<string>>(new Set());
+  const [feedPage, setFeedPage] = useState(0);
+  const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
+  const [feedTechnical, setFeedTechnical] = useState(false);
 
   const authKey = resolveAuthKey(fleetToken);
 
@@ -213,6 +219,13 @@ export default function RunsPage() {
     await clearAuditLog(fleetId, authKey);
     setAllEntries([]);
     fetchAllEntries();
+  }
+
+  function toggleFeedExpanded(key: string) {
+    setFeedExpandedTasks(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+  function changeFeedVariant(v: string) {
+    if (isFeedVariant(v)) setFeedVariant(v);
   }
 
   // --- Splitter ---
@@ -458,86 +471,30 @@ export default function RunsPage() {
           {/* Splitter */}
           <div onMouseDown={handleAnalyticsSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
 
-          {/* Right: Grouped Event Feed */}
+          {/* Right: Detail Event Feed */}
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
             <div className="flex items-center justify-between" style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 700, color: 'var(--tx2)', letterSpacing: 1 }}>
-              <span>TASK / EVENT FEED — GROUPED</span>
-              <span style={{ fontWeight: 400, color: 'var(--tx3)' }}>{rangedEntries.length} in range</span>
+              <span>EVENT FEED — DETAIL</span>
+              <span style={{ fontWeight: 400, color: 'var(--tx3)' }}>{scopedEntries.length} in {scopeLabel || 'range'}</span>
             </div>
-            <div style={{ fontSize: 10.5, color: 'var(--tx3)', padding: '4px 12px', borderBottom: '1px solid var(--line)' }}>
-              ▸ days roll up · click to expand
+            <div className="flex items-center gap-2" style={{ padding: '6px 12px', borderBottom: '1px solid var(--line)' }}>
+              <select value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
+                <option value="log">Log</option>
+                <option value="tape">Tape</option>
+                <option value="manifest">Manifest</option>
+              </select>
+              <button onClick={() => setFeedTechnical(t => !t)} style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: feedTechnical ? 'var(--info-bg)' : 'var(--sunk)', color: feedTechnical ? 'var(--info)' : 'var(--tx3)', border: `1px solid ${feedTechnical ? 'var(--info)' : 'var(--line2)'}`, cursor: 'pointer' }}>Tech</button>
+              <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>click rows to expand tool calls</span>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-              {dailyStats.length === 0 ? (
-                <p style={{ color: 'var(--tx3)', fontSize: 12.5, textAlign: 'center', padding: 20 }}>No events in range</p>
-              ) : [...dailyStats].reverse().map(([day, d]) => {
-                const dayOpen = openDays.has(day);
-                const dayLabel = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
-                const dayPct = pctOf(d.used, d.saved);
-                const watchMap = new Map<string, { wn: number; aid: string; entries: AuditEntry[] }>();
-                d.entries.forEach(e => {
-                  const wn = e.watchNumber || 0;
-                  const aid = e.agentId || (e as Record<string, unknown>).from as string || '';
-                  const key = watchKey(day, aid, wn);
-                  const group = watchMap.get(key) || { wn, aid, entries: [] };
-                  group.entries.push(e);
-                  watchMap.set(key, group);
-                });
-                const watches = [...watchMap.entries()].sort(([, a], [, b]) => b.wn - a.wn);
-
-                return (
-                  <div key={day} style={{ marginBottom: 6 }}>
-                    <div onClick={() => setOpenDays(prev => { const n = new Set(prev); n.has(day) ? n.delete(day) : n.add(day); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 6, padding: '7px 10px', cursor: 'pointer', userSelect: 'none' as const }}>
-                      <span style={{ fontSize: 10.5, color: 'var(--tx2)', width: 10 }}>{dayOpen ? '▾' : '▸'}</span>
-                      <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: 1, flex: 1 }}>{dayLabel}</span>
-                      <span className="flex gap-2" style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap' as const }}>
-                        <span><b style={{ color: 'var(--tx2)' }}>{watches.length}</b> watches</span>
-                        <span><b style={{ color: 'var(--tx2)' }}>{d.tasks}</b> tasks</span>
-                        <span><b style={{ color: 'var(--tx2)' }}>{fmtK(d.used)}</b> tok</span>
-                        {d.saved > 0 && <span style={{ color: 'var(--ok)' }}><b>{fmtK(d.saved)}</b> saved</span>}
-                        {dayPct > 0 && <span style={{ color: 'var(--ok)' }}>{dayPct.toFixed(1)}%</span>}
-                      </span>
-                    </div>
-                    {dayOpen && watches.map(([wKey, wGroup]) => {
-                      const wOpen = openWatches.has(wKey);
-                      const wTasks = wGroup.entries.filter(e => e.type === 'task_complete').length;
-                      const wTokens = wGroup.entries.filter(e => e.type === 'task_complete').reduce((s, e) => s + (e.tokensUsed || 0), 0);
-                      return (
-                        <div key={wKey} style={{ margin: '4px 0 4px 14px' }}>
-                          <div onClick={() => setOpenWatches(prev => { const n = new Set(prev); n.has(wKey) ? n.delete(wKey) : n.add(wKey); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--line)', borderLeft: '2px solid var(--line2)', borderRadius: 5, padding: '6px 8px', cursor: 'pointer', userSelect: 'none' as const }}>
-                            <span style={{ fontSize: 10.5, color: 'var(--tx2)', width: 9 }}>{wOpen ? '▾' : '▸'}</span>
-                            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--tx2)' }}>WATCH #{wGroup.wn || '?'}</span>
-                            <span style={{ fontSize: 10.5, color: 'var(--tx3)', flex: 1 }}>{wGroup.aid || ''}</span>
-                            <span className="flex gap-2" style={{ fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap' as const }}>
-                              <span><b style={{ color: 'var(--tx2)' }}>{wTasks}</b> tasks</span>
-                              <span><b style={{ color: 'var(--tx2)' }}>{fmtK(wTokens)}</b> tok</span>
-                            </span>
-                          </div>
-                          {wOpen && (
-                            <div style={{ padding: '4px 0 4px 20px' }}>
-                              {wGroup.entries.map(entry => {
-                                const isTask = entry.type === 'task_complete';
-                                const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-                                return (
-                                  <div key={entry.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '3px 0', fontSize: 11.5, borderBottom: '1px solid var(--sunk)' }}>
-                                    <span style={{ color: 'var(--tx3)', minWidth: 52 }}>{time}</span>
-                                    <span style={{ color: 'var(--tx2)', minWidth: 70 }}>{entry.agentId || ''}</span>
-                                    <span style={{ color: isTask ? 'var(--tx)' : 'var(--tx2)', flex: 1, wordBreak: 'break-word' as const }}>
-                                      {isTask ? `✓ ${entry.taskName || 'task'}` : (entry.type || '').toUpperCase()}
-                                    </span>
-                                    <span style={{ color: 'var(--info)', minWidth: 40, textAlign: 'right' as const }}>{isTask && entry.tokensUsed ? fmtK(entry.tokensUsed) : ''}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
+            <ActivityFeed
+              entries={scopedEntries}
+              page={feedPage}
+              onPageChange={setFeedPage}
+              variant={feedVariant}
+              technical={feedTechnical}
+              expanded={feedExpandedTasks}
+              onToggleExpanded={toggleFeedExpanded}
+            />
           </div>
         </div>
       </div>

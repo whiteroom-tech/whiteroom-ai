@@ -5,6 +5,8 @@ import { auditLog, checkWatch, fleetReport, getHandover, pauseAgent as pauseAgen
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { RingGauge, Beacon } from '@/components/AgentGauge';
 import { FleetVisualization } from '@/components/FleetVisualization';
+import { ActivityFeed } from '@/components/ActivityFeed';
+import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -55,6 +57,10 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   });
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [agentActionLoading, setAgentActionLoading] = useState<Record<string, boolean>>({});
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [feedPage, setFeedPage] = useState(0);
+  const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
+  const [technical, setTechnical] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
 
   const fetchReport = useCallback(async () => {
@@ -151,11 +157,18 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const fetchRecentActivity = useCallback(async () => {
     if (!fleetId) return;
     try {
-      const data = await auditLog({ fleetId, limit: 8 }, authKey);
+      const data = await auditLog({ fleetId, limit: 200 }, authKey);
       if ('error' in data) return;
       setRecentEntries(data.entries);
     } catch { /* ignore */ }
   }, [fleetId, authKey]);
+
+  function toggleExpanded(key: string) {
+    setExpandedTasks(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+  function changeFeedVariant(v: string) {
+    if (isFeedVariant(v)) setFeedVariant(v);
+  }
 
   const fetchAllEntries = useCallback(async () => {
     if (!fleetId) return;
@@ -471,28 +484,26 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
 
         <div className="flex flex-col" style={{ marginTop: 16, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--card)', overflow: 'hidden' }}>
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Recent Activity</span>
-            <a href="/runs" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>View all runs →</a>
+            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
+            <div className="flex items-center gap-2">
+              <select value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
+                <option value="log">Log</option>
+                <option value="tape">Tape</option>
+                <option value="manifest">Manifest</option>
+              </select>
+              <button onClick={() => setTechnical(t => !t)} style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: technical ? 'var(--info-bg)' : 'var(--sunk)', color: technical ? 'var(--info)' : 'var(--tx3)', border: `1px solid ${technical ? 'var(--info)' : 'var(--line2)'}`, cursor: 'pointer' }}>Tech</button>
+              <a href="/runs" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>View all runs →</a>
+            </div>
           </div>
-          <div style={{ padding: '4px 0' }}>
-            {recentEntries.slice(0, 8).map((entry) => {
-              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-              const isTask = entry.type === 'task_complete';
-              return (
-                <div key={entry.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '5px 12px', borderBottom: '1px solid var(--sunk)', fontSize: 12.5 }}>
-                  <span style={{ color: 'var(--tx3)', minWidth: 52, fontFamily: FONT_MONO, fontSize: 11.5 }}>{time}</span>
-                  <span style={{ color: 'var(--tx2)', minWidth: 70, fontFamily: FONT_MONO, fontSize: 11.5 }}>{(entry.agentId || '').toUpperCase()}</span>
-                  <span style={{ color: isTask ? 'var(--tx)' : 'var(--tx2)', flex: 1, wordBreak: 'break-word' as const }}>
-                    {isTask ? `✓ ${entry.taskName || 'task'}` : (entry.type || '').replace(/_/g, ' ').toUpperCase()}
-                  </span>
-                  {entry.tokensUsed ? <span style={{ color: 'var(--info)', fontFamily: FONT_MONO, fontSize: 11.5 }}>{fmtK(entry.tokensUsed)}</span> : null}
-                </div>
-              );
-            })}
-            {recentEntries.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--tx3)', padding: '20px 0', fontSize: 12.5 }}>No activity yet</div>
-            )}
-          </div>
+          <ActivityFeed
+            entries={recentEntries}
+            page={feedPage}
+            onPageChange={setFeedPage}
+            variant={feedVariant}
+            technical={technical}
+            expanded={expandedTasks}
+            onToggleExpanded={toggleExpanded}
+          />
         </div>
       </div>
 
