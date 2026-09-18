@@ -43,7 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: '/agents',
-        label: 'Overview',
+        label: 'Live Fleet',
         icon: ICONS.fleet,
         match: (path, tab) =>
           (path === '/agents' && (tab === null || tab === 'overview' || (tab !== 'performance'))) ||
@@ -51,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: '/runs',
-        label: 'Runs',
+        label: 'Run History',
         icon: ICONS.analytics,
         match: (path) => path === '/runs',
       },

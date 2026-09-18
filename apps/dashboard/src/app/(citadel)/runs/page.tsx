@@ -295,7 +295,7 @@ export default function RunsPage() {
       {/* Top bar */}
       <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
         <span style={{ fontSize: 14, color: 'var(--tx3)' }}>
-          <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Runs</b> / {fleetId}
+          <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Run History</b> / {fleetId}
         </span>
         <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
         <span style={{ marginLeft: 'auto' }} />
