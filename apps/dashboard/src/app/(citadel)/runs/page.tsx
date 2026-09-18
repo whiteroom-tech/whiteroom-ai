@@ -27,7 +27,7 @@ export default function RunsPage() {
   const [scopedDay, setScopedDay] = useState<string | null>(null);
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
-  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState(380);
+  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState<number | null>(null);
   const [feedExpandedTasks, setFeedExpandedTasks] = useState<Set<string>>(new Set());
   const [feedPage, setFeedPage] = useState(0);
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
@@ -234,7 +234,8 @@ export default function RunsPage() {
     e.preventDefault();
     const container = analyticsGridRef.current;
     if (!container) return;
-    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(760, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
+    const containerWidth = container.getBoundingClientRect().width;
+    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(containerWidth * 0.75, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
@@ -387,7 +388,7 @@ export default function RunsPage() {
         </div>
 
         {/* Split panel: charts + feed */}
-        <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: `1fr 6px ${analyticsFeedWidth}px`, gridTemplateRows: 'minmax(0, 1fr)' }}>
+        <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: analyticsFeedWidth ? `1fr 6px ${analyticsFeedWidth}px` : '1fr 6px 1fr', gridTemplateRows: 'minmax(0, 1fr)' }}>
           {/* Left: Chart + Breakdown */}
           <div style={{ overflowY: 'auto', padding: 12 }}>
             {/* Daily Tokens Chart */}
