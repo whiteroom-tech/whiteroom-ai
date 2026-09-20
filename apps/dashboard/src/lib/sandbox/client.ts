@@ -1,29 +1,18 @@
 import "server-only";
 import { PROXY_URL } from "@/lib/whiteroom/client";
 
-const ENGINE_BASE = PROXY_URL;
-
 export interface SandboxResponse<T = Record<string, unknown>> {
   data: T;
   status: number;
   retryAfter?: string;
 }
 
-async function sandboxFetch<T = Record<string, unknown>>(
-  endpoint: string,
+async function proxyCall<T = Record<string, unknown>>(
   body: Record<string, unknown>,
 ): Promise<SandboxResponse<T>> {
-  const secret = process.env.WR_SANDBOX_SERVICE_SECRET;
-  if (!secret) {
-    return { data: { error: "Test service is not configured. Contact your workspace administrator." } as T, status: 503 };
-  }
-
-  const res = await fetch(`${ENGINE_BASE}/sandbox-internal/${endpoint}`, {
+  const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-wr-sandbox-secret": secret,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);
@@ -54,22 +43,30 @@ export function createRun(
     mode?: "demo" | "connected";
   },
 ) {
-  return sandboxFetch("runs", { ownerSubject, ...opts });
+  return proxyCall({
+    action: "create_sandbox",
+    user_id: ownerSubject,
+    is_trial: opts.mode === "demo",
+    api_key: opts.apiKey,
+    ttl_minutes: opts.ttlMinutes,
+    selected_catalog_ids: opts.selectedCatalogIds,
+    custom_controls: opts.customControls,
+    policy_mode: opts.policyMode,
+  });
 }
 
 export function getStatus(ownerSubject: string) {
-  return sandboxFetch("status", { ownerSubject });
+  return proxyCall({ action: "sandbox_status", user_id: ownerSubject });
 }
 
 export function startDemo(ownerSubject: string, sandboxId: string) {
-  return sandboxFetch("demo", { ownerSubject, sandboxId });
+  return proxyCall({ action: "start_demo", sandbox_id: sandboxId });
 }
 
 export function destroyRun(ownerSubject: string, sandboxId: string) {
-  return sandboxFetch("destroy", { ownerSubject, sandboxId });
+  return proxyCall({ action: "destroy_sandbox", sandbox_id: sandboxId });
 }
 
 export function getReport(ownerSubject: string, sandboxId: string) {
-  return sandboxFetch("report", { ownerSubject, sandboxId });
+  return proxyCall({ action: "test_report", sandbox_id: sandboxId });
 }
-
