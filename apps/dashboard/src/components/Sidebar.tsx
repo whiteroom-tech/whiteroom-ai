@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { FONT_DISPLAY } from '@whiteroom/ui';
-
 interface NavItem {
   href: string;
   label: string;
@@ -68,7 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: '/sandbox',
-        label: 'Test Runs',
+        label: 'Sandbox',
         icon: ICONS.sandbox,
         match: (path) => path === '/sandbox' || path === '/controls',
       },
@@ -103,12 +101,24 @@ export function Sidebar() {
 
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
-      <div style={{ padding: '5px 10px 18px' }}>
-        <div className="flex items-center gap-2.5">
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 9px var(--ok)', animation: 'pulse-dot 2s infinite' }} />
-          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' as const }}>WHITE ROOM</span>
+      <div style={{ padding: '5px 10px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <svg width="40" height="40" viewBox="0 0 48 48" style={{ flex: 'none' }}>
+          <circle cx="24" cy="24" r="14" fill="none" stroke="#4a5f78" strokeWidth="1" />
+          <circle cx="24" cy="24" r="7" fill="none" stroke="#4a5f78" strokeWidth="1" />
+          <path d="M24 3V45M3 24H45" stroke="#4a5f78" strokeWidth="1" />
+          <g className="cr-sweep" style={{ transformBox: 'view-box' as const, transformOrigin: '24px 24px', animation: 'cr-spin 4s linear infinite' }}>
+            <path d="M24 24L9.15 9.15A21 21 0 0 1 24 3Z" fill="#34d399" opacity="0.30" />
+            <path d="M24 24V3" stroke="#34d399" strokeWidth="2" />
+          </g>
+          <circle cx="24" cy="24" r="21" fill="none" stroke="var(--tx)" strokeWidth="2" />
+          <circle cx="31" cy="14" r="2.2" fill="#34d399" />
+          <circle cx="14" cy="30" r="1.7" fill="#34d399" opacity="0.55" />
+          <circle cx="24" cy="24" r="1.6" fill="var(--tx)" />
+        </svg>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontFamily: "'Saira', 'Barlow', sans-serif", fontWeight: 700, fontSize: 20, lineHeight: 1, letterSpacing: '0.16em', color: 'var(--tx)' }}>CITADEL</span>
+          <span style={{ fontFamily: "'Martian Mono', ui-monospace, monospace", fontWeight: 500, fontSize: 9.5, lineHeight: 1, letterSpacing: '0.22em', color: 'var(--cr-cyan)' }}>CONTROL ROOM</span>
         </div>
-        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1.8, color: 'var(--tx3)', marginTop: 6, paddingLeft: 18, textTransform: 'uppercase' as const }}>Citadel — Control Panel</div>
       </div>
 
       {NAV_GROUPS.map((group) => (

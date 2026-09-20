@@ -43,6 +43,7 @@
   --ho: #a78bfa; --ho-bg: #221540;
   --info: #38bdf8; --info-bg: #0c4a6e;
   --track: #1a2434;
+  --cr-cyan: #39bef8;
 }
 
 /* Light mode — follows system preference when no explicit toggle */
@@ -58,6 +59,7 @@
     --ho: #7c3aed; --ho-bg: #f5f3ff;
     --info: #0284c7; --info-bg: #e0f2fe;
     --track: #e2e8f0;
+    --cr-cyan: #0369a1;
   }
 }
 
@@ -73,6 +75,11 @@
   --ho: #7c3aed; --ho-bg: #f5f3ff;
   --info: #0284c7; --info-bg: #e0f2fe;
   --track: #e2e8f0;
+}
+
+@keyframes cr-spin { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) {
+  .cr-sweep { animation: none !important; }
 }
 
 /* Keep the shared navigation usable on narrow screens without squeezing content. */

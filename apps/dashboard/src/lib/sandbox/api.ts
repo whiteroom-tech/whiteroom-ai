@@ -7,6 +7,7 @@ import type {
 export interface RunStatusResult {
   success?: boolean;
   sandboxId?: string;
+  mode?: "demo" | "connected";
   isTrial?: boolean;
   environment?: string;
   verifiedConnectionAt?: string;
@@ -69,6 +70,7 @@ export interface ReportResult {
   sandboxId?: string;
   overall?: string;
   controls?: ControlDefinition[];
+  mode?: "demo" | "connected";
   isTrial?: boolean;
   totalTokens?: number | null;
   totalTasks?: number;
@@ -98,15 +100,15 @@ async function bffFetch<T>(path: string, opts?: RequestInit): Promise<T> {
 
 export function createRun(opts: {
   apiKey?: string;
-  isTrial?: boolean;
+  mode: "demo" | "connected";
   ttlMinutes?: number;
   selectedCatalogIds?: string[];
   customControls?: CustomControlInput[];
   policyMode?: "observe" | "enforce";
-}): Promise<{ success?: boolean; sandboxId?: string; fleetToken?: string; expiresAt?: string; isTrial?: boolean; controls?: ControlDefinition[]; error?: string }> {
+}): Promise<{ success?: boolean; sandboxId?: string; fleetToken?: string; expiresAt?: string; mode?: "demo" | "connected"; controls?: ControlDefinition[]; error?: string }> {
   return bffFetch("runs", {
     method: "POST",
-    body: JSON.stringify({ ...opts, mode: opts.isTrial ? "demo" : "connected" }),
+    body: JSON.stringify(opts),
   });
 }
 

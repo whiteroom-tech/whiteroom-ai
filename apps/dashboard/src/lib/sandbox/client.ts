@@ -61,10 +61,6 @@ export function getStatus(ownerSubject: string) {
   return sandboxFetch("status", { ownerSubject });
 }
 
-export function getHistory(ownerSubject: string) {
-  return sandboxFetch("history", { ownerSubject });
-}
-
 export function startDemo(ownerSubject: string, sandboxId: string) {
   return sandboxFetch("demo", { ownerSubject, sandboxId });
 }
@@ -73,14 +69,7 @@ export function destroyRun(ownerSubject: string, sandboxId: string) {
   return sandboxFetch("destroy", { ownerSubject, sandboxId });
 }
 
-export function resetRun(ownerSubject: string, sandboxId: string) {
-  return sandboxFetch("reset", { ownerSubject, sandboxId });
-}
-
 export function getReport(ownerSubject: string, sandboxId: string) {
   return sandboxFetch("report", { ownerSubject, sandboxId });
 }
 
-export function getAnalytics(ownerSubject: string) {
-  return sandboxFetch("analytics", { ownerSubject });
-}
