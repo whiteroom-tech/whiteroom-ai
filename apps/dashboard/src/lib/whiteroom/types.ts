@@ -11,6 +11,7 @@ export interface ToolDetail {
 export interface AgentInfo {
   agentId: string;
   status: string;
+  taskType?: string | null;
   watchNumber?: number;
   minutesWorked?: number;
   minutesRemaining?: number;
@@ -291,6 +292,40 @@ export interface FleetHourlyResult {
   fleetId: string;
   period: { start: string; end: string };
   hourly: FleetHourlyDataPoint[];
+  error?: string;
+}
+
+// Per-declared-task-type cost estimate: $/task (median + p90), and — once a
+// budget is set — how many more tasks the remaining budget affords at each.
+export interface TaskCostForecast {
+  taskType: string;
+  n: number;
+  medianPerTask: number;
+  p90PerTask: number;
+  seedSource: string;
+  calibrating: boolean;
+  affordableMedian: number | null;
+  affordableP90: number | null;
+}
+
+export interface PerformanceCostForecastResult {
+  fleetId: string;
+  budgetUsd: number | null;
+  spendToDateUsd: number;
+  taskTypes: TaskCostForecast[];
+  error?: string;
+}
+
+export interface GetBudgetResult {
+  fleetId: string;
+  budgetUsd: number | null;
+  error?: string;
+}
+
+export interface SetBudgetResult {
+  success: boolean;
+  fleetId: string;
+  budgetUsd: number | null;
   error?: string;
 }
 
