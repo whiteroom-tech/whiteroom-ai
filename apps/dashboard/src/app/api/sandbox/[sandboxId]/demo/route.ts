@@ -1,17 +1,18 @@
 import { requireSandboxMutation } from "@/lib/sandbox/auth";
-import { startDemo, toResponse } from "@/lib/sandbox/client";
+import { startDemo, toResponse, extractFleetToken } from "@/lib/sandbox/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ sandboxId: string }> },
 ) {
   const user = await requireSandboxMutation();
   if ("error" in user) return user.error;
 
+  const token = extractFleetToken(req);
   const { sandboxId } = await params;
-  const result = await startDemo(user.ownerSubject, sandboxId);
+  const result = await startDemo(user.ownerSubject, sandboxId, token);
   return toResponse(result);
 }

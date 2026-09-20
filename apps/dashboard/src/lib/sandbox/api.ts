@@ -87,10 +87,18 @@ export interface ReportResult {
   error?: string;
 }
 
+function fleetToken(): string | null {
+  try { return localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token'); }
+  catch { return null; }
+}
+
 async function bffFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const token = fleetToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["x-fleet-token"] = token;
   const res = await fetch(`/api/sandbox/${path}`, {
     cache: "no-store",
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...opts,
   });
   const data = await res.json().catch(() => ({ error: "Test service unavailable. Try again." }));
