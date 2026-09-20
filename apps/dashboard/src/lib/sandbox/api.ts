@@ -1,26 +1,16 @@
 import type {
-  CatalogEntry,
   ControlDefinition,
   CustomControlInput,
-  ReadinessAssessment,
   ReadinessResult,
 } from "@/lib/whiteroom/types";
-
-export interface CreateRunResult {
-  success?: boolean;
-  sandboxId?: string;
-  fleetToken?: string;
-  expiresAt?: string;
-  isTrial?: boolean;
-  experience?: "legacy" | "new";
-  controls?: ControlDefinition[];
-  error?: string;
-}
 
 export interface RunStatusResult {
   success?: boolean;
   sandboxId?: string;
+  isTrial?: boolean;
   environment?: string;
+  verifiedConnectionAt?: string;
+  retryAfter?: number;
   experience?: "legacy" | "new";
   expiresAt?: string;
   expiresInSeconds?: number | null;
@@ -40,42 +30,30 @@ export interface RunStatusResult {
   liveReady?: boolean;
   demoComplete?: boolean;
   overallControlResult?: ReadinessResult;
-  agents?: AgentInfo[];
-  auditLog?: AuditEntry[];
+  agents?: {
+    agentId: string;
+    role: string;
+    status: string;
+    watchMinutes: number;
+    watchCount: number;
+    totalTasks: number;
+    totalTokens: number;
+    pairedWith: string | null;
+    currentWatch: {
+      watchNumber: number;
+      minutesWorked: number;
+      tokensUsed: number;
+      tasksCompleted: number;
+    } | null;
+  }[];
+  auditLog?: {
+    id: string;
+    timestamp: string;
+    type: string;
+    agentId: string | null;
+    [key: string]: unknown;
+  }[];
   error?: string;
-}
-
-export interface AgentInfo {
-  agentId: string;
-  role: string;
-  status: string;
-  watchMinutes: number;
-  watchCount: number;
-  totalTasks: number;
-  totalTokens: number;
-  pairedWith: string | null;
-  currentWatch: {
-    watchNumber: number;
-    minutesWorked: number;
-    tokensUsed: number;
-    tasksCompleted: number;
-  } | null;
-}
-
-export interface AuditEntry {
-  id: string;
-  timestamp: string;
-  type: string;
-  agentId: string | null;
-  taskId?: string;
-  taskName?: string;
-  watchNumber?: number;
-  tokensUsed?: number;
-  minutesSpent?: number;
-  details?: Array<{ name: string; args: string }>;
-  toAgent?: string;
-  fromAgent?: string;
-  [key: string]: unknown;
 }
 
 export interface DemoStep {
@@ -86,20 +64,14 @@ export interface DemoStep {
   timestamp: string;
 }
 
-export interface HistoryEntry {
-  sandboxId: string;
-  userId: string;
-  createdAt: string;
-  destroyedAt: string;
-  overall: "pass" | "fail" | "in_progress";
-  totalTasks: number;
-  isTrial: boolean;
-}
-
 export interface ReportResult {
   success?: boolean;
   sandboxId?: string;
   overall?: string;
+  controls?: ControlDefinition[];
+  isTrial?: boolean;
+  totalTokens?: number | null;
+  totalTasks?: number;
   assertions?: Record<
     string,
     {
@@ -115,10 +87,13 @@ export interface ReportResult {
 
 async function bffFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`/api/sandbox/${path}`, {
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  return res.json() as Promise<T>;
+  const data = await res.json().catch(() => ({ error: "Test service unavailable. Try again." }));
+  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Test service unavailable. Try again.");
+  return data as T;
 }
 
 export function createRun(opts: {
@@ -128,23 +103,15 @@ export function createRun(opts: {
   selectedCatalogIds?: string[];
   customControls?: CustomControlInput[];
   policyMode?: "observe" | "enforce";
-}): Promise<CreateRunResult> {
-  return bffFetch<CreateRunResult>("runs", {
+}): Promise<{ success?: boolean; sandboxId?: string; fleetToken?: string; expiresAt?: string; isTrial?: boolean; controls?: ControlDefinition[]; error?: string }> {
+  return bffFetch("runs", {
     method: "POST",
-    body: JSON.stringify(opts),
+    body: JSON.stringify({ ...opts, mode: opts.isTrial ? "demo" : "connected" }),
   });
 }
 
 export function getStatus(): Promise<RunStatusResult> {
   return bffFetch<RunStatusResult>("status");
-}
-
-export function getHistory(): Promise<{
-  success?: boolean;
-  sessions?: HistoryEntry[];
-  error?: string;
-}> {
-  return bffFetch("history");
 }
 
 export function startDemo(sandboxId: string): Promise<{
@@ -163,24 +130,6 @@ export function destroyRun(sandboxId: string): Promise<{
   return bffFetch(`${sandboxId}/destroy`, { method: "POST" });
 }
 
-export function resetRun(sandboxId: string): Promise<{
-  success?: boolean;
-  error?: string;
-}> {
-  return bffFetch(`${sandboxId}/reset`, { method: "POST" });
-}
-
 export function getReport(sandboxId: string): Promise<ReportResult> {
   return bffFetch(`${sandboxId}/report`);
-}
-
-export function getAnalytics(): Promise<{
-  success?: boolean;
-  totalSessions?: number;
-  passed?: number;
-  failed?: number;
-  passRate?: number;
-  error?: string;
-}> {
-  return bffFetch("analytics");
 }

@@ -1,11 +1,11 @@
-import { requireSandboxUser } from "@/lib/sandbox/auth";
-import { createRun, getStatus } from "@/lib/sandbox/client";
+import { requireSandboxUser, requireSandboxMutation } from "@/lib/sandbox/auth";
+import { createRun, getStatus, toResponse } from "@/lib/sandbox/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const user = await requireSandboxUser();
+  const user = await requireSandboxMutation();
   if ("error" in user) return user.error;
 
   const body = await req.json();
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     policyMode: body.policyMode,
     mode: body.mode,
   });
-  return Response.json(result);
+  return toResponse(result);
 }
 
 export async function GET() {
@@ -25,5 +25,5 @@ export async function GET() {
   if ("error" in user) return user.error;
 
   const result = await getStatus(user.ownerSubject);
-  return Response.json(result);
+  return toResponse(result);
 }

@@ -1,14 +1,21 @@
+import "server-only";
 import { PROXY_URL } from "@/lib/whiteroom/client";
 
 const ENGINE_BASE = PROXY_URL;
 
-async function sandboxFetch<T>(
+export interface SandboxResponse<T = Record<string, unknown>> {
+  data: T;
+  status: number;
+  retryAfter?: string;
+}
+
+async function sandboxFetch<T = Record<string, unknown>>(
   endpoint: string,
   body: Record<string, unknown>,
-): Promise<T> {
+): Promise<SandboxResponse<T>> {
   const secret = process.env.WR_SANDBOX_SERVICE_SECRET;
   if (!secret) {
-    throw new Error("WR_SANDBOX_SERVICE_SECRET is not configured.");
+    return { data: { error: "Test service is not configured. Contact your workspace administrator." } as T, status: 503 };
   }
 
   const res = await fetch(`${ENGINE_BASE}/sandbox-internal/${endpoint}`, {
@@ -18,14 +25,22 @@ async function sandboxFetch<T>(
       "x-wr-sandbox-secret": secret,
     },
     body: JSON.stringify(body),
-  });
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => null);
+  if (!res) return { data: { error: "Test service unavailable. Check your connection and try again." } as T, status: 502 };
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Engine sandbox-internal/${endpoint} returned ${res.status}: ${text}`);
-  }
+  const data = await res.json().catch(() => ({ error: "Test service unavailable. Try again." })) as T;
+  return {
+    data,
+    status: res.status,
+    retryAfter: res.headers.get("retry-after") ?? undefined,
+  };
+}
 
-  return res.json() as Promise<T>;
+export function toResponse(result: SandboxResponse): Response {
+  const headers: Record<string, string> = {};
+  if (result.retryAfter) headers["Retry-After"] = result.retryAfter;
+  return Response.json(result.data, { status: result.status, headers });
 }
 
 export function createRun(

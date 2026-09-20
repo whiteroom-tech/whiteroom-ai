@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 
 export default function CitadelLayout({ children }: { children: React.ReactNode }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     const stored = localStorage.getItem('wr_theme');
     if (stored === 'light' || stored === 'dark') {
@@ -13,7 +14,7 @@ export default function CitadelLayout({ children }: { children: React.ReactNode 
 
   return (
     <div
-      className="wr-shell"
+      className={`wr-shell citadel-layout${menuOpen ? " navigation-open" : ""}`}
       style={{
         background: 'var(--bg)',
         color: 'var(--tx)',
@@ -28,6 +29,7 @@ export default function CitadelLayout({ children }: { children: React.ReactNode 
     >
       <Sidebar />
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+        <button className="citadel-mobile-menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}>{menuOpen ? "Close navigation" : "Open navigation"}</button>
         {children}
       </div>
     </div>

@@ -74,3 +74,12 @@
   --info: #0284c7; --info-bg: #e0f2fe;
   --track: #e2e8f0;
 }
+
+/* Keep the shared navigation usable on narrow screens without squeezing content. */
+.citadel-mobile-menu { display: none; }
+@media (max-width: 720px) {
+  .citadel-layout { grid-template-columns: 1fr !important; }
+  .citadel-layout > aside { display: none !important; }
+  .citadel-mobile-menu { display: block; text-align: left; background: var(--card); color: var(--brand); border-bottom: 1px solid var(--line); padding: 10px 16px; font-size: 12px; flex-shrink: 0; }
+  .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: 40px; bottom: 0; left: 0; width: 212px; z-index: 30; }
+}

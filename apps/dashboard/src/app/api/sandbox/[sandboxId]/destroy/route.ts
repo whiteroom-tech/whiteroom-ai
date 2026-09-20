@@ -1,5 +1,5 @@
-import { requireSandboxUser } from "@/lib/sandbox/auth";
-import { destroyRun } from "@/lib/sandbox/client";
+import { requireSandboxMutation } from "@/lib/sandbox/auth";
+import { destroyRun, toResponse } from "@/lib/sandbox/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,10 +8,10 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ sandboxId: string }> },
 ) {
-  const user = await requireSandboxUser();
+  const user = await requireSandboxMutation();
   if ("error" in user) return user.error;
 
   const { sandboxId } = await params;
   const result = await destroyRun(user.ownerSubject, sandboxId);
-  return Response.json(result);
+  return toResponse(result);
 }

@@ -1,5 +1,5 @@
 import { requireSandboxUser } from "@/lib/sandbox/auth";
-import { getReport } from "@/lib/sandbox/client";
+import { getReport, toResponse } from "@/lib/sandbox/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,5 +13,5 @@ export async function GET(
 
   const { sandboxId } = await params;
   const result = await getReport(user.ownerSubject, sandboxId);
-  return Response.json(result);
+  return toResponse(result);
 }
