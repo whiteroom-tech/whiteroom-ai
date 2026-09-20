@@ -8,3 +8,4 @@ export * from './StatBox';
 export * from './CopyButton';
 export * from './CodeBlock';
 export * from './StatCard';
+export * from './TextInput';

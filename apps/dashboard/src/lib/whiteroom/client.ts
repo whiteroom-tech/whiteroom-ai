@@ -31,6 +31,9 @@ import type {
   RecommendationBriefResult,
   RecommendationExportMarkdownResult,
   FleetHourlyResult,
+  PerformanceCostForecastResult,
+  GetBudgetResult,
+  SetBudgetResult,
   RebindResult,
   RegisterResult,
   StoreKeyResult,
@@ -83,7 +86,7 @@ export async function createFleet(fleetId: string, apiKey: string): Promise<Regi
 export async function registerAgent(
   fleetId: string,
   apiKey: string,
-  opts: { agentId?: string; role?: string } = {},
+  opts: { agentId?: string; role?: string; taskType?: string } = {},
 ): Promise<RegisterResult> {
   const res = await postRaw(
     {
@@ -91,7 +94,28 @@ export async function registerAgent(
       fleet_id: fleetId,
       agent_id: opts.agentId ?? 'setup-agent',
       agent_role: opts.role ?? 'worker',
+      ...(opts.taskType && { task_type: opts.taskType }),
     },
+    apiKey,
+  );
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  return res.json();
+}
+
+/**
+ * Sets an already-registered agent's declared task type — what kind of work
+ * it does (e.g. "auto insurance policy drafting"). Keys the fleet's shared
+ * per-task cost estimate (see performanceCostForecast below); agents sharing
+ * the same taskType pool into one estimate.
+ */
+export async function updateAgentTaskType(
+  fleetId: string,
+  agentId: string,
+  taskType: string,
+  apiKey?: string,
+): Promise<{ success?: boolean; error?: string }> {
+  const res = await postRaw(
+    { action: 'update_agent', fleet_id: fleetId, agent_id: agentId, task_type: taskType },
     apiKey,
   );
   if (!res.ok) return { error: `HTTP ${res.status}` };
@@ -559,4 +583,16 @@ export function performanceRecommendationExport(
     contract_version: '1',
     format,
   }, key);
+}
+
+export function performanceCostForecast(fleetId: string, taskType?: string, key?: string): Promise<PerformanceCostForecastResult> {
+  return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType }, key);
+}
+
+export function getBudgetUsd(fleetId: string, key?: string): Promise<GetBudgetResult> {
+  return apiCall<GetBudgetResult>({ action: 'get_budget_usd', fleet_id: fleetId }, key);
+}
+
+export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {
+  return apiCall<SetBudgetResult>({ action: 'set_budget_usd', fleet_id: fleetId, budget_usd: budgetUsd }, key);
 }

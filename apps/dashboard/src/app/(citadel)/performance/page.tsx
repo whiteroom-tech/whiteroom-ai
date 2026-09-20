@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, auditLog } from '@/lib/whiteroom/client';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, auditLog } from '@/lib/whiteroom/client';
 import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
@@ -9,8 +9,8 @@ import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry } from '@/lib/whiteroom/types';
-import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult } from '@/lib/whiteroom/types';
+import { Logo, StatBox, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
 
@@ -577,6 +577,113 @@ function Btn({ label, onClick, loading, accent }: { label: string; onClick: () =
   );
 }
 
+// Per-task-type cost estimate (see performanceCostForecast) plus the fleet's
+// budget: $/task (median + p90), spend-to-date vs. budget, and how many more
+// tasks the remaining budget affords at each. Agents declare their task type
+// on the Overview agent cards; every agent sharing a label pools into one
+// estimate here.
+function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: string }) {
+  const [forecast, setForecast] = useState<PerformanceCostForecastResult | null>(null);
+  const [budgetDraft, setBudgetDraft] = useState('');
+  const [budgetDirty, setBudgetDirty] = useState(false);
+  const budgetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchForecast = useCallback(async () => {
+    try {
+      const data = await performanceCostForecast(fleetId, undefined, authKey);
+      if (data.error) return;
+      setForecast(data);
+      setBudgetDirty((dirty) => {
+        if (!dirty) setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
+        return dirty;
+      });
+    } catch { /* ignore */ }
+  }, [fleetId, authKey]);
+
+  useEffect(() => {
+    fetchForecast();
+    const t = setInterval(fetchForecast, 15000);
+    return () => clearInterval(t);
+  }, [fetchForecast]);
+
+  function changeBudgetDraft(value: string) {
+    setBudgetDraft(value);
+    setBudgetDirty(true);
+    if (budgetTimerRef.current) clearTimeout(budgetTimerRef.current);
+    budgetTimerRef.current = setTimeout(async () => {
+      const trimmed = value.trim();
+      const n = trimmed === '' ? null : Number(trimmed);
+      if (n != null && !(n > 0)) return; // leave the draft as-is until it's a valid number or empty
+      try {
+        await setBudgetUsd(fleetId, n, authKey);
+        setBudgetDirty(false);
+        fetchForecast();
+      } catch { /* ignore */ }
+    }, 600);
+  }
+
+  if (!forecast) return null;
+
+  return (
+    <div style={CARD}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={H3}>Cost Tracking</h3>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
+          <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={changeBudgetDraft} placeholder="not set" mono className="w-24 text-right" />
+        </div>
+      </div>
+
+      {forecast.budgetUsd != null && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="flex justify-between" style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 2 }}>
+            <span>Spend to date</span>
+            <span style={{ color: 'var(--tx2)', fontFamily: FONT_MONO }}>${forecast.spendToDateUsd.toFixed(2)} / ${forecast.budgetUsd.toFixed(2)}</span>
+          </div>
+          <div style={{ height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: 99, transition: 'all 1s',
+              width: `${Math.min(100, (forecast.spendToDateUsd / forecast.budgetUsd) * 100)}%`,
+              background: forecast.spendToDateUsd > forecast.budgetUsd ? 'var(--bad)' : 'var(--ok)',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {forecast.taskTypes.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--tx3)', fontSize: 12 }}>
+          No task type declared yet — set one on an agent card above to start cost tracking.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {forecast.taskTypes.map((t) => (
+            <div key={t.taskType} style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, padding: 8 }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--tx2)' }}>{t.taskType}</span>
+                {t.calibrating ? (
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--warn-bg)', color: 'var(--warn)' }}>CALIBRATING · n={t.n}</span>
+                ) : (
+                  <span style={{ fontSize: 10, color: 'var(--tx3)' }}>n={t.n}</span>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: t.affordableMedian != null ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: 4 }}>
+                <StatBox label="$/TASK (MEDIAN)" value={`$${t.medianPerTask.toFixed(3)}`} color="var(--tx)" />
+                <StatBox label="$/TASK (P90)" value={`$${t.p90PerTask.toFixed(3)}`} color="var(--warn)" />
+                {t.affordableMedian != null && t.affordableP90 != null && (
+                  <>
+                    <StatBox label="AFFORDABLE (MED)" value={t.affordableMedian.toFixed(0)} color="var(--ok)" />
+                    <StatBox label="AFFORDABLE (P90)" value={t.affordableP90.toFixed(0)} color="var(--warn)" />
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
@@ -639,6 +746,8 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
       </div>
 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} /></div>}
+
+      <CostTrackingSection fleetId={fleetId} authKey={authKey} />
 
       {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
 

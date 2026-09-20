@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { auditLog, checkWatch, fleetReport, getHandover, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, fleetReport, getHandover, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi, updateAgentTaskType } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { RingGauge, Beacon } from '@/components/AgentGauge';
 import { FleetVisualization } from '@/components/FleetVisualization';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
-import { StatBox, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { StatBox, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; badgeBd: string; bar: string }> = {
   working:      { border: 'var(--ok)', badgeBg: 'var(--ok-bg)', badgeTx: 'var(--ok)', badgeBd: 'var(--ok)', bar: 'var(--ok)' },
@@ -61,7 +61,28 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const [feedPage, setFeedPage] = useState(0);
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
   const [technical, setTechnical] = useState(false);
+  // Per-agent draft so a poll landing mid-keystroke can't clobber what the
+  // operator is typing — cleared once the commit round-trip lands.
+  const [taskTypeDrafts, setTaskTypeDrafts] = useState<Record<string, string>>({});
+  const taskTypeTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const mainRef = useRef<HTMLDivElement>(null);
+
+  function changeTaskTypeDraft(agentId: string, value: string) {
+    setTaskTypeDrafts((prev) => ({ ...prev, [agentId]: value }));
+    if (taskTypeTimerRef.current[agentId]) clearTimeout(taskTypeTimerRef.current[agentId]);
+    taskTypeTimerRef.current[agentId] = setTimeout(async () => {
+      if (!fleetId) return;
+      try {
+        await updateAgentTaskType(fleetId, agentId, value, authKey);
+        setTaskTypeDrafts((prev) => {
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        fetchReport();
+      } catch { /* ignore */ }
+    }, 600);
+  }
 
   const fetchReport = useCallback(async () => {
     if (!fleetId) return;
@@ -443,7 +464,17 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                       ) : null}
                     </div>
                   </div>
-                  <div style={{ marginBottom: 6 }}>
+                  {/* Declared task type — keys the fleet's per-task cost
+                      estimate on the Performance page; shared across every
+                      agent that declares the same label. */}
+                  <TextInput
+                    ariaLabel="Declared task type"
+                    value={taskTypeDrafts[agent.agentId] ?? agent.taskType ?? ''}
+                    onChange={(v) => changeTaskTypeDraft(agent.agentId, v)}
+                    placeholder="e.g. auto insurance policy drafting"
+                    className="w-full"
+                  />
+                  <div style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="flex justify-between" style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 2 }}>
                       <span>{status === 'resting' ? 'Rest progress' : 'Watch progress'}</span>
                       <span style={{ color: 'var(--tx2)' }}>{watchDisplay.toFixed(0)}%{status !== 'resting' && ` · ${Math.round((agent.minutesRemaining || 0) * 10) / 10}min left`}</span>
