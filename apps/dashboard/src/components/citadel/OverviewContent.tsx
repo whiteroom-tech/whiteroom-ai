@@ -62,26 +62,28 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
   const [technical, setTechnical] = useState(false);
   // Per-agent draft so a poll landing mid-keystroke can't clobber what the
-  // operator is typing — cleared once the commit round-trip lands.
+  // operator is typing — cleared once the commit round-trip lands. Only
+  // written on Enter/blur (see TextInput's onCommit), never mid-keystroke:
+  // saving on every pause created one backend record per partial value typed.
   const [taskTypeDrafts, setTaskTypeDrafts] = useState<Record<string, string>>({});
-  const taskTypeTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const mainRef = useRef<HTMLDivElement>(null);
 
   function changeTaskTypeDraft(agentId: string, value: string) {
     setTaskTypeDrafts((prev) => ({ ...prev, [agentId]: value }));
-    if (taskTypeTimerRef.current[agentId]) clearTimeout(taskTypeTimerRef.current[agentId]);
-    taskTypeTimerRef.current[agentId] = setTimeout(async () => {
-      if (!fleetId) return;
-      try {
-        await updateAgentTaskType(fleetId, agentId, value, authKey);
-        setTaskTypeDrafts((prev) => {
-          const next = { ...prev };
-          delete next[agentId];
-          return next;
-        });
-        fetchReport();
-      } catch { /* ignore */ }
-    }, 600);
+  }
+
+  async function commitTaskType(agentId: string, value: string) {
+    const trimmed = value.trim();
+    if (!fleetId || !trimmed) return;
+    try {
+      await updateAgentTaskType(fleetId, agentId, trimmed, authKey);
+      setTaskTypeDrafts((prev) => {
+        const next = { ...prev };
+        delete next[agentId];
+        return next;
+      });
+      fetchReport();
+    } catch { /* ignore */ }
   }
 
   const fetchReport = useCallback(async () => {
@@ -471,7 +473,8 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     ariaLabel="Declared task type"
                     value={taskTypeDrafts[agent.agentId] ?? agent.taskType ?? ''}
                     onChange={(v) => changeTaskTypeDraft(agent.agentId, v)}
-                    placeholder="e.g. auto insurance policy drafting"
+                    onCommit={(v) => commitTaskType(agent.agentId, v)}
+                    placeholder="e.g. auto insurance policy drafting — press Enter to save"
                     className="w-full"
                   />
                   <div style={{ marginTop: 6, marginBottom: 6 }}>

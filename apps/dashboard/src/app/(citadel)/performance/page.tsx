@@ -10,7 +10,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult } from '@/lib/whiteroom/types';
-import { Logo, StatBox, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { Logo, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
 
@@ -577,27 +577,24 @@ function Btn({ label, onClick, loading, accent }: { label: string; onClick: () =
   );
 }
 
-// Per-task-type cost estimate (see performanceCostForecast) plus the fleet's
-// budget: $/task (median + p90), spend-to-date vs. budget, and how many more
-// tasks the remaining budget affords at each. Agents declare their task type
-// on the Overview agent cards; every agent sharing a label pools into one
-// estimate here.
+// The fleet's budget vs. spend to date. Backs onto performanceCostForecast
+// (which also carries a per-task-type $/task breakdown — deliberately not
+// shown here; a single "what's left" figure is what this card is for).
 function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: string }) {
   const [forecast, setForecast] = useState<PerformanceCostForecastResult | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState('');
-  const [budgetDirty, setBudgetDirty] = useState(false);
-  const budgetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchForecast = useCallback(async () => {
     try {
       const data = await performanceCostForecast(fleetId, undefined, authKey);
-      if (data.error) return;
+      if (data.error) { setLoadError(data.error); return; }
+      setLoadError(null);
       setForecast(data);
-      setBudgetDirty((dirty) => {
-        if (!dirty) setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
-        return dirty;
-      });
-    } catch { /* ignore */ }
+      setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
+    } catch {
+      setLoadError('Could not reach the cost-tracking endpoint.');
+    }
   }, [fleetId, authKey]);
 
   useEffect(() => {
@@ -606,23 +603,31 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     return () => clearInterval(t);
   }, [fetchForecast]);
 
-  function changeBudgetDraft(value: string) {
-    setBudgetDraft(value);
-    setBudgetDirty(true);
-    if (budgetTimerRef.current) clearTimeout(budgetTimerRef.current);
-    budgetTimerRef.current = setTimeout(async () => {
-      const trimmed = value.trim();
-      const n = trimmed === '' ? null : Number(trimmed);
-      if (n != null && !(n > 0)) return; // leave the draft as-is until it's a valid number or empty
-      try {
-        await setBudgetUsd(fleetId, n, authKey);
-        setBudgetDirty(false);
-        fetchForecast();
-      } catch { /* ignore */ }
-    }, 600);
+  async function commitBudget(value: string) {
+    const trimmed = value.trim();
+    const n = trimmed === '' ? null : Number(trimmed);
+    if (n != null && !(n > 0)) { setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
+    try {
+      await setBudgetUsd(fleetId, n, authKey);
+      fetchForecast();
+    } catch { /* ignore */ }
   }
 
-  if (!forecast) return null;
+  if (loadError) {
+    return (
+      <div style={CARD}>
+        <h3 style={H3}>Cost Tracking</h3>
+        <div style={{ fontSize: 12, color: 'var(--bad)' }}>
+          Couldn&apos;t load cost tracking: {loadError}
+          {loadError === 'Unknown action.' && ' — the backend hasn’t been deployed with this feature yet.'}
+        </div>
+      </div>
+    );
+  }
+
+  if (!forecast) return null; // still loading the first response
+
+  const remaining = forecast.budgetUsd != null ? forecast.budgetUsd - forecast.spendToDateUsd : null;
 
   return (
     <div style={CARD}>
@@ -630,55 +635,32 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
         <h3 style={H3}>Cost Tracking</h3>
         <div className="flex items-center gap-2">
           <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
-          <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={changeBudgetDraft} placeholder="not set" mono className="w-24 text-right" />
+          <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={setBudgetDraft} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
         </div>
       </div>
 
-      {forecast.budgetUsd != null && (
-        <div style={{ marginBottom: 16 }}>
-          <div className="flex justify-between" style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 2 }}>
-            <span>Spend to date</span>
-            <span style={{ color: 'var(--tx2)', fontFamily: FONT_MONO }}>${forecast.spendToDateUsd.toFixed(2)} / ${forecast.budgetUsd.toFixed(2)}</span>
+      {remaining == null ? (
+        <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--tx3)', fontSize: 12 }}>
+          Set a budget above to see what&apos;s remaining.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: FONT_MONO, color: remaining < 0 ? 'var(--bad)' : remaining < forecast.budgetUsd! * 0.2 ? 'var(--warn)' : 'var(--ok)' }}>
+            ${remaining.toFixed(2)}
           </div>
+          <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 10 }}>estimated budget remaining</div>
           <div style={{ height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
             <div style={{
               height: '100%', borderRadius: 99, transition: 'all 1s',
-              width: `${Math.min(100, (forecast.spendToDateUsd / forecast.budgetUsd) * 100)}%`,
-              background: forecast.spendToDateUsd > forecast.budgetUsd ? 'var(--bad)' : 'var(--ok)',
+              width: `${Math.min(100, (forecast.spendToDateUsd / forecast.budgetUsd!) * 100)}%`,
+              background: forecast.spendToDateUsd > forecast.budgetUsd! ? 'var(--bad)' : 'var(--ok)',
             }} />
           </div>
-        </div>
-      )}
-
-      {forecast.taskTypes.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--tx3)', fontSize: 12 }}>
-          No task type declared yet — set one on an agent card above to start cost tracking.
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {forecast.taskTypes.map((t) => (
-            <div key={t.taskType} style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, padding: 8 }}>
-              <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--tx2)' }}>{t.taskType}</span>
-                {t.calibrating ? (
-                  <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--warn-bg)', color: 'var(--warn)' }}>CALIBRATING · n={t.n}</span>
-                ) : (
-                  <span style={{ fontSize: 10, color: 'var(--tx3)' }}>n={t.n}</span>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: t.affordableMedian != null ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: 4 }}>
-                <StatBox label="$/TASK (MEDIAN)" value={`$${t.medianPerTask.toFixed(3)}`} color="var(--tx)" />
-                <StatBox label="$/TASK (P90)" value={`$${t.p90PerTask.toFixed(3)}`} color="var(--warn)" />
-                {t.affordableMedian != null && t.affordableP90 != null && (
-                  <>
-                    <StatBox label="AFFORDABLE (MED)" value={t.affordableMedian.toFixed(0)} color="var(--ok)" />
-                    <StatBox label="AFFORDABLE (P90)" value={t.affordableP90.toFixed(0)} color="var(--warn)" />
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+          <div className="flex justify-between" style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 4 }}>
+            <span>${forecast.spendToDateUsd.toFixed(2)} spent</span>
+            <span>${forecast.budgetUsd!.toFixed(2)} budget</span>
+          </div>
+        </>
       )}
     </div>
   );
