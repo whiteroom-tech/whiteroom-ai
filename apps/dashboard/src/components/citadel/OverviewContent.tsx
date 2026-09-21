@@ -469,14 +469,30 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                   {/* Declared task type — keys the fleet's per-task cost
                       estimate on the Performance page; shared across every
                       agent that declares the same label. */}
-                  <TextInput
-                    ariaLabel="Declared task type"
-                    value={taskTypeDrafts[agent.agentId] ?? agent.taskType ?? ''}
-                    onChange={(v) => changeTaskTypeDraft(agent.agentId, v)}
-                    onCommit={(v) => commitTaskType(agent.agentId, v)}
-                    placeholder="e.g. auto insurance policy drafting — press Enter to save"
-                    className="w-full"
-                  />
+                  <div className="flex items-center gap-1.5" style={{ marginBottom: 2 }}>
+                    <TextInput
+                      ariaLabel="Declared task type"
+                      value={taskTypeDrafts[agent.agentId] ?? agent.taskType ?? ''}
+                      onChange={(v) => changeTaskTypeDraft(agent.agentId, v)}
+                      onCommit={(v) => commitTaskType(agent.agentId, v)}
+                      placeholder="e.g. auto insurance policy drafting"
+                      className="w-full"
+                    />
+                    <button
+                      onClick={() => commitTaskType(agent.agentId, taskTypeDrafts[agent.agentId] ?? agent.taskType ?? '')}
+                      disabled={taskTypeDrafts[agent.agentId] === undefined}
+                      title="Save task type"
+                      style={{
+                        fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, whiteSpace: 'nowrap',
+                        background: taskTypeDrafts[agent.agentId] !== undefined ? 'var(--brand-dim)' : 'transparent',
+                        color: taskTypeDrafts[agent.agentId] !== undefined ? 'var(--brand)' : 'var(--tx3)',
+                        border: `1px solid ${taskTypeDrafts[agent.agentId] !== undefined ? 'var(--brand)' : 'var(--line)'}`,
+                        cursor: taskTypeDrafts[agent.agentId] !== undefined ? 'pointer' : 'not-allowed',
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
                   <div style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="flex justify-between" style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 2 }}>
                       <span>{status === 'resting' ? 'Rest progress' : 'Watch progress'}</span>
