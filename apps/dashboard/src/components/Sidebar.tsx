@@ -48,6 +48,12 @@ const NAV_GROUPS: NavGroup[] = [
           path === '/fleet',
       },
       {
+        href: '/sandbox',
+        label: 'Test Run',
+        icon: ICONS.sandbox,
+        match: (path) => path === '/sandbox' || path === '/controls',
+      },
+      {
         href: '/runs',
         label: 'Run History',
         icon: ICONS.analytics,
@@ -58,17 +64,6 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Performance',
         icon: ICONS.performance,
         match: (path) => path === '/performance',
-      },
-    ],
-  },
-  {
-    label: 'CONTROLS',
-    items: [
-      {
-        href: '/sandbox',
-        label: 'Sandbox',
-        icon: ICONS.sandbox,
-        match: (path) => path === '/sandbox' || path === '/controls',
       },
     ],
   },
