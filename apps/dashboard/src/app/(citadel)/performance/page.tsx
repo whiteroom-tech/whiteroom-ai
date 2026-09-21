@@ -627,8 +627,6 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
 
   if (!forecast) return null; // still loading the first response
 
-  const remaining = forecast.budgetUsd != null ? forecast.budgetUsd - forecast.spendToDateUsd : null;
-
   return (
     <div style={CARD}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -639,29 +637,29 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
         </div>
       </div>
 
-      {remaining == null ? (
-        <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--tx3)', fontSize: 12 }}>
-          Set a budget above to see what&apos;s remaining.
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
+            ${forecast.burnRateUsdPerHour.toFixed(2)}/hr
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>estimated burn rate</div>
         </div>
-      ) : (
-        <>
-          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: FONT_MONO, color: remaining < 0 ? 'var(--bad)' : remaining < forecast.budgetUsd! * 0.2 ? 'var(--warn)' : 'var(--ok)' }}>
-            ${remaining.toFixed(2)}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 10 }}>estimated budget remaining</div>
-          <div style={{ height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 99, transition: 'all 1s',
-              width: `${Math.min(100, (forecast.spendToDateUsd / forecast.budgetUsd!) * 100)}%`,
-              background: forecast.spendToDateUsd > forecast.budgetUsd! ? 'var(--bad)' : 'var(--ok)',
-            }} />
-          </div>
-          <div className="flex justify-between" style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 4 }}>
-            <span>${forecast.spendToDateUsd.toFixed(2)} spent</span>
-            <span>${forecast.budgetUsd!.toFixed(2)} budget</span>
-          </div>
-        </>
-      )}
+        <div>
+          {forecast.remainingTasks == null ? (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>set a budget to see tasks remaining</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: forecast.remainingTasks <= 0 ? 'var(--bad)' : forecast.remainingTasks < 5 ? 'var(--warn)' : 'var(--ok)' }}>
+                {forecast.remainingTasks}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>tasks remaining at this budget</div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
