@@ -415,7 +415,7 @@ export function TestRunFlow() {
     {/* ── Topbar (workspace only) ── */}
     {phase === 'workspace' && run && (
       <div className={s.topbar}>
-        <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Test Run</span>
+        <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Sandbox</span>
         <span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'DEMO' : 'LIVE TEST'}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className={`${s.timer} ${timerColor(displaySeconds)}`} aria-label={`${expired ? 'Expired' : formatTimer(displaySeconds)} remaining`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(displaySeconds)}</span>
@@ -427,7 +427,7 @@ export function TestRunFlow() {
     {/* ── Header (start/setup only) ── */}
     {phase !== 'workspace' && (
       <div className={s.topbar}>
-        <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Test Run</span>
+        <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Sandbox</span>
         <span className={s.badgeEnv}>TEST ENVIRONMENT</span>
         <div style={{ marginLeft: 'auto' }}><ThemeToggle /></div>
       </div>

@@ -49,7 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: '/sandbox',
-        label: 'Test Run',
+        label: 'Sandbox',
         icon: ICONS.sandbox,
         match: (path) => path === '/sandbox' || path === '/controls',
       },
