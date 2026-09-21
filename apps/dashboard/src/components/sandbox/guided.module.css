@@ -110,7 +110,8 @@
 .preview { background:var(--sunk); border:1px solid var(--line); border-radius:8px; padding:20px; margin:16px 0; }
 .previewHeader { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:10px; font-weight:600; letter-spacing:.1em; color:var(--tx3); margin-bottom:14px; text-align:center; }
 .previewScenes { display:flex; gap:16px; justify-content:center; padding:10px 0; align-items:flex-start; }
-.previewScene { text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; }
+.previewScene { text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; background:none; border:none; padding:4px; font:inherit; }
+.previewScene:focus-visible { outline:2px solid var(--brand); outline-offset:2px; border-radius:6px; }
 .previewIcon { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--brand-dim,#e6eefb); color:var(--brand); transition:all .25s; }
 .previewIcon svg { width:20px; height:20px; }
 .previewIconActive { background:var(--brand); color:var(--bg,#fff); transform:scale(1.08); }

@@ -120,6 +120,8 @@ export function TestRunFlow() {
   const [pollTick, setPollTick] = useState(0);
   const [previewStep, setPreviewStep] = useState(0);
   const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const ownerRef = useRef<string | undefined>(undefined);
@@ -211,7 +213,46 @@ export function TestRunFlow() {
     return () => { disposed = true; clearTimeout(timer); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [run?.sandboxId, phase, expired, pollTick, verified]);
 
-  // Preview auto-play
+  // Local timer countdown — ticks every second between polls
+  useEffect(() => {
+    if (run?.expiresInSeconds != null) setDisplaySeconds(run.expiresInSeconds);
+  }, [run?.expiresInSeconds]);
+
+  useEffect(() => {
+    if (displaySeconds == null || displaySeconds <= 0 || phase !== 'workspace') return;
+    const t = setInterval(() => setDisplaySeconds(prev => (prev != null && prev > 0) ? prev - 1 : 0), 1000);
+    return () => clearInterval(t);
+  }, [displaySeconds != null && displaySeconds > 0, phase]);
+
+  // Warn before unload when a live test is running
+  useEffect(() => {
+    if (phase !== 'workspace' || !run?.sandboxId || isDemo) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [phase, run?.sandboxId, isDemo]);
+
+  // Auto-start preview on first mount
+  useEffect(() => {
+    if (phase !== 'start') return;
+    const delay = setTimeout(() => {
+      setPreviewPlaying(true);
+      setPreviewStep(0);
+      previewTimer.current = setInterval(() => {
+        setPreviewStep(prev => {
+          if (prev >= 3) {
+            if (previewTimer.current) clearInterval(previewTimer.current);
+            setPreviewPlaying(false);
+            return 3;
+          }
+          return prev + 1;
+        });
+      }, 2500);
+    }, 800);
+    return () => { clearTimeout(delay); if (previewTimer.current) clearInterval(previewTimer.current); };
+  }, [phase]);
+
+  // Preview auto-play cleanup
   useEffect(() => {
     return () => { if (previewTimer.current) clearInterval(previewTimer.current); };
   }, []);
@@ -324,7 +365,7 @@ export function TestRunFlow() {
     const guide = checkGuidance(c.controlId, status, run);
     return (
       <div className={s.check} key={c.controlId}>
-        <div className={`${s.checkIcon} ${passed ? s.checkPass : s.checkWait}`}>{passed ? CHECK_ICON_PASS : CHECK_ICON_WAIT}</div>
+        <div className={`${s.checkIcon} ${passed ? s.checkPass : s.checkWait}`} aria-label={passed ? 'Verified' : 'Waiting'}>{passed ? CHECK_ICON_PASS : CHECK_ICON_WAIT}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className={s.checkName}>{checkLabel(c.controlId, c.name)}</div>
           {passed && <div className={`${s.checkDetail} ${s.checkDetailPass}`}>Verified{lastUpdated ? ` · ${guide.detail}` : ''}</div>}
@@ -343,10 +384,13 @@ export function TestRunFlow() {
 
   // ── Render activity feed ──
   const renderActivity = () => {
-    const entries = run?.auditLog?.slice(-12).reverse() ?? [];
+    const allEntries = [...(run?.auditLog ?? [])].reverse();
+    const limit = activityExpanded ? allEntries.length : 20;
+    const entries = allEntries.slice(0, limit);
+    const hasMore = allEntries.length > limit;
     if (!entries.length) return <p style={{ fontSize: 13, color: 'var(--tx3)', textAlign: 'center', padding: '32px 0' }}>{phase === 'workspace' && !isDemo ? 'No agent activity yet. Connect your agent to see events appear here.' : 'Demo activity is synthetic.'}</p>;
     return (
-      <ul className={s.activity}>{entries.map(e => {
+      <><ul className={s.activity}>{entries.map(e => {
         const type = e.type.replaceAll('_', ' ');
         let dotClass = s.activityDotRequest;
         if (type.includes('connect') || type.includes('register')) dotClass = s.activityDotConnect;
@@ -362,6 +406,8 @@ export function TestRunFlow() {
           </li>
         );
       })}</ul>
+      {hasMore && <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setActivityExpanded(true)} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>Show all {allEntries.length} events</button>}
+      </>
     );
   };
 
@@ -372,7 +418,7 @@ export function TestRunFlow() {
         <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Test Run</span>
         <span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'DEMO' : 'LIVE TEST'}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className={`${s.timer} ${timerColor(run.expiresInSeconds)}`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(run.expiresInSeconds)}</span>
+          <span className={`${s.timer} ${timerColor(displaySeconds)}`} aria-label={`${expired ? 'Expired' : formatTimer(displaySeconds)} remaining`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(displaySeconds)}</span>
           <ThemeToggle />
         </div>
       </div>
@@ -403,10 +449,10 @@ export function TestRunFlow() {
             {previewIcons.map((icon, i) => (
               <React.Fragment key={i}>
                 {i > 0 && <div className={s.previewConnector} />}
-                <div className={s.previewScene} onClick={() => setPreviewStep(i)}>
+                <button className={s.previewScene} onClick={() => setPreviewStep(i)} aria-label={`Step ${i + 1}: ${previewLabels[i]}`} type="button">
                   <div className={`${s.previewIcon} ${i === previewStep ? s.previewIconActive : i < previewStep ? s.previewIconDone : ''}`}>{icon}</div>
                   <div className={`${s.previewLabel} ${i === previewStep ? s.previewLabelActive : ''}`}>{previewLabels[i]}</div>
-                </div>
+                </button>
               </React.Fragment>
             ))}
           </div>
@@ -550,7 +596,13 @@ export function TestRunFlow() {
           {/* Actions */}
           <div className={s.btnRow}>
             {!allPassed && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(download); }} disabled={busy} style={{ fontSize: 12 }}>Export results</button>}
-            {isDemo && <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => { void end().then(() => setPhase('setup')); }} disabled={busy} style={{ fontSize: 12 }}>End demo and test my agent</button>}
+            {isDemo && <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => act(async () => {
+              if (!run?.sandboxId) return;
+              const result = await destroyRun(run.sandboxId);
+              if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
+              setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setAssessment('Not assessed');
+              setPhase('setup');
+            })} disabled={busy} style={{ fontSize: 12 }}>End demo and test my agent</button>}
             <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
           </div>
 
