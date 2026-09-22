@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, auditLog } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
 import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
@@ -584,6 +584,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   const [forecast, setForecast] = useState<PerformanceCostForecastResult | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState('');
+  const [tokenBudgetDraft, setTokenBudgetDraft] = useState('');
 
   const fetchForecast = useCallback(async () => {
     try {
@@ -592,6 +593,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
       setLoadError(null);
       setForecast(data);
       setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
+      setTokenBudgetDraft(data.tokenBudget != null ? String(data.tokenBudget) : '');
     } catch {
       setLoadError('Could not reach the cost-tracking endpoint.');
     }
@@ -609,6 +611,16 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     if (n != null && !(n > 0)) { setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
     try {
       await setBudgetUsd(fleetId, n, authKey);
+      fetchForecast();
+    } catch { /* ignore */ }
+  }
+
+  async function commitTokenBudget(value: string) {
+    const trimmed = value.trim();
+    const n = trimmed === '' ? null : Number(trimmed);
+    if (n != null && !(n > 0)) { setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
+    try {
+      await setTokenBudget(fleetId, n, authKey);
       fetchForecast();
     } catch { /* ignore */ }
   }
@@ -631,10 +643,17 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     <div style={CARD}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <h3 style={H3}>Cost Tracking</h3>
-        <div className="flex items-center gap-2">
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
-          <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={setBudgetDraft} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
-        </div>
+        {forecast.costUnavailable ? (
+          <div className="flex items-center gap-2" title="No $/token pricing on file yet for this fleet's model — budget is tracked in tokens instead of dollars until pricing is added.">
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>TOKEN BUDGET</span>
+            <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={setTokenBudgetDraft} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
+            <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={setBudgetDraft} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -648,7 +667,9 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
           {forecast.remainingTasks == null ? (
             <>
               <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
-              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>set a budget to see tasks remaining</div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>
+                {forecast.costUnavailable ? 'set a token budget to see tasks remaining' : 'set a budget to see tasks remaining'}
+              </div>
             </>
           ) : (
             <>

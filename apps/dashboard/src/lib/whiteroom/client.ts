@@ -34,6 +34,8 @@ import type {
   PerformanceCostForecastResult,
   GetBudgetResult,
   SetBudgetResult,
+  GetTokenBudgetResult,
+  SetTokenBudgetResult,
   RegisterResult,
   StoreKeyResult,
   TokenLoginResult,
@@ -569,4 +571,12 @@ export function getBudgetUsd(fleetId: string, key?: string): Promise<GetBudgetRe
 
 export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {
   return apiCall<SetBudgetResult>({ action: 'set_budget_usd', fleet_id: fleetId, budget_usd: budgetUsd }, key);
+}
+
+export function getTokenBudget(fleetId: string, key?: string): Promise<GetTokenBudgetResult> {
+  return apiCall<GetTokenBudgetResult>({ action: 'get_token_budget', fleet_id: fleetId }, key);
+}
+
+export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {
+  return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
 }

@@ -295,7 +295,15 @@ export interface PerformanceCostForecastResult {
   budgetUsd: number | null;
   spendToDateUsd: number;
   burnRateUsdPerHour: number;
+  // Dollar-based normally; token-based (against tokenBudget) when
+  // costUnavailable — same field either way, since the card only shows one.
   remainingTasks: number | null;
+  // true when recent activity used a model with no price-catalog entry —
+  // burnRateUsdPerHour is $0 because it's unpriced, not because it's free.
+  // tokensPerHour/tokenBudget are the fallback signals in that case.
+  costUnavailable: boolean;
+  tokensPerHour: number | null;
+  tokenBudget: number | null;
   error?: string;
 }
 
@@ -309,6 +317,19 @@ export interface SetBudgetResult {
   success: boolean;
   fleetId: string;
   budgetUsd: number | null;
+  error?: string;
+}
+
+export interface GetTokenBudgetResult {
+  fleetId: string;
+  tokenBudget: number | null;
+  error?: string;
+}
+
+export interface SetTokenBudgetResult {
+  success: boolean;
+  fleetId: string;
+  tokenBudget: number | null;
   error?: string;
 }
 
