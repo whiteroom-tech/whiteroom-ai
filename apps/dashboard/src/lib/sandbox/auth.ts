@@ -2,6 +2,8 @@ import "server-only";
 import { auth } from "@/auth";
 import { headers } from "next/headers";
 
+export const SANDBOX_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
+
 export async function requireSandboxUser(): Promise<
   { ownerSubject: string } | { error: Response }
 > {

@@ -1,10 +1,8 @@
-import { requireSandboxMutation } from "@/lib/sandbox/auth";
+import { requireSandboxMutation, SANDBOX_ID_RE } from "@/lib/sandbox/auth";
 import { startDemo, toResponse, extractFleetToken } from "@/lib/sandbox/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const SANDBOX_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
 export async function POST(
   req: Request,

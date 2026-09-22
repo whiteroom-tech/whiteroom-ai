@@ -8,6 +8,9 @@ function adminHost(): string | undefined {
 
 const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth'];
 
+const SESSION_PROTECTED = ['/dashboard', '/settings', '/admin'];
+const SESSION_PUBLIC_UNDER_SETTINGS = new Set(['/settings/confirm-email']);
+
 function isUnder(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(prefix + '/');
 }
@@ -37,6 +40,17 @@ export function proxy(request: NextRequest) {
   const ADMIN_HOST = adminHost();
   const { pathname, searchParams } = request.nextUrl;
   const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '').toLowerCase();
+
+  if (!SESSION_PUBLIC_UNDER_SETTINGS.has(pathname) &&
+      SESSION_PROTECTED.some((p) => isUnder(pathname, p))) {
+    const cookie = request.cookies.get('__Secure-authjs.session-token') ??
+                   request.cookies.get('authjs.session-token');
+    if (!cookie?.value) {
+      const signIn = new URL('/sign-in', request.url);
+      signIn.searchParams.set('callbackUrl', pathname);
+      return NextResponse.redirect(signIn);
+    }
+  }
 
   if (ADMIN_HOST) {
     if (host === ADMIN_HOST) {

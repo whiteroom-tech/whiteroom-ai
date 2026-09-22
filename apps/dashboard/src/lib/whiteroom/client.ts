@@ -366,14 +366,6 @@ export function sandboxReport(sandboxId: string, key?: string): Promise<SandboxR
   return apiCall<SandboxReportResult>({ action: 'test_report', sandbox_id: sandboxId }, key);
 }
 
-export function pauseSandboxAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key);
-}
-
-export function resumeSandboxAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key);
-}
-
 export function resetSandboxSession(sandboxId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return apiCall<{ success?: boolean; error?: string }>({ action: 'reset_session', sandbox_id: sandboxId }, key);
 }

@@ -218,20 +218,3 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
   }
 }
 
-/**
- * Whether this user may link one more fleet.
- *
- * Enforced here as well as on the engine because the two catch different
- * things: this stops the account growing past its plan, while the engine's
- * agent cap stops a single fleet being used to route around it.
- */
-export async function canAddFleet(): Promise<{ allowed: boolean; used: number; limit: number; plan: PlanId }> {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) throw new Error('Not authenticated');
-
-  const [sub, used] = await Promise.all([getSubscriptionRow(userId), countFleets(userId)]);
-  const plan = effectivePlan(sub);
-  const limit = limitsFor(plan).maxFleets;
-  return { allowed: used < limit, used, limit, plan };
-}
