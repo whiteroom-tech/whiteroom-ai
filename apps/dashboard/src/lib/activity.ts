@@ -16,10 +16,10 @@ import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 
 export type { AuditEntry, ToolDetail };
 
-export type Tone = 'task' | 'handover' | 'start' | 'rest' | 'idle';
+type Tone = 'task' | 'handover' | 'start' | 'rest' | 'idle';
 
 /** Accent per tone, matching this dashboard's existing hex palette. */
-export const TONE_VAR: Record<Tone, string> = {
+const TONE_VAR: Record<Tone, string> = {
   task: '#22c55e',
   handover: '#a855f7',
   start: '#38bdf8',
@@ -27,7 +27,7 @@ export const TONE_VAR: Record<Tone, string> = {
   idle: '#475569',
 };
 
-export const TONE_BG: Record<Tone, string> = {
+const TONE_BG: Record<Tone, string> = {
   task: '#052e16',
   handover: '#2e1065',
   start: '#0c4a6e',
@@ -44,12 +44,12 @@ interface EventCopy {
 }
 
 /** Capitalised agent name. Agents are identified by id in this app. */
-export function agentName(id: unknown): string {
+function agentName(id: unknown): string {
   const s = String(id ?? '').trim();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'An agent';
 }
 
-export const EVENT_COPY: Record<string, EventCopy> = {
+const EVENT_COPY: Record<string, EventCopy> = {
   task_complete: { icon: '✅', tone: 'task', code: 'TSK', say: (e) => `finished "${e.taskName || 'a task'}"` },
   watch_start: { icon: '▶', tone: 'start', code: 'ON', say: () => 'started a shift' },
   watch_end: { icon: '⏹', tone: 'start', code: 'OFF', say: () => 'ended the shift' },
@@ -64,7 +64,7 @@ export const EVENT_COPY: Record<string, EventCopy> = {
 };
 
 /** Unknown or absent types degrade to readable prose rather than throwing. */
-export function humanizeType(type: unknown): string {
+function humanizeType(type: unknown): string {
   const s = String(type ?? '')
     .replace(/[_-]+/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -85,7 +85,7 @@ export function relTime(timestamp: unknown, now: number = Date.now()): string {
   return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function clockTime(timestamp: unknown): string {
+function clockTime(timestamp: unknown): string {
   const d = new Date(String(timestamp ?? ''));
   if (!Number.isFinite(d.getTime())) return '--:--';
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -102,7 +102,7 @@ export function feedDayLabel(timestamp: unknown, now: number = Date.now()): stri
 }
 
 // ── Tool calls → plain English ───────────────────────────
-export interface ActionKind {
+interface ActionKind {
   icon: string;
   label: string;
   /** Present participle, for "Alpha is <ing> …" captions. */
@@ -126,7 +126,7 @@ const ACTION_RULES: ActionRule[] = [
   { test: /read|open|get|fetch|load|file|doc|view/i, icon: '📄', label: 'Read', ing: 'Reading' },
 ];
 
-export const ACTION_FALLBACK: ActionKind = { icon: '🔧', label: 'Used', ing: 'Using' };
+const ACTION_FALLBACK: ActionKind = { icon: '🔧', label: 'Used', ing: 'Using' };
 
 export function classifyAction(name: unknown): ActionKind {
   const n = String(name ?? '');
@@ -262,7 +262,7 @@ export function pageSlice<T>(items: T[], page: number, size: number = PAGE_SIZE)
   return items.slice(start, start + size);
 }
 
-export const FEED_VARIANTS = ['log', 'tape', 'manifest'] as const;
+const FEED_VARIANTS = ['log', 'tape', 'manifest'] as const;
 export type FeedVariant = (typeof FEED_VARIANTS)[number];
 
 export function isFeedVariant(v: unknown): v is FeedVariant {

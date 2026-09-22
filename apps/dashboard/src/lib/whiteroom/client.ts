@@ -34,7 +34,6 @@ import type {
   PerformanceCostForecastResult,
   GetBudgetResult,
   SetBudgetResult,
-  RebindResult,
   RegisterResult,
   StoreKeyResult,
   TokenLoginResult,
@@ -153,26 +152,6 @@ export function claimFleet(fleetId: string, key?: string): Promise<ClaimFleetRes
 
 export function listFleets(apiKey: string): Promise<ListFleetsResult> {
   return apiCall<ListFleetsResult>({ action: 'list_fleets' }, apiKey);
-}
-
-/**
- * BYOK — rebind a fleet from its current key to the customer's Anthropic key.
- * Authenticated with the fleet's current key (apiKey).
- */
-export async function rebindFleetKey(
-  fleetId: string,
-  newApiKey: string,
-  apiKey: string,
-): Promise<RebindResult> {
-  const res = await postRaw(
-    { action: 'rebind_fleet_key', fleet_id: fleetId, new_api_key: newApiKey },
-    apiKey,
-  );
-  const body = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
-  if (!res.ok || !body.success) {
-    return { success: false, error: body.error || `Rebind failed (HTTP ${res.status}).` };
-  }
-  return { success: true };
 }
 
 // -- Reporting & monitoring --

@@ -8,7 +8,7 @@ export function estimateCost(tokensSaved: number): number {
 }
 
 /** YYYY-MM-DD in the browser's local timezone. */
-export function localDay(d: Date): string {
+function localDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 

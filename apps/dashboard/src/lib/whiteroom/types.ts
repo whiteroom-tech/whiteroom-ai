@@ -120,11 +120,6 @@ export interface ClaimFleetResult {
   error?: string;
 }
 
-export interface RebindResult {
-  success: boolean;
-  error?: string;
-}
-
 // -- Provider keys (BYOK) --
 //
 // A fleet can hold several provider keys at once — one per key the account

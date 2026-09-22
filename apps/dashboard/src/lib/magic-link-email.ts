@@ -14,7 +14,7 @@ interface TransactionalEmail {
 }
 
 /** Shared shell for every transactional email the dashboard sends. */
-export function transactionalEmail({ heading, body, cta, url, footer }: TransactionalEmail): { html: string; text: string } {
+function transactionalEmail({ heading, body, cta, url, footer }: TransactionalEmail): { html: string; text: string } {
   const html = `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#070B14;">
