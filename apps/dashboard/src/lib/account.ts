@@ -1,7 +1,7 @@
 'use server';
 
 import { createHmac, randomBytes } from 'node:crypto';
-import { headers } from 'next/headers';
+import { appOrigin } from '@/lib/app-origin';
 import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
@@ -59,24 +59,9 @@ function hashToken(token: string): string {
   // Keyed with AUTH_SECRET for the same reason the engine peppers its key
   // hashes: an unkeyed digest of a high-entropy token is fine in theory, but
   // a keyed one stays safe even if the token space is ever narrowed.
-  const secret = process.env.AUTH_SECRET ?? '';
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) throw new Error('AUTH_SECRET is required');
   return createHmac('sha256', secret).update(token).digest('hex');
-}
-
-/**
- * Absolute origin for links in outgoing email.
- *
- * Cloud Run terminates TLS at the load balancer, so the request's own protocol
- * is http and only X-Forwarded-Proto reflects what the user actually used —
- * the same reason auth.ts sets trustHost.
- */
-async function origin(): Promise<string> {
-  if (process.env.AUTH_URL) return process.env.AUTH_URL.replace(/\/$/, '');
-  const h = await headers();
-  const host = h.get('x-forwarded-host') ?? h.get('host');
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  if (!host) return 'https://app.whiteroom.tech';
-  return `${proto}://${host}`;
 }
 
 function isValidEmail(value: string): boolean {
@@ -258,7 +243,7 @@ export async function requestEmailChange(newEmailRaw: string): Promise<ActionRes
     [userId, newEmail, hashToken(token), expiresAt],
   );
 
-  const url = `${await origin()}/settings/confirm-email?token=${encodeURIComponent(token)}`;
+  const url = `${appOrigin()}/settings/confirm-email?token=${encodeURIComponent(token)}`;
   const { html, text } = emailChangeEmail(url, currentEmail ?? 'your current address');
 
   try {
@@ -266,8 +251,8 @@ export async function requestEmailChange(newEmailRaw: string): Promise<ActionRes
   } catch (err) {
     // Leaving the row behind would show a pending change for a link nobody
     // ever received.
-    await db().query(`DELETE FROM email_change_requests WHERE user_id = $1`, [userId]);
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not send the confirmation email.' };
+    await db().query(`DELETE FROM email_change_requests WHERE user_id = $1 AND token_hash = $2`, [userId, hashToken(token)]);
+    return { ok: false, error: 'Could not send the confirmation email.' };
   }
 
   return { ok: true };
@@ -344,7 +329,7 @@ export async function confirmEmailChange(token: string): Promise<
     return { ok: true, newEmail: req.new_email };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not confirm that email.' };
+    return { ok: false, error: 'Could not confirm that email.' };
   } finally {
     client.release();
   }
@@ -385,7 +370,7 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     client.release();
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not delete the account.' };
+    return { ok: false, error: 'Could not delete the account.' };
   }
   client.release();
 

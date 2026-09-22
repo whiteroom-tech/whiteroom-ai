@@ -3,14 +3,13 @@ import { describe, it, expect } from "vitest";
 // drift from the implementation.
 import { fleetProvisioned } from "../lib/whiteroom/client";
 
-// Every payload below is a verbatim response captured from the production
-// engine (proxy.whiteroom.tech), so these cases document actual API behaviour
-// rather than an assumed contract.
+// Payload shapes reflect the engine contract. Credentials and identities
+// are synthetic fixtures, never live production values.
 describe("fleetProvisioned", () => {
   it("accepts a fresh create_fleet response", () => {
     expect(
       fleetProvisioned({
-        fleetToken: "wr_cf39d6e8-f597-48dc-996b-2c9de1f028e0",
+        fleetToken: "wr_test_fixture_not_a_live_credential",
       }),
     ).toBe(true);
   });
@@ -23,8 +22,8 @@ describe("fleetProvisioned", () => {
   it("accepts 'already registered', which carries an error AND a token", () => {
     expect(
       fleetProvisioned({
-        error: "Agent 'setup-agent' already registered in fleet 'alexnyan2004-gmail-com'.",
-        fleetToken: "wr_cf39d6e8-f597-48dc-996b-2c9de1f028e0",
+        error: "Agent 'setup-agent' already registered in fleet 'test-fleet'.",
+        fleetToken: "wr_test_fixture_not_a_live_credential",
       }),
     ).toBe(true);
   });

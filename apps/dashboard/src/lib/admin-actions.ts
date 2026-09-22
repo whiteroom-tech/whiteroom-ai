@@ -19,7 +19,7 @@ function refused(err: unknown): AdminResult {
   // Deliberately identical to any other failure. Telling a non-admin that the
   // endpoint exists and merely refused them is more than they need to know.
   if (err instanceof NotAdminError) return { ok: false, error: 'Not allowed.' };
-  return { ok: false, error: err instanceof Error ? err.message : 'Something went wrong.' };
+  return { ok: false, error: 'Something went wrong. Please try again.' };
 }
 
 /**
@@ -39,36 +39,48 @@ export async function setPlanOverride(userId: string, plan: string | null): Prom
       return { ok: false, error: `'${plan}' is not a plan.` };
     }
 
-    const { rows } = await db().query(`SELECT email FROM users WHERE id = $1`, [userId]);
-    if (rows.length === 0) return { ok: false, error: 'No such user.' };
-    const targetEmail: string | null = rows[0].email;
+    const client = await db().connect();
+    try {
+      await client.query('BEGIN');
 
-    const { rows: before } = await db().query(
-      `SELECT plan_override FROM subscriptions WHERE user_id = $1`,
-      [userId],
-    );
+      const { rows } = await client.query(`SELECT email FROM users WHERE id = $1`, [userId]);
+      if (rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { ok: false, error: 'No such user.' };
+      }
+      const targetEmail: string | null = rows[0].email;
 
-    // A user who has never reached Checkout has no subscriptions row, and a
-    // comp is exactly the case where that's likely. stripe_customer_id is NOT
-    // NULL, so seed a placeholder that ensureCustomer() will replace the first
-    // time they do subscribe.
-    await db().query(
-      `INSERT INTO subscriptions (user_id, stripe_customer_id, plan_override, updated_at)
-       VALUES ($1, $2, $3, now())
-       ON CONFLICT (user_id) DO UPDATE SET plan_override = EXCLUDED.plan_override, updated_at = now()`,
-      [userId, `pending_${userId}`, plan],
-    );
+      const { rows: before } = await client.query(
+        `SELECT plan_override FROM subscriptions WHERE user_id = $1 FOR UPDATE`,
+        [userId],
+      );
 
-    await logAdminAction({
-      actor,
-      action: plan ? 'plan_override.set' : 'plan_override.clear',
-      targetUserId: userId,
-      targetEmail,
-      details: { from: before[0]?.plan_override ?? null, to: plan },
-    });
+      await client.query(
+        `INSERT INTO subscriptions (user_id, stripe_customer_id, plan_override, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (user_id) DO UPDATE SET plan_override = EXCLUDED.plan_override, updated_at = now()`,
+        [userId, `pending_${userId}`, plan],
+      );
+
+      await logAdminAction({
+        actor,
+        action: plan ? 'plan_override.set' : 'plan_override.clear',
+        targetUserId: userId,
+        targetEmail,
+        details: { from: before[0]?.plan_override ?? null, to: plan },
+      }, client);
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
 
     // The override changes what the engine should allow, so it has to reach
-    // the engine — otherwise a comped account keeps its old fleet limits.
+    // the engine — outside the transaction since it's a remote call that
+    // should not hold a DB lock.
     await syncEntitlementsToEngine(userId);
 
     return { ok: true };

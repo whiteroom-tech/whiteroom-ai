@@ -2,7 +2,8 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { syncEntitlementsToEngine } from '@/lib/entitlements';
+import { revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 
 export interface UserProvisioning {
   apiKey: string | null;
@@ -38,23 +39,48 @@ export async function upsertUserProvisioning(input: {
   fleetToken: string | null;
 }): Promise<void> {
   const userId = await requireUserId();
+  await verifyFleetOwnership(input?.fleetToken, input?.fleetId);
+  if (typeof input.apiKey !== 'string' || !/^sk-wr-[a-zA-Z0-9_-]{16,128}$/.test(input.apiKey)) {
+    throw new Error('Invalid dashboard credential.');
+  }
   const session = await auth();
-  await db().query(
-    `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
-     ON CONFLICT (id) DO UPDATE SET
-       email = EXCLUDED.email,
-       name = EXCLUDED.name,
-       api_key = EXCLUDED.api_key,
-       fleet_id = EXCLUDED.fleet_id,
-       fleet_token = EXCLUDED.fleet_token,
-       updated_at = now()`,
-    [userId, session?.user?.email ?? null, session?.user?.name ?? null, input.apiKey, input.fleetId, input.fleetToken],
-  );
 
-  // The fleet provisioned at sign-in has no user_fleets row, so nothing else
-  // would ever tell the engine what it's entitled to. Without this a paying
-  // customer's main fleet silently runs on free limits.
+  let oldFleetId: string | null = null;
+
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+
+    const { rows: current } = await client.query(
+      'SELECT fleet_id FROM users WHERE id = $1',
+      [userId],
+    );
+    oldFleetId = current[0]?.fleet_id ?? null;
+
+    await client.query(
+      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (id) DO UPDATE SET
+         email = EXCLUDED.email,
+         name = EXCLUDED.name,
+         api_key = EXCLUDED.api_key,
+         fleet_id = EXCLUDED.fleet_id,
+         fleet_token = EXCLUDED.fleet_token,
+         updated_at = now()`,
+      [userId, session?.user?.email ?? null, session?.user?.name ?? null, input.apiKey, input.fleetId, input.fleetToken],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  if (oldFleetId && oldFleetId !== input.fleetId) {
+    await revokeFleetEntitlement(oldFleetId);
+  }
   await syncEntitlementsToEngine(userId);
 }
 

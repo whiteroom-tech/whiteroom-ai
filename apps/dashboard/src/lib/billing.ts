@@ -1,6 +1,6 @@
 'use server';
 
-import { headers } from 'next/headers';
+import { appOrigin } from '@/lib/app-origin';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
@@ -15,14 +15,6 @@ async function requireUser(): Promise<{ id: string; email: string | null }> {
   return { id: session.user.id, email: session.user.email ?? null };
 }
 
-async function origin(): Promise<string> {
-  if (process.env.AUTH_URL) return process.env.AUTH_URL.replace(/\/$/, '');
-  const h = await headers();
-  const host = h.get('x-forwarded-host') ?? h.get('host');
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  if (!host) return 'https://app.whiteroom.tech';
-  return `${proto}://${host}`;
-}
 
 /**
  * Whether a stored customer id is one Stripe would actually recognise.
@@ -79,7 +71,7 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
   try {
     const user = await requireUser();
     const customerId = await ensureCustomer(user.id, user.email);
-    const base = await origin();
+    const base = appOrigin();
 
     const session = await stripe().checkout.sessions.create({
       mode: 'subscription',
@@ -97,7 +89,7 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     if (!session.url) return { ok: false, error: 'Stripe did not return a checkout URL.' };
     return { ok: true, url: session.url };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not start checkout.' };
+    return { ok: false, error: 'Could not start checkout.' };
   }
 }
 
@@ -118,10 +110,10 @@ export async function openBillingPortal(): Promise<UrlResult> {
 
     const session = await stripe().billingPortal.sessions.create({
       customer: sub.stripeCustomerId,
-      return_url: `${await origin()}/settings`,
+      return_url: `${appOrigin()}/settings`,
     });
     return { ok: true, url: session.url };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not open the billing portal.' };
+    return { ok: false, error: 'Could not open the billing portal.' };
   }
 }

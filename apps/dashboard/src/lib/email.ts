@@ -20,6 +20,8 @@ export async function sendEmail(opts: {
 
   const res = await fetch(RESEND_ENDPOINT, {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    redirect: 'error',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -28,6 +30,6 @@ export async function sendEmail(opts: {
   });
 
   if (!res.ok) {
-    throw new Error(`Resend error: ${JSON.stringify(await res.json().catch(() => ({})))}`);
+    throw new Error('Could not send the email.');
   }
 }

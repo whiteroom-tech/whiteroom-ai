@@ -10,12 +10,8 @@ import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } 
 import type { FleetReport } from '@/lib/whiteroom/types';
 
 function generateApiKey() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let key = 'sk-wr-';
-  for (let i = 0; i < 40; i++) {
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return key;
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return 'sk-wr-' + Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function emailToFleetId(email: string) {
@@ -145,7 +141,10 @@ export default function DashboardPage() {
       }
     }
 
-    handleUser(session.user);
+    void handleUser(session.user).catch(() => {
+      setProvisionError('Could not load your fleet. Please reload and try again.');
+      setLoading(false);
+    });
   }, [status, session, router]);
 
   if (loading) {

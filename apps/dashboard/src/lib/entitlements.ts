@@ -171,14 +171,16 @@ export async function syncEntitlementsToEngine(userId: string): Promise<void> {
   try {
     const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
       method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      console.error(`[entitlements] engine sync failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
+      console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
     }
   } catch (err) {
-    console.error('[entitlements] engine sync failed:', err);
+    console.error('[entitlements] engine sync failed');
   }
 }
 
@@ -197,6 +199,8 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
   try {
     const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
       method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
       body: JSON.stringify({
         fleets: [{
@@ -210,7 +214,7 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
     });
     if (!res.ok) console.error(`[entitlements] revoke failed for ${fleetId}: HTTP ${res.status}`);
   } catch (err) {
-    console.error(`[entitlements] revoke failed for ${fleetId}:`, err);
+    console.error('[entitlements] revoke failed');
   }
 }
 

@@ -1,3 +1,4 @@
+import 'server-only';
 import { Pool } from 'pg';
 
 let pool: Pool | null = null;
@@ -14,7 +15,14 @@ export function db(): Pool {
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
       max: 5,
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 30_000,
+      statement_timeout: 15_000,
+      idle_in_transaction_session_timeout: 15_000,
     });
+    // Idle sockets can fail outside a query's catch block. Handle the event
+    // without logging connection details or allowing an uncaught exception.
+    pool.on('error', () => console.error('[db] idle connection failed'));
   }
   return pool;
 }

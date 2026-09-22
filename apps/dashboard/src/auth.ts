@@ -55,6 +55,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
+          signal: AbortSignal.timeout(10_000),
+          redirect: 'error',
           headers: {
             Authorization: `Bearer ${provider.apiKey}`,
             'Content-Type': 'application/json',
@@ -68,7 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (!res.ok) {
-          throw new Error('Resend error: ' + JSON.stringify(await res.json()));
+          throw new Error('Could not send the sign-in email.');
         }
       },
     }),
@@ -81,6 +83,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // SESSION_REVALIDATE_SECONDS anyway; this bounds the worst case if that
   // check is ever bypassed.
   session: { strategy: 'jwt', maxAge: 7 * 24 * 60 * 60 },
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Secure-authjs.session-token'
+        : 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   // Required off Vercel — Cloud Run sits behind a proxy that sets
   // X-Forwarded-* headers rather than terminating TLS itself.
   trustHost: true,
@@ -152,10 +167,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.revalidatedAt = now;
         return token;
       } catch {
-        // A database blip shouldn't sign the whole product out. Keep the
-        // session and leave revalidatedAt untouched so the next request
-        // retries immediately rather than waiting out the throttle.
-        return token;
+        // Once revalidation is due, an outage cannot extend a revoked or
+        // deleted account's access indefinitely. Require authentication again.
+        return null;
       }
     },
     async session({ session, token }) {

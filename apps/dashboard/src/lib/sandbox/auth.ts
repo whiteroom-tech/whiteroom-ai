@@ -25,8 +25,11 @@ export async function requireSandboxMutation(): Promise<
     return { error: Response.json({ error: "Missing origin." }, { status: 403 }) };
   }
   try {
-    const originHost = new URL(origin).host;
-    if (originHost !== host) {
+    const parsed = new URL(origin);
+    const local = process.env.NODE_ENV !== 'production' &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    if (parsed.host !== host || parsed.origin !== origin ||
+        (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:'))) {
       return { error: Response.json({ error: "Origin mismatch." }, { status: 403 }) };
     }
   } catch {

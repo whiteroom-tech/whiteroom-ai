@@ -5,9 +5,9 @@ import { deriveDisplayStatus, resolveAuthKey, isApiKey, buildCredentials } from 
 import { estimateCost, getCutoff, handoverSaved, watchKey } from "../lib/analytics-metrics";
 
 describe("date range boundaries", () => {
-  it("'today' includes only today (UTC)", () => {
-    // 2026-07-11 15:00:00 UTC
-    const nowMs = Date.UTC(2026, 6, 11, 15, 0, 0);
+  it("'today' includes only today (local time)", () => {
+    // 2026-07-11 15:00:00 local
+    const nowMs = new Date(2026, 6, 11, 15, 0, 0).getTime();
     const cutoff = getCutoff("today", nowMs);
     expect(cutoff).toBe("2026-07-11");
 
@@ -18,7 +18,7 @@ describe("date range boundaries", () => {
   });
 
   it("'7d' includes exactly 7 calendar days", () => {
-    const nowMs = Date.UTC(2026, 6, 11, 15, 0, 0);
+    const nowMs = new Date(2026, 6, 11, 15, 0, 0).getTime();
     const cutoff = getCutoff("7d", nowMs);
     expect(cutoff).toBe("2026-07-05");
 
@@ -31,7 +31,7 @@ describe("date range boundaries", () => {
   });
 
   it("'30d' includes exactly 30 calendar days", () => {
-    const nowMs = Date.UTC(2026, 6, 11, 15, 0, 0);
+    const nowMs = new Date(2026, 6, 11, 15, 0, 0).getTime();
     const cutoff = getCutoff("30d", nowMs);
     expect(cutoff).toBe("2026-06-12");
 
@@ -40,18 +40,18 @@ describe("date range boundaries", () => {
   });
 
   it("'recent' includes all retained events", () => {
-    const nowMs = Date.UTC(2026, 6, 11, 15, 0, 0);
+    const nowMs = new Date(2026, 6, 11, 15, 0, 0).getTime();
     const cutoff = getCutoff("recent", nowMs);
     expect(cutoff).toBe("1970-01-01");
   });
 
-  it("'today' handles UTC midnight boundary", () => {
-    // 2026-07-11 23:59:59 UTC — still Jul 11
-    const lateMs = Date.UTC(2026, 6, 11, 23, 59, 59);
+  it("'today' handles local midnight boundary", () => {
+    // 2026-07-11 23:59:59 local — still Jul 11
+    const lateMs = new Date(2026, 6, 11, 23, 59, 59).getTime();
     expect(getCutoff("today", lateMs)).toBe("2026-07-11");
 
-    // 2026-07-12 00:00:01 UTC — now Jul 12
-    const earlyMs = Date.UTC(2026, 6, 12, 0, 0, 1);
+    // 2026-07-12 00:00:01 local — now Jul 12
+    const earlyMs = new Date(2026, 6, 12, 0, 0, 1).getTime();
     expect(getCutoff("today", earlyMs)).toBe("2026-07-12");
   });
 });

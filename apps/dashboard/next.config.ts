@@ -3,6 +3,28 @@ import path from 'node:path';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  poweredByHeader: false,
+  async headers() {
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'no-referrer' },
+        { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+        { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'" },
+      ],
+    },
+    {
+      source: '/api/:path*',
+      headers: [
+        { key: 'Access-Control-Allow-Origin', value: 'https://app.whiteroom.tech' },
+        { key: 'Access-Control-Allow-Methods', value: 'GET, POST, OPTIONS' },
+        { key: 'Access-Control-Allow-Headers', value: 'Content-Type, x-fleet-token' },
+        { key: 'Access-Control-Max-Age', value: '86400' },
+      ],
+    }];
+  },
   // @whiteroom/ui ships raw .ts/.tsx source over a local file: link, so Next
   // has to transpile it rather than treat it as pre-built node_modules code.
   transpilePackages: ['@whiteroom/ui'],

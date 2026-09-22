@@ -44,7 +44,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     // A bad signature is either a misconfigured endpoint secret or someone
     // posting forged events. Both want a 400, and neither wants a retry.
-    console.error('[stripe] signature verification failed:', err instanceof Error ? err.message : err);
+    console.error('[stripe] signature verification failed');
     return new Response('Invalid signature', { status: 400 });
   }
 
@@ -63,14 +63,14 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     // Couldn't record the claim — better to 500 and let Stripe retry than to
     // apply an event we can't deduplicate.
-    console.error('[stripe] could not claim event:', err);
+    console.error('[stripe] could not claim event');
     return new Response('Storage error', { status: 500 });
   }
 
   try {
     await handle(event);
   } catch (err) {
-    console.error(`[stripe] handler failed for ${event.type} (${event.id}):`, err);
+    console.error(`[stripe] handler failed for ${event.type} (${event.id})`);
     // Release the claim so Stripe's retry is actually allowed to re-run.
     await db().query(`DELETE FROM stripe_events WHERE id = $1`, [event.id]).catch(() => {});
     return new Response('Handler error', { status: 500 });

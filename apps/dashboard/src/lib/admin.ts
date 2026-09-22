@@ -80,8 +80,9 @@ export async function logAdminAction(input: {
   targetUserId?: string | null;
   targetEmail?: string | null;
   details?: Record<string, unknown>;
-}): Promise<void> {
-  await db().query(
+}, queryable?: Pick<ReturnType<typeof db>, 'query'>): Promise<void> {
+  const q = queryable ?? db();
+  await q.query(
     `INSERT INTO admin_audit_log (actor_user_id, actor_email, action, target_user_id, target_email, details)
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [
@@ -301,6 +302,8 @@ async function fetchFleetUsage(fleetIds: string[]): Promise<{
   try {
     const res = await fetch(`${PROXY_URL}/internal/fleet-usage`, {
       method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
       body: JSON.stringify({ fleetIds, sinceDays: 7 }),
       cache: 'no-store',
@@ -320,7 +323,7 @@ async function fetchFleetUsage(fleetIds: string[]): Promise<{
     }
     return { byFleet, windowDays: data.windowDays };
   } catch (err) {
-    console.error('[admin] fleet-usage failed:', err);
+    console.error('[admin] fleet-usage failed');
     return empty;
   }
 }

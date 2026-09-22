@@ -16,7 +16,10 @@ vi.mock('@/auth', () => ({
 }));
 
 vi.mock('@/lib/db', () => ({
-  db: () => ({ query }),
+  db: () => ({
+    query,
+    connect: async () => ({ query, release: vi.fn() }),
+  }),
 }));
 
 vi.mock('@/lib/entitlements', () => ({
@@ -112,7 +115,8 @@ describe('setPlanOverride', () => {
 
   it('reports an unknown target rather than writing', async () => {
     session.current = { user: { id: ADMIN.id } };
-    results([ADMIN], []); // admin check, then the target lookup finds nothing
+    // requireAdmin, BEGIN, SELECT email finds nothing
+    results([ADMIN], [], []);
 
     expect(await setPlanOverride('u-nobody', 'pro')).toEqual({ ok: false, error: 'No such user.' });
   });
@@ -121,7 +125,8 @@ describe('setPlanOverride', () => {
   // doesn't wipe it. Writing `plan` here would be overwritten within minutes.
   it('writes plan_override and never plan', async () => {
     session.current = { user: { id: ADMIN.id } };
-    results([ADMIN], [{ email: 'target@example.com' }], [{ plan_override: null }]);
+    // requireAdmin, BEGIN, SELECT email, SELECT plan_override FOR UPDATE
+    results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: null }]);
 
     expect(await setPlanOverride('u-target', 'team')).toEqual({ ok: true });
 
@@ -134,7 +139,8 @@ describe('setPlanOverride', () => {
 
   it('records the change in the audit log, with what it changed from', async () => {
     session.current = { user: { id: ADMIN.id } };
-    results([ADMIN], [{ email: 'target@example.com' }], [{ plan_override: 'pro' }]);
+    // requireAdmin, BEGIN, SELECT email, SELECT plan_override FOR UPDATE
+    results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: 'pro' }]);
 
     await setPlanOverride('u-target', 'team');
 
@@ -149,7 +155,8 @@ describe('setPlanOverride', () => {
 
   it('logs a clear, not a set, when the override is removed', async () => {
     session.current = { user: { id: ADMIN.id } };
-    results([ADMIN], [{ email: 'target@example.com' }], [{ plan_override: 'team' }]);
+    // requireAdmin, BEGIN, SELECT email, SELECT plan_override FOR UPDATE
+    results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: 'team' }]);
 
     await setPlanOverride('u-target', null);
 

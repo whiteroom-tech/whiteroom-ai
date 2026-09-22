@@ -54,6 +54,9 @@ function authHeaders(key?: string): Record<string, string> {
 async function postRaw(body: Record<string, unknown>, key?: string): Promise<Response> {
   return fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
+    signal: AbortSignal.timeout(15_000),
+    redirect: 'error',
+    cache: 'no-store',
     headers: authHeaders(key),
     body: JSON.stringify(body),
   });

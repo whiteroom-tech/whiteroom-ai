@@ -33,6 +33,11 @@ describe("requireSandboxUser", () => {
 });
 
 describe("requireSandboxMutation (CSRF)", () => {
+  it.each(['http://app.whiteroom.ai', 'ftp://app.whiteroom.ai', 'https://user:password@app.whiteroom.ai', 'https://app.whiteroom.ai/path'])("rejects non-origin or insecure value %s", async (origin) => {
+    fakeHeaders(origin, 'app.whiteroom.ai');
+    const result = await requireSandboxMutation();
+    expect('error' in result && result.error.status).toBe(403);
+  });
   it("allows same-origin request", async () => {
     fakeHeaders("https://app.whiteroom.ai", "app.whiteroom.ai");
     const result = await requireSandboxMutation();

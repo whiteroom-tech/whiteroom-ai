@@ -1,6 +1,7 @@
 # Build context is the repo root (not apps/dashboard) so this can COPY the
 # sibling packages/ui dependency pulled in via a `file:` link — Buildpacks
 # can't do this since they only see a single --path directory.
+# TODO: Pin to a reviewed digest (node:20-alpine@sha256:...) with automated updates
 FROM node:20-alpine AS deps
 WORKDIR /repo
 COPY packages/ui ./packages/ui
@@ -20,8 +21,9 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8080
-COPY --from=builder /repo/apps/dashboard/public ./apps/dashboard/public
-COPY --from=builder /repo/apps/dashboard/.next/standalone ./
-COPY --from=builder /repo/apps/dashboard/.next/static ./apps/dashboard/.next/static
+COPY --from=builder --chown=node:node /repo/apps/dashboard/public ./apps/dashboard/public
+COPY --from=builder --chown=node:node /repo/apps/dashboard/.next/standalone ./
+COPY --from=builder --chown=node:node /repo/apps/dashboard/.next/static ./apps/dashboard/.next/static
+USER node
 EXPOSE 8080
 CMD ["node", "apps/dashboard/server.js"]
