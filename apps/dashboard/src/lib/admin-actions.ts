@@ -79,11 +79,6 @@ export async function setPlanOverride(userId: string, plan: string | null): Prom
       client.release();
     }
 
-    // The override changes what the engine should allow, so it has to reach
-    // the engine — outside the transaction since it's a remote call that
-    // should not hold a DB lock.
-    await syncEntitlementsToEngine(userId);
-
     return { ok: true };
   } catch (err) {
     return refused(err);

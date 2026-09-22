@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { enqueueEntitlementSync, revokeFleetEntitlement } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 
 export interface UserProvisioning {
@@ -82,7 +82,6 @@ export async function upsertUserProvisioning(input: {
   if (oldFleetId && oldFleetId !== input.fleetId) {
     await revokeFleetEntitlement(oldFleetId);
   }
-  await syncEntitlementsToEngine(userId);
 }
 
 export async function setByok(value: boolean): Promise<void> {

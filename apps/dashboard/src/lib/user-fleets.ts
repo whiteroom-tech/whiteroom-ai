@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, getSubscriptionRow, revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { enqueueEntitlementSync, getSubscriptionRow, revokeFleetEntitlement } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor } from '@/lib/plans';
 
@@ -105,7 +105,6 @@ export async function addUserFleet(
     client.release();
   }
 
-  await syncEntitlementsToEngine(userId);
   return { ok: true };
 }
 

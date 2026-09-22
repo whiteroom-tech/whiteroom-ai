@@ -66,7 +66,7 @@ describe('server-side fleet ownership', () => {
     expect(mocks.sync).not.toHaveBeenCalled();
   });
 
-  it('keeps verified linking working and synchronizes its entitlements', async () => {
+  it('keeps verified linking working and enqueues sync via the outbox', async () => {
     fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
     mocks.query.mockResolvedValue({ rows: [] });
     expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
@@ -74,7 +74,7 @@ describe('server-side fleet ownership', () => {
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
     );
     expect(insertCall?.[1]).toEqual(['user-1', 'test-token', 'owned', 'Fleet']);
-    expect(mocks.sync).toHaveBeenCalledWith('user-1');
+    expect(mocks.sync).not.toHaveBeenCalled();
   });
 
   it('rejects a provider API key at the provisioning storage boundary', async () => {
