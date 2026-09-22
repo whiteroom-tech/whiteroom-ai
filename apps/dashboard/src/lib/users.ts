@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { enqueueEntitlementSync, revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 
 export interface UserProvisioning {
@@ -70,6 +70,7 @@ export async function upsertUserProvisioning(input: {
          updated_at = now()`,
       [userId, session?.user?.email ?? null, session?.user?.name ?? null, input.apiKey, input.fleetId, input.fleetToken],
     );
+    await enqueueEntitlementSync(client, userId, 'provisioning_upsert');
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

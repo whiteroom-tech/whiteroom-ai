@@ -10,7 +10,7 @@
 
 import { db } from '@/lib/db';
 import { logAdminAction, NotAdminError, requireAdmin } from '@/lib/admin';
-import { syncEntitlementsToEngine } from '@/lib/entitlements';
+import { enqueueEntitlementSync, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { isPlanId } from '@/lib/plans';
 
 export type AdminResult = { ok: true } | { ok: false; error: string };
@@ -70,6 +70,7 @@ export async function setPlanOverride(userId: string, plan: string | null): Prom
         details: { from: before[0]?.plan_override ?? null, to: plan },
       }, client);
 
+      await enqueueEntitlementSync(client, userId, plan ? 'plan_override_set' : 'plan_override_clear');
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});

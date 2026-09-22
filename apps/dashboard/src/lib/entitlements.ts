@@ -129,6 +129,22 @@ async function fleetIdsFor(userId: string): Promise<string[]> {
 }
 
 /**
+ * Writes an outbox row inside the caller's transaction, guaranteeing
+ * the sync intent is committed atomically with the business data change.
+ * The sweep endpoint drains these to the engine.
+ */
+export async function enqueueEntitlementSync(
+  client: Pick<ReturnType<typeof db>, 'query'>,
+  userId: string,
+  reason: string,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO entitlement_outbox (user_id, reason) VALUES ($1, $2)`,
+    [userId, reason],
+  );
+}
+
+/**
  * Pushes this user's current limits to the engine.
  *
  * Called after anything that can change what they're entitled to: a webhook,

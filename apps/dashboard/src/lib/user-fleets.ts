@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { getSubscriptionRow, revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { enqueueEntitlementSync, getSubscriptionRow, revokeFleetEntitlement, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor } from '@/lib/plans';
 
@@ -94,6 +94,7 @@ export async function addUserFleet(
       `INSERT INTO user_fleets (user_id, fleet_token, fleet_id, label) VALUES ($1, $2, $3, $4)`,
       [userId, fleetToken, fleetId, label],
     );
+    await enqueueEntitlementSync(client, userId, 'fleet_linked');
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

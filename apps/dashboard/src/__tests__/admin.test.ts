@@ -24,6 +24,7 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/entitlements', () => ({
   syncEntitlementsToEngine: vi.fn(async () => {}),
+  enqueueEntitlementSync: vi.fn(async () => {}),
 }));
 
 const { requireAdmin, isAdmin, NotAdminError } = await import('@/lib/admin');

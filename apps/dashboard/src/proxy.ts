@@ -41,17 +41,6 @@ export function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
   const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '').toLowerCase();
 
-  if (!SESSION_PUBLIC_UNDER_SETTINGS.has(pathname) &&
-      SESSION_PROTECTED.some((p) => isUnder(pathname, p))) {
-    const cookie = request.cookies.get('__Secure-authjs.session-token') ??
-                   request.cookies.get('authjs.session-token');
-    if (!cookie?.value) {
-      const signIn = new URL('/sign-in', request.url);
-      signIn.searchParams.set('callbackUrl', pathname);
-      return NextResponse.redirect(signIn);
-    }
-  }
-
   if (ADMIN_HOST) {
     if (host === ADMIN_HOST) {
       if (pathname === '/') {
@@ -85,6 +74,17 @@ export function proxy(request: NextRequest) {
     const response = NextResponse.redirect(url, 307);
     response.headers.set('Cache-Control', 'no-store');
     return response;
+  }
+
+  if (!SESSION_PUBLIC_UNDER_SETTINGS.has(pathname) &&
+      SESSION_PROTECTED.some((p) => isUnder(pathname, p))) {
+    const cookie = request.cookies.get('__Secure-authjs.session-token') ??
+                   request.cookies.get('authjs.session-token');
+    if (!cookie?.value) {
+      const signIn = new URL('/sign-in', request.url);
+      signIn.searchParams.set('callbackUrl', pathname);
+      return NextResponse.redirect(signIn);
+    }
   }
 
   return forward(request);

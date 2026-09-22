@@ -10,10 +10,11 @@ const APP = 'app.whiteroom.tech';
  * Builds a request as it arrives behind the load balancer: the host the user
  * typed is in X-Forwarded-Host, not in the URL.
  */
-function req(host: string, pathname: string, { forwarded = true } = {}) {
+function req(host: string, pathname: string, { forwarded = true, withSession = false } = {}) {
   const headers = new Headers();
   if (forwarded) headers.set('x-forwarded-host', host);
   else headers.set('host', host);
+  if (withSession) headers.set('cookie', '__Secure-authjs.session-token=test-token');
   return new NextRequest(`https://internal.run.app${pathname}`, { headers });
 }
 
@@ -45,10 +46,20 @@ afterEach(() => {
 describe('single-host mode (ADMIN_HOST unset)', () => {
   // Local development, and any deployment that hasn't split the hosts yet.
   // Nothing should change for them.
-  it('lets everything through, /admin included', () => {
+  it('lets everything through, /admin included, when authenticated', () => {
     for (const path of ['/admin', '/admin/u-1', '/settings', '/']) {
-      expect(verdict(proxy(req(APP, path)))).toBe('pass');
+      expect(verdict(proxy(req(APP, path, { withSession: true })))).toBe('pass');
     }
+  });
+
+  it('redirects protected paths to sign-in without a session', () => {
+    for (const path of ['/admin', '/settings', '/dashboard']) {
+      expect(verdict(proxy(req(APP, path)))).toBe('redirect:/sign-in');
+    }
+  });
+
+  it('lets /settings/confirm-email through without a session', () => {
+    expect(verdict(proxy(req(APP, '/settings/confirm-email')))).toBe('pass');
   });
 
   it('redirects legacy routes to Citadel equivalents', () => {
@@ -62,7 +73,7 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
 
   it('treats an empty ADMIN_HOST as unset rather than as a host named ""', () => {
     process.env.ADMIN_HOST = '   ';
-    expect(verdict(proxy(req(APP, '/admin')))).toBe('pass');
+    expect(verdict(proxy(req(APP, '/admin', { withSession: true })))).toBe('pass');
   });
 });
 
@@ -75,10 +86,10 @@ describe('the app host', () => {
     expect(verdict(proxy(req(APP, '/admin/u-1')))).toBe('notFound');
   });
 
-  it('leaves the rest of the app alone', () => {
+  it('leaves the rest of the app alone when authenticated', () => {
     process.env.ADMIN_HOST = ADMIN;
     for (const path of ['/settings', '/api/auth/session', '/']) {
-      expect(verdict(proxy(req(APP, path)))).toBe('pass');
+      expect(verdict(proxy(req(APP, path, { withSession: true })))).toBe('pass');
     }
   });
 
@@ -131,8 +142,8 @@ describe('the requested path, forwarded to the app', () => {
   // A layout has no pathname of its own, and the admin gate needs one to send
   // an unauthenticated visitor back to where they were going.
   it('rides along on requests the proxy lets through', () => {
-    expect(forwardedPath(proxy(req(APP, '/settings')))).toBe('/settings');
-    expect(forwardedPath(proxy(req(APP, '/admin/u-1')))).toBe('/admin/u-1');
+    expect(forwardedPath(proxy(req(APP, '/settings', { withSession: true })))).toBe('/settings');
+    expect(forwardedPath(proxy(req(APP, '/admin/u-1', { withSession: true })))).toBe('/admin/u-1');
   });
 
   it('rides along on the admin host too', () => {

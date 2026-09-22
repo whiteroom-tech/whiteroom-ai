@@ -10,6 +10,7 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/entitlements', () => ({
   syncEntitlementsToEngine: mocks.sync,
+  enqueueEntitlementSync: vi.fn(async () => {}),
   getSubscriptionRow: async () => null,
   revokeFleetEntitlement: mocks.revoke,
 }));
