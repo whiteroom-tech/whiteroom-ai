@@ -577,6 +577,28 @@ function Btn({ label, onClick, loading, accent }: { label: string; onClick: () =
   );
 }
 
+// Explicit save action for the budget inputs — Enter/blur alone (TextInput's
+// onCommit) isn't discoverable enough on its own, same reasoning as the
+// task-type field's Save button in OverviewContent.tsx.
+function SaveBudgetButton({ dirty, onSave }: { dirty: boolean; onSave: () => void }) {
+  return (
+    <button
+      onClick={onSave}
+      disabled={!dirty}
+      title="Save budget"
+      style={{
+        fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, whiteSpace: 'nowrap',
+        background: dirty ? 'var(--brand-dim)' : 'transparent',
+        color: dirty ? 'var(--brand)' : 'var(--tx3)',
+        border: `1px solid ${dirty ? 'var(--brand)' : 'var(--line)'}`,
+        cursor: dirty ? 'pointer' : 'not-allowed',
+      }}
+    >
+      Save
+    </button>
+  );
+}
+
 // The fleet's budget vs. spend to date. Backs onto performanceCostForecast
 // (which also carries a per-task-type $/task breakdown — deliberately not
 // shown here; a single "what's left" figure is what this card is for).
@@ -647,11 +669,19 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
           <div className="flex items-center gap-2" title="No $/token pricing on file yet for this fleet's model — budget is tracked in tokens instead of dollars until pricing is added.">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>TOKEN BUDGET</span>
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={setTokenBudgetDraft} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
+            <SaveBudgetButton
+              dirty={tokenBudgetDraft !== (forecast.tokenBudget != null ? String(forecast.tokenBudget) : '')}
+              onSave={() => commitTokenBudget(tokenBudgetDraft)}
+            />
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
             <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={setBudgetDraft} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
+            <SaveBudgetButton
+              dirty={budgetDraft !== (forecast.budgetUsd != null ? String(forecast.budgetUsd) : '')}
+              onSave={() => commitBudget(budgetDraft)}
+            />
           </div>
         )}
       </div>
