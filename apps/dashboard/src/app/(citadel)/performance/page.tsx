@@ -658,10 +658,23 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
-            ${forecast.burnRateUsdPerHour.toFixed(2)}/hr
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>estimated burn rate</div>
+          {forecast.costUnavailable ? (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
+                {forecast.tokensPerHour != null ? `${fmtTokens(Math.round(forecast.tokensPerHour))}/hr` : '—'}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--warn)' }} title="No $/token pricing on file yet for the model this fleet is using — showing token burn instead of a misleading $0.">
+                token burn rate (pricing unavailable)
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
+                ${forecast.burnRateUsdPerHour.toFixed(2)}/hr
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>estimated burn rate</div>
+            </>
+          )}
         </div>
         <div>
           {forecast.remainingTasks == null ? (
