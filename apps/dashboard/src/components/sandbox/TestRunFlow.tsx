@@ -122,6 +122,8 @@ export function TestRunFlow() {
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
+  const [setupMode, setSetupMode] = useState<'fleet' | 'apikey' | null>(null);
+  const [fleetTokenInput, setFleetTokenInput] = useState('');
   const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const ownerRef = useRef<string | undefined>(undefined);
@@ -144,6 +146,16 @@ export function TestRunFlow() {
     else if (key.startsWith('sk-') && !key.startsWith('sk-ant-')) setProvider('openai');
   }, [key]);
 
+  // Pre-fill fleet token from localStorage when user selects fleet path
+  useEffect(() => {
+    if (setupMode === 'fleet') {
+      try {
+        const existing = localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token') || '';
+        setFleetTokenInput(existing);
+      } catch { setFleetTokenInput(''); }
+    }
+  }, [setupMode]);
+
   // Focus heading on phase change
   useEffect(() => { heading.current?.focus(); }, [phase]);
 
@@ -155,7 +167,7 @@ export function TestRunFlow() {
     const owner = session?.user?.id;
     if (ownerRef.current !== owner) {
       ownerRef.current = owner;
-      setRun(null); setReport(null); setKey(''); setDemo([]); setPhase('start'); setBooting(true);
+      setRun(null); setReport(null); setKey(''); setDemo([]); setPhase('start'); setBooting(true); setSetupMode(null);
     }
     if (!owner) return;
     let disposed = false;
@@ -192,7 +204,7 @@ export function TestRunFlow() {
         if (st.error) throw new Error('unavailable');
         if (!st.sandboxId) {
           setError('This test session is no longer available. You can start another test; previously exported results remain on your device.');
-          setRun(null); setPhase('start'); return;
+          setRun(null); setPhase('start'); setSetupMode(null); return;
         }
         setRun(st); setLastUpdated(new Date()); setReconnecting(false); failures = 0;
         if (st.expiresInSeconds === 0) setWsTab('results');
@@ -303,8 +315,17 @@ export function TestRunFlow() {
 
   const begin = (mode: 'demo' | 'connected') => act(async () => {
     try {
-      const result = await createRun({ mode, apiKey: mode === 'demo' ? undefined : key.trim(), selectedCatalogIds: [], policyMode: 'observe' });
+      if (mode === 'connected' && setupMode === 'fleet' && fleetTokenInput.trim()) {
+        localStorage.setItem('wr_fleet_token', fleetTokenInput.trim());
+        window.dispatchEvent(new Event('storage'));
+      }
+      const apiKey = mode === 'connected' && setupMode === 'apikey' ? key.trim() : undefined;
+      const result = await createRun({ mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' });
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
+      if (result.fleetToken) {
+        localStorage.setItem('wr_fleet_token', result.fleetToken);
+        window.dispatchEvent(new Event('storage'));
+      }
       posthog.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
       setRun({ ...result, mode, agents: [] }); setReport(null); setAssessment('Not assessed');
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
@@ -313,7 +334,7 @@ export function TestRunFlow() {
         if (d.error) throw new Error(d.error);
         setDemo(d.steps ?? []); setScene(0);
       }
-    } finally { setKey(''); setShowKey(false); }
+    } finally { setKey(''); setShowKey(false); setFleetTokenInput(''); }
   });
 
   const review = () => act(async () => {
@@ -338,7 +359,7 @@ export function TestRunFlow() {
     if (!run?.sandboxId) return;
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
-    setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed');
+    setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed'); setSetupMode(null);
   });
 
   if (authStatus === 'loading') return <div className={s.content}>Loading your workspace…</div>;
@@ -465,34 +486,68 @@ export function TestRunFlow() {
           <button className={`${s.btn} ${s.btnGhost}`} onClick={togglePreview}>{previewPlaying ? 'Pause' : previewStep === 3 ? 'Replay preview' : 'Watch the preview'}</button>
           <button className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => void begin('demo')}>Try the full demo</button>
         </div>
-        <p className={s.small} style={{ marginTop: 10 }}>You'll need the same provider API key your agent uses. Tests run for 30 minutes.</p>
+        <p className={s.small} style={{ marginTop: 10 }}>You'll need your fleet token or provider API key. Tests run for 30 minutes.</p>
       </> : phase === 'setup' ? <>
         {/* ═══ SETUP ═══ */}
         <div className={s.eyebrow}>WHITEROOM / TEST RUNS</div>
         <h1 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Set up your test</h1>
-        <p className={s.pageSub}>Two things: your provider and the API key your agent uses.</p>
 
-        <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
-          <div className={s.formGroup}>
-            <span className={s.formLabel}>Model provider</span>
-            <div className={s.formToggle}>
-              <button className={`${s.formToggleOpt} ${provider === 'anthropic' ? s.formToggleOptOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
-              <button className={`${s.formToggleOpt} ${provider === 'openai' ? s.formToggleOptOn : ''}`} onClick={() => setProvider('openai')}>OpenAI</button>
+        {setupMode === null ? <>
+          <p className={s.pageSub}>Connect your agent to the sandbox. If you've tested before, you already have a fleet token.</p>
+          <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
+            <span className={s.formLabel}>Do you already have a fleet token for this agent?</span>
+            <div className={s.btnRow} style={{ marginTop: 16 }}>
+              <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => setSetupMode('fleet')}>Yes, use my fleet token</button>
+              <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setSetupMode('apikey')}>No, set up a new one</button>
+            </div>
+            <div className={s.btnRow} style={{ marginTop: 12 }}>
+              <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setPhase('start')}>Back</button>
             </div>
           </div>
-          <div className={s.formGroup}>
-            <span className={s.formLabel}>Provider API key</span>
-            <div className={s.keyWrap}>
-              <input className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={key} onChange={e => setKey(e.target.value)} placeholder="Paste the same key your agent uses" />
-              <button className={s.keyShow} onClick={() => setShowKey(v => !v)}>{showKey ? 'Hide' : 'Show'}</button>
+        </> : setupMode === 'fleet' ? <>
+          <p className={s.pageSub}>Your fleet token identifies your agent. We'll use it to connect to the sandbox.</p>
+          <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
+            <div className={s.formGroup}>
+              <span className={s.formLabel}>Fleet token</span>
+              <input className={s.formInput} type="text" autoComplete="off" spellCheck={false} value={fleetTokenInput} onChange={e => setFleetTokenInput(e.target.value)} placeholder="Paste your fleet token" style={{ fontFamily: FONT_MONO, fontSize: 12 }} />
+              {fleetTokenInput ? <p className={s.small} style={{ marginTop: 5, color: 'var(--good)' }}>Token ready. Click start to begin testing.</p> : <p className={s.small} style={{ marginTop: 5 }}>Paste the fleet token from your agent configuration or the Live Fleet page.</p>}
             </div>
-            <p className={s.small} style={{ marginTop: 5 }}>Used once to bind this test. Only a hash is kept. Your agent keeps using its existing key.</p>
+            <div className={s.formGroup}>
+              <span className={s.formLabel}>Model provider</span>
+              <div className={s.formToggle}>
+                <button className={`${s.formToggleOpt} ${provider === 'anthropic' ? s.formToggleOptOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
+                <button className={`${s.formToggleOpt} ${provider === 'openai' ? s.formToggleOptOn : ''}`} onClick={() => setProvider('openai')}>OpenAI</button>
+              </div>
+            </div>
+            <div className={s.btnRow} style={{ marginTop: 8 }}>
+              <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !fleetTokenInput.trim()} onClick={() => void begin('connected')}>{busy ? 'Starting…' : 'Start test →'}</button>
+              <button className={`${s.btn} ${s.btnGhost}`} onClick={() => { setSetupMode(null); setFleetTokenInput(''); }}>Back</button>
+            </div>
           </div>
-          <div className={s.btnRow} style={{ marginTop: 8 }}>
-            <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !key.trim()} onClick={() => void begin('connected')}>{busy ? 'Starting…' : 'Start test →'}</button>
-            <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setPhase('start')}>Back</button>
+        </> : <>
+          <p className={s.pageSub}>Enter your provider API key. We'll hash it and generate a fleet token — you won't need the key again.</p>
+          <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
+            <div className={s.formGroup}>
+              <span className={s.formLabel}>Model provider</span>
+              <div className={s.formToggle}>
+                <button className={`${s.formToggleOpt} ${provider === 'anthropic' ? s.formToggleOptOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
+                <button className={`${s.formToggleOpt} ${provider === 'openai' ? s.formToggleOptOn : ''}`} onClick={() => setProvider('openai')}>OpenAI</button>
+              </div>
+            </div>
+            <div className={s.formGroup}>
+              <span className={s.formLabel}>Provider API key</span>
+              <div className={s.keyWrap}>
+                <input className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={key} onChange={e => setKey(e.target.value)} placeholder="Paste the same key your agent uses" />
+                <button className={s.keyShow} onClick={() => setShowKey(v => !v)}>{showKey ? 'Hide' : 'Show'}</button>
+              </div>
+              <p className={s.small} style={{ marginTop: 5 }}>We hash this once to create your fleet token. The key itself is never stored.</p>
+            </div>
+            <div className={s.btnRow} style={{ marginTop: 8 }}>
+              <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !key.trim()} onClick={() => void begin('connected')}>{busy ? 'Starting…' : 'Start test →'}</button>
+              <button className={`${s.btn} ${s.btnGhost}`} onClick={() => { setSetupMode(null); setKey(''); setShowKey(false); }}>Back</button>
+            </div>
           </div>
-        </div>
+        </>}
       </> : <>
         {/* ═══ WORKSPACE ═══ */}
         {run && !isDemo && <div className={s.dataWarn}>{WARN_ICON} Results are stored in this session only. Export before closing or restarting.</div>}
@@ -601,7 +656,7 @@ export function TestRunFlow() {
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
               setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setAssessment('Not assessed');
-              setPhase('setup');
+              setPhase('setup'); setSetupMode(null);
             })} disabled={busy} style={{ fontSize: 12 }}>End demo and test my agent</button>}
             <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
           </div>
