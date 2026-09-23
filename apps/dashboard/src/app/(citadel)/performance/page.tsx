@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -15,6 +16,56 @@ import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenc
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
+
+// --- URL state sync ---
+
+/** Merge the given params into the current URL (null removes), replacing in place without a scroll reset. */
+function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<string, string | null>) {
+  const sp = new URLSearchParams(window.location.search);
+  let changed = false;
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) {
+      if (sp.has(k)) { sp.delete(k); changed = true; }
+    } else if (sp.get(k) !== v) {
+      sp.set(k, v); changed = true;
+    }
+  }
+  if (!changed) return;
+  const qs = sp.toString();
+  router.replace(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { scroll: false });
+}
+
+// --- Table sort ---
+
+type SortDir = 'asc' | 'desc';
+type SortState<K extends string> = { key: K; dir: SortDir } | null;
+
+/** Tiny sort-state holder: click toggles asc/desc on the active column, first click uses defaultDir. */
+function useTableSort<K extends string>() {
+  const [sort, setSort] = useState<SortState<K>>(null);
+  const toggleSort = useCallback((key: K, defaultDir: SortDir = 'desc') => {
+    setSort(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: defaultDir });
+  }, []);
+  return { sort, toggleSort };
+}
+
+/** Returns a sorted copy (never mutates); no sort selected keeps the incoming order. */
+function sortRows<T, K extends string>(rows: T[], sort: SortState<K>, getters: Record<K, (row: T) => string | number>): T[] {
+  if (!sort) return rows;
+  const get = getters[sort.key];
+  const mul = sort.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = get(a), bv = get(b);
+    return mul * (typeof av === 'string' || typeof bv === 'string' ? String(av).localeCompare(String(bv)) : av - bv);
+  });
+}
+
+function ariaSort<K extends string>(sort: SortState<K>, key: K): 'ascending' | 'descending' | 'none' {
+  return sort?.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+}
+function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
+  return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+}
 
 const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
 const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 12, margin: 0 };
@@ -178,7 +229,17 @@ function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
   );
 }
 
+type TrafficSortKey = 'model' | 'calls' | 'input' | 'output' | 'cost';
+
 function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
+  const { sort, toggleSort } = useTableSort<TrafficSortKey>();
+  const sorted = useMemo(() => sortRows(models, sort, {
+    model: m => m.model ?? '',
+    calls: m => m.calls,
+    input: m => m.inputTokens,
+    output: m => m.outputTokens,
+    cost: m => m.costMicros,
+  }), [models, sort]);
   if (models.length === 0) return null;
   return (
     <div style={CARD}>
@@ -187,15 +248,17 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
         <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-              <th style={{ padding: '6px 8px' }}>Model</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Calls</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Input</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Output</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right' }}>Cost</th>
+              {([['Model', 'model'], ['Calls', 'calls'], ['Input', 'input'], ['Output', 'output'], ['Cost', 'cost']] as [string, TrafficSortKey][]).map(([h, k]) => (
+                <th key={k} aria-sort={ariaSort(sort, k)} style={{ padding: 0, textAlign: k === 'model' ? 'left' : 'right' }}>
+                  <button onClick={() => toggleSort(k, k === 'model' ? 'asc' : 'desc')} title={`Sort by ${h.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontWeight: 600, color: sort?.key === k ? 'var(--tx)' : 'var(--tx3)', padding: '6px 8px', textAlign: k === 'model' ? 'left' : 'right' }}>
+                    {h}{sortArrow(sort, k)}
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {models.map((m, i) => (
+            {sorted.map((m, i) => (
               <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                 <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx)' }}>{m.model ?? 'unknown'}</td>
                 <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{m.calls.toLocaleString()}</td>
@@ -911,6 +974,13 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
     return () => { cancelled = true; };
   }, [fleetId, recommendationId, authKey]);
 
+  // Evidence-calls table sort (numeric columns); no selection keeps the server order.
+  const { sort: callSort, toggleSort: toggleCallSort } = useTableSort<'tools' | 'schema'>();
+  const sortedCalls = useMemo(() => sortRows(data.calls, callSort, {
+    tools: c => Number(c.toolDefinitionCount ?? 0),
+    schema: c => Number(c.toolSchemaEstimateChars ?? 0),
+  }), [data.calls, callSort]);
+
   async function exportBrief(mode: 'copy' | 'download') {
     if (!fleetId || !recommendationId) return;
     setBriefLoading(true);
@@ -1000,13 +1070,21 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    {['Call ID', 'Model', 'Tools', 'Schema Chars', 'Status', 'Time'].map(h => (
-                      <th key={h} style={{ padding: '6px 8px', textAlign: ['Tools', 'Schema Chars'].includes(h) ? 'right' : 'left' }}>{h}</th>
-                    ))}
+                    {(['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time'] as (string | [string, 'tools' | 'schema'])[]).map(h => {
+                      if (typeof h === 'string') return <th key={h} style={{ padding: '6px 8px', textAlign: 'left' }}>{h}</th>;
+                      const [label, k] = h;
+                      return (
+                        <th key={k} aria-sort={ariaSort(callSort, k)} style={{ padding: 0, textAlign: 'right' }}>
+                          <button onClick={() => toggleCallSort(k)} title={`Sort by ${label.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontWeight: 600, color: callSort?.key === k ? 'var(--tx)' : 'var(--tx3)', padding: '6px 8px', textAlign: 'right' }}>
+                            {label}{sortArrow(callSort, k)}
+                          </button>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.calls.map((c, i) => (
+                  {sortedCalls.map((c, i) => (
                     <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
@@ -1030,12 +1108,34 @@ export default function PerformancePage() {
   const auth = useFleetAuth();
   const { fleetId, authKey } = auth;
   const authenticated = auth.status === 'authenticated';
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [view, setView] = useState<ViewMode>('index');
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  // View, agent, and time window live in the URL (?view=…&agent=…&hours=…) so
+  // they survive refresh and can be deep-linked; invalid values fall back to
+  // defaults. The evidence view needs a finding id (not persisted), so a
+  // deep-linked ?view=evidence degrades to the agent view.
+  const [view, setView] = useState<ViewMode>(() => {
+    const v = searchParams.get('view');
+    return (v === 'agent' || v === 'evidence') && searchParams.get('agent') ? 'agent' : 'index';
+  });
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(() => searchParams.get('agent'));
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
-  const [hoursBack, setHoursBack] = useState(168);
+  const [hoursBack, setHoursBack] = useState(() => {
+    const h = Number(searchParams.get('hours'));
+    return h === 24 || h === 72 || h === 168 ? h : 168;
+  });
+
+  // Keep the URL in sync: defaults drop their param; leaving agent/evidence
+  // views removes ?agent.
+  useEffect(() => {
+    syncQueryParams(router, {
+      hours: hoursBack === 168 ? null : String(hoursBack),
+      view: view === 'index' ? null : view,
+      agent: view === 'index' ? null : selectedAgent,
+    });
+  }, [router, hoursBack, view, selectedAgent]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 

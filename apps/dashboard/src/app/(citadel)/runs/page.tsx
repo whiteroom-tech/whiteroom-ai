@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
 import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs } from '@/lib/analytics-metrics';
 import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
@@ -25,17 +26,84 @@ function handoverAgent(e: AuditEntry): string {
   return ((e as Record<string, unknown>).from as string) || e.agentId || '';
 }
 
+// --- URL state sync ---
+
+const ANALYTICS_RANGES = ['today', '7d', '30d', 'recent'] as const;
+type AnalyticsRange = typeof ANALYTICS_RANGES[number];
+function isAnalyticsRange(v: string | null): v is AnalyticsRange {
+  return (ANALYTICS_RANGES as readonly (string | null)[]).includes(v);
+}
+const DAY_PARAM_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Merge the given params into the current URL (null removes), replacing in place without a scroll reset. */
+function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<string, string | null>) {
+  const sp = new URLSearchParams(window.location.search);
+  let changed = false;
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) {
+      if (sp.has(k)) { sp.delete(k); changed = true; }
+    } else if (sp.get(k) !== v) {
+      sp.set(k, v); changed = true;
+    }
+  }
+  if (!changed) return;
+  const qs = sp.toString();
+  router.replace(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { scroll: false });
+}
+
+// --- Table sort ---
+
+type SortDir = 'asc' | 'desc';
+type SortState<K extends string> = { key: K; dir: SortDir } | null;
+
+/** Tiny sort-state holder: click toggles asc/desc on the active column, first click uses defaultDir. */
+function useTableSort<K extends string>() {
+  const [sort, setSort] = useState<SortState<K>>(null);
+  const toggleSort = useCallback((key: K, defaultDir: SortDir = 'desc') => {
+    setSort(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: defaultDir });
+  }, []);
+  return { sort, toggleSort };
+}
+
+/** Returns a sorted copy (never mutates); no sort selected keeps the incoming order. */
+function sortRows<T, K extends string>(rows: T[], sort: SortState<K>, getters: Record<K, (row: T) => string | number>): T[] {
+  if (!sort) return rows;
+  const get = getters[sort.key];
+  const mul = sort.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = get(a), bv = get(b);
+    return mul * (typeof av === 'string' || typeof bv === 'string' ? String(av).localeCompare(String(bv)) : av - bv);
+  });
+}
+
+function ariaSort<K extends string>(sort: SortState<K>, key: K): 'ascending' | 'descending' | 'none' {
+  return sort?.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+}
+function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
+  return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+}
+
 export default function RunsPage() {
   const auth = useFleetAuth();
   const { fleetId, authKey, resetSession } = auth;
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('7d');
+  // Range and day scope live in the URL (?range=…&day=…) so they survive
+  // refresh and can be deep-linked; invalid values fall back to defaults.
+  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(() => {
+    const r = searchParams.get('range');
+    return isAnalyticsRange(r) ? r : '7d';
+  });
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [clearError, setClearError] = useState('');
-  const [scopedDay, setScopedDay] = useState<string | null>(null);
+  const [scopedDay, setScopedDay] = useState<string | null>(() => {
+    const d = searchParams.get('day');
+    return d && DAY_PARAM_RE.test(d) ? d : null;
+  });
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState<number | null>(null);
@@ -43,6 +111,14 @@ export default function RunsPage() {
   const [feedPage, setFeedPage] = useState(0);
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
   const [feedTechnical, setFeedTechnical] = useState(false);
+
+  // Keep the URL in sync: defaults drop their param, clearing the scope removes ?day.
+  useEffect(() => {
+    syncQueryParams(router, {
+      range: analyticsRange === '7d' ? null : analyticsRange,
+      day: scopedDay,
+    });
+  }, [router, analyticsRange, scopedDay]);
 
   const fetchAllEntries = useCallback(async (stale: () => boolean) => {
     if (!fleetId) return;
@@ -151,6 +227,18 @@ export default function RunsPage() {
 
   const { rangedEntries, dailyStats, chartMax, scopedEntries, agentBreakdown, scopedCompression, rangeTotals, scopeLabel } = analytics;
 
+  // Per-agent table sort; no selection keeps the default order (tokens desc).
+  type AgentSortKey = 'agent' | 'tasks' | 'tokens' | 'handovers' | 'saved' | 'compression';
+  const { sort: agentSort, toggleSort: toggleAgentSort } = useTableSort<AgentSortKey>();
+  const sortedAgentBreakdown = useMemo(() => sortRows(agentBreakdown, agentSort, {
+    agent: ([agent]) => agent,
+    tasks: ([, v]) => v.tasks,
+    tokens: ([, v]) => v.used,
+    handovers: ([, v]) => v.handovers,
+    saved: ([, v]) => v.saved,
+    compression: ([, v]) => v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0,
+  }), [agentBreakdown, agentSort]);
+
   async function exportWorkbook() {
     if (!rangedEntries.length) return;
     const tasks = rangedEntries.filter((e) => e.type === 'task_complete');
@@ -250,7 +338,7 @@ export default function RunsPage() {
         {/* Range selector */}
         <div className="flex items-center gap-3" style={{ padding: '14px 20px 0' }}>
           <div className="flex items-center" style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, padding: 3 }}>
-            {(['today', '7d', '30d', 'recent'] as const).map((r) => (
+            {ANALYTICS_RANGES.map((r) => (
               <button key={r} onClick={() => setAnalyticsRange(r)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 4, border: 'none', background: analyticsRange === r ? 'var(--card)' : 'transparent', color: analyticsRange === r ? 'var(--brand)' : 'var(--tx3)', boxShadow: analyticsRange === r ? 'inset 0 0 0 1px var(--line2)' : 'none', cursor: 'pointer' }}>
                 {r.toUpperCase()}
               </button>
@@ -401,15 +489,19 @@ export default function RunsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                    {['AGENT', 'TASKS', 'TOKENS', 'HANDOVERS', 'SAVED', 'COMPRESSION'].map(h => (
-                      <th key={h} style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>{h}</th>
+                    {([['AGENT', 'agent'], ['TASKS', 'tasks'], ['TOKENS', 'tokens'], ['HANDOVERS', 'handovers'], ['SAVED', 'saved'], ['COMPRESSION', 'compression']] as [string, AgentSortKey][]).map(([h, k]) => (
+                      <th key={k} aria-sort={ariaSort(agentSort, k)} style={{ padding: 0, textAlign: h === 'AGENT' ? 'left' : 'right' }}>
+                        <button onClick={() => toggleAgentSort(k, k === 'agent' ? 'asc' : 'desc')} title={`Sort by ${h.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: agentSort?.key === k ? 'var(--tx)' : 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>
+                          {h}{sortArrow(agentSort, k)}
+                        </button>
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {agentBreakdown.length === 0 ? (
                     <tr><td colSpan={6} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 12.5 }}>{loading ? 'Loading…' : 'No events in scope.'}</td></tr>
-                  ) : agentBreakdown.map(([agent, v]) => {
+                  ) : sortedAgentBreakdown.map(([agent, v]) => {
                     const pct = v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0;
                     return (
                       <tr key={agent} style={{ borderBottom: '1px solid var(--sunk)' }}>
