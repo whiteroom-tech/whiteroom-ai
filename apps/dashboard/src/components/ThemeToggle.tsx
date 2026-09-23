@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
 type WrTheme = 'system' | 'light' | 'dark';
 
@@ -21,7 +22,7 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<WrTheme>('system');
 
   useEffect(() => {
-    const stored = localStorage.getItem('wr_theme') as WrTheme | null;
+    const stored = safeGet('wr_theme') as WrTheme | null;
     if (stored && (stored === 'light' || stored === 'dark')) {
       setTheme(stored);
       applyTheme(stored);
@@ -32,8 +33,8 @@ export function ThemeToggle() {
     const order: WrTheme[] = ['system', 'light', 'dark'];
     const next = order[(order.indexOf(theme) + 1) % order.length];
     setTheme(next);
-    if (next === 'system') localStorage.removeItem('wr_theme');
-    else localStorage.setItem('wr_theme', next);
+    if (next === 'system') safeRemove('wr_theme');
+    else safeSet('wr_theme', next);
     applyTheme(next);
   }
 

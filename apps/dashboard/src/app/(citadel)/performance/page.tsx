@@ -2,26 +2,22 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
-import { resolveAuthKey, isApiKey, preferProductionFleet } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
-import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { usePoll } from '@/hooks/usePoll';
+import { FleetLogin } from '@/components/citadel/FleetLogin';
+import { fmtCost, fmtTokens } from '@/lib/format';
+import { safeGet, safeSet } from '@/lib/safe-storage';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult } from '@/lib/whiteroom/types';
-import { Logo, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { TextInput, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
 
 const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
 const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 12, margin: 0 };
-
-function fmtCost(micros: number): string {
-  if (micros === 0) return '$0.00';
-  const d = micros / 1_000_000;
-  return d < 0.01 ? `$${d.toFixed(4)}` : d < 1 ? `$${d.toFixed(3)}` : `$${d.toFixed(2)}`;
-}
 
 function fmtLatency(ms: number | null): string {
   if (ms == null) return '--';
@@ -30,11 +26,6 @@ function fmtLatency(ms: number | null): string {
 
 function fmtPct(rate: number): string {
   return rate === 0 ? '0%' : `${(rate * 100).toFixed(1)}%`;
-}
-
-function fmtTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return n < 1_000_000 ? `${(n / 1000).toFixed(1)}K` : `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 function Sparkline({ data, color = 'var(--brand)', height = 32, width = 100 }: { data: (number | null)[]; color?: string; height?: number; width?: number }) {
@@ -233,7 +224,7 @@ function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey?: stri
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [ttlHours, setTtlHours] = useState<number | null>(null);
   const [feedVariant, setFeedVariant] = useState<FeedVariant>(() => {
-    const v = typeof window !== 'undefined' ? localStorage.getItem('wr_perf_feed_variant') : null;
+    const v = safeGet('wr_perf_feed_variant');
     return isFeedVariant(v) ? v : 'log';
   });
   const [technical, setTechnical] = useState(false);
@@ -258,7 +249,7 @@ function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey?: stri
   function changeVariant(v: string) {
     if (!isFeedVariant(v)) return;
     setFeedVariant(v);
-    localStorage.setItem('wr_perf_feed_variant', v);
+    safeSet('wr_perf_feed_variant', v);
   }
 
   return (
@@ -346,7 +337,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Input Tokens</th><th style={{ ...TH, textAlign: 'right' }}>Output Tokens</th></tr></thead>
-              <tbody>{models.sort((a, b) => b.calls - a.calls).map((m, i) => (
+              <tbody>{[...models].sort((a, b) => b.calls - a.calls).map((m, i) => (
                 <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                   <td style={TD}>{m.model ?? 'unknown'}</td>
                   <td style={TDR}>{m.calls.toLocaleString()}</td>
@@ -379,7 +370,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Cost</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Input</th><th style={{ ...TH, textAlign: 'right' }}>Output</th><th style={{ ...TH, textAlign: 'right' }}>Cost/Call</th></tr></thead>
-            <tbody>{models.sort((a, b) => b.costMicros - a.costMicros).map((m, i) => (
+            <tbody>{[...models].sort((a, b) => b.costMicros - a.costMicros).map((m, i) => (
               <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                 <td style={TD}>{m.model ?? 'unknown'}</td>
                 <td style={{ ...TDR, color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
@@ -577,6 +568,11 @@ function Btn({ label, onClick, loading, accent }: { label: string; onClick: () =
   );
 }
 
+/** True while the input identified by this aria-label has focus. */
+function editing(ariaLabel: string): boolean {
+  return typeof document !== 'undefined' && document.activeElement?.getAttribute('aria-label') === ariaLabel;
+}
+
 // The fleet's budget vs. spend to date. Backs onto performanceCostForecast
 // (which also carries a per-task-type $/task breakdown — deliberately not
 // shown here; a single "what's left" figure is what this card is for).
@@ -585,43 +581,55 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState('');
   const [tokenBudgetDraft, setTokenBudgetDraft] = useState('');
+  // Set once the operator edits a draft; cleared on commit. While set (or while
+  // the input is focused), polls must not overwrite what they are typing.
+  const budgetDirty = useRef(false);
+  const tokenBudgetDirty = useRef(false);
 
-  const fetchForecast = useCallback(async () => {
+  const fetchForecast = useCallback(async (stale: () => boolean) => {
     try {
       const data = await performanceCostForecast(fleetId, undefined, authKey);
+      if (stale()) return;
       if (data.error) { setLoadError(data.error); return; }
       setLoadError(null);
       setForecast(data);
-      setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
-      setTokenBudgetDraft(data.tokenBudget != null ? String(data.tokenBudget) : '');
+      if (!budgetDirty.current && !editing('Fleet budget in USD')) setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
+      if (!tokenBudgetDirty.current && !editing('Fleet token budget')) setTokenBudgetDraft(data.tokenBudget != null ? String(data.tokenBudget) : '');
     } catch {
-      setLoadError('Could not reach the cost-tracking endpoint.');
+      if (!stale()) setLoadError('Could not reach the cost-tracking endpoint.');
     }
   }, [fleetId, authKey]);
 
+  const { refresh: refreshForecast } = usePoll(fetchForecast, { intervalMs: 60000 });
+
+  // usePoll fires on mount and on each tick with the latest fetchForecast, but
+  // its interval doesn't restart on identity change — refetch promptly if the
+  // fleet (or key) this card points at changes.
+  const forecastFirstRun = useRef(true);
   useEffect(() => {
-    fetchForecast();
-    const t = setInterval(fetchForecast, 15000);
-    return () => clearInterval(t);
-  }, [fetchForecast]);
+    if (forecastFirstRun.current) { forecastFirstRun.current = false; return; }
+    refreshForecast();
+  }, [fetchForecast, refreshForecast]);
 
   async function commitBudget(value: string) {
     const trimmed = value.trim();
     const n = trimmed === '' ? null : Number(trimmed);
-    if (n != null && !(n > 0)) { setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
+    if (n != null && !(n > 0)) { budgetDirty.current = false; setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
     try {
       await setBudgetUsd(fleetId, n, authKey);
-      fetchForecast();
+      budgetDirty.current = false;
+      refreshForecast();
     } catch { /* ignore */ }
   }
 
   async function commitTokenBudget(value: string) {
     const trimmed = value.trim();
     const n = trimmed === '' ? null : Number(trimmed);
-    if (n != null && !(n > 0)) { setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
+    if (n != null && !(n > 0)) { tokenBudgetDirty.current = false; setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
     try {
       await setTokenBudget(fleetId, n, authKey);
-      fetchForecast();
+      tokenBudgetDirty.current = false;
+      refreshForecast();
     } catch { /* ignore */ }
   }
 
@@ -646,12 +654,12 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
         {forecast.costUnavailable ? (
           <div className="flex items-center gap-2" title="No $/token pricing on file yet for this fleet's model — budget is tracked in tokens instead of dollars until pricing is added.">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>TOKEN BUDGET</span>
-            <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={setTokenBudgetDraft} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
+            <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
-            <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={setBudgetDraft} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
+            <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
           </div>
         )}
       </div>
@@ -685,35 +693,56 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   );
 }
 
-function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading }: {
+function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
   onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => void;
   feedbackLoading: string | null;
+  feedbackError: { recId: string; message: string } | null;
 }) {
   const s = data.summary;
   const [recStatus, setRecStatus] = useState<string>('all');
   const [recAgent, setRecAgent] = useState('');
+  const [recAgentQuery, setRecAgentQuery] = useState('');
   const [recs, setRecs] = useState<RecommendationDetail[]>([]);
   const [recCursor, setRecCursor] = useState<string | null>(null);
   const [recTotal, setRecTotal] = useState(0);
   const [recLoading, setRecLoading] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
+  // Monotonic request id: a response only lands if it is still the newest
+  // request, so an out-of-order reply can't show the wrong list or store a
+  // stale cursor for "Load more".
+  const recReq = useRef(0);
+
+  // Debounce the agent filter so we don't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setRecAgentQuery(recAgent), 300);
+    return () => clearTimeout(t);
+  }, [recAgent]);
 
   const fetchRecs = useCallback(async (cursor?: string) => {
+    const req = ++recReq.current;
+    const stale = () => recReq.current !== req;
     setRecLoading(true);
     try {
       const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: 15, includeSummaries: true };
       if (recStatus !== 'all') opts.status = recStatus;
-      if (recAgent.trim()) opts.agentId = recAgent.trim();
+      if (recAgentQuery.trim()) opts.agentId = recAgentQuery.trim();
       if (cursor) opts.cursor = cursor;
       const res = await performanceRecommendationsList(fleetId, opts, authKey);
-      if (res.error) return;
+      if (stale()) return;
+      if (res.error) { setRecError(res.error); return; }
+      setRecError(null);
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-    } catch {} finally { setRecLoading(false); }
-  }, [fleetId, authKey, recStatus, recAgent]);
+    } catch {
+      if (!stale()) setRecError('Failed to load recommendations.');
+    } finally {
+      if (!stale()) setRecLoading(false);
+    }
+  }, [fleetId, authKey, recStatus, recAgentQuery]);
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
 
@@ -798,11 +827,20 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
                 )}
               </div>
             </div>
+            {feedbackError?.recId === rec.id && (
+              <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 6, textAlign: 'right' }}>{feedbackError.message}</div>
+            )}
             {rec.summary && <div style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 6, paddingLeft: 2, lineHeight: 1.5 }}>{rec.summary}</div>}
           </div>
         )) : (
           <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-            {recLoading ? 'Loading...' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
+            {recLoading ? 'Loading...' : recError ? 'Recommendations unavailable.' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
+          </div>
+        )}
+
+        {recError && (
+          <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 12, marginTop: 8 }}>
+            {recError}
           </div>
         )}
 
@@ -864,8 +902,13 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
   const [recDetail, setRecDetail] = useState<RecommendationGetResult | null>(null);
 
   useEffect(() => {
+    setRecDetail(null);
     if (!fleetId || !recommendationId) return;
-    performanceRecommendationGet(fleetId, recommendationId, authKey).then(setRecDetail).catch(() => {});
+    let cancelled = false;
+    performanceRecommendationGet(fleetId, recommendationId, authKey)
+      .then(d => { if (!cancelled) setRecDetail(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, [fleetId, recommendationId, authKey]);
 
   async function exportBrief(mode: 'copy' | 'download') {
@@ -984,89 +1027,9 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
 }
 
 export default function PerformancePage() {
-  const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
-  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? (localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token')) : null);
-  const [authenticated, setAuthenticated] = useState(false);
-  const [loginToken, setLoginToken] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-
-  const authKey = resolveAuthKey(fleetToken);
-
-  useEffect(() => {
-    if (!fleetToken) { setAuthenticated(false); return; }
-    if (!fleetId && fleetToken) {
-      tokenLogin(fleetToken).then(data => {
-        if (data.fleetId) {
-          localStorage.setItem('wr_fleet', data.fleetId);
-          window.location.reload();
-        } else {
-          resetSession('Fleet token invalid. Please enter your API key.');
-        }
-      }).catch(() => { resetSession(); });
-      return;
-    }
-    setAuthenticated(true);
-  }, [fleetToken, fleetId]);
-
-  function resetSession(loginErr?: string) {
-    clearFleetCredentials();
-    setFleetId(null);
-    setFleetToken(null);
-    setAuthenticated(false);
-    if (loginErr) setLoginError(loginErr);
-  }
-
-  const handleAuthError = useCallback((msg: string) => {
-    resetSession(msg);
-  }, []);
-
-  async function handleFleetLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoginError('');
-    setLoginLoading(true);
-    try {
-      const apiKeyLogin = isApiKey(loginToken);
-      let resolvedFleetId: string;
-      let resolvedFleetToken: string;
-
-      if (apiKeyLogin) {
-        const listData = await listFleets(loginToken);
-        const fleets = preferProductionFleet(listData.fleets ?? []);
-        if (!fleets.length) {
-          setLoginError('No fleets found for this API key. Register an agent first.');
-          return;
-        }
-        resolvedFleetId = fleets[0].fleetId;
-        const claim = await claimFleet(resolvedFleetId, loginToken);
-        if (claim.error || !claim.fleetToken) {
-          setLoginError(claim.error || 'Could not retrieve fleet token.');
-          return;
-        }
-        resolvedFleetToken = claim.fleetToken;
-      } else {
-        const data = await tokenLogin(loginToken);
-        if (data.error) {
-          setLoginError(data.error);
-          return;
-        }
-        resolvedFleetId = data.fleetId ?? '';
-        resolvedFleetToken = loginToken;
-      }
-
-      clearFleetCredentials();
-      localStorage.setItem('wr_fleet', resolvedFleetId);
-      localStorage.setItem('wr_fleet_token', resolvedFleetToken);
-      setFleetId(resolvedFleetId);
-      setFleetToken(resolvedFleetToken);
-      setAuthenticated(true);
-      window.location.reload();
-    } catch {
-      setLoginError('Could not connect to WhiteRoom server');
-    } finally {
-      setLoginLoading(false);
-    }
-  }
+  const auth = useFleetAuth();
+  const { fleetId, authKey } = auth;
+  const authenticated = auth.status === 'authenticated';
 
   const [view, setView] = useState<ViewMode>('index');
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -1081,10 +1044,20 @@ export default function PerformancePage() {
   const [agentData, setAgentData] = useState<AgentPerformanceResult | null>(null);
   const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
   const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
+
+  // Monotonic request ids, one per fetch key: a response is applied only if it
+  // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
+  // switching agents mid-flight) can't render a stale response.
+  const indexReq = useRef(0);
+  const agentReq = useRef(0);
+  const evidenceReq = useRef(0);
 
   const fetchIndex = useCallback(async () => {
     if (!fleetId) return;
+    const req = ++indexReq.current;
+    const stale = () => indexReq.current !== req;
     setLoading(true); setError('');
     try {
       const [idx, hourly, audit] = await Promise.all([
@@ -1092,6 +1065,7 @@ export default function PerformancePage() {
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
         auditLog({ fleetId, limit: 2000 }, authKey).catch(() => null),
       ]);
+      if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
       setIndexData(idx);
       if (!hourly.error) setHourlyData(hourly);
@@ -1122,30 +1096,36 @@ export default function PerformancePage() {
       } else {
         setGovSavings(null);
       }
-    } catch { setError('Failed to load performance data.'); }
-    finally { setLoading(false); }
+    } catch { if (!stale()) setError('Failed to load performance data.'); }
+    finally { if (!stale()) setLoading(false); }
   }, [fleetId, hoursBack, authKey]);
 
   const fetchAgent = useCallback(async (agentId: string) => {
     if (!fleetId) return;
+    const req = ++agentReq.current;
+    const stale = () => agentReq.current !== req;
     setLoading(true); setError('');
     try {
       const data = await performanceAgent(fleetId, agentId, hoursBack, authKey);
+      if (stale()) return;
       if (data.error) { setError(data.error); return; }
       setAgentData(data);
-    } catch { setError('Failed to load agent performance data.'); }
-    finally { setLoading(false); }
+    } catch { if (!stale()) setError('Failed to load agent performance data.'); }
+    finally { if (!stale()) setLoading(false); }
   }, [fleetId, hoursBack, authKey]);
 
   const fetchEvidence = useCallback(async (findingId: string) => {
     if (!fleetId) return;
+    const req = ++evidenceReq.current;
+    const stale = () => evidenceReq.current !== req;
     setLoading(true);
     try {
       const data = await performanceEvidence(fleetId, findingId, authKey);
+      if (stale()) return;
       if (data.error) { setError(data.error); return; }
       setEvidenceData(data);
-    } catch { setError('Failed to load evidence.'); }
-    finally { setLoading(false); }
+    } catch { if (!stale()) setError('Failed to load evidence.'); }
+    finally { if (!stale()) setLoading(false); }
   }, [fleetId, authKey]);
 
   useEffect(() => { if (authenticated && view === 'index') fetchIndex(); }, [authenticated, view, fetchIndex]);
@@ -1155,6 +1135,7 @@ export default function PerformancePage() {
   async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) {
     if (!fleetId) return;
     setFeedbackLoading(recId);
+    setFeedbackError(null);
     try {
       await performanceFeedback(fleetId, {
         recommendationId: recId, findingVersion, action, reason,
@@ -1162,57 +1143,18 @@ export default function PerformancePage() {
         idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }, authKey);
       fetchIndex();
-    } catch { setError('Failed to submit feedback.'); }
+    } catch {
+      setError('Failed to submit feedback.');
+      setFeedbackError({ recId, message: 'Failed to submit feedback. Try again.' });
+    }
     finally { setFeedbackLoading(null); }
   }
 
-  if (!authenticated) {
-    return (
-      <div className="flex items-center justify-center" style={{ flex: 1, padding: 16 }}>
-        <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
-          <div className="flex items-center justify-center gap-2.5 mb-1">
-            <Logo width={22} height={30} gradientId="wr-perf" />
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 3, color: 'var(--tx)' }}>WHITE ROOM</span>
-          </div>
-          <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+  // A refetch is in flight while the previous data is still on screen
+  // (e.g. switching 24h→3d, or picking another agent).
+  const refreshing = loading && (view === 'index' ? indexData != null : view === 'agent' ? agentData != null : evidenceData != null);
 
-          <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
-            <div>
-              <label htmlFor="fleet-token-perf" style={{ display: 'block', fontSize: 11.5, color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
-                YOUR API KEY OR FLEET TOKEN
-              </label>
-              <input
-                id="fleet-token-perf"
-                type="password"
-                value={loginToken}
-                onChange={(e) => setLoginToken(e.target.value)}
-                placeholder="wr_... or sk-ant-..."
-                required
-                style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 14.5, fontFamily: FONT_MONO, outline: 'none' }}
-              />
-            </div>
-
-            {loginError && (
-              <p style={{ color: 'var(--bad)', fontSize: 14.5 }}>{loginError}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loginLoading || !loginToken}
-              style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 15, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
-            >
-              {loginLoading ? 'CONNECTING...' : 'CONNECT TO MY FLEET →'}
-            </button>
-          </form>
-
-          <p style={{ color: 'var(--tx3)', fontSize: 11.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
-            Your key is never stored or sent to any third party.<br />
-            It is used only to identify your fleet in this session.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (auth.status !== 'authenticated') return <FleetLogin auth={auth} />;
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
@@ -1246,15 +1188,16 @@ export default function PerformancePage() {
           ))}
         </div>
         <ThemeToggle />
-        <button onClick={() => resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
+        <button onClick={() => auth.resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
+      {/* Content — dimmed while a range/agent fetch is in flight over data
+          already on screen, so stale charts read as "refreshing", not current. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, ...(refreshing ? { opacity: 0.55, pointerEvents: 'none' as const, transition: 'opacity 0.15s' } : { transition: 'opacity 0.15s' }) }}>
         {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
         {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>
