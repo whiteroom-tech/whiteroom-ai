@@ -1,27 +1,30 @@
 'use client';
 
-// Canonical fleet auth flow, extracted from the ~150-line block that was
-// copy-pasted (and drifting) across the agents, runs, and performance pages.
+// Canonical fleet auth flow for the Citadel pages.
 //
-// Fixes over the copies it replaces:
-// - Three-state status: 'checking' → 'authenticated' | 'unauthenticated', so
-//   the login form no longer flashes on every load (the copies initialized
-//   authenticated=false and only flipped it in an effect).
-// - Only a real 401/403 (isAuthError) clears credentials. A network blip,
-//   timeout, or 5xx keeps them and exposes retryableError + retry() instead
-//   of dumping the user back to the login form with wiped storage.
-// - No window.location.reload() after login — state updates instead.
-// - Listens for the `storage` event so sign-in/sign-out in one tab is
-//   reflected in the others.
+// The fleet token now lives in server-side custody: an httpOnly cookie
+// (`wr_fleet_auth`) minted by POST /api/fleet/session. Page script never
+// sees or stores the token any more — keyless client calls ride through the
+// /api/fleet/engine BFF, which attaches the cookie's token server-side.
+// That kills the XSS-exfiltratable long-lived credential that used to sit
+// in localStorage, while keeping both auth models working:
+//   (a) raw fleet-token / API-key login with no next-auth session, and
+//   (b) next-auth session users, whose linked user_fleets token the session
+//       route adopts into the cookie automatically.
+//
+// Consequences for consumers (public API shape is unchanged):
+// - `fleetToken` is null and `authKey` undefined for cookie-based sessions;
+//   keyless calls through @/lib/whiteroom/client work regardless.
+// - Legacy localStorage credentials (`wr_fleet_token` / `wr_token`) are
+//   migrated into the cookie once on load, then cleared.
+// - Only a real 401 (credential rejection) signs the user out. A network
+//   blip / 5xx keeps the session and exposes retryableError + retry().
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  clearFleetCredentials,
-  getFleetCredentials,
-  setFleetCredentials,
-} from '@/lib/fleet-credentials';
-import { claimFleet, isAuthError, listFleets, tokenLogin } from '@/lib/whiteroom/client';
+import { clearFleetCredentials, getFleetCredentials } from '@/lib/fleet-credentials';
+import { claimFleet, isAuthError, listFleets } from '@/lib/whiteroom/client';
 import { isApiKey, preferProductionFleet, resolveAuthKey } from '@/lib/fleet-helpers';
+import { safeSet } from '@/lib/safe-storage';
 
 export type FleetAuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
@@ -48,79 +51,149 @@ export interface FleetAuthState {
   resetSession: (loginError?: string) => void;
 }
 
+const SESSION_URL = '/api/fleet/session';
+const RETRYABLE_MESSAGE =
+  'Could not reach the WhiteRoom server. Your session was kept — retry when you are back online.';
+
+/** Nudges other tabs to re-check the cookie session (storage events only fire cross-tab). */
+function pingOtherTabs(): void {
+  safeSet('wr_auth_ping', String(Date.now()));
+}
+
+/**
+ * POST the token to the session route, which validates it against the engine
+ * and moves it into the httpOnly cookie. Distinguishes a credential rejection
+ * (401) from "engine/route unreachable" so callers keep legacy creds on the
+ * latter.
+ */
+async function createSession(
+  token: string,
+): Promise<{ outcome: 'ok'; fleetId: string } | { outcome: 'rejected' } | { outcome: 'unreachable' }> {
+  try {
+    const res = await fetch(SESSION_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { fleetId?: string };
+      return { outcome: 'ok', fleetId: data.fleetId ?? '' };
+    }
+    if (res.status === 401) return { outcome: 'rejected' };
+    // 400/403/502/5xx: not a credential verdict.
+    return { outcome: 'unreachable' };
+  } catch {
+    return { outcome: 'unreachable' };
+  }
+}
+
 export function useFleetAuth(): FleetAuthState {
   const [status, setStatus] = useState<FleetAuthStatus>('checking');
   const [fleetId, setFleetId] = useState<string | null>(null);
+  // Always null for cookie-based sessions; kept in state (and in the public
+  // shape) so existing consumers compile and legacy flows type-check.
   const [fleetToken, setFleetToken] = useState<string | null>(null);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [retryableError, setRetryableError] = useState<string | null>(null);
-  // Bumped to re-run the bootstrap effect (retry, cross-tab storage changes).
+  // Bumped to re-run the bootstrap effect (retry, cross-tab pings).
   const [attempt, setAttempt] = useState(0);
 
   const resetSession = useCallback((message?: string) => {
+    // Clear legacy localStorage leftovers AND the server-side cookie. The
+    // DELETE is fire-and-forget: the UI signs out immediately either way,
+    // and the cookie clear is idempotent.
     clearFleetCredentials();
+    fetch(SESSION_URL, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
     setFleetId(null);
     setFleetToken(null);
     setRetryableError(null);
     setStatus('unauthenticated');
     if (message) setLoginError(message);
+    pingOtherTabs();
   }, []);
 
-  // Bootstrap from storage.
+  // Bootstrap: migrate legacy localStorage creds into the cookie, else ask
+  // the server whether a cookie/next-auth session already exists.
   useEffect(() => {
     let cancelled = false;
-    const creds = getFleetCredentials();
 
-    if (!creds.fleetToken) {
-      setFleetId(null);
-      setFleetToken(null);
-      setStatus('unauthenticated');
-      return;
-    }
+    async function bootstrap() {
+      const legacy = getFleetCredentials();
 
-    if (creds.fleetId) {
-      setFleetId(creds.fleetId);
-      setFleetToken(creds.fleetToken);
-      setRetryableError(null);
-      setStatus('authenticated');
-      return;
-    }
-
-    // Token without a fleet id (older sessions; the onboarding bug that wrote
-    // only the token): resolve the fleet id from the token.
-    const token = creds.fleetToken;
-    setStatus('checking');
-    tokenLogin(token)
-      .then((data) => {
+      if (legacy.fleetToken) {
+        // One-time migration of a pre-cookie session.
+        const result = await createSession(legacy.fleetToken);
         if (cancelled) return;
-        if (data.fleetId) {
-          setFleetCredentials(data.fleetId, token);
-          setFleetId(data.fleetId);
-          setFleetToken(token);
+        if (result.outcome === 'ok') {
+          clearFleetCredentials(); // token leaves the browser for good
+          setFleetId(result.fleetId || legacy.fleetId);
+          setFleetToken(null);
           setRetryableError(null);
           setStatus('authenticated');
+        } else if (result.outcome === 'rejected') {
+          clearFleetCredentials();
+          setFleetId(null);
+          setFleetToken(null);
+          setStatus('unauthenticated');
+          setLoginError('Fleet token invalid. Please enter your API key.');
         } else {
-          resetSession('Fleet token invalid. Please enter your API key.');
-        }
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        if (isAuthError(e)) {
-          resetSession('Fleet token invalid. Please enter your API key.');
-        } else {
-          // Network/timeout/5xx: the token may be perfectly fine. Keep it.
-          setRetryableError('Could not reach the WhiteRoom server. Your session was kept — retry when you are back online.');
+          // Engine/route unreachable: the token may be perfectly fine.
+          // Keep the legacy creds and let the user retry the migration.
+          setRetryableError(RETRYABLE_MESSAGE);
           setStatus('unauthenticated');
         }
-      });
-    return () => { cancelled = true; };
-  }, [attempt, resetSession]);
+        return;
+      }
 
-  // Keep tabs in sync: another tab signing in or out changes the wr_* keys.
+      // No legacy creds: does the server already hold a session for us?
+      try {
+        const res = await fetch(SESSION_URL, {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          const data = (await res.json()) as { fleetId?: string };
+          setFleetId(data.fleetId ?? null);
+          setFleetToken(null);
+          setRetryableError(null);
+          setStatus('authenticated');
+        } else if (res.status === 401) {
+          setFleetId(null);
+          setFleetToken(null);
+          setStatus('unauthenticated');
+        } else {
+          setRetryableError(RETRYABLE_MESSAGE);
+          setStatus('unauthenticated');
+        }
+      } catch {
+        if (cancelled) return;
+        setRetryableError(RETRYABLE_MESSAGE);
+        setStatus('unauthenticated');
+      }
+    }
+
+    bootstrap();
+    return () => { cancelled = true; };
+  }, [attempt]);
+
+  // Keep tabs in sync. Legacy wr_* keys still trigger a re-check (a
+  // pre-deploy tab may write them); `wr_auth_ping` is the nudge this hook
+  // writes after cookie sign-in/sign-out, since httpOnly cookies fire no
+  // storage events of their own.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key !== null && e.key !== 'wr_fleet' && e.key !== 'wr_fleet_token' && e.key !== 'wr_token') return;
+      if (
+        e.key !== null &&
+        e.key !== 'wr_fleet' &&
+        e.key !== 'wr_fleet_token' &&
+        e.key !== 'wr_token' &&
+        e.key !== 'wr_auth_ping'
+      ) return;
       setAttempt((a) => a + 1);
     }
     window.addEventListener('storage', onStorage);
@@ -132,37 +205,41 @@ export function useFleetAuth(): FleetAuthState {
     setRetryableError(null);
     setLoginLoading(true);
     try {
-      let resolvedFleetId: string;
-      let resolvedFleetToken: string;
+      let fleetTokenToStore = token;
 
       if (isApiKey(token)) {
+        // API key: resolve the preferred fleet and claim its token first
+        // (both calls carry the typed key explicitly, so they go direct to
+        // the engine — no cookie involved yet).
         const listData = await listFleets(token);
         const fleets = preferProductionFleet(listData.fleets ?? []);
         if (!fleets.length) {
           setLoginError('No fleets found for this API key. Register an agent first.');
           return;
         }
-        resolvedFleetId = fleets[0].fleetId;
-        const claim = await claimFleet(resolvedFleetId, token);
+        const claim = await claimFleet(fleets[0].fleetId, token);
         if (claim.error || !claim.fleetToken) {
           setLoginError(claim.error || 'Could not retrieve fleet token.');
           return;
         }
-        resolvedFleetToken = claim.fleetToken;
-      } else {
-        const data = await tokenLogin(token);
-        if (data.error) {
-          setLoginError(data.error);
-          return;
-        }
-        resolvedFleetId = data.fleetId ?? '';
-        resolvedFleetToken = token;
+        fleetTokenToStore = claim.fleetToken;
       }
 
-      setFleetCredentials(resolvedFleetId, resolvedFleetToken);
-      setFleetId(resolvedFleetId);
-      setFleetToken(resolvedFleetToken);
+      // Hand the token to the server; nothing is persisted client-side.
+      const result = await createSession(fleetTokenToStore);
+      if (result.outcome === 'rejected') {
+        setLoginError('That key or token was rejected. Check it and try again.');
+        return;
+      }
+      if (result.outcome === 'unreachable') {
+        setLoginError('Could not connect to WhiteRoom server');
+        return;
+      }
+
+      setFleetId(result.fleetId);
+      setFleetToken(null);
       setStatus('authenticated');
+      pingOtherTabs();
     } catch (e) {
       setLoginError(isAuthError(e)
         ? 'That key or token was rejected. Check it and try again.'

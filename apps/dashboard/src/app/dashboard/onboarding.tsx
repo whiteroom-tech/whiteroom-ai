@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { setFleetCredentials } from '@/lib/fleet-credentials';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
@@ -257,11 +256,20 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
   const [tab, setTab] = useState<ProviderTab>('direct');
 
   useEffect(() => {
-    // Write the id + token pair together: writing only the token left a stale
-    // `wr_fleet` from a previous fleet behind, and the mismatched pair logged
-    // users out of the Citadel tabs at random.
-    if (fleetToken) setFleetCredentials(fleetId, fleetToken);
-  }, [fleetId, fleetToken]);
+    // Hand the fresh fleet token to server-side custody: POST it to the
+    // session route, which validates it and sets the httpOnly wr_fleet_auth
+    // cookie. Nothing is written to localStorage any more — the token never
+    // stays reachable from page script. Fire-and-forget, like the local
+    // write it replaces; the Citadel pages re-check the session on load.
+    if (!fleetToken) return;
+    fetch('/api/fleet/session', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: fleetToken }),
+    }).catch(() => {});
+  }, [fleetToken]);
 
   return (
     <div className="min-h-screen font-sans" style={{ background: '#070B14', color: '#EAF1FF' }}>

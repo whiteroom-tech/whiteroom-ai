@@ -1,6 +1,6 @@
 import "server-only";
 import { auth } from "@/auth";
-import { headers } from "next/headers";
+import { checkSameOrigin } from "@/lib/origin-check";
 
 export const SANDBOX_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
@@ -20,23 +20,9 @@ export async function requireSandboxMutation(): Promise<
   const user = await requireSandboxUser();
   if ("error" in user) return user;
 
-  const hdrs = await headers();
-  const origin = hdrs.get("origin");
-  const host = hdrs.get("host");
-  if (!origin || !host) {
-    return { error: Response.json({ error: "Missing origin." }, { status: 403 }) };
-  }
-  try {
-    const parsed = new URL(origin);
-    const local = process.env.NODE_ENV !== 'production' &&
-      ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
-    if (parsed.host !== host || parsed.origin !== origin ||
-        (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:'))) {
-      return { error: Response.json({ error: "Origin mismatch." }, { status: 403 }) };
-    }
-  } catch {
-    return { error: Response.json({ error: "Invalid origin." }, { status: 403 }) };
-  }
+  // Same-origin rule shared with the fleet-session routes (src/lib/origin-check.ts).
+  const originError = await checkSameOrigin();
+  if (originError) return { error: originError };
 
   return user;
 }

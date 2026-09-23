@@ -70,7 +70,11 @@ export function isAuthError(e: unknown): boolean {
   return e instanceof WhiteRoomApiError && (e.status === 401 || e.status === 403);
 }
 
-function authHeaders(key?: string): Record<string, string> {
+/**
+ * The auth-header rule, shared with the /api/fleet/engine BFF route (which
+ * attaches the server-held fleet token with exactly the same logic).
+ */
+export function engineAuthHeaders(key?: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (key) {
     if (key.startsWith('sk-')) h['x-api-key'] = key;
@@ -79,14 +83,46 @@ function authHeaders(key?: string): Record<string, string> {
   return h;
 }
 
-async function postRaw(body: Record<string, unknown>, key?: string): Promise<Response> {
+interface PostOptions {
+  /**
+   * Skip the BFF even when running keyless in the browser. token_login must
+   * stay direct: it authenticates BY the token in its request body, before
+   * any cookie session exists to ride on.
+   */
+  direct?: boolean;
+}
+
+async function postRaw(
+  body: Record<string, unknown>,
+  key?: string,
+  opts?: PostOptions,
+): Promise<Response> {
+  // Browser + no explicit key = the caller has no credential to send: the
+  // fleet token lives server-side in the httpOnly `wr_fleet_auth` cookie.
+  // Route those calls through the same-origin BFF, which attaches the token
+  // on the server. Explicit-key calls (a typed API key during onboarding or
+  // login) and server-side calls go straight to the engine as before.
+  const viaBff = typeof window !== 'undefined' && !key && !opts?.direct;
   try {
+    if (viaBff) {
+      return await fetch('/api/fleet/engine', {
+        method: 'POST',
+        // The BFF's own upstream timeout is 15s; give it headroom so its 502
+        // arrives instead of racing it with our own abort.
+        signal: AbortSignal.timeout(20_000),
+        redirect: 'error',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
     return await fetch(`${PROXY_URL}/api/white-room`, {
       method: 'POST',
       signal: AbortSignal.timeout(15_000),
       redirect: 'error',
       cache: 'no-store',
-      headers: authHeaders(key),
+      headers: engineAuthHeaders(key),
       body: JSON.stringify(body),
     });
   } catch (e) {
@@ -95,8 +131,12 @@ async function postRaw(body: Record<string, unknown>, key?: string): Promise<Res
   }
 }
 
-async function apiCall<T>(body: Record<string, unknown>, key?: string): Promise<T> {
-  const res = await postRaw(body, key);
+async function apiCall<T>(
+  body: Record<string, unknown>,
+  key?: string,
+  opts?: PostOptions,
+): Promise<T> {
+  const res = await postRaw(body, key, opts);
   if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
   try {
     return (await res.json()) as T;
@@ -183,7 +223,14 @@ export function fleetProvisioned(
 }
 
 export function tokenLogin(fleetToken: string): Promise<TokenLoginResult> {
-  return apiCall<TokenLoginResult>({ action: 'token_login', fleet_token: fleetToken });
+  // Always direct: token_login is the unauthenticated call that VALIDATES a
+  // token — routing it through the cookie-authenticated BFF would deadlock
+  // login (no cookie yet -> 401 before the engine ever sees the token).
+  return apiCall<TokenLoginResult>(
+    { action: 'token_login', fleet_token: fleetToken },
+    undefined,
+    { direct: true },
+  );
 }
 
 export function claimFleet(fleetId: string, key?: string): Promise<ClaimFleetResult> {

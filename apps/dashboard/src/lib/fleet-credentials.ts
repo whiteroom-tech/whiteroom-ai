@@ -1,11 +1,13 @@
-// Single authority for the fleet credential pair in browser storage.
+// Single authority for the LEGACY fleet credential pair in browser storage.
 //
 // The pair is `wr_fleet` (fleet id) + `wr_fleet_token` (fleet token), plus the
-// legacy `wr_token` key from before fleet tokens were split out. Reading and
-// writing them anywhere else caused the credential-mismatch bugs this module
-// exists to end: onboarding once wrote only the token, leaving a stale
-// `wr_fleet` from a previous fleet, and Citadel tabs then logged users out at
-// random. Always write the pair together via setFleetCredentials.
+// older `wr_token` key from before fleet tokens were split out.
+//
+// As of the httpOnly-cookie migration, fleet tokens live in server-side
+// custody (`wr_fleet_auth` cookie via /api/fleet/session) and NOTHING should
+// write tokens to localStorage any more. This module survives only so
+// useFleetAuth can read a pre-migration session once (and move it into the
+// cookie) and so sign-out can sweep the old keys away.
 
 import { safeGet, safeRemove, safeSet } from './safe-storage';
 
@@ -22,7 +24,11 @@ export function getFleetCredentials(): FleetCredentials {
   };
 }
 
-/** Writes the pair atomically-in-spirit: never one key without the other. */
+/**
+ * @deprecated Tokens belong in the httpOnly cookie now — POST them to
+ * /api/fleet/session instead. Kept only so any straggling caller keeps
+ * compiling until it is migrated; do not add new call sites.
+ */
 export function setFleetCredentials(fleetId: string, fleetToken: string): void {
   safeSet('wr_fleet', fleetId);
   safeSet('wr_fleet_token', fleetToken);
