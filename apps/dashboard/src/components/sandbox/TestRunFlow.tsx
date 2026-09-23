@@ -316,14 +316,14 @@ export function TestRunFlow() {
   const begin = (mode: 'demo' | 'connected') => act(async () => {
     try {
       if (mode === 'connected' && setupMode === 'fleet' && fleetTokenInput.trim()) {
-        localStorage.setItem('wr_fleet_token', fleetTokenInput.trim());
+        localStorage.setItem('wr_sandbox_token', fleetTokenInput.trim());
         window.dispatchEvent(new Event('storage'));
       }
       const apiKey = mode === 'connected' && setupMode === 'apikey' ? key.trim() : undefined;
       const result = await createRun({ mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' });
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
       if (result.fleetToken) {
-        localStorage.setItem('wr_fleet_token', result.fleetToken);
+        localStorage.setItem('wr_sandbox_token', result.fleetToken);
         window.dispatchEvent(new Event('storage'));
       }
       posthog.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });

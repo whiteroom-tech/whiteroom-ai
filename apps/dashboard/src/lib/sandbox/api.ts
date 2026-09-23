@@ -88,7 +88,7 @@ export interface ReportResult {
 }
 
 function fleetToken(): string | null {
-  try { return localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token'); }
+  try { return localStorage.getItem('wr_sandbox_token') || localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token'); }
   catch { return null; }
 }
 
