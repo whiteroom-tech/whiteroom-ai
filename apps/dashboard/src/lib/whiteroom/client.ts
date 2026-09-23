@@ -43,6 +43,33 @@ import type {
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
+/**
+ * Every failure thrown out of this module is one of these, so callers can
+ * tell a real auth rejection from a network blip instead of treating any
+ * thrown error as "credentials are bad" (which used to wipe them).
+ *
+ * `status` is the HTTP status of the failed response, or undefined when the
+ * request never got a response at all (network error, timeout, redirect).
+ */
+export class WhiteRoomApiError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'WhiteRoomApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * True only for a genuine credential rejection (401/403). A timeout, network
+ * failure, or 5xx is NOT an auth error — credentials should be kept and the
+ * call retried.
+ */
+export function isAuthError(e: unknown): boolean {
+  return e instanceof WhiteRoomApiError && (e.status === 401 || e.status === 403);
+}
+
 function authHeaders(key?: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (key) {
@@ -53,19 +80,30 @@ function authHeaders(key?: string): Record<string, string> {
 }
 
 async function postRaw(body: Record<string, unknown>, key?: string): Promise<Response> {
-  return fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(15_000),
-    redirect: 'error',
-    cache: 'no-store',
-    headers: authHeaders(key),
-    body: JSON.stringify(body),
-  });
+  try {
+    return await fetch(`${PROXY_URL}/api/white-room`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(15_000),
+      redirect: 'error',
+      cache: 'no-store',
+      headers: authHeaders(key),
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // Network failure, timeout, or unexpected redirect: no response, no status.
+    throw new WhiteRoomApiError(e instanceof Error ? e.message : 'Network error');
+  }
 }
 
 async function apiCall<T>(body: Record<string, unknown>, key?: string): Promise<T> {
   const res = await postRaw(body, key);
-  return res.json() as Promise<T>;
+  if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
+  try {
+    return (await res.json()) as T;
+  } catch {
+    // 200 with a non-JSON body (e.g. an HTML error page from a proxy layer).
+    throw new WhiteRoomApiError(`Invalid JSON response (HTTP ${res.status})`, res.status);
+  }
 }
 
 // -- Fleet provisioning & login --

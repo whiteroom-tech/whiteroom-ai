@@ -44,7 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Live Fleet',
         icon: ICONS.fleet,
         match: (path, tab) =>
-          (path === '/agents' && (tab === null || tab === 'overview' || (tab !== 'performance'))) ||
+          (path === '/agents' && tab !== 'performance') ||
           path === '/fleet',
       },
       {
@@ -87,7 +87,10 @@ export function Sidebar() {
 
   const [fleetId, setFleetId] = useState<string | null>(null);
   useEffect(() => {
-    const read = () => setFleetId(localStorage.getItem('wr_fleet'));
+    const read = () => {
+      try { setFleetId(localStorage.getItem('wr_fleet')); }
+      catch { setFleetId(null); }
+    };
     read();
     window.addEventListener('storage', read);
     window.addEventListener('focus', read);
@@ -127,6 +130,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
                 className="flex items-center gap-2.5"
                 style={{
                   padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600, textAlign: 'left' as const, width: '100%',

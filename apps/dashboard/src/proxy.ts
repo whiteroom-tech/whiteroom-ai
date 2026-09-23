@@ -39,7 +39,15 @@ const REDIRECTS: Record<string, string> = {
 export function proxy(request: NextRequest) {
   const ADMIN_HOST = adminHost();
   const { pathname, searchParams } = request.nextUrl;
-  const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '').toLowerCase();
+  // Behind the load balancer the user's hostname arrives in x-forwarded-host
+  // (Host is the internal run.app URL). This header is only trustworthy while
+  // Cloud Run ingress is restricted to the load balancer; the host gate is
+  // routing/defense-in-depth — real admin authorization is requireAdmin().
+  const host = (
+    request.headers.get('x-forwarded-host') ||
+    request.headers.get('host') ||
+    ''
+  ).toLowerCase();
 
   if (ADMIN_HOST) {
     if (host === ADMIN_HOST) {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { setByok } from '@/lib/users';
+import { setFleetCredentials } from '@/lib/fleet-credentials';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
@@ -256,8 +257,11 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
   const [tab, setTab] = useState<ProviderTab>('direct');
 
   useEffect(() => {
-    if (fleetToken) localStorage.setItem('wr_fleet_token', fleetToken);
-  }, [fleetToken]);
+    // Write the id + token pair together: writing only the token left a stale
+    // `wr_fleet` from a previous fleet behind, and the mismatched pair logged
+    // users out of the Citadel tabs at random.
+    if (fleetToken) setFleetCredentials(fleetId, fleetToken);
+  }, [fleetId, fleetToken]);
 
   return (
     <div className="min-h-screen font-sans" style={{ background: '#070B14', color: '#EAF1FF' }}>

@@ -75,13 +75,13 @@ export function getStatus(ownerSubject: string, key?: string) {
 }
 
 export function startDemo(ownerSubject: string, sandboxId: string, key?: string) {
-  return proxyCall({ action: "start_demo", sandbox_id: sandboxId }, key);
+  return proxyCall({ action: "start_demo", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }
 
 export function destroyRun(ownerSubject: string, sandboxId: string, key?: string) {
-  return proxyCall({ action: "destroy_sandbox", sandbox_id: sandboxId }, key);
+  return proxyCall({ action: "destroy_sandbox", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }
 
 export function getReport(ownerSubject: string, sandboxId: string, key?: string) {
-  return proxyCall({ action: "test_report", sandbox_id: sandboxId }, key);
+  return proxyCall({ action: "test_report", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }
