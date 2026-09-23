@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, fleetReport, listFleets, tokenLogin, pauseAgent as pauseAgentApi } from '@/lib/whiteroom/client';
-import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
+import { resolveAuthKey, isApiKey, preferProductionFleet } from '@/lib/fleet-helpers';
 import { Sidebar } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OverviewContent } from '@/components/citadel/OverviewContent';
@@ -48,7 +48,7 @@ export default function FleetDashboard() {
 
       if (apiKeyLogin) {
         const listData = await listFleets(loginToken);
-        const fleets = listData.fleets ?? [];
+        const fleets = preferProductionFleet(listData.fleets ?? []);
         if (!fleets.length) {
           setLoginError('No fleets found for this API key. Register an agent first.');
           return;

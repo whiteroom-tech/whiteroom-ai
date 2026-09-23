@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { auditLog, clearAuditLog, claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
-import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
+import { resolveAuthKey, isApiKey, preferProductionFleet } from '@/lib/fleet-helpers';
 import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ActivityFeed } from '@/components/ActivityFeed';
@@ -70,7 +70,7 @@ export default function RunsPage() {
 
       if (apiKeyLogin) {
         const listData = await listFleets(loginToken);
-        const fleets = listData.fleets ?? [];
+        const fleets = preferProductionFleet(listData.fleets ?? []);
         if (!fleets.length) {
           setLoginError('No fleets found for this API key. Register an agent first.');
           return;

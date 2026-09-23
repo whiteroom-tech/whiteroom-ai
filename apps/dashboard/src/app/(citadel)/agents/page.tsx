@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
-import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
+import { resolveAuthKey, isApiKey, preferProductionFleet } from '@/lib/fleet-helpers';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OverviewContent } from '@/components/citadel/OverviewContent';
 import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
@@ -65,7 +65,7 @@ export default function AgentsPage() {
 
       if (apiKeyLogin) {
         const listData = await listFleets(loginToken);
-        const fleets = listData.fleets ?? [];
+        const fleets = preferProductionFleet(listData.fleets ?? []);
         if (!fleets.length) {
           setLoginError('No fleets found for this API key. Register an agent first.');
           return;

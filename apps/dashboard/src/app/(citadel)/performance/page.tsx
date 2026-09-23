@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
-import { resolveAuthKey, isApiKey } from '@/lib/fleet-helpers';
+import { resolveAuthKey, isApiKey, preferProductionFleet } from '@/lib/fleet-helpers';
 import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
@@ -1032,7 +1032,7 @@ export default function PerformancePage() {
 
       if (apiKeyLogin) {
         const listData = await listFleets(loginToken);
-        const fleets = listData.fleets ?? [];
+        const fleets = preferProductionFleet(listData.fleets ?? []);
         if (!fleets.length) {
           setLoginError('No fleets found for this API key. Register an agent first.');
           return;

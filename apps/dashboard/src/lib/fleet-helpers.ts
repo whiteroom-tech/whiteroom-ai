@@ -24,3 +24,10 @@ export function buildCredentials(
 ): { fleetId: string; fleetToken: string } {
   return { fleetId: resolvedFleetId, fleetToken: resolvedFleetToken };
 }
+
+export function preferProductionFleet(
+  fleets: Array<{ fleetId: string }>,
+): Array<{ fleetId: string }> {
+  const production = fleets.filter((f) => !f.fleetId.startsWith('sandbox-'));
+  return production.length > 0 ? production : fleets;
+}
