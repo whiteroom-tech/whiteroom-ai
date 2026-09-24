@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/whiteroom/client", () => ({ PROXY_URL: "http://engine:3000" }));
+vi.mock("@/lib/fleet-session", () => ({
+  getFleetAuthCookie: async () => null,
+  tokenFromUserFleets: async () => null,
+}));
 
 import { type SandboxResponse, toResponse } from "@/lib/sandbox/client";
 

@@ -1,5 +1,6 @@
 import "server-only";
 import { PROXY_URL } from "@/lib/whiteroom/client";
+import { getFleetAuthCookie, tokenFromUserFleets } from "@/lib/fleet-session";
 
 export interface SandboxResponse<T = Record<string, unknown>> {
   data: T;
@@ -42,8 +43,16 @@ export function toResponse(result: SandboxResponse): Response {
   return Response.json(result.data, { status: result.status, headers });
 }
 
-export function extractFleetToken(req: Request): string | undefined {
-  return req.headers.get("x-fleet-token") ?? undefined;
+export async function extractFleetToken(req: Request): Promise<string | undefined> {
+  // Explicit header wins: the sandbox run flow sends its own short-lived
+  // sandbox token. The browser no longer holds the fleet token (it lives in
+  // the httpOnly session cookie), so fall back to the server-held credential.
+  const header = req.headers.get("x-fleet-token");
+  if (header) return header;
+  const cookie = await getFleetAuthCookie();
+  if (cookie) return cookie;
+  const linked = await tokenFromUserFleets();
+  return linked?.token ?? undefined;
 }
 
 export function createRun(
