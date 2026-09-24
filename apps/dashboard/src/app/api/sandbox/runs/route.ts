@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const token = extractFleetToken(req);
+  const token = await extractFleetToken(req);
   const result = await createRun(user.ownerSubject, {
     apiKey: body.apiKey as string | undefined,
     ttlMinutes: body.ttlMinutes as number | undefined,
@@ -79,7 +79,7 @@ export async function GET(req: Request) {
   const user = await requireSandboxUser();
   if ("error" in user) return user.error;
 
-  const token = extractFleetToken(req);
+  const token = await extractFleetToken(req);
   const result = await getStatus(user.ownerSubject, token);
   return toResponse(result);
 }

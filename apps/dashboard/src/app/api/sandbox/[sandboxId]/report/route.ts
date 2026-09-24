@@ -16,7 +16,7 @@ export async function GET(
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const token = extractFleetToken(req);
+  const token = await extractFleetToken(req);
   const result = await getReport(user.ownerSubject, sandboxId, token);
   return toResponse(result);
 }

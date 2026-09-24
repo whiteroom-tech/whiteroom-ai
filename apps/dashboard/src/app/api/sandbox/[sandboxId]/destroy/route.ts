@@ -16,7 +16,7 @@ export async function POST(
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const token = extractFleetToken(req);
+  const token = await extractFleetToken(req);
   const result = await destroyRun(user.ownerSubject, sandboxId, token);
   return toResponse(result);
 }
