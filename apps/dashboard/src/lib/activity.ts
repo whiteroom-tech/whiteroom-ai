@@ -116,6 +116,7 @@ interface ActionRule extends ActionKind {
 // Order matters — first match wins, so the specific patterns run before the
 // broad ones. `query_database` must read as "Looked up", not "Searched".
 const ACTION_RULES: ActionRule[] = [
+  { test: /^tool_result$/i, icon: '↩️', label: 'Returned', ing: 'Returning' },
   { test: /voice|speak|tts|audio|transcri|dial|phone/i, icon: '🎙️', label: 'Spoke', ing: 'Speaking' },
   { test: /send|email|mail|message|slack|notify|post/i, icon: '📤', label: 'Sent', ing: 'Sending' },
   { test: /write|create|edit|update|save|draft|append/i, icon: '✏️', label: 'Wrote', ing: 'Writing' },
@@ -164,7 +165,10 @@ export function shortArg(args: unknown): string {
     }
   }
   s = s.replace(/\s+/g, ' ').trim();
-  return s.length > 90 ? `${s.slice(0, 90)}…` : s;
+  // Expanded rows are the one place granular detail matters (which site was
+  // visited, which system answered) — keep enough to show it; the Tech
+  // toggle still has the full raw string.
+  return s.length > 220 ? `${s.slice(0, 220)}…` : s;
 }
 
 // ── Row model ────────────────────────────────────────────
