@@ -1,30 +1,109 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { auditLog, clearAuditLog, claimFleet, listFleets, tokenLogin } from '@/lib/whiteroom/client';
-import { resolveAuthKey, isApiKey, preferProductionFleet } from '@/lib/fleet-helpers';
-import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
+import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs } from '@/lib/analytics-metrics';
+import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
+import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { usePoll } from '@/hooks/usePoll';
+import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
-import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
-function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
-export default function RunsPage() {
-  const [fleetId, setFleetId] = useState<string | null>(() => typeof window !== 'undefined' ? localStorage.getItem('wr_fleet') : null);
-  const [fleetToken, setFleetToken] = useState<string | null>(() => typeof window !== 'undefined' ? (localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token')) : null);
-  const [authenticated, setAuthenticated] = useState(false);
-  const [loginToken, setLoginToken] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
+function handoverSaved(e: AuditEntry): number {
+  return computeHandoverSaved({
+    contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
+    handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
+  });
+}
+function handoverAgent(e: AuditEntry): string {
+  return ((e as Record<string, unknown>).from as string) || e.agentId || '';
+}
 
-  const [analyticsRange, setAnalyticsRange] = useState<'today' | '7d' | '30d' | 'recent'>('7d');
+// --- URL state sync ---
+
+const ANALYTICS_RANGES = ['today', '7d', '30d', 'recent'] as const;
+type AnalyticsRange = typeof ANALYTICS_RANGES[number];
+function isAnalyticsRange(v: string | null): v is AnalyticsRange {
+  return (ANALYTICS_RANGES as readonly (string | null)[]).includes(v);
+}
+const DAY_PARAM_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Merge the given params into the current URL (null removes), replacing in place without a scroll reset. */
+function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<string, string | null>) {
+  const sp = new URLSearchParams(window.location.search);
+  let changed = false;
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) {
+      if (sp.has(k)) { sp.delete(k); changed = true; }
+    } else if (sp.get(k) !== v) {
+      sp.set(k, v); changed = true;
+    }
+  }
+  if (!changed) return;
+  const qs = sp.toString();
+  router.replace(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { scroll: false });
+}
+
+// --- Table sort ---
+
+type SortDir = 'asc' | 'desc';
+type SortState<K extends string> = { key: K; dir: SortDir } | null;
+
+/** Tiny sort-state holder: click toggles asc/desc on the active column, first click uses defaultDir. */
+function useTableSort<K extends string>() {
+  const [sort, setSort] = useState<SortState<K>>(null);
+  const toggleSort = useCallback((key: K, defaultDir: SortDir = 'desc') => {
+    setSort(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: defaultDir });
+  }, []);
+  return { sort, toggleSort };
+}
+
+/** Returns a sorted copy (never mutates); no sort selected keeps the incoming order. */
+function sortRows<T, K extends string>(rows: T[], sort: SortState<K>, getters: Record<K, (row: T) => string | number>): T[] {
+  if (!sort) return rows;
+  const get = getters[sort.key];
+  const mul = sort.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = get(a), bv = get(b);
+    return mul * (typeof av === 'string' || typeof bv === 'string' ? String(av).localeCompare(String(bv)) : av - bv);
+  });
+}
+
+function ariaSort<K extends string>(sort: SortState<K>, key: K): 'ascending' | 'descending' | 'none' {
+  return sort?.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+}
+function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
+  return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+}
+
+export default function RunsPage() {
+  const auth = useFleetAuth();
+  const { fleetId, authKey, resetSession } = auth;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Range and day scope live in the URL (?range=…&day=…) so they survive
+  // refresh and can be deep-linked; invalid values fall back to defaults.
+  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(() => {
+    const r = searchParams.get('range');
+    return isAnalyticsRange(r) ? r : '7d';
+  });
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
-  const [scopedDay, setScopedDay] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [clearError, setClearError] = useState('');
+  const [scopedDay, setScopedDay] = useState<string | null>(() => {
+    const d = searchParams.get('day');
+    return d && DAY_PARAM_RE.test(d) ? d : null;
+  });
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
   const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState<number | null>(null);
@@ -33,175 +112,132 @@ export default function RunsPage() {
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
   const [feedTechnical, setFeedTechnical] = useState(false);
 
-  const authKey = resolveAuthKey(fleetToken);
-
+  // Keep the URL in sync: defaults drop their param, clearing the scope removes ?day.
   useEffect(() => {
-    if (!fleetToken) { setAuthenticated(false); return; }
-    if (!fleetId && fleetToken) {
-      tokenLogin(fleetToken).then(data => {
-        if (data.fleetId) {
-          localStorage.setItem('wr_fleet', data.fleetId);
-          window.location.reload();
-        } else {
-          resetSession('Fleet token invalid. Please enter your API key.');
-        }
-      }).catch(() => { resetSession(); });
-      return;
-    }
-    setAuthenticated(true);
-  }, [fleetToken, fleetId]);
+    syncQueryParams(router, {
+      range: analyticsRange === '7d' ? null : analyticsRange,
+      day: scopedDay,
+    });
+  }, [router, analyticsRange, scopedDay]);
 
-  function resetSession(loginError?: string) {
-    clearFleetCredentials();
-    setFleetId(null);
-    setFleetToken(null);
-    setAuthenticated(false);
-    if (loginError) setLoginError(loginError);
-  }
-
-  async function handleFleetLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoginError('');
-    setLoginLoading(true);
-    try {
-      const apiKeyLogin = isApiKey(loginToken);
-      let resolvedFleetId: string;
-      let resolvedFleetToken: string;
-
-      if (apiKeyLogin) {
-        const listData = await listFleets(loginToken);
-        const fleets = preferProductionFleet(listData.fleets ?? []);
-        if (!fleets.length) {
-          setLoginError('No fleets found for this API key. Register an agent first.');
-          return;
-        }
-        resolvedFleetId = fleets[0].fleetId;
-        const claim = await claimFleet(resolvedFleetId, loginToken);
-        if (claim.error || !claim.fleetToken) {
-          setLoginError(claim.error || 'Could not retrieve fleet token.');
-          return;
-        }
-        resolvedFleetToken = claim.fleetToken;
-      } else {
-        const data = await tokenLogin(loginToken);
-        if (data.error) {
-          setLoginError(data.error);
-          return;
-        }
-        resolvedFleetId = data.fleetId ?? '';
-        resolvedFleetToken = loginToken;
-      }
-
-      clearFleetCredentials();
-      localStorage.setItem('wr_fleet', resolvedFleetId);
-      localStorage.setItem('wr_fleet_token', resolvedFleetToken);
-      setFleetId(resolvedFleetId);
-      setFleetToken(resolvedFleetToken);
-      setAuthenticated(true);
-      window.location.reload();
-    } catch {
-      setLoginError('Could not connect to WhiteRoom server');
-    } finally {
-      setLoginLoading(false);
-    }
-  }
-
-  const fetchAllEntries = useCallback(async () => {
+  const fetchAllEntries = useCallback(async (stale: () => boolean) => {
     if (!fleetId) return;
     try {
       const data = await auditLog({ fleetId, limit: 2000 }, authKey);
-      if ('error' in data) return;
+      if (stale()) return;
+      if ('error' in data || !Array.isArray(data.entries)) {
+        setFetchError(true);
+        setLoading(false);
+        return;
+      }
       setAllEntries(data.entries);
-    } catch { /* ignore */ }
-  }, [fleetId, authKey]);
-
-  useEffect(() => {
-    if (authenticated) fetchAllEntries();
-  }, [authenticated, fetchAllEntries]);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    fetchAllEntries();
-    const id = setInterval(fetchAllEntries, 15000);
-    return () => clearInterval(id);
-  }, [authenticated, fetchAllEntries]);
-
-  // --- Analytics computation ---
-  const cutoff = getCutoff(analyticsRange, Date.now());
-  const rangedEntries = allEntries.filter(e => localDayFromTs(e.timestamp) >= cutoff);
-
-  const handoverSaved = (e: AuditEntry) => computeHandoverSaved({
-    contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
-    handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
-  });
-  const handoverAgent = (e: AuditEntry) => (e as Record<string, unknown>).from as string || e.agentId || '';
-
-  const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[]; hSaved: number; oSaved: number }>();
-  rangedEntries.forEach(e => {
-    const day = localDayFromTs(e.timestamp);
-    const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [], hSaved: 0, oSaved: 0 };
-    d.entries.push(e);
-    if (e.type === 'task_complete') d.tasks++;
-    if (e.tokensUsed) d.used += e.tokensUsed;
-    const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-    if (isHandover) {
-      d.handovers++;
-      d.hSaved += handoverSaved(e);
+      setFetchError(false);
+      setLoading(false);
+      setLastUpdated(Date.now());
+    } catch (e) {
+      if (stale()) return;
+      if (isAuthError(e)) {
+        resetSession('Your session expired. Please sign in again.');
+        return;
+      }
+      setFetchError(true);
+      setLoading(false);
     }
-    if (e.type === 'context_offload') {
-      const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-      const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-      d.oSaved += Math.max(0, ctx - ret);
+  }, [fleetId, authKey, resetSession]);
+
+  usePoll(fetchAllEntries, { intervalMs: 15000, enabled: auth.status === 'authenticated' });
+
+  // --- Analytics computation (memoized: up to 2000 entries, several passes) ---
+  const analytics = useMemo(() => {
+    const cutoff = getCutoff(analyticsRange, Date.now());
+    // Precompute each entry's local day once; localDayFromTs allocates a Date per call.
+    const ranged = allEntries
+      .map((e) => ({ e, day: localDayFromTs(e.timestamp) }))
+      .filter(({ day }) => day >= cutoff);
+    const rangedEntries = ranged.map(({ e }) => e);
+
+    const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[]; hSaved: number; oSaved: number }>();
+    ranged.forEach(({ e, day }) => {
+      const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [], hSaved: 0, oSaved: 0 };
+      d.entries.push(e);
+      if (e.type === 'task_complete') d.tasks++;
+      if (e.tokensUsed) d.used += e.tokensUsed;
+      const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+      if (isHandover) {
+        d.handovers++;
+        d.hSaved += handoverSaved(e);
+      }
+      if (e.type === 'context_offload') {
+        const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+        const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
+        d.oSaved += Math.max(0, ctx - ret);
+      }
+      dayMap.set(day, d);
+    });
+    for (const d of dayMap.values()) {
+      const avg = d.handovers > 0 ? Math.ceil(d.tasks / (d.handovers + 1)) : 0;
+      d.saved = d.hSaved * Math.max(avg, 1) + d.oSaved;
     }
-    dayMap.set(day, d);
-  });
-  for (const d of dayMap.values()) {
-    const avg = d.handovers > 0 ? Math.ceil(d.tasks / (d.handovers + 1)) : 0;
-    d.saved = d.hSaved * Math.max(avg, 1) + d.oSaved;
-  }
-  const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
-  const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
+    const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
+    const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
 
-  const scopedEntries = scopedDay ? rangedEntries.filter(e => localDayFromTs(e.timestamp) === scopedDay) : rangedEntries;
+    const scopedEntries = scopedDay ? ranged.filter(({ day }) => day === scopedDay).map(({ e }) => e) : rangedEntries;
 
-  const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; hSaved: number; oSaved: number }>();
-  scopedEntries.forEach(e => {
-    const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-    const rawAid = isHandover ? handoverAgent(e) : e.agentId;
-    if (!rawAid) return;
-    const aid = rawAid.toLowerCase();
-    const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, hSaved: 0, oSaved: 0 };
-    if (e.type === 'task_complete') a.tasks++;
-    if (e.tokensUsed) a.used += e.tokensUsed;
-    if (isHandover) {
-      a.handovers++;
-      a.hSaved += handoverSaved(e);
-      const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-      const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 300;
-      if (ctx > 0) { a.ctxTokens += ctx; a.hdTokens += hd; }
+    const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; hSaved: number; oSaved: number }>();
+    scopedEntries.forEach(e => {
+      const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+      const rawAid = isHandover ? handoverAgent(e) : e.agentId;
+      if (!rawAid) return;
+      const aid = rawAid.toLowerCase();
+      const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, hSaved: 0, oSaved: 0 };
+      if (e.type === 'task_complete') a.tasks++;
+      if (e.tokensUsed) a.used += e.tokensUsed;
+      if (isHandover) {
+        a.handovers++;
+        a.hSaved += handoverSaved(e);
+        const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+        const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 300;
+        if (ctx > 0) { a.ctxTokens += ctx; a.hdTokens += hd; }
+      }
+      if (e.type === 'context_offload') {
+        const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
+        const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
+        a.oSaved += Math.max(0, ctx - ret);
+      }
+      agentMap.set(aid, a);
+    });
+    for (const a of agentMap.values()) {
+      const avg = a.handovers > 0 ? Math.ceil(a.tasks / (a.handovers + 1)) : 0;
+      a.saved = a.hSaved * Math.max(avg, 1) + a.oSaved;
     }
-    if (e.type === 'context_offload') {
-      const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-      const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-      a.oSaved += Math.max(0, ctx - ret);
-    }
-    agentMap.set(aid, a);
-  });
-  for (const a of agentMap.values()) {
-    const avg = a.handovers > 0 ? Math.ceil(a.tasks / (a.handovers + 1)) : 0;
-    a.saved = a.hSaved * Math.max(avg, 1) + a.oSaved;
-  }
-  const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
+    const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
 
-  const scopedCtxTokens = agentBreakdown.reduce((s, [, v]) => s + v.ctxTokens, 0);
-  const scopedHdTokens = agentBreakdown.reduce((s, [, v]) => s + v.hdTokens, 0);
-  const scopedCompression = scopedCtxTokens > 0 ? Math.max(0, Math.min(100, (1 - scopedHdTokens / scopedCtxTokens) * 100)) : 0;
+    const scopedCtxTokens = agentBreakdown.reduce((s, [, v]) => s + v.ctxTokens, 0);
+    const scopedHdTokens = agentBreakdown.reduce((s, [, v]) => s + v.hdTokens, 0);
+    const scopedCompression = scopedCtxTokens > 0 ? Math.max(0, Math.min(100, (1 - scopedHdTokens / scopedCtxTokens) * 100)) : 0;
 
-  const rangeTotals = (scopedDay ? [dailyStats.find(([k]) => k === scopedDay)].filter(Boolean) as [string, typeof dailyStats[0][1]][] : dailyStats).reduce((acc, [, d]) => ({
-    tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
-  }), { tasks: 0, used: 0, saved: 0, handovers: 0 });
+    const rangeTotals = (scopedDay ? [dailyStats.find(([k]) => k === scopedDay)].filter(Boolean) as [string, typeof dailyStats[0][1]][] : dailyStats).reduce((acc, [, d]) => ({
+      tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
+    }), { tasks: 0, used: 0, saved: 0, handovers: 0 });
 
-  const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
+    const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
+
+    return { rangedEntries, dailyStats, chartMax, scopedEntries, agentBreakdown, scopedCompression, rangeTotals, scopeLabel };
+  }, [allEntries, analyticsRange, scopedDay]);
+
+  const { rangedEntries, dailyStats, chartMax, scopedEntries, agentBreakdown, scopedCompression, rangeTotals, scopeLabel } = analytics;
+
+  // Per-agent table sort; no selection keeps the default order (tokens desc).
+  type AgentSortKey = 'agent' | 'tasks' | 'tokens' | 'handovers' | 'saved' | 'compression';
+  const { sort: agentSort, toggleSort: toggleAgentSort } = useTableSort<AgentSortKey>();
+  const sortedAgentBreakdown = useMemo(() => sortRows(agentBreakdown, agentSort, {
+    agent: ([agent]) => agent,
+    tasks: ([, v]) => v.tasks,
+    tokens: ([, v]) => v.used,
+    handovers: ([, v]) => v.handovers,
+    saved: ([, v]) => v.saved,
+    compression: ([, v]) => v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0,
+  }), [agentBreakdown, agentSort]);
 
   async function exportWorkbook() {
     if (!rangedEntries.length) return;
@@ -216,9 +252,23 @@ export default function RunsPage() {
 
   async function handleClearAudit() {
     if (!fleetId || !confirm('This will delete all audit entries, reset agent counters, clear current watch state, and reset agent status and alarm/rest fields. This cannot be undone.')) return;
-    await clearAuditLog(fleetId, authKey);
-    setAllEntries([]);
-    fetchAllEntries();
+    try {
+      const res = await clearAuditLog(fleetId, authKey);
+      if (res.error || res.success === false) {
+        setClearError(res.error || 'Could not clear the audit log.');
+        return;
+      }
+      setClearError('');
+      // The engine clears asynchronously: an immediate refetch resurrects the
+      // deleted rows. Empty the local state and let the next poll catch up.
+      setAllEntries([]);
+    } catch (e) {
+      if (isAuthError(e)) {
+        resetSession('Your session expired. Please sign in again.');
+        return;
+      }
+      setClearError('Could not clear the audit log.');
+    }
   }
 
   function toggleFeedExpanded(key: string) {
@@ -230,65 +280,44 @@ export default function RunsPage() {
 
   // --- Splitter ---
   const analyticsGridRef = useRef<HTMLDivElement>(null);
+  const clampFeedWidth = (w: number, containerWidth: number) => Math.min(containerWidth * 0.75, Math.max(240, w));
   function handleAnalyticsSplitterDown(e: React.MouseEvent) {
     e.preventDefault();
     const container = analyticsGridRef.current;
     if (!container) return;
     const containerWidth = container.getBoundingClientRect().width;
-    const onMove = (ev: MouseEvent) => setAnalyticsFeedWidth(Math.min(containerWidth * 0.75, Math.max(240, container.getBoundingClientRect().right - ev.clientX)));
-    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = ''; };
+    // rAF-throttled: one state update per frame instead of per mousemove pixel.
+    let raf: number | null = null;
+    let lastX = 0;
+    const onMove = (ev: MouseEvent) => {
+      lastX = ev.clientX;
+      if (raf !== null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        setAnalyticsFeedWidth(clampFeedWidth(container.getBoundingClientRect().right - lastX, containerWidth));
+      });
+    };
+    const onUp = () => {
+      if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
+      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = '';
+    };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }
+  function handleAnalyticsSplitterKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const container = analyticsGridRef.current;
+    if (!container) return;
+    const containerWidth = container.getBoundingClientRect().width;
+    const step = e.key === 'ArrowLeft' ? 24 : -24; // left widens the feed
+    setAnalyticsFeedWidth(prev => clampFeedWidth((prev ?? containerWidth / 2) + step, containerWidth));
+  }
 
-  if (!authenticated) {
-    return (
-      <div className="flex items-center justify-center" style={{ flex: 1, padding: 16 }}>
-        <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
-          <div className="flex items-center justify-center gap-2.5 mb-1">
-            <Logo width={22} height={30} gradientId="wr-runs" />
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 3, color: 'var(--tx)' }}>WHITE ROOM</span>
-          </div>
-          <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>MONITORING DASHBOARD</p>
-
-          <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
-            <div>
-              <label htmlFor="fleet-token-runs" style={{ display: 'block', fontSize: 11.5, color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
-                YOUR API KEY OR FLEET TOKEN
-              </label>
-              <input
-                id="fleet-token-runs"
-                type="password"
-                value={loginToken}
-                onChange={(e) => setLoginToken(e.target.value)}
-                placeholder="wr_... or sk-ant-..."
-                required
-                style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 14.5, fontFamily: FONT_MONO, outline: 'none' }}
-              />
-            </div>
-
-            {loginError && (
-              <p style={{ color: 'var(--bad)', fontSize: 14.5 }}>{loginError}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loginLoading || !loginToken}
-              style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 15, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
-            >
-              {loginLoading ? 'CONNECTING...' : 'CONNECT TO MY FLEET →'}
-            </button>
-          </form>
-
-          <p style={{ color: 'var(--tx3)', fontSize: 11.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
-            Your key is never stored or sent to any third party.<br />
-            It is used only to identify your fleet in this session.
-          </p>
-        </div>
-      </div>
-    );
+  if (auth.status !== 'authenticated') {
+    return <FleetLogin auth={auth} />;
   }
 
   return (
@@ -301,7 +330,7 @@ export default function RunsPage() {
         <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
         <span style={{ marginLeft: 'auto' }} />
         <ThemeToggle />
-        <button onClick={() => resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
+        <button onClick={() => { setAllEntries([]); setLoading(true); setLastUpdated(null); resetSession(); }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
       </div>
 
       {/* Analytics content */}
@@ -309,19 +338,34 @@ export default function RunsPage() {
         {/* Range selector */}
         <div className="flex items-center gap-3" style={{ padding: '14px 20px 0' }}>
           <div className="flex items-center" style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, padding: 3 }}>
-            {(['today', '7d', '30d', 'recent'] as const).map((r) => (
+            {ANALYTICS_RANGES.map((r) => (
               <button key={r} onClick={() => setAnalyticsRange(r)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 4, border: 'none', background: analyticsRange === r ? 'var(--card)' : 'transparent', color: analyticsRange === r ? 'var(--brand)' : 'var(--tx3)', boxShadow: analyticsRange === r ? 'inset 0 0 0 1px var(--line2)' : 'none', cursor: 'pointer' }}>
                 {r.toUpperCase()}
               </button>
             ))}
           </div>
           <span style={{ marginLeft: 'auto' }} />
+          {lastUpdated !== null && (
+            <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(lastUpdated)}</span>
+          )}
           <button onClick={exportWorkbook} disabled={!rangedEntries.length} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: rangedEntries.length ? 'pointer' : 'not-allowed', opacity: rangedEntries.length ? 1 : 0.4 }} title="Export to Excel">⬇ .xlsx</button>
           <button onClick={handleClearAudit} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--bad, #ef4444)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Clear all audit entries">Clear</button>
         </div>
 
+        {/* Fetch / clear error banners */}
+        {fetchError && !loading && (
+          <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--warn-bg)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 12.5 }}>
+            Connection lost — retrying{lastUpdated !== null ? ` · last updated ${fmtTime(lastUpdated)}` : ''}
+          </div>
+        )}
+        {clearError && (
+          <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--bad)', color: 'var(--bad)', fontSize: 12.5 }}>
+            {clearError}
+          </div>
+        )}
+
         {/* 8-col metrics row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(7, 1fr)', gap: 11, padding: '12px 20px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
               <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
@@ -353,11 +397,11 @@ export default function RunsPage() {
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
             <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtTokens(rangeTotals.used) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
             <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtTokens(rangeTotals.used + rangeTotals.saved) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
             <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
@@ -369,7 +413,7 @@ export default function RunsPage() {
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
             <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * 0.0000004).toFixed(4) + ' kWh' : '—'}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * KWH_PER_TOKEN).toFixed(4) + ' kWh' : '—'}</div>
           </div>
         </div>
 
@@ -379,7 +423,7 @@ export default function RunsPage() {
           {scopedDay ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--info-bg)', border: '1px solid var(--info)', color: 'var(--info)', borderRadius: 12, padding: '3px 10px', fontSize: 11.5, fontWeight: 700 }}>
               VIEWING: {scopeLabel}
-              <button onClick={() => setScopedDay(null)} style={{ background: 'none', border: 'none', color: 'var(--info)', fontSize: 12.5, padding: 0, cursor: 'pointer' }}>✕</button>
+              <button onClick={() => setScopedDay(null)} aria-label="Clear day scope" style={{ background: 'none', border: 'none', color: 'var(--info)', fontSize: 12.5, padding: 0, cursor: 'pointer' }}>✕</button>
             </span>
           ) : (
             <span style={{ color: 'var(--tx2)' }}>{analyticsRange.toUpperCase()}</span>
@@ -398,17 +442,28 @@ export default function RunsPage() {
                 <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>click a day to scope</span>
               </div>
               <div className="flex items-end" style={{ height: 150, padding: '0 4px 4px', gap: 14 }}>
-                {dailyStats.length === 0 ? (
+                {loading ? (
+                  <div style={{ flex: 1, textAlign: 'center', color: 'var(--tx3)', paddingTop: 50, fontSize: 12.5 }}>Loading…</div>
+                ) : dailyStats.length === 0 ? (
                   <div style={{ flex: 1, textAlign: 'center', color: 'var(--tx3)', paddingTop: 50, fontSize: 12.5 }}>No data in range</div>
                 ) : dailyStats.map(([day, d]) => {
                   const withoutWR = d.used + d.saved;
                   const usedH = Math.max(2, (d.used / chartMax) * 110);
                   const withoutH = Math.max(2, (withoutWR / chartMax) * 110);
                   const pct = pctOf(d.used, d.saved);
-                  const label = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+                  const label = new Date(day + 'T12:00:00').toLocaleDateString([], { month: 'numeric', day: 'numeric' });
                   const isSel = scopedDay === day;
                   return (
-                    <div key={day} onClick={() => setScopedDay(isSel ? null : day)} className="flex flex-col items-center justify-end" style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? 'var(--info-bg)' : undefined, outline: isSel ? '1px solid var(--info)' : undefined }} title={`${day} — w/ WR ${fmtK(d.used)}, w/o WR ${fmtK(withoutWR)}, saved ${fmtK(d.saved)}`}>
+                    <div
+                      key={day}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setScopedDay(isSel ? null : day)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setScopedDay(isSel ? null : day); } }}
+                      className="flex flex-col items-center justify-end"
+                      style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? 'var(--info-bg)' : undefined, outline: isSel ? '1px solid var(--info)' : undefined }}
+                      title={`${day} — w/ WR ${fmtTokens(d.used)}, w/o WR ${fmtTokens(withoutWR)}, saved ${fmtTokens(d.saved)}`}
+                    >
                       <span style={{ fontSize: 10.5, color: 'var(--ok)', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
                       <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
                         <div style={{ width: 16, height: usedH, background: 'var(--ok)', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
@@ -434,23 +489,27 @@ export default function RunsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                    {['AGENT', 'TASKS', 'TOKENS', 'HANDOVERS', 'SAVED', 'COMPRESSION'].map(h => (
-                      <th key={h} style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>{h}</th>
+                    {([['AGENT', 'agent'], ['TASKS', 'tasks'], ['TOKENS', 'tokens'], ['HANDOVERS', 'handovers'], ['SAVED', 'saved'], ['COMPRESSION', 'compression']] as [string, AgentSortKey][]).map(([h, k]) => (
+                      <th key={k} aria-sort={ariaSort(agentSort, k)} style={{ padding: 0, textAlign: h === 'AGENT' ? 'left' : 'right' }}>
+                        <button onClick={() => toggleAgentSort(k, k === 'agent' ? 'asc' : 'desc')} title={`Sort by ${h.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: agentSort?.key === k ? 'var(--tx)' : 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>
+                          {h}{sortArrow(agentSort, k)}
+                        </button>
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {agentBreakdown.length === 0 ? (
-                    <tr><td colSpan={6} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 12.5 }}>No events in scope.</td></tr>
-                  ) : agentBreakdown.map(([agent, v]) => {
+                    <tr><td colSpan={6} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 12.5 }}>{loading ? 'Loading…' : 'No events in scope.'}</td></tr>
+                  ) : sortedAgentBreakdown.map(([agent, v]) => {
                     const pct = v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0;
                     return (
                       <tr key={agent} style={{ borderBottom: '1px solid var(--sunk)' }}>
                         <td style={{ padding: '6px 8px', fontWeight: 700, fontFamily: FONT_MONO, fontSize: 12.5 }}>{agent.toUpperCase()}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{v.tasks}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--info)' }}>{fmtK(v.used)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--info)' }}>{fmtTokens(v.used)}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ho)' }}>{v.handovers || '—'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ok)' }}>{v.handovers ? fmtK(v.saved) : '—'}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ok)' }}>{v.handovers ? fmtTokens(v.saved) : '—'}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                           {v.handovers ? (
                             <div>
@@ -470,7 +529,16 @@ export default function RunsPage() {
           </div>
 
           {/* Splitter */}
-          <div onMouseDown={handleAnalyticsSplitterDown} style={{ background: 'var(--line)', cursor: 'col-resize' }} title="Drag to resize the feed" />
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the event feed"
+            tabIndex={0}
+            onMouseDown={handleAnalyticsSplitterDown}
+            onKeyDown={handleAnalyticsSplitterKeyDown}
+            style={{ background: 'var(--line)', cursor: 'col-resize' }}
+            title="Drag to resize the feed"
+          />
 
           {/* Right: Detail Event Feed */}
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
@@ -479,7 +547,7 @@ export default function RunsPage() {
               <span style={{ fontWeight: 400, color: 'var(--tx3)' }}>{scopedEntries.length} in {scopeLabel || 'range'}</span>
             </div>
             <div className="flex items-center gap-2" style={{ padding: '6px 12px', borderBottom: '1px solid var(--line)' }}>
-              <select value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
+              <select value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} aria-label="Feed variant" style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
                 <option value="log">Log</option>
                 <option value="tape">Tape</option>
                 <option value="manifest">Manifest</option>
@@ -511,11 +579,14 @@ export default function RunsPage() {
 
 // --- Pure-JS XLSX export ---
 
+let crcTable: number[] | null = null;
 function crc32(bytes: Uint8Array): number {
-  const table: number[] = [];
-  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; table[n] = c >>> 0; }
+  if (!crcTable) {
+    crcTable = [];
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c >>> 0; }
+  }
   let crc = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xff];
   return (crc ^ 0xffffffff) >>> 0;
 }
 

@@ -7,6 +7,7 @@ import { clearFleetCredentials } from '@/lib/fleet-credentials';
 export default function SignOut() {
   useEffect(() => {
     clearFleetCredentials();
+    void fetch('/api/fleet/session', { method: 'DELETE' }).catch(() => {});
     signOut({ callbackUrl: 'https://whiteroom.tech' });
   }, []);
 

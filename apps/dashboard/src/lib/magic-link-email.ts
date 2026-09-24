@@ -13,6 +13,16 @@ interface TransactionalEmail {
   footer: string;
 }
 
+/** Escapes text for interpolation into email HTML (element and attribute contexts). */
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 /** Shared shell for every transactional email the dashboard sends. */
 function transactionalEmail({ heading, body, cta, url, footer }: TransactionalEmail): { html: string; text: string } {
   const html = `<!doctype html>
@@ -24,24 +34,24 @@ function transactionalEmail({ heading, body, cta, url, footer }: TransactionalEm
           <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:440px;background:#0A1020;border:1px solid #1B2740;border-radius:12px;padding:40px 32px;">
             <tr>
               <td align="center" style="font-family:Helvetica,Arial,sans-serif;color:#EAF1FF;font-size:20px;font-weight:700;padding-bottom:8px;">
-                ${heading}
+                ${escapeHtml(heading)}
               </td>
             </tr>
             <tr>
               <td align="center" style="font-family:Helvetica,Arial,sans-serif;color:#6B7C9E;font-size:14px;line-height:20px;padding-bottom:28px;">
-                ${body}
+                ${escapeHtml(body)}
               </td>
             </tr>
             <tr>
               <td align="center" style="padding-bottom:28px;">
-                <a href="${url}" style="display:inline-block;background:#38E1FF;color:#04222B;font-family:Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:8px;">
-                  ${cta}
+                <a href="${escapeHtml(url)}" style="display:inline-block;background:#38E1FF;color:#04222B;font-family:Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:8px;">
+                  ${escapeHtml(cta)}
                 </a>
               </td>
             </tr>
             <tr>
               <td align="center" style="font-family:Helvetica,Arial,sans-serif;color:#6B7C9E;font-size:12px;line-height:18px;">
-                ${footer}
+                ${escapeHtml(footer)}
               </td>
             </tr>
           </table>

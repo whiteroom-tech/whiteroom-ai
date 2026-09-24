@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { auditLog, checkWatch, fleetReport, getHandover, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { useState, useCallback, useRef } from 'react';
+import { auditLog, checkWatch, fleetReport, getHandover, isAuthError, pauseAgent as pauseAgentApi, resumeAgent as resumeAgentApi, updateAgentTaskType } from '@/lib/whiteroom/client';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
+import { usePoll } from '@/hooks/usePoll';
+import { estimateCost, fmtTime, fmtTokens, fmtUsd, KWH_PER_TOKEN } from '@/lib/format';
+import { safeGet, safeSet } from '@/lib/safe-storage';
 import { RingGauge, Beacon } from '@/components/AgentGauge';
 import { FleetVisualization } from '@/components/FleetVisualization';
 import { ActivityFeed } from '@/components/ActivityFeed';
@@ -35,7 +38,11 @@ const AGENT_GRID_GAP: Record<AgentView, number> = {
   cards: 8, compact: 8, list: 0, rings: 14, beacon: 14,
 };
 
-function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
+// When fleetReport lacks agentDetails we fall back to one checkWatch per agent
+// (plus one getHandover per resting agent). Doing that on every 10s tick is an
+// N+1 storm, so the fan-out runs at most this often; between fan-outs the
+// previous details are reused with statuses overlaid from the report buckets.
+const DETAIL_FANOUT_INTERVAL_MS = 60_000;
 
 interface OverviewContentProps {
   fleetId: string;
@@ -52,11 +59,15 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const [error, setError] = useState('');
   const [recentEntries, setRecentEntries] = useState<AuditEntry[]>([]);
   const [agentView, setAgentView] = useState<AgentView>(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('wr_agent_view') : null;
+    const saved = safeGet('wr_agent_view');
     return isAgentView(saved) ? saved : 'cards';
   });
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
   const [agentActionLoading, setAgentActionLoading] = useState<Record<string, boolean>>({});
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [confirmStopAll, setConfirmStopAll] = useState(false);
+  const [actionNotice, setActionNotice] = useState('');
+  const [taskTypeFeedback, setTaskTypeFeedback] = useState<Record<string, { ok: boolean; msg: string }>>({});
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [feedPage, setFeedPage] = useState(0);
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
@@ -67,38 +78,26 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   // saving on every pause created one backend record per partial value typed.
   const [taskTypeDrafts, setTaskTypeDrafts] = useState<Record<string, string>>({});
   const mainRef = useRef<HTMLDivElement>(null);
+  // N+1 fallback throttle: last fan-out timestamp + the details/docs it produced.
+  const lastFanOutRef = useRef(0);
+  const fanOutDetailsRef = useRef<AgentInfo[]>([]);
+  const fanOutDocsRef = useRef<Record<string, HandoverDoc>>({});
 
   function changeTaskTypeDraft(agentId: string, value: string) {
     setTaskTypeDrafts((prev) => ({ ...prev, [agentId]: value }));
   }
 
-  async function commitTaskType(agentId: string, value: string) {
-    const trimmed = value.trim();
-    if (!fleetId || !trimmed) return;
-    try {
-      await updateAgentTaskType(fleetId, agentId, trimmed, authKey);
-      setTaskTypeDrafts((prev) => {
-        const next = { ...prev };
-        delete next[agentId];
-        return next;
-      });
-      fetchReport();
-    } catch { /* ignore */ }
-  }
-
-  const fetchReport = useCallback(async () => {
+  const fetchReport = useCallback(async (stale: () => boolean) => {
     if (!fleetId) return;
     try {
       const data = await fleetReport(fleetId, authKey);
+      if (stale()) return;
       if (data.error) {
-        if (data.error.toLowerCase().includes('unauthorized') || data.error.toLowerCase().includes('invalid')) {
-          onAuthError?.(data.error);
-        } else {
-          setError(data.error);
-        }
+        // Payload-level error strings are page errors — never a sign-out.
+        // Only a thrown 401/403 (isAuthError below) wipes credentials.
+        setError(data.error);
         return;
       }
-      setReport(data);
 
       let details: AgentInfo[];
       const docs: Record<string, HandoverDoc> = {};
@@ -108,7 +107,8 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
           if (d.handoverDoc) docs[d.agentId] = d.handoverDoc;
           return d;
         });
-      } else {
+      } else if (Date.now() - lastFanOutRef.current >= DETAIL_FANOUT_INTERVAL_MS) {
+        lastFanOutRef.current = Date.now();
         const allIds = [...(data.status.working || []), ...(data.status.resting || []), ...(data.status.idle || []), ...(data.status.handover_out || [])];
         details = await Promise.all(
           allIds.map(async (id: string) => {
@@ -122,9 +122,25 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
             if (hd.handoverDoc) docs[d.agentId] = hd.handoverDoc;
           } catch { /* ignore */ }
         }));
+        if (stale()) return;
+        fanOutDetailsRef.current = details;
+        fanOutDocsRef.current = docs;
+      } else {
+        // Between fan-outs: reuse the previous details, but overlay the fresh
+        // statuses the report already carries so pause/resume shows through.
+        const statusById: Record<string, string> = {};
+        (['working', 'resting', 'idle', 'handover_out'] as const).forEach((s) => {
+          (data.status[s] || []).forEach((id) => { statusById[id] = s; });
+        });
+        details = fanOutDetailsRef.current.map((d) => statusById[d.agentId] ? { ...d, status: statusById[d.agentId] } : d);
+        Object.assign(docs, fanOutDocsRef.current);
       }
 
+      if (stale()) return;
+      setReport(data);
       setAgents(details);
+      setError('');
+      setLastUpdated(Date.now());
 
       setAgentHealth((prev: Record<string, { health: number; lastStatus: string }>) => {
         const next = { ...prev };
@@ -143,8 +159,30 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
       });
 
       setHandoverDocs(docs);
-    } catch { setError('Connection lost'); }
+    } catch (e) {
+      if (stale()) return;
+      if (isAuthError(e)) {
+        onAuthError?.('Session expired. Please sign in again.');
+        return;
+      }
+      setError('Connection lost');
+    }
   }, [fleetId, authKey, onAuthError]);
+
+  const fetchRecentActivity = useCallback(async (stale: () => boolean) => {
+    if (!fleetId) return;
+    try {
+      const data = await auditLog({ fleetId, limit: 200 }, authKey);
+      if (stale()) return;
+      if ('error' in data || !Array.isArray(data.entries)) return;
+      setRecentEntries(data.entries);
+    } catch { /* ignore */ }
+  }, [fleetId, authKey]);
+
+  const { refresh } = usePoll(
+    (stale) => { void fetchReport(stale); void fetchRecentActivity(stale); },
+    { intervalMs: 10000, enabled: !!fleetId },
+  );
 
   const handlePauseAgent = useCallback(async (agentId: string) => {
     if (!fleetId) return;
@@ -153,10 +191,12 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     try {
       await pauseAgentApi(fleetId, agentId, authKey);
     } finally {
-      await fetchReport();
+      // refresh() also invalidates any in-flight poll so a slow, older
+      // response can't revert the optimistic status above.
+      refresh();
       setAgentActionLoading(prev => ({ ...prev, [agentId]: false }));
     }
-  }, [fleetId, authKey, fetchReport]);
+  }, [fleetId, authKey, refresh]);
 
   const handleResumeAgent = useCallback(async (agentId: string) => {
     if (!fleetId) return;
@@ -165,26 +205,44 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     try {
       await resumeAgentApi(fleetId, agentId, authKey);
     } finally {
-      await fetchReport();
+      refresh();
       setAgentActionLoading(prev => ({ ...prev, [agentId]: false }));
     }
-  }, [fleetId, authKey, fetchReport]);
+  }, [fleetId, authKey, refresh]);
 
   const handleStopAll = useCallback(async () => {
     if (!fleetId || !agents.length) return;
+    setConfirmStopAll(false);
     const working = agents.filter(a => deriveDisplayStatus(a.status, a.stale, a.minutesRemaining, a.disconnected) === 'working');
-    await Promise.all(working.map(a => pauseAgentApi(fleetId, a.agentId, authKey)));
-    await fetchReport();
-  }, [fleetId, agents, authKey, fetchReport]);
+    const results = await Promise.allSettled(working.map(a => pauseAgentApi(fleetId, a.agentId, authKey)));
+    const failed = results.filter(r => r.status === 'rejected').length;
+    setActionNotice(failed ? `Stop All: ${failed} of ${working.length} agent${working.length === 1 ? '' : 's'} failed to pause` : '');
+    refresh();
+  }, [fleetId, agents, authKey, refresh]);
 
-  const fetchRecentActivity = useCallback(async () => {
-    if (!fleetId) return;
+  async function commitTaskType(agentId: string, value: string) {
+    const trimmed = value.trim();
+    if (!fleetId || !trimmed) return;
     try {
-      const data = await auditLog({ fleetId, limit: 200 }, authKey);
-      if ('error' in data) return;
-      setRecentEntries(data.entries);
-    } catch { /* ignore */ }
-  }, [fleetId, authKey]);
+      await updateAgentTaskType(fleetId, agentId, trimmed, authKey);
+      setTaskTypeDrafts((prev) => {
+        const next = { ...prev };
+        delete next[agentId];
+        return next;
+      });
+      setTaskTypeFeedback((prev) => ({ ...prev, [agentId]: { ok: true, msg: 'Saved' } }));
+      refresh();
+    } catch {
+      setTaskTypeFeedback((prev) => ({ ...prev, [agentId]: { ok: false, msg: 'Save failed' } }));
+    }
+    setTimeout(() => {
+      setTaskTypeFeedback((prev) => {
+        const next = { ...prev };
+        delete next[agentId];
+        return next;
+      });
+    }, 2500);
+  }
 
   function toggleExpanded(key: string) {
     setExpandedTasks(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -193,32 +251,22 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     if (isFeedVariant(v)) setFeedVariant(v);
   }
 
-  const fetchAllEntries = useCallback(async () => {
+  const fetchAllEntries = useCallback(async (stale: () => boolean) => {
     if (!fleetId) return;
     try {
       const data = await auditLog({ fleetId, limit: 2000 }, authKey);
-      if ('error' in data) return;
+      if (stale()) return;
+      if ('error' in data || !Array.isArray(data.entries)) return;
       setAllEntries(data.entries);
     } catch { /* ignore */ }
   }, [fleetId, authKey]);
 
-  useEffect(() => {
-    fetchReport(); fetchRecentActivity();
-    const interval = setInterval(() => { fetchReport(); fetchRecentActivity(); }, 10000);
-    return () => clearInterval(interval);
-  }, [fetchReport, fetchRecentActivity]);
-
-  useEffect(() => {
-    if (!visualizationMode) return;
-    fetchAllEntries();
-    const id = setInterval(fetchAllEntries, 15000);
-    return () => clearInterval(id);
-  }, [visualizationMode, fetchAllEntries]);
+  usePoll(fetchAllEntries, { intervalMs: 15000, enabled: !!fleetId && !!visualizationMode });
 
   function changeAgentView(v: string) {
     if (!isAgentView(v)) return;
     setAgentView(v);
-    localStorage.setItem('wr_agent_view', v);
+    safeSet('wr_agent_view', v);
   }
 
   if (!report) {
@@ -239,10 +287,8 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const lifetimeRatio = t.tokens > 0 ? (es.estimatedTokensSaved || 0) / t.tokens : 0;
   const watchSaved = Math.round(watchTokens * lifetimeRatio);
   const watchWithoutWR = watchTokens + watchSaved;
-  const savingsCost = watchSaved * 0.8 * 0.0000008 + watchSaved * 0.2 * 0.000004;
-  const watchCostSaved = watchSaved > 0 ? `$${savingsCost.toFixed(4)}` : '$0';
-  const kwhPerToken = 0.0000004;
-  const watchEnergySaved = watchSaved > 0 ? `${(watchSaved * kwhPerToken).toFixed(4)} kWh` : '0 kWh';
+  const watchCostSaved = watchSaved > 0 ? fmtUsd(estimateCost(watchSaved)) : '$0';
+  const watchEnergySaved = watchSaved > 0 ? `${(watchSaved * KWH_PER_TOKEN).toFixed(4)} kWh` : '0 kWh';
 
   const vizAgents = agents.map((agent) => {
     const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
@@ -266,7 +312,17 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(7, 1fr)', gap: 11, padding: '14px 20px 0' }}>
+      {error && (
+        <div style={{ padding: '5px 20px', background: 'var(--warn-bg)', borderBottom: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 11.5, fontWeight: 600, flexShrink: 0 }}>
+          {error} — retrying{lastUpdated ? ` · last updated ${fmtTime(lastUpdated)}` : ''}
+        </div>
+      )}
+      {actionNotice && (
+        <div style={{ padding: '5px 20px', background: 'var(--bad-bg)', borderBottom: '1px solid var(--bad)', color: 'var(--bad)', fontSize: 11.5, fontWeight: 600, flexShrink: 0 }}>
+          {actionNotice}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '14px 20px 0' }}>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
             <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
@@ -298,11 +354,11 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchTokens > 0 ? fmtK(watchTokens) : '—'}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchTokens > 0 ? fmtTokens(watchTokens) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{watchWithoutWR > 0 ? fmtK(watchWithoutWR) : '—'}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{watchWithoutWR > 0 ? fmtTokens(watchWithoutWR) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
@@ -320,12 +376,29 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
       <div ref={mainRef} className="flex-1 min-h-0" style={{ overflowY: 'auto', padding: '12px 20px 0' }}>
         <div style={{ padding: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agents</span>
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Agents</span>
+              {!error && lastUpdated && (
+                <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(lastUpdated)}</span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {agents.some(a => deriveDisplayStatus(a.status, a.stale, a.minutesRemaining, a.disconnected) === 'working') && (
-                <button onClick={handleStopAll} style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--bad)', border: '1px solid var(--bad)', borderRadius: 6, padding: '3px 10px', background: 'transparent', cursor: 'pointer' }}>
-                  ■ Stop All
-                </button>
+                confirmStopAll ? (
+                  <span className="flex items-center gap-1.5" style={{ fontSize: 11.5 }}>
+                    <span style={{ fontWeight: 600, color: 'var(--tx2)' }}>Pause all working agents?</span>
+                    <button onClick={handleStopAll} style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--bg)', border: '1px solid var(--bad)', borderRadius: 6, padding: '3px 10px', background: 'var(--bad)', cursor: 'pointer' }}>
+                      Confirm
+                    </button>
+                    <button onClick={() => setConfirmStopAll(false)} style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '3px 10px', background: 'transparent', cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button onClick={() => setConfirmStopAll(true)} style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--bad)', border: '1px solid var(--bad)', borderRadius: 6, padding: '3px 10px', background: 'transparent', cursor: 'pointer' }}>
+                    ■ Stop All
+                  </button>
+                )
               )}
               <select
                 aria-label="Agent card style"
@@ -380,7 +453,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     </div>
                     <div style={{ textAlign: 'center' as const }}>
                       <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
-                      <div style={{ fontSize: 10.5, color: 'var(--tx2)', marginTop: 1 }}>{status.toUpperCase()} · {fmtK(tokens)}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--tx2)', marginTop: 1 }}>{status.toUpperCase()} · {fmtTokens(tokens)}</div>
                     </div>
                   </div>
                 );
@@ -411,11 +484,11 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     </div>
                     <span style={{ width: 36, textAlign: 'right' as const, fontSize: 11.5, color: 'var(--tx2)' }}>{watchDisplay.toFixed(0)}%</span>
                     <span style={{ width: 36, textAlign: 'right' as const, fontSize: 11.5, color: healthColor }}>{health.toFixed(0)}%</span>
-                    <span style={{ width: 56, textAlign: 'right' as const, fontSize: 11.5, color: 'var(--tx)' }}>{fmtK(tokens)}</span>
+                    <span style={{ width: 56, textAlign: 'right' as const, fontSize: 11.5, color: 'var(--tx)' }}>{fmtTokens(tokens)}</span>
                     {status === 'working' ? (
-                      <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ width: 28, fontSize: 9.5, fontWeight: 600, padding: '1px 0', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
+                      <button aria-label={`Pause ${agent.agentId}`} disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ width: 28, fontSize: 9.5, fontWeight: 600, padding: '1px 0', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
                     ) : status === 'resting' ? (
-                      <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ width: 28, fontSize: 9.5, fontWeight: 600, padding: '1px 0', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>▶</button>
+                      <button aria-label={`Resume ${agent.agentId}`} disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ width: 28, fontSize: 9.5, fontWeight: 600, padding: '1px 0', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>▶</button>
                     ) : <span style={{ width: 28 }} />}
                   </div>
                 );
@@ -429,9 +502,9 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                       <div className="flex items-center gap-1">
                         <span style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
                         {status === 'working' ? (
-                          <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
+                          <button aria-label={`Pause ${agent.agentId}`} disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
                         ) : status === 'resting' ? (
-                          <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>▶</button>
+                          <button aria-label={`Resume ${agent.agentId}`} disabled={!!agentActionLoading[agent.agentId]} onClick={() => handleResumeAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--ok)', border: '1px solid var(--ok)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>▶</button>
                         ) : null}
                       </div>
                     </div>
@@ -439,7 +512,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                       <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
                     </div>
                     <div className="flex justify-between" style={{ fontSize: 10.5, color: 'var(--tx2)' }}>
-                      <span>W{agent.watchNumber || 1} · {fmtK(tokens)} tok</span>
+                      <span>W{agent.watchNumber || 1} · {fmtTokens(tokens)} tok</span>
                       <span style={{ color: healthColor }}>{health.toFixed(0)}% hlth</span>
                     </div>
                   </div>
@@ -492,6 +565,11 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     >
                       Save
                     </button>
+                    {taskTypeFeedback[agent.agentId] && (
+                      <span role="status" style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', color: taskTypeFeedback[agent.agentId].ok ? 'var(--ok)' : 'var(--bad)' }}>
+                        {taskTypeFeedback[agent.agentId].msg}
+                      </span>
+                    )}
                   </div>
                   <div style={{ marginTop: 6, marginBottom: 6 }}>
                     <div className="flex justify-between" style={{ fontSize: 11.5, color: 'var(--tx3)', marginBottom: 2 }}>
@@ -510,7 +588,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginTop: 6 }}>
-                    <StatBox label="TOKENS USED" value={fmtK(tokens)} color={tokens > 20000 ? 'var(--warn)' : 'var(--tx)'} />
+                    <StatBox label="TOKENS USED" value={fmtTokens(tokens)} color={tokens > 20000 ? 'var(--warn)' : 'var(--tx)'} />
                     <StatBox label="WATCH %" value={`${pct.toFixed(0)}%`} color={pct > 80 ? 'var(--warn)' : 'var(--tx)'} />
                     <StatBox label="WATCH #" value={String(agent.watchNumber || 1)} color="var(--ho)" />
                   </div>
@@ -520,7 +598,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                       {hdoc.state && <div style={{ color: 'var(--tx2)', marginBottom: 2 }}>STATE: <span style={{ color: 'var(--tx2)' }}>{hdoc.state.slice(0, 120)}...</span></div>}
                       {hdoc.pending && hdoc.pending.length > 0 && <div style={{ color: 'var(--tx2)', marginBottom: 2 }}>PENDING: <span style={{ color: 'var(--tx2)' }}>{hdoc.pending.map((p) => p.task).slice(0, 2).join(', ')}</span></div>}
                       {hdoc.warnings && hdoc.warnings.length > 0 && <div style={{ color: 'var(--tx2)' }}>⚠ {hdoc.warnings[0].slice(0, 100)}</div>}
-                      {hdoc.session_stats && <div style={{ color: 'var(--tx2)' }}>COMPRESSED: {hdoc.session_stats.tasks_completed} tasks, {fmtK(hdoc.session_stats.total_tokens)} tokens → summary</div>}
+                      {hdoc.session_stats && <div style={{ color: 'var(--tx2)' }}>COMPRESSED: {hdoc.session_stats.tasks_completed} tasks, {fmtTokens(hdoc.session_stats.total_tokens)} tokens → summary</div>}
                     </div>
                   )}
                 </div>
@@ -536,7 +614,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
           <div className="flex items-center justify-between" style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
             <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx2)', textTransform: 'uppercase' as const }}>Activity</span>
             <div className="flex items-center gap-2">
-              <select value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
+              <select aria-label="Activity feed style" value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
                 <option value="log">Log</option>
                 <option value="tape">Tape</option>
                 <option value="manifest">Manifest</option>

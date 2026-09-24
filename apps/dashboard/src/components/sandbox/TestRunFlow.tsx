@@ -32,6 +32,15 @@ export function connectionRecipe(provider: Provider, fleetId: string, agentId: s
     : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
 }
 
+// A leftover sandbox token would keep shadowing fleet auth in bffFetch long
+// after the run is gone, so clear it whenever the sandbox no longer exists.
+function clearSandboxToken() {
+  try {
+    localStorage.removeItem('wr_sandbox_token');
+    window.dispatchEvent(new Event('storage'));
+  } catch { /* localStorage unavailable */ }
+}
+
 function connectionVerified(status: RunStatusResult | null) {
   return status?.mode !== 'demo' && status?.controls?.some(c => c.controlId === 'core.connect' && c.result?.liveEvidence?.status === 'observed');
 }
@@ -159,8 +168,13 @@ export function TestRunFlow() {
   // Focus heading on phase change
   useEffect(() => { heading.current?.focus(); }, [phase]);
 
-  // Auto-switch to results tab when connection verifies
-  useEffect(() => { if (verified && wsTab === 'setup') setWsTab('results'); }, [verified, wsTab]);
+  // Auto-switch to results tab only when the connection first verifies (rising
+  // edge) — re-running on every tab change would snap the user out of Setup.
+  const wasVerified = useRef(false);
+  useEffect(() => {
+    if (verified && !wasVerified.current && wsTab === 'setup') setWsTab('results');
+    wasVerified.current = !!verified;
+  }, [verified, wsTab]);
 
   // Boot: check for existing run
   useEffect(() => {
@@ -203,6 +217,7 @@ export function TestRunFlow() {
         retryAfter = Math.max(0, Number(st.retryAfter) || 0) * 1000;
         if (st.error) throw new Error('unavailable');
         if (!st.sandboxId) {
+          clearSandboxToken();
           setError('This test session is no longer available. You can start another test; previously exported results remain on your device.');
           setRun(null); setPhase('start'); setSetupMode(null); return;
         }
@@ -212,7 +227,7 @@ export function TestRunFlow() {
       finally {
         pending = false;
         if (!disposed) {
-          const interval = verified ? 3000 : 1000;
+          const interval = verified ? 3000 : 2500;
           const backoff = failures ? Math.min(5000, 1000 * 2 ** failures) : 0;
           timer = setTimeout(poll, Math.max(retryAfter, backoff || interval));
         }
@@ -337,17 +352,25 @@ export function TestRunFlow() {
     } finally { setKey(''); setShowKey(false); setFleetTokenInput(''); }
   });
 
-  const review = () => act(async () => {
-    if (!run?.sandboxId) return;
-    const result = await getReport(run.sandboxId);
-    if (result.error) throw new Error(result.error);
-    posthog.capture('sandbox_review_opened', { mode: run?.mode });
-    setReport(result);
-  });
+  // Returns the fetched report (null on failure) so callers can export it
+  // directly — the `report` state they closed over is a render behind.
+  const review = async (): Promise<ReportResult | null> => {
+    const sandboxId = run?.sandboxId;
+    if (!sandboxId) return null;
+    let fetched: ReportResult | null = null;
+    await act(async () => {
+      const result = await getReport(sandboxId);
+      if (result.error) throw new Error(result.error);
+      posthog.capture('sandbox_review_opened', { mode: run?.mode });
+      setReport(result);
+      fetched = result;
+    });
+    return fetched;
+  };
 
-  const download = () => {
+  const download = (fetched?: ReportResult | null) => {
     if (!run?.sandboxId) return;
-    const data = report ?? run;
+    const data = fetched ?? report ?? run;
     posthog.capture('sandbox_report_exported', { mode: run?.mode });
     const blob = new Blob([JSON.stringify({ ...data, assessment: { source: 'human', result: assessment }, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -359,11 +382,23 @@ export function TestRunFlow() {
     if (!run?.sandboxId) return;
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
+    clearSandboxToken();
     setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed'); setSetupMode(null);
   });
 
   if (authStatus === 'loading') return <div className={s.content}>Loading your workspace…</div>;
-  if (!session?.user?.id) return <div className={s.content}><h1 style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h1><p>Sign in to create and manage your test environments.</p><a href="/sign-in">Sign in</a></div>;
+  if (!session?.user?.id) return (
+    <main className={s.content}>
+      <div className={s.eyebrow}>WHITEROOM / TEST RUNS</div>
+      <h1 className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h1>
+      <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
+        <p className={s.pageSub}>Sandbox uses your WhiteRoom account sign-in, so sign in to create and manage your test environments.</p>
+        <div className={s.btnRow} style={{ marginTop: 16 }}>
+          <a className={`${s.btn} ${s.btnPrimary}`} href={`/sign-in?callbackUrl=${encodeURIComponent('/sandbox')}`} style={{ textDecoration: 'none' }}>Sign in →</a>
+        </div>
+      </div>
+    </main>
+  );
 
   // ── Preview icons ──
   const previewIcons = [
@@ -643,18 +678,19 @@ export function TestRunFlow() {
               <pre className={s.recipe} style={{ fontFamily: FONT_MONO, fontSize: 10.5 }}>{connectionRecipe(provider, 'fleet-YOUR_FLEET_ID', 'your-agent', language)}</pre>
               <div className={s.btnRow} style={{ marginTop: 8 }}>
                 <CopyButton text={connectionRecipe(provider, 'fleet-YOUR_FLEET_ID', 'your-agent', language)} />
-                <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(download); }} disabled={busy} style={{ fontSize: 12 }}>Export full report</button>
+                <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(r => { if (r) download(r); }); }} disabled={busy} style={{ fontSize: 12 }}>Export full report</button>
               </div>
             </div>
           )}
 
           {/* Actions */}
           <div className={s.btnRow}>
-            {!allPassed && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(download); }} disabled={busy} style={{ fontSize: 12 }}>Export results</button>}
+            {!allPassed && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(r => { if (r) download(r); }); }} disabled={busy} style={{ fontSize: 12 }}>Export results</button>}
             {isDemo && <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => act(async () => {
               if (!run?.sandboxId) return;
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
+              clearSandboxToken();
               setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setAssessment('Not assessed');
               setPhase('setup'); setSetupMode(null);
             })} disabled={busy} style={{ fontSize: 12 }}>End demo and test my agent</button>}

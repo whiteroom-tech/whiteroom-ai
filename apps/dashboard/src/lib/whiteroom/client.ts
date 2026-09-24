@@ -43,7 +43,38 @@ import type {
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
-function authHeaders(key?: string): Record<string, string> {
+/**
+ * Every failure thrown out of this module is one of these, so callers can
+ * tell a real auth rejection from a network blip instead of treating any
+ * thrown error as "credentials are bad" (which used to wipe them).
+ *
+ * `status` is the HTTP status of the failed response, or undefined when the
+ * request never got a response at all (network error, timeout, redirect).
+ */
+export class WhiteRoomApiError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'WhiteRoomApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * True only for a genuine credential rejection (401/403). A timeout, network
+ * failure, or 5xx is NOT an auth error — credentials should be kept and the
+ * call retried.
+ */
+export function isAuthError(e: unknown): boolean {
+  return e instanceof WhiteRoomApiError && (e.status === 401 || e.status === 403);
+}
+
+/**
+ * The auth-header rule, shared with the /api/fleet/engine BFF route (which
+ * attaches the server-held fleet token with exactly the same logic).
+ */
+export function engineAuthHeaders(key?: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (key) {
     if (key.startsWith('sk-')) h['x-api-key'] = key;
@@ -52,20 +83,67 @@ function authHeaders(key?: string): Record<string, string> {
   return h;
 }
 
-async function postRaw(body: Record<string, unknown>, key?: string): Promise<Response> {
-  return fetch(`${PROXY_URL}/api/white-room`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(15_000),
-    redirect: 'error',
-    cache: 'no-store',
-    headers: authHeaders(key),
-    body: JSON.stringify(body),
-  });
+interface PostOptions {
+  /**
+   * Skip the BFF even when running keyless in the browser. token_login must
+   * stay direct: it authenticates BY the token in its request body, before
+   * any cookie session exists to ride on.
+   */
+  direct?: boolean;
 }
 
-async function apiCall<T>(body: Record<string, unknown>, key?: string): Promise<T> {
-  const res = await postRaw(body, key);
-  return res.json() as Promise<T>;
+async function postRaw(
+  body: Record<string, unknown>,
+  key?: string,
+  opts?: PostOptions,
+): Promise<Response> {
+  // Browser + no explicit key = the caller has no credential to send: the
+  // fleet token lives server-side in the httpOnly `wr_fleet_auth` cookie.
+  // Route those calls through the same-origin BFF, which attaches the token
+  // on the server. Explicit-key calls (a typed API key during onboarding or
+  // login) and server-side calls go straight to the engine as before.
+  const viaBff = typeof window !== 'undefined' && !key && !opts?.direct;
+  try {
+    if (viaBff) {
+      return await fetch('/api/fleet/engine', {
+        method: 'POST',
+        // The BFF's own upstream timeout is 15s; give it headroom so its 502
+        // arrives instead of racing it with our own abort.
+        signal: AbortSignal.timeout(20_000),
+        redirect: 'error',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+    return await fetch(`${PROXY_URL}/api/white-room`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(15_000),
+      redirect: 'error',
+      cache: 'no-store',
+      headers: engineAuthHeaders(key),
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // Network failure, timeout, or unexpected redirect: no response, no status.
+    throw new WhiteRoomApiError(e instanceof Error ? e.message : 'Network error');
+  }
+}
+
+async function apiCall<T>(
+  body: Record<string, unknown>,
+  key?: string,
+  opts?: PostOptions,
+): Promise<T> {
+  const res = await postRaw(body, key, opts);
+  if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
+  try {
+    return (await res.json()) as T;
+  } catch {
+    // 200 with a non-JSON body (e.g. an HTML error page from a proxy layer).
+    throw new WhiteRoomApiError(`Invalid JSON response (HTTP ${res.status})`, res.status);
+  }
 }
 
 // -- Fleet provisioning & login --
@@ -145,7 +223,14 @@ export function fleetProvisioned(
 }
 
 export function tokenLogin(fleetToken: string): Promise<TokenLoginResult> {
-  return apiCall<TokenLoginResult>({ action: 'token_login', fleet_token: fleetToken });
+  // Always direct: token_login is the unauthenticated call that VALIDATES a
+  // token — routing it through the cookie-authenticated BFF would deadlock
+  // login (no cookie yet -> 401 before the engine ever sees the token).
+  return apiCall<TokenLoginResult>(
+    { action: 'token_login', fleet_token: fleetToken },
+    undefined,
+    { direct: true },
+  );
 }
 
 export function claimFleet(fleetId: string, key?: string): Promise<ClaimFleetResult> {

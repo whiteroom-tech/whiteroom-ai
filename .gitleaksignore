@@ -1,0 +1,6 @@
+# False positives: fake test fixture "wr_test_fixture_not_a_live_credential"
+# in provisioning.test.ts (PR #30 history). Not a live credential.
+2dc332e7cc02190f2927049b3ae28008aa85bf55:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:13
+2dc332e7cc02190f2927049b3ae28008aa85bf55:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:26
+e09ef176d57aeab504c280330c4f399113394049:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:13
+e09ef176d57aeab504c280330c4f399113394049:apps/dashboard/src/__tests__/provisioning.test.ts:generic-api-key:26

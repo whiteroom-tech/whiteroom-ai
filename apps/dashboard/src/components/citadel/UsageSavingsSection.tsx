@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { auditLog } from '@/lib/whiteroom/client';
-import { estimateCost, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
+import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watchKey } from '@/lib/analytics-metrics';
+import { estimateCost, fmtTokens as fmtK, fmtUsd, KWH_PER_TOKEN } from '@/lib/format';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
-function fmtK(n: number): string { return (n / 1000).toFixed(1) + 'K'; }
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
 export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; authKey?: string }) {
@@ -22,7 +22,7 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
     if (!fleetId) return;
     try {
       const data = await auditLog({ fleetId, limit: 2000 }, authKey);
-      if ('error' in data) return;
+      if ('error' in data || !Array.isArray(data.entries)) return;
       setAllEntries(data.entries);
     } catch { /* ignore */ }
   }, [fleetId, authKey]);
@@ -175,11 +175,11 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
         <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span>
-        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? '$' + estimateCost(rangeTotals.saved).toFixed(4) : '—'}</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? fmtUsd(estimateCost(rangeTotals.saved)) : '—'}</div>
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
         <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
-        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * 0.0000004).toFixed(4) + ' kWh' : '—'}</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * KWH_PER_TOKEN).toFixed(4) + ' kWh' : '—'}</div>
       </div>
     </div>
 

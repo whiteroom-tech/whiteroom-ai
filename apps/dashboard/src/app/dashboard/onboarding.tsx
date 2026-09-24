@@ -256,7 +256,19 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
   const [tab, setTab] = useState<ProviderTab>('direct');
 
   useEffect(() => {
-    if (fleetToken) localStorage.setItem('wr_fleet_token', fleetToken);
+    // Hand the fresh fleet token to server-side custody: POST it to the
+    // session route, which validates it and sets the httpOnly wr_fleet_auth
+    // cookie. Nothing is written to localStorage any more — the token never
+    // stays reachable from page script. Fire-and-forget, like the local
+    // write it replaces; the Citadel pages re-check the session on load.
+    if (!fleetToken) return;
+    fetch('/api/fleet/session', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: fleetToken }),
+    }).catch(() => {});
   }, [fleetToken]);
 
   return (
