@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { setByok } from '@/lib/users';
+import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
@@ -21,6 +22,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   azure: 'Azure OpenAI',
+  'azure-openai': 'Azure OpenAI',
 };
 
 type ProviderTab = 'direct' | 'azure' | 'aws';
@@ -67,9 +69,9 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab }: { apiKey: string; fleetI
         setMsg('Enter your Azure endpoint URL (e.g. https://myresource.openai.azure.com).');
         return;
       }
-      if (!/^https:\/\/.+\.(openai\.azure\.com|services\.ai\.azure\.com|cognitiveservices\.azure\.com)/.test(ep)) {
+      if (!azureOpenAIEndpoint(ep)) {
         setStatus('error');
-        setMsg('Endpoint must be an Azure OpenAI URL (e.g. https://myresource.openai.azure.com).');
+        setMsg('Endpoint must be your Azure resource URL (e.g. https://myresource.openai.azure.com).');
         return;
       }
     } else {
@@ -81,11 +83,13 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab }: { apiKey: string; fleetI
     }
     setStatus('saving'); setMsg('');
     try {
-      const result = await storeProviderKey(auth, key, isAzure ? endpoint.trim() : undefined);
+      const result = isAzure
+        ? await storeProviderKey(auth, key, azureOpenAIEndpoint(endpoint) ?? undefined, 'azure-openai')
+        : await storeProviderKey(auth, key);
       if (!result.success || !result.proxyUrl) {
         setStatus('error'); setMsg(result.error || 'Could not connect that key.'); return;
       }
-      const provider = isAzure ? 'azure' : (result.provider ?? (key.startsWith('sk-ant-') ? 'anthropic' : 'openai'));
+      const provider = result.provider ?? (isAzure ? 'azure-openai' : key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
       setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? key.slice(-4), provider });
       setValue(''); setEndpoint(''); setStatus('idle');
       await refresh();
@@ -113,7 +117,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab }: { apiKey: string; fleetI
   }
 
   function issuedEnvHint(p: string, url: string) {
-    if (p === 'azure') return `export AZURE_OPENAI_ENDPOINT=${url}`;
+    if (p === 'azure' || p === 'azure-openai') return `export AZURE_OPENAI_ENDPOINT=${url}`;
     if (p === 'openai') return `export OPENAI_BASE_URL=${url}/v1`;
     return `export ANTHROPIC_BASE_URL=${url}`;
   }
@@ -219,7 +223,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab }: { apiKey: string; fleetI
 
 const PROVIDER_TABS: { key: ProviderTab; label: string; soon?: boolean }[] = [
   { key: 'direct', label: 'Anthropic / OpenAI' },
-  { key: 'azure', label: 'Azure OpenAI', soon: true },
+  { key: 'azure', label: 'Azure OpenAI' },
   { key: 'aws', label: 'AWS Bedrock', soon: true },
 ];
 
@@ -327,7 +331,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                   </p>
                   <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>
                     {tab === 'azure'
-                      ? 'Add your Azure API key and endpoint in the Bring Your Own Key section below. You\'ll get a proxy URL to use in your agent.'
+                      ? 'Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) in Bring Your Own Key below. You get back a proxy URL — point your agent at it instead of Azure, and keep your key, deployment names and api-version exactly as they are.'
                       : 'Change one URL so your agent’s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.'}
                   </p>
                 </div>
@@ -341,6 +345,14 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                   <div className="space-y-2">
                     <CodeBlock label="Set your proxy URL (you'll get this after connecting your key)" code="export AZURE_OPENAI_ENDPOINT=https://proxy.whiteroom.tech/<your-proxy-key>" />
                     <CodeBlock label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                    <CodeBlock
+                      label="The AzureOpenAI client picks both up — nothing else changes"
+                      code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(api_version="2024-10-21")  # your usual api-version\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`}
+                    />
+                    <CodeBlock
+                      label="Or with the OpenAI SDK against Azure's v1 API"
+                      code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="https://proxy.whiteroom.tech/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n)`}
+                    />
                   </div>
                 )}
               </div>
