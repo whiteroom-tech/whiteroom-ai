@@ -47,13 +47,13 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
   // Local development, and any deployment that hasn't split the hosts yet.
   // Nothing should change for them.
   it('lets everything through, /admin included, when authenticated', () => {
-    for (const path of ['/admin', '/admin/u-1', '/settings', '/']) {
+    for (const path of ['/admin', '/admin/u-1', '/settings', '/organization', '/']) {
       expect(verdict(proxy(req(APP, path, { withSession: true })))).toBe('pass');
     }
   });
 
   it('redirects protected paths to sign-in without a session', () => {
-    for (const path of ['/admin', '/settings', '/dashboard']) {
+    for (const path of ['/admin', '/settings', '/dashboard', '/organization']) {
       expect(verdict(proxy(req(APP, path)))).toBe('redirect:/sign-in');
     }
   });
@@ -132,7 +132,7 @@ describe('the admin host', () => {
   // The customer app must not be quietly served from a second origin too.
   it('404s the customer-facing app', () => {
     process.env.ADMIN_HOST = ADMIN;
-    for (const path of ['/fleet', '/settings', '/performance', '/sandbox', '/dashboard']) {
+    for (const path of ['/fleet', '/settings', '/performance', '/sandbox', '/dashboard', '/organization']) {
       expect(verdict(proxy(req(ADMIN, path)))).toBe('notFound');
     }
   });

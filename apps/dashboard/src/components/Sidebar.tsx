@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { myOrganizationSummary } from '@/lib/organization-actions';
 interface NavItem {
   href: string;
   label: string;
@@ -32,6 +33,7 @@ const ICONS = {
   eval: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 20V10M12 20V4M6 20v-6" /></svg>,
   builder: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>,
   settings: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8" /></svg>,
+  org: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4M9 10h.01M15 10h.01M9 14h.01M15 14h.01" /></svg>,
   performance: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
 };
 
@@ -97,6 +99,16 @@ export function Sidebar() {
     return () => { window.removeEventListener('storage', read); window.removeEventListener('focus', read); };
   }, []);
 
+  // Only people in an organization, or invited to one, get the link — for
+  // everyone else it would lead to an empty page. Re-read on navigation so
+  // accepting or leaving updates the nav without a reload.
+  const [org, setOrg] = useState<Awaited<ReturnType<typeof myOrganizationSummary>>>(null);
+  useEffect(() => {
+    let live = true;
+    myOrganizationSummary().then((s) => { if (live) setOrg(s); }).catch(() => {});
+    return () => { live = false; };
+  }, [pathname]);
+
   return (
     <aside style={{ borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
       <div style={{ padding: '5px 10px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -146,6 +158,33 @@ export function Sidebar() {
           })}
         </div>
       ))}
+
+      {org && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', padding: '8px 10px 4px', textTransform: 'uppercase' as const }}>
+            MANAGE
+          </div>
+          <Link
+            href="/organization"
+            aria-current={pathname === '/organization' ? 'page' : undefined}
+            className="flex items-center gap-2.5"
+            style={{
+              padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600, textAlign: 'left' as const, width: '100%',
+              textDecoration: 'none',
+              background: pathname === '/organization' ? 'var(--brand-dim)' : 'transparent',
+              color: pathname === '/organization' ? 'var(--brand)' : 'var(--tx2)',
+            }}
+          >
+            {ICONS.org}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{org.name ?? 'Organization'}</span>
+            {org.invitations > 0 && (
+              <span aria-label={`${org.invitations} pending invitation${org.invitations === 1 ? '' : 's'}`} style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, background: 'var(--brand)', color: 'var(--bg)', borderRadius: 99, padding: '1px 6px' }}>
+                {org.invitations}
+              </span>
+            )}
+          </Link>
+        </div>
+      )}
 
       <button
         onClick={() => setRoadmapOpen((p) => !p)}

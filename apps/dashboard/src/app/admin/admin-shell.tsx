@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 
@@ -21,6 +22,40 @@ import { FONT_DISPLAY } from '@whiteroom/ui';
  * The two components staying separate is the feature, not duplication to be
  * tidied away later.
  */
+/** Sections of the panel, in the order they are drawn. */
+const NAV = [
+  {
+    href: '/admin',
+    label: 'Users',
+    icon: (
+      <>
+        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+      </>
+    ),
+  },
+  {
+    href: '/admin/organizations',
+    label: 'Organizations',
+    icon: (
+      <>
+        <path d="M3 21h18M5 21V7l7-4 7 4v14" />
+        <path d="M9 21v-4h6v4M9 10h.01M15 10h.01M9 14h.01M15 14h.01" />
+      </>
+    ),
+  },
+];
+
+/**
+ * Which nav item to light up. Most specific match wins: /admin prefixes every
+ * admin route, so matching per item would light Users up on every page.
+ */
+function activeHref(pathname: string): string | undefined {
+  return NAV.filter((item) => pathname === item.href || pathname.startsWith(item.href + '/'))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+}
+
 export function AdminShell({
   title,
   breadcrumb,
@@ -30,6 +65,8 @@ export function AdminShell({
   breadcrumb?: { href: string; label: string };
   children: React.ReactNode;
 }) {
+  const current = activeHref(usePathname());
+
   useEffect(() => {
     const stored = localStorage.getItem('wr_theme');
     if (stored === 'light' || stored === 'dark') {
@@ -58,21 +95,28 @@ export function AdminShell({
           </span>
         </div>
 
-        <Link
-          href="/admin"
-          className="flex items-center gap-2.5"
-          style={{
-            padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600,
-            textDecoration: 'none', background: 'var(--ho-bg)', color: 'var(--ho)',
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-          </svg>
-          <span>Users</span>
-        </Link>
+        {NAV.map((item) => {
+          const active = item.href === current;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className="flex items-center gap-2.5"
+              style={{
+                padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600,
+                textDecoration: 'none',
+                background: active ? 'var(--ho-bg)' : 'transparent',
+                color: active ? 'var(--ho)' : 'var(--tx2)',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {item.icon}
+              </svg>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
 
         <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 12, color: 'var(--tx3)' }}>
           Internal tools
