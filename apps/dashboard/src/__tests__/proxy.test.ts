@@ -65,9 +65,27 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
   it('redirects legacy routes to Citadel equivalents', () => {
     // /performance is NOT a legacy route -- Sidebar.tsx links it directly and
     // (citadel)/performance/page.tsx serves it live. Only /fleet and /sandbox
-    // were ever renamed.
+    // were ever renamed. It is session-protected, so checking that it isn't
+    // renamed needs a signed-in request; signed out it goes to /sign-in
+    // (covered below), which is a different question.
     expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
-    expect(verdict(proxy(req(APP, '/performance')))).toBe('pass');
+    expect(verdict(proxy(req(APP, '/performance', { withSession: true })))).toBe('pass');
+    expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
+  });
+
+  it('sends signed-out visitors on Citadel routes to sign-in', () => {
+    // Without this the Citadel pages rendered the fleet API-key card to a
+    // signed-out visitor instead of sending them to sign in.
+    for (const path of ['/agents', '/runs', '/performance', '/controls']) {
+      expect(verdict(proxy(req(APP, path)))).toBe('redirect:/sign-in');
+      expect(verdict(proxy(req(APP, path, { withSession: true })))).toBe('pass');
+    }
+  });
+
+  it('still redirects legacy routes before the session gate', () => {
+    // /fleet and /sandbox are renamed, not protected: a signed-out visitor is
+    // sent to the new path first, and only that path asks them to sign in.
+    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
     expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
   });
 
@@ -96,7 +114,7 @@ describe('the app host', () => {
   it('redirects legacy routes even with ADMIN_HOST set', () => {
     process.env.ADMIN_HOST = ADMIN;
     expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
-    expect(verdict(proxy(req(APP, '/performance')))).toBe('pass');
+    expect(verdict(proxy(req(APP, '/performance', { withSession: true })))).toBe('pass');
     expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
   });
 
