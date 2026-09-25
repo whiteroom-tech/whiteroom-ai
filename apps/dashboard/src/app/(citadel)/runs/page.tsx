@@ -330,7 +330,7 @@ export default function RunsPage() {
         <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
         <span style={{ marginLeft: 'auto' }} />
         <ThemeToggle />
-        <button onClick={() => { setAllEntries([]); setLoading(true); setLastUpdated(null); resetSession(); }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
+        <button onClick={() => { window.location.href = '/auth/sign-out'; }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
       </div>
 
       {/* Analytics content */}

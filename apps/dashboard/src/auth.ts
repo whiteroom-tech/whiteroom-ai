@@ -70,6 +70,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (!res.ok) {
+          const body = await res.text().catch(() => '(no body)');
+          console.error(`[auth] Resend API ${res.status}: ${body}`);
           throw new Error('Could not send the sign-in email.');
         }
       },

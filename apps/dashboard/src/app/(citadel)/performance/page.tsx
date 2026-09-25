@@ -1288,7 +1288,7 @@ export default function PerformancePage() {
           ))}
         </div>
         <ThemeToggle />
-        <button onClick={() => auth.resetSession()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
+        <button onClick={() => { window.location.href = '/auth/sign-out'; }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
       </div>
 
       {/* Content — dimmed while a range/agent fetch is in flight over data
