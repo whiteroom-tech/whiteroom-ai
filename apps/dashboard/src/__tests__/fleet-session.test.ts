@@ -37,6 +37,11 @@ vi.mock('@/lib/whiteroom/client', async (importOriginal) => {
   return { ...actual, tokenLogin: (...args: unknown[]) => mockTokenLogin(...args) };
 });
 
+// The signed-in next-auth user, or null for a raw token login. The fleet
+// cookie is bound to whoever this is when it's minted.
+const session = vi.hoisted(() => ({ current: null as { user: { id: string } } | null }));
+vi.mock('@/auth', () => ({ auth: async () => session.current }));
+
 const mockGetUserFleets = vi.fn();
 vi.mock('@/lib/user-fleets', () => ({
   getUserFleets: () => mockGetUserFleets(),
@@ -62,6 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   jar = new Map();
   setCalls = [];
+  session.current = null;
   fakeHeaders(`https://${HOST}`);
   mockGetUserFleets.mockResolvedValue([]);
 });
@@ -91,7 +97,7 @@ describe('POST /api/fleet/session', () => {
     // The token must never come back in the response body.
     expect(JSON.stringify(body)).not.toContain('ft-123');
 
-    expect(setCalls).toHaveLength(1);
+    expect(setCalls.map((c) => c.name)).toEqual(['wr_fleet_auth', 'wr_fleet_auth_owner']);
     const cookie = setCalls[0];
     expect(cookie.name).toBe('wr_fleet_auth');
     expect(cookie.value).toBe('ft-123');
@@ -145,8 +151,7 @@ describe('GET /api/fleet/session', () => {
     const res = await GET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ fleetId: 'prod-1' });
-    expect(setCalls).toHaveLength(1);
-    expect(setCalls[0].value).toBe('ft-prod');
+    expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-prod' });
     // fleet_id was known from the DB row — no engine round-trip needed.
     expect(mockTokenLogin).not.toHaveBeenCalled();
   });
@@ -170,10 +175,81 @@ describe('DELETE /api/fleet/session', () => {
     expect(jar.has('wr_fleet_auth')).toBe(true);
   });
 
-  it('clears the cookie', async () => {
+  it('clears the cookie and its owner', async () => {
     jar.set('wr_fleet_auth', 'ft-cookie');
+    jar.set('wr_fleet_auth_owner', 'u-alice');
     const res = await DELETE();
     expect(res.status).toBe(200);
     expect(jar.has('wr_fleet_auth')).toBe(false);
+    expect(jar.has('wr_fleet_auth_owner')).toBe(false);
+  });
+});
+
+// A fleet cookie that outlives its sign-out must not be inherited by the
+// next account to sign in on the same browser.
+describe('fleet cookie ownership', () => {
+  it('records the signed-in user as the owner', async () => {
+    session.current = { user: { id: 'u-alice' } };
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-1' });
+    await POST(postReq({ token: 'ft-123' }));
+    expect(jar.get('wr_fleet_auth_owner')).toBe('u-alice');
+  });
+
+  it('records a raw token login as anonymous', async () => {
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-1' });
+    await POST(postReq({ token: 'ft-123' }));
+    expect(jar.get('wr_fleet_auth_owner')).toBe('anon');
+  });
+
+  it('ignores a cookie minted for someone else and serves the current user\'s own fleet', async () => {
+    jar.set('wr_fleet_auth', 'ft-alice');
+    jar.set('wr_fleet_auth_owner', 'u-alice');
+    session.current = { user: { id: 'u-bob' } };
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-bob', fleet_id: 'bob-1', label: 'b', created_at: '' },
+    ]);
+
+    const res = await GET();
+    expect(await res.json()).toEqual({ fleetId: 'bob-1' });
+    expect(mockTokenLogin).not.toHaveBeenCalledWith('ft-alice');
+    // Bob's fleet replaces Alice's cookie, now owned by Bob.
+    expect(jar.get('wr_fleet_auth')).toBe('ft-bob');
+    expect(jar.get('wr_fleet_auth_owner')).toBe('u-bob');
+  });
+
+  it('401s rather than serving a stranger\'s fleet when the user has none of their own', async () => {
+    jar.set('wr_fleet_auth', 'ft-alice');
+    jar.set('wr_fleet_auth_owner', 'u-alice');
+    session.current = { user: { id: 'u-bob' } };
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(mockTokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('ignores an anonymous cookie once someone is signed in', async () => {
+    jar.set('wr_fleet_auth', 'ft-anon');
+    jar.set('wr_fleet_auth_owner', 'anon');
+    session.current = { user: { id: 'u-bob' } };
+    expect((await GET()).status).toBe(401);
+  });
+
+  it('keeps honouring the owner\'s own cookie', async () => {
+    jar.set('wr_fleet_auth', 'ft-alice');
+    jar.set('wr_fleet_auth_owner', 'u-alice');
+    session.current = { user: { id: 'u-alice' } };
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });
+    expect(await (await GET()).json()).toEqual({ fleetId: 'fleet-a' });
+  });
+
+  // Cookies minted before owners were recorded.
+  it('treats a pre-existing cookie as anonymous: kept for token logins, not for a signed-in user', async () => {
+    jar.set('wr_fleet_auth', 'ft-legacy');
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-l' });
+    expect(await (await GET()).json()).toEqual({ fleetId: 'fleet-l' });
+
+    session.current = { user: { id: 'u-bob' } };
+    mockTokenLogin.mockClear();
+    expect((await GET()).status).toBe(401);
+    expect(mockTokenLogin).not.toHaveBeenCalled();
   });
 });
