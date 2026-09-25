@@ -8,7 +8,7 @@ import 'server-only';
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { PROXY_URL } from '@/lib/whiteroom/client';
+import { fetchFleetUsage, type FleetUsage } from '@/lib/fleet-usage';
 import { effectivePlan, PLANS, type PlanId } from '@/lib/plans';
 import { fleetCountSql } from '@/lib/entitlements';
 
@@ -214,17 +214,7 @@ function toAdminUserRow(r: Record<string, unknown>): AdminUserRow {
 
 // -- User detail --
 
-export interface FleetUsage {
-  fleetId: string;
-  exists: boolean;
-  label: string | null;
-  agentCount?: number;
-  byStatus?: Record<string, number>;
-  lastHeartbeat?: string | null;
-  totalTasks?: number;
-  entitlement?: { plan: string; status: string; maxAgents: number };
-  spend?: { inputTokens: number; outputTokens: number; costMicros: number; calls: number };
-}
+export type { FleetUsage };
 
 export interface AdminUserDetail {
   user: AdminUserRow;
@@ -281,49 +271,4 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
     usageWindowDays: usage.windowDays,
     audit,
   };
-}
-
-/**
- * Asks the engine what these fleets are actually doing.
- *
- * Returns empty rather than throwing when the engine is unreachable or the
- * sync secret is unset: usage is the least important thing on an admin page,
- * and losing it should not take the subscription and account data down with
- * it.
- */
-async function fetchFleetUsage(fleetIds: string[]): Promise<{
-  byFleet: Map<string, Omit<FleetUsage, 'fleetId' | 'label'>>;
-  windowDays: number | null;
-}> {
-  const empty = { byFleet: new Map<string, Omit<FleetUsage, 'fleetId' | 'label'>>(), windowDays: null };
-  const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
-  if (!secret || fleetIds.length === 0) return empty;
-
-  try {
-    const res = await fetch(`${PROXY_URL}/internal/fleet-usage`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(10_000),
-      redirect: 'error',
-      headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
-      body: JSON.stringify({ fleetIds, sinceDays: 7 }),
-      cache: 'no-store',
-    });
-    if (!res.ok) {
-      console.error(`[admin] fleet-usage failed: HTTP ${res.status}`);
-      return empty;
-    }
-    const data = (await res.json()) as {
-      windowDays: number;
-      fleets: Array<Omit<FleetUsage, 'label'>>;
-    };
-    const byFleet = new Map<string, Omit<FleetUsage, 'fleetId' | 'label'>>();
-    for (const f of data.fleets) {
-      const { fleetId, ...rest } = f;
-      byFleet.set(fleetId, rest);
-    }
-    return { byFleet, windowDays: data.windowDays };
-  } catch (err) {
-    console.error('[admin] fleet-usage failed');
-    return empty;
-  }
 }

@@ -8,7 +8,7 @@ function adminHost(): string | undefined {
 
 const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth'];
 
-const SESSION_PROTECTED = ['/dashboard', '/settings', '/admin'];
+const SESSION_PROTECTED = ['/dashboard', '/settings', '/organization', '/admin'];
 const SESSION_PUBLIC_UNDER_SETTINGS = new Set(['/settings/confirm-email']);
 
 function isUnder(pathname: string, prefix: string): boolean {
