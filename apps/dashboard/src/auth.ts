@@ -70,8 +70,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (!res.ok) {
-          const body = await res.text().catch(() => '(no body)');
-          console.error(`[auth] Resend API ${res.status}: ${body}`);
+          // Status and Resend's error name only (e.g. validation_error): the
+          // body's message can echo the recipient's address, and upstream
+          // bodies are kept out of the logs everywhere else.
+          const detail = await res.json().then((b) => (typeof b?.name === 'string' ? b.name : ''), () => '');
+          console.error(`[auth] Resend API ${res.status}${detail ? ` ${detail}` : ''}`);
           throw new Error('Could not send the sign-in email.');
         }
       },
