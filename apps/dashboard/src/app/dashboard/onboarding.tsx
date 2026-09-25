@@ -219,7 +219,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab }: { apiKey: string; fleetI
 
 const PROVIDER_TABS: { key: ProviderTab; label: string; soon?: boolean }[] = [
   { key: 'direct', label: 'Anthropic / OpenAI' },
-  { key: 'azure', label: 'Azure OpenAI' },
+  { key: 'azure', label: 'Azure OpenAI', soon: true },
   { key: 'aws', label: 'AWS Bedrock', soon: true },
 ];
 
