@@ -379,6 +379,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
         <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
           <a
             href="/agents"
+            target="_blank"
+            rel="noopener noreferrer"
             className="rounded-xl p-6 flex items-center gap-4 transition-all group"
             style={{ background: '#0A1020', border: '1px solid #1B2740', textDecoration: 'none' }}
           >

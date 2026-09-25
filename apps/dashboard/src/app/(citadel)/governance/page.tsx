@@ -205,6 +205,226 @@ function TagInput({ tags, onAdd, onRemove, placeholder }: {
   );
 }
 
+// ── Model picker ──────────────────────────────────────────────────
+
+const MODEL_GROUPS: { provider: string; models: { id: string; label: string }[] }[] = [
+  {
+    provider: "Anthropic",
+    models: [
+      { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+      { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+      { id: "claude-opus-4-20250514", label: "Claude Opus 4" },
+      { id: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
+    ],
+  },
+  {
+    provider: "OpenAI",
+    models: [
+      { id: "gpt-4o", label: "GPT-4o" },
+      { id: "gpt-4o-mini", label: "GPT-4o Mini" },
+      { id: "gpt-4.1", label: "GPT-4.1" },
+      { id: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
+      { id: "gpt-4.1-nano", label: "GPT-4.1 Nano" },
+      { id: "o3", label: "o3" },
+      { id: "o4-mini", label: "o4-mini" },
+    ],
+  },
+  {
+    provider: "Google",
+    models: [
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+    ],
+  },
+  {
+    provider: "AWS Bedrock",
+    models: [
+      { id: "anthropic.claude-sonnet-4-20250514-v1:0", label: "Claude Sonnet 4" },
+      { id: "anthropic.claude-3-5-sonnet-20241022-v2:0", label: "Claude 3.5 Sonnet v2" },
+      { id: "anthropic.claude-haiku-4-5-20251001-v1:0", label: "Claude Haiku 4.5" },
+      { id: "amazon.nova-pro-v1:0", label: "Nova Pro" },
+      { id: "amazon.nova-lite-v1:0", label: "Nova Lite" },
+    ],
+  },
+  {
+    provider: "Azure OpenAI",
+    models: [
+      { id: "azure/gpt-4o", label: "GPT-4o (via Azure)" },
+      { id: "azure/gpt-4o-mini", label: "GPT-4o Mini (via Azure)" },
+      { id: "azure/gpt-4.1", label: "GPT-4.1 (via Azure)" },
+    ],
+  },
+];
+
+const ALL_KNOWN_MODELS = MODEL_GROUPS.flatMap((g) => g.models);
+
+function ModelPicker({ tags, onAdd, onRemove }: {
+  tags: string[];
+  onAdd: (tag: string) => void;
+  onRemove: (tag: string) => void;
+}) {
+  const [showCustom, setShowCustom] = useState(false);
+  const [customInput, setCustomInput] = useState("");
+  const tagSet = new Set(tags);
+
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
+      {tags.map((t) => {
+        const known = ALL_KNOWN_MODELS.find((m) => m.id === t);
+        return (
+          <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+            {known ? known.label : t}
+            <button onClick={() => onRemove(t)} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+          </span>
+        );
+      })}
+      {showCustom ? (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          <input
+            autoFocus
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value.slice(0, 64))}
+            onKeyDown={(e) => {
+              const trimmed = customInput.trim();
+              if (e.key === "Enter" && trimmed) {
+                if (!tagSet.has(trimmed)) onAdd(trimmed);
+                setCustomInput("");
+                setShowCustom(false);
+                e.preventDefault();
+              }
+              if (e.key === "Escape") { setShowCustom(false); setCustomInput(""); }
+            }}
+            onBlur={() => { setShowCustom(false); setCustomInput(""); }}
+            placeholder="deployment name or model ID"
+            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, width: 200, outline: "none" }}
+          />
+        </span>
+      ) : (
+        <select
+          value=""
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "__custom__") {
+              setShowCustom(true);
+            } else if (val && !tagSet.has(val)) {
+              onAdd(val);
+            }
+          }}
+          style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
+        >
+          <option value="">+ add model</option>
+          {MODEL_GROUPS.map((g) => {
+            const available = g.models.filter((m) => !tagSet.has(m.id));
+            if (available.length === 0) return null;
+            return (
+              <optgroup key={g.provider} label={g.provider}>
+                {available.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </optgroup>
+            );
+          })}
+          <option value="__custom__">Other (type deployment name or model ID)...</option>
+        </select>
+      )}
+    </span>
+  );
+}
+
+// ── Tool picker ───────────────────────────────────────────────────
+
+const TOOL_GROUPS: { category: string; tools: string[] }[] = [
+  {
+    category: "File & code",
+    tools: ["read_file", "write_file", "list_directory", "search_files", "edit_file"],
+  },
+  {
+    category: "Web & API",
+    tools: ["http_request", "fetch_url", "web_search", "api_call"],
+  },
+  {
+    category: "Execution",
+    tools: ["run_command", "execute_code", "shell", "bash"],
+  },
+  {
+    category: "Memory & state",
+    tools: ["get_memory", "set_memory", "read_context", "save_state"],
+  },
+];
+
+const ALL_KNOWN_TOOLS = TOOL_GROUPS.flatMap((g) => g.tools);
+
+function ToolPicker({ tags, onAdd, onRemove }: {
+  tags: string[];
+  onAdd: (tag: string) => void;
+  onRemove: (tag: string) => void;
+}) {
+  const [showCustom, setShowCustom] = useState(false);
+  const [customInput, setCustomInput] = useState("");
+  const tagSet = new Set(tags);
+
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
+      {tags.map((t) => (
+        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+          {t}
+          <button onClick={() => onRemove(t)} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+        </span>
+      ))}
+      {showCustom ? (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          <input
+            autoFocus
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value.slice(0, 64))}
+            onKeyDown={(e) => {
+              const trimmed = customInput.trim();
+              if (e.key === "Enter" && trimmed) {
+                if (!tagSet.has(trimmed)) onAdd(trimmed);
+                setCustomInput("");
+                setShowCustom(false);
+                e.preventDefault();
+              }
+              if (e.key === "Escape") { setShowCustom(false); setCustomInput(""); }
+            }}
+            onBlur={() => { setShowCustom(false); setCustomInput(""); }}
+            placeholder="tool name"
+            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, width: 140, outline: "none" }}
+          />
+        </span>
+      ) : (
+        <select
+          value=""
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "__custom__") {
+              setShowCustom(true);
+            } else if (val && !tagSet.has(val)) {
+              onAdd(val);
+            }
+          }}
+          style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
+        >
+          <option value="">+ add tool</option>
+          {TOOL_GROUPS.map((g) => {
+            const available = g.tools.filter((t) => !tagSet.has(t));
+            if (available.length === 0) return null;
+            return (
+              <optgroup key={g.category} label={g.category}>
+                {available.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </optgroup>
+            );
+          })}
+          <option value="__custom__">Other (type tool name)...</option>
+        </select>
+      )}
+    </span>
+  );
+}
+
 // ── Inline number input (debounced) ───────────────────────────────
 
 function InlineNumber({ value, onChange }: { value: number; onChange: (n: number) => void }) {
@@ -437,7 +657,7 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                             <option value="day">day</option>
                           </select>
                           . Ignore:{" "}
-                          <TagInput
+                          <ToolPicker
                             tags={p.ignoreTools}
                             onAdd={(t) => {
                               if (!p.ignoreTools.includes(t)) updateParams(rt, { ...p, ignoreTools: [...p.ignoreTools, t] });
@@ -452,13 +672,12 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                       return (
                         <span>
                           Only allow these models:{" "}
-                          <TagInput
+                          <ModelPicker
                             tags={p.allowedModels}
                             onAdd={(t) => {
                               if (!p.allowedModels.includes(t)) updateParams(rt, { ...p, allowedModels: [...p.allowedModels, t] });
                             }}
                             onRemove={(t) => updateParams(rt, { ...p, allowedModels: p.allowedModels.filter((x) => x !== t) })}
-                            placeholder="+ add"
                           />
                         </span>
                       );
