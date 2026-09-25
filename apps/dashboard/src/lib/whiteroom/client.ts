@@ -308,11 +308,15 @@ export function storeProviderKey(
   auth: FleetAuth,
   providerKey: string,
   endpoint?: string,
+  provider?: string,
 ): Promise<StoreKeyResult> {
   return keyCall<StoreKeyResult>(auth, {
     action: 'store_key',
     api_key: providerKey,
     ...(endpoint && { llm_endpoint: endpoint }),
+    // Azure keys are opaque, so the engine can't infer the provider from the
+    // key's prefix the way it does for sk-ant- / sk- keys — it has to be named.
+    ...(provider && { provider }),
   });
 }
 
