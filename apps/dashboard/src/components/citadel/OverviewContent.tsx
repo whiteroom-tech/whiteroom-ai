@@ -193,6 +193,10 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     setAgents(prev => prev.map(a => a.agentId === agentId ? { ...a, status: 'resting' } : a));
     try {
       await pauseAgentApi(fleetId, agentId, authKey);
+      setActionNotice('');
+    } catch (e) {
+      // refresh() below restores the real status the optimistic update hid.
+      setActionNotice(`Could not pause ${agentId}: ${e instanceof Error ? e.message : 'request failed'}`);
     } finally {
       // refresh() also invalidates any in-flight poll so a slow, older
       // response can't revert the optimistic status above.
@@ -207,6 +211,9 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
     setAgents(prev => prev.map(a => a.agentId === agentId ? { ...a, status: 'working' } : a));
     try {
       await resumeAgentApi(fleetId, agentId, authKey);
+      setActionNotice('');
+    } catch (e) {
+      setActionNotice(`Could not resume ${agentId}: ${e instanceof Error ? e.message : 'request failed'}`);
     } finally {
       refresh();
       setAgentActionLoading(prev => ({ ...prev, [agentId]: false }));
