@@ -42,5 +42,6 @@ export function clearFleetCredentials(): void {
   safeRemove('wr_fleet');
   safeRemove('wr_fleet_token');
   // Deliberately does NOT touch `wr_sandbox_token`: the sandbox session has
-  // its own lifecycle and must survive a fleet sign-out.
+  // its own lifecycle and must survive a fleet sign-out. Account sign-out
+  // clears it separately (app/auth/sign-out).
 }

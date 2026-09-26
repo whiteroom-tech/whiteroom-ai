@@ -6,7 +6,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { createRun, getStatus, getReport, destroyRun, startDemo, type RunStatusResult, type ReportResult, type DemoStep } from '@/lib/sandbox/api';
+import { clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult, type DemoStep } from '@/lib/sandbox/api';
 import s from './guided.module.css';
 
 type Phase = 'start' | 'setup' | 'workspace';
@@ -30,15 +30,6 @@ export function connectionRecipe(provider: Provider, fleetId: string, agentId: s
   return provider === 'openai'
     ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
     : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
-}
-
-// A leftover sandbox token would keep shadowing fleet auth in bffFetch long
-// after the run is gone, so clear it whenever the sandbox no longer exists.
-function clearSandboxToken() {
-  try {
-    localStorage.removeItem('wr_sandbox_token');
-    window.dispatchEvent(new Event('storage'));
-  } catch { /* localStorage unavailable */ }
 }
 
 function connectionVerified(status: RunStatusResult | null) {
@@ -180,6 +171,9 @@ export function TestRunFlow() {
   useEffect(() => {
     const owner = session?.user?.id;
     if (ownerRef.current !== owner) {
+      // A different account signed in on this browser: the stored sandbox
+      // token belongs to the previous one.
+      if (ownerRef.current && owner) clearSandboxToken();
       ownerRef.current = owner;
       setRun(null); setReport(null); setKey(''); setDemo([]); setPhase('start'); setBooting(true); setSetupMode(null);
     }
@@ -189,7 +183,7 @@ export function TestRunFlow() {
       if (disposed) return;
       if (st.error) throw new Error(st.error);
       if (st.sandboxId) {
-        setRun(st);
+        setRun(withRunMode(st));
         setPhase('workspace');
         setWsTab(connectionVerified(st) || st.mode === 'demo' || st.expiresInSeconds === 0 ? 'results' : 'setup');
       }
@@ -221,7 +215,7 @@ export function TestRunFlow() {
           setError('This test session is no longer available. You can start another test; previously exported results remain on your device.');
           setRun(null); setPhase('start'); setSetupMode(null); return;
         }
-        setRun(st); setLastUpdated(new Date()); setReconnecting(false); failures = 0;
+        setRun(prev => withRunMode(st, prev?.mode)); setLastUpdated(new Date()); setReconnecting(false); failures = 0;
         if (st.expiresInSeconds === 0) setWsTab('results');
       } catch { if (!disposed) { setReconnecting(true); failures++; } }
       finally {
@@ -330,12 +324,9 @@ export function TestRunFlow() {
 
   const begin = (mode: 'demo' | 'connected') => act(async () => {
     try {
-      if (mode === 'connected' && setupMode === 'fleet' && fleetTokenInput.trim()) {
-        localStorage.setItem('wr_sandbox_token', fleetTokenInput.trim());
-        window.dispatchEvent(new Event('storage'));
-      }
+      const pastedToken = mode === 'connected' && setupMode === 'fleet' ? fleetTokenInput.trim() || undefined : undefined;
       const apiKey = mode === 'connected' && setupMode === 'apikey' ? key.trim() : undefined;
-      const result = await createRun({ mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' });
+      const result = await createRun({ mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' }, pastedToken);
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
       if (result.fleetToken) {
         localStorage.setItem('wr_sandbox_token', result.fleetToken);

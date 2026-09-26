@@ -87,13 +87,42 @@ export interface ReportResult {
   error?: string;
 }
 
-function fleetToken(): string | null {
-  try { return localStorage.getItem('wr_sandbox_token') || localStorage.getItem('wr_fleet_token') || localStorage.getItem('wr_token'); }
+// Only the short-lived sandbox token is ever read from storage. A production
+// fleet token belongs in the httpOnly cookie, which the BFF falls back to when
+// no header is sent.
+function sandboxToken(): string | null {
+  try { return localStorage.getItem('wr_sandbox_token'); }
   catch { return null; }
 }
 
-async function bffFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const token = fleetToken();
+/**
+ * Removes the stored sandbox token. A leftover one would keep shadowing fleet
+ * auth in bffFetch long after the run is gone — or after the account that
+ * created it has signed out — so clear it whenever either ends.
+ */
+export function clearSandboxToken(): void {
+  try {
+    localStorage.removeItem('wr_sandbox_token');
+    window.dispatchEvent(new Event('storage'));
+  } catch { /* localStorage unavailable */ }
+}
+
+/**
+ * The engine records a demo as a trial sandbox; status responses carry that
+ * as isTrial. Falls back to the mode the run was created with for an engine
+ * that doesn't report it yet, so a demo is never relabelled as a live test.
+ */
+export function withRunMode<T extends { mode?: "demo" | "connected"; isTrial?: boolean }>(
+  st: T,
+  previous?: "demo" | "connected",
+): T & { mode?: "demo" | "connected" } {
+  if (st.mode) return st;
+  if (typeof st.isTrial === "boolean") return { ...st, mode: st.isTrial ? "demo" : "connected" };
+  return previous ? { ...st, mode: previous } : st;
+}
+
+async function bffFetch<T>(path: string, opts?: RequestInit, explicitToken?: string): Promise<T> {
+  const token = explicitToken || sandboxToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["x-fleet-token"] = token;
   const res = await fetch(`/api/sandbox/${path}`, {
@@ -113,11 +142,12 @@ export function createRun(opts: {
   selectedCatalogIds?: string[];
   customControls?: CustomControlInput[];
   policyMode?: "observe" | "enforce";
-}): Promise<{ success?: boolean; sandboxId?: string; fleetToken?: string; expiresAt?: string; mode?: "demo" | "connected"; controls?: ControlDefinition[]; error?: string }> {
+}, fleetToken?: string): Promise<{ success?: boolean; sandboxId?: string; fleetToken?: string; expiresAt?: string; mode?: "demo" | "connected"; controls?: ControlDefinition[]; error?: string }> {
+  // A pasted fleet token authenticates this one request and is never stored.
   return bffFetch("runs", {
     method: "POST",
     body: JSON.stringify(opts),
-  });
+  }, fleetToken);
 }
 
 export function getStatus(): Promise<RunStatusResult> {
