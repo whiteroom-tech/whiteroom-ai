@@ -14,6 +14,11 @@ function authHeaders(key?: string): Record<string, string> {
     if (key.startsWith("sk-")) h["x-api-key"] = key;
     else h["Authorization"] = `Bearer ${key}`;
   }
+  // Proves to the engine that the user_id in the body was set by this server
+  // from the signed-in session; without it the engine refuses to look a
+  // sandbox up by user or act for one.
+  const serviceSecret = process.env.WR_SANDBOX_SERVICE_SECRET;
+  if (serviceSecret) h["x-wr-sandbox-secret"] = serviceSecret;
   return h;
 }
 
