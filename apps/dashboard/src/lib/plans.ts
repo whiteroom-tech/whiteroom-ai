@@ -115,6 +115,27 @@ export function stripePriceId(plan: PlanId): string | null {
   }
 }
 
+/**
+ * Paid plans a user can actually buy right now: Stripe is configured and the
+ * plan has a price. Empty in an environment without Stripe, so the settings
+ * page offers nothing that would only end in an error.
+ */
+export function purchasablePlans(): PlanId[] {
+  if (!process.env.STRIPE_SECRET_KEY) return [];
+  return PLAN_IDS.filter((p) => p !== 'free' && stripePriceId(p) !== null);
+}
+
+/**
+ * Whether a subscription row is backed by a Stripe subscription that is still
+ * billing. Such a customer changes plan in the portal; a second Checkout would
+ * attach a second subscription to the same customer.
+ */
+export function hasLiveSubscription(
+  row: { stripeSubscriptionId?: string | null; status: string } | null | undefined,
+): boolean {
+  return !!row?.stripeSubscriptionId && isActiveStatus(row.status);
+}
+
 /** Reverse of stripePriceId, for reading a subscription back off a webhook. */
 export function planForPriceId(priceId: string | null | undefined): PlanId {
   if (!priceId) return 'free';
