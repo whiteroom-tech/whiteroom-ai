@@ -823,7 +823,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
-  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => void;
+  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => Promise<boolean>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
 }) {
@@ -874,6 +874,13 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   }, [fleetId, authKey, recStatus, recAgentQuery]);
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
+
+  // The list is owned here, not by the parent's index refresh, so reload it
+  // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
+  // its old status and buttons until a filter changes (audit F16).
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => {
+    if (await onFeedback(recId, findingVersion, action, reason)) void fetchRecs();
+  };
 
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
   const toggleMetric = (m: string) => setExpandedMetric(prev => prev === m ? null : m);
@@ -950,9 +957,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
                 <Btn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
                 {rec.status === 'open' && (
                   <>
-                    <Btn label="Snooze" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Dismiss" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Implemented" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
+                    <Btn label="Snooze" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
+                    <Btn label="Dismiss" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
+                    <Btn label="Implemented" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
                   </>
                 )}
               </div>
@@ -1303,20 +1310,23 @@ export default function PerformancePage() {
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) {
-    if (!fleetId) return;
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> {
+    if (!fleetId) return false;
     setFeedbackLoading(recId);
     setFeedbackError(null);
     try {
-      await performanceFeedback(fleetId, {
+      const res = await performanceFeedback(fleetId, {
         recommendationId: recId, findingVersion, action, reason,
         snoozeDays: action === 'snooze' ? 7 : undefined,
         idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }, authKey);
+      if (res.error) throw new Error(res.error);
       fetchIndex();
+      return true;
     } catch {
       setError('Failed to submit feedback.');
       setFeedbackError({ recId, message: 'Failed to submit feedback. Try again.' });
+      return false;
     }
     finally { setFeedbackLoading(null); }
   }
