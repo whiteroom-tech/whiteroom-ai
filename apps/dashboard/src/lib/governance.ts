@@ -26,6 +26,19 @@ export const REASON_LABELS: Record<string, string> = {
   model_not_allowed: 'model not allowed',
 };
 
+/** Blended rate the engine applies to dollar spend caps: $0.003 per 1K tokens. */
+export const BLENDED_USD_PER_TOKEN = 0.003 / 1000;
+
+/**
+ * Converts a spend cap between units at the blended rate. Dollars round to
+ * cents and tokens to whole tokens, never below the smallest positive value
+ * (the engine rejects a zero cap), so a small cap is never silently replaced.
+ */
+export function convertSpendCap(cap: number, to: 'tokens' | 'dollars'): number {
+  if (to === 'dollars') return Math.max(0.01, Math.round(cap * BLENDED_USD_PER_TOKEN * 100) / 100);
+  return Math.max(1, Math.round(cap / BLENDED_USD_PER_TOKEN));
+}
+
 export function ruleLabel(ruleType: unknown): string {
   return RULE_LABELS[ruleType as GovernanceRuleType] ?? 'Governance rule';
 }

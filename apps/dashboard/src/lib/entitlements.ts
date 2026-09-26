@@ -153,21 +153,21 @@ export async function enqueueEntitlementSync(
  * to ask, which is what keeps the proxy hot path free of a cross-service
  * round trip.
  *
- * Failures are logged and swallowed. A Stripe webhook that 500s because the
- * engine happened to be redeploying would be retried by Stripe and re-apply a
- * payment that already succeeded; the engine re-reads entitlements from its
- * own table at boot, so a missed push self-heals on the next sync rather than
- * needing this one to succeed.
+ * Never throws: a Stripe webhook that 500s because the engine happened to be
+ * redeploying would be retried by Stripe and re-apply a payment that already
+ * succeeded. Instead it returns whether the engine acknowledged the push, and
+ * callers that need delivery (the outbox sweep) must check it — the engine
+ * only knows what it was last sent, so nothing else re-sends a missed push.
  */
-export async function syncEntitlementsToEngine(userId: string): Promise<void> {
+export async function syncEntitlementsToEngine(userId: string): Promise<boolean> {
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   if (!secret) {
     console.warn('[entitlements] WR_ENTITLEMENT_SYNC_SECRET unset — skipping engine sync');
-    return;
+    return false;
   }
 
   const [sub, fleetIds] = await Promise.all([getSubscriptionRow(userId), fleetIdsFor(userId)]);
-  if (fleetIds.length === 0) return;
+  if (fleetIds.length === 0) return true;
 
   const plan = effectivePlan(sub);
   const limits = limitsFor(plan);
@@ -194,9 +194,12 @@ export async function syncEntitlementsToEngine(userId: string): Promise<void> {
     });
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error('[entitlements] engine sync failed');
+    return false;
   }
 }
 

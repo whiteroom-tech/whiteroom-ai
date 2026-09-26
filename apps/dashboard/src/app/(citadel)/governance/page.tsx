@@ -22,7 +22,7 @@ import type {
   ModelAllowlistParams,
   SpendCapParams,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, convertSpendCap, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { FONT_MONO } from "@whiteroom/ui";
@@ -417,7 +417,7 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
 
 // ── Inline number input (debounced) ───────────────────────────────
 
-function InlineNumber({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+function InlineNumber({ value, onChange, allowDecimals = false }: { value: number; onChange: (n: number) => void; allowDecimals?: boolean }) {
   const [draft, setDraft] = useState(value.toLocaleString());
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -430,7 +430,8 @@ function InlineNumber({ value, onChange }: { value: number; onChange: (n: number
       value={draft}
       onChange={(e) => {
         setDraft(e.target.value);
-        const n = parseInt(e.target.value.replace(/,/g, ""), 10);
+        const raw = e.target.value.replace(/,/g, "");
+        const n = allowDecimals ? Number(raw) : parseInt(raw, 10);
         if (!isNaN(n) && n > 0) {
           clearTimeout(timer.current);
           timer.current = setTimeout(() => onChange(n), 300);
@@ -604,12 +605,11 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
         <span>
           Stop an agent that spends more than{" "}
           {p.unit === "dollars" && <span style={{ color: "#67e8f9", fontFamily: FONT_MONO }}>$</span>}
-          <InlineNumber value={p.dailyCap} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
+          <InlineNumber value={p.dailyCap} allowDecimals={p.unit === "dollars"} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
           {" "}
           <select value={p.unit} onChange={(e) => {
             const newUnit = e.target.value as "tokens" | "dollars";
-            const converted = newUnit === "dollars" ? Math.round(p.dailyCap * 0.003 * 100) / 100 : Math.round(p.dailyCap / 0.003);
-            updateParams(rule.id, { unit: newUnit, dailyCap: converted || (newUnit === "dollars" ? 5 : 50000) });
+            updateParams(rule.id, { unit: newUnit, dailyCap: convertSpendCap(p.dailyCap, newUnit) });
           }} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
             <option value="tokens">tokens</option>
             <option value="dollars">dollars</option>
