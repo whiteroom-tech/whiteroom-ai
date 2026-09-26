@@ -90,7 +90,6 @@ const SOON_ITEMS: SoonItem[] = [
   { label: 'Compliance', icon: ICONS.compliance },
   { label: 'Eval results', icon: ICONS.eval, group: 'Evaluation' },
   { label: 'Builder', icon: ICONS.builder },
-  { label: 'Settings', icon: ICONS.settings, group: 'Manage' },
 ];
 
 export function Sidebar() {
@@ -171,11 +170,27 @@ export function Sidebar() {
         </div>
       ))}
 
-      {org && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', padding: '8px 10px 4px', textTransform: 'uppercase' as const }}>
-            MANAGE
-          </div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', padding: '8px 10px 4px', textTransform: 'uppercase' as const }}>
+          MANAGE
+        </div>
+        {/* Profile, billing, sign-in methods and sign-out everywhere live
+            here; it used to sit under "Coming soon" with no link at all. */}
+        <Link
+          href="/settings"
+          aria-current={pathname === '/settings' ? 'page' : undefined}
+          className="flex items-center gap-2.5"
+          style={{
+            padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600, textAlign: 'left' as const, width: '100%',
+            textDecoration: 'none',
+            background: pathname === '/settings' ? 'var(--brand-dim)' : 'transparent',
+            color: pathname === '/settings' ? 'var(--brand)' : 'var(--tx2)',
+          }}
+        >
+          {ICONS.settings}
+          <span>Settings</span>
+        </Link>
+        {org && (
           <Link
             href="/organization"
             aria-current={pathname === '/organization' ? 'page' : undefined}
@@ -195,8 +210,8 @@ export function Sidebar() {
               </span>
             )}
           </Link>
-        </div>
-      )}
+        )}
+      </div>
 
       <button
         onClick={() => setRoadmapOpen((p) => !p)}

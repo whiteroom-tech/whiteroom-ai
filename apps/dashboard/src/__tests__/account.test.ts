@@ -14,11 +14,11 @@ vi.mock('@/auth', () => ({
   signOut: vi.fn(),
   handlers: {},
 }));
-vi.mock('@/lib/db', () => ({ db: () => ({ query }) }));
+vi.mock('@/lib/db', () => ({ db: () => ({ query, connect: async () => ({ query, release: () => {} }) }) }));
 vi.mock('@/lib/email', () => ({ sendEmail: vi.fn(async () => {}), EMAIL_FROM: 'x' }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers({ host: 'app.whiteroom.tech' }) }));
 
-const { getAccountOverview, unlinkProvider } = await import('@/lib/account');
+const { deleteAccount, getAccountOverview, unlinkProvider } = await import('@/lib/account');
 
 const USER = { id: 'u1', email: 'nyan@whiteroom.tech', name: 'N', image: null, timezone: null, emailVerified: new Date() };
 
@@ -96,5 +96,41 @@ describe('the last sign-in method', () => {
     const res = await unlinkProvider('email');
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('cannot be removed');
+  });
+});
+
+describe('deleteAccount safeguards', () => {
+  /** Answers each query by its SQL, so the order of checks doesn't matter. */
+  function respond(over: { subscription?: Record<string, unknown>; ownedOrgs?: string[]; stranded?: string[] }) {
+    query.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: USER.email }] };
+      if (sql.includes('FROM subscriptions')) return { rows: over.subscription ? [over.subscription] : [] };
+      if (sql.startsWith('SELECT org_id FROM organization_members')) return { rows: (over.ownedOrgs ?? []).map((org_id) => ({ org_id })) };
+      if (sql.includes('FROM organizations o')) return { rows: (over.stranded ?? []).map((name) => ({ name })) };
+      return { rows: [], rowCount: 0 };
+    });
+  }
+  const deletedUser = () => query.mock.calls.some((c) => String(c[0]).startsWith('DELETE FROM users'));
+
+  it('refuses while a Stripe subscription is still billing (F07)', async () => {
+    respond({ subscription: { stripe_subscription_id: 'sub_1', status: 'active' } });
+    const res = await deleteAccount(USER.email);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('Cancel your subscription');
+    expect(deletedUser()).toBe(false);
+  });
+
+  it('refuses the only owner of an organization with other members (F21)', async () => {
+    respond({ ownedOrgs: ['org-1'], stranded: ['Acme'] });
+    const res = await deleteAccount(USER.email);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('only owner of Acme');
+    expect(deletedUser()).toBe(false);
+  });
+
+  it('deletes when neither applies', async () => {
+    respond({ subscription: { stripe_subscription_id: 'sub_1', status: 'canceled' }, ownedOrgs: ['org-1'], stranded: [] });
+    await deleteAccount(USER.email);
+    expect(deletedUser()).toBe(true);
   });
 });

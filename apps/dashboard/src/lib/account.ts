@@ -6,6 +6,7 @@ import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
+import { isActiveStatus } from '@/lib/plans';
 
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
 
@@ -337,6 +338,48 @@ export async function confirmEmailChange(token: string): Promise<
 
 // -- Deletion --
 
+type Queryable = { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
+
+/**
+ * Why this account can't be deleted yet, or null. Runs inside the deletion
+ * transaction, with the same organization locks leaveOrganization takes.
+ *
+ * - A live Stripe subscription would keep billing after the row that links
+ *   it to a person is gone, leaving no way back to the billing portal
+ *   (audit F07). Cancel first.
+ * - Deleting the only owner of an organization that has other members
+ *   cascades the membership away and leaves nobody able to manage it — the
+ *   rule leave/remove/demote already enforce (audit F21).
+ */
+async function deletionBlocker(q: Queryable, userId: string): Promise<string | null> {
+  const { rows: sub } = await q.query(
+    `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`,
+    [userId],
+  );
+  if (sub[0]?.stripe_subscription_id && isActiveStatus(String(sub[0].status))) {
+    return 'Cancel your subscription in Manage billing before deleting your account.';
+  }
+
+  const { rows: owned } = await q.query(
+    `SELECT org_id FROM organization_members WHERE user_id = $1 AND role = 'owner' AND status = 'active'`,
+    [userId],
+  );
+  const orgIds = owned.map((r) => r.org_id);
+  if (orgIds.length === 0) return null;
+
+  await q.query(`SELECT id FROM organizations WHERE id = ANY($1) FOR UPDATE`, [orgIds]);
+  const { rows: stranded } = await q.query(
+    `SELECT o.name FROM organizations o
+     WHERE o.id = ANY($1)
+       AND NOT EXISTS (SELECT 1 FROM organization_members m
+                       WHERE m.org_id = o.id AND m.user_id <> $2 AND m.role = 'owner' AND m.status = 'active')
+       AND EXISTS (SELECT 1 FROM organization_members m WHERE m.org_id = o.id AND m.user_id <> $2)`,
+    [orgIds, userId],
+  );
+  if (stranded.length === 0) return null;
+  return `You're the only owner of ${stranded[0].name ?? 'your organization'}. Make someone else an owner before deleting your account.`;
+}
+
 /**
  * Deletes the account and everything the dashboard holds for it.
  *
@@ -359,6 +402,14 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
   const client = await db().connect();
   try {
     await client.query('BEGIN');
+
+    const blocked = await deletionBlocker(client, userId);
+    if (blocked) {
+      await client.query('ROLLBACK');
+      client.release();
+      return { ok: false, error: blocked };
+    }
+
     // user_fleets predates the adapter migration and its foreign key may not
     // cascade, so clear it explicitly rather than relying on the constraint.
     await client.query(`DELETE FROM user_fleets WHERE user_id = $1`, [userId]);
