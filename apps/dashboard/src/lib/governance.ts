@@ -99,7 +99,7 @@ export interface GovernanceSuggestions {
   onlyModels: string[] | null;
 }
 
-/** The Controls page's "Suggested" cards, computed from real traffic. */
+/** The Controls page's "Suggested" cards, computed from the last 14 days of traffic. */
 export function computeSuggestions(index: PerformanceIndexResult, hourly: FleetHourlyResult): GovernanceSuggestions {
   let input = 0;
   let cached = 0;
