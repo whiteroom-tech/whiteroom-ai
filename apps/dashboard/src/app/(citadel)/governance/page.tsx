@@ -17,12 +17,15 @@ interface ModelAllowlistParams { allowedModels: string[] }
 
 type AnyRuleParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams;
 
+type RuleScope = "all" | string[];
+
 interface FleetRule {
   id: string;
   fleetId: string;
   ruleType: RuleType;
   params: AnyRuleParams;
   mode: RuleMode;
+  appliesTo: RuleScope;
   version: number;
   changedBy: string;
   changedAt: string;
@@ -44,7 +47,7 @@ function readStore(fleetId: string): FleetRule[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return (JSON.parse(raw) as FleetRule[]).filter((r) => r.fleetId === fleetId);
+    return (JSON.parse(raw) as FleetRule[]).filter((r) => r.fleetId === fleetId).map((r) => ({ ...r, appliesTo: r.appliesTo ?? "all" }));
   } catch { return []; }
 }
 
@@ -81,22 +84,69 @@ const DEFAULT_PARAMS: Record<RuleType, AnyRuleParams> = {
   model_allowlist: { allowedModels: [] },
 };
 
-function mockSetRule(fleetId: string, ruleType: RuleType, mode: RuleMode, params?: AnyRuleParams): FleetRule {
-  const existing = readStore(fleetId);
-  const prev = existing.find((r) => r.ruleType === ruleType);
+let ruleCounter = Date.now();
+
+function mockCreateRule(fleetId: string, ruleType: RuleType): FleetRule {
   const rule: FleetRule = {
-    id: prev?.id ?? `rule_${fleetId}_${ruleType}`,
+    id: `rule_${fleetId}_${ruleType}_${++ruleCounter}`,
     fleetId,
     ruleType,
-    params: params ?? prev?.params ?? DEFAULT_PARAMS[ruleType],
-    mode,
-    version: (prev?.version ?? 0) + 1,
+    params: structuredClone(DEFAULT_PARAMS[ruleType]),
+    mode: "off",
+    appliesTo: "all",
+    version: 1,
     changedBy: "dashboard",
     changedAt: new Date().toISOString(),
   };
-  const updated = prev ? existing.map((r) => (r.ruleType === ruleType ? rule : r)) : [...existing, rule];
-  writeStore(fleetId, updated);
+  const existing = readStore(fleetId);
+  writeStore(fleetId, [...existing, rule]);
   return rule;
+}
+
+function mockUpdateRule(fleetId: string, ruleId: string, updates: Partial<Pick<FleetRule, "mode" | "params" | "appliesTo">>): FleetRule {
+  const existing = readStore(fleetId);
+  const prev = existing.find((r) => r.id === ruleId);
+  if (!prev) throw new Error(`Rule ${ruleId} not found`);
+  const rule: FleetRule = {
+    ...prev,
+    mode: updates.mode ?? prev.mode,
+    params: updates.params ?? prev.params,
+    appliesTo: updates.appliesTo ?? prev.appliesTo,
+    version: prev.version + 1,
+    changedBy: "dashboard",
+    changedAt: new Date().toISOString(),
+  };
+  writeStore(fleetId, existing.map((r) => (r.id === ruleId ? rule : r)));
+  return rule;
+}
+
+function mockDeleteRule(fleetId: string, ruleId: string) {
+  const existing = readStore(fleetId);
+  writeStore(fleetId, existing.filter((r) => r.id !== ruleId));
+}
+
+// ── Mock fleet agents ─────────────────────────────────────────────
+
+const AGENTS_KEY = "wr_citadel_agents";
+
+function readAgents(fleetId: string): string[] {
+  try {
+    const raw = localStorage.getItem(AGENTS_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw) as Record<string, string[]>;
+    return data[fleetId] ?? [];
+  } catch { return []; }
+}
+
+function seedAgentsIfEmpty(fleetId: string) {
+  const existing = readAgents(fleetId);
+  if (existing.length > 0) return;
+  try {
+    const raw = localStorage.getItem(AGENTS_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    data[fleetId] = ["research-agent", "coding-agent", "qa-agent"];
+    localStorage.setItem(AGENTS_KEY, JSON.stringify(data));
+  } catch { /* */ }
 }
 
 // ── Rule descriptions ──────────────────────────────────────────────
@@ -425,6 +475,58 @@ function ToolPicker({ tags, onAdd, onRemove }: {
   );
 }
 
+// ── Scope picker ──────────────────────────────────────────────────
+
+function ScopePicker({ scope = "all", agents = [], onChange }: {
+  scope: RuleScope;
+  agents: string[];
+  onChange: (s: RuleScope) => void;
+}) {
+  const isAll = scope === "all" || !Array.isArray(scope);
+  const selected = isAll ? [] : scope;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--tx3)", marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+      <span style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, fontSize: 10 }}>Applies to</span>
+      <select
+        value={isAll ? "__all__" : "__specific__"}
+        onChange={(e) => {
+          if (e.target.value === "__all__") onChange("all");
+          else onChange([]);
+        }}
+        style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, cursor: "pointer" }}
+      >
+        <option value="__all__">All agents</option>
+        <option value="__specific__">Specific agents</option>
+      </select>
+      {!isAll && (
+        <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
+          {selected.map((a) => (
+            <span key={a} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#1e3a5f", color: "#93c5fd", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+              {a}
+              <button onClick={() => onChange(selected.filter((x) => x !== a))} style={{ color: "#93c5fd", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+            </span>
+          ))}
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value && !selected.includes(e.target.value)) {
+                onChange([...selected, e.target.value]);
+              }
+            }}
+            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
+          >
+            <option value="">+ add agent</option>
+            {agents.filter((a) => !selected.includes(a)).map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Inline number input (debounced) ───────────────────────────────
 
 function InlineNumber({ value, onChange }: { value: number; onChange: (n: number) => void }) {
@@ -467,60 +569,123 @@ export default function GovernancePage() {
 
 function GovernanceContent({ fleetId }: { fleetId: string }) {
   const [rules, setRules] = useState<FleetRule[]>([]);
-  const [selected, setSelected] = useState<RuleType | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [agents, setAgents] = useState<string[]>([]);
 
   const fetchData = useCallback(() => {
+    seedAgentsIfEmpty(fleetId);
     setRules(readStore(fleetId));
     setHistory(readHistory(fleetId));
+    setAgents(readAgents(fleetId));
   }, [fleetId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const changeMode = (ruleType: RuleType, mode: RuleMode) => {
-    const prevRule = rules.find((r) => r.ruleType === ruleType);
-    const prevMode = prevRule?.mode ?? "off";
-    const rule = mockSetRule(fleetId, ruleType, mode);
-    if (prevMode !== mode) {
-      const label = RULE_LABELS[ruleType];
-      if (prevRule) {
-        pushHistory(fleetId, ruleType, `${capitalize(prevMode)} → ${capitalize(mode)}`, "dashboard");
-      } else {
-        pushHistory(fleetId, ruleType, `Created ${label} in ${capitalize(mode)}`, "dashboard");
-      }
-    }
-    setRules((rs) => {
-      const idx = rs.findIndex((r) => r.ruleType === ruleType);
-      if (idx >= 0) return [...rs.slice(0, idx), rule, ...rs.slice(idx + 1)];
-      return [...rs, rule];
-    });
+  const rulesBy = (rt: RuleType) => rules.filter((r) => r.ruleType === rt);
+
+  const addRule = (ruleType: RuleType) => {
+    const rule = mockCreateRule(fleetId, ruleType);
+    pushHistory(fleetId, ruleType, `Added new ${RULE_LABELS[ruleType]} rule`, "dashboard");
+    setRules(readStore(fleetId));
     setHistory(readHistory(fleetId));
-    setSelected(ruleType);
+    setSelectedId(rule.id);
   };
 
-  const updateParams = (ruleType: RuleType, params: AnyRuleParams) => {
-    const existing = rules.find((r) => r.ruleType === ruleType);
-    const rule = mockSetRule(fleetId, ruleType, existing?.mode ?? "off", params);
-    setRules((rs) => {
-      const idx = rs.findIndex((r) => r.ruleType === ruleType);
-      if (idx >= 0) return [...rs.slice(0, idx), rule, ...rs.slice(idx + 1)];
-      return [...rs, rule];
-    });
+  const removeRule = (ruleId: string, ruleType: RuleType) => {
+    mockDeleteRule(fleetId, ruleId);
+    pushHistory(fleetId, ruleType, `Removed ${RULE_LABELS[ruleType]} rule`, "dashboard");
+    setRules(readStore(fleetId));
+    setHistory(readHistory(fleetId));
+    if (selectedId === ruleId) setSelectedId(null);
   };
 
-  const ruleMap = new Map(rules.map((r) => [r.ruleType, r]));
-  const selectedRule: FleetRule | null = selected
-    ? ruleMap.get(selected) ?? {
-        id: `rule_${fleetId}_${selected}`,
-        fleetId,
-        ruleType: selected,
-        params: DEFAULT_PARAMS[selected],
-        mode: "off" as RuleMode,
-        version: 0,
-        changedBy: "",
-        changedAt: "",
-      }
-    : null;
+  const changeMode = (ruleId: string, ruleType: RuleType, mode: RuleMode) => {
+    const prevRule = rules.find((r) => r.id === ruleId);
+    const prevMode = prevRule?.mode ?? "off";
+    const rule = mockUpdateRule(fleetId, ruleId, { mode });
+    if (prevMode !== mode) {
+      pushHistory(fleetId, ruleType, `${capitalize(prevMode)} → ${capitalize(mode)}`, "dashboard");
+    }
+    setRules((rs) => rs.map((r) => (r.id === ruleId ? rule : r)));
+    setHistory(readHistory(fleetId));
+    setSelectedId(ruleId);
+  };
+
+  const updateParams = (ruleId: string, params: AnyRuleParams) => {
+    const rule = mockUpdateRule(fleetId, ruleId, { params });
+    setRules((rs) => rs.map((r) => (r.id === ruleId ? rule : r)));
+  };
+
+  const updateScope = (ruleId: string, ruleType: RuleType, appliesTo: RuleScope) => {
+    const rule = mockUpdateRule(fleetId, ruleId, { appliesTo });
+    const label = appliesTo === "all" ? "All agents" : (appliesTo as string[]).join(", ") || "none";
+    pushHistory(fleetId, ruleType, `Scope → ${label}`, "dashboard");
+    setRules((rs) => rs.map((r) => (r.id === ruleId ? rule : r)));
+    setHistory(readHistory(fleetId));
+  };
+
+  const selectedRule = selectedId ? rules.find((r) => r.id === selectedId) ?? null : null;
+
+  // Render the natural-language params for a rule
+  const renderParams = (rule: FleetRule) => {
+    const rt = rule.ruleType;
+    if (rt === "spend_cap") {
+      const p = rule.params as SpendCapParams;
+      return (
+        <span>
+          Stop an agent that spends more than{" "}
+          {p.unit === "dollars" && <span style={{ color: "#67e8f9", fontFamily: FONT_MONO }}>$</span>}
+          <InlineNumber value={p.dailyCap} onChange={(n) => updateParams(rule.id, { ...p, dailyCap: n })} />
+          {" "}
+          <select value={p.unit} onChange={(e) => {
+            const newUnit = e.target.value as "tokens" | "dollars";
+            const converted = newUnit === "dollars" ? Math.round(p.dailyCap * 0.003 * 100) / 100 : Math.round(p.dailyCap / 0.003);
+            updateParams(rule.id, { ...p, unit: newUnit, dailyCap: converted || (newUnit === "dollars" ? 5 : 50000) });
+          }} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+            <option value="tokens">tokens</option>
+            <option value="dollars">dollars</option>
+          </select>
+          {" "}in a{" "}
+          <select value={p.scope} onChange={(e) => updateParams(rule.id, { ...p, scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+            <option value="run">run</option>
+            <option value="day">day</option>
+          </select>
+        </span>
+      );
+    }
+    if (rt === "loop_breaker") {
+      const p = rule.params as LoopBreakerParams;
+      return (
+        <span>
+          Stop an agent that makes the same call{" "}
+          <InlineNumber value={p.threshold} onChange={(n) => updateParams(rule.id, { ...p, threshold: n })} />
+          {" "}times in a{" "}
+          <select value={p.scope} onChange={(e) => updateParams(rule.id, { ...p, scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+            <option value="run">run</option>
+            <option value="day">day</option>
+          </select>
+          . Ignore:{" "}
+          <ToolPicker
+            tags={p.ignoreTools}
+            onAdd={(t) => { if (!p.ignoreTools.includes(t)) updateParams(rule.id, { ...p, ignoreTools: [...p.ignoreTools, t] }); }}
+            onRemove={(t) => updateParams(rule.id, { ...p, ignoreTools: p.ignoreTools.filter((x) => x !== t) })}
+          />
+        </span>
+      );
+    }
+    const p = rule.params as ModelAllowlistParams;
+    return (
+      <span>
+        Only allow these models:{" "}
+        <ModelPicker
+          tags={p.allowedModels}
+          onAdd={(t) => { if (!p.allowedModels.includes(t)) updateParams(rule.id, { ...p, allowedModels: [...p.allowedModels, t] }); }}
+          onRemove={(t) => updateParams(rule.id, { ...p, allowedModels: p.allowedModels.filter((x) => x !== t) })}
+        />
+      </span>
+    );
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, flex: 1 }}>
@@ -559,14 +724,20 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                 <div style={{ flexShrink: 0 }}>
                   <button
                     onClick={() => {
-                      const existing = ruleMap.get("model_allowlist");
-                      const prev = (existing?.params ?? DEFAULT_PARAMS.model_allowlist) as ModelAllowlistParams;
-                      mockSetRule(fleetId, "model_allowlist", "watch", {
-                        allowedModels: prev.allowedModels.includes("claude-haiku-4-5") ? prev.allowedModels : ["claude-haiku-4-5", ...prev.allowedModels],
-                      } as ModelAllowlistParams);
+                      const existing = rulesBy("model_allowlist");
+                      if (existing.length === 0) {
+                        const rule = mockCreateRule(fleetId, "model_allowlist");
+                        mockUpdateRule(fleetId, rule.id, { mode: "watch", params: { allowedModels: ["claude-haiku-4-5"] } as ModelAllowlistParams });
+                      } else {
+                        const first = existing[0];
+                        const prev = first.params as ModelAllowlistParams;
+                        mockUpdateRule(fleetId, first.id, {
+                          mode: "watch",
+                          params: { allowedModels: prev.allowedModels.includes("claude-haiku-4-5") ? prev.allowedModels : ["claude-haiku-4-5", ...prev.allowedModels] } as ModelAllowlistParams,
+                        });
+                      }
                       pushHistory(fleetId, "model_allowlist", "Added Model allowlist in Watch (suggested)", "dashboard");
                       fetchData();
-                      setSelected("model_allowlist");
                     }}
                     style={{ padding: "6px 12px", fontSize: 11, background: "#06b6d4", color: "#0f172a", fontWeight: 500, borderRadius: 6, border: "none", cursor: "pointer" }}
                   >
@@ -579,118 +750,64 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
 
           {/* Rule sections */}
           {RULE_SECTIONS.map(({ key: rt, section }) => {
-            const rule = ruleMap.get(rt);
-            const mode = rule?.mode ?? "off";
-            const isSelected = selected === rt;
-
+            const sectionRules = rulesBy(rt);
             return (
               <div key={rt} style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 12 }}>
-                  {section} · 1
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)" }}>
+                    {section} · {sectionRules.length || 0}
+                  </span>
+                  <button
+                    onClick={() => addRule(rt)}
+                    style={{ fontSize: 10, fontWeight: 600, color: "#06b6d4", background: "transparent", border: "1px solid #06b6d4", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}
+                  >
+                    + Add rule
+                  </button>
                 </div>
-                <div
-                  onClick={() => setSelected(rt)}
-                  style={{
-                    background: "var(--card)",
-                    border: `1px solid ${isSelected ? "#06b6d4" : "var(--line)"}`,
-                    borderRadius: 8,
-                    padding: 16,
-                    cursor: "pointer",
-                    transition: "border-color 0.15s",
-                  }}
-                >
-                  {/* Natural language rule */}
-                  <div style={{ fontSize: 13, color: "var(--tx)", marginBottom: 12 }}>
-                    {rt === "spend_cap" && (() => {
-                      const p = (rule?.params ?? DEFAULT_PARAMS.spend_cap) as SpendCapParams;
-                      return (
-                        <span>
-                          Stop an agent that spends more than{" "}
-                          {p.unit === "dollars" && <span style={{ color: "#67e8f9", fontFamily: FONT_MONO }}>$</span>}
-                          <InlineNumber
-                            value={p.dailyCap}
-                            onChange={(n) => updateParams(rt, { ...p, dailyCap: n })}
-                          />
-                          {" "}
-                          <select
-                            value={p.unit}
-                            onChange={(e) => {
-                              const newUnit = e.target.value as "tokens" | "dollars";
-                              const converted = newUnit === "dollars"
-                                ? Math.round(p.dailyCap * 0.003 * 100) / 100
-                                : Math.round(p.dailyCap / 0.003);
-                              updateParams(rt, { ...p, unit: newUnit, dailyCap: converted || (newUnit === "dollars" ? 5 : 50000) });
-                            }}
-                            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {sectionRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      onClick={() => setSelectedId(rule.id)}
+                      style={{
+                        background: "var(--card)",
+                        border: `1px solid ${selectedId === rule.id ? "#06b6d4" : "var(--line)"}`,
+                        borderRadius: 8,
+                        padding: 16,
+                        cursor: "pointer",
+                        transition: "border-color 0.15s",
+                      }}
+                    >
+                      <div style={{ fontSize: 13, color: "var(--tx)", marginBottom: 12 }}>
+                        {renderParams(rule)}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <ModeToggle mode={rule.mode} onChange={(m) => changeMode(rule.id, rt, m)} />
+                          <span style={{ fontSize: 11, color: "var(--tx3)" }}>{MODE_DESCRIPTION[rt][rule.mode]}</span>
+                        </div>
+                        {sectionRules.length > 1 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeRule(rule.id, rt); }}
+                            style={{ fontSize: 11, color: "var(--tx3)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px" }}
+                            title="Remove this rule"
                           >
-                            <option value="tokens">tokens</option>
-                            <option value="dollars">dollars</option>
-                          </select>
-                          {" "}in a{" "}
-                          <select
-                            value={p.scope}
-                            onChange={(e) => updateParams(rt, { ...p, scope: e.target.value as "run" | "day" })}
-                            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}
-                          >
-                            <option value="run">run</option>
-                            <option value="day">day</option>
-                          </select>
-                        </span>
-                      );
-                    })()}
-                    {rt === "loop_breaker" && (() => {
-                      const p = (rule?.params ?? DEFAULT_PARAMS.loop_breaker) as LoopBreakerParams;
-                      return (
-                        <span>
-                          Stop an agent that makes the same call{" "}
-                          <InlineNumber
-                            value={p.threshold}
-                            onChange={(n) => updateParams(rt, { ...p, threshold: n })}
-                          />
-                          {" "}times in a{" "}
-                          <select
-                            value={p.scope}
-                            onChange={(e) => updateParams(rt, { ...p, scope: e.target.value as "run" | "day" })}
-                            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}
-                          >
-                            <option value="run">run</option>
-                            <option value="day">day</option>
-                          </select>
-                          . Ignore:{" "}
-                          <ToolPicker
-                            tags={p.ignoreTools}
-                            onAdd={(t) => {
-                              if (!p.ignoreTools.includes(t)) updateParams(rt, { ...p, ignoreTools: [...p.ignoreTools, t] });
-                            }}
-                            onRemove={(t) => updateParams(rt, { ...p, ignoreTools: p.ignoreTools.filter((x) => x !== t) })}
-                          />
-                        </span>
-                      );
-                    })()}
-                    {rt === "model_allowlist" && (() => {
-                      const p = (rule?.params ?? DEFAULT_PARAMS.model_allowlist) as ModelAllowlistParams;
-                      return (
-                        <span>
-                          Only allow these models:{" "}
-                          <ModelPicker
-                            tags={p.allowedModels}
-                            onAdd={(t) => {
-                              if (!p.allowedModels.includes(t)) updateParams(rt, { ...p, allowedModels: [...p.allowedModels, t] });
-                            }}
-                            onRemove={(t) => updateParams(rt, { ...p, allowedModels: p.allowedModels.filter((x) => x !== t) })}
-                          />
-                        </span>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Mode toggle + description */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <ModeToggle mode={mode} onChange={(m) => changeMode(rt, m)} />
-                      <span style={{ fontSize: 11, color: "var(--tx3)" }}>{MODE_DESCRIPTION[rt][mode]}</span>
+                            &times;
+                          </button>
+                        )}
+                      </div>
+                      <ScopePicker
+                        scope={rule.appliesTo}
+                        agents={agents}
+                        onChange={(s) => updateScope(rule.id, rt, s)}
+                      />
                     </div>
-                  </div>
+                  ))}
+                  {sectionRules.length === 0 && (
+                    <div style={{ background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 8, padding: 16, textAlign: "center", color: "var(--tx3)", fontSize: 12 }}>
+                      No rules configured. Click &quot;+ Add rule&quot; to create one.
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -698,10 +815,10 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
         </div>
 
         {/* Right column — detail panel */}
-        {selected && selectedRule && (
+        {selectedRule && (
           <div style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>
             <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{RULE_LABELS[selected]}</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{RULE_LABELS[selectedRule.ruleType]}</h2>
               <p style={{ fontSize: 12, color: "var(--tx3)", marginTop: 4 }}>
                 {selectedRule.mode === "enforce" ? "Enforcing" : selectedRule.mode === "watch" ? "Watching" : "Off"}
                 {" · "}
@@ -711,20 +828,27 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                   ? "Counting would-blocks without stopping agents."
                   : "Not active."}
               </p>
+              <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 4 }}>
+                {selectedRule.appliesTo === "all"
+                  ? "Applies to all agents in this fleet."
+                  : (selectedRule.appliesTo as string[]).length === 0
+                  ? "No agents selected."
+                  : `Applies to: ${(selectedRule.appliesTo as string[]).join(", ")}`}
+              </p>
             </div>
 
             {selectedRule.mode !== "off" && (
               <div style={{ marginTop: 20 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 8 }}>WHAT THE AGENT GETS</div>
                 <pre style={{ background: "#1e293b", borderRadius: 8, padding: 12, fontSize: 11, color: "#94a3b8", fontFamily: FONT_MONO, lineHeight: 1.6, overflowX: "auto", margin: 0 }}>
-                  {AGENT_RESPONSE[selected]}
+                  {AGENT_RESPONSE[selectedRule.ruleType]}
                 </pre>
                 <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 8 }}>
-                  {selected === "spend_cap" && "Stops before the next call. Non-retryable, so SDKs should not retry."}
-                  {selected === "loop_breaker" && "Stops after the repeated call. Non-retryable within the same run."}
-                  {selected === "model_allowlist" && "Stops before the call. The agent must switch to an allowed model."}
+                  {selectedRule.ruleType === "spend_cap" && "Stops before the next call. Non-retryable, so SDKs should not retry."}
+                  {selectedRule.ruleType === "loop_breaker" && "Stops after the repeated call. Non-retryable within the same run."}
+                  {selectedRule.ruleType === "model_allowlist" && "Stops before the call. The agent must switch to an allowed model."}
                 </p>
-                {selected === "spend_cap" && (selectedRule.params as SpendCapParams).unit === "dollars" && (
+                {selectedRule.ruleType === "spend_cap" && (selectedRule.params as SpendCapParams).unit === "dollars" && (
                   <p style={{ fontSize: 10, color: "var(--tx3)", marginTop: 8 }}>
                     Dollar estimates use a blended rate of $0.003/1K tokens. Actual cost varies by model — see the Performance tab for per-model pricing.
                   </p>
@@ -736,7 +860,7 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
             <div style={{ marginTop: 20 }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 8 }}>HISTORY · FROM THE AUDIT CHAIN</div>
               {(() => {
-                const filtered = history.filter((h) => h.ruleType === selected);
+                const filtered = history.filter((h) => h.ruleType === selectedRule.ruleType);
                 return filtered.length === 0 ? (
                   <p style={{ fontSize: 11, color: "var(--tx3)" }}>No history yet.</p>
                 ) : (
