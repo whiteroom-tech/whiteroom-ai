@@ -44,7 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: '/agents',
-        label: 'Live Fleet',
+        label: 'Overview',
         icon: ICONS.fleet,
         match: (path, tab) =>
           (path === '/agents' && tab !== 'performance') ||
