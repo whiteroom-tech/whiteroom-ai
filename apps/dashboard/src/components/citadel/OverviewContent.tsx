@@ -183,7 +183,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   }, [fleetId, authKey]);
 
   const { refresh } = usePoll(
-    (stale) => { void fetchReport(stale); void fetchRecentActivity(stale); },
+    (stale) => Promise.all([fetchReport(stale), fetchRecentActivity(stale)]).then(() => {}),
     { intervalMs: 10000, enabled: !!fleetId },
   );
 
