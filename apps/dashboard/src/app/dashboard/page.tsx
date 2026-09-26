@@ -41,9 +41,11 @@ export default function DashboardPage() {
     async function handleUser(user: NonNullable<typeof session>['user']) {
       const email = user.email || '';
       const name = user.name || email.split('@')[0];
-      const fleetId = emailToFleetId(email);
-
       const provisioning = await getUserProvisioning();
+      // The fleet is fixed once provisioned. Deriving it from the email on
+      // every load meant an email change silently provisioned a new, empty
+      // fleet and revoked the old one's entitlement (audit F11).
+      let fleetId = provisioning.fleetId ?? emailToFleetId(email);
       const isNew = !provisioning.apiKey;
       const apiKey = provisioning.apiKey ?? generateApiKey();
       let fleetToken = provisioning.fleetToken;
@@ -75,6 +77,21 @@ export default function DashboardPage() {
         }
       } catch (err) {
         regError = err instanceof Error ? err.message : 'network error';
+      }
+
+      // A new account whose email-derived id is already held by another key
+      // (an address differing only in punctuation, or an id claimed first)
+      // gets an unguessable id of its own instead of a dead end.
+      if (!registered && !provisioning.fleetId) {
+        const fallbackId = `${fleetId}-${crypto.randomUUID().slice(0, 8)}`;
+        try {
+          const res = await createFleet(fallbackId, apiKey);
+          if (fleetProvisioned(res)) {
+            fleetId = fallbackId;
+            fleetToken = res.fleetToken;
+            registered = true;
+          }
+        } catch { /* keep the original error */ }
       }
 
       // A stored fleet token authenticates even when the API key does not, so

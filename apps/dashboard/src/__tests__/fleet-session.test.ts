@@ -42,6 +42,10 @@ vi.mock('@/lib/whiteroom/client', async (importOriginal) => {
 const session = vi.hoisted(() => ({ current: null as { user: { id: string } } | null }));
 vi.mock('@/auth', () => ({ auth: async () => session.current }));
 
+// users.fleet_id/fleet_token: the account's own provisioned fleet.
+const mockDbQuery = vi.fn();
+vi.mock('@/lib/db', () => ({ db: () => ({ query: mockDbQuery }) }));
+
 const mockGetUserFleets = vi.fn();
 vi.mock('@/lib/user-fleets', () => ({
   getUserFleets: () => mockGetUserFleets(),
@@ -70,6 +74,7 @@ beforeEach(() => {
   session.current = null;
   fakeHeaders(`https://${HOST}`);
   mockGetUserFleets.mockResolvedValue([]);
+  mockDbQuery.mockResolvedValue({ rows: [] });
 });
 
 describe('POST /api/fleet/session', () => {
@@ -154,6 +159,20 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-prod' });
     // fleet_id was known from the DB row — no engine round-trip needed.
     expect(mockTokenLogin).not.toHaveBeenCalled();
+  });
+
+  // A fresh browser deep-linking into a fleet page: the provisioned fleet
+  // lives on users, not user_fleets, and must still be found (audit F10).
+  it('adopts the account\'s own provisioned fleet ahead of linked ones', async () => {
+    session.current = { user: { id: 'u-primary' } };
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: 'primary-1', fleet_token: 'ft-primary' }] });
+    mockGetUserFleets.mockResolvedValue([
+      { id: '2', fleet_token: 'ft-prod', fleet_id: 'prod-1', label: 'p', created_at: '' },
+    ]);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ fleetId: 'primary-1' });
+    expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-primary' });
   });
 
   it('propagates 502 (session kept) when the cookie cannot be verified', async () => {
