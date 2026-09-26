@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
-import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
+import { agentDaySavings, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, partialCoverageSince, type SavingsEvent } from '@/lib/analytics-metrics';
 import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
 import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/governance';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -25,6 +25,23 @@ function handoverSaved(e: AuditEntry): number {
 }
 function handoverAgent(e: AuditEntry): string {
   return ((e as Record<string, unknown>).from as string) || e.agentId || '';
+}
+function isHandoverEntry(e: AuditEntry): boolean {
+  return e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+}
+function savingsEvent(e: AuditEntry, day: string): SavingsEvent {
+  const isHandover = isHandoverEntry(e);
+  const r = e as Record<string, unknown>;
+  return {
+    day,
+    agent: ((isHandover ? handoverAgent(e) : e.agentId) || '').toLowerCase(),
+    isTask: e.type === 'task_complete',
+    isHandover,
+    handoverSaved: isHandover ? handoverSaved(e) : 0,
+    offloadSaved: e.type === 'context_offload'
+      ? Math.max(0, ((r.contextTokens as number) ?? 0) - ((r.returnedTokens as number) ?? 0))
+      : 0,
+  };
 }
 
 // --- URL state sync ---
@@ -159,40 +176,29 @@ export default function RunsPage() {
       .filter(({ day }) => day >= cutoff);
     const rangedEntries = ranged.map(({ e }) => e);
 
-    const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[]; hSaved: number; oSaved: number }>();
+    const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[] }>();
     ranged.forEach(({ e, day }) => {
-      const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [], hSaved: 0, oSaved: 0 };
+      const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [] };
       d.entries.push(e);
       if (e.type === 'task_complete') d.tasks++;
       if (e.tokensUsed) d.used += e.tokensUsed;
-      const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-      if (isHandover) {
-        d.handovers++;
-        d.hSaved += handoverSaved(e);
-      }
-      if (e.type === 'context_offload') {
-        const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-        const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-        d.oSaved += Math.max(0, ctx - ret);
-      }
+      if (isHandoverEntry(e)) d.handovers++;
       dayMap.set(day, d);
     });
-    for (const d of dayMap.values()) {
-      const avg = d.handovers > 0 ? Math.ceil(d.tasks / (d.handovers + 1)) : 0;
-      d.saved = d.hSaved * Math.max(avg, 1) + d.oSaved;
-    }
+    const rangeSavings = agentDaySavings(ranged.map(({ e, day }) => savingsEvent(e, day)));
+    for (const [day, d] of dayMap) d.saved = rangeSavings.byDay.get(day) ?? 0;
     const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
     const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
 
     const scopedEntries = scopedDay ? ranged.filter(({ day }) => day === scopedDay).map(({ e }) => e) : rangedEntries;
 
-    const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; hSaved: number; oSaved: number; blocks: number; wouldBlocks: number }>();
+    const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; blocks: number; wouldBlocks: number }>();
     scopedEntries.forEach(e => {
-      const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+      const isHandover = isHandoverEntry(e);
       const rawAid = isHandover ? handoverAgent(e) : e.agentId;
       if (!rawAid) return;
       const aid = rawAid.toLowerCase();
-      const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, hSaved: 0, oSaved: 0, blocks: 0, wouldBlocks: 0 };
+      const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, blocks: 0, wouldBlocks: 0 };
       if (e.type === 'task_complete') a.tasks++;
       // Controls rules: Enforce blocks and Watch would-blocks.
       if (e.type === GOVERNANCE_BLOCK) a.blocks += occurrences(e);
@@ -200,22 +206,16 @@ export default function RunsPage() {
       if (e.tokensUsed) a.used += e.tokensUsed;
       if (isHandover) {
         a.handovers++;
-        a.hSaved += handoverSaved(e);
         const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
         const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 300;
         if (ctx > 0) { a.ctxTokens += ctx; a.hdTokens += hd; }
       }
-      if (e.type === 'context_offload') {
-        const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-        const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-        a.oSaved += Math.max(0, ctx - ret);
-      }
       agentMap.set(aid, a);
     });
-    for (const a of agentMap.values()) {
-      const avg = a.handovers > 0 ? Math.ceil(a.tasks / (a.handovers + 1)) : 0;
-      a.saved = a.hSaved * Math.max(avg, 1) + a.oSaved;
-    }
+    const scopedSavings = scopedDay
+      ? agentDaySavings(ranged.filter(({ day }) => day === scopedDay).map(({ e, day }) => savingsEvent(e, day)))
+      : rangeSavings;
+    for (const [aid, a] of agentMap) a.saved = scopedSavings.byAgent.get(aid) ?? 0;
     const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
 
     const scopedCtxTokens = agentBreakdown.reduce((s, [, v]) => s + v.ctxTokens, 0);

@@ -206,8 +206,18 @@ export async function updateAgentTaskType(
     { action: 'update_agent', fleet_id: fleetId, agent_id: agentId, task_type: taskType },
     apiKey,
   );
-  if (!res.ok) return { error: `HTTP ${res.status}` };
-  return res.json();
+  if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
+  return requireSuccess(await res.json());
+}
+
+/**
+ * Mutations answer HTTP 200 with {error} or {success:false} when the engine
+ * refuses them (missing agent, mandatory rest…). Throws on those so callers
+ * can't report a refused change as done.
+ */
+function requireSuccess<T extends { success?: boolean; error?: string }>(res: T): T {
+  if (res.error || res.success === false) throw new Error(res.error ?? 'The engine refused the change.');
+  return res;
 }
 
 /**
@@ -458,12 +468,12 @@ export function startDemo(sandboxId: string, key?: string): Promise<{ success?: 
   return apiCall<{ success?: boolean; message?: string; steps?: DemoStep[]; error?: string }>({ action: 'start_demo', sandbox_id: sandboxId }, key);
 }
 
-export function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key);
+export async function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
-export function resumeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key);
+export async function resumeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
 export interface SandboxHistoryEntry {

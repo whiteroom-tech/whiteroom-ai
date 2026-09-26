@@ -10,43 +10,81 @@ export interface UsePollOptions {
   pauseWhenHidden?: boolean;
 }
 
+type PollFn = (stale: () => boolean) => void | Promise<void>;
+
+/**
+ * The sequencing behind usePoll, kept free of React so it can be tested.
+ *
+ * `tick()` is a scheduled poll: it is skipped while the previous one is still
+ * running. Starting a new sequence on every interval regardless meant any
+ * response slower than the interval arrived stale and was dropped, so a slow
+ * engine left the page frozen while requests piled up (audit F13).
+ *
+ * `refresh()` is an explicit reload (e.g. after a mutation): it always starts
+ * a new sequence, invalidating whatever is in flight.
+ */
+export function createPoller(getFn: () => PollFn) {
+  let seq = 0;
+  let inFlight = false;
+
+  function run(force: boolean) {
+    if (!force && inFlight) return;
+    const mine = ++seq;
+    const result = getFn()(() => seq !== mine);
+    if (result && typeof result.then === 'function') {
+      inFlight = true;
+      result.then(
+        () => { if (seq === mine) inFlight = false; },
+        () => { if (seq === mine) inFlight = false; },
+      );
+    } else {
+      inFlight = false;
+    }
+  }
+
+  return {
+    tick: () => run(false),
+    refresh: () => run(true),
+    /** Invalidates any in-flight response, e.g. on unmount. */
+    stop: () => { seq++; inFlight = false; },
+  };
+}
+
 /**
  * Sequence-guarded polling. `fn` receives `stale()`, which turns true once a
- * newer tick has started or the poller stopped — check it before applying a
- * response so a slow request can't overwrite fresher data.
+ * newer sequence has started or the poller stopped — check it before applying
+ * a response so a slow request can't overwrite fresher data. Return the
+ * request's promise so scheduled ticks can wait for it instead of piling up.
  */
 export function usePoll(
-  fn: (stale: () => boolean) => void | Promise<void>,
+  fn: PollFn,
   { intervalMs, enabled = true, pauseWhenHidden = true }: UsePollOptions,
 ): { refresh: () => void } {
   const fnRef = useRef(fn);
   fnRef.current = fn;
-  const seqRef = useRef(0);
+  const pollerRef = useRef<ReturnType<typeof createPoller> | null>(null);
+  if (!pollerRef.current) pollerRef.current = createPoller(() => fnRef.current);
+  const poller = pollerRef.current;
 
-  // A manual refresh starts a new tick immediately, invalidating any in-flight
-  // response (e.g. after an optimistic pause/resume mutation).
-  const refresh = useCallback(() => {
-    const seq = ++seqRef.current;
-    void fnRef.current(() => seqRef.current !== seq);
-  }, []);
+  const refresh = useCallback(() => poller.refresh(), [poller]);
 
   useEffect(() => {
     if (!enabled) return;
-    refresh();
+    poller.refresh();
     const id = setInterval(() => {
       if (pauseWhenHidden && document.hidden) return;
-      refresh();
+      poller.tick();
     }, intervalMs);
     const onVisible = () => {
-      if (!document.hidden) refresh();
+      if (!document.hidden) poller.tick();
     };
     if (pauseWhenHidden) document.addEventListener('visibilitychange', onVisible);
     return () => {
-      seqRef.current++;
+      poller.stop();
       clearInterval(id);
       if (pauseWhenHidden) document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [enabled, intervalMs, pauseWhenHidden, refresh]);
+  }, [enabled, intervalMs, pauseWhenHidden, poller]);
 
   return { refresh };
 }

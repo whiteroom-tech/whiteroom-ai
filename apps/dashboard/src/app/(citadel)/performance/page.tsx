@@ -695,6 +695,9 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   // the input is focused), polls must not overwrite what they are typing.
   const budgetDirty = useRef(false);
   const tokenBudgetDirty = useRef(false);
+  // A failed save keeps the typed value (still dirty, so polls leave it
+  // alone and the next commit retries) but says plainly it wasn't saved.
+  const [budgetSaveError, setBudgetSaveError] = useState<string | null>(null);
 
   const fetchForecast = useCallback(async (stale: () => boolean) => {
     try {
@@ -726,10 +729,15 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { budgetDirty.current = false; setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
     try {
-      await setBudgetUsd(fleetId, n, authKey);
+      const res = await setBudgetUsd(fleetId, n, authKey);
+      if (res.error || res.success === false) throw new Error(res.error);
       budgetDirty.current = false;
+      setBudgetSaveError(null);
       refreshForecast();
-    } catch { /* ignore */ }
+    } catch {
+      const saved = forecast?.budgetUsd != null ? `$${forecast.budgetUsd}` : 'not set';
+      setBudgetSaveError(`Budget not saved — it is still ${saved}. Press Enter to retry.`);
+    }
   }
 
   async function commitTokenBudget(value: string) {
@@ -737,10 +745,15 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { tokenBudgetDirty.current = false; setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
     try {
-      await setTokenBudget(fleetId, n, authKey);
+      const res = await setTokenBudget(fleetId, n, authKey);
+      if (res.error || res.success === false) throw new Error(res.error);
       tokenBudgetDirty.current = false;
+      setBudgetSaveError(null);
       refreshForecast();
-    } catch { /* ignore */ }
+    } catch {
+      const saved = forecast?.tokenBudget != null ? `${forecast.tokenBudget.toLocaleString()} tokens` : 'not set';
+      setBudgetSaveError(`Token budget not saved — it is still ${saved}. Press Enter to retry.`);
+    }
   }
 
   if (loadError) {
@@ -767,12 +780,15 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" title="Used to estimate tasks remaining. It does not stop spending — add a spend cap on the Controls page for that.">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
             <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
           </div>
         )}
       </div>
+      {budgetSaveError && (
+        <div role="alert" style={{ fontSize: 12, color: 'var(--bad)', margin: '-4px 0 12px' }}>{budgetSaveError}</div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div>
@@ -807,7 +823,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
-  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => void;
+  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => Promise<boolean>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
 }) {
@@ -858,6 +874,13 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   }, [fleetId, authKey, recStatus, recAgentQuery]);
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
+
+  // The list is owned here, not by the parent's index refresh, so reload it
+  // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
+  // its old status and buttons until a filter changes (audit F16).
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => {
+    if (await onFeedback(recId, findingVersion, action, reason)) void fetchRecs();
+  };
 
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
   const toggleMetric = (m: string) => setExpandedMetric(prev => prev === m ? null : m);
@@ -934,9 +957,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
                 <Btn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
                 {rec.status === 'open' && (
                   <>
-                    <Btn label="Snooze" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Dismiss" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Implemented" onClick={() => onFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
+                    <Btn label="Snooze" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
+                    <Btn label="Dismiss" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
+                    <Btn label="Implemented" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
                   </>
                 )}
               </div>
@@ -1287,20 +1310,23 @@ export default function PerformancePage() {
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) {
-    if (!fleetId) return;
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> {
+    if (!fleetId) return false;
     setFeedbackLoading(recId);
     setFeedbackError(null);
     try {
-      await performanceFeedback(fleetId, {
+      const res = await performanceFeedback(fleetId, {
         recommendationId: recId, findingVersion, action, reason,
         snoozeDays: action === 'snooze' ? 7 : undefined,
         idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }, authKey);
+      if (res.error) throw new Error(res.error);
       fetchIndex();
+      return true;
     } catch {
       setError('Failed to submit feedback.');
       setFeedbackError({ recId, message: 'Failed to submit feedback. Try again.' });
+      return false;
     }
     finally { setFeedbackLoading(null); }
   }

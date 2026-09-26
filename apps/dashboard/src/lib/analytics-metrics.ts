@@ -46,6 +46,48 @@ export function partialCoverageSince(
   return since > getCutoff(range, nowMs) ? since : null;
 }
 
+export interface SavingsEvent {
+  day: string;
+  /** Attributed agent, lower-cased; '' when the event names none. */
+  agent: string;
+  isTask: boolean;
+  isHandover: boolean;
+  /** Tokens a handover saved before the task multiplier (see handoverSaved). */
+  handoverSaved: number;
+  /** Tokens a context offload kept out of the conversation. */
+  offloadSaved: number;
+}
+
+/**
+ * Estimated tokens saved, computed once per agent-day and then summed, so the
+ * per-day totals and the per-agent rows are the same numbers cut two ways.
+ *
+ * A handover's saving is multiplied by the tasks it carried the context
+ * across (tasks per handover, at least 1). That multiplier is not additive:
+ * applying it per day for the totals but across the whole range for each
+ * agent made the two disagree for the same scope (audit F15).
+ */
+export function agentDaySavings(events: SavingsEvent[]): { byDay: Map<string, number>; byAgent: Map<string, number> } {
+  const buckets = new Map<string, { day: string; agent: string; tasks: number; handovers: number; hSaved: number; oSaved: number }>();
+  for (const e of events) {
+    const key = `${e.agent}\u0000${e.day}`;
+    const b = buckets.get(key) ?? { day: e.day, agent: e.agent, tasks: 0, handovers: 0, hSaved: 0, oSaved: 0 };
+    if (e.isTask) b.tasks++;
+    if (e.isHandover) { b.handovers++; b.hSaved += e.handoverSaved; }
+    b.oSaved += e.offloadSaved;
+    buckets.set(key, b);
+  }
+  const byDay = new Map<string, number>();
+  const byAgent = new Map<string, number>();
+  for (const b of buckets.values()) {
+    const perHandover = b.handovers > 0 ? Math.ceil(b.tasks / (b.handovers + 1)) : 0;
+    const saved = b.hSaved * Math.max(perHandover, 1) + b.oSaved;
+    byDay.set(b.day, (byDay.get(b.day) ?? 0) + saved);
+    if (b.agent) byAgent.set(b.agent, (byAgent.get(b.agent) ?? 0) + saved);
+  }
+  return { byDay, byAgent };
+}
+
 /** Tokens saved by a handover: compressed context minus the handover doc (default 300). */
 export function handoverSaved(e: { contextTokens?: number; handoverDocTokens?: number }): number {
   const ctx = e.contextTokens ?? 0;
