@@ -605,7 +605,7 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
     <Section
       title="Delete account"
       tone="danger"
-      description="Removes your profile, linked fleets and subscription. Your fleets keep running on the engine — they belong to whoever holds the fleet token — but this dashboard will no longer know about them."
+      description="Removes your profile and linked fleets. Cancel any paid subscription first, and hand over any organization you solely own. Your fleets keep running on the engine — they belong to whoever holds the fleet token — but this dashboard will no longer know about them."
     >
       {!open ? (
         <button style={button('danger', pending)} disabled={pending} onClick={() => setOpen(true)}>
