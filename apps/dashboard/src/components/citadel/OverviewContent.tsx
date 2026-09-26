@@ -10,6 +10,7 @@ import { RingGauge, Beacon } from '@/components/AgentGauge';
 import { FleetVisualization } from '@/components/FleetVisualization';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
+import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { StatBox, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
@@ -58,6 +59,8 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
   const [handoverDocs, setHandoverDocs] = useState<Record<string, HandoverDoc>>({});
   const [error, setError] = useState('');
   const [recentEntries, setRecentEntries] = useState<AuditEntry[]>([]);
+  // Agents stopped by a governance rule recently — refreshed with the 10s audit poll.
+  const recentBlocks = recentBlocksByAgent(recentEntries);
   const [agentView, setAgentView] = useState<AgentView>(() => {
     const saved = safeGet('wr_agent_view');
     return isAgentView(saved) ? saved : 'cards';
@@ -440,6 +443,14 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
               const watchDisplay = status === 'resting' ? restPct : pct;
               const tokens = agent.tokensUsed || 0;
               const hdoc = handoverDocs[agent.agentId];
+              // Stopped by a Controls rule in Enforce within the last 15 min.
+              const block = recentBlocks[agent.agentId];
+              const blockTitle = block
+                ? `Blocked by ${ruleLabel(block.ruleType)}${REASON_LABELS[String(block.reason)] ? ` (${REASON_LABELS[String(block.reason)]})` : ''} at ${new Date(block.timestamp).toLocaleTimeString()}`
+                : '';
+              const blockBadge = block ? (
+                <span title={blockTitle} aria-label={blockTitle} style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, letterSpacing: 0.8, whiteSpace: 'nowrap', background: 'var(--bad-bg)', color: 'var(--bad)', border: '1px solid var(--bad)' }}>BLOCKED</span>
+              ) : null;
 
               if (agentView === 'rings') {
                 const animate = status === 'working';
@@ -453,7 +464,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     </div>
                     <div style={{ textAlign: 'center' as const }}>
                       <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
-                      <div style={{ fontSize: 10.5, color: 'var(--tx2)', marginTop: 1 }}>{status.toUpperCase()} · {fmtTokens(tokens)}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--tx2)', marginTop: 1 }}>{status.toUpperCase()} · {fmtTokens(tokens)}{block && <span title={blockTitle} style={{ color: 'var(--bad)', fontWeight: 700 }}> · BLOCKED</span>}</div>
                     </div>
                   </div>
                 );
@@ -467,7 +478,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     <Beacon color={sc.bar} animate={animate} breathe={breathe} />
                     <div style={{ textAlign: 'center' as const }}>
                       <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</div>
-                      <div style={{ fontSize: 10.5, color: 'var(--tx2)' }}>{status.toUpperCase()} · {watchDisplay.toFixed(0)}%</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--tx2)' }}>{status.toUpperCase()} · {watchDisplay.toFixed(0)}%{block && <span title={blockTitle} style={{ color: 'var(--bad)', fontWeight: 700 }}> · BLOCKED</span>}</div>
                     </div>
                   </div>
                 );
@@ -477,7 +488,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                 return (
                   <div key={agent.agentId} className="flex items-center gap-3" style={{ borderBottom: '1px solid var(--line)', padding: '6px 4px' }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: sc.border, flexShrink: 0 }} />
-                    <span style={{ minWidth: 100, fontFamily: FONT_MONO, fontSize: 13.5, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
+                    <span style={{ minWidth: 100, fontFamily: FONT_MONO, fontSize: 13.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>{agent.agentId.toUpperCase()}{blockBadge}</span>
                     <span style={{ minWidth: 76, textAlign: 'center' as const, fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
                     <div style={{ flex: 1, height: 4, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 99, width: `${watchDisplay}%`, background: watchBarColor }} />
@@ -500,6 +511,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                     <div className="flex justify-between items-center" style={{ marginBottom: 4 }}>
                       <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600 }}>{agent.agentId.toUpperCase()}</span>
                       <div className="flex items-center gap-1">
+                        {blockBadge}
                         <span style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
                         {status === 'working' ? (
                           <button aria-label={`Pause ${agent.agentId}`} disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>■</button>
@@ -527,6 +539,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
                       <div style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 2 }}>Watch #{agent.watchNumber || 1} · {agent.tasksCompleted || 0} tasks · {Math.round((agent.minutesWorked || 0) * 10) / 10}min worked</div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {blockBadge}
                       <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, letterSpacing: 1, whiteSpace: 'nowrap', background: sc.badgeBg, color: sc.badgeTx, border: `1px solid ${sc.badgeBd}` }}>{status.toUpperCase()}</span>
                       {status === 'working' ? (
                         <button disabled={!!agentActionLoading[agent.agentId]} onClick={() => handlePauseAgent(agent.agentId)} style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, color: 'var(--bad)', border: '1px solid var(--bad)', background: 'transparent', cursor: 'pointer', opacity: agentActionLoading[agent.agentId] ? 0.5 : 1 }}>

@@ -12,7 +12,8 @@ import { safeGet, safeSet } from '@/lib/safe-storage';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
+import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
@@ -385,7 +386,7 @@ function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, tr
   );
 }
 
-function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: { tokensSaved: number; costSaved: number } | null }) {
+function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blockedCount }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: { tokensSaved: number; costSaved: number } | null; govCounts?: GovernanceCounts | null; blockedCount?: number }) {
   const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' };
   const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 12, fontFamily: FONT_MONO, color: 'var(--tx)' };
   const TDR: React.CSSProperties = { ...TD, textAlign: 'right' };
@@ -501,6 +502,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
             { label: 'Complete', value: totalComplete.toLocaleString(), color: 'var(--brand)', desc: 'Successful responses' },
             { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)', desc: 'API errors + interrupted' },
             { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)', desc: 'Cancelled, blocked, unknown' },
+            ...(blockedCount ? [{ label: 'Governance Blocks', value: blockedCount.toLocaleString(), color: 'var(--bad)', desc: 'Stopped by Controls rules (in Other)' }] : []),
             { label: 'Error Rate', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 100 }}>
@@ -612,6 +614,51 @@ function MetricDrillDown({ metric, models, hourly, govSavings }: { metric: strin
         {govTokens > 0 && (
           <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
             Governance savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (metric === 'governance') {
+    const counts = govCounts;
+    const agents = counts ? Object.entries(counts.byAgent).sort(([, a], [, b]) => (b.blocks - a.blocks) || (b.wouldBlocks - a.wouldBlocks)) : [];
+    return (
+      <div style={{ ...CARD, marginBottom: 16 }}>
+        <h3 style={H3}>Governance</h3>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>
+          Calls stopped by rules on the Controls page. Blocked = Enforce stopped the call; would-block = a Watch rule matched but the call went through. Per-rule and per-agent counts come from recent audit events.
+        </div>
+        {!counts || (counts.blocks === 0 && counts.wouldBlocks === 0 && !blockedCount) ? (
+          <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No governance rule fired in the selected time window.</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ overflowX: 'auto', flex: '1 1 260px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={TH}>Rule</th><th style={{ ...TH, textAlign: 'right' }}>Blocked</th><th style={{ ...TH, textAlign: 'right' }}>Would block</th></tr></thead>
+                <tbody>{(Object.keys(RULE_LABELS) as GovernanceRuleType[]).map((rt) => (
+                  <tr key={rt} style={{ borderTop: '1px solid var(--line)' }}>
+                    <td style={TD}>{RULE_LABELS[rt]}</td>
+                    <td style={{ ...TDR, color: counts.byRule[rt].blocks ? 'var(--bad)' : 'var(--tx3)' }}>{counts.byRule[rt].blocks.toLocaleString()}</td>
+                    <td style={{ ...TDR, color: counts.byRule[rt].wouldBlocks ? 'var(--warn)' : 'var(--tx3)' }}>{counts.byRule[rt].wouldBlocks.toLocaleString()}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <div style={{ overflowX: 'auto', flex: '1 1 260px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={TH}>Agent</th><th style={{ ...TH, textAlign: 'right' }}>Blocked</th><th style={{ ...TH, textAlign: 'right' }}>Would block</th></tr></thead>
+                <tbody>{agents.length === 0 ? (
+                  <tr><td style={TD} colSpan={3}>—</td></tr>
+                ) : agents.map(([agent, t]) => (
+                  <tr key={agent} style={{ borderTop: '1px solid var(--line)' }}>
+                    <td style={{ ...TD, fontFamily: FONT_MONO }}>{agent}</td>
+                    <td style={{ ...TDR, color: t.blocks ? 'var(--bad)' : 'var(--tx3)' }}>{t.blocks.toLocaleString()}</td>
+                    <td style={{ ...TDR, color: t.wouldBlocks ? 'var(--warn)' : 'var(--tx3)' }}>{t.wouldBlocks.toLocaleString()}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -756,8 +803,8 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   );
 }
 
-function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
-  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; fleetId: string; authKey?: string;
+function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
   onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => void;
@@ -765,6 +812,9 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
   feedbackError: { recId: string; message: string } | null;
 }) {
   const s = data.summary;
+  // Both are lower bounds: the engine's rollup trails live traffic by a few
+  // minutes, and the audit tally only covers retained events. Show the larger.
+  const blocked = Math.max(s.blockedCount ?? 0, govCounts?.blocks ?? 0);
   const [recStatus, setRecStatus] = useState<string>('all');
   const [recAgent, setRecAgent] = useState('');
   const [recAgentQuery, setRecAgentQuery] = useState('');
@@ -836,9 +886,10 @@ function IndexView({ data, hourlyData, govSavings, fleetId, authKey, onSelectAge
         <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? `cache + governance` : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
         <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
         <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
+        <MetricCard label="Governance Blocks" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
       </div>
 
-      {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} /></div>}
+      {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
 
       <CostTrackingSection fleetId={fleetId} authKey={authKey} />
 
@@ -932,6 +983,7 @@ function AgentView({ data }: { data: AgentPerformanceResult }) {
         <MetricCard label="Estimated Cost" value={fmtCost(t.costMicros)} />
         <MetricCard label="Avg Latency" value={fmtLatency(t.avgLatencyMs)} />
         <MetricCard label="Error Rate" value={fmtPct(t.errorRate)} warn={t.errorRate > 0.05} />
+        {t.blockedCount !== undefined && <MetricCard label="Governance Blocks" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Stopped by Controls rules" />}
       </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <MetricCard label="Input Tokens" value={fmtTokens(t.inputTokens)} />
@@ -1146,6 +1198,7 @@ export default function PerformancePage() {
   const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
   const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
+  const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
@@ -1193,8 +1246,10 @@ export default function PerformancePage() {
         const avg = handoverCount > 0 ? Math.ceil(taskCount / (handoverCount + 1)) : 0;
         const tokensSaved = hSaved * Math.max(avg, 1) + oSaved;
         setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
+        setGovCounts(governanceCounts(audit.entries, cutoff));
       } else {
         setGovSavings(null);
+        setGovCounts(null);
       }
     } catch { if (!stale()) setError('Failed to load performance data.'); }
     finally { if (!stale()) setLoading(false); }
@@ -1297,7 +1352,7 @@ export default function PerformancePage() {
         {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
         {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

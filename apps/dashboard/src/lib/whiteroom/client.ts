@@ -16,6 +16,12 @@ import type {
   DeleteKeyResult,
   FleetReport,
   GetHandoverResult,
+  GovernanceListResult,
+  GovernanceMode,
+  GovernanceParams,
+  GovernanceRule,
+  GovernanceRuleType,
+  GovernanceScope,
   ListFleetsResult,
   ListKeysResult,
   PerformanceEvidenceResult,
@@ -668,4 +674,47 @@ export function getTokenBudget(fleetId: string, key?: string): Promise<GetTokenB
 
 export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {
   return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
+}
+
+// -- Fleet governance rules (Controls page) --
+
+export function governanceList(fleetId: string, key?: string): Promise<GovernanceListResult> {
+  return apiCall<GovernanceListResult>({ action: 'governance_list', fleet_id: fleetId }, key);
+}
+
+export function governanceCreateRule(
+  fleetId: string,
+  rule: { ruleType: GovernanceRuleType; mode?: GovernanceMode; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  key?: string,
+): Promise<{ rule: GovernanceRule }> {
+  return apiCall<{ rule: GovernanceRule }>({
+    action: 'governance_create_rule',
+    fleet_id: fleetId,
+    rule_type: rule.ruleType,
+    mode: rule.mode,
+    params: rule.params,
+    applies_to: rule.appliesTo,
+    description: rule.description,
+  }, key);
+}
+
+export function governanceUpdateRule(
+  fleetId: string,
+  ruleId: string,
+  updates: { mode?: GovernanceMode; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  key?: string,
+): Promise<{ rule: GovernanceRule }> {
+  return apiCall<{ rule: GovernanceRule }>({
+    action: 'governance_update_rule',
+    fleet_id: fleetId,
+    rule_id: ruleId,
+    mode: updates.mode,
+    params: updates.params,
+    applies_to: updates.appliesTo,
+    description: updates.description,
+  }, key);
+}
+
+export function governanceDeleteRule(fleetId: string, ruleId: string, key?: string): Promise<{ success?: boolean }> {
+  return apiCall<{ success?: boolean }>({ action: 'governance_delete_rule', fleet_id: fleetId, rule_id: ruleId }, key);
 }
