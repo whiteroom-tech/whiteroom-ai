@@ -44,7 +44,7 @@ export default function AgentsPage() {
 
       {/* Footer */}
       <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 11.5, color: 'var(--tx3)', flexShrink: 0 }}>
-        <span>White Room v1.1 Beta</span>
+        <span>WhiteRoom v1.1 Beta</span>
         <span>© 2026 WhiteRoom</span>
       </div>
     </div>

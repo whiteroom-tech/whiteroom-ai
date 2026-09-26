@@ -220,7 +220,7 @@ export function Sidebar() {
       ))}
 
       <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 12, color: 'var(--tx3)' }}>
-        <span>White Room Beta</span>
+        <span>WhiteRoom Beta</span>
         {fleetId && <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand2)', fontSize: 11.5, marginTop: 2 }}>{fleetId}</div>}
       </div>
     </aside>
