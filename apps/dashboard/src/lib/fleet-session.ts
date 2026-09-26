@@ -1,6 +1,7 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { auth } from '@/auth';
+import { db } from '@/lib/db';
 import { getUserFleets, type UserFleet } from '@/lib/user-fleets';
 
 // Server-side custody of the fleet token. The token used to live in
@@ -84,13 +85,20 @@ export interface LinkedFleetCredential {
 }
 
 /**
- * Fallback credential for next-auth session users with no fleet cookie yet:
- * the preferred fleet linked in user_fleets. Mirrors the login-page
- * preference (see preferProductionFleet / commit 30ddc00): production fleets
- * win over sandbox-* ones; rows without a known fleet_id only when nothing
- * better exists. Returns null when there is no session or no linked fleet.
+ * Fallback credential for next-auth session users with no fleet cookie yet.
+ *
+ * The account's own provisioned fleet (users.fleet_token) wins: it has no
+ * user_fleets row, so a fresh browser deep-linking into a fleet page used to
+ * be asked for a token it already owned (audit F10). After that, the
+ * preferred fleet linked in user_fleets, mirroring the login-page preference
+ * (see preferProductionFleet / commit 30ddc00): production fleets win over
+ * sandbox-* ones; rows without a known fleet_id only when nothing better
+ * exists. Returns null when there is no session or no fleet at all.
  */
 export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | null> {
+  const primary = await primaryFleet();
+  if (primary) return primary;
+
   let fleets: UserFleet[];
   try {
     fleets = await getUserFleets();
@@ -103,4 +111,19 @@ export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | nul
   );
   const pick = (production.length ? production : fleets)[0];
   return { token: pick.fleet_token, fleetId: pick.fleet_id };
+}
+
+async function primaryFleet(): Promise<LinkedFleetCredential | null> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return null;
+    const { rows } = await db().query(
+      'SELECT fleet_id, fleet_token FROM users WHERE id = $1',
+      [session.user.id],
+    );
+    const row = rows[0];
+    return row?.fleet_token ? { token: row.fleet_token, fleetId: row.fleet_id ?? null } : null;
+  } catch {
+    return null;
+  }
 }
