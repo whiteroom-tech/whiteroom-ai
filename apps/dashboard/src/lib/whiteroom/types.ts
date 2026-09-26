@@ -76,6 +76,10 @@ export interface AuditLogResponse {
   total: number;
   limit: number;
   filters: { agentIds: string[]; types: string[] };
+  /** Timestamp of the oldest event the engine still holds. */
+  retainedSince?: string | null;
+  /** True once older events have been trimmed; absent from older engines. */
+  historyTruncated?: boolean;
   entries: AuditEntry[];
 }
 
