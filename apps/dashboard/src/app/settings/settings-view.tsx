@@ -16,7 +16,7 @@ import {
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
-import { PLAN_IDS, PLANS, formatPrice } from '@/lib/plans';
+import { PLANS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -109,10 +109,12 @@ function button(variant: 'primary' | 'ghost' | 'danger', disabled = false): Reac
 export function SettingsView({
   account,
   entitlement,
+  purchasablePlans,
   billingResult,
 }: {
   account: AccountOverview;
   entitlement: Entitlement;
+  purchasablePlans: PlanId[];
   billingResult: string | null;
 }) {
   const router = useRouter();
@@ -176,7 +178,7 @@ export function SettingsView({
           )}
 
           <ProfileSection account={account} pending={pending} run={run} />
-          <PlanSection entitlement={entitlement} setBanner={setBanner} pending={pending} />
+          <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
           <EmailSection account={account} pending={pending} run={run} />
           <MethodsSection account={account} pending={pending} run={run} />
           <SessionsSection pending={pending} />
@@ -263,10 +265,12 @@ function ProfileSection({
 
 function PlanSection({
   entitlement,
+  purchasablePlans,
   setBanner,
   pending,
 }: {
   entitlement: Entitlement;
+  purchasablePlans: PlanId[];
   setBanner: (b: Banner) => void;
   pending: boolean;
 }) {
@@ -289,6 +293,10 @@ function PlanSection({
   }
 
   const fleetsAtLimit = usage.fleets >= limits.maxFleets;
+  // A paying customer switches plan in the portal (Checkout would start a
+  // second subscription), so the cards route there instead.
+  const subscribed = hasLiveSubscription(subscription);
+  const offers = purchasablePlans.filter((p) => p !== plan);
 
   return (
     <Section title="Plan" description="What your subscription currently allows. Limits apply to every fleet on the account.">
@@ -341,35 +349,37 @@ function PlanSection({
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-        {PLAN_IDS.filter((p) => p !== 'free' && p !== plan).map((p) => (
-          <div
-            key={p}
-            style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '14px 16px', background: 'var(--sunk)' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700 }}>{PLANS[p].name}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: 'var(--tx2)' }}>
-                {formatPrice(PLANS[p].priceCents)}<span style={{ color: 'var(--tx3)', fontSize: 11 }}>/mo</span>
-              </span>
-            </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 14px', display: 'grid', gap: 5 }}>
-              {PLANS[p].features.map((f) => (
-                <li key={f} style={{ fontSize: 12.5, color: 'var(--tx2)', display: 'flex', gap: 7 }}>
-                  <span style={{ color: 'var(--brand)' }}>·</span>{f}
-                </li>
-              ))}
-            </ul>
-            <button
-              style={{ ...button('primary', busy !== null || pending), width: '100%' }}
-              disabled={busy !== null || pending}
-              onClick={() => go(() => startCheckout(p), p)}
+      {offers.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+          {offers.map((p) => (
+            <div
+              key={p}
+              style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '14px 16px', background: 'var(--sunk)' }}
             >
-              {busy === p ? 'Opening…' : `Switch to ${PLANS[p].name}`}
-            </button>
-          </div>
-        ))}
-      </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700 }}>{PLANS[p].name}</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: 'var(--tx2)' }}>
+                  {formatPrice(PLANS[p].priceCents)}<span style={{ color: 'var(--tx3)', fontSize: 11 }}>/mo</span>
+                </span>
+              </div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 14px', display: 'grid', gap: 5 }}>
+                {PLANS[p].features.map((f) => (
+                  <li key={f} style={{ fontSize: 12.5, color: 'var(--tx2)', display: 'flex', gap: 7 }}>
+                    <span style={{ color: 'var(--brand)' }}>·</span>{f}
+                  </li>
+                ))}
+              </ul>
+              <button
+                style={{ ...button('primary', busy !== null || pending), width: '100%' }}
+                disabled={busy !== null || pending}
+                onClick={() => go(() => (subscribed ? openBillingPortal() : startCheckout(p)), p)}
+              >
+                {busy === p ? 'Opening…' : `Switch to ${PLANS[p].name}`}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </Section>
   );
 }

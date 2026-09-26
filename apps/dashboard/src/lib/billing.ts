@@ -5,7 +5,7 @@ import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
 import { getSubscriptionRow } from '@/lib/entitlements';
-import { isPlanId, stripePriceId, type PlanId } from '@/lib/plans';
+import { hasLiveSubscription, isPlanId, stripePriceId, type PlanId } from '@/lib/plans';
 
 type UrlResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -70,6 +70,9 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
 
   try {
     const user = await requireUser();
+    if (hasLiveSubscription(await getSubscriptionRow(user.id))) {
+      return { ok: false, error: 'You already have a subscription — change plans from Manage billing.' };
+    }
     const customerId = await ensureCustomer(user.id, user.email);
     const base = appOrigin();
 

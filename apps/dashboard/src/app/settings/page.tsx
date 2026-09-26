@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { getAccountOverview } from '@/lib/account';
 import { getEntitlement } from '@/lib/entitlements';
+import { purchasablePlans } from '@/lib/plans';
 import { SettingsView } from './settings-view';
 
 // Reads the signed-in user's own rows on every request — there is nothing
@@ -22,5 +23,12 @@ export default async function SettingsPage({
     searchParams,
   ]);
 
-  return <SettingsView account={account} entitlement={entitlement} billingResult={params.billing ?? null} />;
+  return (
+    <SettingsView
+      account={account}
+      entitlement={entitlement}
+      purchasablePlans={purchasablePlans()}
+      billingResult={params.billing ?? null}
+    />
+  );
 }

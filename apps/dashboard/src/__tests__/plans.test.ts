@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 // Guards the real resolver the settings page and the engine sync both call,
 // so the two can't disagree about what a subscription grants.
-import { effectivePlan, isActiveStatus, limitsFor, planForPriceId, PLANS } from '../lib/plans';
+import { effectivePlan, hasLiveSubscription, isActiveStatus, limitsFor, planForPriceId, PLANS, purchasablePlans } from '../lib/plans';
 
 describe('effectivePlan', () => {
   it('treats a missing subscription as free', () => {
@@ -84,5 +84,35 @@ describe('limits', () => {
     expect(PLANS.free.priceCents).toBe(0);
     expect(PLANS.pro.priceCents).toBeGreaterThan(0);
     expect(PLANS.team.priceCents).toBeGreaterThan(PLANS.pro.priceCents);
+  });
+});
+
+describe('purchasablePlans', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('offers nothing when Stripe is not configured', () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+    expect(purchasablePlans()).toEqual([]);
+  });
+
+  it('offers only paid plans that have a price', () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+    delete process.env.STRIPE_PRICE_TEAM;
+    expect(purchasablePlans()).toEqual(['pro']);
+  });
+});
+
+describe('hasLiveSubscription', () => {
+  it('is true only for a Stripe subscription that is still billing', () => {
+    expect(hasLiveSubscription({ stripeSubscriptionId: 'sub_1', status: 'active' })).toBe(true);
+    expect(hasLiveSubscription({ stripeSubscriptionId: 'sub_1', status: 'past_due' })).toBe(true);
+    expect(hasLiveSubscription({ stripeSubscriptionId: 'sub_1', status: 'canceled' })).toBe(false);
+    expect(hasLiveSubscription({ stripeSubscriptionId: null, status: 'active' })).toBe(false);
+    expect(hasLiveSubscription(null)).toBe(false);
   });
 });
