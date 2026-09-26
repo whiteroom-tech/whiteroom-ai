@@ -30,6 +30,22 @@ export function getCutoff(range: string, nowMs: number): string {
   return localDay(cutoff);
 }
 
+/**
+ * The local day a range's totals actually start from, when the engine has
+ * trimmed history the range asks for; null when the range is fully covered.
+ * The engine keeps only its newest events, so a busy fleet's 7D or 30D
+ * figures can cover far less than their label says.
+ */
+export function partialCoverageSince(
+  range: string,
+  coverage: { retainedSince?: string | null; historyTruncated?: boolean },
+  nowMs: number,
+): string | null {
+  if (!coverage.historyTruncated || !coverage.retainedSince) return null;
+  const since = localDayFromTs(coverage.retainedSince);
+  return since > getCutoff(range, nowMs) ? since : null;
+}
+
 /** Tokens saved by a handover: compressed context minus the handover doc (default 300). */
 export function handoverSaved(e: { contextTokens?: number; handoverDocTokens?: number }): number {
   const ctx = e.contextTokens ?? 0;

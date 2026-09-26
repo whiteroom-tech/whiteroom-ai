@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
-import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs } from '@/lib/analytics-metrics';
+import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
 import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
 import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/governance';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -101,6 +101,7 @@ export default function RunsPage() {
   const [fetchError, setFetchError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [clearError, setClearError] = useState('');
+  const [coverage, setCoverage] = useState<{ retainedSince?: string | null; historyTruncated?: boolean }>({});
   const [scopedDay, setScopedDay] = useState<string | null>(() => {
     const d = searchParams.get('day');
     return d && DAY_PARAM_RE.test(d) ? d : null;
@@ -132,6 +133,7 @@ export default function RunsPage() {
         return;
       }
       setAllEntries(data.entries);
+      setCoverage({ retainedSince: data.retainedSince, historyTruncated: data.historyTruncated });
       setFetchError(false);
       setLoading(false);
       setLastUpdated(Date.now());
@@ -363,6 +365,14 @@ export default function RunsPage() {
             Connection lost — retrying{lastUpdated !== null ? ` · last updated ${fmtTime(lastUpdated)}` : ''}
           </div>
         )}
+        {(() => {
+          const since = partialCoverageSince(analyticsRange, coverage, Date.now());
+          return since && !loading ? (
+            <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--warn-bg)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 12.5 }}>
+              Partial range: history is only kept from {since}, so totals and exports for {analyticsRange.toUpperCase()} cover {since} onward.
+            </div>
+          ) : null;
+        })()}
         {clearError && (
           <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--bad)', color: 'var(--bad)', fontSize: 12.5 }}>
             {clearError}
