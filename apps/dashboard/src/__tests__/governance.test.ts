@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  convertSpendCap,
   computeSuggestions,
   governanceCounts,
   occurrences,
@@ -105,5 +106,17 @@ describe('activity feed governance rows', () => {
   it('degrades gracefully on a malformed governance entry', () => {
     const m = eventModel(ev('governance_block', { ruleType: 42 as unknown as undefined }), NOW);
     expect(m.said).toBe('was blocked by the governance rule');
+  });
+});
+
+describe('convertSpendCap', () => {
+  it('converts at $0.003 per 1K tokens, matching the engine', () => {
+    expect(convertSpendCap(50000, 'dollars')).toBe(0.15);
+    expect(convertSpendCap(5, 'tokens')).toBe(1666667);
+  });
+
+  it('never rounds a small cap down to zero', () => {
+    expect(convertSpendCap(1000, 'dollars')).toBe(0.01);
+    expect(convertSpendCap(0.000001, 'tokens')).toBe(1);
   });
 });

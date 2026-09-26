@@ -48,9 +48,9 @@ describe('entitlement sweep', () => {
 
   it('syncs each user and marks rows delivered', async () => {
     mocks.query
-      .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 'u1' }, { id: 2, user_id: 'u2' }] })
+      .mockResolvedValueOnce({ rows: [{ max_id: 1, user_id: 'u1' }, { max_id: 2, user_id: 'u2' }] })
       .mockResolvedValue({ rows: [] });
-    mocks.sync.mockResolvedValue(undefined);
+    mocks.sync.mockResolvedValue(true);
 
     const res = await sweep(SECRET);
     const body = await res.json();
@@ -62,15 +62,35 @@ describe('entitlement sweep', () => {
       (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE entitlement_outbox'),
     );
     expect(updateCalls).toHaveLength(2);
+    // Only rows up to the newest one seen before the sync are acknowledged.
+    expect(updateCalls[0][0]).toContain('id <= $2');
+    expect(updateCalls[0][1]).toEqual(['u1', 1]);
+  });
+
+  it('leaves rows pending when the engine does not acknowledge the sync', async () => {
+    mocks.query
+      .mockResolvedValueOnce({ rows: [{ max_id: 1, user_id: 'u1' }, { max_id: 2, user_id: 'u2' }] })
+      .mockResolvedValue({ rows: [] });
+    mocks.sync.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    const res = await sweep(SECRET);
+    const body = await res.json();
+
+    expect(body).toEqual({ swept: 1, pending: 2 });
+    const updateCalls = mocks.query.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE entitlement_outbox'),
+    );
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0][1]).toEqual(['u2', 2]);
   });
 
   it('continues sweeping other users when one fails', async () => {
     mocks.query
-      .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 'u1' }, { id: 2, user_id: 'u2' }] })
+      .mockResolvedValueOnce({ rows: [{ max_id: 1, user_id: 'u1' }, { max_id: 2, user_id: 'u2' }] })
       .mockResolvedValue({ rows: [] });
     mocks.sync
       .mockRejectedValueOnce(new Error('engine down'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(true);
 
     const res = await sweep(SECRET);
     const body = await res.json();

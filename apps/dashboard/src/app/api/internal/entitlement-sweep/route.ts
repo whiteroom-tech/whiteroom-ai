@@ -20,11 +20,15 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
+  // max_id bounds the acknowledgement below: a row enqueued while this user's
+  // sync is in flight may not be reflected in what was sent, so it stays
+  // pending for the next sweep.
   const { rows: pending } = await db().query(
-    `SELECT DISTINCT ON (user_id) id, user_id
+    `SELECT user_id, max(id) AS max_id
      FROM entitlement_outbox
      WHERE delivered_at IS NULL
-     ORDER BY user_id, created_at DESC
+     GROUP BY user_id
+     ORDER BY min(created_at)
      LIMIT $1`,
     [BATCH_SIZE],
   );
@@ -36,11 +40,14 @@ export async function POST(req: Request): Promise<Response> {
   let delivered = 0;
   for (const row of pending) {
     try {
-      await syncEntitlementsToEngine(row.user_id);
+      if (!(await syncEntitlementsToEngine(row.user_id))) {
+        console.error(`[sweep] engine did not acknowledge user ${row.user_id}; leaving pending`);
+        continue;
+      }
       await db().query(
         `UPDATE entitlement_outbox SET delivered_at = now()
-         WHERE user_id = $1 AND delivered_at IS NULL`,
-        [row.user_id],
+         WHERE user_id = $1 AND id <= $2 AND delivered_at IS NULL`,
+        [row.user_id, row.max_id],
       );
       delivered++;
     } catch {
