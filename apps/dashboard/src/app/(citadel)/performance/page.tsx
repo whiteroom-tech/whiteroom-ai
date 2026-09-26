@@ -695,6 +695,9 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   // the input is focused), polls must not overwrite what they are typing.
   const budgetDirty = useRef(false);
   const tokenBudgetDirty = useRef(false);
+  // A failed save keeps the typed value (still dirty, so polls leave it
+  // alone and the next commit retries) but says plainly it wasn't saved.
+  const [budgetSaveError, setBudgetSaveError] = useState<string | null>(null);
 
   const fetchForecast = useCallback(async (stale: () => boolean) => {
     try {
@@ -726,10 +729,15 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { budgetDirty.current = false; setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
     try {
-      await setBudgetUsd(fleetId, n, authKey);
+      const res = await setBudgetUsd(fleetId, n, authKey);
+      if (res.error || res.success === false) throw new Error(res.error);
       budgetDirty.current = false;
+      setBudgetSaveError(null);
       refreshForecast();
-    } catch { /* ignore */ }
+    } catch {
+      const saved = forecast?.budgetUsd != null ? `$${forecast.budgetUsd}` : 'not set';
+      setBudgetSaveError(`Budget not saved — it is still ${saved}. Press Enter to retry.`);
+    }
   }
 
   async function commitTokenBudget(value: string) {
@@ -737,10 +745,15 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { tokenBudgetDirty.current = false; setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
     try {
-      await setTokenBudget(fleetId, n, authKey);
+      const res = await setTokenBudget(fleetId, n, authKey);
+      if (res.error || res.success === false) throw new Error(res.error);
       tokenBudgetDirty.current = false;
+      setBudgetSaveError(null);
       refreshForecast();
-    } catch { /* ignore */ }
+    } catch {
+      const saved = forecast?.tokenBudget != null ? `${forecast.tokenBudget.toLocaleString()} tokens` : 'not set';
+      setBudgetSaveError(`Token budget not saved — it is still ${saved}. Press Enter to retry.`);
+    }
   }
 
   if (loadError) {
@@ -767,12 +780,15 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" title="Used to estimate tasks remaining. It does not stop spending — add a spend cap on the Controls page for that.">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
             <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
           </div>
         )}
       </div>
+      {budgetSaveError && (
+        <div role="alert" style={{ fontSize: 12, color: 'var(--bad)', margin: '-4px 0 12px' }}>{budgetSaveError}</div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div>
