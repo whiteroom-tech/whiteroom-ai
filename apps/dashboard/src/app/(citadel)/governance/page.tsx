@@ -38,7 +38,8 @@ type HistoryEntry = GovernanceHistoryEntry;
 
 type Suggestions = GovernanceSuggestions;
 
-const SUGGESTION_HOURS = 30 * 24;
+// The engine caps performance queries at 336h (hours_back check in security.ts).
+const SUGGESTION_HOURS = 14 * 24;
 
 // ── Rule descriptions ──────────────────────────────────────────────
 
@@ -677,7 +678,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             </div>
           )}
 
-          {/* Suggested section — computed from the last 30 days of traffic */}
+          {/* Suggested section — computed from the last 14 days of traffic */}
           {suggestionCount > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 12 }}>SUGGESTED · {suggestionCount}</div>
@@ -697,7 +698,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
                 <div>
                   <p style={{ fontSize: 13, color: "var(--tx)" }}>
-                    Your fleet only used {allowlistSuggestion.join(", ")} in the last 30 days. An allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
+                    Your fleet only used {allowlistSuggestion.join(", ")} in the last 14 days. An allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
                   </p>
                   <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 2 }}>Turns on Model allowlist in Watch.</p>
                 </div>
