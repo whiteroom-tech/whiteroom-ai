@@ -13,10 +13,11 @@
 // old color choices in fleet/page.tsx) instead.
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
+import { REASON_LABELS, occurrences, ruleLabel } from '@/lib/governance';
 
 export type { AuditEntry, ToolDetail };
 
-type Tone = 'task' | 'handover' | 'start' | 'rest' | 'idle';
+type Tone = 'task' | 'handover' | 'start' | 'rest' | 'idle' | 'block' | 'wouldBlock';
 
 /** Accent per tone, matching this dashboard's existing hex palette. */
 const TONE_VAR: Record<Tone, string> = {
@@ -25,6 +26,9 @@ const TONE_VAR: Record<Tone, string> = {
   start: '#38bdf8',
   rest: '#0ea5e9',
   idle: '#475569',
+  // Governance tones use the theme tokens so they read in light mode too.
+  block: 'var(--bad)',
+  wouldBlock: 'var(--warn)',
 };
 
 const TONE_BG: Record<Tone, string> = {
@@ -33,6 +37,8 @@ const TONE_BG: Record<Tone, string> = {
   start: '#0c4a6e',
   rest: '#0c4a6e',
   idle: '#1e293b',
+  block: 'var(--bad-bg)',
+  wouldBlock: 'var(--warn-bg)',
 };
 
 interface EventCopy {
@@ -41,6 +47,8 @@ interface EventCopy {
   /** Three-letter manifest code. */
   code: string;
   say: (e: AuditEntry) => string;
+  /** Headline subject when the event isn't about one agent. */
+  who?: string;
 }
 
 /** Capitalised agent name. Agents are identified by id in this app. */
@@ -61,7 +69,17 @@ const EVENT_COPY: Record<string, EventCopy> = {
   rest_end: { icon: '☀', tone: 'rest', code: 'UP', say: () => 'came back from break' },
   alarm: { icon: '⏰', tone: 'rest', code: 'BEL', say: () => 'finished its break' },
   register: { icon: '➕', tone: 'idle', code: 'REG', say: () => 'joined the fleet' },
+  governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by the ${governancePhrase(e)}` },
+  governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by the ${governancePhrase(e)} (Watch only)` },
+  governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
 };
+
+/** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
+function governancePhrase(e: AuditEntry): string {
+  const reason = REASON_LABELS[String(e.reason ?? '')];
+  const n = occurrences(e);
+  return `${ruleLabel(e.ruleType).toLowerCase()}${reason ? ` (${reason})` : ''}${n > 1 ? ` ×${n}` : ''}`;
+}
 
 /** Unknown or absent types degrade to readable prose rather than throwing. */
 function humanizeType(type: unknown): string {
@@ -206,7 +224,7 @@ export function eventModel(e: AuditEntry, now: number = Date.now()): EventModel 
     key: eventKey(e),
     details,
     canExpand: details.length > 0,
-    who: agentName(e.agentId),
+    who: copy?.who ?? agentName(e.agentId),
     said: copy ? copy.say(e) : humanizeType(type),
     icon: copy ? copy.icon : '•',
     code: copy ? copy.code : 'LOG',
@@ -238,6 +256,10 @@ export function technicalLine(m: EventModel): string {
   if (Number.isFinite(Number(e.minutesSpent))) bits.push(`${Number(e.minutesSpent)} min spent`);
   if (Number.isFinite(Number(e.remaining))) bits.push(`${Number(e.remaining)} min remaining`);
   if (e.taskId) bits.push(`id ${e.taskId}`);
+  if (e.ruleType) bits.push(`rule ${String(e.ruleType)}`);
+  if (e.reason) bits.push(`reason ${String(e.reason)}`);
+  if (e.model) bits.push(`model ${String(e.model)}`);
+  if (e.occurrences != null && occurrences(e) > 1) bits.push(`${occurrences(e)} calls`);
   return bits.join(' · ');
 }
 

@@ -2,152 +2,43 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
+import {
+  governanceCreateRule,
+  governanceDeleteRule,
+  governanceList,
+  governanceUpdateRule,
+  isAuthError,
+  performanceFleetHourly,
+  performanceIndex,
+} from "@/lib/whiteroom/client";
+import type {
+  GovernanceHistoryEntry,
+  GovernanceMode,
+  GovernanceParams,
+  GovernanceRule,
+  GovernanceRuleType,
+  GovernanceScope,
+  LoopBreakerParams,
+  ModelAllowlistParams,
+  SpendCapParams,
+} from "@/lib/whiteroom/types";
+import { computeSuggestions, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { FONT_MONO } from "@whiteroom/ui";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type RuleType = "spend_cap" | "loop_breaker" | "model_allowlist";
-type RuleMode = "off" | "watch" | "enforce";
+type RuleType = GovernanceRuleType;
+type RuleMode = GovernanceMode;
+type AnyRuleParams = GovernanceParams;
+type RuleScope = GovernanceScope;
+type FleetRule = GovernanceRule;
+type HistoryEntry = GovernanceHistoryEntry;
 
-interface SpendCapParams { dailyCap: number; scope: "run" | "day"; unit: "tokens" | "dollars" }
-interface LoopBreakerParams { threshold: number; scope: "run" | "day"; ignoreTools: string[] }
-interface ModelAllowlistParams { allowedModels: string[] }
+type Suggestions = GovernanceSuggestions;
 
-type AnyRuleParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams;
-
-type RuleScope = "all" | string[];
-
-interface FleetRule {
-  id: string;
-  fleetId: string;
-  ruleType: RuleType;
-  params: AnyRuleParams;
-  mode: RuleMode;
-  appliesTo: RuleScope;
-  version: number;
-  changedBy: string;
-  changedAt: string;
-}
-
-interface HistoryEntry {
-  ruleType: RuleType;
-  description: string;
-  time: string;
-  by: string;
-}
-
-// ── localStorage mock layer ────────────────────────────────────────
-
-const STORAGE_KEY = "wr_citadel_rules";
-const HISTORY_KEY = "wr_citadel_history";
-
-function readStore(fleetId: string): FleetRule[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return (JSON.parse(raw) as FleetRule[]).filter((r) => r.fleetId === fleetId).map((r) => ({ ...r, appliesTo: r.appliesTo ?? "all" }));
-  } catch { return []; }
-}
-
-function writeStore(fleetId: string, rules: FleetRule[]) {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const all: FleetRule[] = raw ? JSON.parse(raw) : [];
-    const other = all.filter((r) => r.fleetId !== fleetId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...other, ...rules]));
-  } catch { /* */ }
-}
-
-function readHistory(fleetId: string): HistoryEntry[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) return [];
-    return (JSON.parse(raw) as (HistoryEntry & { fleetId: string })[])
-      .filter((h) => h.fleetId === fleetId);
-  } catch { return []; }
-}
-
-function pushHistory(fleetId: string, ruleType: RuleType, description: string, by: string) {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    const all = raw ? JSON.parse(raw) : [];
-    all.unshift({ fleetId, ruleType, description, time: new Date().toISOString(), by });
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(all.slice(0, 100)));
-  } catch { /* */ }
-}
-
-const DEFAULT_PARAMS: Record<RuleType, AnyRuleParams> = {
-  spend_cap: { dailyCap: 50000, scope: "run", unit: "tokens" },
-  loop_breaker: { threshold: 5, scope: "run", ignoreTools: [] },
-  model_allowlist: { allowedModels: [] },
-};
-
-let ruleCounter = Date.now();
-
-function mockCreateRule(fleetId: string, ruleType: RuleType): FleetRule {
-  const rule: FleetRule = {
-    id: `rule_${fleetId}_${ruleType}_${++ruleCounter}`,
-    fleetId,
-    ruleType,
-    params: structuredClone(DEFAULT_PARAMS[ruleType]),
-    mode: "off",
-    appliesTo: "all",
-    version: 1,
-    changedBy: "dashboard",
-    changedAt: new Date().toISOString(),
-  };
-  const existing = readStore(fleetId);
-  writeStore(fleetId, [...existing, rule]);
-  return rule;
-}
-
-function mockUpdateRule(fleetId: string, ruleId: string, updates: Partial<Pick<FleetRule, "mode" | "params" | "appliesTo">>): FleetRule {
-  const existing = readStore(fleetId);
-  const prev = existing.find((r) => r.id === ruleId);
-  if (!prev) throw new Error(`Rule ${ruleId} not found`);
-  const rule: FleetRule = {
-    ...prev,
-    mode: updates.mode ?? prev.mode,
-    params: updates.params ?? prev.params,
-    appliesTo: updates.appliesTo ?? prev.appliesTo,
-    version: prev.version + 1,
-    changedBy: "dashboard",
-    changedAt: new Date().toISOString(),
-  };
-  writeStore(fleetId, existing.map((r) => (r.id === ruleId ? rule : r)));
-  return rule;
-}
-
-function mockDeleteRule(fleetId: string, ruleId: string) {
-  const existing = readStore(fleetId);
-  writeStore(fleetId, existing.filter((r) => r.id !== ruleId));
-}
-
-// ── Mock fleet agents ─────────────────────────────────────────────
-
-const AGENTS_KEY = "wr_citadel_agents";
-
-function readAgents(fleetId: string): string[] {
-  try {
-    const raw = localStorage.getItem(AGENTS_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw) as Record<string, string[]>;
-    return data[fleetId] ?? [];
-  } catch { return []; }
-}
-
-function seedAgentsIfEmpty(fleetId: string) {
-  const existing = readAgents(fleetId);
-  if (existing.length > 0) return;
-  try {
-    const raw = localStorage.getItem(AGENTS_KEY);
-    const data = raw ? JSON.parse(raw) : {};
-    data[fleetId] = ["research-agent", "coding-agent", "qa-agent"];
-    localStorage.setItem(AGENTS_KEY, JSON.stringify(data));
-  } catch { /* */ }
-}
+const SUGGESTION_HOURS = 30 * 24;
 
 // ── Rule descriptions ──────────────────────────────────────────────
 
@@ -157,26 +48,22 @@ const RULE_SECTIONS: { key: RuleType; section: string }[] = [
   { key: "model_allowlist", section: "MODELS" },
 ];
 
-const RULE_LABELS: Record<RuleType, string> = {
-  spend_cap: "Spend cap",
-  loop_breaker: "Loop breaker",
-  model_allowlist: "Model allowlist",
+const REASON: Record<RuleType, string> = {
+  spend_cap: "budget_exceeded",
+  loop_breaker: "loop_detected",
+  model_allowlist: "model_not_allowed",
 };
 
-const AGENT_RESPONSE: Record<RuleType, string> = {
-  spend_cap: `403 governance_block
-reason: budget_exceeded
+/** The 403 the engine returns for this rule (see the engine's blockResponseBody). */
+function agentResponse(rule: FleetRule): string {
+  const resets = rule.ruleType === "model_allowlist"
+    ? "never"
+    : (rule.params as SpendCapParams | LoopBreakerParams).scope === "day" ? "next day (00:00 UTC)" : "next run";
+  return `403 governance_block
+reason: ${REASON[rule.ruleType]}
 retryable: false
-resets: next run`,
-  loop_breaker: `403 governance_block
-reason: loop_detected
-retryable: false
-resets: next run`,
-  model_allowlist: `403 governance_block
-reason: model_not_allowed
-retryable: false
-resets: never`,
-};
+resets: ${resets}`;
+}
 
 const MODE_DESCRIPTION: Record<RuleType, Record<RuleMode, string>> = {
   spend_cap: { off: "Off. Not counting.", watch: "Would-block only. Counting.", enforce: "Stops before the next call" },
@@ -564,66 +451,146 @@ export default function GovernancePage() {
 
   if (!auth.fleetId) return null;
 
-  return <GovernanceContent fleetId={auth.fleetId} />;
+  return <GovernanceContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />;
 }
 
-function GovernanceContent({ fleetId }: { fleetId: string }) {
+function GovernanceContent({ fleetId, authKey, onAuthError }: {
+  fleetId: string;
+  authKey: string | undefined;
+  onAuthError: (msg?: string) => void;
+}) {
   const [rules, setRules] = useState<FleetRule[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
 
-  const fetchData = useCallback(() => {
-    seedAgentsIfEmpty(fleetId);
-    setRules(readStore(fleetId));
-    setHistory(readHistory(fleetId));
-    setAgents(readAgents(fleetId));
-  }, [fleetId]);
+  const handleError = useCallback((e: unknown, what: string) => {
+    if (isAuthError(e)) { onAuthError(); return; }
+    setError(`Couldn't ${what}. Your last change may not have been saved — refreshed from the server.`);
+  }, [onAuthError]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const fetchData = useCallback(async () => {
+    try {
+      const d = await governanceList(fleetId, authKey);
+      setRules(d.rules);
+      setHistory(d.history);
+      setAgents(d.agents);
+      setLoaded(true);
+    } catch (e) {
+      if (isAuthError(e)) { onAuthError(); return; }
+      setError("Couldn't load governance rules. Retrying on the next change.");
+      setLoaded(true);
+    }
+  }, [fleetId, authKey, onAuthError]);
+
+  useEffect(() => { void fetchData(); }, [fetchData]);
+
+  // Suggested rules come from real traffic. The performance store is optional
+  // (503 without a database), so any failure just means no suggestions.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      performanceIndex(fleetId, SUGGESTION_HOURS, authKey),
+      performanceFleetHourly(fleetId, SUGGESTION_HOURS, authKey),
+    ])
+      .then(([index, hourly]) => { if (!cancelled) setSuggestions(computeSuggestions(index, hourly)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [fleetId, authKey]);
+
+  /** Apply a server-returned rule, ignoring a response older than what we hold. */
+  const applyRule = (rule: FleetRule) => {
+    setRules((rs) => rs.map((r) => (r.id === rule.id && rule.version >= r.version ? rule : r)));
+  };
+
+  const refreshHistory = () => {
+    governanceList(fleetId, authKey).then((d) => { setHistory(d.history); setAgents(d.agents); }).catch(() => {});
+  };
 
   const rulesBy = (rt: RuleType) => rules.filter((r) => r.ruleType === rt);
 
-  const addRule = (ruleType: RuleType) => {
-    const rule = mockCreateRule(fleetId, ruleType);
-    pushHistory(fleetId, ruleType, `Added new ${RULE_LABELS[ruleType]} rule`, "dashboard");
-    setRules(readStore(fleetId));
-    setHistory(readHistory(fleetId));
-    setSelectedId(rule.id);
+  const addRule = async (ruleType: RuleType) => {
+    setError(null);
+    try {
+      const { rule } = await governanceCreateRule(fleetId, { ruleType }, authKey);
+      setRules((rs) => [...rs, rule]);
+      setSelectedId(rule.id);
+      refreshHistory();
+    } catch (e) { handleError(e, "add the rule"); void fetchData(); }
   };
 
-  const removeRule = (ruleId: string, ruleType: RuleType) => {
-    mockDeleteRule(fleetId, ruleId);
-    pushHistory(fleetId, ruleType, `Removed ${RULE_LABELS[ruleType]} rule`, "dashboard");
-    setRules(readStore(fleetId));
-    setHistory(readHistory(fleetId));
+  const removeRule = async (ruleId: string) => {
+    setError(null);
+    setRules((rs) => rs.filter((r) => r.id !== ruleId));
     if (selectedId === ruleId) setSelectedId(null);
+    try {
+      await governanceDeleteRule(fleetId, ruleId, authKey);
+      refreshHistory();
+    } catch (e) { handleError(e, "remove the rule"); void fetchData(); }
   };
 
-  const changeMode = (ruleId: string, ruleType: RuleType, mode: RuleMode) => {
-    const prevRule = rules.find((r) => r.id === ruleId);
-    const prevMode = prevRule?.mode ?? "off";
-    const rule = mockUpdateRule(fleetId, ruleId, { mode });
-    if (prevMode !== mode) {
-      pushHistory(fleetId, ruleType, `${capitalize(prevMode)} → ${capitalize(mode)}`, "dashboard");
-    }
-    setRules((rs) => rs.map((r) => (r.id === ruleId ? rule : r)));
-    setHistory(readHistory(fleetId));
+  const update = async (ruleId: string, updates: { mode?: RuleMode; params?: AnyRuleParams; appliesTo?: RuleScope }, what: string, logsHistory: boolean) => {
+    setError(null);
+    // Optimistic: the controls reflect the change immediately.
+    setRules((rs) => rs.map((r) => (r.id === ruleId ? { ...r, ...updates } : r)));
+    try {
+      const { rule } = await governanceUpdateRule(fleetId, ruleId, updates, authKey);
+      applyRule(rule);
+      if (logsHistory) refreshHistory();
+    } catch (e) { handleError(e, what); void fetchData(); }
+  };
+
+  const changeMode = (ruleId: string, _ruleType: RuleType, mode: RuleMode) => {
     setSelectedId(ruleId);
+    if (rules.find((r) => r.id === ruleId)?.mode === mode) return;
+    void update(ruleId, { mode }, "change the mode", true);
   };
 
-  const updateParams = (ruleId: string, params: AnyRuleParams) => {
-    const rule = mockUpdateRule(fleetId, ruleId, { params });
-    setRules((rs) => rs.map((r) => (r.id === ruleId ? rule : r)));
+  // Controls send only the field they changed; it is merged onto the latest
+  // params here, at save time. Merging onto the params captured at render
+  // let a debounced number edit land after a select change and revert it.
+  const rulesRef = useRef(rules);
+  rulesRef.current = rules;
+  const updateParams = (ruleId: string, patch: Partial<SpendCapParams & LoopBreakerParams & ModelAllowlistParams>) => {
+    const latest = rulesRef.current.find((r) => r.id === ruleId);
+    if (!latest) return;
+    const params = { ...latest.params, ...patch } as AnyRuleParams;
+    rulesRef.current = rulesRef.current.map((r) => (r.id === ruleId ? { ...r, params } : r));
+    void update(ruleId, { params }, "save the rule settings", true);
   };
 
-  const updateScope = (ruleId: string, ruleType: RuleType, appliesTo: RuleScope) => {
-    const rule = mockUpdateRule(fleetId, ruleId, { appliesTo });
-    const label = appliesTo === "all" ? "All agents" : (appliesTo as string[]).join(", ") || "none";
-    pushHistory(fleetId, ruleType, `Scope → ${label}`, "dashboard");
-    setRules((rs) => rs.map((r) => (r.id === ruleId ? rule : r)));
-    setHistory(readHistory(fleetId));
+  const updateScope = (ruleId: string, _ruleType: RuleType, appliesTo: RuleScope) => {
+    void update(ruleId, { appliesTo }, "change who the rule applies to", true);
   };
+
+  const addSuggestedAllowlist = async (models: string[]) => {
+    setError(null);
+    const description = "Added Model allowlist in Watch (suggested)";
+    try {
+      const existing = rulesBy("model_allowlist");
+      if (existing.length === 0) {
+        await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
+      } else {
+        const first = existing[0];
+        const prev = (first.params as ModelAllowlistParams).allowedModels;
+        await governanceUpdateRule(fleetId, first.id, {
+          mode: "watch",
+          params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] },
+          description,
+        }, authKey);
+      }
+    } catch (e) { handleError(e, "add the suggested allowlist"); }
+    void fetchData();
+  };
+
+  const allowlistSuggestion = suggestions.onlyModels && !rulesBy("model_allowlist").some((r) =>
+    r.mode !== "off" && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m)))
+    ? suggestions.onlyModels
+    : null;
+  const suggestionCount = (suggestions.noCaching ? 1 : 0) + (allowlistSuggestion ? 1 : 0);
 
   const selectedRule = selectedId ? rules.find((r) => r.id === selectedId) ?? null : null;
 
@@ -636,18 +603,18 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
         <span>
           Stop an agent that spends more than{" "}
           {p.unit === "dollars" && <span style={{ color: "#67e8f9", fontFamily: FONT_MONO }}>$</span>}
-          <InlineNumber value={p.dailyCap} onChange={(n) => updateParams(rule.id, { ...p, dailyCap: n })} />
+          <InlineNumber value={p.dailyCap} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
           {" "}
           <select value={p.unit} onChange={(e) => {
             const newUnit = e.target.value as "tokens" | "dollars";
             const converted = newUnit === "dollars" ? Math.round(p.dailyCap * 0.003 * 100) / 100 : Math.round(p.dailyCap / 0.003);
-            updateParams(rule.id, { ...p, unit: newUnit, dailyCap: converted || (newUnit === "dollars" ? 5 : 50000) });
+            updateParams(rule.id, { unit: newUnit, dailyCap: converted || (newUnit === "dollars" ? 5 : 50000) });
           }} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
             <option value="tokens">tokens</option>
             <option value="dollars">dollars</option>
           </select>
           {" "}in a{" "}
-          <select value={p.scope} onChange={(e) => updateParams(rule.id, { ...p, scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          <select value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
             <option value="run">run</option>
             <option value="day">day</option>
           </select>
@@ -659,17 +626,17 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
       return (
         <span>
           Stop an agent that makes the same call{" "}
-          <InlineNumber value={p.threshold} onChange={(n) => updateParams(rule.id, { ...p, threshold: n })} />
+          <InlineNumber value={p.threshold} onChange={(n) => updateParams(rule.id, { threshold: n })} />
           {" "}times in a{" "}
-          <select value={p.scope} onChange={(e) => updateParams(rule.id, { ...p, scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          <select value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
             <option value="run">run</option>
             <option value="day">day</option>
           </select>
           . Ignore:{" "}
           <ToolPicker
             tags={p.ignoreTools}
-            onAdd={(t) => { if (!p.ignoreTools.includes(t)) updateParams(rule.id, { ...p, ignoreTools: [...p.ignoreTools, t] }); }}
-            onRemove={(t) => updateParams(rule.id, { ...p, ignoreTools: p.ignoreTools.filter((x) => x !== t) })}
+            onAdd={(t) => { if (!p.ignoreTools.includes(t)) updateParams(rule.id, { ignoreTools: [...p.ignoreTools, t] }); }}
+            onRemove={(t) => updateParams(rule.id, { ignoreTools: p.ignoreTools.filter((x) => x !== t) })}
           />
         </span>
       );
@@ -680,8 +647,8 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
         Only allow these models:{" "}
         <ModelPicker
           tags={p.allowedModels}
-          onAdd={(t) => { if (!p.allowedModels.includes(t)) updateParams(rule.id, { ...p, allowedModels: [...p.allowedModels, t] }); }}
-          onRemove={(t) => updateParams(rule.id, { ...p, allowedModels: p.allowedModels.filter((x) => x !== t) })}
+          onAdd={(t) => { if (!p.allowedModels.includes(t)) updateParams(rule.id, { allowedModels: [...p.allowedModels, t] }); }}
+          onRemove={(t) => updateParams(rule.id, { allowedModels: p.allowedModels.filter((x) => x !== t) })}
         />
       </span>
     );
@@ -703,50 +670,50 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Left column — rules */}
         <div style={{ flex: 1, overflowY: "auto", padding: 24, minWidth: 0 }}>
-          {/* Suggested section */}
+          {error && (
+            <div role="alert" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--bad)", background: "var(--bad-bg)", color: "var(--tx)", fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>{error}</span>
+              <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "var(--tx3)", cursor: "pointer", fontSize: 14 }} aria-label="Dismiss">&times;</button>
+            </div>
+          )}
+
+          {/* Suggested section — computed from the last 30 days of traffic */}
+          {suggestionCount > 0 && (
           <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 12 }}>SUGGESTED · 2</div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 12 }}>SUGGESTED · {suggestionCount}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {suggestions.noCaching && (
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
                 <div>
                   <p style={{ fontSize: 13, color: "var(--tx)" }}>None of your fleet&apos;s input is cached, so agents pay full price for repeated context.</p>
                   <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 2 }}>Not a rule. Caching is turned on in your client.</p>
                 </div>
                 <div style={{ flexShrink: 0 }}>
-                  <button style={{ padding: "6px 12px", fontSize: 11, border: "1px solid var(--line)", borderRadius: 6, color: "var(--tx)", background: "transparent", cursor: "pointer" }}>How to turn on caching</button>
+                  <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "6px 12px", fontSize: 11, border: "1px solid var(--line)", borderRadius: 6, color: "var(--tx)", background: "transparent", cursor: "pointer", textDecoration: "none" }}>How to turn on caching</a>
                 </div>
               </div>
+              )}
+              {allowlistSuggestion && (
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
                 <div>
-                  <p style={{ fontSize: 13, color: "var(--tx)" }}>Your fleet only used claude-haiku-4-5 in the last 30 days. An allowlist with that model would have stopped 0 calls.</p>
+                  <p style={{ fontSize: 13, color: "var(--tx)" }}>
+                    Your fleet only used {allowlistSuggestion.join(", ")} in the last 30 days. An allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
+                  </p>
                   <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 2 }}>Turns on Model allowlist in Watch.</p>
                 </div>
                 <div style={{ flexShrink: 0 }}>
                   <button
-                    onClick={() => {
-                      const existing = rulesBy("model_allowlist");
-                      if (existing.length === 0) {
-                        const rule = mockCreateRule(fleetId, "model_allowlist");
-                        mockUpdateRule(fleetId, rule.id, { mode: "watch", params: { allowedModels: ["claude-haiku-4-5"] } as ModelAllowlistParams });
-                      } else {
-                        const first = existing[0];
-                        const prev = first.params as ModelAllowlistParams;
-                        mockUpdateRule(fleetId, first.id, {
-                          mode: "watch",
-                          params: { allowedModels: prev.allowedModels.includes("claude-haiku-4-5") ? prev.allowedModels : ["claude-haiku-4-5", ...prev.allowedModels] } as ModelAllowlistParams,
-                        });
-                      }
-                      pushHistory(fleetId, "model_allowlist", "Added Model allowlist in Watch (suggested)", "dashboard");
-                      fetchData();
-                    }}
+                    onClick={() => { void addSuggestedAllowlist(allowlistSuggestion); }}
                     style={{ padding: "6px 12px", fontSize: 11, background: "#06b6d4", color: "#0f172a", fontWeight: 500, borderRadius: 6, border: "none", cursor: "pointer" }}
                   >
                     Add in Watch
                   </button>
                 </div>
               </div>
+              )}
             </div>
           </div>
+          )}
 
           {/* Rule sections */}
           {RULE_SECTIONS.map(({ key: rt, section }) => {
@@ -758,7 +725,7 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                     {section} · {sectionRules.length || 0}
                   </span>
                   <button
-                    onClick={() => addRule(rt)}
+                    onClick={() => { void addRule(rt); }}
                     style={{ fontSize: 10, fontWeight: 600, color: "#06b6d4", background: "transparent", border: "1px solid #06b6d4", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}
                   >
                     + Add rule
@@ -788,7 +755,7 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                         </div>
                         {sectionRules.length > 1 && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); removeRule(rule.id, rt); }}
+                            onClick={(e) => { e.stopPropagation(); void removeRule(rule.id); }}
                             style={{ fontSize: 11, color: "var(--tx3)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px" }}
                             title="Remove this rule"
                           >
@@ -805,7 +772,7 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
                   ))}
                   {sectionRules.length === 0 && (
                     <div style={{ background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 8, padding: 16, textAlign: "center", color: "var(--tx3)", fontSize: 12 }}>
-                      No rules configured. Click &quot;+ Add rule&quot; to create one.
+                      {loaded ? <>No rules configured. Click &quot;+ Add rule&quot; to create one.</> : "Loading…"}
                     </div>
                   )}
                 </div>
@@ -841,7 +808,7 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
               <div style={{ marginTop: 20 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 8 }}>WHAT THE AGENT GETS</div>
                 <pre style={{ background: "#1e293b", borderRadius: 8, padding: 12, fontSize: 11, color: "#94a3b8", fontFamily: FONT_MONO, lineHeight: 1.6, overflowX: "auto", margin: 0 }}>
-                  {AGENT_RESPONSE[selectedRule.ruleType]}
+                  {agentResponse(selectedRule)}
                 </pre>
                 <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 8 }}>
                   {selectedRule.ruleType === "spend_cap" && "Stops before the next call. Non-retryable, so SDKs should not retry."}
@@ -890,9 +857,6 @@ function GovernanceContent({ fleetId }: { fleetId: string }) {
   );
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 function formatTimeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();

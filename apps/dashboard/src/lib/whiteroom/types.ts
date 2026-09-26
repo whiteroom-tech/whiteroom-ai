@@ -62,6 +62,12 @@ export interface AuditEntry {
   details?: ToolDetail[];
   toAgent?: string;
   fromAgent?: string;
+  /** governance_block / governance_would_block / governance_rule_changed */
+  ruleType?: GovernanceRuleType;
+  reason?: GovernanceReason;
+  model?: string;
+  /** Repeats of the same governance event folded into this one (engine dedupes per minute). */
+  occurrences?: number;
   [key: string]: unknown;
 }
 
@@ -185,6 +191,8 @@ export interface PerformanceIndexResult {
     totalCost: number;
     avgLatencyMs: number | null;
     errorRate: number;
+    /** Calls stopped by a governance rule in Enforce (absent on older engines). */
+    blockedCount?: number;
     models: PerformanceModelSummary[];
   };
   recommendations: PerformanceRecommendation[];
@@ -215,6 +223,8 @@ export interface AgentPerformanceResult {
     cacheReadTokens: number;
     cacheWriteTokens: number;
     errorRate: number;
+    /** Calls stopped by a governance rule in Enforce (absent on older engines). */
+    blockedCount?: number;
     avgLatencyMs: number | null;
   };
   error?: string;
@@ -458,4 +468,44 @@ export interface CustomControlInput {
   rules: Array<ExecutableRule | ProposedRule>;
   requiredByUser?: boolean;
   testMethod: string;
+}
+
+// -- Fleet governance rules (Controls page) --
+
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist';
+export type GovernanceMode = 'off' | 'watch' | 'enforce';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed';
+export type GovernanceScope = 'all' | string[];
+
+export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
+export interface LoopBreakerParams { threshold: number; scope: 'run' | 'day'; ignoreTools: string[] }
+export interface ModelAllowlistParams { allowedModels: string[] }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams;
+
+export interface GovernanceRule {
+  id: string;
+  fleetId: string;
+  ruleType: GovernanceRuleType;
+  params: GovernanceParams;
+  mode: GovernanceMode;
+  appliesTo: GovernanceScope;
+  version: number;
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface GovernanceHistoryEntry {
+  id: string;
+  ruleId: string;
+  ruleType: GovernanceRuleType;
+  description: string;
+  by: string;
+  time: string;
+}
+
+export interface GovernanceListResult {
+  fleetId: string;
+  rules: GovernanceRule[];
+  history: GovernanceHistoryEntry[];
+  agents: string[];
 }

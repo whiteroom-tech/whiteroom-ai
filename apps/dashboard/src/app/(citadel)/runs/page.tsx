@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
 import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs } from '@/lib/analytics-metrics';
 import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
+import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/governance';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
@@ -183,14 +184,17 @@ export default function RunsPage() {
 
     const scopedEntries = scopedDay ? ranged.filter(({ day }) => day === scopedDay).map(({ e }) => e) : rangedEntries;
 
-    const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; hSaved: number; oSaved: number }>();
+    const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; hSaved: number; oSaved: number; blocks: number; wouldBlocks: number }>();
     scopedEntries.forEach(e => {
       const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
       const rawAid = isHandover ? handoverAgent(e) : e.agentId;
       if (!rawAid) return;
       const aid = rawAid.toLowerCase();
-      const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, hSaved: 0, oSaved: 0 };
+      const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, hSaved: 0, oSaved: 0, blocks: 0, wouldBlocks: 0 };
       if (e.type === 'task_complete') a.tasks++;
+      // Controls rules: Enforce blocks and Watch would-blocks.
+      if (e.type === GOVERNANCE_BLOCK) a.blocks += occurrences(e);
+      if (e.type === GOVERNANCE_WOULD_BLOCK) a.wouldBlocks += occurrences(e);
       if (e.tokensUsed) a.used += e.tokensUsed;
       if (isHandover) {
         a.handovers++;
@@ -228,7 +232,7 @@ export default function RunsPage() {
   const { rangedEntries, dailyStats, chartMax, scopedEntries, agentBreakdown, scopedCompression, rangeTotals, scopeLabel } = analytics;
 
   // Per-agent table sort; no selection keeps the default order (tokens desc).
-  type AgentSortKey = 'agent' | 'tasks' | 'tokens' | 'handovers' | 'saved' | 'compression';
+  type AgentSortKey = 'agent' | 'tasks' | 'tokens' | 'handovers' | 'saved' | 'compression' | 'blocks';
   const { sort: agentSort, toggleSort: toggleAgentSort } = useTableSort<AgentSortKey>();
   const sortedAgentBreakdown = useMemo(() => sortRows(agentBreakdown, agentSort, {
     agent: ([agent]) => agent,
@@ -237,6 +241,7 @@ export default function RunsPage() {
     handovers: ([, v]) => v.handovers,
     saved: ([, v]) => v.saved,
     compression: ([, v]) => v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0,
+    blocks: ([, v]) => v.blocks * 1e6 + v.wouldBlocks,
   }), [agentBreakdown, agentSort]);
 
   async function exportWorkbook() {
@@ -489,7 +494,7 @@ export default function RunsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                    {([['AGENT', 'agent'], ['TASKS', 'tasks'], ['TOKENS', 'tokens'], ['HANDOVERS', 'handovers'], ['SAVED', 'saved'], ['COMPRESSION', 'compression']] as [string, AgentSortKey][]).map(([h, k]) => (
+                    {([['AGENT', 'agent'], ['TASKS', 'tasks'], ['TOKENS', 'tokens'], ['HANDOVERS', 'handovers'], ['SAVED', 'saved'], ['COMPRESSION', 'compression'], ['BLOCKS', 'blocks']] as [string, AgentSortKey][]).map(([h, k]) => (
                       <th key={k} aria-sort={ariaSort(agentSort, k)} style={{ padding: 0, textAlign: h === 'AGENT' ? 'left' : 'right' }}>
                         <button onClick={() => toggleAgentSort(k, k === 'agent' ? 'asc' : 'desc')} title={`Sort by ${h.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: agentSort?.key === k ? 'var(--tx)' : 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>
                           {h}{sortArrow(agentSort, k)}
@@ -500,7 +505,7 @@ export default function RunsPage() {
                 </thead>
                 <tbody>
                   {agentBreakdown.length === 0 ? (
-                    <tr><td colSpan={6} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 12.5 }}>{loading ? 'Loading…' : 'No events in scope.'}</td></tr>
+                    <tr><td colSpan={7} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 12.5 }}>{loading ? 'Loading…' : 'No events in scope.'}</td></tr>
                   ) : sortedAgentBreakdown.map(([agent, v]) => {
                     const pct = v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0;
                     return (
@@ -518,6 +523,14 @@ export default function RunsPage() {
                                 <div style={{ height: '100%', background: 'var(--ok)', width: `${Math.min(100, pct)}%` }} />
                               </div>
                             </div>
+                          ) : <span style={{ color: 'var(--line2)' }}>—</span>}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' }} title="Calls stopped by a Controls rule (Enforce) · would-blocks recorded in Watch">
+                          {v.blocks || v.wouldBlocks ? (
+                            <>
+                              {v.blocks > 0 && <span style={{ color: 'var(--bad)', fontWeight: 700 }}>{v.blocks}</span>}
+                              {v.wouldBlocks > 0 && <span style={{ color: 'var(--warn)', fontSize: 11.5 }}>{v.blocks > 0 ? ' · ' : ''}{v.wouldBlocks} watch</span>}
+                            </>
                           ) : <span style={{ color: 'var(--line2)' }}>—</span>}
                         </td>
                       </tr>
