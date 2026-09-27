@@ -16,7 +16,8 @@
 .timerRed { color:var(--bad,#c03a2e); }
 
 /* ── Content area ── */
-.content { width:100%; max-width:960px; margin:0 auto; padding:28px clamp(20px,4vw,40px); overflow-y:auto; min-height:0; box-sizing:border-box; }
+/* The full-width area scrolls (scrollbar at the page edge); side padding keeps the content in a centred 960px column. */
+.content { width:100%; padding:28px max(clamp(20px,4vw,40px), calc((100% - 960px) / 2)); overflow-y:auto; min-height:0; box-sizing:border-box; }
 .eyebrow { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:10px; font-weight:500; letter-spacing:.13em; color:var(--brand); margin-bottom:4px; }
 .pageTitle { font-family:'Chakra Petch',sans-serif; font-size:clamp(22px,2.8vw,30px); font-weight:700; line-height:1.15; margin:0 0 4px; outline:none; }
 .pageSub { color:var(--tx2); font-size:14px; max-width:56ch; margin:0 0 24px; line-height:1.6; }

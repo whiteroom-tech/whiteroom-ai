@@ -667,7 +667,7 @@ export function TestRunFlow() {
               <p>{DEMO_STORY[scene].text}</p>
               <div className={s.btnRow}>
                 <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === 0} onClick={() => setScene(v => v - 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Previous</button>
-                <span className={s.small}>Step {scene + 1} of {DEMO_STORY.length}</span>
+                <span className={s.small} style={{ alignSelf: 'center' }}>Step {scene + 1} of {DEMO_STORY.length}</span>
                 <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === DEMO_STORY.length - 1} onClick={() => setScene(v => v + 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Next</button>
               </div>
             </div>
