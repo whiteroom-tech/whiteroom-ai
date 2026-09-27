@@ -46,6 +46,37 @@ export function partialCoverageSince(
   return since > getCutoff(range, nowMs) ? since : null;
 }
 
+/** Audit entry types that record a context handover. */
+export function isHandoverEntry(e: { type: string }): boolean {
+  return e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
+}
+
+/** The agent a handover is attributed to: the outgoing one. */
+export function handoverAgent(e: { agentId?: string; from?: unknown }): string {
+  return (typeof e.from === 'string' && e.from) || e.agentId || '';
+}
+
+/**
+ * Maps one audit entry to the savings inputs for its day. Run History and
+ * Performance both go through this, so their savings can only differ by the
+ * time window they cover, never by the math.
+ */
+export function auditSavingsEvent(e: { type: string; agentId?: string } & Record<string, unknown>, day: string): SavingsEvent {
+  const isHandover = isHandoverEntry(e);
+  return {
+    day,
+    agent: ((isHandover ? handoverAgent(e) : e.agentId) || '').toLowerCase(),
+    isTask: e.type === 'task_complete',
+    isHandover,
+    handoverSaved: isHandover
+      ? handoverSaved({ contextTokens: e.contextTokens as number | undefined, handoverDocTokens: e.handoverDocTokens as number | undefined })
+      : 0,
+    offloadSaved: e.type === 'context_offload'
+      ? Math.max(0, ((e.contextTokens as number) ?? 0) - ((e.returnedTokens as number) ?? 0))
+      : 0,
+  };
+}
+
 export interface SavingsEvent {
   day: string;
   /** Attributed agent, lower-cased; '' when the event names none. */

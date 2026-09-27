@@ -96,6 +96,7 @@
   /* Header: keep the page name and actions on one line; the fleet ID yields. */
   .citadel-page-header { padding: 0 16px !important; gap: 8px !important; }
   .citadel-page-fleet { display: none; }
+  .citadel-hide-mobile { display: none !important; }
   /* The footer only repeats the copyright; give the space back to content. */
   .citadel-page-footer { display: none !important; }
 

@@ -15,7 +15,7 @@ const KWH_PER_MILLION = +(KWH_PER_TOKEN * 1_000_000).toFixed(3);
  * `range` — Run History, which covers the selected date range.
  */
 export function metricDefinition(key: MetricKey, scope: 'watch' | 'range'): string {
-  const period = scope === 'watch' ? 'in the current watch' : 'in the selected range';
+  const period = scope === 'watch' ? 'in the current watch' : 'in the selected calendar days';
   switch (key) {
     case 'compression':
       return 'How much smaller an agent’s context is after a handover than before it, averaged across handovers.';
@@ -26,7 +26,7 @@ export function metricDefinition(key: MetricKey, scope: 'watch' | 'range'): stri
         ? 'Tokens used plus the estimated tokens saved. The saving applies the fleet’s lifetime savings rate to this watch’s usage.'
         : 'Tokens used plus the tokens saved by handover compression and context offloads.';
     case 'costSaved':
-      return `Tokens saved ${period}, priced at a blended $${USD_PER_MILLION} per million (80% input, 20% output). Performance’s Est. Savings is a different measure: prompt-cache discounts plus governance.`;
+      return `Tokens saved ${period}, priced at a blended $${USD_PER_MILLION} per million (80% input, 20% output). Performance’s Est. Savings also counts prompt-cache discounts and covers rolling hours, so it can differ.`;
     case 'energySaved':
       return `Tokens saved ${period} × ${KWH_PER_MILLION} kWh per million tokens.`;
   }

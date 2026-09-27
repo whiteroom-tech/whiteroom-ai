@@ -3,7 +3,7 @@
 // across the whole range for the other.
 
 import { describe, it, expect } from 'vitest';
-import { agentDaySavings, type SavingsEvent } from '@/lib/analytics-metrics';
+import { agentDaySavings, auditSavingsEvent, type SavingsEvent } from '@/lib/analytics-metrics';
 
 function ev(day: string, agent: string, kind: 'task' | 'handover' | 'offload', saved = 0): SavingsEvent {
   return {
@@ -44,5 +44,37 @@ describe('agentDaySavings', () => {
     const { byDay, byAgent } = agentDaySavings([ev('d1', '', 'offload', 50), ev('d1', 'a', 'offload', 20)]);
     expect(byDay.get('d1')).toBe(70);
     expect([...byAgent.values()].reduce((s, v) => s + v, 0)).toBe(20);
+  });
+});
+
+// Performance's Est. Savings used to apply one task multiplier across the
+// whole range, so it read higher than Run History for the same audit entries.
+// Both pages now map entries through auditSavingsEvent into agentDaySavings.
+describe('auditSavingsEvent', () => {
+  it('maps handovers, tasks and offloads', () => {
+    expect(auditSavingsEvent({ type: 'self_handover', agentId: 'x', from: 'Lead', contextTokens: 1300, handoverDocTokens: 300 }, 'd1'))
+      .toEqual({ day: 'd1', agent: 'lead', isTask: false, isHandover: true, handoverSaved: 1000, offloadSaved: 0 });
+    expect(auditSavingsEvent({ type: 'task_complete', agentId: 'Lead' }, 'd1'))
+      .toMatchObject({ agent: 'lead', isTask: true, handoverSaved: 0 });
+    expect(auditSavingsEvent({ type: 'context_offload', agentId: 'a', contextTokens: 500, returnedTokens: 120 }, 'd1'))
+      .toMatchObject({ offloadSaved: 380 });
+  });
+
+  it('defaults the handover doc to 300 tokens', () => {
+    expect(auditSavingsEvent({ type: 'handover', agentId: 'a', contextTokens: 1000 }, 'd1').handoverSaved).toBe(700);
+  });
+
+  it('does not inflate a quiet day with a busy day\'s multiplier', () => {
+    const entries = [
+      { type: 'handover', agentId: 'a', contextTokens: 1300, handoverDocTokens: 300, day: 'd1' },
+      ...Array.from({ length: 9 }, () => ({ type: 'task_complete', agentId: 'a', day: 'd1' })),
+      { type: 'handover', agentId: 'a', contextTokens: 1300, handoverDocTokens: 300, day: 'd2' },
+      { type: 'task_complete', agentId: 'a', day: 'd2' },
+    ];
+    const { byDay } = agentDaySavings(entries.map(({ day, ...e }) => auditSavingsEvent(e, day)));
+    const total = [...byDay.values()].reduce((s, v) => s + v, 0);
+    // Per agent-day: d1 = 1000 × ceil(9/2) = 5000, d2 = 1000 × 1 = 1000.
+    // The old range-wide multiplier gave 2000 × ceil(10/3) = 8000.
+    expect(total).toBe(6000);
   });
 });
