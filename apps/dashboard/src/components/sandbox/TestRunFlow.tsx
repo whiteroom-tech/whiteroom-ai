@@ -7,7 +7,7 @@ import { SignOutButton } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult, type DemoStep } from '@/lib/sandbox/api';
+import { clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
 import s from './guided.module.css';
 
 type Phase = 'start' | 'setup' | 'workspace';
@@ -42,18 +42,15 @@ const EVENT_LABELS: Record<string, string> = {
   policy_decision: 'Policy check',
 };
 
-/** Plain-language headings for the demo walkthrough steps. */
-const DEMO_STEP_LABELS: Record<string, string> = {
-  register_agent: 'An agent connects',
-  start_watch: 'Its work period starts',
-  complete_task: 'It finishes a task',
-  assertion_pass: 'A check passes',
-  initiate_handover: 'It hands its work over',
-  create_policy: 'A safety rule is set up',
-  observe_test: 'The rule spots a risky tool call',
-  enforce_test: 'The rule blocks the risky call',
-  chain_verify: 'The record is checked for tampering',
-};
+/**
+ * The demo walkthrough: one step per check. The engine's script also runs a
+ * safety-rule test, which isn't one of these checks, so it isn't shown.
+ */
+const DEMO_STORY = [
+  { title: 'Your agent connects', text: 'A demo agent sends its calls through WhiteRoom and finishes a task. Nothing about its calls changes.' },
+  { title: 'It hands over when the watch ends', text: 'Its work period (a “watch”) ends. WhiteRoom packs its context into a short handover.' },
+  { title: 'It picks up where it left off', text: 'The work carries on from the handover instead of the full history, and the next task completes.' },
+];
 
 function eventLabel(type: string): string {
   return EVENT_LABELS[type] ?? type.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
@@ -175,7 +172,6 @@ export function TestRunFlow() {
   const [reconnecting, setReconnecting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [report, setReport] = useState<ReportResult | null>(null);
-  const [demo, setDemo] = useState<DemoStep[]>([]);
   const [scene, setScene] = useState(0);
   const [assessment, setAssessment] = useState('Not assessed');
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -244,7 +240,7 @@ export function TestRunFlow() {
       // token belongs to the previous one.
       if (ownerRef.current && owner) clearSandboxToken();
       ownerRef.current = owner;
-      setRun(null); setReport(null); setCredential(''); setDemo([]); setPhase('start'); setBooting(true);
+      setRun(null); setReport(null); setCredential(''); setPhase('start'); setBooting(true);
     }
     if (!owner) return;
     let disposed = false;
@@ -377,7 +373,7 @@ export function TestRunFlow() {
       if (mode === 'demo') {
         const d = await startDemo(result.sandboxId);
         if (d.error) throw new Error(d.error);
-        setDemo(d.steps ?? []); setScene(0);
+        setScene(0);
       }
     } finally { setCredential(''); setShowKey(false); }
   });
@@ -413,7 +409,7 @@ export function TestRunFlow() {
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
     clearSandboxToken();
-    setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed');
+    setRun(null); setReport(null); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed');
   });
 
   if (authStatus === 'loading') return <div className={s.content}>Loading your workspace…</div>;
@@ -664,15 +660,15 @@ export function TestRunFlow() {
 
         {/* ── Results tab ── */}
         <div className={`${s.panel} ${wsTab === 'results' ? s.panelActive : ''}`}>
-          {isDemo && demo.length > 0 && (
+          {isDemo && (
             <div className={s.card} style={{ marginBottom: 16 }}>
               <div className={s.eyebrow}>DEMO WALKTHROUGH</div>
-              <h2 style={{ fontFamily: FONT_DISPLAY }}>{demo[scene] ? (DEMO_STEP_LABELS[demo[scene].action] ?? eventLabel(demo[scene].action)) : 'Demo activity'}</h2>
-              <p>{demo[scene]?.detail ?? 'Made-up data. The checks below show what a real test looks for.'}</p>
+              <h2 style={{ fontFamily: FONT_DISPLAY }}>{DEMO_STORY[scene].title}</h2>
+              <p>{DEMO_STORY[scene].text}</p>
               <div className={s.btnRow}>
                 <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === 0} onClick={() => setScene(v => v - 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Previous</button>
-                <span className={s.small}>{scene + 1} / {demo.length}</span>
-                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === demo.length - 1} onClick={() => setScene(v => v + 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Next</button>
+                <span className={s.small}>Step {scene + 1} of {DEMO_STORY.length}</span>
+                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === DEMO_STORY.length - 1} onClick={() => setScene(v => v + 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Next</button>
               </div>
             </div>
           )}
@@ -702,7 +698,7 @@ export function TestRunFlow() {
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
               clearSandboxToken();
-              setRun(null); setReport(null); setDemo([]); setConfirmEnd(false); setAssessment('Not assessed');
+              setRun(null); setReport(null); setConfirmEnd(false); setAssessment('Not assessed');
               setPhase('setup');
             })} disabled={busy} style={{ fontSize: 12 }}>Now test my agent →</button>}
             <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
