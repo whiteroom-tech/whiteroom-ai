@@ -9,7 +9,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtTokens } from '@/lib/format';
 import { safeGet, safeSet } from '@/lib/safe-storage';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
@@ -1339,9 +1339,9 @@ export default function PerformancePage() {
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
-      {/* Top bar */}
-      <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <PageHeader
+        fleetId={fleetId}
+        title={<>
           {view !== 'index' && (
             <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Performance</button>
           )}
@@ -1355,10 +1355,9 @@ export default function PerformancePage() {
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>
             {view === 'index' ? 'Performance' : view === 'agent' ? selectedAgent : 'Evidence'}
           </span>
-        </div>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
-        <span style={{ marginLeft: 'auto' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        </>}
+      >
+        <div role="group" aria-label="Time range" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {([24, 72, 168] as const).map(h => (
             <button key={h} onClick={() => setHoursBack(h)} style={{
               fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
@@ -1368,9 +1367,7 @@ export default function PerformancePage() {
             }}>{h === 24 ? '24h' : h === 72 ? '3d' : '7d'}</button>
           ))}
         </div>
-        <ThemeToggle />
-        <button onClick={() => { window.location.href = '/auth/sign-out'; }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
-      </div>
+      </PageHeader>
 
       {/* Content — dimmed while a range/agent fetch is in flight over data
           already on screen, so stale charts read as "refreshing", not current. */}
@@ -1383,11 +1380,7 @@ export default function PerformancePage() {
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 11.5, color: 'var(--tx3)', flexShrink: 0 }}>
-        <span>White Room v1.1 Beta</span>
-        <span>© 2026 WhiteRoom</span>
-      </div>
+      <PageFooter />
     </div>
   );
 }

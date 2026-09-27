@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SignOutButton } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
   acceptOrgInvitation,
@@ -67,7 +68,7 @@ export function OrganizationView({ mine, viewerId }: { mine: MyOrganization; vie
                 {membership && <Pill tone={membership.role === 'owner' ? 'ho' : 'muted'}>{ROLE_LABELS[membership.role]}</Pill>}
               </h1>
             </div>
-            <ThemeToggle />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><ThemeToggle /><SignOutButton /></div>
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>

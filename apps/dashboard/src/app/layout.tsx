@@ -5,7 +5,7 @@ import { Providers } from './providers';
 import { auth } from '@/auth';
 
 export const metadata: Metadata = {
-  title: 'WhiteRoom Dashboard',
+  title: { default: 'WhiteRoom', template: '%s · WhiteRoom' },
   description: 'Agent governance dashboard',
 };
 

@@ -42,7 +42,8 @@ export function ThemeToggle() {
     <button
       onClick={cycleTheme}
       title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
-      style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 5, padding: '3px 7px', cursor: 'pointer', color: 'var(--tx3)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: 4 }}
+      aria-label={`Theme: ${theme}. Switch theme`}
+      style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, minWidth: 30, minHeight: 28, padding: '6px 8px', cursor: 'pointer', color: 'var(--tx3)', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
     >
       {THEME_ICON[theme]}
     </button>

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SignOutButton } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
@@ -467,6 +468,7 @@ export function TestRunFlow() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className={`${s.timer} ${timerColor(displaySeconds)}`} aria-label={`${expired ? 'Expired' : formatTimer(displaySeconds)} remaining`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(displaySeconds)}</span>
           <ThemeToggle />
+          <SignOutButton />
         </div>
       </div>
     )}
@@ -476,7 +478,7 @@ export function TestRunFlow() {
       <div className={s.topbar}>
         <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Sandbox</span>
         <span className={s.badgeEnv}>TEST ENVIRONMENT</span>
-        <div style={{ marginLeft: 'auto' }}><ThemeToggle /></div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}><ThemeToggle /><SignOutButton /></div>
       </div>
     )}
 

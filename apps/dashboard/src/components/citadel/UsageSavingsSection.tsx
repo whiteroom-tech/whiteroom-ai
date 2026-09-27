@@ -6,6 +6,8 @@ import { getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, watch
 import { estimateCost, fmtTokens as fmtK, fmtUsd, KWH_PER_TOKEN } from '@/lib/format';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { InfoTip } from '@/components/citadel/InfoTip';
+import { metricDefinition } from '@/lib/metric-definitions';
 
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
@@ -148,7 +150,7 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
           </div>
         </div>
         <div>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span><InfoTip label="Context Compression">{metricDefinition('compression', 'range')}</InfoTip>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 34, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
             {scopedCompression > 0 ? scopedCompression.toFixed(1) + '%' : '—'}
           </div>
@@ -162,11 +164,11 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5 }}>{rangeTotals.tasks ? String(rangeTotals.tasks) : '—'}</div>
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span>
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span><InfoTip label="Tokens w/ WhiteRoom">{metricDefinition('tokensWith', 'range')}</InfoTip>
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtK(rangeTotals.used) : '—'}</div>
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span>
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span><InfoTip label="Tokens w/o WhiteRoom">{metricDefinition('tokensWithout', 'range')}</InfoTip>
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtK(rangeTotals.used + rangeTotals.saved) : '—'}</div>
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
@@ -174,11 +176,11 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ho)' }}>{rangeTotals.handovers ? String(rangeTotals.handovers) : '—'}</div>
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span>
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span><InfoTip label="$ Saved">{metricDefinition('costSaved', 'range')}</InfoTip>
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? fmtUsd(estimateCost(rangeTotals.saved)) : '—'}</div>
       </div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span><InfoTip label="Energy Saved">{metricDefinition('energySaved', 'range')}</InfoTip>
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * KWH_PER_TOKEN).toFixed(4) + ' kWh' : '—'}</div>
       </div>
     </div>

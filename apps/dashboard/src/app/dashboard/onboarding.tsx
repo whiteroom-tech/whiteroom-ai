@@ -275,6 +275,118 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
     }).catch(() => {});
   }, [fleetToken]);
 
+  // A fleet that has done work doesn't need the setup steps up front.
+  const active = (report?.agentCount ?? 0) > 0 || (report?.totals?.tasks ?? 0) > 0;
+
+  const setupSteps = (
+      <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+        <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
+
+        <div className="space-y-8">
+          {/* Step 1 */}
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
+            <div className="flex-1 space-y-3">
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>
+                  {tab === 'azure' ? 'Connect your Azure key' : 'Point your agent at WhiteRoom'}
+                </p>
+                <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>
+                  {tab === 'azure'
+                    ? 'Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) in Bring Your Own Key below. You get back a proxy URL — point your agent at it instead of Azure, and keep your key, deployment names and api-version exactly as they are.'
+                    : 'Change one URL so your agent’s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.'}
+                </p>
+              </div>
+              {tab === 'direct' && (
+                <div className="space-y-2">
+                  <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
+                  <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
+                </div>
+              )}
+              {tab === 'azure' && (
+                <div className="space-y-2">
+                  <CodeBlock label="Set your proxy URL (you'll get this after connecting your key)" code="export AZURE_OPENAI_ENDPOINT=https://proxy.whiteroom.tech/<your-proxy-key>" />
+                  <CodeBlock label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                  <CodeBlock
+                    label="The AzureOpenAI client picks both up — nothing else changes"
+                    code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(api_version="2024-10-21")  # your usual api-version\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`}
+                  />
+                  <CodeBlock
+                    label="Or with the OpenAI SDK against Azure's v1 API"
+                    code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="https://proxy.whiteroom.tech/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n)`}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>2</div>
+            <div className="flex-1 space-y-3">
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
+                <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and starts governance automatically when your first API call flows through the proxy.</p>
+              </div>
+              <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
+            </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>3</div>
+            <div className="flex-1 space-y-3">
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
+                <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
+              </div>
+              <a href="/agents" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold hover:underline" style={{ color: '#38E1FF' }}>
+                Open the Control Room
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+  );
+
+  const liveRow = (
+      <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
+        <a
+          href="/agents"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-xl p-6 flex items-center gap-4 transition-all group"
+          style={{ background: '#0A1020', border: '1px solid #1B2740', textDecoration: 'none' }}
+        >
+          <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(56,225,255,.1)' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </div>
+          <div>
+            <p className="text-base font-semibold group-hover:text-[#38E1FF] transition-colors" style={{ color: '#EAF1FF' }}>Live Dashboard</p>
+            <p className="text-sm mt-0.5" style={{ color: '#6B7C9E' }}>Monitor your agents in real time</p>
+          </div>
+          <svg className="ml-auto shrink-0 opacity-40 group-hover:opacity-100 transition-opacity" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>
+          <span className="sr-only">(opens in a new tab)</span>
+        </a>
+
+        {report && (
+          <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+            <p className="text-[11px] font-mono tracking-[.28em] uppercase font-medium mb-3" style={{ color: '#A9B8D4' }}>Fleet Status</p>
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard label="Agents" value={report.agentCount ?? 0} />
+              <StatCard label="Tasks" value={report.totals?.tasks ?? 0} />
+              <StatCard
+                label="Tokens"
+                value={`${((report.totals?.tokens ?? 0) / 1000).toFixed(1)}K`}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+  );
+
   return (
     <div className="min-h-screen font-sans" style={{ background: '#070B14', color: '#EAF1FF' }}>
       {/* Header */}
@@ -313,113 +425,29 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           </div>
         )}
 
+        {active && liveRow}
+
         {/* Provider selector */}
         <ProviderPills value={tab} onChange={setTab} />
 
-        {/* Getting Started */}
-        <section className="rounded-xl p-6 space-y-8" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-          <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: '#A9B8D4' }}>Get Started in 3 Steps</h3>
-
-          <div className="space-y-8">
-            {/* Step 1 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>1</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>
-                    {tab === 'azure' ? 'Connect your Azure key' : 'Point your agent at WhiteRoom'}
-                  </p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>
-                    {tab === 'azure'
-                      ? 'Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) in Bring Your Own Key below. You get back a proxy URL — point your agent at it instead of Azure, and keep your key, deployment names and api-version exactly as they are.'
-                      : 'Change one URL so your agent’s API calls flow through WhiteRoom. No code changes needed — your agent runs exactly as before, but now with governance.'}
-                  </p>
-                </div>
-                {tab === 'direct' && (
-                  <div className="space-y-2">
-                    <CodeBlock label="If you use Anthropic (Claude)" code="export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech" />
-                    <CodeBlock label="If you use OpenAI (GPT)" code="export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1" />
-                  </div>
-                )}
-                {tab === 'azure' && (
-                  <div className="space-y-2">
-                    <CodeBlock label="Set your proxy URL (you'll get this after connecting your key)" code="export AZURE_OPENAI_ENDPOINT=https://proxy.whiteroom.tech/<your-proxy-key>" />
-                    <CodeBlock label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
-                    <CodeBlock
-                      label="The AzureOpenAI client picks both up — nothing else changes"
-                      code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(api_version="2024-10-21")  # your usual api-version\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`}
-                    />
-                    <CodeBlock
-                      label="Or with the OpenAI SDK against Azure's v1 API"
-                      code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="https://proxy.whiteroom.tech/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n)`}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Step 2 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>2</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>Run your agent</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Run your agent exactly as before. WhiteRoom auto-registers, auto-pairs, and starts governance automatically when your first API call flows through the proxy.</p>
-                </div>
-                <CodeBlock label="That's it — no CLI commands needed" code="python my_agent.py # or node agent.js, etc." />
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: 'rgba(56,225,255,.1)', color: '#38E1FF' }}>3</div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#EAF1FF' }}>View your dashboard</p>
-                  <p className="text-sm mt-1" style={{ color: '#6B7C9E' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
-                </div>
-                <CodeBlock label="Open in your browser" code="https://app.whiteroom.tech/agents" />
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* Getting Started — collapsed once the fleet has run work, so
+            returning users land on the Control Room link, not setup. */}
+        {active ? (
+          <details className="group/setup space-y-4">
+            <summary className="rounded-xl cursor-pointer list-none px-6 py-4 flex items-center justify-between text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ background: '#0A1020', border: '1px solid #1B2740', color: '#A9B8D4' }}>
+              Setup guide
+              <span aria-hidden="true" className="transition-transform group-open/setup:rotate-90">▸</span>
+            </summary>
+            {setupSteps}
+          </details>
+        ) : (
+          setupSteps
+        )}
 
         {/* Bring Your Own Key */}
         <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} />
 
-        {/* Live Dashboard + Fleet Status row */}
-        <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
-          <a
-            href="/agents"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-xl p-6 flex items-center gap-4 transition-all group"
-            style={{ background: '#0A1020', border: '1px solid #1B2740', textDecoration: 'none' }}
-          >
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(56,225,255,.1)' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            </div>
-            <div>
-              <p className="text-base font-semibold group-hover:text-[#38E1FF] transition-colors" style={{ color: '#EAF1FF' }}>Live Dashboard</p>
-              <p className="text-sm mt-0.5" style={{ color: '#6B7C9E' }}>Monitor your agents in real time</p>
-            </div>
-            <svg className="ml-auto shrink-0 opacity-40 group-hover:opacity-100 transition-opacity" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38E1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          </a>
-
-          {report && (
-            <div className="rounded-xl p-6" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
-              <p className="text-[11px] font-mono tracking-[.28em] uppercase font-medium mb-3" style={{ color: '#A9B8D4' }}>Fleet Status</p>
-              <div className="grid grid-cols-3 gap-3">
-                <StatCard label="Agents" value={report.agentCount ?? 0} />
-                <StatCard label="Tasks" value={report.totals?.tasks ?? 0} />
-                <StatCard
-                  label="Tokens"
-                  value={`${((report.totals?.tokens ?? 0) / 1000).toFixed(1)}K`}
-                />
-              </div>
-            </div>
-          )}
-        </div>
+        {!active && liveRow}
 
         {/* API Key */}
         <section className="rounded-xl p-6 space-y-3" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>

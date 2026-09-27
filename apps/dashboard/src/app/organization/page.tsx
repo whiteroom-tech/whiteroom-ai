@@ -1,7 +1,10 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { getMyOrganization } from '@/lib/organizations';
 import { OrganizationView } from './organization-view';
+
+export const metadata: Metadata = { title: 'Organization' };
 
 // Scoped to the caller's membership and role on every request.
 export const dynamic = 'force-dynamic';
