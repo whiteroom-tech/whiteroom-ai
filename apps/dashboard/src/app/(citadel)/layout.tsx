@@ -30,7 +30,10 @@ export default function CitadelLayout({ children }: { children: React.ReactNode 
     >
       <Sidebar />
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-        <button className="citadel-mobile-menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}>{menuOpen ? "Close navigation" : "Open navigation"}</button>
+        <button className="citadel-mobile-menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">{menuOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}</svg>
+          {menuOpen ? 'Close menu' : 'Menu'}
+        </button>
         {children}
       </div>
     </div>

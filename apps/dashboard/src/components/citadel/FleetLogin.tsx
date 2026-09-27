@@ -30,7 +30,7 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
       <div className="w-full max-w-md rounded-xl p-10 text-center" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
         <div className="flex items-center justify-center gap-2.5 mb-1">
           <Logo width={22} height={30} gradientId="wr-l" />
-          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 3, color: 'var(--tx)' }}>WHITE ROOM</span>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 0.5, color: 'var(--tx)' }}>WhiteRoom</span>
         </div>
         <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
 

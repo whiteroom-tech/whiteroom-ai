@@ -24,7 +24,7 @@ import type {
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, convertSpendCap, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { PageFooter, PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO } from "@whiteroom/ui";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ function ModeToggle({ mode, onChange }: { mode: RuleMode; onChange: (m: RuleMode
                 ? { background: "#f59e0b", color: "#0f172a" }
                 : m === "watch"
                 ? { background: "#06b6d4", color: "#0f172a" }
-                : { background: "#334155", color: "var(--tx)" }
+                : { background: "var(--line2)", color: "var(--tx)" }
               : { background: "transparent", color: "var(--tx3)" }),
           }}
         >
@@ -120,7 +120,7 @@ function TagInput({ tags, onAdd, onRemove, placeholder }: {
       {tags.map((t) => (
         <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
           {t}
-          <button onClick={() => onRemove(t)} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
         </span>
       ))}
       <span style={{ display: "inline-flex", alignItems: "center" }}>
@@ -136,6 +136,7 @@ function TagInput({ tags, onAdd, onRemove, placeholder }: {
             }
           }}
           placeholder={placeholder ?? "+ add"}
+          aria-label={placeholder ?? "Add"}
           style={{ background: "transparent", border: "none", outline: "none", fontSize: 11, color: "var(--tx3)", width: 64 }}
         />
       </span>
@@ -213,7 +214,7 @@ function ModelPicker({ tags, onAdd, onRemove }: {
         return (
           <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
             {known ? known.label : t}
-            <button onClick={() => onRemove(t)} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+            <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
           </span>
         );
       })}
@@ -235,11 +236,13 @@ function ModelPicker({ tags, onAdd, onRemove }: {
             }}
             onBlur={() => { setShowCustom(false); setCustomInput(""); }}
             placeholder="deployment name or model ID"
+            aria-label="Custom model or deployment name"
             style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, width: 200, outline: "none" }}
           />
         </span>
       ) : (
         <select
+          aria-label="Add a model"
           value=""
           onChange={(e) => {
             const val = e.target.value;
@@ -307,7 +310,7 @@ function ToolPicker({ tags, onAdd, onRemove }: {
       {tags.map((t) => (
         <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
           {t}
-          <button onClick={() => onRemove(t)} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
         </span>
       ))}
       {showCustom ? (
@@ -328,11 +331,13 @@ function ToolPicker({ tags, onAdd, onRemove }: {
             }}
             onBlur={() => { setShowCustom(false); setCustomInput(""); }}
             placeholder="tool name"
+            aria-label="Tool name to ignore"
             style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, width: 140, outline: "none" }}
           />
         </span>
       ) : (
         <select
+          aria-label="Add a tool to ignore"
           value=""
           onChange={(e) => {
             const val = e.target.value;
@@ -377,6 +382,7 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--tx3)", marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
       <span style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, fontSize: 10 }}>Applies to</span>
       <select
+        aria-label="Which agents this rule applies to"
         value={isAll ? "__all__" : "__specific__"}
         onChange={(e) => {
           if (e.target.value === "__all__") onChange("all");
@@ -392,10 +398,11 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
           {selected.map((a) => (
             <span key={a} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#1e3a5f", color: "#93c5fd", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
               {a}
-              <button onClick={() => onChange(selected.filter((x) => x !== a))} style={{ color: "#93c5fd", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 2, fontSize: 13 }}>&times;</button>
+              <button onClick={() => onChange(selected.filter((x) => x !== a))} aria-label={`Remove ${a}`} style={{ color: "#93c5fd", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
             </span>
           ))}
           <select
+            aria-label="Add an agent"
             value=""
             onChange={(e) => {
               if (e.target.value && !selected.includes(e.target.value)) {
@@ -417,7 +424,7 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
 
 // ── Inline number input (debounced) ───────────────────────────────
 
-function InlineNumber({ value, onChange, allowDecimals = false }: { value: number; onChange: (n: number) => void; allowDecimals?: boolean }) {
+function InlineNumber({ value, onChange, allowDecimals = false, ariaLabel }: { value: number; onChange: (n: number) => void; allowDecimals?: boolean; ariaLabel: string }) {
   const [draft, setDraft] = useState(value.toLocaleString());
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -427,6 +434,8 @@ function InlineNumber({ value, onChange, allowDecimals = false }: { value: numbe
   return (
     <input
       type="text"
+      inputMode={allowDecimals ? "decimal" : "numeric"}
+      aria-label={ariaLabel}
       value={draft}
       onChange={(e) => {
         setDraft(e.target.value);
@@ -605,9 +614,9 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
         <span>
           Stop an agent that spends more than{" "}
           {p.unit === "dollars" && <span style={{ color: "#67e8f9", fontFamily: FONT_MONO }}>$</span>}
-          <InlineNumber value={p.dailyCap} allowDecimals={p.unit === "dollars"} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
+          <InlineNumber ariaLabel="Spend limit" value={p.dailyCap} allowDecimals={p.unit === "dollars"} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
           {" "}
-          <select value={p.unit} onChange={(e) => {
+          <select aria-label="Limit unit" value={p.unit} onChange={(e) => {
             const newUnit = e.target.value as "tokens" | "dollars";
             updateParams(rule.id, { unit: newUnit, dailyCap: convertSpendCap(p.dailyCap, newUnit) });
           }} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
@@ -615,7 +624,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             <option value="dollars">dollars</option>
           </select>
           {" "}in a{" "}
-          <select value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
             <option value="run">run</option>
             <option value="day">day</option>
           </select>
@@ -627,9 +636,9 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
       return (
         <span>
           Stop an agent that makes the same call{" "}
-          <InlineNumber value={p.threshold} onChange={(n) => updateParams(rule.id, { threshold: n })} />
+          <InlineNumber ariaLabel="Repeated-call limit" value={p.threshold} onChange={(n) => updateParams(rule.id, { threshold: n })} />
           {" "}times in a{" "}
-          <select value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
             <option value="run">run</option>
             <option value="day">day</option>
           </select>
@@ -657,16 +666,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, flex: 1 }}>
-      {/* Header */}
-      <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: "1px solid var(--line)", padding: "0 20px" }}>
-        <span style={{ fontSize: 14, color: "var(--tx3)" }}>
-          <b style={{ color: "var(--tx)", fontWeight: 600 }}>Governance</b> / {fleetId}
-        </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: "var(--info)", background: "var(--info-bg)", border: "1px solid var(--info)", borderRadius: 4, padding: "2px 8px" }}>BETA</span>
-        <span style={{ marginLeft: "auto" }} />
-        <ThemeToggle />
-        <button onClick={() => { window.location.href = "/auth/sign-out"; }} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--tx2)", border: "1px solid var(--line2)", borderRadius: 6, padding: "6px 12px", background: "var(--card)", cursor: "pointer" }}>Sign out</button>
-      </div>
+      <PageHeader title="Controls" fleetId={fleetId} />
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Left column — rules */}
@@ -757,8 +757,9 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                         {sectionRules.length > 1 && (
                           <button
                             onClick={(e) => { e.stopPropagation(); void removeRule(rule.id); }}
-                            style={{ fontSize: 11, color: "var(--tx3)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px" }}
+                            style={{ fontSize: 14, color: "var(--tx3)", background: "transparent", border: "none", cursor: "pointer", minWidth: 24, minHeight: 24, padding: "2px 6px" }}
                             title="Remove this rule"
+                            aria-label="Remove this rule"
                           >
                             &times;
                           </button>
@@ -849,11 +850,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-between" style={{ padding: "6px 20px", borderTop: "1px solid var(--line)", background: "var(--sunk)", fontSize: 11.5, color: "var(--tx3)", flexShrink: 0 }}>
-        <span>Traffic that bypasses the proxy, such as Claude Code signed in with OAuth, is not covered.</span>
-        <span>WhiteRoom v1.1 Beta</span>
-      </div>
+      <PageFooter note="Traffic that bypasses the proxy, such as Claude Code signed in with OAuth, is not covered." />
     </div>
   );
 }

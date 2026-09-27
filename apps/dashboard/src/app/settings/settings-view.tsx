@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SignOutButton } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
   cancelEmailChange,
@@ -157,7 +158,7 @@ export function SettingsView({
         <div style={{ maxWidth: 760, margin: '0 auto', padding: '26px 24px 80px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
             <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, margin: 0 }}>Settings</h1>
-            <ThemeToggle />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><ThemeToggle /><SignOutButton /></div>
           </div>
 
           {banner && (
@@ -542,7 +543,9 @@ function MethodsSection({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {m.accountRef}
+                {/* Google's account ref is a numeric ID that means nothing to
+                    people; the email method's ref is the address itself. */}
+                {m.provider === 'email' ? m.accountRef : 'Connected'}
               </div>
             </div>
             {m.canUnlink ? (

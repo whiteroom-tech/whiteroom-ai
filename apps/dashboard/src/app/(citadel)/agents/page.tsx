@@ -3,9 +3,8 @@
 import { useSearchParams } from 'next/navigation';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { OverviewContent } from '@/components/citadel/OverviewContent';
-import { FONT_MONO } from '@whiteroom/ui';
+import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
 
 export default function AgentsPage() {
   const searchParams = useSearchParams();
@@ -21,16 +20,7 @@ export default function AgentsPage() {
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
-      {/* Top bar */}
-      <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
-        <span style={{ fontSize: 14, color: 'var(--tx3)' }}>
-          <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Overview</b> / {auth.fleetId}
-        </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
-        <span style={{ marginLeft: 'auto' }} />
-        <ThemeToggle />
-        <button onClick={() => { window.location.href = '/auth/sign-out'; }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
-      </div>
+      <PageHeader title="Overview" fleetId={auth.fleetId} />
 
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -42,11 +32,7 @@ export default function AgentsPage() {
         />
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 11.5, color: 'var(--tx3)', flexShrink: 0 }}>
-        <span>White Room v1.1 Beta</span>
-        <span>© 2026 WhiteRoom</span>
-      </div>
+      <PageFooter />
     </div>
   );
 }

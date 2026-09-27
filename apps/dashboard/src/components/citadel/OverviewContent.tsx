@@ -13,6 +13,8 @@ import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { StatBox, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { InfoTip } from '@/components/citadel/InfoTip';
+import { metricDefinition } from '@/lib/metric-definitions';
 
 const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; badgeBd: string; bar: string }> = {
   working:      { border: 'var(--ok)', badgeBg: 'var(--ok-bg)', badgeTx: 'var(--ok)', badgeBd: 'var(--ok)', bar: 'var(--ok)' },
@@ -332,7 +334,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
           {actionNotice}
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '14px 20px 0' }}>
+      <div className="citadel-kpi-strip" style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '14px 20px 0' }}>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
             <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
@@ -349,7 +351,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
             </div>
           </div>
           <div>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span><InfoTip label="Context Compression">{metricDefinition('compression', 'watch')}</InfoTip>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 34, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
               {(es.compressionRatio ?? 0) > 0 ? (es.compressionRatio as number).toFixed(1) + '%' : '—'}
             </div>
@@ -363,11 +365,11 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5 }}>{watchTasks ? String(watchTasks) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span><InfoTip label="Tokens w/ WhiteRoom">{metricDefinition('tokensWith', 'watch')}</InfoTip>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchTokens > 0 ? fmtTokens(watchTokens) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span><InfoTip label="Tokens w/o WhiteRoom">{metricDefinition('tokensWithout', 'watch')}</InfoTip>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{watchWithoutWR > 0 ? fmtTokens(watchWithoutWR) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
@@ -375,11 +377,11 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ho)' }}>{watchHandovers ? String(watchHandovers) : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span><InfoTip label="$ Saved">{metricDefinition('costSaved', 'watch')}</InfoTip>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchCostSaved !== '$0' ? watchCostSaved : '—'}</div>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span><InfoTip label="Energy Saved">{metricDefinition('energySaved', 'watch')}</InfoTip>
           <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{watchEnergySaved !== '0 kWh' ? watchEnergySaved : '—'}</div>
         </div>
       </div>
@@ -437,7 +439,7 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: AGENT_GRID_COLS[agentView], gap: AGENT_GRID_GAP[agentView], marginBottom: 12 }}>
+          <div className={agentView === 'rings' ? undefined : 'citadel-agent-grid'} style={{ display: 'grid', gridTemplateColumns: AGENT_GRID_COLS[agentView], gap: AGENT_GRID_GAP[agentView], marginBottom: 12 }}>
             {agents.map((agent) => {
               const status = deriveDisplayStatus(agent.status, agent.stale, agent.minutesRemaining, agent.disconnected);
               const sc = SC[status] || SC.idle;

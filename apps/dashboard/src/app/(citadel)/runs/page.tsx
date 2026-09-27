@@ -9,11 +9,14 @@ import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/gov
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
+import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
+import { InfoTip } from '@/components/citadel/InfoTip';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { metricDefinition } from '@/lib/metric-definitions';
 
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
@@ -118,6 +121,19 @@ export default function RunsPage() {
   const [fetchError, setFetchError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [clearError, setClearError] = useState('');
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !actionsRef.current?.contains(e.target as Node)) setActionsOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+  }, [actionsOpen]);
   const [coverage, setCoverage] = useState<{ retainedSince?: string | null; historyTruncated?: boolean }>({});
   const [scopedDay, setScopedDay] = useState<string | null>(() => {
     const d = searchParams.get('day');
@@ -258,7 +274,8 @@ export default function RunsPage() {
   }
 
   async function handleClearAudit() {
-    if (!fleetId || !confirm('This will delete all audit entries, reset agent counters, clear current watch state, and reset agent status and alarm/rest fields. This cannot be undone.')) return;
+    if (!fleetId) return;
+    setClearBusy(true);
     try {
       const res = await clearAuditLog(fleetId, authKey);
       if (res.error || res.success === false) {
@@ -266,6 +283,7 @@ export default function RunsPage() {
         return;
       }
       setClearError('');
+      setClearOpen(false);
       // The engine clears asynchronously: an immediate refetch resurrects the
       // deleted rows. Empty the local state and let the next poll catch up.
       setAllEntries([]);
@@ -275,6 +293,8 @@ export default function RunsPage() {
         return;
       }
       setClearError('Could not clear the audit log.');
+    } finally {
+      setClearBusy(false);
     }
   }
 
@@ -329,16 +349,7 @@ export default function RunsPage() {
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
-      {/* Top bar */}
-      <div className="flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px' }}>
-        <span style={{ fontSize: 14, color: 'var(--tx3)' }}>
-          <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Run History</b> / {fleetId}
-        </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: 1, color: 'var(--info)', background: 'var(--info-bg)', border: '1px solid var(--info)', borderRadius: 4, padding: '2px 8px' }}>BETA</span>
-        <span style={{ marginLeft: 'auto' }} />
-        <ThemeToggle />
-        <button onClick={() => { window.location.href = '/auth/sign-out'; }} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer' }}>Sign out</button>
-      </div>
+      <PageHeader title="Run History" fleetId={fleetId} />
 
       {/* Analytics content */}
       <div className="flex flex-col flex-1 min-h-0">
@@ -356,7 +367,25 @@ export default function RunsPage() {
             <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(lastUpdated)}</span>
           )}
           <button onClick={exportWorkbook} disabled={!rangedEntries.length} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: rangedEntries.length ? 'pointer' : 'not-allowed', opacity: rangedEntries.length ? 1 : 0.4 }} title="Export to Excel">⬇ .xlsx</button>
-          <button onClick={handleClearAudit} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--bad, #ef4444)', border: '1px solid var(--line2)', cursor: 'pointer' }} title="Clear all audit entries">Clear</button>
+          <div ref={actionsRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setActionsOpen(v => !v)}
+              aria-haspopup="menu"
+              aria-expanded={actionsOpen}
+              aria-label="More actions"
+              style={{ minWidth: 30, fontSize: 14, fontWeight: 700, lineHeight: 1, padding: '4px 8px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }}
+            >⋯</button>
+            {actionsOpen && (
+              <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20, minWidth: 190, padding: 4, borderRadius: 8, background: 'var(--card)', border: '1px solid var(--line2)', boxShadow: '0 6px 20px rgba(0,0,0,.25)' }}>
+                <button
+                  role="menuitem"
+                  autoFocus
+                  onClick={() => { setActionsOpen(false); setClearOpen(true); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--bad)', border: 'none', cursor: 'pointer' }}
+                >Clear run history…</button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Fetch / clear error banners */}
@@ -380,7 +409,7 @@ export default function RunsPage() {
         )}
 
         {/* 8-col metrics row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
+        <div className="citadel-kpi-strip" style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
               <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
@@ -397,7 +426,7 @@ export default function RunsPage() {
               </div>
             </div>
             <div>
-              <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span><InfoTip label="Context Compression">{metricDefinition('compression', 'range')}</InfoTip>
               <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 34, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
                 {scopedCompression > 0 ? scopedCompression.toFixed(1) + '%' : '—'}
               </div>
@@ -411,11 +440,11 @@ export default function RunsPage() {
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5 }}>{rangeTotals.tasks ? String(rangeTotals.tasks) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span><InfoTip label="Tokens w/ WhiteRoom">{metricDefinition('tokensWith', 'range')}</InfoTip>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtTokens(rangeTotals.used) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span><InfoTip label="Tokens w/o WhiteRoom">{metricDefinition('tokensWithout', 'range')}</InfoTip>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtTokens(rangeTotals.used + rangeTotals.saved) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
@@ -423,11 +452,11 @@ export default function RunsPage() {
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ho)' }}>{rangeTotals.handovers ? String(rangeTotals.handovers) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span><InfoTip label="$ Saved">{metricDefinition('costSaved', 'range')}</InfoTip>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? '$' + estimateCost(rangeTotals.saved).toFixed(4) : '—'}</div>
           </div>
           <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span><InfoTip label="Energy Saved">{metricDefinition('energySaved', 'range')}</InfoTip>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * KWH_PER_TOKEN).toFixed(4) + ' kWh' : '—'}</div>
           </div>
         </div>
@@ -591,11 +620,17 @@ export default function RunsPage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-between" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 11.5, color: 'var(--tx3)', flexShrink: 0 }}>
-        <span>White Room v1.1 Beta</span>
-        <span>© 2026 WhiteRoom</span>
-      </div>
+      <ConfirmDialog
+        open={clearOpen}
+        title="Clear run history?"
+        body={<>This permanently deletes every audit entry for <b>{fleetId}</b>, resets agent counters and clears the current watch, status and alarm/rest fields. It can't be undone. Export an .xlsx first if you need a record.</>}
+        confirmLabel="Clear history"
+        confirmPhrase="clear"
+        busy={clearBusy}
+        onConfirm={handleClearAudit}
+        onCancel={() => setClearOpen(false)}
+      />
+      <PageFooter />
     </div>
   );
 }
