@@ -89,7 +89,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
   return out;
 }
 
-/** Recent enforced blocks shows as a badge on Live Fleet. */
+/** Recent enforced blocks shows as a badge on Overview. */
 export const RECENT_BLOCK_MS = 15 * 60_000;
 
 /** Newest governance_block per agent within `windowMs` of `now`. */

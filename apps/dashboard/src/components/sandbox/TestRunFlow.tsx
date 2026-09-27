@@ -536,7 +536,7 @@ export function TestRunFlow() {
             <div className={s.formGroup}>
               <span className={s.formLabel}>Fleet token</span>
               <input className={s.formInput} type="text" autoComplete="off" spellCheck={false} value={fleetTokenInput} onChange={e => setFleetTokenInput(e.target.value)} placeholder="Paste your fleet token" style={{ fontFamily: FONT_MONO, fontSize: 12 }} />
-              {fleetTokenInput ? <p className={s.small} style={{ marginTop: 5, color: 'var(--good)' }}>Token ready. Click start to begin testing.</p> : <p className={s.small} style={{ marginTop: 5 }}>Paste the fleet token from your agent configuration or the Live Fleet page.</p>}
+              {fleetTokenInput ? <p className={s.small} style={{ marginTop: 5, color: 'var(--good)' }}>Token ready. Click start to begin testing.</p> : <p className={s.small} style={{ marginTop: 5 }}>Paste the fleet token from your agent configuration or the Overview page.</p>}
             </div>
             <div className={s.formGroup}>
               <span className={s.formLabel}>Model provider</span>

@@ -64,7 +64,7 @@ const assert = require('node:assert/strict');
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:'/private/tmp/wr-flow-mobile.png',fullPage:true});
   await page.getByRole('button',{name:'Open navigation'}).click();
-  await page.getByRole('link',{name:'Live Fleet',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Overview',exact:true}).waitFor();
   await page.getByRole('button',{name:'Close navigation'}).click();
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth); assert.equal(overflow,false);
   console.log(JSON.stringify({connectedFlow:true,demoFlow:true,export:true,noFalseConnection:true,mobileOverflow:overflow,errors}));
