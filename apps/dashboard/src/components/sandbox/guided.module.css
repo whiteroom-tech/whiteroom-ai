@@ -4,14 +4,14 @@
 
 /* ── Badges ── */
 .badgeMode { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:9px; font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; }
-.badgeMode.live { background:var(--good-bg,#e4f5ed); color:var(--good,#18865a); }
+.badgeMode.live { background:var(--ok-bg); color:var(--ok); }
 .badgeMode.demo { background:var(--brand-dim,#e6eefb); color:var(--brand,#3170e0); }
 .badgeEnv { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:9px; font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; color:var(--brand); border:1px solid var(--line2); }
 
 /* ── Timer ── */
 .timer { margin-left:auto; font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:12px; font-weight:500; display:flex; align-items:center; gap:5px; }
 .timer svg { width:15px; height:15px; }
-.timerGreen { color:var(--good,#18865a); }
+.timerGreen { color:var(--ok); }
 .timerAmber { color:var(--warn,#a67108); }
 .timerRed { color:var(--bad,#c03a2e); }
 
@@ -37,7 +37,7 @@
 /* ── Summary banner ── */
 .summary { border-left:3px solid var(--brand); background:var(--brand-dim,#e6eefb); border-radius:0 7px 7px 0; padding:12px 16px; margin-bottom:18px; font-size:13px; color:var(--tx2); line-height:1.55; }
 .summary strong { color:var(--tx); }
-.summaryPass { border-color:var(--good,#18865a); background:var(--good-bg,#e4f5ed); }
+.summaryPass { border-color:var(--ok); background:var(--ok-bg); }
 
 /* ── Card ── */
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:22px 24px; box-shadow:0 1px 3px rgba(24,28,40,0.07); margin-bottom:14px; }
@@ -50,12 +50,12 @@
 .check:last-child { border-bottom:none; }
 .checkIcon { width:24px; height:24px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; margin-top:1px; }
 .checkIcon svg { width:13px; height:13px; }
-.checkPass { background:var(--good-bg,#e4f5ed); color:var(--good,#18865a); }
+.checkPass { background:var(--ok-bg); color:var(--ok); }
 .checkWait { background:var(--warn-bg,#fdf4e0); color:var(--warn,#a67108); }
 .checkFail { background:var(--bad-bg,#fcecea); color:var(--bad,#c03a2e); }
 .checkName { font-size:14px; font-weight:600; color:var(--tx); }
 .checkDetail { font-size:12.5px; color:var(--tx3); margin-top:3px; line-height:1.5; }
-.checkDetailPass { color:var(--good,#18865a); }
+.checkDetailPass { color:var(--ok); }
 .checkAction { font-size:12px; color:var(--brand); margin-top:5px; font-weight:500; }
 
 /* ── Progress bar ── */
@@ -63,7 +63,7 @@
 .progressTrack { flex:1; height:4px; background:var(--sunk); border-radius:2px; overflow:hidden; }
 .progressFill { height:100%; border-radius:2px; transition:width .3s; }
 .progressFillWarn { background:var(--warn,#a67108); }
-.progressFillGood { background:var(--good,#18865a); }
+.progressFillGood { background:var(--ok); }
 .progressLabel { font-size:11px; color:var(--tx3); white-space:nowrap; }
 
 /* ── Connection diagnostic ── */
@@ -72,7 +72,7 @@
 .diagStep::before { content:''; position:absolute; left:11px; top:30px; bottom:-7px; width:1px; background:var(--line); }
 .diagStep:last-child::before { display:none; }
 .diagDot { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size:10px; position:relative; z-index:1; }
-.diagDone { background:var(--good-bg,#e4f5ed); color:var(--good,#18865a); }
+.diagDone { background:var(--ok-bg); color:var(--ok); }
 .diagActive { background:var(--brand-dim,#e6eefb); color:var(--brand); border:2px solid var(--brand); }
 .diagPending { background:var(--sunk); color:var(--tx3); }
 .diagLabel { font-size:13px; font-weight:600; color:var(--tx); }
@@ -101,7 +101,7 @@
 .btn:focus-visible { outline:2px solid var(--brand); outline-offset:3px; }
 .btn:disabled { opacity:.4; cursor:not-allowed; }
 .btnPrimary { background:var(--brand); color:var(--bg,#fff); border:1px solid var(--brand); }
-.btnGood { background:var(--good,#18865a); color:#fff; border:1px solid var(--good); }
+.btnGood { background:var(--ok); color:var(--bg); border:1px solid var(--ok); }
 .btnSecondary { background:var(--card); color:var(--tx); border:1px solid var(--line2); }
 .btnGhost { background:none; color:var(--tx2); border:1px solid transparent; font-size:12px; }
 .btnRow { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
@@ -115,7 +115,7 @@
 .previewIcon { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--brand-dim,#e6eefb); color:var(--brand); transition:all .25s; }
 .previewIcon svg { width:20px; height:20px; }
 .previewIconActive { background:var(--brand); color:var(--bg,#fff); transform:scale(1.08); }
-.previewIconDone { background:var(--good-bg,#e4f5ed); color:var(--good); }
+.previewIconDone { background:var(--ok-bg); color:var(--ok); }
 .previewLabel { font-size:10.5px; color:var(--tx3); font-weight:500; transition:color .15s; }
 .previewLabelActive { color:var(--brand); font-weight:600; }
 .previewConnector { width:32px; height:1px; background:var(--line); margin-top:22px; flex-shrink:0; }
@@ -125,8 +125,8 @@
 .previewDotOn { background:var(--brand); }
 
 /* ── Production card ── */
-.prod { background:var(--good-bg,#e4f5ed); border:1px solid var(--good-line,#8fd4b4); border-radius:8px; padding:18px 22px; margin-top:18px; }
-.prodTitle { font-family:'Chakra Petch',sans-serif; font-size:15px; font-weight:700; color:var(--good,#18865a); margin-bottom:6px; }
+.prod { background:var(--ok-bg); border:1px solid var(--ok); border-radius:8px; padding:18px 22px; margin-top:18px; }
+.prodTitle { font-family:'Chakra Petch',sans-serif; font-size:15px; font-weight:700; color:var(--ok); margin-bottom:6px; }
 .prod p { font-size:12.5px; color:var(--tx2); margin:0 0 8px; line-height:1.5; }
 .prod .recipe { background:var(--card); }
 
@@ -135,7 +135,7 @@
 .activityItem { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
 .activityItem:last-child { border-bottom:none; }
 .activityDot { width:7px; height:7px; border-radius:50%; flex-shrink:0; margin-top:5px; }
-.activityDotConnect { background:var(--good,#18865a); }
+.activityDotConnect { background:var(--ok); }
 .activityDotRequest { background:var(--brand); }
 .activityDotHandover { background:var(--warn,#a67108); }
 .activityDotPolicy { background:var(--cr-cyan,#3ec9a8); }
