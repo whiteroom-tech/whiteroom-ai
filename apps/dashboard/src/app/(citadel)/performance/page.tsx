@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceLiveFeed, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
-import { estimateCost, handoverSaved as computeHandoverSaved } from '@/lib/analytics-metrics';
+import { agentDaySavings, auditSavingsEvent, estimateCost, localDayFromTs } from '@/lib/analytics-metrics';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
@@ -549,7 +549,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Savings Breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and governance (handovers, context offloads).</div>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and handover compression (handovers and context offloads).</div>
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
@@ -561,7 +561,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(cacheMicros)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Governance</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Handover compression</div>
             <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(govCostMicros)}</div>
           </div>
         </div>
@@ -595,7 +595,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         )}
         {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Governance Savings</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Handover Compression Savings</div>
         {govTokens > 0 ? (
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
             {[
@@ -609,11 +609,11 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No governance savings detected. Handovers and context offloads reduce redundant token processing.</div>
+          <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No handover compression savings yet. Handovers and context offloads reduce redundant token processing.</div>
         )}
         {govTokens > 0 && (
           <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
-            Governance savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model.
+            These savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model.
           </div>
         )}
       </div>
@@ -906,7 +906,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
       <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
         <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
         <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-        <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? `cache + governance` : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+        <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
         <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
         <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
         <MetricCard label="Governance Blocks" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
@@ -1248,26 +1248,13 @@ export default function PerformancePage() {
 
       if (audit) {
         const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
-        let hSaved = 0, oSaved = 0, handoverCount = 0, taskCount = 0;
-        for (const e of audit.entries) {
-          if (new Date(e.timestamp).getTime() < cutoff) continue;
-          const isHandover = e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-          if (isHandover) {
-            handoverCount++;
-            hSaved += computeHandoverSaved({
-              contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
-              handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
-            });
-          }
-          if (e.type === 'context_offload') {
-            const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-            const ret = ((e as Record<string, unknown>).returnedTokens as number) ?? 0;
-            oSaved += Math.max(0, ctx - ret);
-          }
-          if (e.type === 'task_complete') taskCount++;
-        }
-        const avg = handoverCount > 0 ? Math.ceil(taskCount / (handoverCount + 1)) : 0;
-        const tokensSaved = hSaved * Math.max(avg, 1) + oSaved;
+        // Same per-agent-day math as Run History (audit F15). Applying one
+        // task multiplier across the whole range overstated the saving.
+        const events = audit.entries
+          .filter((e) => new Date(e.timestamp).getTime() >= cutoff)
+          .map((e) => auditSavingsEvent(e as AuditEntry & Record<string, unknown>, localDayFromTs(e.timestamp)));
+        let tokensSaved = 0;
+        for (const v of agentDaySavings(events).byDay.values()) tokensSaved += v;
         setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
         setGovCounts(governanceCounts(audit.entries, cutoff));
       } else {
@@ -1357,9 +1344,10 @@ export default function PerformancePage() {
           </span>
         </>}
       >
+        <span className="citadel-hide-mobile" style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Rolling · last {hoursBack} hours</span>
         <div role="group" aria-label="Time range" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {([24, 72, 168] as const).map(h => (
-            <button key={h} onClick={() => setHoursBack(h)} style={{
+            <button key={h} onClick={() => setHoursBack(h)} aria-pressed={hoursBack === h} title={`Last ${h} hours, counted back from now`} style={{
               fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
               background: hoursBack === h ? 'var(--brand-dim)' : 'transparent',
               color: hoursBack === h ? 'var(--brand)' : 'var(--tx3)',

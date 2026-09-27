@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
-import { agentDaySavings, getCutoff, handoverSaved as computeHandoverSaved, localDayFromTs, partialCoverageSince, type SavingsEvent } from '@/lib/analytics-metrics';
+import { agentDaySavings, auditSavingsEvent, getCutoff, handoverAgent, isHandoverEntry, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
 import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
 import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/governance';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -20,37 +20,19 @@ import { metricDefinition } from '@/lib/metric-definitions';
 
 function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
-function handoverSaved(e: AuditEntry): number {
-  return computeHandoverSaved({
-    contextTokens: (e as Record<string, unknown>).contextTokens as number | undefined,
-    handoverDocTokens: (e as Record<string, unknown>).handoverDocTokens as number | undefined,
-  });
-}
-function handoverAgent(e: AuditEntry): string {
-  return ((e as Record<string, unknown>).from as string) || e.agentId || '';
-}
-function isHandoverEntry(e: AuditEntry): boolean {
-  return e.type === 'handover' || e.type === 'self_handover' || e.type === 'paired_handover';
-}
-function savingsEvent(e: AuditEntry, day: string): SavingsEvent {
-  const isHandover = isHandoverEntry(e);
-  const r = e as Record<string, unknown>;
-  return {
-    day,
-    agent: ((isHandover ? handoverAgent(e) : e.agentId) || '').toLowerCase(),
-    isTask: e.type === 'task_complete',
-    isHandover,
-    handoverSaved: isHandover ? handoverSaved(e) : 0,
-    offloadSaved: e.type === 'context_offload'
-      ? Math.max(0, ((r.contextTokens as number) ?? 0) - ((r.returnedTokens as number) ?? 0))
-      : 0,
-  };
-}
-
 // --- URL state sync ---
 
 const ANALYTICS_RANGES = ['today', '7d', '30d', 'recent'] as const;
 type AnalyticsRange = typeof ANALYTICS_RANGES[number];
+
+/** Plain-language window for the scope row: these ranges are calendar days, not rolling hours. */
+function rangeDescription(range: AnalyticsRange, nowMs: number): string {
+  if (range === 'recent') return 'All loaded history';
+  if (range === 'today') return 'Today, since midnight';
+  const since = new Date(getCutoff(range, nowMs) + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${range === '7d' ? 7 : 30} calendar days, since ${since}`;
+}
+
 function isAnalyticsRange(v: string | null): v is AnalyticsRange {
   return (ANALYTICS_RANGES as readonly (string | null)[]).includes(v);
 }
@@ -201,7 +183,7 @@ export default function RunsPage() {
       if (isHandoverEntry(e)) d.handovers++;
       dayMap.set(day, d);
     });
-    const rangeSavings = agentDaySavings(ranged.map(({ e, day }) => savingsEvent(e, day)));
+    const rangeSavings = agentDaySavings(ranged.map(({ e, day }) => auditSavingsEvent(e as AuditEntry & Record<string, unknown>, day)));
     for (const [day, d] of dayMap) d.saved = rangeSavings.byDay.get(day) ?? 0;
     const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
     const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
@@ -229,7 +211,7 @@ export default function RunsPage() {
       agentMap.set(aid, a);
     });
     const scopedSavings = scopedDay
-      ? agentDaySavings(ranged.filter(({ day }) => day === scopedDay).map(({ e, day }) => savingsEvent(e, day)))
+      ? agentDaySavings(ranged.filter(({ day }) => day === scopedDay).map(({ e, day }) => auditSavingsEvent(e as AuditEntry & Record<string, unknown>, day)))
       : rangeSavings;
     for (const [aid, a] of agentMap) a.saved = scopedSavings.byAgent.get(aid) ?? 0;
     const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
@@ -470,7 +452,7 @@ export default function RunsPage() {
               <button onClick={() => setScopedDay(null)} aria-label="Clear day scope" style={{ background: 'none', border: 'none', color: 'var(--info)', fontSize: 12.5, padding: 0, cursor: 'pointer' }}>✕</button>
             </span>
           ) : (
-            <span style={{ color: 'var(--tx2)' }}>{analyticsRange.toUpperCase()}</span>
+            <span style={{ color: 'var(--tx2)' }}>{rangeDescription(analyticsRange, Date.now())}</span>
           )}
           <span style={{ color: 'var(--tx3)' }}>· click a chart day to scope</span>
         </div>
