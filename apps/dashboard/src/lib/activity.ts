@@ -51,6 +51,11 @@ interface EventCopy {
   who?: string;
 }
 
+/** A payload count worth printing: a whole, non-negative, finite number, else null. */
+function wholeCount(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null;
+}
+
 /** Capitalised agent name. Agents are identified by id in this app. */
 function agentName(id: unknown): string {
   const s = String(id ?? '').trim();
@@ -78,8 +83,11 @@ const EVENT_COPY: Record<string, EventCopy> = {
   // they need neither "watch" nor "shift"; every value comes from the payload.
   handover_loop_detected: {
     icon: '🔁', tone: 'wouldBlock', code: 'H/L',
-    say: (e) => `kept handing over after a call or two, so WhiteRoom raised its context limit${
-      typeof e.newLimit === 'number' ? ` to ${e.newLimit.toLocaleString('en-US')} tokens` : ''} to keep it working`,
+    say: (e) => {
+      const limit = wholeCount(e.newLimit);
+      return `kept handing over after a call or two, so WhiteRoom raised its context limit${
+        limit ? ` to ${limit.toLocaleString('en-US')} tokens` : ''} to keep it working`;
+    },
   },
   handover_summary_failed: {
     icon: '⚠', tone: 'wouldBlock', code: 'SUM',
@@ -88,7 +96,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
   handover_results_truncated: {
     icon: '✂', tone: 'wouldBlock', code: 'CUT',
     say: (e) => {
-      const n = typeof e.results === 'number' ? e.results : null;
+      const n = wholeCount(e.results);
       return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to carry through its handover, so some were cut`;
     },
   },

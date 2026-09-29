@@ -34,6 +34,22 @@ describe('handover health labels', () => {
     expect(at({ type: 'handover_results_truncated' }).said).toContain('had tool results too large');
   });
 
+  it('malformed numbers are left out, never printed', () => {
+    for (const bad of [NaN, Infinity, -1, 2.5, '40000']) {
+      expect(at({ type: 'handover_loop_detected', newLimit: bad }).said).toBe(
+        'kept handing over after a call or two, so WhiteRoom raised its context limit to keep it working',
+      );
+      expect(at({ type: 'handover_results_truncated', results: bad }).said).toContain('had tool results too large');
+    }
+  });
+
+  it('each type has its own label and code, not the generic fallback', () => {
+    expect(at({ type: 'handover_loop_detected' }).code).toBe('H/L');
+    expect(at({ type: 'handover_summary_failed' }).code).toBe('SUM');
+    expect(at({ type: 'handover_results_truncated' }).code).toBe('CUT');
+    expect(at({ type: 'some_unknown_event' }).code).toBe('LOG');
+  });
+
   it('no label uses internal words', () => {
     for (const type of ['handover_loop_detected', 'handover_summary_failed', 'handover_results_truncated']) {
       expect(at({ type, results: 2, newLimit: 1 }).said).not.toMatch(/watch|shift|session|compression|truncat/i);
