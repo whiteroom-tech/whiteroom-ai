@@ -1,0 +1,83 @@
+name: Claude
+
+# Mention @claude in a PR comment, review, inline review comment, or a new
+# issue to have Claude Code answer, review, or push changes. Runs on the Claude
+# subscription token (from `claude setup-token`) and authenticates to GitHub
+# as the Claude GitHub App, so its pushes trigger CI like anyone else's.
+#
+# Only people with write access can trigger it: the action checks the
+# commenter's permission before running Claude, and bots are not allowed.
+# It refuses PRs from forks: Claude runs the branch's npm scripts, and a
+# fork's code shouldn't run in a job that can push here.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  # Exchanged for a Claude GitHub App token.
+  id-token: write
+  # Lets Claude read CI results and logs when asked why a check failed. The
+  # app token gets it via additional_permissions below, which also requires
+  # the workflow token to hold it.
+  actions: read
+
+jobs:
+  claude:
+    # Filter here so ordinary comments don't start a runner at all.
+    if: >-
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    # One run at a time per PR or issue. Set on the job, not the workflow, so
+    # comments without @claude (skipped by the `if` above) never join the
+    # queue. A mention during a run waits for it, but GitHub keeps only the
+    # newest waiting run: mention again once the current one finishes rather
+    # than stacking several.
+    concurrency:
+      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Refuse PRs from forks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Comment events on a PR arrive as issue events with a pull_request link.
+          PR_NUMBER: ${{ github.event.pull_request.number || (github.event.issue.pull_request && github.event.issue.number) || '' }}
+        run: |
+          [ -z "$PR_NUMBER" ] && exit 0
+          head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.repo.full_name)
+          if [ "$head" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::PR #$PR_NUMBER comes from the fork $head; @claude only runs on branches in this repo"
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          # The action swaps in its own app token for pushing; don't leave
+          # the workflow token in .git/config as well.
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829 # v1.0.236
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          # Let Claude install locked dependencies and run each package's own
+          # typecheck, lint, test and build scripts to check its work. No
+          # `npm install`, so it can't add packages or drift from the lockfile.
+          claude_args: |
+            --allowedTools Bash(npm ci:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(npx vitest:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*)
