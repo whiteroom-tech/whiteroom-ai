@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredText, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -129,6 +129,10 @@ describe('what we checked', () => {
     expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: '6 of 14 days of history so far' }] });
     expect(s.waiting).toEqual([{ agentId: 'summarizer', text: '41 of 50 calls. Checked automatically once it gets there.' }]);
   });
+  it("an agent whose findings are only snoozed or dismissed isn't 'nothing found'", () => {
+    const s = checkedSummary(fleet({ reports: [report('lead-agent', [finding('review_tool_errors', 'snoozed')])] }));
+    expect(s.nothingFound).toEqual([]);
+  });
 });
 
 describe('refetch on focus', () => {
@@ -138,16 +142,44 @@ describe('refetch on focus', () => {
     expect(shouldRefetchOnFocus(NOW - FOCUS_REFETCH_MS, NOW, false)).toBe(true);
     expect(shouldRefetchOnFocus(null, NOW, true)).toBe(false);
   });
+  it('request gate: only the newest response lands', () => {
+    const g = createRequestGate();
+    const slow = g.startRead()!;
+    const fresh = g.startRead()!;
+    expect(g.isCurrent(slow)).toBe(false);
+    expect(g.isCurrent(fresh)).toBe(true);
+  });
+  it('request gate: a read during a check waits, then replays once the check lands', () => {
+    const g = createRequestGate();
+    const check = g.startCheck();
+    expect(g.startRead()).toBeNull();
+    expect(g.isCurrent(check)).toBe(true); // the check's result still lands
+    expect(g.finish(check)).toBe(true);     // and the skipped read runs after it
+    expect(g.startRead()).not.toBeNull();
+  });
+  it('request gate: nothing skipped means no replay, and a fleet change drops what is in flight', () => {
+    const g = createRequestGate();
+    const check = g.startCheck();
+    expect(g.finish(check)).toBe(false);
+    const again = g.startCheck();
+    g.reset();
+    expect(g.isCurrent(again)).toBe(false);
+    expect(g.finish(again)).toBe(false);
+    expect(g.startRead()).not.toBeNull(); // reset also ended the check
+  });
   it('relative time', () => {
     expect(relativeTime(new Date(NOW - 20_000).toISOString(), NOW)).toBe('just now');
     expect(relativeTime(new Date(NOW - 3 * 3600_000).toISOString(), NOW)).toBe('3 hours ago');
   });
 });
 
-import { evidenceHeader } from '@/lib/diagnosis/model';
 
 describe('evidence headers', () => {
   const c = (p: Record<string, unknown>) => ({ requestEnd: '2026-09-28T14:02:00Z', ...p });
+  it('a call with no time shows a dash, never "Invalid Date"', () => {
+    const h = evidenceHeader('review_tool_silence', [{ toolNames: ['persist_lead'], requestedToolNames: [] }], { toolName: 'persist_lead' });
+    expect(h?.kind === 'table' ? h.rows[0][0] : null).toBe('—');
+  });
   it('churn: calls per watch', () => {
     const h = evidenceHeader('review_handover_churn', [c({ watchNumber: 31 }), c({ watchNumber: 32 }), c({ watchNumber: 32 })], {});
     expect(h).toMatchObject({ kind: 'watches', watches: [{ watch: 31, calls: 1 }, { watch: 32, calls: 2 }] });

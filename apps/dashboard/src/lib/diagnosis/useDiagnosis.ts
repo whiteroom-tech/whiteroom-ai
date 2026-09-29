@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { diagnoseFleet, getDiagnosis } from '@/lib/whiteroom/client';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { shouldRefetchOnFocus, type RunState } from './model';
+import { createRequestGate, shouldRefetchOnFocus, type RunState } from './model';
 
 export function useDiagnosis(fleetId: string, authKey?: string) {
   const [data, setData] = useState<FleetDiagnosis | null>(null);
@@ -19,21 +19,21 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
   // Set on every attempt, failed ones too, so an engine with Diagnosis off
   // isn't asked again on every focus.
   const lastAttempt = useRef<number | null>(null);
-  // Only the newest request may land: a slow read must not overwrite a fresh check.
-  const latest = useRef(0);
+  const gate = useRef(createRequestGate()).current;
 
-  useEffect(() => { setData(null); setJustRan(false); setRun('idle'); }, [fleetId]);
+  useEffect(() => { gate.reset(); setData(null); setJustRan(false); setRun('idle'); }, [fleetId, gate]);
 
   const refresh = useCallback(async () => {
-    const req = ++latest.current;
+    const req = gate.startRead();
+    if (req === null) return;
     lastAttempt.current = Date.now();
     try {
       const d = await getDiagnosis(fleetId, authKey);
-      if (req === latest.current) { setData(d); setJustRan(false); }
+      if (gate.isCurrent(req)) { setData(d); setJustRan(false); }
     } catch {
       // Off on this engine, or unreachable: keep what's shown.
     }
-  }, [fleetId, authKey]);
+  }, [fleetId, authKey, gate]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -46,18 +46,22 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
   }, [refresh]);
 
   const checkNow = useCallback(async (): Promise<boolean> => {
-    const req = ++latest.current;
+    const req = gate.startCheck();
     setRun('checking');
     try {
       const d = await diagnoseFleet(fleetId, { force: true }, authKey);
-      if (req === latest.current) { setData(d); setJustRan(true); }
+      if (!gate.isCurrent(req)) return false;
+      setData(d);
+      setJustRan(true);
       setRun('idle');
       return true;
     } catch {
-      setRun('error');
+      if (gate.isCurrent(req)) setRun('error');
       return false;
+    } finally {
+      if (gate.finish(req)) void refresh();
     }
-  }, [fleetId, authKey]);
+  }, [fleetId, authKey, gate, refresh]);
 
   return { data, run, justRan, refresh, checkNow };
 }

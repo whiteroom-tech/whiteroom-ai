@@ -493,25 +493,32 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   // Selecting a rule closes an open suggestion draft, so the panel shows it.
   const selectRule = useCallback((id: string | null) => {
     if (suggestionRec) router.replace("/governance");
+    setNotice(null);
     setSelectedId(id);
   }, [suggestionRec, router]);
+
+  /** Every change starts clean: the last error and notice are about something else. */
+  const startChange = () => { setError(null); setNotice(null); };
 
   const handleError = useCallback((e: unknown, what: string) => {
     if (isAuthError(e)) { onAuthError(); return; }
     setError(`Couldn't ${what}. Your last change may not have been saved — refreshed from the server.`);
   }, [onAuthError]);
 
-  const fetchData = useCallback(async () => {
+  /** Reloads the rules; resolves false if that failed. */
+  const fetchData = useCallback(async (): Promise<boolean> => {
     try {
       const d = await governanceList(fleetId, authKey);
       setRules(d.rules);
       setHistory(d.history);
       setAgents(d.agents);
       setLoaded(true);
+      return true;
     } catch (e) {
-      if (isAuthError(e)) { onAuthError(); return; }
+      if (isAuthError(e)) { onAuthError(); return false; }
       setError("Couldn't load governance rules. Retrying on the next change.");
       setLoaded(true);
+      return false;
     }
   }, [fleetId, authKey, onAuthError]);
 
@@ -542,7 +549,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const rulesBy = (rt: RuleType) => rules.filter((r) => r.ruleType === rt);
 
   const addRule = async (ruleType: RuleType) => {
-    setError(null);
+    startChange();
     try {
       const { rule } = await governanceCreateRule(fleetId, { ruleType }, authKey);
       setRules((rs) => [...rs, rule]);
@@ -552,7 +559,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const removeRule = async (ruleId: string) => {
-    setError(null);
+    startChange();
     setRules((rs) => rs.filter((r) => r.id !== ruleId));
     if (selectedId === ruleId) setSelectedId(null);
     try {
@@ -562,7 +569,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const update = async (ruleId: string, updates: { mode?: RuleMode; params?: AnyRuleParams; appliesTo?: RuleScope }, what: string, logsHistory: boolean) => {
-    setError(null);
+    startChange();
     // Optimistic: the controls reflect the change immediately.
     setRules((rs) => rs.map((r) => (r.id === ruleId ? { ...r, ...updates } : r)));
     try {
@@ -596,7 +603,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const addSuggestedAllowlist = async (models: string[]) => {
-    setError(null);
+    startChange();
     const description = "Added Model allowlist in Watch (suggested)";
     try {
       const existing = rulesBy("model_allowlist");
@@ -816,7 +823,8 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             onDone={(ruleId, message) => {
               setNotice(message);
               router.replace("/governance");
-              void fetchData().then(() => setSelectedId(ruleId));
+              // Select the new rule only once the list that holds it has loaded.
+              void fetchData().then((ok) => { if (ok) setSelectedId(ruleId); });
             }}
             onCancel={(ruleCreated) => {
               router.replace("/governance");

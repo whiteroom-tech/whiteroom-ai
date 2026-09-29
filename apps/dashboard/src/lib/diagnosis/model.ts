@@ -13,6 +13,49 @@ export function shouldRefetchOnFocus(lastFetchedAt: number | null, now: number, 
   return lastFetchedAt == null || now - lastFetchedAt >= FOCUS_REFETCH_MS;
 }
 
+/**
+ * Which Diagnosis response may land. Only the newest request's response
+ * applies; a read never starts while a check is running (the check's result is
+ * newer), but one asked for meanwhile runs when the check finishes, since the
+ * check began before whatever prompted it; and a fleet change drops
+ * everything in flight.
+ */
+export function createRequestGate() {
+  let latest = 0;
+  let checking = 0;
+  let readWaiting = false;
+  return {
+    /** A read's id, or null while a check is running. */
+    startRead(): number | null {
+      if (checking) {
+        readWaiting = true;
+        return null;
+      }
+      return ++latest;
+    },
+    startCheck(): number {
+      checking = ++latest;
+      readWaiting = false;
+      return checking;
+    },
+    isCurrent: (req: number) => req === latest,
+    /** Ends a check; true when a read was skipped during it and should run now. */
+    finish(req: number): boolean {
+      if (checking !== req) return false;
+      checking = 0;
+      const replay = readWaiting;
+      readWaiting = false;
+      return replay;
+    },
+    /** The fleet changed: nothing in flight may land. */
+    reset() {
+      latest++;
+      checking = 0;
+      readWaiting = false;
+    },
+  };
+}
+
 export function relativeTime(iso: string, now: number): string {
   const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
   if (s < 60) return 'just now';
@@ -92,7 +135,8 @@ export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
   const perAgent: CheckedSummary['perAgent'] = [];
   const nothingFound: string[] = [];
   for (const r of d.reports) {
-    if (!r.findings.some((f) => f.status === 'open')) nothingFound.push(r.agentId);
+    // Only agents with no findings at all: a snoozed or dismissed one is still a finding.
+    if (r.findings.length === 0) nothingFound.push(r.agentId);
     // Unknown detector ids (a newer engine) are skipped rather than mislabelled.
     const looksFine = r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c) => titleLower(c.detector));
     const needsData = r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n) => ({ title: titleLower(n.detector), text: notMeasuredShort(n.code, n.reason) }));
@@ -105,7 +149,6 @@ export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
     waiting: d.waiting.map((w) => ({ agentId: w.agentId, text: `${w.calls7d} of ${d.minCalls} calls. Checked automatically once it gets there.` })),
   };
 }
-
 
 // -- §6.2.5 Evidence headers ------------------------------------------------
 
@@ -124,7 +167,10 @@ export type EvidenceHeader =
  */
 export function evidenceHeader(detector: string, calls: EvidenceCall[], measures: Record<string, unknown>): EvidenceHeader {
   const tool = String(measures.toolName ?? '');
-  const time = (c: EvidenceCall) => new Date(when(c)).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  const time = (c: EvidenceCall) => {
+    const d = new Date(when(c));
+    return Number.isFinite(d.getTime()) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+  };
   const byTime = [...calls].sort((a, b) => when(b).localeCompare(when(a)));
   switch (detector) {
     case 'review_handover_churn': {

@@ -16,12 +16,16 @@ import { MONO } from '@/lib/diagnosis/ui';
 const REC_ID = /^[a-zA-Z0-9_-]{1,64}$/;
 
 type RuleType = 'loop_breaker' | 'spend_cap';
-type Loaded = { rec: RecommendationDetail; ruleType: RuleType; sentence: string; params: GovernanceParams };
+type Loaded = { rec: RecommendationDetail; ruleType: RuleType; sentence: string; params: GovernanceParams; suggested: number };
 
-const FIELD: Record<RuleType, { label: string; key: 'threshold' | 'dailyCap'; suffix: string }> = {
-  loop_breaker: { label: 'Same call repeated', key: 'threshold', suffix: 'times in one run' },
-  spend_cap: { label: 'Tokens per day', key: 'dailyCap', suffix: 'tokens a day' },
+// `max` matches the engine's own validation, so the limit shows here rather
+// than as a failed request.
+const FIELD: Record<RuleType, { label: string; key: 'threshold' | 'dailyCap'; suffix: string; max: number }> = {
+  loop_breaker: { label: 'Same call repeated', key: 'threshold', suffix: 'times in one run', max: 10_000 },
+  spend_cap: { label: 'Tokens per day', key: 'dailyCap', suffix: 'tokens a day', max: 1e12 },
 };
+
+const isRuleType = (v: unknown): v is RuleType => typeof v === 'string' && Object.hasOwn(FIELD, v);
 
 const panel = { width: 420, borderLeft: '1px solid var(--line)', overflowY: 'auto', padding: 24, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 } as const;
 
@@ -49,14 +53,17 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
         if (cancelled) return;
         const rec = res.recommendation;
         const action = rec?.suggestedAction;
-        if (!rec || !isDiagnosisDetector(rec.detector) || action?.kind !== 'rule' || !(action.rule in FIELD)) {
+        const rule = action?.kind === 'rule' ? action : null;
+        const params = rule ? (rule.params as unknown as Record<string, unknown> | null) : null;
+        const suggested = rule && params && isRuleType(rule.rule) ? params[FIELD[rule.rule].key] : undefined;
+        if (!rec || !isDiagnosisDetector(rec.detector) || !rule || !isRuleType(rule.rule)
+          || typeof suggested !== 'number' || !Number.isFinite(suggested) || suggested < 1) {
           setProblem('This suggestion can’t be added as a rule.');
           return;
         }
         const measures = (res.finding?.measures as Record<string, number | string> | undefined) ?? rec.measures ?? {};
-        const params = action.params as unknown as GovernanceParams;
-        setLoaded({ rec, ruleType: action.rule, sentence: sentenceText(findingSentence(rec.detector, measures)), params });
-        setAmount(String((params as unknown as Record<string, unknown>)[FIELD[action.rule].key] ?? ''));
+        setLoaded({ rec, ruleType: rule.rule, sentence: sentenceText(findingSentence(rec.detector, measures)), params: params as unknown as GovernanceParams, suggested });
+        setAmount(String(Math.round(suggested)));
       })
       .catch(() => { if (!cancelled) setProblem('Couldn’t load this suggestion. It may have expired.'); });
     return () => { cancelled = true; };
@@ -78,7 +85,9 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
   const { rec, ruleType } = loaded;
   const field = FIELD[ruleType];
   const value = Math.round(Number(amount));
-  const valid = Number.isFinite(value) && value >= 1;
+  const valid = Number.isFinite(value) && value >= 1 && value <= field.max;
+  // Not an error: an extra digit is easy to type and quietly weakens the rule.
+  const farAbove = valid && value > loaded.suggested * 10;
 
   const add = async () => {
     if (!valid || saving) return;
@@ -130,6 +139,8 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
           {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{field.suffix}</span>
+          {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 12, color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {field.max.toLocaleString('en-US')}.</span>}
+          {farAbove && <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
         </dd>
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>
         <dd style={{ margin: 0 }}>

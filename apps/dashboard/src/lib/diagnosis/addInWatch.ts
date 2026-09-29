@@ -73,9 +73,13 @@ export async function addSuggestedRuleInWatch(deps: AddInWatchDeps, input: AddIn
   } catch (error) {
     if (status(error) !== 409) return { ok: false, step: 'feedback', ruleId, error };
     try {
-      const fresh = await deps.reloadRecommendation(input.recommendationId);
-      const findingId = fresh.recommendation?.currentFindingId;
-      if (!findingId) return { ok: false, step: 'feedback', ruleId, error };
+      const fresh = (await deps.reloadRecommendation(input.recommendationId)).recommendation;
+      // No longer open (snoozed, dismissed, resolved meanwhile): the rule is
+      // what was asked for, and there's nothing left to mark.
+      if (fresh && fresh.status !== 'open') return { ok: true, ruleId, existing, feedback: 'skipped' };
+      const findingId = fresh?.currentFindingId;
+      // The same finding would only conflict again.
+      if (!findingId || findingId === input.currentFindingId) return { ok: false, step: 'feedback', ruleId, error };
       await mark(findingId);
     } catch (retryError) {
       return { ok: false, step: 'feedback', ruleId, error: retryError };
