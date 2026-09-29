@@ -7,6 +7,8 @@ name: Claude
 #
 # Only people with write access can trigger it: the action checks the
 # commenter's permission before running Claude, and bots are not allowed.
+# Claude can run the repo's npm scripts, so be careful mentioning it on a PR
+# from a fork: that code would run in a job that can push.
 
 on:
   issue_comment:
@@ -24,10 +26,14 @@ permissions:
   issues: write
   # Exchanged for a Claude GitHub App token.
   id-token: write
-  # Lets Claude read CI results and logs when asked why a check failed.
+  # Lets Claude read CI results and logs when asked why a check failed. The
+  # app token gets it via additional_permissions below, which also requires
+  # the workflow token to hold it.
   actions: read
 
-# One run at a time per PR or issue; a second mention waits for the first.
+# One run at a time per PR or issue. A mention during a run waits for it, but
+# GitHub keeps only the newest waiting run: mention again after the current
+# one finishes rather than stacking several.
 concurrency:
   group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: false
@@ -46,15 +52,19 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
+          # The action swaps in its own app token for pushing; don't leave
+          # the workflow token in .git/config as well.
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829 # v1.0.236
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
-          # Let Claude install dependencies and run each package's own
-          # typecheck, lint, test and build scripts to check its work.
+          # Let Claude install locked dependencies and run each package's own
+          # typecheck, lint, test and build scripts to check its work. No
+          # `npm install`, so it can't add packages or drift from the lockfile.
           claude_args: |
-            --allowedTools Bash(npm ci:*),Bash(npm install:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(npx vitest:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*)
+            --allowedTools Bash(npm ci:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(npx vitest:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*)
