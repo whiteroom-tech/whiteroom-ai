@@ -561,7 +561,8 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const removeRule = async (ruleId: string) => {
     startChange();
     setRules((rs) => rs.filter((r) => r.id !== ruleId));
-    if (selectedId === ruleId) setSelectedId(null);
+    // Through selectRule, like every other panel change, so an open draft closes too.
+    if (selectedId === ruleId) selectRule(null);
     try {
       await governanceDeleteRule(fleetId, ruleId, authKey);
       refreshHistory();
@@ -820,8 +821,9 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             fleetId={fleetId}
             authKey={authKey}
             recId={suggestionRec}
+            existingRule={rules.find((r) => r.sourceRecommendationId === suggestionRec) ?? null}
             onDone={(ruleId, message) => {
-              setNotice(message);
+              setNotice(message || null);
               router.replace("/governance");
               // Select the new rule only once the list that holds it has loaded.
               void fetchData().then((ok) => { if (ok) setSelectedId(ruleId); });

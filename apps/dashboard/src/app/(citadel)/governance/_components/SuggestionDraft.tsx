@@ -10,16 +10,19 @@ import { useEffect, useState } from 'react';
 import { governanceCreateRule, performanceFeedback, performanceRecommendationGet } from '@/lib/whiteroom/client';
 import type { GovernanceParams } from '@/lib/whiteroom/types';
 import { addSuggestedRuleInWatch } from '@/lib/diagnosis/addInWatch';
+import { feedbackOrThrow } from '@/lib/diagnosis/feedback';
 import { RULE_LABEL, RULE_TITLE, STATUS_LABEL } from '@/lib/diagnosis/copy';
 import { FIELD, isRecId, readAmount, readSuggestion, type Suggestion } from '@/lib/diagnosis/suggestion';
 import { MONO } from '@/lib/diagnosis/ui';
 
 const panel = { width: 420, borderLeft: '1px solid var(--line)', overflowY: 'auto', padding: 24, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 } as const;
 
-export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
+export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone, onCancel }: {
   fleetId: string;
   authKey?: string;
   recId: string;
+  /** A rule already made from this suggestion: adding again keeps it unchanged, so the amount can't be edited. */
+  existingRule: { id: string; params: unknown } | null;
   onDone: (ruleId: string, message: string) => void;
   /** `ruleCreated`: the rule exists even though the draft is being closed. */
   onCancel: (ruleCreated: boolean) => void;
@@ -62,7 +65,9 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
 
   const { rec, ruleType } = loaded;
   const field = FIELD[ruleType];
-  const value = readAmount(ruleType, amount);
+  const existingAmount = existingRule ? (existingRule.params as Record<string, unknown> | null)?.[FIELD[ruleType].key] : undefined;
+  const shownAmount = typeof existingAmount === 'number' ? String(existingAmount) : amount;
+  const value = readAmount(ruleType, shownAmount);
   const valid = value !== null;
   // Not an error: an extra digit is easy to type and quietly weakens the rule.
   const farAbove = value !== null && value > loaded.suggested * 10;
@@ -73,7 +78,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
     setFailure(null);
     const result = await addSuggestedRuleInWatch({
       createRule: (input) => governanceCreateRule(fleetId, input, authKey),
-      markImplemented: (input) => performanceFeedback(fleetId, { ...input, action: 'implemented' }, authKey),
+      markImplemented: (input) => performanceFeedback(fleetId, { ...input, action: 'implemented' }, authKey).then(feedbackOrThrow),
       reloadRecommendation: (id) => performanceRecommendationGet(fleetId, id, authKey),
     }, {
       recommendationId: rec.id,
@@ -100,7 +105,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
 
   return (
     <section className="gov-panel" style={panel} aria-labelledby="suggestion-title">
-      <h2 id="suggestion-title" style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>New {RULE_LABEL[ruleType]} from a suggestion</h2>
+      <h2 id="suggestion-title" style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{existingRule ? `${RULE_TITLE[ruleType]} from this suggestion` : `New ${RULE_LABEL[ruleType]} from a suggestion`}</h2>
       <div style={{ background: 'var(--brand-dim)', border: '1px solid var(--brand)', borderRadius: 8, padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}>
         {rec.status === 'open'
           ? <><b style={{ color: 'var(--brand)' }}>Suggested for <span style={MONO}>{rec.agentId}</span>:</b> {loaded.sentence}</>
@@ -113,12 +118,13 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
         <dt style={{ color: 'var(--tx2)' }}>Applies to</dt><dd style={{ margin: 0, ...MONO }}>{rec.agentId}</dd>
         <dt style={{ color: 'var(--tx2)' }}><label htmlFor="suggestion-amount">{loaded.text.label}</label></dt>
         <dd style={{ margin: 0 }}>
-          <input id="suggestion-amount" inputMode="numeric" value={amount} disabled={!!ruleId} aria-invalid={!valid}
+          <input id="suggestion-amount" inputMode="numeric" value={shownAmount} disabled={!!ruleId || !!existingRule} aria-invalid={!valid} aria-describedby={existingRule ? 'suggestion-existing' : undefined}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
           {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{loaded.text.suffix}</span>
           {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 12, color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {field.max.toLocaleString('en-US')}.</span>}
-          {farAbove && <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
+          {farAbove && !existingRule && <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
+          {existingRule && <span id="suggestion-existing" style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>This suggestion already has a rule. Its number is changed on the rule itself.</span>}
         </dd>
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>
         <dd style={{ margin: 0 }}>
@@ -133,10 +139,15 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
       {failure && <div role="alert" style={{ fontSize: 12.5, color: 'var(--tx)', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 8, padding: '8px 12px' }}>{failure}</div>}
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" className="dx-main-btn" disabled={saving || !valid} onClick={() => void add()} style={{
+        {existingRule ? (
+          <button type="button" className="dx-main-btn" onClick={() => onDone(existingRule.id, '')} style={{
+            fontSize: 13, fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
+            background: 'var(--brand)', color: 'var(--bg)', cursor: 'pointer',
+          }}>Show the rule</button>
+        ) : (<button type="button" className="dx-main-btn" disabled={saving || !valid} onClick={() => void add()} style={{
           fontSize: 13, fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
           background: 'var(--brand)', color: 'var(--bg)', cursor: saving ? 'wait' : 'pointer', opacity: saving || !valid ? 0.6 : 1,
-        }}>{saving ? 'Adding…' : ruleId ? 'Try again' : 'Add in Watch'}</button>
+        }}>{saving ? 'Adding…' : ruleId ? 'Try again' : 'Add in Watch'}</button>)}
         <button type="button" className="dx-link" onClick={() => onCancel(!!ruleId)}>Cancel</button>
       </div>
     </section>

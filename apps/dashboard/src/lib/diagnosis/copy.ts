@@ -183,3 +183,4 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 export const MARKED_FIXED_TOAST = 'Marked as fixed. You can find it under Implemented.';
+export const ALREADY_CHANGED_NOTICE = 'This suggestion had already changed, so nothing was applied. The list now shows where it stands.';

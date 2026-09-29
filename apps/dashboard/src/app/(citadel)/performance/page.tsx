@@ -17,8 +17,11 @@ import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/gove
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
-import { isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
-import { sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
+import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
+import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
+
+/** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
+type FeedbackResult = 'done' | 'closed' | 'failed';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
@@ -790,7 +793,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
-  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<boolean>;
+  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<FeedbackResult>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
 }) {
@@ -853,21 +856,22 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   // The notice is about the last action; changing what's listed moves on from it.
   useEffect(() => { setDiagnosisNotice(null); }, [recStatus, recAgentQuery]);
 
-  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<boolean> => {
-    const ok = await onFeedback(recId, findingVersion, action, reason, recover);
-    if (ok) void fetchRecs();
-    return ok;
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
+    const result = await onFeedback(recId, findingVersion, action, reason, recover);
+    if (result !== 'failed') void fetchRecs();
+    return result;
   };
   const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
     // No reason: Diagnosis rows don't ask why, and a made-up one would skew the feedback.
     // Recovers from a finding that changed since the list loaded (409), and
     // never sends the recommendation id as a finding id.
-    const ok = await submitFeedback(rec.id, rec.currentFindingId ?? '', action, undefined, true);
-    if (ok) {
+    const result = await submitFeedback(rec.id, rec.currentFindingId ?? '', action, undefined, true);
+    if (result !== 'failed') {
       void diagnosis.refresh(); // the attention strip drops a snoozed finding at once
-      setDiagnosisNotice(action === 'implemented' ? MARKED_FIXED_TOAST : null);
+      // Closed elsewhere meanwhile: nothing was applied, so no "Marked as fixed".
+      setDiagnosisNotice(result === 'closed' ? ALREADY_CHANGED_NOTICE : action === 'implemented' ? MARKED_FIXED_TOAST : null);
     }
-    return ok;
+    return result !== 'failed';
   };
   const runCheck = async () => { setDiagnosisNotice(null); if (await diagnosis.checkNow()) void fetchRecs(); };
   const seeFindings = () => {
@@ -1327,8 +1331,8 @@ export default function PerformancePage() {
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<boolean> {
-    if (!fleetId) return false;
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> {
+    if (!fleetId) return 'failed';
     setFeedbackLoading(recId);
     setFeedbackError(null);
     try {
@@ -1338,20 +1342,22 @@ export default function PerformancePage() {
           snoozeDays: action === 'snooze' ? SNOOZE_DAYS : undefined,
           idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         }, authKey);
-        if (res.error) throw new Error(res.error);
+        feedbackOrThrow(res);
       };
+      let result: FeedbackResult = 'done';
       if (recover) {
         const sent = await sendWithFindingRecovery({ send, reload: () => performanceRecommendationGet(fleetId, recId, authKey) }, findingVersion);
         if (sent.kind === 'failed') throw sent.error;
+        result = sent.kind;
       } else {
         await send(findingVersion);
       }
       fetchIndex();
-      return true;
+      return result;
     } catch {
       setError('Failed to submit feedback.');
       setFeedbackError({ recId, message: 'Failed to submit feedback. Try again.' });
-      return false;
+      return 'failed';
     }
     finally { setFeedbackLoading(null); }
   }
