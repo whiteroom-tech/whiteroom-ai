@@ -7,8 +7,8 @@ name: Claude
 #
 # Only people with write access can trigger it: the action checks the
 # commenter's permission before running Claude, and bots are not allowed.
-# Claude can run the repo's npm scripts, so be careful mentioning it on a PR
-# from a fork: that code would run in a job that can push.
+# It refuses PRs from forks: Claude runs the branch's npm scripts, and a
+# fork's code shouldn't run in a job that can push here.
 
 on:
   issue_comment:
@@ -31,13 +31,6 @@ permissions:
   # the workflow token to hold it.
   actions: read
 
-# One run at a time per PR or issue. A mention during a run waits for it, but
-# GitHub keeps only the newest waiting run: mention again after the current
-# one finishes rather than stacking several.
-concurrency:
-  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false
-
 jobs:
   claude:
     # Filter here so ordinary comments don't start a runner at all.
@@ -46,9 +39,29 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    # One run at a time per PR or issue. Set on the job, not the workflow, so
+    # comments without @claude (skipped by the `if` above) never join the
+    # queue. A mention during a run waits for it, but GitHub keeps only the
+    # newest waiting run: mention again once the current one finishes rather
+    # than stacking several.
+    concurrency:
+      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Refuse PRs from forks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Comment events on a PR arrive as issue events with a pull_request link.
+          PR_NUMBER: ${{ github.event.pull_request.number || (github.event.issue.pull_request && github.event.issue.number) || '' }}
+        run: |
+          [ -z "$PR_NUMBER" ] && exit 0
+          head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.repo.full_name)
+          if [ "$head" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::PR #$PR_NUMBER comes from the fork $head; @claude only runs on branches in this repo"
+            exit 1
+          fi
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 1
