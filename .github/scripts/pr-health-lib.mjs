@@ -3,7 +3,9 @@
 
 export const MARKER = "<!-- whiteroom-pr-health -->";
 // Comments posted with the workflow's github.token are authored by this bot.
-export const BOT_LOGIN = "github-actions[bot]";
+// Set PR_HEALTH_BOT_LOGIN if the workflow ever posts with a PAT or app token,
+// or the old comment won't be found and each run will post a new one.
+export const BOT_LOGIN = process.env.PR_HEALTH_BOT_LOGIN || "github-actions[bot]";
 
 const SEVERITIES = ["blocker", "major", "minor", "nit"];
 const VERDICTS = ["ready", "needs_changes", "risky"];
@@ -94,6 +96,15 @@ export function diffSignals(files) {
   };
 }
 
+// ---------- Waiting on checks ----------
+
+// Whether to stop waiting on the other checks. All of them must be finished,
+// and the job must have been running for at least graceMs: a fast check can
+// finish before slower workflows have registered theirs.
+export function checksSettled({ runs, now, startedAt, graceMs }) {
+  return now - startedAt >= graceMs && runs.every((r) => r.status === "completed");
+}
+
 // ---------- Scoring ----------
 
 // Pass rate of the other checks, 0-100. A check still running when we stop
@@ -136,31 +147,38 @@ export function computeHealth(review, checks, signals) {
 // ---------- Rendering ----------
 
 // Model output (and check names) are derived from untrusted PR content. Keep
-// them as inert text: no HTML, no links, no @mentions, no markdown emphasis.
-// Inline code spans are kept as written since GitHub renders them literally.
+// them as inert text: no HTML, links, @mentions, issue references, headings,
+// list markers or emphasis. Paired inline code spans are kept as written
+// since GitHub renders them literally.
 export function sanitize(text) {
   return String(text)
     .replace(/\s*\n\s*/g, " ")
     .split(/(`[^`]*`)/)
-    .map((part, i) => (i % 2 ? part : escapeProse(part)))
+    .map((part, i) => (i % 2 ? part : escapeProse(part, i)))
     .join("");
 }
 
 // URLs become code spans so they aren't clickable; the rest is escaped.
-function escapeProse(s) {
-  return s
-    .split(/(https?:\/\/\S+)/)
-    .map((part, i) =>
-      i % 2
+function escapeProse(s, i) {
+  const out = s
+    .split(/((?:https?:\/\/|www\.)\S+)/)
+    .map((part, j) =>
+      j % 2
         ? codeSpan(part)
         : part
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
-            .replace(/[\\*_[\]|~]/g, "\\$&")
-            .replace(/@(?=[\w-])/g, "@​"),
+            .replace(/[\\*_[\]|~`]/g, "\\$&")
+            .replace(/@(?=[\w-])/g, "@​")
+            .replace(/#(?=\d)/g, "#​"),
     )
     .join("");
+  // Text only starts a line at the very beginning; stop it opening a heading,
+  // list or quote there.
+  // Markdown can't escape a digit, so an ordered list is broken at its dot.
+  if (i !== 0) return out;
+  return out.replace(/^(\s*)(#|[-+]\s)/, "$1\\$2").replace(/^(\s*\d+)([.)]\s)/, "$1\\$2");
 }
 
 // For text placed inside a code span we build ourselves.
@@ -261,6 +279,6 @@ export function render({ scores: { health, ci, hygiene, reviewScore }, signals, 
 
 // Our own sticky comment: it must carry the marker and be authored by the bot,
 // so a human quoting the marker can't redirect the update to their comment.
-export function findOwnComment(comments) {
-  return comments.find((c) => c.user?.login === BOT_LOGIN && c.body?.includes(MARKER));
+export function findOwnComment(comments, login = BOT_LOGIN) {
+  return comments.find((c) => c.user?.login === login && c.body?.includes(MARKER));
 }

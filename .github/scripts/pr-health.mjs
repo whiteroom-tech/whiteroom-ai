@@ -9,12 +9,21 @@
 // Optional: CHECKS_TIMEOUT_MIN
 
 import { appendFileSync } from "node:fs";
-import { MARKER, computeHealth, diffSignals, findOwnComment, parseReview, render } from "./pr-health-lib.mjs";
+import {
+  MARKER,
+  checksSettled,
+  computeHealth,
+  diffSignals,
+  findOwnComment,
+  parseReview,
+  render,
+} from "./pr-health-lib.mjs";
 
+const SCRIPT_START = Date.now();
 const SELF_CHECK_NAME = "PR health";
 const CHECKS_TIMEOUT_MS = Number(process.env.CHECKS_TIMEOUT_MIN || 20) * 60_000;
-// Other workflows can take a moment to register their check runs; don't
-// conclude "no checks" before this.
+// Other workflows can take a while to register their check runs, so don't
+// stop waiting until this job has been running at least this long.
 const CHECKS_GRACE_MS = 3 * 60_000;
 
 const { GITHUB_TOKEN, GITHUB_REPOSITORY, PR_NUMBER, HEAD_SHA } = process.env;
@@ -56,15 +65,18 @@ const repo = `/repos/${GITHUB_REPOSITORY}`;
 // Wait for the other checks on this commit to finish so the score reflects
 // them. Checks still running at the deadline count as not passed.
 async function collectChecks() {
-  const start = Date.now();
-  const deadline = start + CHECKS_TIMEOUT_MS;
+  const deadline = Date.now() + CHECKS_TIMEOUT_MS;
   for (;;) {
-    const runs = (await paginate(`${repo}/commits/${HEAD_SHA}/check-runs`, "check_runs")).filter(
-      (r) => r.name !== SELF_CHECK_NAME,
-    );
+    const all = await paginate(`${repo}/commits/${HEAD_SHA}/check-runs`, "check_runs");
+    const self = all.find((r) => r.name === SELF_CHECK_NAME);
+    const runs = all.filter((r) => r.name !== SELF_CHECK_NAME);
     const pending = runs.filter((r) => r.status !== "completed");
-    const settled = runs.length > 0 ? pending.length === 0 : Date.now() - start > CHECKS_GRACE_MS;
-    if (settled || Date.now() > deadline) return runs;
+    // Measured from when this job started, which is before the Claude review
+    // ran, so the grace period has usually passed by now.
+    const startedAt = self?.started_at ? Date.parse(self.started_at) : SCRIPT_START;
+    if (checksSettled({ runs, now: Date.now(), startedAt, graceMs: CHECKS_GRACE_MS }) || Date.now() > deadline) {
+      return runs;
+    }
     console.log(
       runs.length
         ? `waiting on ${pending.length} check(s): ${pending.map((r) => r.name).join(", ")}`

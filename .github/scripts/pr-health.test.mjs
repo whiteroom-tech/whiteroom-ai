@@ -5,6 +5,7 @@ import { test } from "node:test";
 import {
   BOT_LOGIN,
   MARKER,
+  checksSettled,
   ciScore,
   computeHealth,
   diffSignals,
@@ -98,6 +99,24 @@ test("health weights shift to the review when there are no checks", () => {
   assert.equal(health, Math.round(hygiene * 0.2 + reviewScore * 0.8));
 });
 
+// ---------- Waiting on checks ----------
+
+test("checksSettled waits out the grace period even when every visible check is done", () => {
+  const runs = [passed("PR health tests")];
+  assert.equal(checksSettled({ runs, now: 60_000, startedAt: 0, graceMs: 180_000 }), false);
+  assert.equal(checksSettled({ runs, now: 180_000, startedAt: 0, graceMs: 180_000 }), true);
+});
+
+test("checksSettled keeps waiting while any check is running", () => {
+  const runs = [passed("a"), { name: "b", status: "in_progress", conclusion: null }];
+  assert.equal(checksSettled({ runs, now: 999_999, startedAt: 0, graceMs: 0 }), false);
+});
+
+test("checksSettled settles on no checks once the grace period is over", () => {
+  assert.equal(checksSettled({ runs: [], now: 10, startedAt: 0, graceMs: 180_000 }), false);
+  assert.equal(checksSettled({ runs: [], now: 180_000, startedAt: 0, graceMs: 180_000 }), true);
+});
+
 // ---------- Diff signals ----------
 
 test("hygieneScore penalizes size, missing tests and added smells", () => {
@@ -144,6 +163,19 @@ test("sanitize neutralizes mentions, HTML, links and emphasis but keeps code spa
   assert.ok(out.includes("`a<b> @c`"));
 });
 
+test("sanitize defuses headings, list markers, issue refs, www links and lone backticks", () => {
+  assert.ok(sanitize("# Heading").startsWith("\\#"));
+  assert.ok(sanitize("- item").startsWith("\\-"));
+  assert.ok(sanitize("1. item").startsWith("1\\."));
+  assert.ok(sanitize("2) item").startsWith("2\\)"));
+  assert.ok(!/#\d/.test(sanitize("fixes #123 and org/repo#9")));
+  assert.ok(sanitize("see www.evil.test now").includes("`www.evil.test`"));
+  // An unpaired backtick is escaped rather than opening a code span.
+  assert.equal(sanitize("a ` b"), "a \\` b");
+  // A # that isn't an issue reference is left alone.
+  assert.equal(sanitize("C# code"), "C# code");
+});
+
 test("sanitize keeps model output from forging our marker or breaking lines", () => {
   const out = sanitize(`${MARKER}\n\n## Fake heading`);
   assert.ok(!out.includes(MARKER));
@@ -167,6 +199,12 @@ test("findOwnComment ignores marker copies from other authors", () => {
   const ours = { id: 2, user: { login: BOT_LOGIN }, body: `${MARKER}\nscore` };
   assert.equal(findOwnComment([quoted, ours])?.id, 2);
   assert.equal(findOwnComment([quoted]), undefined);
+});
+
+test("findOwnComment can match a different bot login", () => {
+  const app = { id: 3, user: { login: "whiteroom-bot[bot]" }, body: MARKER };
+  assert.equal(findOwnComment([app]), undefined);
+  assert.equal(findOwnComment([app], "whiteroom-bot[bot]")?.id, 3);
 });
 
 // ---------- Workflow wiring ----------
