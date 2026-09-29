@@ -1,0 +1,60 @@
+name: Claude
+
+# Mention @claude in a PR comment, review, inline review comment, or a new
+# issue to have Claude Code answer, review, or push changes. Runs on the Claude
+# subscription token (from `claude setup-token`) and authenticates to GitHub
+# as the Claude GitHub App, so its pushes trigger CI like anyone else's.
+#
+# Only people with write access can trigger it: the action checks the
+# commenter's permission before running Claude, and bots are not allowed.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  # Exchanged for a Claude GitHub App token.
+  id-token: write
+  # Lets Claude read CI results and logs when asked why a check failed.
+  actions: read
+
+# One run at a time per PR or issue; a second mention waits for the first.
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    # Filter here so ordinary comments don't start a runner at all.
+    if: >-
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          # Let Claude install dependencies and run each package's own
+          # typecheck, lint, test and build scripts to check its work.
+          claude_args: |
+            --allowedTools Bash(npm ci:*),Bash(npm install:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(npx vitest:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*)
