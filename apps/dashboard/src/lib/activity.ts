@@ -74,6 +74,24 @@ const EVENT_COPY: Record<string, EventCopy> = {
   governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by the ${governancePhrase(e)}` },
   governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by the ${governancePhrase(e)} (Watch only)` },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
+  // Handover health (engine events from Agent Diagnosis Phase 0). Worded so
+  // they need neither "watch" nor "shift"; every value comes from the payload.
+  handover_loop_detected: {
+    icon: '🔁', tone: 'wouldBlock', code: 'H/L',
+    say: (e) => `kept handing over after a call or two, so WhiteRoom raised its context limit${
+      typeof e.newLimit === 'number' ? ` to ${e.newLimit.toLocaleString('en-US')} tokens` : ''} to keep it working`,
+  },
+  handover_summary_failed: {
+    icon: '⚠', tone: 'wouldBlock', code: 'SUM',
+    say: () => "couldn't be summarised at handover, so it picked up again from a short note",
+  },
+  handover_results_truncated: {
+    icon: '✂', tone: 'wouldBlock', code: 'CUT',
+    say: (e) => {
+      const n = typeof e.results === 'number' ? e.results : null;
+      return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to carry through its handover, so some were cut`;
+    },
+  },
 };
 
 /** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
