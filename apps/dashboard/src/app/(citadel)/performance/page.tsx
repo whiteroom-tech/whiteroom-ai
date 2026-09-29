@@ -17,7 +17,7 @@ import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/gove
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
-import { isDiagnosisDetector } from '@/lib/diagnosis/copy';
+import { isDiagnosisDetector, MARKED_FIXED_TOAST } from '@/lib/diagnosis/copy';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
@@ -73,7 +73,6 @@ function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
   return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
 }
 
-
 function fmtLatency(ms: number | null): string {
   if (ms == null) return '--';
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
@@ -108,7 +107,6 @@ function TrendBadge({ value, invert }: { value: number | null; invert?: boolean 
     </span>
   );
 }
-
 
 function computeTrends(hourly: FleetHourlyDataPoint[]) {
   const mid = Math.floor(hourly.length / 2);
@@ -646,7 +644,6 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
   return null;
 }
 
-
 /** True while the input identified by this aria-label has focus. */
 function editing(ariaLabel: string): boolean {
   return typeof document !== 'undefined' && document.activeElement?.getAttribute('aria-label') === ariaLabel;
@@ -847,18 +844,25 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
   // its old status and buttons until a filter changes (audit F16).
-  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> => {
-    const ok = await onFeedback(recId, findingVersion, action, reason);
-    if (ok) {
-      void fetchRecs();
-      void diagnosis.refresh(); // so the attention strip drops a snoozed finding at once
-    }
-    return ok;
-  };
-
   // Agent Diagnosis: one read shared by the strip, the header line and What we checked.
   const diagnosis = useDiagnosis(fleetId, authKey);
   const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
+  // Card-level, so it survives the row leaving the Open filter.
+  const [diagnosisNotice, setDiagnosisNotice] = useState<string | null>(null);
+
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> => {
+    const ok = await onFeedback(recId, findingVersion, action, reason);
+    if (ok) void fetchRecs();
+    return ok;
+  };
+  const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
+    const ok = await submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action, action === 'dismiss' ? 'not_worth_it' : undefined);
+    if (ok) {
+      void diagnosis.refresh(); // the attention strip drops a snoozed finding at once
+      setDiagnosisNotice(action === 'implemented' ? MARKED_FIXED_TOAST : null);
+    }
+    return ok;
+  };
   const runCheck = async () => { if (await diagnosis.checkNow()) void fetchRecs(); };
   const seeFindings = () => {
     setRecStatus('open');
@@ -916,6 +920,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
           <input value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />
         </div>
         <DiagnosisStatus line={diagnosisLine} onAction={() => void runCheck()} />
+        <div aria-live="polite" style={{ fontSize: 12.5, color: 'var(--tx2)', margin: diagnosisNotice ? '0 0 8px' : 0 }}>{diagnosisNotice}</div>
         <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
           {REC_STATUSES.map(st => (
             <button key={st} onClick={() => setRecStatus(st)} style={{
@@ -933,7 +938,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
             rec={rec}
             onSelectAgent={onSelectAgent}
             onSelectEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
-            onFeedback={(action) => submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action, action === 'dismiss' ? 'not_worth_it' : undefined)}
+            onFeedback={(action) => submitDiagnosisFeedback(rec, action)}
             busy={feedbackLoading === rec.id}
             error={feedbackError?.recId === rec.id ? feedbackError.message : null}
           />

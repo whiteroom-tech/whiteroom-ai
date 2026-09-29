@@ -490,6 +490,11 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const router = useRouter();
   const suggestionRec = searchParams.get("rec");
   const [notice, setNotice] = useState<string | null>(null);
+  // Selecting a rule closes an open suggestion draft, so the panel shows it.
+  const selectRule = useCallback((id: string | null) => {
+    if (suggestionRec) router.replace("/governance");
+    setSelectedId(id);
+  }, [suggestionRec, router]);
 
   const handleError = useCallback((e: unknown, what: string) => {
     if (isAuthError(e)) { onAuthError(); return; }
@@ -541,7 +546,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
     try {
       const { rule } = await governanceCreateRule(fleetId, { ruleType }, authKey);
       setRules((rs) => [...rs, rule]);
-      setSelectedId(rule.id);
+      selectRule(rule.id);
       refreshHistory();
     } catch (e) { handleError(e, "add the rule"); void fetchData(); }
   };
@@ -568,7 +573,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const changeMode = (ruleId: string, _ruleType: RuleType, mode: RuleMode) => {
-    setSelectedId(ruleId);
+    selectRule(ruleId);
     if (rules.find((r) => r.id === ruleId)?.mode === mode) return;
     void update(ruleId, { mode }, "change the mode", true);
   };
@@ -755,7 +760,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                   {sectionRules.map((rule) => (
                     <div
                       key={rule.id}
-                      onClick={() => setSelectedId(rule.id)}
+                      onClick={() => selectRule(rule.id)}
                       style={{
                         background: "var(--card)",
                         border: `1px solid ${selectedId === rule.id ? "#06b6d4" : "var(--line)"}`,
@@ -808,12 +813,15 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             fleetId={fleetId}
             authKey={authKey}
             recId={suggestionRec}
-            onDone={(rule, message) => {
+            onDone={(ruleId, message) => {
               setNotice(message);
               router.replace("/governance");
-              void fetchData().then(() => setSelectedId(rule.id));
+              void fetchData().then(() => setSelectedId(ruleId));
             }}
-            onCancel={() => router.replace("/governance")}
+            onCancel={(ruleCreated) => {
+              router.replace("/governance");
+              if (ruleCreated) void fetchData();
+            }}
           />
         ) : selectedRule && (
           <div style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>

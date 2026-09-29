@@ -3,7 +3,7 @@
 /**
  * One Diagnosis read shared by the attention strip, the card header and What
  * we checked (spec Rev 4.4 §6.7). One call on load; on window focus at most
- * every 5 minutes and never while the tab is hidden; never runs a check on
+ * every 5 minutes, never while the tab is hidden, and never runs a check on
  * load. If the engine has Diagnosis switched off, `data` stays null and
  * nothing renders.
  */
@@ -16,13 +16,20 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
   const [data, setData] = useState<FleetDiagnosis | null>(null);
   const [run, setRun] = useState<RunState>('idle');
   const [justRan, setJustRan] = useState(false);
-  const lastFetched = useRef<number | null>(null);
+  // Set on every attempt, failed ones too, so an engine with Diagnosis off
+  // isn't asked again on every focus.
+  const lastAttempt = useRef<number | null>(null);
+  // Only the newest request may land: a slow read must not overwrite a fresh check.
+  const latest = useRef(0);
+
+  useEffect(() => { setData(null); setJustRan(false); setRun('idle'); }, [fleetId]);
 
   const refresh = useCallback(async () => {
+    const req = ++latest.current;
+    lastAttempt.current = Date.now();
     try {
       const d = await getDiagnosis(fleetId, authKey);
-      lastFetched.current = Date.now();
-      setData(d);
+      if (req === latest.current) { setData(d); setJustRan(false); }
     } catch {
       // Off on this engine, or unreachable: keep what's shown.
     }
@@ -32,19 +39,18 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
 
   useEffect(() => {
     const onFocus = () => {
-      if (shouldRefetchOnFocus(lastFetched.current, Date.now(), document.visibilityState === 'hidden')) void refresh();
+      if (shouldRefetchOnFocus(lastAttempt.current, Date.now(), document.visibilityState === 'hidden')) void refresh();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
 
   const checkNow = useCallback(async (): Promise<boolean> => {
+    const req = ++latest.current;
     setRun('checking');
     try {
       const d = await diagnoseFleet(fleetId, { force: true }, authKey);
-      lastFetched.current = Date.now();
-      setData(d);
-      setJustRan(true);
+      if (req === latest.current) { setData(d); setJustRan(true); }
       setRun('idle');
       return true;
     } catch {

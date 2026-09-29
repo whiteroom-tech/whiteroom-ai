@@ -1,6 +1,6 @@
 /**
- * Shared Performance-page primitives, moved out of page.tsx unchanged so the
- * Diagnosis components can use them too.
+ * Shared Performance-page primitives, moved out of page.tsx so the Diagnosis
+ * components use the same badge and card. Badge also knows "resolved".
  */
 import type React from 'react';
 

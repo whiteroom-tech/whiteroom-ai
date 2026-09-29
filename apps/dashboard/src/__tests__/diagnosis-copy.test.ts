@@ -165,6 +165,15 @@ describe('evidence headers', () => {
     const h = evidenceHeader('review_tool_errors', [c({ watchNumber: 44, toolResults: 2, toolErrorNames: ['fetch_page', 'fetch_page'] })], { toolName: 'fetch_page' });
     expect(h && h.kind === 'table' && h.rows[0].slice(1)).toEqual(['44', '2', 'fetch_page, fetch_page']);
   });
+  it('spend: highest-token calls first', () => {
+    const h = evidenceHeader('review_spend_outliers', [c({ reportedModel: 'm', attempts: [{ inputTokens: 10, outputTokens: 5 }] }), c({ reportedModel: 'm', attempts: [{ inputTokens: 900, outputTokens: 100 }] })], {});
+    expect(h && h.kind === 'table' && h.rows.map((r) => r[2])).toEqual(['1,000', '15']);
+  });
+  it('unknown detector ids never throw in What we checked', () => {
+    const d = fleet({ reports: [{ ...report('a', []), clear: [{ detector: 'review_new_thing' as DiagnosisDetectorId, note: null }] }] });
+    expect(() => checkedSummary(d)).not.toThrow();
+    expect(checkedSummary(d).perAgent[0].looksFine).toEqual([]);
+  });
   it('other detectors keep the existing view', () => {
     expect(evidenceHeader('review_tool_bloat', [], {})).toBeNull();
   });

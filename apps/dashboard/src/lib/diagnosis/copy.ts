@@ -29,7 +29,10 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
 };
 
 /** Lower-case form for "Looks fine: …" lists. */
-export const titleLower = (d: DiagnosisDetectorId) => TITLES[d].charAt(0).toLowerCase() + TITLES[d].slice(1);
+export const titleLower = (d: string) => {
+  const t = TITLES[d as DiagnosisDetectorId] ?? d.replace(/^review_/, '').replace(/_/g, ' ');
+  return t.charAt(0).toLowerCase() + t.slice(1);
+};
 
 export const WATCH_DEFINITION = 'A watch is one stretch of work before an agent hands over to a fresh context.';
 
@@ -149,6 +152,7 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
 }
 
 export const RULE_LABEL: Record<'loop_breaker' | 'spend_cap', string> = { loop_breaker: 'loop breaker', spend_cap: 'spend cap' };
+export const RULE_TITLE: Record<'loop_breaker' | 'spend_cap', string> = { loop_breaker: 'Loop breaker', spend_cap: 'Spend cap' };
 
 export const STATUS_LABEL: Record<string, string> = {
   open: 'open',

@@ -2,8 +2,8 @@
  * Agent Diagnosis view logic (spec Rev 4.4 §6.2, §6.7), kept pure so every
  * state is testable without rendering.
  */
-import type { DiagnosisDetectorId, FleetDiagnosis } from '@/lib/whiteroom/types';
-import { notMeasuredText, titleLower, TITLES } from './copy';
+import type { FleetDiagnosis } from '@/lib/whiteroom/types';
+import { isDiagnosisDetector, notMeasuredText, titleLower } from './copy';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -93,8 +93,9 @@ export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
   const nothingFound: string[] = [];
   for (const r of d.reports) {
     if (!r.findings.some((f) => f.status === 'open')) nothingFound.push(r.agentId);
-    const looksFine = r.clear.map((c) => titleLower(c.detector));
-    const needsData = r.notMeasured.map((n) => ({ title: titleLower(n.detector as DiagnosisDetectorId), text: notMeasuredText(n.code, n.reason) }));
+    // Unknown detector ids (a newer engine) are skipped rather than mislabelled.
+    const looksFine = r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c) => titleLower(c.detector));
+    const needsData = r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n) => ({ title: titleLower(n.detector), text: notMeasuredText(n.code, n.reason) }));
     if (looksFine.length || needsData.length) perAgent.push({ agentId: r.agentId, looksFine, needsData });
   }
   return {
@@ -105,7 +106,6 @@ export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
   };
 }
 
-export { TITLES };
 
 // -- §6.2.5 Evidence headers ------------------------------------------------
 
@@ -158,6 +158,21 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         kind: 'table', caption: 'Tool results and errors, newest first', columns: ['Time', 'Watch', 'Tool results', 'Reported errors'],
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), String(c.toolResults ?? '—'), list(c.toolErrorNames).join(', ') || '—']),
         note: 'WhiteRoom records which tool reported an error, not the error text. The cause is in your agent’s logs.',
+      };
+    case 'review_spend_outliers': {
+      const tokens = (c: EvidenceCall) => {
+        const a = Array.isArray(c.attempts) ? (c.attempts[0] as Record<string, unknown> | undefined) : undefined;
+        return Number(a?.inputTokens ?? 0) + Number(a?.outputTokens ?? 0);
+      };
+      return {
+        kind: 'table', caption: 'Highest-token calls on the flagged days', columns: ['Time', 'Model', 'Tokens'],
+        rows: [...calls].sort((a, b) => tokens(b) - tokens(a)).map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), tokens(c).toLocaleString('en-US')]),
+      };
+    }
+    case 'review_provider_failures':
+      return {
+        kind: 'table', caption: 'Failed calls, newest first', columns: ['Time', 'Model', 'Result'],
+        rows: byTime.map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), String(c.terminal ?? '—').replace(/_/g, ' ')]),
       };
     default:
       return null;
