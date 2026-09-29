@@ -1,0 +1,91 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "scores",
+    "findings",
+    "verdict"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "Two or three sentences on what the PR does and its overall state."
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "correctness",
+        "security",
+        "maintainability",
+        "testing"
+      ],
+      "properties": {
+        "correctness": {
+          "type": "integer",
+          "description": "0-10"
+        },
+        "security": {
+          "type": "integer",
+          "description": "0-10"
+        },
+        "maintainability": {
+          "type": "integer",
+          "description": "0-10"
+        },
+        "testing": {
+          "type": "integer",
+          "description": "0-10"
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "file",
+          "line",
+          "title",
+          "detail"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocker",
+              "major",
+              "minor",
+              "nit"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "description": "Line in the new file, or 0 if not line-specific."
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string",
+            "description": "What goes wrong, under what input or state, and the fix."
+          }
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "needs_changes",
+        "risky"
+      ]
+    }
+  }
+}
