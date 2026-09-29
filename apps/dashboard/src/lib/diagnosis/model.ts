@@ -39,11 +39,15 @@ export function createRequestGate() {
       return checking;
     },
     isCurrent: (req: number) => req === latest,
-    /** Ends a check; true when a read was skipped during it and should run now. */
-    finish(req: number): boolean {
+    /**
+     * Ends a check; true when a read should run now: one was asked for during
+     * the check, or the check failed (a read in flight when it started was
+     * dropped, so what's shown may be stale).
+     */
+    finish(req: number, succeeded: boolean): boolean {
       if (checking !== req) return false;
       checking = 0;
-      const replay = readWaiting;
+      const replay = readWaiting || !succeeded;
       readWaiting = false;
       return replay;
     },
@@ -184,7 +188,9 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
       const groups = new Map<string, { name: string; hash: string; watch: string; calls: number }>();
       for (const c of calls) {
         const hashes = Array.isArray(c.toolCallHashes) ? (c.toolCallHashes as Array<{ n: string; h: string }>) : [];
-        for (const t of hashes) {
+        // The looping tool only: other tools' calls in the same request would
+        // crowd it out of the top five.
+        for (const t of hashes.filter((x) => !tool || x.n === tool)) {
           const key = `${c.watchNumber}|${t.h}`;
           const g = groups.get(key) ?? { name: t.n, hash: t.h, watch: String(c.watchNumber ?? '—'), calls: 0 };
           g.calls++;

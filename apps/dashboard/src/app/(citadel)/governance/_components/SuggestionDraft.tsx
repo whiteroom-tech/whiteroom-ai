@@ -111,12 +111,12 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
       <dl style={{ display: 'grid', gridTemplateColumns: '140px minmax(0,1fr)', gap: '10px 14px', fontSize: 13, alignItems: 'center', margin: 0 }}>
         <dt style={{ color: 'var(--tx2)' }}>Rule</dt><dd style={{ margin: 0 }}>{RULE_TITLE[ruleType]}</dd>
         <dt style={{ color: 'var(--tx2)' }}>Applies to</dt><dd style={{ margin: 0, ...MONO }}>{rec.agentId}</dd>
-        <dt style={{ color: 'var(--tx2)' }}><label htmlFor="suggestion-amount">{field.label}</label></dt>
+        <dt style={{ color: 'var(--tx2)' }}><label htmlFor="suggestion-amount">{loaded.text.label}</label></dt>
         <dd style={{ margin: 0 }}>
           <input id="suggestion-amount" inputMode="numeric" value={amount} disabled={!!ruleId} aria-invalid={!valid}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
-          {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{field.suffix}</span>
+          {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{loaded.text.suffix}</span>
           {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 12, color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {field.max.toLocaleString('en-US')}.</span>}
           {farAbove && <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
         </dd>

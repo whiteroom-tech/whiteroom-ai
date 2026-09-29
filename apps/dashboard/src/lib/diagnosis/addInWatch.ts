@@ -11,6 +11,7 @@
  * API calls are injected so this is testable without a network.
  */
 import type { GovernanceParams, GovernanceRule, RecommendationGetResult } from '@/lib/whiteroom/types';
+import { sendWithFindingRecovery } from './feedback';
 
 export interface AddInWatchDeps {
   createRule: (input: {
@@ -41,8 +42,6 @@ export type AddInWatchResult =
   | { ok: false; step: 'create'; error: unknown }
   | { ok: false; step: 'feedback'; ruleId: string; error: unknown };
 
-const status = (e: unknown) => (e && typeof e === 'object' && 'status' in e ? (e as { status?: number }).status : undefined);
-
 export const implementedKey = (recommendationId: string, findingId: string) => `diag-impl:${recommendationId}:${findingId}`;
 
 export async function addSuggestedRuleInWatch(deps: AddInWatchDeps, input: AddInWatchInput): Promise<AddInWatchResult> {
@@ -66,34 +65,14 @@ export async function addSuggestedRuleInWatch(deps: AddInWatchDeps, input: AddIn
 
   if (input.status !== 'open') return { ok: true, ruleId, existing, feedback: 'skipped' };
 
-  const mark = (findingId: string) =>
-    deps.markImplemented({ recommendationId: input.recommendationId, findingVersion: findingId, idempotencyKey: implementedKey(input.recommendationId, findingId) });
-
-  // A loaded finding id first. Without one (the engine sent none), or on 409
-  // (the finding changed), reload the recommendation and try its current one.
-  let conflict: unknown = null;
-  if (input.currentFindingId) {
-    try {
-      await mark(input.currentFindingId);
-      return { ok: true, ruleId, existing, feedback: 'done' };
-    } catch (error) {
-      if (status(error) !== 409) return { ok: false, step: 'feedback', ruleId, error };
-      conflict = error;
-    }
-  }
-  try {
-    const fresh = (await deps.reloadRecommendation(input.recommendationId)).recommendation;
-    // No longer open (snoozed, dismissed, resolved meanwhile): the rule is
-    // what was asked for, and there's nothing left to mark.
-    if (fresh && fresh.status !== 'open') return { ok: true, ruleId, existing, feedback: 'skipped' };
-    const findingId = fresh?.currentFindingId;
-    // No id, or the same finding, would only fail again.
-    if (!findingId || findingId === input.currentFindingId) {
-      return { ok: false, step: 'feedback', ruleId, error: conflict ?? new Error('The suggestion has no current finding.') };
-    }
-    await mark(findingId);
-  } catch (retryError) {
-    return { ok: false, step: 'feedback', ruleId, error: retryError };
-  }
+  const sent = await sendWithFindingRecovery({
+    send: (findingId) => deps.markImplemented({
+      recommendationId: input.recommendationId, findingVersion: findingId, idempotencyKey: implementedKey(input.recommendationId, findingId),
+    }),
+    reload: () => deps.reloadRecommendation(input.recommendationId),
+  }, input.currentFindingId);
+  // Closed meanwhile: the rule is what was asked for, and there's nothing left to mark.
+  if (sent.kind === 'closed') return { ok: true, ruleId, existing, feedback: 'skipped' };
+  if (sent.kind === 'failed') return { ok: false, step: 'feedback', ruleId, error: sent.error };
   return { ok: true, ruleId, existing, feedback: 'done' };
 }

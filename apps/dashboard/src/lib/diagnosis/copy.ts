@@ -48,33 +48,41 @@ const t = (text: string): SentencePart => ({ text });
 const v = (x: unknown): SentencePart => ({ value: num(x) });
 const code = (x: unknown): SentencePart => ({ value: String(x ?? ''), code: true });
 
+/** "1 watch" / "3 watches": the number as a value, the noun agreeing with it. */
+const count = (x: unknown, one: string, many: string): SentencePart[] => [v(x), t(` ${Number(x) === 1 ? one : many}`)];
+
 /** The finding sentence, as parts so the row can style values. */
 export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasures): SentencePart[] {
   switch (detector) {
     case 'review_handover_churn': {
       const parts = [
-        t('Handed over after '), v(m.medianCallsPerWatch), t(' calls on average, '), v(m.longestStreak),
-        t(' watches in a row. This often means tool results are too large for one watch. If so, return smaller results (page them, drop raw HTML, summarise first).'),
+        t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
+        ...count(m.longestStreak, 'watch', 'watches'), t(' in a row. This often means tool results are too large for one watch. If so, return smaller results (page them, drop raw HTML, summarise first).'),
       ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;
     }
     case 'review_tool_loops':
-      return [code(m.toolName), t(' repeated '), v(m.maxRepeats), t(' times in watch '), v(m.worstWatch), t(', and in '), v(m.watchesAffected), t(' watches this week.')];
-    case 'review_spend_outliers':
+      return [
+        code(m.toolName), t(' repeated '), ...count(m.maxRepeats, 'time', 'times'), t(' in watch '), v(m.worstWatch), t(', and in '),
+        ...count(m.watchesAffected, 'watch', 'watches'), t(' this week.'),
+      ];
+    case 'review_spend_outliers': {
+      const one = Number(m.flaggedDays) === 1;
       return [
         t('Used '), v(m.maxDayTokens), t(' tokens on '), v(m.maxDay), t(', '), v(m.maxDayRatio), t('× its usual busy day. '),
-        v(m.flaggedDays), t(' days this week were over 1.5×.'),
+        ...count(m.flaggedDays, 'day', 'days'), t(` this week ${one ? 'was' : 'were'} over 1.5×.`),
       ];
+    }
     case 'review_tool_errors':
       return [
-        code(m.toolName), t(' failed '), v(m.toolErrors), t(' times this week. '), v(m.errorRatePct), t('% of all tool results were errors ('),
+        code(m.toolName), t(' failed '), ...count(m.toolErrors, 'time', 'times'), t(' this week. '), v(m.errorRatePct), t('% of all tool results were errors ('),
         v(m.totalErrors), t(' of '), v(m.totalResults), t('). Check that tool’s timeouts and inputs, or skip targets that keep failing.'),
       ];
     case 'review_tool_silence': {
       const parts = [
         code(m.toolName), t(' has barely been called since '), v(m.lastCalled), t(': '), v(m.recentCallsPerDay), t(' a day this week, down from '),
-        v(m.baselineCallsPerDay), t('. The agent is still busy ('), v(m.recentCalls), t(' calls), so it may be working without finishing its task.'),
+        v(m.baselineCallsPerDay), t('. The agent is still busy ('), ...count(m.recentCalls, 'call', 'calls'), t('), so it may be working without finishing its task.'),
       ];
       if (Number(m.silentTools) > 1) parts.push(t(' '), v(m.silentTools), t(' tools went quiet at the same time.'));
       return parts;
@@ -83,7 +91,10 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       const parts = has(m, 'failureRatePct')
         ? [v(m.failureRatePct), t('% of calls to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t(').')]
         : [t('Calls to the model provider are failing.')];
-      if (Number(m.otherCohorts) > 0) parts.push(t(' '), v(m.otherCohorts), t(' other models also failing.'));
+      if (Number(m.otherCohorts) > 0) {
+        const one = Number(m.otherCohorts) === 1;
+        parts.push(t(' '), ...count(m.otherCohorts, 'other model', 'other models'), t(` ${one ? 'is' : 'are'} also failing.`));
+      }
       return parts;
     }
   }
@@ -109,22 +120,28 @@ export function limitationText(detector: DiagnosisDetectorId, limitation: string
 
 /** "Needs more data" reasons as short clauses, for What we checked. Falls back to the engine's text. */
 export function notMeasuredShort(code: string, reason: string): string {
-  const n = (re: RegExp) => reason.match(re)?.[1] ?? '0';
+  const engineText = () => reason.charAt(0).toLowerCase() + reason.slice(1).replace(/\.$/, '');
+  // A count read from the engine's reason; if its wording changed and the
+  // number can't be found, the engine's own text is shown rather than a made-up 0.
+  const n = (re: RegExp, build: (x: string) => string) => {
+    const x = reason.match(re)?.[1];
+    return x === undefined ? engineText() : build(x);
+  };
   switch (code) {
-    case 'few_watches': return `${n(/has (\d+)/)} of 5 watches so far`;
-    case 'short_history': return `${n(/has (\d+)/)} of 14 days of history so far`;
-    case 'low_coverage': return `can only see ${n(/for (\d+)%/)}% of its tool calls`;
+    case 'few_watches': return n(/has (\d+)/, (x) => `${x} of 5 watches so far`);
+    case 'short_history': return n(/has (\d+)/, (x) => `${x} of 14 days of history so far`);
+    case 'low_coverage': return n(/for (\d+)%/, (x) => `can only see ${x}% of its tool calls`);
     case 'hashing_off':
     case 'detector_off': return 'switched off on this engine';
     case 'openai_format': return 'only works with Anthropic-format tools';
-    case 'few_results': return `${n(/has (\d+)/)} of 20 tool results so far`;
+    case 'few_results': return n(/has (\d+)/, (x) => `${x} of 20 tool results so far`);
     case 'not_captured': return 'nothing recorded yet';
-    case 'few_measured_calls': return `${n(/has (\d+)/)} of 50 fully recorded calls this week`;
-    case 'few_requests': return `busiest model had ${n(/had (\d+)/)} of the 100 calls needed in 24 hours`;
+    case 'few_measured_calls': return n(/has (\d+)/, (x) => `${x} of 50 fully recorded calls this week`);
+    case 'few_requests': return n(/had (\d+)/, (x) => `busiest model had ${x} of the 100 calls needed in 24 hours`);
     case 'thin_evidence': return 'too few calls show it yet';
     case 'first_check_pending': return 'first check runs overnight';
     case 'publish_failed': return 'couldn\u2019t be saved; checked again soon';
-    default: return reason.charAt(0).toLowerCase() + reason.slice(1).replace(/\.$/, '');
+    default: return engineText();
   }
 }
 

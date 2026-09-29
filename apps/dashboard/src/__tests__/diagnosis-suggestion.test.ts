@@ -27,6 +27,19 @@ describe('reading a suggestion', () => {
     expect(s.sentence).toBe('search repeated 9 times in watch 3, and in 2 watches this week.');
   });
 
+  it("labels the amount from the suggested rule's scope and unit", () => {
+    const rule = (r: string, params: Record<string, unknown>) => readSuggestion(result(loopRec({ suggestedAction: { kind: 'rule', rule: r, params } })))?.text;
+    expect(rule('loop_breaker', { threshold: 5, scope: 'run', ignoreTools: [] })).toEqual({ label: 'Same call repeated', suffix: 'times in one run' });
+    expect(rule('loop_breaker', { threshold: 5, scope: 'day', ignoreTools: [] })).toEqual({ label: 'Same call repeated', suffix: 'times a day' });
+    const spend = { ...loopRec(), detector: 'review_spend_outliers', measures: {} };
+    const spendText = (params: Record<string, unknown>) => readSuggestion(result({ ...spend, suggestedAction: { kind: 'rule', rule: 'spend_cap', params } }))?.text;
+    expect(spendText({ dailyCap: 2_000_000, scope: 'day', unit: 'tokens' })).toEqual({ label: 'Tokens per day', suffix: 'tokens a day' });
+    expect(spendText({ dailyCap: 20, scope: 'run', unit: 'dollars' })).toEqual({ label: 'Dollars per run', suffix: 'dollars in one run' });
+    // A scope or unit the draft can't describe is refused, not mislabelled.
+    expect(rule('loop_breaker', { threshold: 5, scope: 'week' })).toBeUndefined();
+    expect(spendText({ dailyCap: 20, scope: 'day', unit: 'credits' })).toBeUndefined();
+  });
+
   it('prefers the finding measures over the recommendation copy', () => {
     const s = readSuggestion(result(loopRec(), { measures: { toolName: 'fetch', maxRepeats: 12, worstWatch: 4, watchesAffected: 3 } }))!;
     expect(s.sentence).toContain('fetch repeated 12 times');

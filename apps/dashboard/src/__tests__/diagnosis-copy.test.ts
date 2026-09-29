@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  findingSentence, sentenceText, costLine, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
+  findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
 import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
@@ -59,7 +59,42 @@ describe('cost, limitations, reasons, how-to', () => {
     expect(limitationText('review_tool_errors', 'x')).not.toContain('is_error');
   });
 
-  it('not-measured reasons read as plain sentences', () => {
+  it('not-measured reasons read as short clauses, using the engine\'s numbers', () => {
+    // The engine's exact wording (diagnosis/detectors.ts and run.ts).
+    const cases: Array<[string, string, string]> = [
+      ['few_watches', 'Needs 5 watches with watch numbers; has 3', '3 of 5 watches so far'],
+      ['short_history', 'Needs 14 days of history; has 6', '6 of 14 days of history so far'],
+      ['low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)', 'can only see 40% of its tool calls'],
+      ['few_results', 'Needs 20 tool results; has 7', '7 of 20 tool results so far'],
+      ['few_measured_calls', 'Needs 50 non-streamed calls this week; has 12', '12 of 50 fully recorded calls this week'],
+      ['few_requests', 'Needs 100 calls to one model in 24 hours; the busiest had 11', 'busiest model had 11 of the 100 calls needed in 24 hours'],
+      ['hashing_off', 'Tool-call hashing is off on this engine', 'switched off on this engine'],
+      ['detector_off', 'Provider checks are switched off on this engine', 'switched off on this engine'],
+      ['openai_format', 'Tool errors are only counted for Anthropic-format tool results', 'only works with Anthropic-format tools'],
+      ['not_captured', "Tool results aren't recorded for these calls yet", 'nothing recorded yet'],
+      ['thin_evidence', 'x', 'too few calls show it yet'],
+      ['first_check_pending', 'First check runs overnight', 'first check runs overnight'],
+      ['publish_failed', "The finding couldn't be saved; it will be retried on the next check", 'couldn\u2019t be saved; checked again soon'],
+    ];
+    for (const [code, reason, want] of cases) expect(notMeasuredShort(code, reason), code).toBe(want);
+  });
+
+  it("if the engine's wording changes, its own text is shown, never a made-up 0", () => {
+    expect(notMeasuredShort('few_watches', 'Needs more watches.')).toBe('needs more watches');
+    expect(notMeasuredShort('few_requests', 'Traffic too low')).toBe('traffic too low');
+    expect(notMeasuredShort('something_new', 'A new reason.')).toBe('a new reason');
+  });
+
+  it('counts of one read in the singular', () => {
+    const text = (d: DiagnosisDetectorId, m: DiagnosisMeasures) => sentenceText(findingSentence(d, m));
+    expect(text('review_tool_loops', { toolName: 'search', maxRepeats: 1, worstWatch: 2, watchesAffected: 1 }))
+      .toBe('search repeated 1 time in watch 2, and in 1 watch this week.');
+    expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5×.');
+    expect(text('review_tool_errors', { ...MEASURES.review_tool_errors, toolErrors: 1 })).toContain('failed 1 time this week');
+    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 call on average, 1 watch in a row');
+    expect(text('review_tool_silence', { ...MEASURES.review_tool_silence, recentCalls: 1 })).toContain('(1 call)');
+    expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 1 })).toContain('1 other model is also failing.');
+    expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');
   });
 
   it('how-to text only claims what the evidence shows', () => {
@@ -148,17 +183,24 @@ describe('refetch on focus', () => {
     const check = g.startCheck();
     expect(g.startRead()).toBeNull();
     expect(g.isCurrent(check)).toBe(true); // the check's result still lands
-    expect(g.finish(check)).toBe(true);     // and the skipped read runs after it
+    expect(g.finish(check, true)).toBe(true); // and the skipped read runs after it
     expect(g.startRead()).not.toBeNull();
+  });
+  it('request gate: a failed check replays a read, since one in flight when it started was dropped', () => {
+    const g = createRequestGate();
+    const inFlight = g.startRead()!;
+    const check = g.startCheck();
+    expect(g.isCurrent(inFlight)).toBe(false);
+    expect(g.finish(check, false)).toBe(true);
   });
   it('request gate: nothing skipped means no replay, and a fleet change drops what is in flight', () => {
     const g = createRequestGate();
     const check = g.startCheck();
-    expect(g.finish(check)).toBe(false);
+    expect(g.finish(check, true)).toBe(false);
     const again = g.startCheck();
     g.reset();
     expect(g.isCurrent(again)).toBe(false);
-    expect(g.finish(again)).toBe(false);
+    expect(g.finish(again, true)).toBe(false);
     expect(g.startRead()).not.toBeNull(); // reset also ended the check
   });
   it('relative time', () => {
@@ -169,6 +211,14 @@ describe('refetch on focus', () => {
 
 
 describe('evidence headers', () => {
+  it('loops: only the looping tool is grouped, so other calls in the same request can\'t crowd it out', () => {
+    const calls = Array.from({ length: 6 }, (_, i) => ({
+      requestStart: `2026-09-28T14:0${i}:00Z`, watchNumber: 3,
+      toolCallHashes: [{ n: 'search', h: 'aaaa1111' }, { n: `other_${i}`, h: `bbbb${i}` }, { n: `more_${i}`, h: `cccc${i}` }],
+    }));
+    const h = evidenceHeader('review_tool_loops', calls, { toolName: 'search' });
+    expect(h?.kind === 'table' ? h.rows : null).toEqual([['search', 'same · aaaa1111', '6', '3']]);
+  });
   const c = (p: Record<string, unknown>) => ({ requestEnd: '2026-09-28T14:02:00Z', ...p });
   it('a call with no time shows a dash, never "Invalid Date"', () => {
     const h = evidenceHeader('review_tool_silence', [{ toolNames: ['persist_lead'], requestedToolNames: [] }], { toolName: 'persist_lead' });

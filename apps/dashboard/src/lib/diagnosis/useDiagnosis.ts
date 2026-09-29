@@ -48,18 +48,20 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
   const checkNow = useCallback(async (): Promise<boolean> => {
     const req = gate.startCheck();
     setRun('checking');
+    let succeeded = false;
     try {
       const d = await diagnoseFleet(fleetId, { force: true }, authKey);
       if (!gate.isCurrent(req)) return false;
       setData(d);
       setJustRan(true);
       setRun('idle');
+      succeeded = true;
       return true;
     } catch {
       if (gate.isCurrent(req)) setRun('error');
       return false;
     } finally {
-      if (gate.finish(req)) void refresh();
+      if (gate.finish(req, succeeded)) void refresh();
     }
   }, [fleetId, authKey, gate, refresh]);
 

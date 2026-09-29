@@ -18,6 +18,7 @@ import { TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
 import { isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
+import { sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
@@ -789,7 +790,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
-  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => Promise<boolean>;
+  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<boolean>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
 }) {
@@ -849,23 +850,28 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
   // Card-level, so it survives the row leaving the Open filter.
   const [diagnosisNotice, setDiagnosisNotice] = useState<string | null>(null);
+  // The notice is about the last action; changing what's listed moves on from it.
+  useEffect(() => { setDiagnosisNotice(null); }, [recStatus, recAgentQuery]);
 
-  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> => {
-    const ok = await onFeedback(recId, findingVersion, action, reason);
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<boolean> => {
+    const ok = await onFeedback(recId, findingVersion, action, reason, recover);
     if (ok) void fetchRecs();
     return ok;
   };
   const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
     // No reason: Diagnosis rows don't ask why, and a made-up one would skew the feedback.
-    const ok = await submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action);
+    // Recovers from a finding that changed since the list loaded (409), and
+    // never sends the recommendation id as a finding id.
+    const ok = await submitFeedback(rec.id, rec.currentFindingId ?? '', action, undefined, true);
     if (ok) {
       void diagnosis.refresh(); // the attention strip drops a snoozed finding at once
       setDiagnosisNotice(action === 'implemented' ? MARKED_FIXED_TOAST : null);
     }
     return ok;
   };
-  const runCheck = async () => { if (await diagnosis.checkNow()) void fetchRecs(); };
+  const runCheck = async () => { setDiagnosisNotice(null); if (await diagnosis.checkNow()) void fetchRecs(); };
   const seeFindings = () => {
+    setDiagnosisNotice(null);
     setRecStatus('open');
     // An agent filter could hide the very findings the strip points to.
     setRecAgent('');
@@ -1321,17 +1327,25 @@ export default function PerformancePage() {
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> {
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<boolean> {
     if (!fleetId) return false;
     setFeedbackLoading(recId);
     setFeedbackError(null);
     try {
-      const res = await performanceFeedback(fleetId, {
-        recommendationId: recId, findingVersion, action, reason,
-        snoozeDays: action === 'snooze' ? SNOOZE_DAYS : undefined,
-        idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      }, authKey);
-      if (res.error) throw new Error(res.error);
+      const send = async (fv: string) => {
+        const res = await performanceFeedback(fleetId, {
+          recommendationId: recId, findingVersion: fv, action, reason,
+          snoozeDays: action === 'snooze' ? SNOOZE_DAYS : undefined,
+          idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        }, authKey);
+        if (res.error) throw new Error(res.error);
+      };
+      if (recover) {
+        const sent = await sendWithFindingRecovery({ send, reload: () => performanceRecommendationGet(fleetId, recId, authKey) }, findingVersion);
+        if (sent.kind === 'failed') throw sent.error;
+      } else {
+        await send(findingVersion);
+      }
       fetchIndex();
       return true;
     } catch {
