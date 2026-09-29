@@ -54,6 +54,10 @@ jobs:
         if: steps.token.outputs.ok == 'true'
         with:
           fetch-depth: 0
+          # Don't leave the job token in .git/config, where Claude's Read tool
+          # could see it and echo it into the posted comment. Nothing after
+          # this step needs git credentials.
+          persist-credentials: false
 
       - name: Prepare review inputs
         if: steps.token.outputs.ok == 'true'
