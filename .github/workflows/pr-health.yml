@@ -1,0 +1,53 @@
+name: PR health
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: pr-health-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: PR health
+    # Fork PRs get no secrets, so there is no key to review with; skip them
+    # and drafts rather than fail.
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Install Anthropic SDK
+        # Installed outside the workspace so no package.json or lockfile changes.
+        run: |
+          mkdir -p "$RUNNER_TEMP/pr-health"
+          cp .github/scripts/pr-health.mjs "$RUNNER_TEMP/pr-health/"
+          cd "$RUNNER_TEMP/pr-health"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund @anthropic-ai/sdk@0.129.0
+      - name: Score PR
+        working-directory: ${{ runner.temp }}/pr-health
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY secret is not set; skipping PR health review"
+            exit 0
+          fi
+          node pr-health.mjs
