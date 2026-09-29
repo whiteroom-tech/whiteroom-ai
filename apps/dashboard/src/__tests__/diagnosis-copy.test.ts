@@ -126,7 +126,7 @@ describe('what we checked', () => {
       waiting: [{ agentId: 'summarizer', calls7d: 41 }],
     }));
     expect(s.nothingFound).toEqual(['triage']);
-    expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: 'Needs 14 days of history (6 so far).' }] });
+    expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: '6 of 14 days of history so far' }] });
     expect(s.waiting).toEqual([{ agentId: 'summarizer', text: '41 of 50 calls. Checked automatically once it gets there.' }]);
   });
 });

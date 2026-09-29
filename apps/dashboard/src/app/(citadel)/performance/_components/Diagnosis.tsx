@@ -10,7 +10,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { FleetDiagnosis, RecommendationDetail } from '@/lib/whiteroom/types';
 import {
-  TITLES, WATCH_DEFINITION, RULE_LABEL,
+  TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL,
   findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
 } from '@/lib/diagnosis/copy';
 import { attentionStrip, checkedSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
@@ -98,13 +98,13 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>{TITLES[detector]}</span>
         <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ ...MONO, fontSize: 12.5, fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>{rec.agentId}</button>
-        <Badge status={rec.status} />
+        <Badge status={rec.status} label={STATUS_LABEL[rec.status]} />
       </div>
       <Sentence parts={findingSentence(detector, m)} />
       {cost && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--warn-tx)' }}>{cost}</p>}
       {limitation && <p style={{ margin: 0, fontSize: 12, color: 'var(--tx2)' }}>{limitation}</p>}
 
-      <div className="dx-acts" style={{ display: 'flex', alignItems: 'center', gap: '8px 16px', flexWrap: 'wrap', marginTop: 2 }}>
+      <div className="dx-acts" style={{ display: 'flex', gap: '8px 16px', flexWrap: 'wrap', marginTop: 2 }}>
         {open && action?.kind === 'rule' && (
           <Link href={`/governance?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, padding: '6px 14px', borderRadius: 6,
@@ -140,7 +140,7 @@ export function WhatWeChecked({ data }: { data: FleetDiagnosis | null }) {
   if (!data || data.reports.length === 0) return null;
   const agents = data.reports.length;
   return (
-    <details onToggle={(e) => setOpen(e.currentTarget.open)} style={{ marginTop: 14, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+    <details onToggle={(e) => setOpen(e.currentTarget.open)} style={{ paddingTop: 12 }}>
       <summary className="dx-summary" style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--tx2)' }}>
         What we checked · <span style={MONO}>{agents}</span> {agents === 1 ? 'agent' : 'agents'}
       </summary>
@@ -151,19 +151,22 @@ export function WhatWeChecked({ data }: { data: FleetDiagnosis | null }) {
 
 function CheckedDetails({ data }: { data: FleetDiagnosis }) {
   const s = checkedSummary(data);
+  const strong = { color: 'var(--tx)', fontWeight: 600 } as const;
   return (
-      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: 'var(--tx2)', lineHeight: 1.5 }}>
-        {s.nothingFound.length > 0 && <div><b style={{ color: 'var(--tx)', fontWeight: 600 }}>Nothing found:</b> <span style={MONO}>{s.nothingFound.join(', ')}</span>.</div>}
-        {s.perAgent.map((a) => (
-          <div key={a.agentId}>
-            <span style={{ ...MONO, color: 'var(--tx)' }}>{a.agentId}</span>:
-            {a.looksFine.length > 0 && <> <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Looks fine:</b> {a.looksFine.join(', ')}.</>}
-            {a.needsData.map((n) => <span key={n.title}> <b style={{ color: 'var(--tx)', fontWeight: 600 }}>Needs more data:</b> {n.title} ({n.text.replace(/\.$/, '')}).</span>)}
-          </div>
-        ))}
-        {s.waiting.map((w) => <div key={w.agentId}><b style={{ color: 'var(--tx)', fontWeight: 600 }}>Not checked yet:</b> <span style={MONO}>{w.agentId}</span>, {w.text}</div>)}
-        <div style={{ fontSize: 12.5, borderTop: '1px dashed var(--line2)', paddingTop: 8 }}>{WATCH_DEFINITION}</div>
-      </div>
+    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: 'var(--tx2)', lineHeight: 1.5 }}>
+      {s.nothingFound.length > 0 && <div><b style={strong}>Nothing found:</b> <span style={MONO}>{s.nothingFound.join(', ')}</span></div>}
+      {s.perAgent.map((a) => (
+        <div key={a.agentId}>
+          <div style={{ ...MONO, ...strong }}>{a.agentId}</div>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {a.looksFine.length > 0 && <li><b style={strong}>Looks fine:</b> {a.looksFine.join(', ')}</li>}
+            {a.needsData.map((n) => <li key={n.title}><b style={strong}>Needs more data:</b> {n.title}, {n.text}</li>)}
+          </ul>
+        </div>
+      ))}
+      {s.waiting.map((w) => <div key={w.agentId}><b style={strong}>Not checked yet:</b> <span style={MONO}>{w.agentId}</span>, {w.text}</div>)}
+      <div style={{ fontSize: 12.5, borderTop: '1px dashed var(--line2)', paddingTop: 8 }}>{WATCH_DEFINITION}</div>
+    </div>
   );
 }
 

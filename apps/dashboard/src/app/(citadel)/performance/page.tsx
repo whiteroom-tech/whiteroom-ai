@@ -12,12 +12,12 @@ import { safeGet, safeSet } from '@/lib/safe-storage';
 import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
-import { isDiagnosisDetector, MARKED_FIXED_TOAST } from '@/lib/diagnosis/copy';
+import { isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, TITLES } from '@/lib/diagnosis/copy';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
@@ -866,8 +866,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   const runCheck = async () => { if (await diagnosis.checkNow()) void fetchRecs(); };
   const seeFindings = () => {
     setRecStatus('open');
-    const card = document.getElementById('recommendations');
-    card?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    // An instant jump, straight away: the filter only changes rows inside the
+    // card, and a smooth scroll can be cancelled mid-way and leave the page put.
+    document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
   };
 
@@ -1082,6 +1083,10 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
   }
 
   const rec = recDetail?.recommendation;
+  // Diagnosis findings: plain titles, no internal ids, and no brief (the
+  // engine has none for them).
+  const diagDetector = [rec?.detector, data.finding?.detector].find((d): d is DiagnosisDetectorId => !!d && isDiagnosisDetector(d));
+  const detectorLabel = (d: string) => (isDiagnosisDetector(d) ? TITLES[d] : d.replace(/_/g, ' '));
   const finding = recDetail?.finding;
   const f = data.finding;
 
@@ -1097,14 +1102,14 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
             {[
-              ['Detector', rec.detector.replace(/_/g, ' ')],
-              ['Action', rec.action.replace(/_/g, ' ')],
+              [diagDetector ? 'Finding' : 'Detector', detectorLabel(rec.detector)],
+              ...(diagDetector ? [] : [['Action', rec.action.replace(/_/g, ' ')]]),
               ['Agent', rec.agentId],
-              ['Cohort', rec.cohort],
+              ...(diagDetector ? [] : [['Cohort', rec.cohort]]),
               ['Created', new Date(rec.createdAt).toLocaleString()],
               ['Updated', new Date(rec.updatedAt).toLocaleString()],
               ['Feedback', `${rec.feedbackCount} action${rec.feedbackCount !== 1 ? 's' : ''}`],
-              ...(finding ? [['Lane', String(finding.lane ?? '--').replace(/_/g, ' ')]] : []),
+              ...(finding && !diagDetector ? [['Lane', String(finding.lane ?? '--').replace(/_/g, ' ')]] : []),
             ].map(([k, v]) => (
               <div key={k}><span style={{ color: 'var(--tx3)' }}>{k}:</span> <span style={{ color: 'var(--tx)' }}>{v}</span></div>
             ))}
@@ -1112,7 +1117,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
         </div>
       )}
 
-      {recommendationId && (
+      {recommendationId && !diagDetector && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button onClick={() => exportBrief('copy')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
             {briefCopied ? 'Copied!' : briefLoading ? 'Loading...' : 'Copy implementation brief'}
@@ -1128,12 +1133,12 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
           <div style={CARD}>
             <h3 style={H3}>Finding Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
-              <div><span style={{ color: 'var(--tx3)' }}>Detector:</span> <span style={{ color: 'var(--tx)' }}>{f.detector.replace(/_/g, ' ')}</span></div>
+              <div><span style={{ color: 'var(--tx3)' }}>{diagDetector ? 'Finding' : 'Detector'}:</span> <span style={{ color: 'var(--tx)' }}>{detectorLabel(f.detector)}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Agent:</span> <span style={{ color: 'var(--tx)' }}>{f.agentId}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Window:</span> <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{new Date(f.windowStart).toLocaleDateString()} - {new Date(f.windowEnd).toLocaleDateString()}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Coverage:</span> <span style={{ color: 'var(--tx)' }}>{f.coverage}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Basis:</span> <span style={{ color: 'var(--tx2)' }}>{f.basis}</span></div>
-              {f.limitations && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--tx3)' }}>Limitations:</span> <span style={{ color: 'var(--warn)' }}>{f.limitations}</span></div>}
+              {f.limitations && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--tx3)' }}>Limitations:</span> <span style={{ color: 'var(--warn)' }}>{(diagDetector && limitationText(diagDetector, f.limitations)) || f.limitations}</span></div>}
             </div>
           </div>
 
@@ -1154,7 +1159,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    {(['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time'] as (string | [string, 'tools' | 'schema'])[]).map(h => {
+                    {((diagDetector ? ['Call ID', 'Model', 'Watch', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
                       if (typeof h === 'string') return <th key={h} style={{ padding: '6px 8px', textAlign: 'left' }}>{h}</th>;
                       const [label, k] = h;
                       return (
@@ -1172,8 +1177,14 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
                     <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
-                      <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{String(c.toolDefinitionCount ?? '--')}</td>
-                      <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
+                      {diagDetector ? (
+                        <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{c.watchNumber != null ? String(c.watchNumber) : '--'}</td>
+                      ) : (
+                        <>
+                          <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{String(c.toolDefinitionCount ?? '--')}</td>
+                          <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
+                        </>
+                      )}
                       <td style={{ padding: 8 }}><Badge status={String(c.terminal ?? 'unknown')} /></td>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
                     </tr>

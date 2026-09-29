@@ -686,9 +686,9 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
     <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, flex: 1 }}>
       <PageHeader title="Controls" fleetId={fleetId} />
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div className="gov-columns" style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Left column — rules */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 24, minWidth: 0 }}>
+        <div className="gov-list" style={{ flex: 1, overflowY: "auto", padding: 24, minWidth: 0 }}>
           {error && (
             <div role="alert" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--bad)", background: "var(--bad-bg)", color: "var(--tx)", fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span>{error}</span>
@@ -824,7 +824,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             }}
           />
         ) : selectedRule && (
-          <div style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>
+          <div className="gov-panel" style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{RULE_LABELS[selectedRule.ruleType]}</h2>
               <p style={{ fontSize: 12, color: "var(--tx3)", marginTop: 4 }}>

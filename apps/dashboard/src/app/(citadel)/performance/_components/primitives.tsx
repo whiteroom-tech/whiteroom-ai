@@ -7,7 +7,7 @@ import type React from 'react';
 export const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
 export const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 12, margin: 0 };
 
-export function Badge({ status, size = 'normal' }: { status: string; size?: 'normal' | 'small' }) {
+export function Badge({ status, size = 'normal', label }: { status: string; size?: 'normal' | 'small'; label?: string }) {
   const map: Record<string, { bg: string; tx: string }> = {
     open: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
     snoozed: { bg: 'var(--warn-bg)', tx: 'var(--warn)' },
@@ -29,7 +29,7 @@ export function Badge({ status, size = 'normal' }: { status: string; size?: 'nor
   const small = size === 'small';
   return (
     <span style={{ fontSize: small ? 10 : 11, fontWeight: 600, padding: small ? '1px 6px' : '2px 8px', borderRadius: 99, background: c.bg, color: c.tx }}>
-      {status.replace(/_/g, ' ')}
+      {label ?? status.replace(/_/g, ' ')}
     </span>
   );
 }

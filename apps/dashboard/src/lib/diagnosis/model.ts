@@ -3,7 +3,7 @@
  * state is testable without rendering.
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { isDiagnosisDetector, notMeasuredText, titleLower } from './copy';
+import { isDiagnosisDetector, notMeasuredShort, titleLower } from './copy';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -95,7 +95,7 @@ export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
     if (!r.findings.some((f) => f.status === 'open')) nothingFound.push(r.agentId);
     // Unknown detector ids (a newer engine) are skipped rather than mislabelled.
     const looksFine = r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c) => titleLower(c.detector));
-    const needsData = r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n) => ({ title: titleLower(n.detector), text: notMeasuredText(n.code, n.reason) }));
+    const needsData = r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n) => ({ title: titleLower(n.detector), text: notMeasuredShort(n.code, n.reason) }));
     if (looksFine.length || needsData.length) perAgent.push({ agentId: r.agentId, looksFine, needsData });
   }
   return {

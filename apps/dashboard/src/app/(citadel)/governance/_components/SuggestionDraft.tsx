@@ -64,7 +64,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
 
   if (problem) {
     return (
-      <div style={panel}>
+      <div className="gov-panel" style={panel}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Suggested rule</h2>
         <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>{problem}</p>
         <button type="button" className="dx-link" onClick={() => onCancel(false)}>Close</button>
@@ -72,7 +72,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
     );
   }
   if (!loaded) {
-    return <div style={panel}><p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading the suggestion…</p></div>;
+    return <div className="gov-panel" style={panel}><p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading the suggestion…</p></div>;
   }
 
   const { rec, ruleType } = loaded;
@@ -112,7 +112,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
   };
 
   return (
-    <section style={panel} aria-labelledby="suggestion-title">
+    <section className="gov-panel" style={panel} aria-labelledby="suggestion-title">
       <h2 id="suggestion-title" style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>New {RULE_LABEL[ruleType]} from a suggestion</h2>
       <div style={{ background: 'var(--brand-dim)', border: '1px solid var(--brand)', borderRadius: 8, padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}>
         {rec.status === 'open'
@@ -129,7 +129,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
           <input id="suggestion-amount" inputMode="numeric" value={amount} disabled={!!ruleId} aria-invalid={!valid}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
-          {' '}<span style={{ color: 'var(--tx2)' }}>{field.suffix}</span>
+          {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{field.suffix}</span>
         </dd>
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>
         <dd style={{ margin: 0 }}>

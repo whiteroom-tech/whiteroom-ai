@@ -125,6 +125,27 @@ export function notMeasuredText(code: string, reason: string): string {
   }
 }
 
+/** The same reasons as a short clause, for lists ("What we checked"). */
+export function notMeasuredShort(code: string, reason: string): string {
+  const n = (re: RegExp) => reason.match(re)?.[1] ?? '0';
+  switch (code) {
+    case 'few_watches': return `${n(/has (\d+)/)} of 5 watches so far`;
+    case 'short_history': return `${n(/has (\d+)/)} of 14 days of history so far`;
+    case 'low_coverage': return `can only see ${n(/for (\d+)%/)}% of its tool calls`;
+    case 'hashing_off':
+    case 'detector_off': return 'switched off on this engine';
+    case 'openai_format': return 'only works with Anthropic-format tools';
+    case 'few_results': return `${n(/has (\d+)/)} of 20 tool results so far`;
+    case 'not_captured': return 'nothing recorded yet';
+    case 'few_measured_calls': return `${n(/has (\d+)/)} of 50 fully recorded calls this week`;
+    case 'few_requests': return `busiest model had ${n(/had (\d+)/)} of the 100 calls needed in 24 hours`;
+    case 'thin_evidence': return 'too few calls show it yet';
+    case 'first_check_pending': return 'first check runs overnight';
+    case 'publish_failed': return 'couldn\u2019t be saved; checked again soon';
+    default: return reason.charAt(0).toLowerCase() + reason.slice(1).replace(/\.$/, '');
+  }
+}
+
 /** How-to text (§6.5); only claims the evidence can show. */
 export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[] {
   const tool = String(m.toolName ?? 'that tool');
