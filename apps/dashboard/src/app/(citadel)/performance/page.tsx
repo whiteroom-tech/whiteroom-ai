@@ -15,6 +15,11 @@ import { isFeedVariant, type FeedVariant } from '@/lib/activity';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
+import { Badge, Btn, CARD, H3 } from './_components/primitives';
+import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
+import { isDiagnosisDetector } from '@/lib/diagnosis/copy';
+import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
+import { statusLine } from '@/lib/diagnosis/model';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
 
@@ -68,8 +73,6 @@ function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
   return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
 }
 
-const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
-const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 12, margin: 0 };
 
 function fmtLatency(ms: number | null): string {
   if (ms == null) return '--';
@@ -106,31 +109,6 @@ function TrendBadge({ value, invert }: { value: number | null; invert?: boolean 
   );
 }
 
-function Badge({ status, size = 'normal' }: { status: string; size?: 'normal' | 'small' }) {
-  const map: Record<string, { bg: string; tx: string }> = {
-    open: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
-    snoozed: { bg: 'var(--warn-bg)', tx: 'var(--warn)' },
-    dismissed: { bg: 'var(--line)', tx: 'var(--tx3)' },
-    reported_implemented: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-    expired: { bg: 'var(--line)', tx: 'var(--tx3)' },
-    evaluating: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-    validated: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
-    collecting: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-    evaluated: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
-    inconclusive: { bg: 'var(--warn-bg)', tx: 'var(--warn)' },
-    regressed: { bg: 'var(--bad-bg)', tx: 'var(--bad)' },
-    unavailable: { bg: 'var(--line)', tx: 'var(--tx3)' },
-    awaiting_metadata: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-  };
-  if (status === 'not_started') return null;
-  const c = map[status] ?? { bg: 'var(--line)', tx: 'var(--tx3)' };
-  const small = size === 'small';
-  return (
-    <span style={{ fontSize: small ? 10 : 11, fontWeight: 600, padding: small ? '1px 6px' : '2px 8px', borderRadius: 99, background: c.bg, color: c.tx }}>
-      {status.replace(/_/g, ' ')}
-    </span>
-  );
-}
 
 function computeTrends(hourly: FleetHourlyDataPoint[]) {
   const mid = Math.floor(hourly.length / 2);
@@ -361,7 +339,7 @@ function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey?: stri
   );
 }
 
-const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'evaluating', 'validated'] as const;
+const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
 
 function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, onClick, active }: {
   label: string; value: string; sub?: string; warn?: boolean;
@@ -668,15 +646,6 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
   return null;
 }
 
-function Btn({ label, onClick, loading, accent }: { label: string; onClick: () => void; loading: boolean; accent?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={loading} style={{
-      fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
-      background: accent ? 'var(--brand-dim)' : 'transparent', color: accent ? 'var(--brand)' : 'var(--tx3)',
-      border: `1px solid ${accent ? 'var(--brand)' : 'var(--line)'}`, opacity: loading ? 0.5 : 1,
-    }}>{label}</button>
-  );
-}
 
 /** True while the input identified by this aria-label has focus. */
 function editing(ariaLabel: string): boolean {
@@ -878,8 +847,24 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
   // its old status and buttons until a filter changes (audit F16).
-  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => {
-    if (await onFeedback(recId, findingVersion, action, reason)) void fetchRecs();
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> => {
+    const ok = await onFeedback(recId, findingVersion, action, reason);
+    if (ok) {
+      void fetchRecs();
+      void diagnosis.refresh(); // so the attention strip drops a snoozed finding at once
+    }
+    return ok;
+  };
+
+  // Agent Diagnosis: one read shared by the strip, the header line and What we checked.
+  const diagnosis = useDiagnosis(fleetId, authKey);
+  const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
+  const runCheck = async () => { if (await diagnosis.checkNow()) void fetchRecs(); };
+  const seeFindings = () => {
+    setRecStatus('open');
+    const card = document.getElementById('recommendations');
+    card?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
   };
 
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
@@ -914,6 +899,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
 
+      <AttentionStrip data={diagnosis.data} onSeeFindings={seeFindings} />
+
       <CostTrackingSection fleetId={fleetId} authKey={authKey} />
 
       {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
@@ -923,11 +910,12 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
         {s.models.length > 0 && <TrafficByModel models={s.models} />}
       </div>
 
-      <div style={CARD}>
+      <div style={CARD} id="recommendations">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <h3 style={H3}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
+          <h3 style={H3} id="recommendations-heading" tabIndex={-1}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
           <input value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />
         </div>
+        <DiagnosisStatus line={diagnosisLine} onAction={() => void runCheck()} />
         <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
           {REC_STATUSES.map(st => (
             <button key={st} onClick={() => setRecStatus(st)} style={{
@@ -939,7 +927,17 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
           ))}
         </div>
 
-        {recs.length > 0 ? recs.map(rec => (
+        {recs.length > 0 ? recs.map(rec => isDiagnosisRow(rec) ? (
+          <DiagnosisRow
+            key={rec.id}
+            rec={rec}
+            onSelectAgent={onSelectAgent}
+            onSelectEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
+            onFeedback={(action) => submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action, action === 'dismiss' ? 'not_worth_it' : undefined)}
+            busy={feedbackLoading === rec.id}
+            error={feedbackError?.recId === rec.id ? feedbackError.message : null}
+          />
+        ) : (
           <div key={rec.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ flex: 1 }}>
@@ -957,7 +955,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
                 <Btn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
                 {rec.status === 'open' && (
                   <>
-                    <Btn label="Snooze" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
+                    <Btn label="Snooze 7 days" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
                     <Btn label="Dismiss" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
                     <Btn label="Implemented" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
                   </>
@@ -989,6 +987,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
             }}>{recLoading ? 'Loading...' : 'Load more'}</button>
           </div>
         )}
+
+        <WhatWeChecked data={diagnosis.data} />
       </div>
 
       <LiveFeedSection fleetId={fleetId} authKey={authKey} />
@@ -1132,12 +1132,16 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
             </div>
           </div>
 
+          {isDiagnosisDetector(f.detector) ? (
+            <DiagnosisEvidence detector={f.detector} calls={data.calls} measures={f.measures} />
+          ) : (
           <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
             <MetricCard label="Tool Definitions" value={String(f.measures.avgToolDefs ?? '--')} />
             <MetricCard label="Tools Requested" value={String(f.measures.uniqueRequestedTools ?? '--')} />
             <MetricCard label="Schema Share" value={`${f.measures.schemaSharePct ?? '--'}%`} warn={(f.measures.schemaSharePct ?? 0) >= 20} />
             <MetricCard label="Utilization" value={`${f.measures.utilization ?? '--'}%`} />
           </div>
+          )}
 
           {data.calls.length > 0 && (
             <div style={CARD}>

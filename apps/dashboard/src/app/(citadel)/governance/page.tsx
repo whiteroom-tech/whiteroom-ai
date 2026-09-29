@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   governanceCreateRule,
@@ -462,7 +465,12 @@ export default function GovernancePage() {
 
   if (!auth.fleetId) return null;
 
-  return <GovernanceContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />;
+  // useSearchParams (the ?rec= Diagnosis suggestion) needs a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <GovernanceContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />
+    </Suspense>
+  );
 }
 
 function GovernanceContent({ fleetId, authKey, onAuthError }: {
@@ -477,6 +485,11 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
+  // A Diagnosis suggestion opened from Performance: /governance?rec=<id>.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const suggestionRec = searchParams.get("rec");
+  const [notice, setNotice] = useState<string | null>(null);
 
   const handleError = useCallback((e: unknown, what: string) => {
     if (isAuthError(e)) { onAuthError(); return; }
@@ -677,6 +690,12 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
               <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "var(--tx3)", cursor: "pointer", fontSize: 14 }} aria-label="Dismiss">&times;</button>
             </div>
           )}
+          {notice && (
+            <div role="status" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--ok)", background: "var(--ok-bg)", color: "var(--tx)", fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>{notice}</span>
+              <button onClick={() => setNotice(null)} style={{ background: "none", border: "none", color: "var(--tx3)", cursor: "pointer", fontSize: 14 }} aria-label="Dismiss">&times;</button>
+            </div>
+          )}
 
           {/* Suggested section — computed from the last 14 days of traffic */}
           {suggestionCount > 0 && (
@@ -783,8 +802,20 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
           })}
         </div>
 
-        {/* Right column — detail panel */}
-        {selectedRule && (
+        {/* Right column — a Diagnosis suggestion's draft, or the selected rule */}
+        {suggestionRec ? (
+          <SuggestionDraft
+            fleetId={fleetId}
+            authKey={authKey}
+            recId={suggestionRec}
+            onDone={(rule, message) => {
+              setNotice(message);
+              router.replace("/governance");
+              void fetchData().then(() => setSelectedId(rule.id));
+            }}
+            onCancel={() => router.replace("/governance")}
+          />
+        ) : selectedRule && (
           <div style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{RULE_LABELS[selectedRule.ruleType]}</h2>
@@ -804,6 +835,11 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                   ? "No agents selected."
                   : `Applies to: ${(selectedRule.appliesTo as string[]).join(", ")}`}
               </p>
+              {selectedRule.sourceRecommendationId && (
+                <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--tx2)" }}>
+                  From a Diagnosis suggestion · <Link href="/performance" style={{ color: "var(--brand)" }}>see it in Performance</Link>
+                </p>
+              )}
             </div>
 
             {selectedRule.mode !== "off" && (

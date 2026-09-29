@@ -1,0 +1,161 @@
+/**
+ * Agent Diagnosis copy (spec Rev 4.4 §6.5). Written from the user's side, in
+ * sentence case. Every number printed comes from a finding's `measures`, so a
+ * sentence can never claim something the data doesn't hold. "Watch" stays
+ * (Citadel glossary) and is defined once, in What we checked.
+ */
+import type { DiagnosisDetectorId, DiagnosisMeasures } from '@/lib/whiteroom/types';
+
+export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
+  'review_handover_churn',
+  'review_tool_loops',
+  'review_spend_outliers',
+  'review_tool_errors',
+  'review_tool_silence',
+  'review_provider_failures',
+];
+
+export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
+  return (DIAGNOSIS_DETECTORS as string[]).includes(detector);
+}
+
+export const TITLES: Record<DiagnosisDetectorId, string> = {
+  review_handover_churn: 'Handing over too often',
+  review_tool_loops: 'Repeating the same call',
+  review_spend_outliers: 'Unusually expensive days',
+  review_tool_errors: 'A tool keeps failing',
+  review_tool_silence: 'Stopped using a key tool',
+  review_provider_failures: 'Model provider errors',
+};
+
+/** Lower-case form for "Looks fine: …" lists. */
+export const titleLower = (d: DiagnosisDetectorId) => TITLES[d].charAt(0).toLowerCase() + TITLES[d].slice(1);
+
+export const WATCH_DEFINITION = 'A watch is one stretch of work before an agent hands over to a fresh context.';
+
+const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
+const has = (m: DiagnosisMeasures, k: string) => m[k] !== undefined && m[k] !== null && m[k] !== '';
+
+/** A part of a sentence: plain text, or a value from measures (shown in mono). */
+export type SentencePart = { text: string } | { value: string; code?: boolean };
+const t = (text: string): SentencePart => ({ text });
+const v = (x: unknown): SentencePart => ({ value: num(x) });
+const code = (x: unknown): SentencePart => ({ value: String(x ?? ''), code: true });
+
+/** The finding sentence, as parts so the row can style values. */
+export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasures): SentencePart[] {
+  switch (detector) {
+    case 'review_handover_churn': {
+      const parts = [
+        t('Handed over after '), v(m.medianCallsPerWatch), t(' calls on average, '), v(m.longestStreak),
+        t(' watches in a row. This often means tool results are too large for one watch. If so, return smaller results (page them, drop raw HTML, summarise first).'),
+      ];
+      if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
+      return parts;
+    }
+    case 'review_tool_loops':
+      return [code(m.toolName), t(' repeated '), v(m.maxRepeats), t(' times in watch '), v(m.worstWatch), t(', and in '), v(m.watchesAffected), t(' watches this week.')];
+    case 'review_spend_outliers':
+      return [
+        t('Used '), v(m.maxDayTokens), t(' tokens on '), v(m.maxDay), t(', '), v(m.maxDayRatio), t('× its usual busy day. '),
+        v(m.flaggedDays), t(' days this week were over 1.5×.'),
+      ];
+    case 'review_tool_errors':
+      return [
+        code(m.toolName), t(' failed '), v(m.toolErrors), t(' times this week. '), v(m.errorRatePct), t('% of all tool results were errors ('),
+        v(m.totalErrors), t(' of '), v(m.totalResults), t('). Check that tool’s timeouts and inputs, or skip targets that keep failing.'),
+      ];
+    case 'review_tool_silence': {
+      const parts = [
+        code(m.toolName), t(' has barely been called since '), v(m.lastCalled), t(': '), v(m.recentCallsPerDay), t(' a day this week, down from '),
+        v(m.baselineCallsPerDay), t('. The agent is still busy ('), v(m.recentCalls), t(' calls), so it may be working without finishing its task.'),
+      ];
+      if (Number(m.silentTools) > 1) parts.push(t(' '), v(m.silentTools), t(' tools went quiet at the same time.'));
+      return parts;
+    }
+    case 'review_provider_failures': {
+      const parts = has(m, 'failureRatePct')
+        ? [v(m.failureRatePct), t('% of calls to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t(').')]
+        : [t('Calls to the model provider are failing.')];
+      if (Number(m.otherCohorts) > 0) parts.push(t(' '), v(m.otherCohorts), t(' other models also failing.'));
+      return parts;
+    }
+  }
+}
+
+export const sentenceText = (parts: SentencePart[]) => parts.map((p) => ('text' in p ? p.text : p.value)).join('');
+
+/** "About 1,200,000 tokens (≈ $1.84) went to this in the last 7 days." — or null. */
+export function costLine(estWastedTokens: number | null | undefined, estWastedCostMicros: number | null | undefined): string | null {
+  if (estWastedTokens == null) return null;
+  const cost = estWastedCostMicros != null ? ` (≈ $${(estWastedCostMicros / 1_000_000).toFixed(2)})` : '';
+  return `About ${estWastedTokens.toLocaleString('en-US')} tokens${cost} went to this in the last 7 days.`;
+}
+
+/** Engine limitations, reworded where the engine's text is technical. */
+export function limitationText(detector: DiagnosisDetectorId, limitation: string | null | undefined): string | null {
+  if (!limitation) return null;
+  if (detector === 'review_tool_errors') return 'Only counts errors your agent reports back.';
+  if (detector === 'review_tool_silence') return 'Only counts calls WhiteRoom sees in full. If you stopped using this tool on purpose, dismiss this.';
+  if (detector === 'review_handover_churn') return null; // internal nuance; the sentence already hedges
+  return limitation;
+}
+
+/** "Needs more data" reasons, as plain sentences. Falls back to the engine's text. */
+export function notMeasuredText(code: string, reason: string): string {
+  const n = (re: RegExp) => reason.match(re)?.[1];
+  switch (code) {
+    case 'few_watches': return `Needs a few more watches to judge (${n(/has (\d+)/) ?? 0} of 5 so far).`;
+    case 'short_history': return `Needs 14 days of history (${n(/has (\d+)/) ?? 0} so far).`;
+    case 'low_coverage': return `Can only see ${n(/for (\d+)%/) ?? 0}% of this agent’s tool calls. Streamed replies hide them.`;
+    case 'hashing_off': return 'This check is switched off on your WhiteRoom engine.';
+    case 'openai_format': return 'Only works for agents using Anthropic-format tools.';
+    case 'few_results': return `Needs 20 tool results to judge (${n(/has (\d+)/) ?? 0} so far).`;
+    case 'not_captured': return 'Starts counting from new calls; nothing recorded yet.';
+    case 'few_measured_calls': return `Needs 50 fully recorded calls this week (${n(/has (\d+)/) ?? 0} so far).`;
+    case 'few_requests': return `Needs 100 calls to one model in 24 hours (the busiest had ${n(/had (\d+)/) ?? 0}).`;
+    case 'detector_off': return 'This check is switched off on your WhiteRoom engine.';
+    case 'thin_evidence': return 'Spotted a possible pattern, but too few calls show it yet.';
+    case 'first_check_pending': return 'First check runs overnight.';
+    case 'publish_failed': return 'Couldn’t save this result; it will be checked again soon.';
+    default: return reason.endsWith('.') ? reason : `${reason}.`;
+  }
+}
+
+/** How-to text (§6.5); only claims the evidence can show. */
+export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[] {
+  const tool = String(m.toolName ?? 'that tool');
+  switch (howtoId) {
+    case 'handover_churn':
+      return [
+        'Return smaller tool results so one watch can hold several steps: page long lists, drop raw HTML, and summarise before returning.',
+        'Open the calls to see how many calls each watch held before it handed over.',
+      ];
+    case 'tool_errors':
+      return [
+        `See which calls reported a ${tool} error. Check your agent’s logs for the cause.`,
+        'Common fixes: add a timeout and one retry, or skip targets that keep failing.',
+      ];
+    case 'tool_silence':
+      return [
+        `Open the calls and check what the agent does instead of calling ${tool}.`,
+        'Common causes: an earlier step fails so the agent never reaches it, the task prompt changed, or the agent decides the work is already done.',
+      ];
+    case 'provider_failures':
+      return ['Open the calls to see which status codes came back. Retry with backoff, or route to another model while the provider recovers.'];
+    default:
+      return [];
+  }
+}
+
+export const RULE_LABEL: Record<'loop_breaker' | 'spend_cap', string> = { loop_breaker: 'loop breaker', spend_cap: 'spend cap' };
+
+export const STATUS_LABEL: Record<string, string> = {
+  open: 'open',
+  snoozed: 'snoozed 7 days',
+  dismissed: 'dismissed',
+  reported_implemented: 'marked fixed',
+  resolved: 'stopped happening',
+};
+
+export const MARKED_FIXED_TOAST = 'Marked as fixed. You can find it under Implemented.';
