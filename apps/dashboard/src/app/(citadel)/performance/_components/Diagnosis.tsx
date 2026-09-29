@@ -10,7 +10,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { FleetDiagnosis, RecommendationDetail } from '@/lib/whiteroom/types';
 import {
-  TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL,
+  TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
   findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
 } from '@/lib/diagnosis/copy';
 import { attentionStrip, checkedSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
@@ -118,7 +118,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
           }}>{howOpen ? 'Hide how to fix' : 'How to fix'}</button>
         )}
         {calls > 0 && <button type="button" className="dx-link" onClick={onSelectEvidence}>See the {calls} calls</button>}
-        {open && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('snooze')}>Snooze 7 days</button>}
+        {open && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('snooze')}>Snooze {SNOOZE_DAYS} days</button>}
         {open && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('dismiss')}>Dismiss</button>}
       </div>
 

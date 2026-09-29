@@ -17,7 +17,7 @@ import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/gove
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
-import { isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, TITLES } from '@/lib/diagnosis/copy';
+import { isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
@@ -856,7 +856,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
     return ok;
   };
   const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
-    const ok = await submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action, action === 'dismiss' ? 'not_worth_it' : undefined);
+    // No reason: Diagnosis rows don't ask why, and a made-up one would skew the feedback.
+    const ok = await submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action);
     if (ok) {
       void diagnosis.refresh(); // the attention strip drops a snoozed finding at once
       setDiagnosisNotice(action === 'implemented' ? MARKED_FIXED_TOAST : null);
@@ -866,6 +867,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   const runCheck = async () => { if (await diagnosis.checkNow()) void fetchRecs(); };
   const seeFindings = () => {
     setRecStatus('open');
+    // An agent filter could hide the very findings the strip points to.
+    setRecAgent('');
+    setRecAgentQuery('');
     // An instant jump, straight away: the filter only changes rows inside the
     // card, and a smooth scroll can be cancelled mid-way and leave the page put.
     document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
@@ -1324,7 +1328,7 @@ export default function PerformancePage() {
     try {
       const res = await performanceFeedback(fleetId, {
         recommendationId: recId, findingVersion, action, reason,
-        snoozeDays: action === 'snooze' ? 7 : undefined,
+        snoozeDays: action === 'snooze' ? SNOOZE_DAYS : undefined,
         idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }, authKey);
       if (res.error) throw new Error(res.error);

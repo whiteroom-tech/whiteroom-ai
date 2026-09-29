@@ -8,24 +8,11 @@
  */
 import { useEffect, useState } from 'react';
 import { governanceCreateRule, performanceFeedback, performanceRecommendationGet } from '@/lib/whiteroom/client';
-import type { GovernanceParams, RecommendationDetail } from '@/lib/whiteroom/types';
+import type { GovernanceParams } from '@/lib/whiteroom/types';
 import { addSuggestedRuleInWatch } from '@/lib/diagnosis/addInWatch';
-import { findingSentence, sentenceText, isDiagnosisDetector, RULE_LABEL, RULE_TITLE, STATUS_LABEL } from '@/lib/diagnosis/copy';
+import { RULE_LABEL, RULE_TITLE, STATUS_LABEL } from '@/lib/diagnosis/copy';
+import { FIELD, isRecId, readAmount, readSuggestion, type Suggestion } from '@/lib/diagnosis/suggestion';
 import { MONO } from '@/lib/diagnosis/ui';
-
-const REC_ID = /^[a-zA-Z0-9_-]{1,64}$/;
-
-type RuleType = 'loop_breaker' | 'spend_cap';
-type Loaded = { rec: RecommendationDetail; ruleType: RuleType; sentence: string; params: GovernanceParams; suggested: number };
-
-// `max` matches the engine's own validation, so the limit shows here rather
-// than as a failed request.
-const FIELD: Record<RuleType, { label: string; key: 'threshold' | 'dailyCap'; suffix: string; max: number }> = {
-  loop_breaker: { label: 'Same call repeated', key: 'threshold', suffix: 'times in one run', max: 10_000 },
-  spend_cap: { label: 'Tokens per day', key: 'dailyCap', suffix: 'tokens a day', max: 1e12 },
-};
-
-const isRuleType = (v: unknown): v is RuleType => typeof v === 'string' && Object.hasOwn(FIELD, v);
 
 const panel = { width: 420, borderLeft: '1px solid var(--line)', overflowY: 'auto', padding: 24, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 } as const;
 
@@ -37,7 +24,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
   /** `ruleCreated`: the rule exists even though the draft is being closed. */
   onCancel: (ruleCreated: boolean) => void;
 }) {
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [loaded, setLoaded] = useState<Suggestion | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
@@ -47,23 +34,14 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
   useEffect(() => {
     let cancelled = false;
     setLoaded(null); setProblem(null); setRuleId(undefined); setFailure(null);
-    if (!REC_ID.test(recId)) { setProblem('This link doesn’t point to a suggestion.'); return; }
+    if (!isRecId(recId)) { setProblem('This link doesn’t point to a suggestion.'); return; }
     performanceRecommendationGet(fleetId, recId, authKey)
       .then((res) => {
         if (cancelled) return;
-        const rec = res.recommendation;
-        const action = rec?.suggestedAction;
-        const rule = action?.kind === 'rule' ? action : null;
-        const params = rule ? (rule.params as unknown as Record<string, unknown> | null) : null;
-        const suggested = rule && params && isRuleType(rule.rule) ? params[FIELD[rule.rule].key] : undefined;
-        if (!rec || !isDiagnosisDetector(rec.detector) || !rule || !isRuleType(rule.rule)
-          || typeof suggested !== 'number' || !Number.isFinite(suggested) || suggested < 1) {
-          setProblem('This suggestion can’t be added as a rule.');
-          return;
-        }
-        const measures = (res.finding?.measures as Record<string, number | string> | undefined) ?? rec.measures ?? {};
-        setLoaded({ rec, ruleType: rule.rule, sentence: sentenceText(findingSentence(rec.detector, measures)), params: params as unknown as GovernanceParams, suggested });
-        setAmount(String(Math.round(suggested)));
+        const suggestion = readSuggestion(res);
+        if (!suggestion) { setProblem('This suggestion can’t be added as a rule.'); return; }
+        setLoaded(suggestion);
+        setAmount(String(Math.round(suggestion.suggested)));
       })
       .catch(() => { if (!cancelled) setProblem('Couldn’t load this suggestion. It may have expired.'); });
     return () => { cancelled = true; };
@@ -84,13 +62,13 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
 
   const { rec, ruleType } = loaded;
   const field = FIELD[ruleType];
-  const value = Math.round(Number(amount));
-  const valid = Number.isFinite(value) && value >= 1 && value <= field.max;
+  const value = readAmount(ruleType, amount);
+  const valid = value !== null;
   // Not an error: an extra digit is easy to type and quietly weakens the rule.
-  const farAbove = valid && value > loaded.suggested * 10;
+  const farAbove = value !== null && value > loaded.suggested * 10;
 
   const add = async () => {
-    if (!valid || saving) return;
+    if (value === null || saving) return;
     setSaving(true);
     setFailure(null);
     const result = await addSuggestedRuleInWatch({
@@ -109,7 +87,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, onDone, onCancel }: {
     setSaving(false);
     if (result.ok) {
       onDone(result.ruleId, result.existing
-        ? `This suggestion's ${RULE_LABEL[ruleType]} was already added in Watch for ${rec.agentId}.`
+        ? `This suggestion's ${RULE_LABEL[ruleType]} was already added in Watch for ${rec.agentId}, so it was kept as it is. Change its number in the list if you need to.`
         : `${RULE_TITLE[ruleType]} added in Watch for ${rec.agentId}. You'll see what it would have caught in Runs.`);
     } else if (result.step === 'feedback') {
       setRuleId(result.ruleId);

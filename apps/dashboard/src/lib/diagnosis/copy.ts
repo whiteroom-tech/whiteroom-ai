@@ -34,6 +34,9 @@ export const titleLower = (d: string) => {
   return t.charAt(0).toLowerCase() + t.slice(1);
 };
 
+/** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
+export const SNOOZE_DAYS = 7;
+
 export const WATCH_DEFINITION = 'A watch is one stretch of work before an agent hands over to a fresh context.';
 
 const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
@@ -104,28 +107,7 @@ export function limitationText(detector: DiagnosisDetectorId, limitation: string
   return limitation;
 }
 
-/** "Needs more data" reasons, as plain sentences. Falls back to the engine's text. */
-export function notMeasuredText(code: string, reason: string): string {
-  const n = (re: RegExp) => reason.match(re)?.[1];
-  switch (code) {
-    case 'few_watches': return `Needs a few more watches to judge (${n(/has (\d+)/) ?? 0} of 5 so far).`;
-    case 'short_history': return `Needs 14 days of history (${n(/has (\d+)/) ?? 0} so far).`;
-    case 'low_coverage': return `Can only see ${n(/for (\d+)%/) ?? 0}% of this agent’s tool calls. Streamed replies hide them.`;
-    case 'hashing_off': return 'This check is switched off on your WhiteRoom engine.';
-    case 'openai_format': return 'Only works for agents using Anthropic-format tools.';
-    case 'few_results': return `Needs 20 tool results to judge (${n(/has (\d+)/) ?? 0} so far).`;
-    case 'not_captured': return 'Starts counting from new calls; nothing recorded yet.';
-    case 'few_measured_calls': return `Needs 50 fully recorded calls this week (${n(/has (\d+)/) ?? 0} so far).`;
-    case 'few_requests': return `Needs 100 calls to one model in 24 hours (the busiest had ${n(/had (\d+)/) ?? 0}).`;
-    case 'detector_off': return 'This check is switched off on your WhiteRoom engine.';
-    case 'thin_evidence': return 'Spotted a possible pattern, but too few calls show it yet.';
-    case 'first_check_pending': return 'First check runs overnight.';
-    case 'publish_failed': return 'Couldn’t save this result; it will be checked again soon.';
-    default: return reason.endsWith('.') ? reason : `${reason}.`;
-  }
-}
-
-/** The same reasons as a short clause, for lists ("What we checked"). */
+/** "Needs more data" reasons as short clauses, for What we checked. Falls back to the engine's text. */
 export function notMeasuredShort(code: string, reason: string): string {
   const n = (re: RegExp) => reason.match(re)?.[1] ?? '0';
   switch (code) {
@@ -177,7 +159,7 @@ export const RULE_TITLE: Record<'loop_breaker' | 'spend_cap', string> = { loop_b
 
 export const STATUS_LABEL: Record<string, string> = {
   open: 'open',
-  snoozed: 'snoozed 7 days',
+  snoozed: `snoozed ${SNOOZE_DAYS} days`,
   dismissed: 'dismissed',
   reported_implemented: 'marked fixed',
   resolved: 'stopped happening',

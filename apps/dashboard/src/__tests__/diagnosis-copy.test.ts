@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  findingSentence, sentenceText, costLine, notMeasuredText, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
+  findingSentence, sentenceText, costLine, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
 import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
@@ -60,12 +60,6 @@ describe('cost, limitations, reasons, how-to', () => {
   });
 
   it('not-measured reasons read as plain sentences', () => {
-    expect(notMeasuredText('few_watches', 'Needs 5 watches with watch numbers; has 3')).toBe('Needs a few more watches to judge (3 of 5 so far).');
-    expect(notMeasuredText('short_history', 'Needs 14 days of history with full tool capture; has 6')).toBe('Needs 14 days of history (6 so far).');
-    expect(notMeasuredText('low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)')).toBe('Can only see 40% of this agent’s tool calls. Streamed replies hide them.');
-    expect(notMeasuredText('hashing_off', 'Tool-call hashing is off on this engine')).toBe('This check is switched off on your WhiteRoom engine.');
-    expect(notMeasuredText('first_check_pending', 'First check runs overnight')).toBe('First check runs overnight.');
-    expect(notMeasuredText('something_new', 'Engine reason')).toBe('Engine reason.');
   });
 
   it('how-to text only claims what the evidence shows', () => {

@@ -154,7 +154,8 @@ export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
 
 type EvidenceCall = Record<string, unknown>;
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-const when = (c: EvidenceCall) => (typeof c.requestEnd === 'string' ? c.requestEnd : String(c.requestStart ?? ''));
+// The call's start, as in the calls table below the header.
+const when = (c: EvidenceCall) => (typeof c.requestStart === 'string' ? c.requestStart : String(c.requestEnd ?? ''));
 
 export type EvidenceHeader =
   | { kind: 'watches'; caption: string; watches: Array<{ watch: number; calls: number }> }

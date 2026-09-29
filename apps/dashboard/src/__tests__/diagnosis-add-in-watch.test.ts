@@ -82,6 +82,19 @@ describe('Add in Watch from a suggestion', () => {
     expect(d.createRule).toHaveBeenCalledTimes(1);
   });
 
+  it('with no loaded finding id, reloads for one instead of sending an empty finding_version', async () => {
+    const d = deps();
+    expect(await addSuggestedRuleInWatch(d, { ...input, currentFindingId: '' })).toMatchObject({ ok: true, feedback: 'done' });
+    expect(d.markImplemented).toHaveBeenCalledTimes(1);
+    expect(d.markImplemented).toHaveBeenCalledWith({ recommendationId: 'pr_1', findingVersion: 'pf_2', idempotencyKey: 'diag-impl:pr_1:pf_2' });
+  });
+
+  it('with no finding id anywhere, nothing is sent and the rule is kept', async () => {
+    const d = deps({ reloadRecommendation: vi.fn(async () => reloaded({ currentFindingId: null })) });
+    expect(await addSuggestedRuleInWatch(d, { ...input, currentFindingId: '' })).toMatchObject({ ok: false, step: 'feedback', ruleId: 'gr_1' });
+    expect(d.markImplemented).not.toHaveBeenCalled();
+  });
+
   it('a suggestion that is no longer open still gets its rule, without feedback', async () => {
     const d = deps();
     expect(await addSuggestedRuleInWatch(d, { ...input, status: 'snoozed' })).toMatchObject({ ok: true, feedback: 'skipped' });

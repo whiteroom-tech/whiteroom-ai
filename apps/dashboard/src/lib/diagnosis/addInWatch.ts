@@ -6,7 +6,8 @@
  *      safe; the browser does no lookup of its own.
  *   2. Mark the suggestion implemented with finding_version = the loaded
  *      currentFindingId and a deterministic idempotency key. On 409 (the
- *      finding changed) reload the recommendation and retry once.
+ *      finding changed), or with no loaded id, reload the recommendation and
+ *      try once with its current finding.
  * API calls are injected so this is testable without a network.
  */
 import type { GovernanceParams, GovernanceRule, RecommendationGetResult } from '@/lib/whiteroom/types';
@@ -68,22 +69,31 @@ export async function addSuggestedRuleInWatch(deps: AddInWatchDeps, input: AddIn
   const mark = (findingId: string) =>
     deps.markImplemented({ recommendationId: input.recommendationId, findingVersion: findingId, idempotencyKey: implementedKey(input.recommendationId, findingId) });
 
-  try {
-    await mark(input.currentFindingId);
-  } catch (error) {
-    if (status(error) !== 409) return { ok: false, step: 'feedback', ruleId, error };
+  // A loaded finding id first. Without one (the engine sent none), or on 409
+  // (the finding changed), reload the recommendation and try its current one.
+  let conflict: unknown = null;
+  if (input.currentFindingId) {
     try {
-      const fresh = (await deps.reloadRecommendation(input.recommendationId)).recommendation;
-      // No longer open (snoozed, dismissed, resolved meanwhile): the rule is
-      // what was asked for, and there's nothing left to mark.
-      if (fresh && fresh.status !== 'open') return { ok: true, ruleId, existing, feedback: 'skipped' };
-      const findingId = fresh?.currentFindingId;
-      // The same finding would only conflict again.
-      if (!findingId || findingId === input.currentFindingId) return { ok: false, step: 'feedback', ruleId, error };
-      await mark(findingId);
-    } catch (retryError) {
-      return { ok: false, step: 'feedback', ruleId, error: retryError };
+      await mark(input.currentFindingId);
+      return { ok: true, ruleId, existing, feedback: 'done' };
+    } catch (error) {
+      if (status(error) !== 409) return { ok: false, step: 'feedback', ruleId, error };
+      conflict = error;
     }
+  }
+  try {
+    const fresh = (await deps.reloadRecommendation(input.recommendationId)).recommendation;
+    // No longer open (snoozed, dismissed, resolved meanwhile): the rule is
+    // what was asked for, and there's nothing left to mark.
+    if (fresh && fresh.status !== 'open') return { ok: true, ruleId, existing, feedback: 'skipped' };
+    const findingId = fresh?.currentFindingId;
+    // No id, or the same finding, would only fail again.
+    if (!findingId || findingId === input.currentFindingId) {
+      return { ok: false, step: 'feedback', ruleId, error: conflict ?? new Error('The suggestion has no current finding.') };
+    }
+    await mark(findingId);
+  } catch (retryError) {
+    return { ok: false, step: 'feedback', ruleId, error: retryError };
   }
   return { ok: true, ruleId, existing, feedback: 'done' };
 }
