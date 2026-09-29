@@ -35,7 +35,7 @@ describe('handover health labels', () => {
   });
 
   it('malformed numbers are left out, never printed', () => {
-    for (const bad of [NaN, Infinity, -1, 2.5, '40000']) {
+    for (const bad of [0, NaN, Infinity, -1, 2.5, '40000']) {
       expect(at({ type: 'handover_loop_detected', newLimit: bad }).said).toBe(
         'kept handing over after a call or two, so WhiteRoom raised its context limit to keep it working',
       );

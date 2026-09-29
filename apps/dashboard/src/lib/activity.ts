@@ -51,9 +51,9 @@ interface EventCopy {
   who?: string;
 }
 
-/** A payload count worth printing: a whole, non-negative, finite number, else null. */
-function wholeCount(v: unknown): number | null {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null;
+/** A payload count worth printing: a whole number above zero, else null. */
+function positiveCount(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null;
 }
 
 /** Capitalised agent name. Agents are identified by id in this app. */
@@ -84,9 +84,9 @@ const EVENT_COPY: Record<string, EventCopy> = {
   handover_loop_detected: {
     icon: '🔁', tone: 'wouldBlock', code: 'H/L',
     say: (e) => {
-      const limit = wholeCount(e.newLimit);
+      const limit = positiveCount(e.newLimit);
       return `kept handing over after a call or two, so WhiteRoom raised its context limit${
-        limit ? ` to ${limit.toLocaleString('en-US')} tokens` : ''} to keep it working`;
+        limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : ''} to keep it working`;
     },
   },
   handover_summary_failed: {
@@ -96,7 +96,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
   handover_results_truncated: {
     icon: '✂', tone: 'wouldBlock', code: 'CUT',
     say: (e) => {
-      const n = wholeCount(e.results);
+      const n = positiveCount(e.results);
       return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to carry through its handover, so some were cut`;
     },
   },
