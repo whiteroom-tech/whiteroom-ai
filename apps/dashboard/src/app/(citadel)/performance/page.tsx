@@ -16,7 +16,7 @@ import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenc
 import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
-import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
+import { DiagnosisCard, DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
 import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 
@@ -918,7 +918,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
 
-      <AttentionStrip data={diagnosis.data} onSeeFindings={seeFindings} />
+      <DiagnosisCard data={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onSeeFindings={seeFindings} />
 
       <CostTrackingSection fleetId={fleetId} authKey={authKey} />
 
@@ -934,7 +934,6 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
           <h3 style={H3} id="recommendations-heading" tabIndex={-1}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
           <input value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />
         </div>
-        <DiagnosisStatus line={diagnosisLine} onAction={() => void runCheck()} />
         <div aria-live="polite" style={{ fontSize: 12.5, color: 'var(--tx2)', margin: diagnosisNotice ? '0 0 8px' : 0 }}>{diagnosisNotice}</div>
         <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
           {REC_STATUSES.map(st => (
@@ -1008,7 +1007,6 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
           </div>
         )}
 
-        <WhatWeChecked data={diagnosis.data} />
       </div>
 
       <LiveFeedSection fleetId={fleetId} authKey={authKey} />

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -145,6 +145,30 @@ describe('attention strip', () => {
     expect(attentionStrip(fleet({ reports: [report('lead-agent', [finding('review_tool_errors')])] }))).toEqual({ lead: 'lead-agent needs attention', names: '' });
     const five = ['a', 'b', 'c', 'd', 'e'].map((n) => report(n, [finding('review_tool_errors')]));
     expect(attentionStrip(fleet({ reports: five }))).toEqual({ lead: '5 agents need attention:', names: 'a, b, c +2 more' });
+  });
+});
+
+describe('diagnosis card summary', () => {
+  const withChecks = (findings: DiagnosisFinding[]) => {
+    const r = report('lead-agent', findings);
+    return fleet({ reports: [{ ...r, clear: [{ detector: 'review_tool_loops', note: null }, { detector: 'review_tool_errors', note: null }, { detector: 'review_handover_churn', note: null }] }] });
+  };
+  it('is empty until a check has run', () => {
+    expect(diagnosisSummary(null)).toBeNull();
+    expect(diagnosisSummary(fleet({ checkedAt: null, reports: [] }))).toBeNull();
+  });
+  it('says all is well, with what was checked and what still needs data', () => {
+    const s = diagnosisSummary(withChecks([]))!;
+    expect(s.tone).toBe('ok');
+    expect(s.text).toBe(`No problems found · 3 checks look fine · ${s.needsData} ${s.needsData === 1 ? 'needs' : 'need'} more data`);
+  });
+  it('leads with who needs attention when a finding is open', () => {
+    const s = diagnosisSummary(withChecks([finding('review_tool_errors')]))!;
+    expect(s).toMatchObject({ tone: 'warn', openFindings: 1 });
+    expect(s.text).toBe('lead-agent needs attention · 1 open finding');
+  });
+  it('a snoozed finding is not an open one', () => {
+    expect(diagnosisSummary(withChecks([finding('review_tool_errors', 'snoozed')]))!.tone).toBe('ok');
   });
 });
 

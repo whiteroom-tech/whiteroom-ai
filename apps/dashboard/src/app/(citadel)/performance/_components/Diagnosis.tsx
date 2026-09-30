@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * Agent Diagnosis inside the Performance page (spec Rev 4.4 §6.2). There is no
- * separate panel: findings are recommendations, so they render as richer rows
- * in the Recommendations card, with a status line in its header and a strip
- * under the metric cards when something is open.
+ * Agent Diagnosis on the Performance page. Its own card, under the metric
+ * cards, says when agents were last checked, what's wrong or that nothing is,
+ * and what each check found per agent. Findings are recommendations, so their
+ * rows stay in the Recommendations card; "See findings" jumps there.
  */
 import { useState } from 'react';
 import Link from 'next/link';
@@ -13,26 +13,38 @@ import {
   TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
   findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
 } from '@/lib/diagnosis/copy';
-import { attentionStrip, checkedSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
+import { checkedSummary, diagnosisSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
 
-// -- §6.2.1 Attention strip -----------------------------------------------
+// -- The Agent Diagnosis card ---------------------------------------------
 
-export function AttentionStrip({ data, onSeeFindings }: { data: FleetDiagnosis | null; onSeeFindings: () => void }) {
-  const strip = attentionStrip(data);
-  if (!strip) return null;
+export function DiagnosisCard({ data, line, onCheck, onSeeFindings }: {
+  data: FleetDiagnosis | null;
+  line: StatusLine | null;
+  onCheck: () => void;
+  onSeeFindings: () => void;
+}) {
+  const summary = diagnosisSummary(data);
+  // Hidden only when Diagnosis is off on the engine: no data and nothing running.
+  if (!data && !line) return null;
+  const warn = summary?.tone === 'warn';
   return (
-    <div role="status" style={{
-      display: 'flex', alignItems: 'center', gap: '8px 12px', flexWrap: 'wrap', marginBottom: 24,
-      background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', color: 'var(--warn-tx)',
-      borderRadius: 10, padding: '10px 14px', fontSize: 13.5,
-    }}>
-      <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--warn)', flex: 'none' }} />
-      <span><b style={{ fontWeight: 600 }}>{strip.lead}</b>{strip.names && <> <span style={{ ...MONO, fontSize: 12.5 }}>{strip.names}</span></>}</span>
-      <span aria-hidden>·</span>
-      <button type="button" className="dx-link dx-strong" onClick={onSeeFindings}>See findings</button>
-    </div>
+    <section aria-labelledby="diagnosis-heading" style={{ ...CARD, marginBottom: 24, ...(warn ? { borderColor: 'var(--warn-line)' } : {}) }}>
+      <h3 id="diagnosis-heading" style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Agent Diagnosis</h3>
+      <DiagnosisStatus line={line} onAction={onCheck} />
+      {summary && (
+        <div role="status" style={{
+          display: 'flex', alignItems: 'center', gap: '8px 12px', flexWrap: 'wrap', marginTop: 10, fontSize: 13.5,
+          color: warn ? 'var(--warn-tx)' : 'var(--tx)',
+        }}>
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: warn ? 'var(--warn)' : 'var(--ok)', flex: 'none' }} />
+          <span style={{ fontWeight: 600 }}>{summary.text}</span>
+          {warn && <button type="button" className="dx-link dx-strong" onClick={onSeeFindings}>See findings</button>}
+        </div>
+      )}
+      <WhatWeChecked data={data} />
+    </section>
   );
 }
 
@@ -136,11 +148,13 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
 // -- §6.2.4 What we checked -------------------------------------------------
 
 export function WhatWeChecked({ data }: { data: FleetDiagnosis | null }) {
-  const [open, setOpen] = useState(false);
+  // Open by default for a few agents, where it's short enough to read at a glance.
+  const defaultOpen = (data?.reports.length ?? 0) <= 3;
+  const [open, setOpen] = useState(defaultOpen);
   if (!data || data.reports.length === 0) return null;
   const agents = data.reports.length;
   return (
-    <details onToggle={(e) => setOpen(e.currentTarget.open)} style={{ paddingTop: 12 }}>
+    <details open={defaultOpen} onToggle={(e) => setOpen(e.currentTarget.open)} style={{ paddingTop: 12 }}>
       <summary className="dx-summary" style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--tx2)' }}>
         What we checked · <span style={MONO}>{agents}</span> {agents === 1 ? 'agent' : 'agents'}
       </summary>
