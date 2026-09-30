@@ -3,42 +3,12 @@
   "additionalProperties": false,
   "required": [
     "summary",
-    "scores",
-    "findings",
-    "verdict"
+    "findings"
   ],
   "properties": {
     "summary": {
       "type": "string",
       "description": "Two or three sentences on what the PR does and its overall state."
-    },
-    "scores": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "correctness",
-        "security",
-        "maintainability",
-        "testing"
-      ],
-      "properties": {
-        "correctness": {
-          "type": "integer",
-          "description": "0-10"
-        },
-        "security": {
-          "type": "integer",
-          "description": "0-10"
-        },
-        "maintainability": {
-          "type": "integer",
-          "description": "0-10"
-        },
-        "testing": {
-          "type": "integer",
-          "description": "0-10"
-        }
-      }
     },
     "findings": {
       "type": "array",
@@ -47,10 +17,13 @@
         "additionalProperties": false,
         "required": [
           "severity",
+          "dimension",
           "file",
           "line",
+          "end_line",
           "title",
-          "detail"
+          "detail",
+          "suggestion"
         ],
         "properties": {
           "severity": {
@@ -62,12 +35,25 @@
               "nit"
             ]
           },
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "correctness",
+              "security",
+              "maintainability",
+              "testing"
+            ]
+          },
           "file": {
             "type": "string"
           },
           "line": {
             "type": "integer",
-            "description": "Line in the new file, or 0 if not line-specific."
+            "description": "First affected line in the new file, or 0 if not line-specific."
+          },
+          "end_line": {
+            "type": "integer",
+            "description": "Last affected line in the new file; the same as line for a single line."
           },
           "title": {
             "type": "string"
@@ -75,17 +61,13 @@
           "detail": {
             "type": "string",
             "description": "What goes wrong, under what input or state, and the fix."
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "Exact replacement text for lines line through end_line, keeping their indentation, or an empty string when the fix is not a local edit."
           }
         }
       }
-    },
-    "verdict": {
-      "type": "string",
-      "enum": [
-        "ready",
-        "needs_changes",
-        "risky"
-      ]
     }
   }
 }
