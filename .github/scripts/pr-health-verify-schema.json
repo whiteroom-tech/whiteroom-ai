@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "results"
+  ],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "verdict",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The id of the finding from findings.json."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "refuted",
+              "uncertain"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "One or two sentences citing the code that confirms or refutes the finding."
+          }
+        }
+      }
+    }
+  }
+}

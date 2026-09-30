@@ -5,60 +5,145 @@ import { test } from "node:test";
 import {
   BOT_LOGIN,
   MARKER,
+  aggregateStats,
+  applyVerification,
   checksSettled,
   ciScore,
+  commentableRanges,
   computeHealth,
   diffSignals,
+  dimensionScores,
   findOwnComment,
+  findingKey,
   hygieneScore,
+  inlineComments,
+  ownInlineComments,
+  parseFindingTag,
   parseReview,
+  parseVerification,
   render,
+  renderStats,
   sanitize,
+  verdictFor,
 } from "./pr-health-lib.mjs";
 
-const baseReview = {
-  summary: "Adds a thing.",
-  verdict: "ready",
-  scores: { correctness: 9, security: 10, maintainability: 8, testing: 7 },
-  findings: [],
-};
+const baseReview = { summary: "Adds a thing.", findings: [] };
+const finding = (o = {}) => ({
+  severity: "minor",
+  dimension: "correctness",
+  file: "src/a.ts",
+  line: 3,
+  title: "t",
+  detail: "d",
+  suggestion: "",
+  ...o,
+  end_line: o.end_line ?? o.line ?? 3,
+});
 const json = (o) => JSON.stringify(o);
 const cleanSignals = diffSignals([]);
 const passed = (name) => ({ name, status: "completed", conclusion: "success" });
+const confirmed = (o) => applyVerification(parseReview(json({ ...baseReview, findings: [finding(o)] })).findings, new Map([[0, { verdict: "confirmed", reason: "" }]]));
+const renderArgs = (findings, signals = cleanSignals, extra = {}) => ({
+  scores: computeHealth(findings.filter((f) => f.verification !== "refuted"), [], signals),
+  signals,
+  checks: [],
+  summary: "s",
+  findings,
+  verified: true,
+  sha: "abcdef0",
+  ...extra,
+});
 
 // ---------- parseReview ----------
 
-test("parseReview rounds and clamps scores", () => {
-  const r = parseReview(json({ ...baseReview, scores: { correctness: 12, security: -3, maintainability: 7.6, testing: 0 } }));
-  assert.deepEqual(r.scores, { correctness: 10, security: 0, maintainability: 8, testing: 0 });
-});
-
-test("parseReview names the field when a score is missing or not a number", () => {
-  assert.throws(
-    () => parseReview(json({ ...baseReview, scores: { ...baseReview.scores, testing: undefined } })),
-    /review\.scores\.testing/,
-  );
-  assert.throws(
-    () => parseReview(json({ ...baseReview, scores: { ...baseReview.scores, security: "9" } })),
-    /review\.scores\.security/,
-  );
+test("parseReview names the field when a finding is malformed", () => {
+  assert.throws(() => parseReview(json({ ...baseReview, findings: [finding({ severity: "huge" })] })), /findings\[0\]\.severity/);
+  assert.throws(() => parseReview(json({ ...baseReview, findings: [finding({ dimension: "style" })] })), /findings\[0\]\.dimension/);
+  assert.throws(() => parseReview(json({ ...baseReview, findings: [finding({ title: 3 })] })), /findings\[0\]\.title/);
 });
 
 test("parseReview rejects empty, malformed and incomplete output clearly", () => {
   assert.throws(() => parseReview(""), /REVIEW_JSON is empty/);
   assert.throws(() => parseReview("{not json"), /not valid JSON/);
   assert.throws(() => parseReview(json({ ...baseReview, findings: undefined })), /review\.findings/);
-  assert.throws(() => parseReview(json({ ...baseReview, verdict: "lgtm" })), /review\.verdict/);
-  assert.throws(
-    () => parseReview(json({ ...baseReview, findings: [{ severity: "huge", file: "a", line: 1, title: "t", detail: "d" }] })),
-    /findings\[0\]\.severity/,
-  );
+  assert.throws(() => parseReview(json({ findings: [] })), /review\.summary/);
 });
 
-test("parseReview normalizes a bad line number to 0", () => {
-  const f = { severity: "minor", file: "a.ts", title: "t", detail: "d" };
-  const r = parseReview(json({ ...baseReview, findings: [{ ...f, line: -4 }, { ...f, line: 2.5 }, { ...f, line: 7 }] }));
-  assert.deepEqual(r.findings.map((x) => x.line), [0, 0, 7]);
+test("parseReview normalizes bad line numbers and ranges", () => {
+  const r = parseReview(
+    json({
+      ...baseReview,
+      findings: [
+        finding({ line: -4, suggestion: "x" }),
+        finding({ line: 2.5 }),
+        finding({ line: 7, end_line: 5 }),
+        finding({ line: 7, end_line: 9 }),
+      ],
+    }),
+  );
+  assert.deepEqual(r.findings.map((x) => [x.line, x.endLine]), [[0, 0], [0, 0], [7, 7], [7, 9]]);
+  // A finding with no line can't carry a suggestion.
+  assert.equal(r.findings[0].suggestion, "");
+  assert.deepEqual(r.findings.map((x) => x.id), [0, 1, 2, 3]);
+});
+
+test("parseReview caps long text and drops oversized suggestions", () => {
+  const r = parseReview(json({ summary: "s".repeat(5000), findings: [finding({ detail: "d".repeat(9000), suggestion: "x".repeat(6000) })] }));
+  assert.ok(r.summary.length <= 1500);
+  assert.ok(r.findings[0].detail.length <= 2000);
+  assert.equal(r.findings[0].suggestion, "");
+});
+
+// ---------- Verification ----------
+
+test("parseVerification returns null when the pass produced nothing usable", () => {
+  assert.equal(parseVerification(""), null);
+  assert.equal(parseVerification(undefined), null);
+  assert.equal(parseVerification("{oops"), null);
+  assert.equal(parseVerification(json({ nope: [] })), null);
+});
+
+test("applyVerification tags findings and treats skipped ones as uncertain", () => {
+  const { findings } = parseReview(json({ ...baseReview, findings: [finding(), finding(), finding()] }));
+  const v = parseVerification(
+    json({ results: [{ id: 0, verdict: "confirmed", reason: "r" }, { id: 1, verdict: "refuted", reason: "guarded" }, { id: 9, verdict: "refuted", reason: "" }, { id: 2, verdict: "maybe", reason: "" }] }),
+  );
+  assert.deepEqual(applyVerification(findings, v).map((f) => f.verification), ["confirmed", "refuted", "uncertain"]);
+  assert.deepEqual(applyVerification(findings, null).map((f) => f.verification), ["unverified", "unverified", "unverified"]);
+});
+
+// ---------- Scores from findings ----------
+
+test("dimension scores come from surviving findings only", () => {
+  const { findings } = parseReview(
+    json({
+      ...baseReview,
+      findings: [
+        finding({ severity: "major", dimension: "security" }),
+        finding({ severity: "minor", dimension: "security" }),
+        finding({ severity: "blocker", dimension: "correctness" }),
+        finding({ severity: "blocker", dimension: "correctness" }),
+        finding({ severity: "nit", dimension: "testing" }),
+      ],
+    }),
+  );
+  assert.deepEqual(dimensionScores(findings), { correctness: 0, security: 6, maintainability: 10, testing: 10 });
+  assert.deepEqual(dimensionScores([]), { correctness: 10, security: 10, maintainability: 10, testing: 10 });
+});
+
+test("verdict follows the worst surviving finding", () => {
+  assert.equal(verdictFor([]), "ready");
+  assert.equal(verdictFor([{ severity: "minor" }]), "ready");
+  assert.equal(verdictFor([{ severity: "minor" }, { severity: "major" }]), "needs_changes");
+  assert.equal(verdictFor([{ severity: "blocker" }]), "risky");
+});
+
+test("a refuted blocker costs nothing", () => {
+  const { findings } = parseReview(json({ ...baseReview, findings: [finding({ severity: "blocker" })] }));
+  const tagged = applyVerification(findings, new Map([[0, { verdict: "refuted", reason: "" }]]));
+  const kept = tagged.filter((f) => f.verification !== "refuted");
+  assert.equal(computeHealth(kept, [passed("a")], cleanSignals).health, 100);
+  assert.equal(computeHealth(tagged, [passed("a")], cleanSignals).health, 59);
 });
 
 // ---------- CI and health ----------
@@ -75,28 +160,121 @@ test("ciScore ignores skipped checks and returns null when nothing counts", () =
 });
 
 test("a pending check caps health like a failing one", () => {
-  const review = parseReview(json({ ...baseReview, scores: { correctness: 10, security: 10, maintainability: 10, testing: 10 } }));
   const pending = [passed("a"), { name: "b", status: "queued", conclusion: null }];
-  assert.equal(computeHealth(review, [passed("a")], cleanSignals).health, 100);
-  assert.ok(computeHealth(review, pending, cleanSignals).health <= 69);
-});
-
-test("a blocker caps health at 59", () => {
-  const review = parseReview(
-    json({
-      ...baseReview,
-      scores: { correctness: 10, security: 10, maintainability: 10, testing: 10 },
-      findings: [{ severity: "blocker", file: "a.ts", line: 1, title: "t", detail: "d" }],
-    }),
-  );
-  assert.equal(computeHealth(review, [passed("a")], cleanSignals).health, 59);
+  assert.equal(computeHealth([], [passed("a")], cleanSignals).health, 100);
+  assert.ok(computeHealth([], pending, cleanSignals).health <= 69);
 });
 
 test("health weights shift to the review when there are no checks", () => {
-  const review = parseReview(json(baseReview));
-  const { health, ci, reviewScore, hygiene } = computeHealth(review, [], cleanSignals);
+  const { findings } = parseReview(json({ ...baseReview, findings: [finding({ severity: "major" })] }));
+  const { health, ci, reviewScore, hygiene } = computeHealth(findings, [], cleanSignals);
   assert.equal(ci, null);
   assert.equal(health, Math.round(hygiene * 0.2 + reviewScore * 0.8));
+});
+
+// ---------- Inline comments ----------
+
+const file = (patch, filename = "src/a.ts") => ({ filename, additions: 1, deletions: 0, changes: 1, status: "modified", patch });
+
+test("commentableRanges reads new-file ranges from hunk headers", () => {
+  assert.deepEqual(commentableRanges("@@ -1,3 +1,4 @@ fn\n x\n+y\n@@ -20 +21 @@\n+z\n@@ -30,2 +32,0 @@\n-a\n-b"), [[1, 4], [21, 21]]);
+  assert.deepEqual(commentableRanges(undefined), []);
+});
+
+test("inlineComments posts only confirmed, non-nit findings inside the diff", () => {
+  const files = [file("@@ -1,3 +1,5 @@\n a\n+b")];
+  const { findings } = parseReview(
+    json({
+      ...baseReview,
+      findings: [
+        finding({ line: 2 }),
+        finding({ line: 2, severity: "nit", title: "nit" }),
+        finding({ line: 40, title: "off the diff" }),
+        finding({ line: 2, file: "src/other.ts", title: "other file" }),
+        finding({ line: 0, title: "general" }),
+        finding({ line: 3, title: "unsure" }),
+      ],
+    }),
+  );
+  const v = new Map(findings.map((f) => [f.id, { verdict: f.title === "unsure" ? "uncertain" : "confirmed", reason: "" }]));
+  const out = inlineComments(applyVerification(findings, v), files);
+  assert.equal(out.length, 1);
+  assert.deepEqual({ path: out[0].path, line: out[0].line, side: out[0].side }, { path: "src/a.ts", line: 2, side: "RIGHT" });
+  assert.equal(out[0].start_line, undefined);
+});
+
+test("inlineComments anchors a range and keeps its suggestion only inside one hunk", () => {
+  const files = [file("@@ -1,3 +1,5 @@\n a\n+b")];
+  const [inside] = inlineComments(confirmed({ line: 2, end_line: 4, suggestion: "fixed()" }), files);
+  assert.equal(inside.start_line, 2);
+  assert.equal(inside.line, 4);
+  assert.match(inside.body, /```suggestion\nfixed\(\)\n```/);
+  const [spill] = inlineComments(confirmed({ line: 4, end_line: 9, suggestion: "fixed()" }), files);
+  assert.equal(spill.line, 4);
+  assert.equal(spill.start_line, undefined);
+  assert.ok(!spill.body.includes("suggestion"));
+});
+
+test("inlineComments skips findings already posted", () => {
+  const files = [file("@@ -1,3 +1,5 @@\n a")];
+  const f = confirmed({ line: 2, title: "Same   Title" });
+  assert.equal(inlineComments(f, files, new Set([findingKey({ file: "src/a.ts", title: "same title" })])).length, 0);
+  assert.equal(inlineComments(f, files).length, 1);
+  assert.equal(inlineComments([...f, ...f], files).length, 1);
+});
+
+test("a suggestion can't close its fence early", () => {
+  const [c] = inlineComments(confirmed({ line: 1, suggestion: "a\n```\n@bob <img>" }), [file("@@ -1 +1 @@\n+a")]);
+  assert.match(c.body, /````suggestion\na\n```\n@bob <img>\n````/);
+});
+
+test("inline comments carry metadata that round-trips and resists forgery", () => {
+  const [c] = inlineComments(confirmed({ line: 1, title: "x --> y", severity: "major", dimension: "security" }), [file("@@ -1 +1 @@\n+a")]);
+  assert.deepEqual(parseFindingTag(c.body), { k: c.key, s: "major", d: "security", t: "x --> y", f: "src/a.ts" });
+  assert.equal(parseFindingTag("no tag here"), null);
+  const mine = { user: { login: BOT_LOGIN }, body: c.body };
+  const copied = { user: { login: "someone" }, body: c.body };
+  assert.equal(ownInlineComments([mine, copied]).length, 1);
+});
+
+// ---------- Rendering with verification ----------
+
+test("render lists refuted findings apart and drops them from the score", () => {
+  const { findings } = parseReview(json({ ...baseReview, findings: [finding({ title: "real" }), finding({ severity: "blocker", title: "bogus" })] }));
+  const tagged = applyVerification(findings, new Map([[0, { verdict: "confirmed", reason: "" }], [1, { verdict: "refuted", reason: "guarded in caller" }]]));
+  const out = render(renderArgs(tagged, cleanSignals, { inlinePosted: 1 }));
+  assert.match(out, /### Findings \(1\)/);
+  assert.match(out, /real\*\* · `src\/a\.ts:3` · ✔ verified/);
+  assert.match(out, /Dropped by verification \(1\)/);
+  assert.match(out, /bogus · `src\/a\.ts`: guarded in caller/);
+  assert.match(out, /1 verified finding\(s\) posted as line comments/);
+  assert.match(out, /✅ Ready/);
+});
+
+test("render says so when the verification pass didn't run", () => {
+  const { findings } = parseReview(json({ ...baseReview, findings: [finding()] }));
+  const out = render(renderArgs(applyVerification(findings, null), cleanSignals, { verified: false }));
+  assert.match(out, /verification pass didn't run/);
+});
+
+// ---------- Resolution stats ----------
+
+test("aggregateStats counts outdated threads as fixed and resolved ones as dismissed", () => {
+  const t = (s, d, isOutdated, isResolved, up = 0, down = 0) => ({ meta: { s, d }, isOutdated, isResolved, up, down });
+  const stats = aggregateStats([
+    t("major", "security", true, true, 1),
+    t("major", "security", false, true, 0, 1),
+    t("minor", "correctness", false, false),
+    t("minor", "correctness", true, false),
+  ]);
+  assert.deepEqual(stats.total, { posted: 4, fixed: 2, dismissed: 1, unaddressed: 1, up: 1, down: 1 });
+  assert.deepEqual(stats.bySeverity.major, { posted: 2, fixed: 1, dismissed: 1, unaddressed: 0, up: 1, down: 1 });
+  assert.equal(stats.byDimension.correctness.fixed, 1);
+  const out = renderStats(stats, { prs: 3, days: 30 });
+  assert.match(out, /\| \*\*All\*\* \| 4 \| 2 \| 1 \| 1 \| \*\*50%\*\* \| 1 \/ 1 \|/);
+  const empty = renderStats(aggregateStats([]), { prs: 5, days: 7 });
+  assert.match(empty, /0 line comments across 5 merged PRs/);
+  assert.ok(!empty.includes("|"));
 });
 
 // ---------- Waiting on checks ----------
@@ -146,7 +324,7 @@ test("diffSignals reports files GitHub sent without a patch", () => {
     { filename: "logo.png", additions: 0, deletions: 0, changes: 0, status: "added" },
   ]);
   assert.deepEqual(s.filesWithoutPatch, ["big.ts"]);
-  const out = render({ scores: computeHealth(parseReview(json(baseReview)), [], s), signals: s, checks: [], review: parseReview(json(baseReview)), sha: "abcdef0" });
+  const out = render(renderArgs([], s));
   assert.match(out, /no patch for 1 large or binary file/);
 });
 
@@ -183,10 +361,7 @@ test("sanitize keeps model output from forging our marker or breaking lines", ()
 });
 
 test("render keeps backticks in file names from breaking the location span", () => {
-  const review = parseReview(
-    json({ ...baseReview, findings: [{ severity: "minor", file: "we`ird.ts", line: 3, title: "@bob look", detail: "x" }] }),
-  );
-  const out = render({ scores: computeHealth(review, [], cleanSignals), signals: cleanSignals, checks: [], review, sha: "abcdef0" });
+  const out = render(renderArgs(confirmed({ file: "we`ird.ts", title: "@bob look" })));
   assert.ok(out.includes("`weird.ts:3`"));
   assert.ok(!out.includes("@bob"));
   assert.ok(out.startsWith(MARKER));
@@ -209,8 +384,10 @@ test("findOwnComment can match a different bot login", () => {
 
 // ---------- Workflow wiring ----------
 
-test("schema has no single quotes, since the workflow wraps it in '...'", () => {
-  const schema = readFileSync(new URL("./pr-health-schema.json", import.meta.url), "utf8");
-  assert.ok(!schema.includes("'"));
-  JSON.parse(schema);
+test("schemas have no single quotes, since the workflow wraps them in '...'", () => {
+  for (const f of ["./pr-health-schema.json", "./pr-health-verify-schema.json"]) {
+    const schema = readFileSync(new URL(f, import.meta.url), "utf8");
+    assert.ok(!schema.includes("'"), f);
+    JSON.parse(schema);
+  }
 });
