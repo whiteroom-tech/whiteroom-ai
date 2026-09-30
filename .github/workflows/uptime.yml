@@ -50,18 +50,24 @@ jobs:
 
             local title="Down: $name"
             local open
-            open="$(gh issue list --label outage --state open --search "in:title \"$title\"" --json number,title \
+            # Filter by label, not --search: the search index can lag behind a
+            # just-opened issue and cause a duplicate.
+            open="$(gh issue list --label outage --state open --limit 100 --json number,title \
               -q ".[] | select(.title == \"$title\") | .number" | head -1)"
 
             if [ -n "$err" ]; then
               echo "::error::$name is down: $err"
               if [ -z "$open" ]; then
-                gh issue create --title "$title" --label outage --assignee "$ASSIGNEE" --body "$(printf '%s\n' \
+                local text
+                text="$(printf '%s\n' \
                   "\`$url\` failed 3 checks in a row at $(date -u '+%Y-%m-%d %H:%M UTC'): $err." \
                   "" \
                   "This closes by itself when the check passes again. Cloud Monitoring alerts for the same host go to info@whiteroom.tech." \
                   "" \
                   "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+                # If the assignee can't be assigned any more, still open the issue.
+                gh issue create --title "$title" --label outage --assignee "$ASSIGNEE" --body "$text" ||
+                  gh issue create --title "$title" --label outage --body "$text"
               fi
               return 1
             fi
