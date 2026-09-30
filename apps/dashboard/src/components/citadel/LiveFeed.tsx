@@ -21,6 +21,7 @@ export function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [ttlHours, setTtlHours] = useState<number | null>(null);
+  const [error, setError] = useState('');
   const [feedVariant, setFeedVariant] = useState<FeedVariant>(() => {
     const v = safeGet('wr_perf_feed_variant');
     return isFeedVariant(v) ? v : 'log';
@@ -31,12 +32,15 @@ export function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey
 
   const fetchLiveFeed = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const res = await performanceLiveFeed(fleetId, { limit: 100 }, authKey);
-      if (res.error) return;
+      if (res.error) { setError('Live feed unavailable. Try Refresh.'); return; }
       setEntries(res.entries ?? []);
       setTtlHours(res.ttlHours ?? null);
-    } catch {} finally { setLoading(false); }
+    } catch {
+      setError('Live feed unavailable. Try Refresh.');
+    } finally { setLoading(false); }
   }, [fleetId, authKey]);
 
   function reveal() {
@@ -75,6 +79,9 @@ export function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey
           <button onClick={reveal} style={{ ...CTRL_BTN, background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)' }}>Show live feed</button>
         )}
       </div>
+      {revealed && error && (
+        <div role="alert" style={{ fontSize: 12, color: 'var(--bad)', padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>{error}</div>
+      )}
       {revealed ? (
         <ActivityFeed
           entries={entries}
