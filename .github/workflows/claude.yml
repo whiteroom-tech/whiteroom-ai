@@ -79,5 +79,7 @@ jobs:
           # Let Claude install locked dependencies and run each package's own
           # typecheck, lint, test and build scripts to check its work. No
           # `npm install`, so it can't add packages or drift from the lockfile.
+          # The list is quoted: claude_args is split like a shell command, so
+          # unquoted rules with spaces (Bash(npm ci:*)) would be cut apart.
           claude_args: |
-            --allowedTools Bash(npm ci:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(npx vitest:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*)
+            --allowedTools 'Bash(npm ci:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(npx vitest:*),Bash(git log:*),Bash(git diff:*),Bash(git status:*)'
