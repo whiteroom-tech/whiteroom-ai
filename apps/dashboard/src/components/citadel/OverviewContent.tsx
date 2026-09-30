@@ -14,6 +14,7 @@ import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance'
 import type { AgentInfo, AuditEntry, FleetReport, HandoverDoc } from '@/lib/whiteroom/types';
 import { StatBox, TextInput, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import { InfoTip } from '@/components/citadel/InfoTip';
+import { LiveFeedSection } from '@/components/citadel/LiveFeed';
 import { metricDefinition } from '@/lib/metric-definitions';
 
 const SC: Record<string, { border: string; badgeBg: string; badgeTx: string; badgeBd: string; bar: string }> = {
@@ -655,6 +656,8 @@ export function OverviewContent({ fleetId, authKey, visualizationMode, onAuthErr
             onToggleExpanded={toggleExpanded}
           />
         </div>
+
+        <LiveFeedSection fleetId={fleetId} authKey={authKey} />
       </div>
 
       <style>{KEYFRAMES_CSS}</style>
