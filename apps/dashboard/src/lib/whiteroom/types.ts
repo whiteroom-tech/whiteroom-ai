@@ -281,6 +281,70 @@ export interface RecommendationDetail {
   createdAt: string;
   updatedAt: string;
   summary?: string | null;
+  // Agent Diagnosis detectors only (engine spec Rev 4.4 §5.7). `action` above
+  // stays a string; the rule suggestion is `suggestedAction`.
+  measures?: DiagnosisMeasures;
+  limitations?: string | null;
+  estWastedTokens?: number | null;
+  estWastedCostMicros?: number | null;
+  evidenceCount?: number;
+  suggestedAction?: DiagnosisSuggestedAction;
+}
+
+// -- Agent Diagnosis (diagnosis.v1) --
+
+export type DiagnosisDetectorId =
+  | 'review_handover_churn'
+  | 'review_tool_loops'
+  | 'review_spend_outliers'
+  | 'review_tool_errors'
+  | 'review_tool_silence'
+  | 'review_provider_failures';
+
+export type DiagnosisMeasures = Record<string, number | string>;
+
+/** Suggested rules always start in Watch. */
+export type DiagnosisSuggestedAction =
+  | { kind: 'rule'; rule: 'loop_breaker' | 'spend_cap'; mode: 'watch'; appliesTo: string[]; params: Record<string, number | string | string[]> }
+  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' };
+
+export interface DiagnosisFinding {
+  recommendationId: string;
+  /** The recommendation's current finding id: send as finding_version. */
+  findingId: string;
+  findingVersion: number;
+  detector: DiagnosisDetectorId;
+  detectorVersion: number;
+  status: string;
+  measures: DiagnosisMeasures;
+  estWastedTokens: number | null;
+  estWastedCostMicros: number | null;
+  evidenceCallIds: string[];
+  coverage: string;
+  limitations: string | null;
+  suggestedAction: DiagnosisSuggestedAction;
+}
+
+export interface DiagnosisReport {
+  schema: 'diagnosis.v1';
+  agentId: string;
+  window: { from: string; to: string; days: 7; calls: number; watches: number };
+  findings: DiagnosisFinding[];
+  clear: Array<{ detector: DiagnosisDetectorId; note: string | null }>;
+  notMeasured: Array<{ detector: DiagnosisDetectorId; code: string; reason: string }>;
+}
+
+export interface FleetDiagnosis {
+  checkedAt: string | null;
+  source: 'background' | 'manual' | null;
+  reports: DiagnosisReport[];
+  waiting: Array<{ agentId: string; calls7d: number }>;
+  skipped: Array<{ agentId: string; calls7d: number }>;
+  truncated: boolean;
+  readyAgents: number;
+  busiest: { agentId: string; calls7d: number } | null;
+  minCalls: number;
+  reused?: boolean;
 }
 
 export interface FleetHourlyDataPoint {
@@ -496,6 +560,8 @@ export interface GovernanceRule {
   version: number;
   changedBy: string;
   changedAt: string;
+  /** Set when the rule came from a Diagnosis suggestion. */
+  sourceRecommendationId?: string;
 }
 
 export interface GovernanceHistoryEntry {

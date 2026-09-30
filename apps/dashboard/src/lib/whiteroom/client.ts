@@ -6,6 +6,7 @@
 //   - no key -> unauthenticated (e.g. token_login)
 
 import type {
+  FleetDiagnosis,
   AgentInfo,
   AgentPerformanceResult,
   AuditLogResponse,
@@ -694,10 +695,14 @@ export function governanceList(fleetId: string, key?: string): Promise<Governanc
 
 export function governanceCreateRule(
   fleetId: string,
-  rule: { ruleType: GovernanceRuleType; mode?: GovernanceMode; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  rule: {
+    ruleType: GovernanceRuleType; mode?: GovernanceMode; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
+    /** The Diagnosis recommendation it comes from; the engine makes at most one rule per suggestion. */
+    sourceRecommendationId?: string;
+  },
   key?: string,
-): Promise<{ rule: GovernanceRule }> {
-  return apiCall<{ rule: GovernanceRule }>({
+): Promise<{ rule: GovernanceRule; existing?: boolean }> {
+  return apiCall<{ rule: GovernanceRule; existing?: boolean }>({
     action: 'governance_create_rule',
     fleet_id: fleetId,
     rule_type: rule.ruleType,
@@ -705,7 +710,20 @@ export function governanceCreateRule(
     params: rule.params,
     applies_to: rule.appliesTo,
     description: rule.description,
+    source_recommendation_id: rule.sourceRecommendationId,
   }, key);
+}
+
+// -- Agent Diagnosis --
+
+/** The latest stored check with live statuses and readiness. Runs nothing. */
+export function getDiagnosis(fleetId: string, key?: string): Promise<FleetDiagnosis> {
+  return apiCall<FleetDiagnosis>({ action: 'get_diagnosis', fleet_id: fleetId }, key);
+}
+
+/** "Check now": checks every ready agent (about 12 s at most). */
+export function diagnoseFleet(fleetId: string, opts: { force?: boolean } = {}, key?: string): Promise<FleetDiagnosis> {
+  return apiCall<FleetDiagnosis>({ action: 'diagnose_fleet', fleet_id: fleetId, force: opts.force }, key);
 }
 
 export function governanceUpdateRule(

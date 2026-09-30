@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   governanceCreateRule,
@@ -462,7 +465,12 @@ export default function GovernancePage() {
 
   if (!auth.fleetId) return null;
 
-  return <GovernanceContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />;
+  // useSearchParams (the ?rec= Diagnosis suggestion) needs a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <GovernanceContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />
+    </Suspense>
+  );
 }
 
 function GovernanceContent({ fleetId, authKey, onAuthError }: {
@@ -477,23 +485,40 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
+  // A Diagnosis suggestion opened from Performance: /governance?rec=<id>.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const suggestionRec = searchParams.get("rec");
+  const [notice, setNotice] = useState<string | null>(null);
+  // Selecting a rule closes an open suggestion draft, so the panel shows it.
+  const selectRule = useCallback((id: string | null) => {
+    if (suggestionRec) router.replace("/governance");
+    setNotice(null);
+    setSelectedId(id);
+  }, [suggestionRec, router]);
+
+  /** Every change starts clean: the last error and notice are about something else. */
+  const startChange = () => { setError(null); setNotice(null); };
 
   const handleError = useCallback((e: unknown, what: string) => {
     if (isAuthError(e)) { onAuthError(); return; }
     setError(`Couldn't ${what}. Your last change may not have been saved — refreshed from the server.`);
   }, [onAuthError]);
 
-  const fetchData = useCallback(async () => {
+  /** Reloads the rules; resolves false if that failed. */
+  const fetchData = useCallback(async (): Promise<boolean> => {
     try {
       const d = await governanceList(fleetId, authKey);
       setRules(d.rules);
       setHistory(d.history);
       setAgents(d.agents);
       setLoaded(true);
+      return true;
     } catch (e) {
-      if (isAuthError(e)) { onAuthError(); return; }
+      if (isAuthError(e)) { onAuthError(); return false; }
       setError("Couldn't load governance rules. Retrying on the next change.");
       setLoaded(true);
+      return false;
     }
   }, [fleetId, authKey, onAuthError]);
 
@@ -524,19 +549,20 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const rulesBy = (rt: RuleType) => rules.filter((r) => r.ruleType === rt);
 
   const addRule = async (ruleType: RuleType) => {
-    setError(null);
+    startChange();
     try {
       const { rule } = await governanceCreateRule(fleetId, { ruleType }, authKey);
       setRules((rs) => [...rs, rule]);
-      setSelectedId(rule.id);
+      selectRule(rule.id);
       refreshHistory();
     } catch (e) { handleError(e, "add the rule"); void fetchData(); }
   };
 
   const removeRule = async (ruleId: string) => {
-    setError(null);
+    startChange();
     setRules((rs) => rs.filter((r) => r.id !== ruleId));
-    if (selectedId === ruleId) setSelectedId(null);
+    // Through selectRule, like every other panel change, so an open draft closes too.
+    if (selectedId === ruleId) selectRule(null);
     try {
       await governanceDeleteRule(fleetId, ruleId, authKey);
       refreshHistory();
@@ -544,7 +570,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const update = async (ruleId: string, updates: { mode?: RuleMode; params?: AnyRuleParams; appliesTo?: RuleScope }, what: string, logsHistory: boolean) => {
-    setError(null);
+    startChange();
     // Optimistic: the controls reflect the change immediately.
     setRules((rs) => rs.map((r) => (r.id === ruleId ? { ...r, ...updates } : r)));
     try {
@@ -555,7 +581,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const changeMode = (ruleId: string, _ruleType: RuleType, mode: RuleMode) => {
-    setSelectedId(ruleId);
+    selectRule(ruleId);
     if (rules.find((r) => r.id === ruleId)?.mode === mode) return;
     void update(ruleId, { mode }, "change the mode", true);
   };
@@ -578,7 +604,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   };
 
   const addSuggestedAllowlist = async (models: string[]) => {
-    setError(null);
+    startChange();
     const description = "Added Model allowlist in Watch (suggested)";
     try {
       const existing = rulesBy("model_allowlist");
@@ -668,13 +694,19 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
     <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, flex: 1 }}>
       <PageHeader title="Controls" fleetId={fleetId} />
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div className="gov-columns" style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Left column — rules */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 24, minWidth: 0 }}>
+        <div className="gov-list" style={{ flex: 1, overflowY: "auto", padding: 24, minWidth: 0 }}>
           {error && (
             <div role="alert" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--bad)", background: "var(--bad-bg)", color: "var(--tx)", fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span>{error}</span>
               <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "var(--tx3)", cursor: "pointer", fontSize: 14 }} aria-label="Dismiss">&times;</button>
+            </div>
+          )}
+          {notice && (
+            <div role="status" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--ok)", background: "var(--ok-bg)", color: "var(--tx)", fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>{notice}</span>
+              <button onClick={() => setNotice(null)} style={{ background: "none", border: "none", color: "var(--tx3)", cursor: "pointer", fontSize: 14 }} aria-label="Dismiss">&times;</button>
             </div>
           )}
 
@@ -736,7 +768,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                   {sectionRules.map((rule) => (
                     <div
                       key={rule.id}
-                      onClick={() => setSelectedId(rule.id)}
+                      onClick={() => selectRule(rule.id)}
                       style={{
                         background: "var(--card)",
                         border: `1px solid ${selectedId === rule.id ? "#06b6d4" : "var(--line)"}`,
@@ -783,9 +815,26 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
           })}
         </div>
 
-        {/* Right column — detail panel */}
-        {selectedRule && (
-          <div style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>
+        {/* Right column — a Diagnosis suggestion's draft, or the selected rule */}
+        {suggestionRec ? (
+          <SuggestionDraft
+            fleetId={fleetId}
+            authKey={authKey}
+            recId={suggestionRec}
+            existingRule={rules.find((r) => r.sourceRecommendationId === suggestionRec) ?? null}
+            onDone={(ruleId, message) => {
+              setNotice(message || null);
+              router.replace("/governance");
+              // Select the new rule only once the list that holds it has loaded.
+              void fetchData().then((ok) => { if (ok) setSelectedId(ruleId); });
+            }}
+            onCancel={(ruleCreated) => {
+              router.replace("/governance");
+              if (ruleCreated) void fetchData();
+            }}
+          />
+        ) : selectedRule && (
+          <div className="gov-panel" style={{ width: 420, borderLeft: "1px solid var(--line)", overflowY: "auto", padding: 24, flexShrink: 0 }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{RULE_LABELS[selectedRule.ruleType]}</h2>
               <p style={{ fontSize: 12, color: "var(--tx3)", marginTop: 4 }}>
@@ -804,6 +853,11 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                   ? "No agents selected."
                   : `Applies to: ${(selectedRule.appliesTo as string[]).join(", ")}`}
               </p>
+              {selectedRule.sourceRecommendationId && (
+                <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--tx2)" }}>
+                  From a Diagnosis suggestion · <Link href="/performance" style={{ color: "var(--brand)" }}>see it in Performance</Link>
+                </p>
+              )}
             </div>
 
             {selectedRule.mode !== "off" && (

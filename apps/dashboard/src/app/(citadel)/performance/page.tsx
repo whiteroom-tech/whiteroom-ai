@@ -12,9 +12,18 @@ import { safeGet, safeSet } from '@/lib/safe-storage';
 import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import { TextInput, FONT_MONO } from '@whiteroom/ui';
+import { Badge, Btn, CARD, H3 } from './_components/primitives';
+import { AttentionStrip, DiagnosisStatus, DiagnosisRow, DiagnosisEvidence, WhatWeChecked, isDiagnosisRow } from './_components/Diagnosis';
+import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
+import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
+
+/** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
+type FeedbackResult = 'done' | 'closed' | 'failed';
+import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
+import { statusLine } from '@/lib/diagnosis/model';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
 
@@ -68,9 +77,6 @@ function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
   return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
 }
 
-const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
-const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 12, margin: 0 };
-
 function fmtLatency(ms: number | null): string {
   if (ms == null) return '--';
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
@@ -102,32 +108,6 @@ function TrendBadge({ value, invert }: { value: number | null; invert?: boolean 
   return (
     <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: bg, color, fontFamily: FONT_MONO }}>
       {arrow}{Math.abs(value).toFixed(1)}%
-    </span>
-  );
-}
-
-function Badge({ status, size = 'normal' }: { status: string; size?: 'normal' | 'small' }) {
-  const map: Record<string, { bg: string; tx: string }> = {
-    open: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
-    snoozed: { bg: 'var(--warn-bg)', tx: 'var(--warn)' },
-    dismissed: { bg: 'var(--line)', tx: 'var(--tx3)' },
-    reported_implemented: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-    expired: { bg: 'var(--line)', tx: 'var(--tx3)' },
-    evaluating: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-    validated: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
-    collecting: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-    evaluated: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
-    inconclusive: { bg: 'var(--warn-bg)', tx: 'var(--warn)' },
-    regressed: { bg: 'var(--bad-bg)', tx: 'var(--bad)' },
-    unavailable: { bg: 'var(--line)', tx: 'var(--tx3)' },
-    awaiting_metadata: { bg: 'var(--info-bg)', tx: 'var(--info)' },
-  };
-  if (status === 'not_started') return null;
-  const c = map[status] ?? { bg: 'var(--line)', tx: 'var(--tx3)' };
-  const small = size === 'small';
-  return (
-    <span style={{ fontSize: small ? 10 : 11, fontWeight: 600, padding: small ? '1px 6px' : '2px 8px', borderRadius: 99, background: c.bg, color: c.tx }}>
-      {status.replace(/_/g, ' ')}
     </span>
   );
 }
@@ -361,7 +341,7 @@ function LiveFeedSection({ fleetId, authKey }: { fleetId: string; authKey?: stri
   );
 }
 
-const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'evaluating', 'validated'] as const;
+const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
 
 function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, onClick, active }: {
   label: string; value: string; sub?: string; warn?: boolean;
@@ -668,16 +648,6 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
   return null;
 }
 
-function Btn({ label, onClick, loading, accent }: { label: string; onClick: () => void; loading: boolean; accent?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={loading} style={{
-      fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
-      background: accent ? 'var(--brand-dim)' : 'transparent', color: accent ? 'var(--brand)' : 'var(--tx3)',
-      border: `1px solid ${accent ? 'var(--brand)' : 'var(--line)'}`, opacity: loading ? 0.5 : 1,
-    }}>{label}</button>
-  );
-}
-
 /** True while the input identified by this aria-label has focus. */
 function editing(ariaLabel: string): boolean {
   return typeof document !== 'undefined' && document.activeElement?.getAttribute('aria-label') === ariaLabel;
@@ -823,7 +793,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
-  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => Promise<boolean>;
+  onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<FeedbackResult>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
 }) {
@@ -878,8 +848,42 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
   // its old status and buttons until a filter changes (audit F16).
-  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string) => {
-    if (await onFeedback(recId, findingVersion, action, reason)) void fetchRecs();
+  // Agent Diagnosis: one read shared by the strip, the header line and What we checked.
+  const diagnosis = useDiagnosis(fleetId, authKey);
+  const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
+  // Card-level, so it survives the row leaving the Open filter.
+  const [diagnosisNotice, setDiagnosisNotice] = useState<string | null>(null);
+  // The notice is about the last action; changing what's listed moves on from it.
+  useEffect(() => { setDiagnosisNotice(null); }, [recStatus, recAgentQuery]);
+
+  const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
+    const result = await onFeedback(recId, findingVersion, action, reason, recover);
+    if (result !== 'failed') void fetchRecs();
+    return result;
+  };
+  const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
+    // No reason: Diagnosis rows don't ask why, and a made-up one would skew the feedback.
+    // Recovers from a finding that changed since the list loaded (409), and
+    // never sends the recommendation id as a finding id.
+    const result = await submitFeedback(rec.id, rec.currentFindingId ?? '', action, undefined, true);
+    if (result !== 'failed') {
+      void diagnosis.refresh(); // the attention strip drops a snoozed finding at once
+      // Closed elsewhere meanwhile: nothing was applied, so no "Marked as fixed".
+      setDiagnosisNotice(result === 'closed' ? ALREADY_CHANGED_NOTICE : action === 'implemented' ? MARKED_FIXED_TOAST : null);
+    }
+    return result !== 'failed';
+  };
+  const runCheck = async () => { setDiagnosisNotice(null); if (await diagnosis.checkNow()) void fetchRecs(); };
+  const seeFindings = () => {
+    setDiagnosisNotice(null);
+    setRecStatus('open');
+    // An agent filter could hide the very findings the strip points to.
+    setRecAgent('');
+    setRecAgentQuery('');
+    // An instant jump, straight away: the filter only changes rows inside the
+    // card, and a smooth scroll can be cancelled mid-way and leave the page put.
+    document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
+    document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
   };
 
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
@@ -914,6 +918,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
 
+      <AttentionStrip data={diagnosis.data} onSeeFindings={seeFindings} />
+
       <CostTrackingSection fleetId={fleetId} authKey={authKey} />
 
       {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
@@ -923,11 +929,13 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
         {s.models.length > 0 && <TrafficByModel models={s.models} />}
       </div>
 
-      <div style={CARD}>
+      <div style={CARD} id="recommendations">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <h3 style={H3}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
+          <h3 style={H3} id="recommendations-heading" tabIndex={-1}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
           <input value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />
         </div>
+        <DiagnosisStatus line={diagnosisLine} onAction={() => void runCheck()} />
+        <div aria-live="polite" style={{ fontSize: 12.5, color: 'var(--tx2)', margin: diagnosisNotice ? '0 0 8px' : 0 }}>{diagnosisNotice}</div>
         <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
           {REC_STATUSES.map(st => (
             <button key={st} onClick={() => setRecStatus(st)} style={{
@@ -939,7 +947,17 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
           ))}
         </div>
 
-        {recs.length > 0 ? recs.map(rec => (
+        {recs.length > 0 ? recs.map(rec => isDiagnosisRow(rec) ? (
+          <DiagnosisRow
+            key={rec.id}
+            rec={rec}
+            onSelectAgent={onSelectAgent}
+            onSelectEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
+            onFeedback={(action) => submitDiagnosisFeedback(rec, action)}
+            busy={feedbackLoading === rec.id}
+            error={feedbackError?.recId === rec.id ? feedbackError.message : null}
+          />
+        ) : (
           <div key={rec.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ flex: 1 }}>
@@ -957,7 +975,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
                 <Btn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
                 {rec.status === 'open' && (
                   <>
-                    <Btn label="Snooze" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
+                    <Btn label="Snooze 7 days" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
                     <Btn label="Dismiss" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
                     <Btn label="Implemented" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
                   </>
@@ -989,6 +1007,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
             }}>{recLoading ? 'Loading...' : 'Load more'}</button>
           </div>
         )}
+
+        <WhatWeChecked data={diagnosis.data} />
       </div>
 
       <LiveFeedSection fleetId={fleetId} authKey={authKey} />
@@ -1077,6 +1097,10 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
   }
 
   const rec = recDetail?.recommendation;
+  // Diagnosis findings: plain titles, no internal ids, and no brief (the
+  // engine has none for them).
+  const diagDetector = [rec?.detector, data.finding?.detector].find((d): d is DiagnosisDetectorId => !!d && isDiagnosisDetector(d));
+  const detectorLabel = (d: string) => (isDiagnosisDetector(d) ? TITLES[d] : d.replace(/_/g, ' '));
   const finding = recDetail?.finding;
   const f = data.finding;
 
@@ -1092,14 +1116,14 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
             {[
-              ['Detector', rec.detector.replace(/_/g, ' ')],
-              ['Action', rec.action.replace(/_/g, ' ')],
+              [diagDetector ? 'Finding' : 'Detector', detectorLabel(rec.detector)],
+              ...(diagDetector ? [] : [['Action', rec.action.replace(/_/g, ' ')]]),
               ['Agent', rec.agentId],
-              ['Cohort', rec.cohort],
+              ...(diagDetector ? [] : [['Cohort', rec.cohort]]),
               ['Created', new Date(rec.createdAt).toLocaleString()],
               ['Updated', new Date(rec.updatedAt).toLocaleString()],
               ['Feedback', `${rec.feedbackCount} action${rec.feedbackCount !== 1 ? 's' : ''}`],
-              ...(finding ? [['Lane', String(finding.lane ?? '--').replace(/_/g, ' ')]] : []),
+              ...(finding && !diagDetector ? [['Lane', String(finding.lane ?? '--').replace(/_/g, ' ')]] : []),
             ].map(([k, v]) => (
               <div key={k}><span style={{ color: 'var(--tx3)' }}>{k}:</span> <span style={{ color: 'var(--tx)' }}>{v}</span></div>
             ))}
@@ -1107,7 +1131,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
         </div>
       )}
 
-      {recommendationId && (
+      {recommendationId && !diagDetector && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button onClick={() => exportBrief('copy')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
             {briefCopied ? 'Copied!' : briefLoading ? 'Loading...' : 'Copy implementation brief'}
@@ -1123,21 +1147,25 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
           <div style={CARD}>
             <h3 style={H3}>Finding Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
-              <div><span style={{ color: 'var(--tx3)' }}>Detector:</span> <span style={{ color: 'var(--tx)' }}>{f.detector.replace(/_/g, ' ')}</span></div>
+              <div><span style={{ color: 'var(--tx3)' }}>{diagDetector ? 'Finding' : 'Detector'}:</span> <span style={{ color: 'var(--tx)' }}>{detectorLabel(f.detector)}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Agent:</span> <span style={{ color: 'var(--tx)' }}>{f.agentId}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Window:</span> <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{new Date(f.windowStart).toLocaleDateString()} - {new Date(f.windowEnd).toLocaleDateString()}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Coverage:</span> <span style={{ color: 'var(--tx)' }}>{f.coverage}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Basis:</span> <span style={{ color: 'var(--tx2)' }}>{f.basis}</span></div>
-              {f.limitations && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--tx3)' }}>Limitations:</span> <span style={{ color: 'var(--warn)' }}>{f.limitations}</span></div>}
+              {f.limitations && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--tx3)' }}>Limitations:</span> <span style={{ color: 'var(--warn)' }}>{(diagDetector && limitationText(diagDetector, f.limitations)) || f.limitations}</span></div>}
             </div>
           </div>
 
+          {isDiagnosisDetector(f.detector) ? (
+            <DiagnosisEvidence detector={f.detector} calls={data.calls} measures={f.measures} />
+          ) : (
           <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
             <MetricCard label="Tool Definitions" value={String(f.measures.avgToolDefs ?? '--')} />
             <MetricCard label="Tools Requested" value={String(f.measures.uniqueRequestedTools ?? '--')} />
             <MetricCard label="Schema Share" value={`${f.measures.schemaSharePct ?? '--'}%`} warn={(f.measures.schemaSharePct ?? 0) >= 20} />
             <MetricCard label="Utilization" value={`${f.measures.utilization ?? '--'}%`} />
           </div>
+          )}
 
           {data.calls.length > 0 && (
             <div style={CARD}>
@@ -1145,7 +1173,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    {(['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time'] as (string | [string, 'tools' | 'schema'])[]).map(h => {
+                    {((diagDetector ? ['Call ID', 'Model', 'Watch', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
                       if (typeof h === 'string') return <th key={h} style={{ padding: '6px 8px', textAlign: 'left' }}>{h}</th>;
                       const [label, k] = h;
                       return (
@@ -1163,8 +1191,14 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
                     <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
-                      <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{String(c.toolDefinitionCount ?? '--')}</td>
-                      <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
+                      {diagDetector ? (
+                        <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{c.watchNumber != null ? String(c.watchNumber) : '--'}</td>
+                      ) : (
+                        <>
+                          <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{String(c.toolDefinitionCount ?? '--')}</td>
+                          <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
+                        </>
+                      )}
                       <td style={{ padding: 8 }}><Badge status={String(c.terminal ?? 'unknown')} /></td>
                       <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
                     </tr>
@@ -1297,23 +1331,33 @@ export default function PerformancePage() {
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
-  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string): Promise<boolean> {
-    if (!fleetId) return false;
+  async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> {
+    if (!fleetId) return 'failed';
     setFeedbackLoading(recId);
     setFeedbackError(null);
     try {
-      const res = await performanceFeedback(fleetId, {
-        recommendationId: recId, findingVersion, action, reason,
-        snoozeDays: action === 'snooze' ? 7 : undefined,
-        idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      }, authKey);
-      if (res.error) throw new Error(res.error);
+      const send = async (fv: string) => {
+        const res = await performanceFeedback(fleetId, {
+          recommendationId: recId, findingVersion: fv, action, reason,
+          snoozeDays: action === 'snooze' ? SNOOZE_DAYS : undefined,
+          idempotencyKey: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        }, authKey);
+        feedbackOrThrow(res);
+      };
+      let result: FeedbackResult = 'done';
+      if (recover) {
+        const sent = await sendWithFindingRecovery({ send, reload: () => performanceRecommendationGet(fleetId, recId, authKey) }, findingVersion);
+        if (sent.kind === 'failed') throw sent.error;
+        result = sent.kind;
+      } else {
+        await send(findingVersion);
+      }
       fetchIndex();
-      return true;
+      return result;
     } catch {
       setError('Failed to submit feedback.');
       setFeedbackError({ recId, message: 'Failed to submit feedback. Try again.' });
-      return false;
+      return 'failed';
     }
     finally { setFeedbackLoading(null); }
   }
