@@ -127,6 +127,37 @@ export function attentionStrip(d: FleetDiagnosis | null): { lead: string; names:
   return { lead: `${agents.length} agents need attention:`, names: `${shown}${more}` };
 }
 
+/**
+ * The Agent Diagnosis card's one-line summary, always visible: what needs
+ * attention, or that everything checked looks fine and what still needs data.
+ * Null until there's a stored check to summarise.
+ */
+export interface DiagnosisSummary {
+  tone: 'warn' | 'ok';
+  text: string;
+  /** Checks with a clear result, and ones still waiting for data, across agents. */
+  fine: number;
+  needsData: number;
+  openFindings: number;
+}
+
+export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | null {
+  if (!d || !d.checkedAt || d.reports.length === 0) return null;
+  const fine = d.reports.reduce((n, r) => n + r.clear.length, 0);
+  const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
+  const openFindings = openFindingCount(d);
+  const counts = [
+    fine > 0 ? `${fine} ${fine === 1 ? 'check looks' : 'checks look'} fine` : '',
+    needsData > 0 ? `${needsData} ${needsData === 1 ? 'needs' : 'need'} more data` : '',
+  ].filter(Boolean).join(' · ');
+  if (openFindings > 0) {
+    const strip = attentionStrip(d)!;
+    const lead = strip.names ? `${strip.lead} ${strip.names}` : strip.lead;
+    return { tone: 'warn', text: `${lead} · ${openFindings} open ${openFindings === 1 ? 'finding' : 'findings'}`, fine, needsData, openFindings };
+  }
+  return { tone: 'ok', text: counts ? `No problems found · ${counts}` : 'No problems found', fine, needsData, openFindings };
+}
+
 export interface CheckedSummary {
   agents: number;
   nothingFound: string[];
