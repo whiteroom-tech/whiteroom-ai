@@ -1,0 +1,86 @@
+name: Uptime
+
+# A second watchdog outside GCP. Cloud Monitoring (ops/monitoring/setup.sh)
+# emails info@whiteroom.tech, but it goes quiet if the GCP project itself is
+# the problem, such as a billing suspension. This opens an `outage` issue
+# per host while it's down and closes it once it recovers.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Uptime
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # Assigned so the outage issue notifies someone directly.
+      ASSIGNEE: alex-nyan
+    steps:
+      - name: Check hosts
+        run: |
+          set -uo pipefail
+          gh label create outage --color B60205 --description "Opened by the Uptime workflow" 2>/dev/null || true
+
+          # check NAME URL CONTENT: three tries 20s apart, so one blip doesn't open an issue.
+          check() {
+            local name="$1" url="$2" content="$3" code body err=""
+            for attempt in 1 2 3; do
+              body="$(curl -sS -m 15 -o - -w '\n%{http_code}' "$url" 2>&1)"
+              code="${body##*$'\n'}"
+              body="${body%$'\n'*}"
+              if [ "$code" = 200 ] && grep -qF -- "$content" <<<"$body"; then
+                err=""
+                break
+              fi
+              err="HTTP $code"
+              [ "$code" = 200 ] && err="HTTP 200 but the page doesn't contain \`$content\`"
+              [ "$attempt" -lt 3 ] && sleep 20
+            done
+
+            local title="Down: $name"
+            local open
+            # Filter by label, not --search: the search index can lag behind a
+            # just-opened issue and cause a duplicate.
+            open="$(gh issue list --label outage --state open --limit 100 --json number,title \
+              -q ".[] | select(.title == \"$title\") | .number" | head -1)"
+
+            if [ -n "$err" ]; then
+              echo "::error::$name is down: $err"
+              if [ -z "$open" ]; then
+                local text
+                text="$(printf '%s\n' \
+                  "\`$url\` failed 3 checks in a row at $(date -u '+%Y-%m-%d %H:%M UTC'): $err." \
+                  "" \
+                  "This closes by itself when the check passes again. Cloud Monitoring alerts for the same host go to info@whiteroom.tech." \
+                  "" \
+                  "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+                # If the assignee can't be assigned any more, still open the issue.
+                gh issue create --title "$title" --label outage --assignee "$ASSIGNEE" --body "$text" ||
+                  gh issue create --title "$title" --label outage --body "$text"
+              fi
+              return 1
+            fi
+
+            echo "$name is up"
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Back up at $(date -u '+%Y-%m-%d %H:%M UTC')."
+            fi
+          }
+
+          status=0
+          check "whiteroom.tech" "https://whiteroom.tech/" "WhiteRoom" || status=1
+          check "app.whiteroom.tech" "https://app.whiteroom.tech/sign-in" "Sign in" || status=1
+          # /health includes the database, so a DB outage shows up here.
+          check "proxy.whiteroom.tech" "https://proxy.whiteroom.tech/health" '"db":"ok"' || status=1
+          exit $status
