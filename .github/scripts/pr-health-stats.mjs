@@ -10,6 +10,11 @@ import { BOT_LOGIN, aggregateStats, parseFindingTag, renderStats } from "./pr-he
 
 requireEnv("GITHUB_TOKEN", "GITHUB_REPOSITORY");
 const days = Number(process.env.DAYS || 30);
+// A NaN window would never close and read every merged PR in the repo.
+if (!Number.isFinite(days) || days <= 0) {
+  console.error(`DAYS must be a positive number, got ${JSON.stringify(process.env.DAYS)}`);
+  process.exit(1);
+}
 const since = Date.now() - days * 86_400_000;
 const [owner, name] = process.env.GITHUB_REPOSITORY.split("/");
 // GraphQL reports bot authors without the [bot] suffix.
@@ -25,6 +30,7 @@ const QUERY = `
           mergedAt
           updatedAt
           reviewThreads(first: 100) {
+            pageInfo { hasNextPage }
             nodes {
               isResolved
               isOutdated
@@ -56,6 +62,9 @@ for (let after = null, done = false; !done; ) {
     }
     if (Date.parse(p.mergedAt) < since) continue;
     prs++;
+    if (p.reviewThreads.pageInfo.hasNextPage) {
+      console.warn(`PR #${p.number} has more than 100 review threads; only the first 100 are counted`);
+    }
     for (const t of p.reviewThreads.nodes) {
       const c = t.comments.nodes[0];
       if (c?.author?.login !== botLogin) continue;
