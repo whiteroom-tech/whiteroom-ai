@@ -5,7 +5,7 @@ import { Button, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO, typ
 import { performanceLiveFeed } from '@/lib/whiteroom/client';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { safeGet, safeSet } from '@/lib/safe-storage';
-import { HELP } from '@/lib/metric-definitions';
+import { liveFeedHelp } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { liveRow, matchesFilter, pageWindow, onRefreshSignal, type LiveFilter, type LiveKind } from '@/lib/home';
 
@@ -80,7 +80,10 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
 
   const rows = useMemo(() => entries.map(liveRow), [entries]);
   const agents = useMemo(() => [...new Set(rows.map((r) => r.agent).filter(Boolean))].sort(), [rows]);
-  const shown = rows.filter((r) => (agent === 'all' || r.agent === agent) && matchesFilter(r, filter));
+  // A picked agent that's gone from the loaded rows (after a reload or Hide)
+  // falls back to All instead of filtering everything out.
+  const activeAgent = agents.includes(agent) ? agent : 'all';
+  const shown = rows.filter((r) => (activeAgent === 'all' || r.agent === activeAgent) && matchesFilter(r, filter));
   const win = pageWindow(shown, page, PAGE);
   const pageRows = win.rows;
 
@@ -88,7 +91,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 
-  const title = <>Live feed<Hint text={HELP.liveFeed.replace('72 hours', `${ttlHours} hours`)} /></>;
+  const title = <>Live feed<Hint text={liveFeedHelp(ttlHours)} /></>;
 
   if (!open) {
     return (
@@ -110,7 +113,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       bodyPadding={0}
       actions={
         <>
-          <SelectChip label="Agent" value={agent} onChange={(v) => { setAgent(v); setPage(0); }} options={[{ value: 'all', label: 'All agents' }, ...agents.map((a) => ({ value: a, label: a }))]} />
+          <SelectChip label="Agent" value={activeAgent} onChange={(v) => { setAgent(v); setPage(0); }} options={[{ value: 'all', label: 'All agents' }, ...agents.map((a) => ({ value: a, label: a }))]} />
           <SegmentedControl<LiveFilter> label="Kind" value={filter} onChange={pickFilter} size={24} options={[{ value: 'all', label: 'Everything' }, { value: 'web', label: 'Web' }, { value: 'tools', label: 'Tools' }, { value: 'replies', label: 'Replies' }]} />
           <Button size={28} onClick={hide}>Hide</Button>
         </>
@@ -119,7 +122,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 12.5, color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
       {loading && rows.length === 0 && <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Loading&hellip;</p>}
       {!loading && !error && shown.length === 0 && (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Nothing in the last {ttlHours} hours{filter !== 'all' || agent !== 'all' ? ' for this filter' : ''}.</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</p>
       )}
       {pageRows.map((r) => (
         <div key={r.key} className="wr-live-row">

@@ -175,10 +175,16 @@ export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRo
   return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: TAGS[m.type] };
 }
 
+/** Epoch ms of an event; 0 for an unreadable timestamp, so it sorts last instead of breaking the sort. */
+function eventTime(e: AuditEntry): number {
+  const t = Date.parse(String(e.timestamp));
+  return Number.isNaN(t) ? 0 : t;
+}
+
 /** The newest `n` events, newest first. */
 export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.now()): ActivityRow[] {
   return [...entries]
-    .sort((a, b) => Date.parse(String(b.timestamp)) - Date.parse(String(a.timestamp)))
+    .sort((a, b) => eventTime(b) - eventTime(a))
     .slice(0, n)
     .map((e) => activityRow(e, now));
 }

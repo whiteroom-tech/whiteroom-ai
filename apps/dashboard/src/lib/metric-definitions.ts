@@ -32,6 +32,11 @@ export function metricDefinition(key: MetricKey, scope: 'watch' | 'range'): stri
   }
 }
 
+/** Live feed help; the retention comes from the engine (ttlHours). */
+export function liveFeedHelp(ttlHours: number): string {
+  return `Everything the agents actually said and did, including the web pages they opened and the exact inputs they gave their tools. It is private content, so it stays hidden until you open it and is deleted after ${ttlHours} hours.`;
+}
+
 /**
  * Hover help for labels, verbatim from the redesign handoff (screen 10,
  * "Labels and hover help"). Shown through the ⓘ Hint next to each label.
@@ -45,7 +50,6 @@ export const HELP = {
   needsYou: 'Things only a person can decide: an agent that was paused or stopped, or a run that did something unusual. When this is empty, nothing needs you.',
   agents: 'Every agent connected to this fleet. Working: doing a task. Resting: a short planned break between shifts. Idle: waiting for work. Paused or Stopped: held by a rule or a person.',
   activity: 'The latest things that happened across the fleet, in plain words.',
-  liveFeed: 'Everything the agents actually said and did, including the web pages they opened and the exact inputs they gave their tools. It is private content, so it stays hidden until you open it and is deleted after 72 hours.',
   runs: 'A run is one stretch of work by one agent, from when it starts until it stops or hands over. Each row is one run.',
   whatStoodOut: 'The one thing worth knowing about this run: something unusual, a rule stepping in, or a person stopping it.',
   whatHappened: 'Every step of this run in order: the model calls, tools used, rules that stepped in, and handovers.',

@@ -249,6 +249,14 @@ describe('fan-out throttle', () => {
   });
 });
 
+describe('activity order', () => {
+  it('puts events with unreadable timestamps last instead of scrambling the rest', () => {
+    const e = (id: string, timestamp: string): AuditEntry => ({ id, type: 'task_complete', timestamp, agentId: id });
+    const rows = latestActivity([e('a', '2026-10-01T10:00:00Z'), e('bad', 'not a date'), e('c', '2026-10-01T12:00:00Z'), e('b', '2026-10-01T11:00:00Z')], 4);
+    expect(rows.map((r) => r.text.split(' ')[0])).toEqual(['c', 'b', 'a', 'bad']);
+  });
+});
+
 describe('live feed refresh', () => {
   it('reloads on a new signal only while open', () => {
     expect(onRefreshSignal(true, 2, 1)).toEqual({ load: true, handled: 2 });
