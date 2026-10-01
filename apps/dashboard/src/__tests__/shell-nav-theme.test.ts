@@ -46,13 +46,15 @@ describe('theme helpers', () => {
     for (const k of ['document', 'localStorage', 'window']) delete (globalThis as Record<string, unknown>)[k];
   });
 
-  it('reads only light or dark as a stored choice', async () => {
+  it('defaults to dark; reads light and system as stored choices', async () => {
     const { storedTheme } = await import('@/lib/theme');
-    expect(storedTheme()).toBe('system');
+    expect(storedTheme()).toBe('dark');
     store.set('wr_theme', 'light');
     expect(storedTheme()).toBe('light');
-    store.set('wr_theme', 'purple');
+    store.set('wr_theme', 'system');
     expect(storedTheme()).toBe('system');
+    store.set('wr_theme', 'purple');
+    expect(storedTheme()).toBe('dark');
   });
 
   it('stores, pins and clears the choice on the shell and on <html>', async () => {
@@ -61,10 +63,11 @@ describe('theme helpers', () => {
     expect(store.get('wr_theme')).toBe('light');
     expect(shell.getAttribute('data-theme')).toBe('light');
     expect(root.getAttribute('data-wr-theme')).toBe('light');
+    // System is stored too: with nothing stored the default is dark.
     chooseTheme('system');
-    expect(store.has('wr_theme')).toBe(false);
+    expect(store.get('wr_theme')).toBe('system');
     expect(shell.getAttribute('data-theme')).toBeNull();
-    expect(root.getAttribute('data-wr-theme')).toBeNull();
+    expect(root.getAttribute('data-wr-theme')).toBe('system');
   });
 
   it('applies to a given shell rather than the first one on the page', async () => {

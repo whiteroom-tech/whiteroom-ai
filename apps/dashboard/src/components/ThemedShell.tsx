@@ -3,8 +3,8 @@
 // The .wr-shell root for pages outside the signed-in layouts (sign-in,
 // onboarding, email confirmation). Theme tokens in globals.css are scoped to
 // .wr-shell, so a page that isn't inside one gets no colors. It applies the
-// stored theme the same way the signed-in layouts do; with none stored, the
-// shell follows the system preference.
+// stored theme the same way the signed-in layouts do; with none stored, it's
+// dark.
 
 import { useEffect, useRef } from 'react';
 import { safeGet } from '@/lib/safe-storage';

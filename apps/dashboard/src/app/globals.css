@@ -56,13 +56,13 @@
   --cr-cyan: #39bef8;
 }
 
-/* Light mode — follows system preference when no explicit choice.
-   Keep identical to the explicit light block below (the test checks).
-   A stored choice is put on <html data-wr-theme> by an inline script in
-   app/layout.tsx before first paint, so pages never flash the wrong theme;
-   data-theme on a shell (set after hydration) still wins. */
+/* Light mode — for the System choice on a light OS. Dark is the default
+   when nothing is chosen. Keep identical to the explicit light block below
+   (the test checks). The stored choice is put on <html data-wr-theme> by an
+   inline script in app/layout.tsx before first paint, so pages never flash
+   the wrong theme; data-theme on a shell (set after hydration) still wins. */
 @media (prefers-color-scheme: light) {
-  :root:not([data-wr-theme="dark"]) .wr-shell:not([data-theme="dark"]) {
+  :root[data-wr-theme="system"] .wr-shell:not([data-theme="dark"]) {
     color-scheme: light;
     --bg: #f5f7fb; --card: #ffffff; --raised: #ffffff; --sunk: #f0f3f8;
     --line: #dce1ea; --line2: #c6cdd8; --track: #e5e9f0;
