@@ -90,6 +90,21 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
   return out;
 }
 
+/**
+ * Per-agent tallies keyed the way the By agent table keys its rows: agent ids
+ * lower-cased (so "Lead-Agent" and "lead-agent" merge, as their tokens do),
+ * and '' kept for decisions recorded without an agent (the Unattributed row).
+ */
+export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Record<string, GovernanceTally> {
+  const out: Record<string, GovernanceTally> = {};
+  for (const [agent, t] of Object.entries(byAgent)) {
+    const key = agent.toLowerCase();
+    const prev = out[key] ?? emptyTally();
+    out[key] = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
+  }
+  return out;
+}
+
 /** Recent enforced blocks shows as a badge on Overview. */
 export const RECENT_BLOCK_MS = 15 * 60_000;
 

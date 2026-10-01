@@ -8,6 +8,18 @@ import { HELP } from '@/lib/metric-definitions';
 
 const PLOT_H = 120;
 
+/**
+ * The Savings card's caption, describing the same total as its value: tokens
+ * shorter handovers didn't spend, plus prompt-cache reads billed at a discount.
+ */
+export function savingsCaption(handoverTokens: number, cacheMicros: number): string {
+  const parts = [
+    handoverTokens > 0 ? `${fmtTokens(handoverTokens)} tokens not spent` : null,
+    cacheMicros > 0 ? 'cache reads' : null,
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(' + ')}, a ceiling` : 'nothing saved in this range';
+}
+
 /** Round a max up to a tidy axis top, so the tallest bar fills most of the plot. */
 export function axisTop(max: number): number {
   if (max <= 0) return 1;

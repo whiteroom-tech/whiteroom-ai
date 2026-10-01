@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, localDayFromTs } from '@/lib/analytics-metrics';
-import { axisLabel, axisTop } from '@/components/performance/SavingsPanels';
+import { axisLabel, axisTop, savingsCaption } from '@/components/performance/SavingsPanels';
+import { ruleActionsByAgent } from '@/lib/governance';
 
 // Performance's Savings chart and By agent table, moved from Run History,
 // must keep Run History's numbers: same attribution, same per-agent-day math.
@@ -71,5 +72,24 @@ describe('agentTotals edge cases', () => {
       { type: 'model_call', timestamp: at(1, 11), tokensUsed: 40 },
     ], 1, now)[0].used;
     expect(rows.reduce((s, r) => s + r.used, 0)).toBe(chartTotal);
+  });
+});
+
+describe('Savings card caption', () => {
+  it('names every part of the total it sits under', () => {
+    expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, a ceiling');
+    expect(savingsCaption(0, 12_000)).toBe('cache reads, a ceiling');
+    expect(savingsCaption(2_000, 12_000)).toBe('2.0K tokens not spent + cache reads, a ceiling');
+    expect(savingsCaption(0, 0)).toBe('nothing saved in this range');
+  });
+});
+
+describe('Rule actions per By agent row', () => {
+  it('merges mixed-case ids and keeps no-agent decisions on the Unattributed key', () => {
+    expect(ruleActionsByAgent({
+      'Lead-Agent': { blocks: 1, wouldBlocks: 0 },
+      'lead-agent': { blocks: 2, wouldBlocks: 1 },
+      '': { blocks: 0, wouldBlocks: 4 },
+    })).toEqual({ 'lead-agent': { blocks: 3, wouldBlocks: 1 }, '': { blocks: 0, wouldBlocks: 4 } });
   });
 });

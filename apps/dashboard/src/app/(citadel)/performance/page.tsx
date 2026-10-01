@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, partialCoverageSince, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
-import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
+import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
@@ -12,7 +12,7 @@ import { fmtCost, fmtTokens } from '@/lib/format';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
-import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
+import { governanceCounts, ruleActionsByAgent, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { DiagnosisCard, DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
@@ -845,7 +845,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           label="Savings"
           hint={HELP.savings}
           value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>up to </span>{fmtCost(savings.totalMicros)}</>}
-          sub={savings.govTokensSaved > 0 ? `${fmtTokens(savings.govTokensSaved)} tokens not spent, a ceiling` : 'nothing saved in this range'}
+          sub={savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
         <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={(blocked + (govCounts?.wouldBlocks ?? 0)).toLocaleString()} sub={ruleSub || 'no rule stepped in'} />
@@ -1340,16 +1340,7 @@ export default function PerformancePage() {
   // By agent cutoff refreshes with each fetch.
   const savingsDays = useMemo(() => (auditEntries ? dailySavings(auditEntries, 7, Date.now()) : null), [auditEntries, today]); // eslint-disable-line react-hooks/exhaustive-deps
   const byAgent = useMemo(() => (auditEntries ? agentTotals(auditEntries, Date.now() - hoursBack * 3_600_000) : null), [auditEntries, hoursBack]);
-  const ruleActions = useMemo(() => {
-    if (!govCounts) return undefined;
-    const out: Record<string, { blocks: number; wouldBlocks: number }> = {};
-    for (const [agent, t] of Object.entries(govCounts.byAgent)) {
-      const key = agent.toLowerCase();
-      const prev = out[key] ?? { blocks: 0, wouldBlocks: 0 };
-      out[key] = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
-    }
-    return out;
-  }, [govCounts]);
+  const ruleActions = useMemo(() => (govCounts ? ruleActionsByAgent(govCounts.byAgent) : undefined), [govCounts]);
   // The audit read is the newest 2,000 events; on a busy fleet they can start
   // inside a panel's window, and its older part would read as quiet. Savings
   // covers 7 calendar days; By agent covers the rolling range.
