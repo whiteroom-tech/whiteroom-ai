@@ -144,6 +144,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       view={view}
       onViewChange={changeView}
       liveFeed={<LiveFeedPanel fleetId={fleetId} authKey={authKey} refreshSignal={refreshSignal} />}
+      fleet={{ fleetId, authKey }}
     />
   );
 }
@@ -152,7 +153,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
  * Home's layout from plain data, so it can be previewed with sample data
  * (/dev/home) without a fleet.
  */
-export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed }: {
+export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet }: {
   report: FleetReport;
   agents: AgentInfo[];
   entries: AuditEntry[];
@@ -162,6 +163,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   view: AgentsView;
   onViewChange: (v: AgentsView) => void;
   liveFeed: React.ReactNode;
+  /** Where Needs you reads today's flagged runs; previews leave it out. */
+  fleet?: { fleetId: string; authKey?: string };
 }) {
   const router = useRouter();
   const sorted = sortAgents(agents);
@@ -177,7 +180,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <div className="wr-home" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
         {failing && <RefreshFailed />}
-        <NeedsYou agents={agents} holdsKnown={report.holds !== undefined} />
+        <NeedsYou agents={agents} holdsKnown={report.holds !== undefined} fleet={fleet} />
 
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />

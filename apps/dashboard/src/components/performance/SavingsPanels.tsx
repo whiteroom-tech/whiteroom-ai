@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { DataTable, Hint, Panel, FONT_MONO } from '@whiteroom/ui';
 import type { AgentTotals, DaySavings } from '@/lib/analytics-metrics';
 import { fmtTokens } from '@/lib/format';
+import { tallyWords, type GovernanceTally } from '@/lib/governance';
 import { HELP } from '@/lib/metric-definitions';
 
 const PLOT_H = 120;
@@ -119,7 +120,7 @@ export function ByAgentTable({ rows, scope, ruleActions }: {
   rows: AgentTotals[];
   scope: string;
   /** Controls blocks (Enforce) and would-blocks (Watch only) per agent id, lower-cased. */
-  ruleActions?: Record<string, { blocks: number; wouldBlocks: number }>;
+  ruleActions?: Record<string, GovernanceTally>;
 }) {
   return (
     <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
@@ -143,13 +144,11 @@ export function ByAgentTable({ rows, scope, ruleActions }: {
             {
               key: 'rules', header: 'Rule actions', width: '180px', numeric: true,
               render: (r) => {
-                const t = ruleActions?.[r.agent];
-                if (!t || (!t.blocks && !t.wouldBlocks)) return <span style={{ color: 'var(--tx2)' }}>–</span>;
+                const words = ruleActions?.[r.agent] ? tallyWords(ruleActions[r.agent]) : [];
+                if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
                 return (
-                  <span title="Calls a Controls rule blocked (Enforce), and calls it would have blocked (Watch only)">
-                    {t.blocks > 0 && <span style={{ color: 'var(--bad)' }}>{t.blocks} blocked</span>}
-                    {t.blocks > 0 && t.wouldBlocks > 0 && ' · '}
-                    {t.wouldBlocks > 0 && <span style={{ color: 'var(--warn)' }}>{t.wouldBlocks} would block</span>}
+                  <span title="What Controls rules did for this agent (Enforce), and would have done (Watch only)">
+                    {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
                   </span>
                 );
               },

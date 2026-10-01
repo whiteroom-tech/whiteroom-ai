@@ -124,6 +124,11 @@ export function fmtLength(seconds: number): string {
 
 export type StandOutTone = 'flag' | 'rule' | 'failed' | 'coverage' | 'clean';
 
+/** True when an engine without flags (P2.1) answered a `flagged` request with every run. */
+export function ignoresFlagged(runs: Pick<RunSummary, 'flags'>[]): boolean {
+  return runs.length > 0 && runs.every((r) => r.flags === undefined);
+}
+
 /** One flag in words: "Repeating the same call: fetch_page ×6", "4 failed calls in a row". */
 export function flagText(f: RunFlag): string {
   return f.signal === 'repeating_call' ? `Repeating the same call: ${f.tool} ×${f.calls}` : `${f.calls} failed calls in a row`;

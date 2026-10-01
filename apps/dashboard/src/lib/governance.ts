@@ -6,6 +6,9 @@
 
 import type {
   AuditEntry,
+  GovernanceResponse,
+  RuleActionCounts,
+  RuleActionsResult,
   FleetHourlyResult,
   GovernanceRuleType,
   PerformanceIndexResult,
@@ -56,6 +59,10 @@ export function occurrences(e: AuditEntry): number {
 export interface GovernanceTally {
   blocks: number;
   wouldBlocks: number;
+  /** From the engine's rule_actions (P2.4); the audit log only knows blocks. */
+  paused?: number;
+  stopped?: number;
+  toldYou?: number;
 }
 
 export interface GovernanceCounts extends GovernanceTally {
@@ -145,4 +152,53 @@ export function computeSuggestions(index: PerformanceIndexResult, hourly: FleetH
     noCaching: input > 0 && cached === 0,
     onlyModels: models.length >= 1 && models.length <= 3 ? models : null,
   };
+}
+
+// ── Rule responses (P2.3) ───────────────────────────────────────────
+
+/** The "then" select, in the Rev 9 words. */
+export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
+  notify: 'Just tell me', block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent',
+};
+
+/** What each response does, under the select (README › Screen 5). */
+export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
+  notify: 'It shows in Rule actions and the run, with a link to the run. The agent keeps going.',
+  block: 'That one call fails with a plain reason. The agent keeps going.',
+  pause: 'Its current run ends. It can’t make calls until someone resumes it, even after a restart.',
+  stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',
+};
+
+/** Pause and Stop only where the fleet has them (Gov v1), but always the rule's current one. */
+export function responseOptions(govV1: boolean, current: GovernanceResponse): { value: GovernanceResponse; label: string }[] {
+  return (['notify', 'block', 'pause', 'stop'] as const)
+    .filter((r) => govV1 || r === 'notify' || r === 'block' || r === current)
+    .map((r) => ({ value: r, label: RESPONSE_LABEL[r] }));
+}
+
+// ── Rule actions (P2.4) ─────────────────────────────────────────────
+
+const tally = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou });
+
+/**
+ * Counts from the engine's rule_actions, which last as long as the runs (the
+ * audit log is pruned). byRule isn't in it, so the audit log's is kept.
+ */
+export function countsFromRuleActions(res: RuleActionsResult, byRule: GovernanceCounts['byRule']): GovernanceCounts {
+  return { ...tally(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tally(c)])) };
+}
+
+/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would act (Watch only)". */
+export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'warn' | 'tx2' }[] {
+  const out: { text: string; tone: 'bad' | 'warn' | 'tx2' }[] = [];
+  if (t.stopped) out.push({ text: `${t.stopped} stopped`, tone: 'bad' });
+  if (t.paused) out.push({ text: `${t.paused} paused`, tone: 'bad' });
+  if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
+  if (t.toldYou) out.push({ text: `${t.toldYou} told you`, tone: 'tx2' });
+  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would act (Watch only)`, tone: 'warn' });
+  return out;
+}
+
+export function tallyTotal(t: GovernanceTally): number {
+  return t.blocks + t.wouldBlocks + (t.paused ?? 0) + (t.stopped ?? 0) + (t.toldYou ?? 0);
 }

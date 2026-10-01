@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
+import { localDay } from '@/lib/runs';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, partialCoverageSince, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -13,7 +14,7 @@ import { fmtCost, fmtTokens } from '@/lib/format';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
-import { governanceCounts, ruleActionsByAgent, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
+import { countsFromRuleActions, governanceCounts, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
 import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { DiagnosisCard, DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
@@ -708,7 +709,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
   byAgent: AgentTotals[] | null;
-  ruleActions?: Record<string, { blocks: number; wouldBlocks: number }>;
+  ruleActions?: Record<string, GovernanceTally>;
   /** Local day the loaded history starts, when that's inside the 7 days. */
   savingsPartialSince: string | null;
   /** The loaded events start inside the By agent range too. */
@@ -834,7 +835,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
 
   const hoursInRange = Math.max(1, (Date.parse(data.period.end) - Date.parse(data.period.start)) / 3_600_000 || 1);
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
-  const ruleSub = [blocked > 0 ? `${blocked.toLocaleString()} blocked` : null, govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-act (Watch only)` : null].filter(Boolean).join(' · ');
+  const ruleSub = tallyWords({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).map((w) => w.text).join(' · ');
 
   return (
     <>
@@ -857,7 +858,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           sub={savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
-        <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={(blocked + (govCounts?.wouldBlocks ?? 0)).toLocaleString()} sub={ruleSub || 'no rule stepped in'} />
+        <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={ruleSub || 'no rule stepped in'} />
       </div>
 
       <div style={{ margin: '10px 0 24px' }}>
@@ -1272,7 +1273,11 @@ export default function PerformancePage() {
         let tokensSaved = 0;
         for (const v of agentDaySavings(events).byDay.values()) tokensSaved += v;
         setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
-        setGovCounts(governanceCounts(audit.entries, cutoff));
+        const fromAudit = governanceCounts(audit.entries, cutoff);
+        setGovCounts(fromAudit);
+        // Durable counts (engine rule_actions) replace the audit log's when there.
+        const durable = await fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey).catch(() => null);
+        if (!stale() && durable && !('unsupported' in durable)) setGovCounts(countsFromRuleActions(durable, fromAudit.byRule));
         setAuditEntries(audit.entries);
         setAuditCoverage({ retainedSince: audit.retainedSince, historyTruncated: audit.historyTruncated });
       } else {

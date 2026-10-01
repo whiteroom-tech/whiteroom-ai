@@ -14,7 +14,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { addDays, clampSpan, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, ignoresFlagged, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
 import { DayStrip } from '@/components/runs/DayStrip';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
@@ -136,7 +136,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (stale()) return;
       if ('unsupported' in res) { setUnsupported(true); return; }
       // An engine without flags ignores `flagged` and lists every run: show All.
-      if (flaggedOnly && res.runs.length && !res.runs.some((r) => r.flags)) { setFlaggedOnly(false); return; }
+      if (flaggedOnly && ignoresFlagged(res.runs)) { setFlaggedOnly(false); return; }
       setRuns(res.runs);
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       setTotal(res.total);

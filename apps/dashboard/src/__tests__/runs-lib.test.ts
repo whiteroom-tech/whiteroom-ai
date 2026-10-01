@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, flagText, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, ignoresFlagged, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
 
@@ -266,5 +266,13 @@ describe('what stood out: run flags', () => {
   it('falls back to rule blocks, failures and coverage without flags (or on older engines)', () => {
     expect(standOut({ ...base, flags: [] }).tone).toBe('clean');
     expect(standOut({ ...base, blockedCalls: 2 }).text).toBe('A rule blocked 2 calls');
+  });
+});
+
+describe('older engines and the Flagged filter', () => {
+  it('spots an engine that ignored `flagged` (no flags field at all)', () => {
+    expect(ignoresFlagged([{}, {}])).toBe(true);
+    expect(ignoresFlagged([{ flags: [] }])).toBe(false);
+    expect(ignoresFlagged([])).toBe(false);
   });
 });
