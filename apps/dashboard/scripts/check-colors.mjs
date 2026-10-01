@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canUpdate, compare, findColors } from './color-check-lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = join(here, '..');
@@ -28,9 +29,6 @@ const EXEMPT = new Set([
   'apps/dashboard/src/lib/magic-link-email.ts',
   'packages/ui/src/Logo.tsx',
 ]);
-
-// `&#8594;`-style HTML entities aren't colors, hence the lookbehind.
-const COLOR = /(?<![\w&])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|\b(?:rgba?|hsla?)\(/g;
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -49,9 +47,10 @@ function scan() {
       const rel = relative(repo, file);
       if (EXEMPT.has(rel)) continue;
       const lines = readFileSync(file, 'utf8').split('\n');
+      const css = file.endsWith('.css');
       const hits = [];
       lines.forEach((line, i) => {
-        for (const m of line.matchAll(COLOR)) hits.push(`${i + 1}: ${m[0]}`);
+        for (const c of findColors(line, { css })) hits.push(`${i + 1}: ${c}`);
       });
       if (hits.length) found[rel] = hits;
     }
@@ -59,12 +58,12 @@ function scan() {
   return found;
 }
 
-/** The saved baseline, or {} when there isn't one yet. Read once, no exists-check race. */
+/** The saved baseline, or null when there isn't one yet. Read once, no exists-check race. */
 function readBaseline() {
   try {
     return JSON.parse(readFileSync(BASELINE, 'utf8'));
   } catch (e) {
-    if (e.code === 'ENOENT') return {};
+    if (e.code === 'ENOENT') return null;
     throw e;
   }
 }
@@ -73,11 +72,10 @@ const found = scan();
 const counts = Object.fromEntries(Object.entries(found).map(([f, h]) => [f, h.length]).sort());
 
 if (process.argv.includes('--update')) {
-  const old = readBaseline();
-  const grew = Object.entries(counts).filter(([f, n]) => n > (old[f] ?? 0));
-  if (grew.length && Object.keys(old).length) {
+  const { ok, grew } = canUpdate(readBaseline(), counts);
+  if (!ok) {
     console.error('Refusing to raise the baseline. These files gained raw colors:');
-    for (const [f, n] of grew) console.error(`  ${f}: ${old[f] ?? 0} -> ${n}`);
+    for (const [f, n] of grew) console.error(`  ${f}: now ${n}`);
     process.exit(1);
   }
   writeFileSync(BASELINE, JSON.stringify(counts, null, 2) + '\n');
@@ -86,20 +84,15 @@ if (process.argv.includes('--update')) {
   process.exit(0);
 }
 
-const baseline = readBaseline();
-let failed = false;
-for (const [file, hits] of Object.entries(found)) {
-  const allowed = baseline[file] ?? 0;
-  if (hits.length > allowed) {
-    failed = true;
-    console.error(`${file}: ${hits.length} raw colors (baseline ${allowed}). Use a token from app/globals.css instead.`);
-    for (const h of hits) console.error(`  ${h}`);
-  }
+const baseline = readBaseline() ?? {};
+const { over, lowered } = compare(baseline, counts);
+for (const file of over) {
+  console.error(`${file}: ${counts[file]} raw colors (baseline ${baseline[file] ?? 0}). Use a token from app/globals.css instead.`);
+  for (const h of found[file]) console.error(`  ${h}`);
 }
-const lowered = Object.entries(baseline).filter(([f, n]) => (counts[f] ?? 0) < n);
 if (lowered.length) {
   console.log(`Fewer raw colors than the baseline in ${lowered.length} file(s). Run \`npm run lint:colors:update\` to lock that in.`);
 }
-if (failed) process.exit(1);
+if (over.length) process.exit(1);
 const total = Object.values(counts).reduce((a, b) => a + b, 0);
 console.log(`check-colors: ok (${total} baselined literals left to retokenize).`);
