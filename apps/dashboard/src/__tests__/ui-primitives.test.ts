@@ -79,6 +79,9 @@ describe('StatusPill', () => {
 describe('Banner', () => {
   it('is an alert only for errors', () => {
     expect(html(h(Banner, { variant: 'error', children: 'Couldn’t stop lead-agent.' }))).toContain('role="alert"');
+    // Success and notices are announced politely, so a save result is heard.
+    expect(html(h(Banner, { variant: 'info', children: 'Profile saved.' }))).toContain('role="status"');
+    expect(html(h(Banner, { variant: 'warn', children: 'Partial history.' }))).toContain('role="status"');
     expect(html(h(Banner, { variant: 'warn', children: 'x' }))).not.toContain('role="alert"');
   });
 });
