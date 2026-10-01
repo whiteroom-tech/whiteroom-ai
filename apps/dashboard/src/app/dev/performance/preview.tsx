@@ -26,7 +26,11 @@ export function PerformancePreview() {
       <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>} />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start' }}>
         <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
-        <ByAgentTable rows={agentTotals(ENTRIES, Date.now() - 24 * 3_600_000)} scope="last 24 h" />
+        <ByAgentTable
+          rows={agentTotals([...ENTRIES, { type: 'model_call', timestamp: day(0, 15), tokensUsed: 1_200 }], Date.now() - 24 * 3_600_000)}
+          scope="last 24 h"
+          ruleActions={{ 'lead-agent': { blocks: 2, wouldBlocks: 1 }, 'scout-agent': { blocks: 0, wouldBlocks: 3 } }}
+        />
         <SavingsChart days={dailySavings([], 7, Date.now())} />
       </div>
     </AppShell>
