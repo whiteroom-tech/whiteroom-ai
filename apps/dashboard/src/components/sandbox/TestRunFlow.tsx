@@ -2,8 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { SignOutButton } from '@/components/citadel/PageChrome';
+import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
@@ -416,7 +415,7 @@ export function TestRunFlow() {
   if (!session?.user?.id) return (
     <main className={s.content}>
       <div className={s.eyebrow}>WHITEROOM / TEST RUNS</div>
-      <h1 className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h1>
+      <h2 className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
       <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
         <p className={s.pageSub}>Sandbox uses your WhiteRoom account sign-in, so sign in to create and manage your test environments.</p>
         <div className={s.btnRow} style={{ marginTop: 16 }}>
@@ -496,24 +495,14 @@ export function TestRunFlow() {
   return <>
     {/* ── Topbar (workspace only) ── */}
     {phase === 'workspace' && run && (
-      <div className={s.topbar}>
-        <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Sandbox</span>
-        <span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'DEMO' : 'LIVE TEST'}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className={`${s.timer} ${timerColor(displaySeconds)}`} aria-label={`${expired ? 'Expired' : formatTimer(displaySeconds)} remaining`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(displaySeconds)}</span>
-          <ThemeToggle />
-          <SignOutButton />
-        </div>
-      </div>
+      <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'DEMO' : 'LIVE TEST'}</span>}>
+        <span className={`${s.timer} ${timerColor(displaySeconds)}`} aria-label={`${expired ? 'Expired' : formatTimer(displaySeconds)} remaining`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(displaySeconds)}</span>
+      </PageHeader>
     )}
 
     {/* ── Header (start/setup only) ── */}
     {phase !== 'workspace' && (
-      <div className={s.topbar}>
-        <span className={s.topbarTitle} style={{ fontFamily: FONT_DISPLAY }}>Sandbox</span>
-        <span className={s.badgeEnv}>TEST ENVIRONMENT</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}><ThemeToggle /><SignOutButton /></div>
-      </div>
+      <PageHeader title="Sandbox" badge={<span style={{ fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Test runs never count toward your fleet&rsquo;s numbers.</span>} />
     )}
 
     <main className={s.content}>
@@ -523,7 +512,7 @@ export function TestRunFlow() {
       {booting ? <p>Checking for an existing test…</p> : phase === 'start' ? <>
         {/* ═══ START ═══ */}
         <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
-        <h1 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h1>
+        <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
         <p className={s.pageSub}>Check that your agent works through WhiteRoom before you use it for real. It takes about 3 minutes and doesn’t touch your live fleet.</p>
 
         <div className={s.preview}>
@@ -550,7 +539,7 @@ export function TestRunFlow() {
       </> : phase === 'setup' ? <>
         {/* ═══ SETUP ═══ */}
         <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
-        <h1 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Start your test</h1>
+        <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Start your test</h2>
         <p className={s.pageSub}>Paste the API key your agent uses. We only use it to link this test to your agent’s calls; the key itself is never stored.</p>
         <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 480 }}>
           <div className={s.formGroup}>

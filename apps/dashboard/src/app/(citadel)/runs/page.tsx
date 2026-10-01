@@ -9,7 +9,7 @@ import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/gov
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
-import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
+import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { InfoTip } from '@/components/citadel/InfoTip';
 import { ActivityFeed } from '@/components/ActivityFeed';
@@ -331,7 +331,7 @@ export default function RunsPage() {
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
-      <PageHeader title="Run History" fleetId={fleetId} />
+      <PageHeader title="Runs" fleetId={fleetId} />
 
       {/* Analytics content */}
       <div className="flex flex-col flex-1 min-h-0">
@@ -612,7 +612,6 @@ export default function RunsPage() {
         onConfirm={handleClearAudit}
         onCancel={() => setClearOpen(false)}
       />
-      <PageFooter />
     </div>
   );
 }

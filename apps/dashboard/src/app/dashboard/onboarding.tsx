@@ -6,7 +6,8 @@ import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
-import { BrandLink, CopyButton, CodeBlock, StatCard, FONT_DISPLAY } from '@whiteroom/ui';
+import { CopyButton, CodeBlock, StatCard } from '@whiteroom/ui';
+import { PageHeader } from '@/components/citadel/PageChrome';
 
 interface Props {
   name: string;
@@ -389,26 +390,9 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
   );
 
   return (
-    <div className="min-h-screen font-sans" style={{ background: 'var(--bg)', color: 'var(--tx)' }}>
-      {/* Header */}
-      <header className="sticky top-0 z-50" style={{ background: 'color-mix(in srgb, var(--bg) 74%, transparent)', backdropFilter: 'blur(16px)', borderBottom: '1px solid var(--line)' }}>
-        <nav className="max-w-[1200px] mx-auto flex items-center justify-between h-[66px] px-7">
-          <BrandLink />
-          <div className="flex items-center gap-6">
-            <a href="https://whiteroom.tech/#how" className="text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>How it works</a>
-            <a href="https://whiteroom.tech/docs.html" className="text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>Docs</a>
-            <span className="text-sm" style={{ color: 'var(--tx2)' }}>{email}</span>
-            <a
-              href="/auth/sign-out"
-              className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all hover:border-[var(--brand)] hover:text-[var(--brand)]"
-              style={{ border: '1px solid var(--line)', color: 'var(--tx)', textDecoration: 'none', fontFamily: FONT_DISPLAY }}
-            >
-              Sign out
-            </a>
-          </div>
-        </nav>
-      </header>
-
+    <>
+      <PageHeader title="Fleet key" fleetId={email} fleetTitle="Signed in as" />
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
       <main className="max-w-[860px] mx-auto px-7 py-14 space-y-10">
         {/* Welcome banner */}
         {isNew ? (
@@ -492,6 +476,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
           ))}
         </footer>
       </main>
-    </div>
+      </div>
+    </>
   );
 }
