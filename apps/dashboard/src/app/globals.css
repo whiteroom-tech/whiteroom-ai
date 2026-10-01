@@ -267,7 +267,9 @@
 /* ── Home (components/home) ── README › Screens › 1a/1b */
 .wr-home-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .wr-home-agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.wr-agent-card { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 14px; background: var(--sunk); border: 1px solid var(--line); }
+.wr-agent-card { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 14px; background: var(--sunk); border: 1px solid var(--line);  color: var(--tx); text-decoration: none; transition: border-color .12s; }
+.wr-agent-card:hover { border-color: var(--line2); }
+.wr-agent-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .wr-chip-warn { display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--warn-bg); color: var(--warn); }
 .wr-activity-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 14px; align-items: center; height: 38px; padding: 0 18px; border-bottom: 1px solid var(--line); }
 .wr-activity-row:last-child { border-bottom: 0; }
@@ -286,3 +288,10 @@
   .wr-live-row > :nth-child(2), .wr-live-row > :nth-child(3) { grid-column: 2; }
   .wr-home .wr-panel__head { flex-wrap: wrap; }
 }
+
+/* ── Agent detail (components/agent) ── README › Screens › 3 */
+.wr-agent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.wr-crumb { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--brand); text-decoration: none; white-space: nowrap; }
+.wr-crumb:hover { text-decoration: underline; }
+.wr-crumb:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
+@media (max-width: 1100px) { .wr-agent-grid { grid-template-columns: 1fr; } }
