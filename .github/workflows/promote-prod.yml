@@ -56,15 +56,20 @@ jobs:
         run: |
           staging_sha=$(gcloud run services describe "$SERVICE" --project whiteroom-staging --region "$REGION" \
             --format='value(metadata.labels.commit-sha)')
+          staging_run=$(gcloud run services describe "$SERVICE" --project whiteroom-staging --region "$REGION" \
+            --format='value(metadata.labels.staging-run)')
           sha="${INPUT_SHA:-$staging_sha}"
           if [ -z "$sha" ] || [ "$sha" != "$staging_sha" ]; then
             echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first (Actions → Deploy staging → Run workflow, from main at that commit)."
             exit 1
           fi
           digest=$(gcloud artifacts docker images describe "$IMAGE:$sha" --format='value(image_summary.digest)')
-          # deploy-staging points <sha>-verified at this prod image only after
-          # staging's latest run for the commit passed its smoke test.
-          verified=$(gcloud artifacts docker images describe "$IMAGE:$sha-verified" --format='value(image_summary.digest)' 2>/dev/null || true)
+          # deploy-staging tags <sha>-verified-<run> on this prod image only after
+          # that run's smoke test passed, and labels staging with the run.
+          verified=""
+          if [ -n "$staging_run" ]; then
+            verified=$(gcloud artifacts docker images describe "$IMAGE:$sha-verified-$staging_run" --format='value(image_summary.digest)' 2>/dev/null || true)
+          fi
           if [ -z "$digest" ] || [ "$verified" != "$digest" ]; then
             echo "::error::Staging's latest run for $sha didn't pass its smoke test. Fix staging first."
             exit 1
