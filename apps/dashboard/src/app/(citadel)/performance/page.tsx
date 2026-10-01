@@ -839,7 +839,15 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
     <>
       {/* README › Performance: four cards, each following the page range. */}
       <div className="wr-perf-strip">
-        <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(s.totalCost)} sub={`${fmtCost(s.totalCost / hoursInRange)} / h`} />
+        <StatCard
+          variant="card"
+          label="Spend"
+          hint={HELP.spend}
+          value={fmtCost(s.totalCost)}
+          sub={data.priceInfo.stale
+            ? <span style={{ color: 'var(--warn)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · prices {data.priceInfo.ageDays} days old</span>
+            : `${fmtCost(s.totalCost / hoursInRange)} / h`}
+        />
         <StatCard
           variant="card"
           label="Savings"

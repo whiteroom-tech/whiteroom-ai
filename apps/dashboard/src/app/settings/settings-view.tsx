@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { AppShell } from '@/components/AppShell';
-import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { Banner, Button, Panel, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
   cancelEmailChange,
   deleteAccount,
@@ -23,7 +23,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   email: 'Email link',
 };
 
-type Banner = { tone: 'ok' | 'bad'; text: string } | null;
+type Notice = { tone: 'ok' | 'bad'; text: string } | null;
 
 function Section({
   title,
@@ -37,74 +37,32 @@ function Section({
   tone?: 'default' | 'danger';
 }) {
   return (
-    <section
-      style={{
-        background: 'var(--card)',
-        border: `1px solid ${tone === 'danger' ? 'var(--bad-line, var(--bad))' : 'var(--line)'}`,
-        borderRadius: 10,
-        padding: '20px 22px',
-        marginBottom: 16,
-      }}
-    >
-      <h2
-        style={{
-          fontFamily: FONT_DISPLAY,
-          fontSize: 16,
-          fontWeight: 700,
-          color: tone === 'danger' ? 'var(--bad)' : 'var(--tx)',
-          margin: 0,
-        }}
-      >
-        {title}
-      </h2>
-      {description && (
-        <p style={{ fontSize: 13.5, color: 'var(--tx2)', margin: '6px 0 0', maxWidth: '62ch' }}>{description}</p>
-      )}
-      <div style={{ marginTop: 18 }}>{children}</div>
-    </section>
+    <Panel title={tone === 'danger' ? <span style={{ color: 'var(--bad)' }}>{title}</span> : title} className={tone === 'danger' ? 'wr-panel--danger' : undefined}>
+      {description && <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>{description}</p>}
+      {children}
+    </Panel>
   );
 }
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--tx3)',
-  letterSpacing: 0.4,
-  textTransform: 'uppercase',
+  fontSize: 12.5,
+  fontWeight: 500,
+  color: 'var(--tx2)',
   marginBottom: 6,
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
+  height: 34,
   background: 'var(--sunk)',
-  border: '1px solid var(--line)',
+  border: '1px solid var(--line2)',
   borderRadius: 7,
-  padding: '9px 11px',
+  padding: '0 11px',
   color: 'var(--tx)',
-  fontSize: 14,
+  fontSize: 13.5,
   fontFamily: 'inherit',
 };
-
-function button(variant: 'primary' | 'ghost' | 'danger', disabled = false): React.CSSProperties {
-  const base: React.CSSProperties = {
-    fontSize: 13.5,
-    fontWeight: 600,
-    padding: '8px 15px',
-    borderRadius: 7,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.5 : 1,
-    fontFamily: 'inherit',
-    whiteSpace: 'nowrap',
-  };
-  if (variant === 'primary') {
-    return { ...base, background: 'var(--brand)', color: 'var(--bg)', border: '1px solid var(--brand)' };
-  }
-  if (variant === 'danger') {
-    return { ...base, background: 'transparent', color: 'var(--bad)', border: '1px solid var(--bad)' };
-  }
-  return { ...base, background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)' };
-}
 
 export function SettingsView({
   account,
@@ -119,7 +77,7 @@ export function SettingsView({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [banner, setBanner] = useState<Banner>(
+  const [banner, setBanner] = useState<Notice>(
     billingResult === 'success'
       ? { tone: 'ok', text: 'Subscription active. It can take a moment for new limits to reach your fleets.' }
       : billingResult === 'cancelled'
@@ -147,23 +105,10 @@ export function SettingsView({
     <AppShell>
       <PageHeader title="Settings" fleetId={account.email} fleetTitle="Signed in as" />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px' }}>
+        <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
 
           {banner && (
-            <div
-              role="status"
-              style={{
-                background: banner.tone === 'ok' ? 'var(--ok-bg)' : 'var(--bad-bg)',
-                color: banner.tone === 'ok' ? 'var(--ok)' : 'var(--bad)',
-                border: `1px solid ${banner.tone === 'ok' ? 'var(--ok)' : 'var(--bad)'}`,
-                borderRadius: 8,
-                padding: '10px 14px',
-                fontSize: 13.5,
-                marginBottom: 16,
-              }}
-            >
-              {banner.text}
-            </div>
+            <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined}>{banner.text}</Banner>
           )}
 
           <ProfileSection account={account} pending={pending} run={run} />
@@ -237,13 +182,13 @@ function ProfileSection({
           </select>
         </div>
         <div>
-          <button
-            style={button('primary', pending || !dirty)}
+          <Button
+            variant="primary"
             disabled={pending || !dirty}
             onClick={() => run(() => updateProfile({ name, timezone: timezone || null }), 'Profile saved.')}
           >
             Save profile
-          </button>
+          </Button>
         </div>
       </div>
     </Section>
@@ -260,7 +205,7 @@ function PlanSection({
 }: {
   entitlement: Entitlement;
   purchasablePlans: PlanId[];
-  setBanner: (b: Banner) => void;
+  setBanner: (b: Notice) => void;
   pending: boolean;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -338,9 +283,9 @@ function PlanSection({
             has a `pending_…` placeholder in that column (see setPlanOverride),
             and offering it a portal link would just produce an error. */}
         {subscription?.stripeCustomerId?.startsWith('cus_') && (
-          <button style={button('ghost', busy !== null)} disabled={busy !== null} onClick={() => go(openBillingPortal, 'portal')}>
+          <Button variant="secondary" disabled={busy !== null} onClick={() => go(openBillingPortal, 'portal')}>
             {busy === 'portal' ? 'Opening…' : 'Manage billing'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -354,6 +299,9 @@ function PlanSection({
         {proCost !== null && <Stat label="This month" value={`${formatPrice(proCost)}/mo`} />}
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
+      <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '-8px 0 20px' }}>
+        History kept covers call records and run history too. There is no second retention setting.
+      </p>
 
       {offers.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
@@ -375,8 +323,8 @@ function PlanSection({
                   </li>
                 ))}
               </ul>
-              <button
-                style={{ ...button('primary', busy !== null || pending), width: '100%' }}
+              <Button
+                variant="primary" style={{ width: '100%' }}
                 disabled={busy !== null || pending}
                 onClick={() => go(() => (subscribed ? openBillingPortal() : startCheckout(p)), p)}
               >
@@ -385,7 +333,7 @@ function PlanSection({
                   : p === 'starter' && entitlement.onTrial
                     ? `Subscribe, free until ${trialEnd}`
                     : `Switch to ${PLANS[p].name}`}
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -464,13 +412,13 @@ function EmailSection({
             <span style={{ fontFamily: FONT_MONO }}>{account.pendingEmailChange.newEmail}</span>. The link expires at{' '}
             {new Date(account.pendingEmailChange.expiresAt).toLocaleTimeString()}.
           </div>
-          <button
-            style={button('ghost', pending)}
+          <Button
+            variant="secondary"
             disabled={pending}
             onClick={() => run(cancelEmailChange, 'Email change cancelled.')}
           >
             Cancel
-          </button>
+          </Button>
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -485,8 +433,8 @@ function EmailSection({
               onChange={(e) => setNewEmail(e.target.value)}
             />
           </div>
-          <button
-            style={button('ghost', pending || newEmail.trim().length === 0)}
+          <Button
+            variant="secondary"
             disabled={pending || newEmail.trim().length === 0}
             onClick={() =>
               run(async () => {
@@ -497,7 +445,7 @@ function EmailSection({
             }
           >
             Send confirmation
-          </button>
+          </Button>
         </div>
       )}
     </Section>
@@ -558,13 +506,13 @@ function MethodsSection({
               </div>
             </div>
             {m.canUnlink ? (
-              <button
-                style={button('ghost', pending)}
+              <Button
+                variant="secondary"
                 disabled={pending}
                 onClick={() => run(() => unlinkProvider(m.id), `${PROVIDER_LABELS[m.provider] ?? m.provider} unlinked.`)}
               >
                 Unlink
-              </button>
+              </Button>
             ) : (
               <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>
                 {m.provider === 'email' ? 'Always available' : 'Only method'}
@@ -587,8 +535,8 @@ function SessionsSection({ pending }: { pending: boolean }) {
       title="Active sessions"
       description="Signs you out on every device, including this one. Use it if you've signed in somewhere you no longer control."
     >
-      <button
-        style={button('ghost', pending || busy)}
+      <Button
+        variant="secondary"
         disabled={pending || busy}
         onClick={() => {
           setBusy(true);
@@ -598,7 +546,7 @@ function SessionsSection({ pending }: { pending: boolean }) {
         }}
       >
         {busy ? 'Signing out…' : 'Sign out everywhere'}
-      </button>
+      </Button>
     </Section>
   );
 }
@@ -620,9 +568,9 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
       description="Removes your profile and linked fleets. Cancel any paid subscription first, and hand over any organization you solely own. Your fleets keep running on the engine — they belong to whoever holds the fleet token — but this dashboard will no longer know about them."
     >
       {!open ? (
-        <button style={button('danger', pending)} disabled={pending} onClick={() => setOpen(true)}>
+        <Button variant="danger" disabled={pending} onClick={() => setOpen(true)}>
           Delete my account
-        </button>
+        </Button>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
           <div>
@@ -639,8 +587,8 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
           </div>
           {error && <p style={{ fontSize: 13, color: 'var(--bad)', margin: 0 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              style={button('danger', !matches || busy)}
+            <Button
+              variant="danger"
               disabled={!matches || busy}
               onClick={async () => {
                 setBusy(true);
@@ -656,10 +604,10 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
               }}
             >
               {busy ? 'Deleting…' : 'Permanently delete'}
-            </button>
-            <button style={button('ghost', busy)} disabled={busy} onClick={() => { setOpen(false); setConfirm(''); setError(''); }}>
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => { setOpen(false); setConfirm(''); setError(''); }}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
