@@ -11,9 +11,10 @@ import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
+import { ActivityRows } from '@/components/home/ActivityRows';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
-  breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, shiftProgress, shiftSummary,
+  breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary,
 } from '@/lib/agent-detail';
 
 type Pending = 'pausing' | 'resuming' | null;
@@ -37,6 +38,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [agent, setAgent] = useState<AgentInfo | null>(preview?.agent ?? null);
   const [notFound, setNotFound] = useState(false);
   const [handover, setHandover] = useState<HandoverDoc | null>(preview?.handover ?? null);
+  // The shift the shown notes belong to, and whether fetching the current
+  // shift's notes failed.
+  const [notesShift, setNotesShift] = useState<number | null | undefined>(preview ? (preview.agent.watchNumber ?? null) : undefined);
+  const [notesFailed, setNotesFailed] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>(preview?.entries ?? []);
   const [failing, setFailing] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
@@ -62,7 +67,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       const res = await checkWatch(agentId, fleetId, authKey);
       if (stale()) return;
       if (isNotFound(res)) { setNotFound(true); return; }
-      if ((res as { error?: string }).error) throw new Error((res as { error?: string }).error);
+      const err = (res as { error?: string }).error;
+      if (err) throw new Error(err);
       setNotFound(false);
       setAgent({ ...res, agentId });
       // Handover notes change once per shift; fetch them when the shift does.
@@ -73,11 +79,14 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         handoverInFlight.current = shift;
         getHandover(agentId, fleetId, authKey)
           .then((h) => {
-            if (stale() || h.error) return;
+            if (stale()) return;
+            if (h.error) { setNotesFailed(true); return; }
             lastShift.current = shift;
             setHandover(h.handoverDoc ?? null);
+            setNotesShift(shift);
+            setNotesFailed(false);
           })
-          .catch(() => {})
+          .catch(() => { if (!stale()) setNotesFailed(true); })
           .finally(() => {
             if (handoverInFlight.current === shift) handoverInFlight.current = undefined;
           });
@@ -192,7 +201,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const breakGate = agent ? canStartBreak(agent) : { allowed: false };
   const resumeGate = agent ? canResume(agent, now) : { allowed: false };
   const progress = agent ? shiftProgress(agent, now) : null;
-  const notes = handoverLines(handover);
+  const notesState = agent ? notesStatus(notesShift, agent.watchNumber ?? null, notesFailed) : 'loading';
+  const notes = notesState === 'current' ? handoverLines(handover) : [];
   const model = lastModel(entries);
   const activity = latestActivity(entries, 8);
   const breakEnd = agent ? breakEndsAt(agent) : null;
@@ -223,7 +233,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           {failing && (
             <p role="status" style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>Couldn&rsquo;t refresh. Retrying&hellip; Showing the last data we had.</p>
           )}
-          {agent && agentState(agent) === 'resting' && (
+          {state === 'resting' && (
             <Banner variant="info" icon="clock">
               {agentId} is on a break{breakEnd ? ` until ${clock(breakEnd)}` : ''}. It starts again on its own when the break ends{resumeGate.allowed ? '; you can also resume it now.' : '.'}
             </Banner>
@@ -252,9 +262,13 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
                 <Panel
                   title={<>Handover notes<Hint text={HELP.handoverNotes} /></>}
-                  actions={handover?.session_stats ? <Tag tone="ho">{handover.session_stats.tasks_completed} tasks → notes</Tag> : undefined}
+                  actions={notesState === 'current' && handover?.session_stats ? <Tag tone="ho">{handover.session_stats.tasks_completed} tasks → notes</Tag> : undefined}
                 >
-                  {notes.length === 0 ? (
+                  {notesState !== 'current' ? (
+                    <p role={notesState === 'failed' ? 'status' : undefined} style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+                      {notesState === 'failed' ? 'Couldn’t load this shift’s notes. Retrying…' : 'Loading notes…'}
+                    </p>
+                  ) : notes.length === 0 ? (
                     <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No handover yet. Notes appear here after this agent’s first shift ends.</p>
                   ) : (
                     <div style={{ display: 'grid', gap: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
@@ -284,15 +298,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
                 <Panel title="Recent activity" bodyPadding={0} actions={<Link href={ROUTES.runs} className="wr-link">All runs &rarr;</Link>}>
-                  {activity.length === 0 ? (
-                    <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Nothing yet for this agent.</p>
-                  ) : activity.map((r) => (
-                    <div key={r.key} className="wr-activity-row">
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{r.time}</span>
-                      <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.text}</span>
-                      {r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}
-                    </div>
-                  ))}
+                  <ActivityRows rows={activity} empty="Nothing yet for this agent." />
                 </Panel>
               </div>
             </div>

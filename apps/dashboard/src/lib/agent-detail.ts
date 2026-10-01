@@ -92,6 +92,16 @@ export function handoverLines(doc: HandoverDoc | null | undefined): { label: str
   return out;
 }
 
+/**
+ * What the Handover notes panel can show. Notes belong to a shift: when the
+ * agent moves on, the previous shift's notes are out of date, so they're
+ * replaced by a loading or failed line until the new ones arrive.
+ */
+export function notesStatus(notesShift: number | null | undefined, currentShift: number | null, failed: boolean): 'current' | 'loading' | 'failed' {
+  if (notesShift === currentShift) return 'current';
+  return failed ? 'failed' : 'loading';
+}
+
 /** check_watch answers an unknown agent with { error: "Agent '…' not found." }. */
 export function isNotFound(res: unknown): boolean {
   const err = (res as { error?: unknown } | null)?.error;

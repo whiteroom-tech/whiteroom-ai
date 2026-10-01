@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { DataTable, Hint, Icon, Panel, SegmentedControl, StatCard, StatusPill, Tag, FONT_MONO } from '@whiteroom/ui';
+import { DataTable, Hint, Icon, Panel, SegmentedControl, StatCard, StatusPill, FONT_MONO } from '@whiteroom/ui';
 import { auditLog, checkWatch, fleetReport, isAuthError, performanceFleetHourly } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
@@ -14,6 +14,7 @@ import { ROUTES } from '@/lib/routes';
 import {
   afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
+import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
 
 export type AgentsView = 'cards' | 'table';
@@ -241,15 +242,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
         </Panel>
 
         <Panel title={<>Activity<Hint text={HELP.activity} /></>} bodyPadding={0} actions={<a href={ROUTES.runs} className="wr-link">View all runs &rarr;</a>}>
-          {activity.length === 0 ? (
-            <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Nothing yet. Events appear here as your agents work.</p>
-          ) : activity.map((r) => (
-            <div key={r.key} className="wr-activity-row">
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{r.time}</span>
-              <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.text}</span>
-              {r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}
-            </div>
-          ))}
+          <ActivityRows rows={activity} empty="Nothing yet. Events appear here as your agents work." />
         </Panel>
 
         {liveFeed}
