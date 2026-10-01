@@ -754,7 +754,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
         {run && <div className={s.footer}>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()} · ` : ''}Test {run.sandboxId}{expired ? ' · Expired' : ''}</div>}
       </>}
 
-      {!booting && phase === 'start' && <PastTests refreshKey={phase} preview={previewUserId ? (previewPastTests ?? []) : undefined} />}
+      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} />}
       </div>
       </div>
 

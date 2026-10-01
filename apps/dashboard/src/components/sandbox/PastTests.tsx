@@ -20,9 +20,10 @@ function ended(iso: string): string {
 /**
  * Sandbox › Past tests (README › Screens › 7b): the owner's finished tests,
  * newest first. The engine keeps them across restarts. Hidden until there is
- * at least one, and quiet if the list can't be loaded.
+ * at least one, and quiet if the list can't be loaded. It mounts on the
+ * start step, so returning there after a test reloads the list.
  */
-export function PastTests({ refreshKey, preview }: { refreshKey?: unknown; preview?: PastTest[] }) {
+export function PastTests({ preview }: { preview?: PastTest[] }) {
   const [tests, setTests] = useState<PastTest[] | null>(preview ?? null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function PastTests({ refreshKey, preview }: { refreshKey?: unknown; previ
     let live = true;
     getHistory().then((r) => { if (live && Array.isArray(r.sessions)) setTests([...r.sessions].reverse()); }, () => {});
     return () => { live = false; };
-  }, [refreshKey, preview]);
+  }, [preview]);
 
   if (!tests?.length) return null;
   return (
