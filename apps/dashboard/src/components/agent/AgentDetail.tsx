@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, Hint, Panel, StatusPill, Tag, TextInput, FONT_MONO, type AgentState } from '@whiteroom/ui';
-import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, resumeAgent, stopAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
-import { fmtTokens } from '@/lib/format';
+import { fmtTime, fmtTokens } from '@/lib/format';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { PageHeader } from '@/components/citadel/PageChrome';
@@ -19,7 +19,7 @@ import {
   breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary,
 } from '@/lib/agent-detail';
 
-type Pending = 'pausing' | 'resuming' | null;
+type Pending = 'pausing' | 'stopping' | 'resuming' | null;
 
 /**
  * Agent detail (redesign screen 3): one agent's shift, handover notes, task
@@ -50,6 +50,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   // No retry for a refusal: asking again gets the same answer.
   const [actionError, setActionError] = useState<{ text: string; retry?: () => void } | null>(null);
   const [confirmBreak, setConfirmBreak] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const [taskDraft, setTaskDraft] = useState<string | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskNote, setTaskNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -113,7 +114,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   useEffect(() => {
     if (!pending || !agent) return;
     const s = agentState(agent);
-    if ((pending === 'pausing' && s === 'resting') || (pending === 'resuming' && s === 'working')) setPending(null);
+    const held = s === 'paused' || s === 'stopped';
+    if ((pending === 'pausing' && (s === 'resting' || held)) || (pending === 'stopping' && s === 'stopped') || (pending === 'resuming' && s !== 'resting' && !held)) setPending(null);
   }, [pending, agent]);
 
   // While waiting for confirmation, check more often than the 10s poll.
@@ -142,6 +144,24 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       setActionError(failure === 'refused'
         ? { text: (e as Error).message }
         : { text: `Couldn’t start a break for ${agentId}. ${e instanceof Error ? e.message : ''} It’s still working; nothing changed.`, retry: startBreak });
+    }
+  }
+
+  async function stop() {
+    setConfirmStop(false);
+    if (preview) return;
+    setActionError(null);
+    setPending('stopping');
+    try {
+      await stopAgent(fleetId, agentId, authKey);
+      refresh();
+    } catch (e) {
+      setPending(null);
+      const failure = controlFailure(e);
+      if (failure === 'sign-out') { onAuthError?.('Session expired. Please sign in again.'); return; }
+      setActionError(failure === 'refused'
+        ? { text: (e as Error).message }
+        : { text: `Couldn’t stop ${agentId}. ${e instanceof Error ? e.message : ''} Nothing changed.`, retry: stop });
     }
   }
 
@@ -209,7 +229,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   }
 
   const state: AgentState | null = agent ? (pending ?? agentState(agent)) : null;
-  const breakGate = agent ? canStartBreak(agent) : { allowed: false };
+  // Gov v1 fleets hold the agent (Pause, Stop); others give it a break.
+  const v1 = !!agent?.govV1;
+  const breakGate = !agent ? { allowed: false } : v1 ? (agent.hold ? { allowed: false, why: `It’s already ${agent.hold.state}.` } : { allowed: true }) : canStartBreak(agent);
+  const stopGate = v1 && agent?.hold?.state !== 'stopped';
   const resumeGate = agent ? canResume(agent, now) : { allowed: false };
   const progress = agent ? shiftProgress(agent, now) : null;
   const notesState = agent ? notesStatus(notesShift, agent.watchNumber ?? null, notesFailed) : 'loading';
@@ -231,7 +254,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         )}
       >
         <Button variant="primary" disabled={!resumeGate.allowed || !!pending} title={resumeGate.why} onClick={resume} busy={pending === 'resuming'} busyLabel="Resuming…">Resume</Button>
-        <Button disabled={!breakGate.allowed || !!pending} title={breakGate.why} onClick={() => setConfirmBreak(true)} busy={pending === 'pausing'} busyLabel="Pausing…">Start a break</Button>
+        <Button disabled={!breakGate.allowed || !!pending} title={breakGate.why} onClick={() => setConfirmBreak(true)} busy={pending === 'pausing'} busyLabel="Pausing…">{v1 ? 'Pause' : 'Start a break'}</Button>
+        {v1 && <Button disabled={!stopGate || !!pending} onClick={() => setConfirmStop(true)} busy={pending === 'stopping'} busyLabel="Stopping…">Stop&hellip;</Button>}
       </PageHeader>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -239,6 +263,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           {actionError && (
             <Banner variant="error" actions={<>{actionError.retry && <Button size={28} onClick={() => { const r = actionError.retry; setActionError(null); r?.(); }}>Try again</Button>}<Button variant="ghost" size={28} onClick={() => setActionError(null)}>Dismiss</Button></>}>
               {actionError.text}
+            </Banner>
+          )}
+          {agent?.hold && (
+            <Banner variant="warn" icon={agent.hold.state === 'stopped' ? 'square' : 'pause'}>
+              {agentId} was {agent.hold.state} at {fmtTime(agent.hold.at)} from the dashboard. It refuses every call until someone resumes it, even after a restart.
             </Banner>
           )}
           {failing && (
@@ -325,11 +354,22 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       <ConfirmDialog
         open={confirmBreak}
         tone="neutral"
-        title={`Give ${agentId} a break now?`}
-        body={<>It stops making calls and takes its scheduled break now, instead of at the end of this shift. It starts again on its own when the break ends.</>}
-        confirmLabel="Start the break"
+        title={v1 ? `Pause ${agentId}?` : `Give ${agentId} a break now?`}
+        body={v1
+          ? <>Its current run ends. It can&rsquo;t make calls until someone resumes it, even after a restart.</>
+          : <>It stops making calls and takes its scheduled break now, instead of at the end of this shift. It starts again on its own when the break ends.</>}
+        confirmLabel={v1 ? 'Pause' : 'Start the break'}
         onConfirm={startBreak}
         onCancel={() => setConfirmBreak(false)}
+      />
+      <ConfirmDialog
+        open={confirmStop}
+        title={`Stop ${agentId}?`}
+        body={<>The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.</>}
+        confirmLabel="Stop agent"
+        confirmPhrase={agentId}
+        onConfirm={stop}
+        onCancel={() => setConfirmStop(false)}
       />
     </>
   );

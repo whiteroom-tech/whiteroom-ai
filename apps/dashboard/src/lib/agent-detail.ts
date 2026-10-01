@@ -34,6 +34,7 @@ export function canStartBreak(a: AgentInfo): ActionGate {
 
 /** Resume ends a break, once the mandatory part is over. */
 export function canResume(a: AgentInfo, now: number = Date.now()): ActionGate {
+  if (a.hold) return { allowed: true };
   if (agentState(a) !== 'resting') return { allowed: false, why: 'It isn’t on a break.' };
   const end = breakEndsAt(a);
   if (end !== null && now < end) {

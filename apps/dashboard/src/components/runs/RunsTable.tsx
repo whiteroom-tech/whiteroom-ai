@@ -135,6 +135,8 @@ export function RunsTable({ preview, retentionDays }: {
       const res = await listRuns(fleetId, { ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, cursor: cursors[cursors.length - 1], pageSize: PAGE, flagged: flaggedOnly }, authKey);
       if (stale()) return;
       if ('unsupported' in res) { setUnsupported(true); return; }
+      // An engine without flags ignores `flagged` and lists every run: show All.
+      if (flaggedOnly && res.runs.length && !res.runs.some((r) => r.flags)) { setFlaggedOnly(false); return; }
       setRuns(res.runs);
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       setTotal(res.total);
@@ -195,7 +197,7 @@ export function RunsTable({ preview, retentionDays }: {
     try {
       const { fromDay, toDay } = runsWindow(view);
       const got = await collectRuns(
-        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50 }, authKey),
+        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50, flagged: flaggedOnly }, authKey),
         EXPORT_MAX_PAGES,
       );
       if ('unsupported' in got) { setExportNote({ ok: false, text: 'This engine can’t list runs yet, so there’s nothing to export.' }); return; }

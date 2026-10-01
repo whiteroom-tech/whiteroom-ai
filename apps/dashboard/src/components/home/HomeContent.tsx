@@ -16,6 +16,7 @@ import {
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
+import { NeedsYou } from '@/components/home/NeedsYou';
 import { RefreshFailed } from '@/components/citadel/States';
 import { EmptyHome } from './EmptyHome';
 
@@ -73,6 +74,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     } else {
       details = overlayStatuses(data, fanOutDetails.current);
     }
+    // The report's holds are current; older engines don't send them.
+    if (data.holds) details = details.map((d) => ({ ...d, hold: data.holds![d.agentId] ?? null }));
     emptyRef.current = data.agentCount === 0;
     setReport(data);
     setAgents(details);
@@ -174,6 +177,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <div className="wr-home" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
         {failing && <RefreshFailed />}
+        <NeedsYou agents={agents} holdsKnown={report.holds !== undefined} />
 
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />

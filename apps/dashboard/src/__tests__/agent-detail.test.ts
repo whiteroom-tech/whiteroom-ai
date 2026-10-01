@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentIdFromSegment, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary } from '@/lib/agent-detail';
 import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
+import { agentState } from '@/lib/home';
 
 const now = Date.parse('2026-10-01T14:00:00Z');
 const working: AgentInfo = { agentId: 'lead-agent', status: 'working', minutesRemaining: 3.2, percentComplete: '41%', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, tokensUsed: 12_400 };
@@ -87,5 +88,17 @@ describe('handover notes per shift', () => {
     expect(notesStatus(8, 9, false)).toBe('loading');
     expect(notesStatus(8, 9, true)).toBe('failed');
     expect(notesStatus(undefined, 1, false)).toBe('loading');
+  });
+});
+
+describe('durable holds (P2.2)', () => {
+  const held = (state: 'paused' | 'stopped') => ({ agentId: 'a', status: 'working', hold: { state, by: 'dashboard', reason: null, at: '2026-10-01T18:00:00Z' } });
+  it('shows a held agent as paused or stopped, whatever its watch status', () => {
+    expect(agentState(held('paused'))).toBe('paused');
+    expect(agentState(held('stopped'))).toBe('stopped');
+    expect(agentState({ ...held('paused'), hold: null })).toBe('working');
+  });
+  it('lets a held agent resume right away', () => {
+    expect(canResume(held('stopped'))).toEqual({ allowed: true });
   });
 });
