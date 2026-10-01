@@ -79,13 +79,18 @@ export function proxy(request: NextRequest) {
     return response;
   }
 
-  // Renamed routes: permanent, and the query string comes along
-  // (/governance?rec=… still opens that draft on /controls).
+  // Renamed routes, query string kept (/governance?rec=… still opens that
+  // draft on /controls). Temporary (307) for the first release: browsers
+  // cache a 301 forever, so a rollback would leave cached /agents -> /home
+  // hops pointing at a page the old revision doesn't have. Switch to 301
+  // once the new routes have settled.
   const moved = LEGACY_REDIRECTS[pathname];
   if (moved) {
     const url = new URL(moved, request.url);
     url.search = request.nextUrl.search;
-    return NextResponse.redirect(url, 301);
+    const response = NextResponse.redirect(url, 307);
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
   }
 
   if (!SESSION_PUBLIC_UNDER_SETTINGS.has(pathname) &&

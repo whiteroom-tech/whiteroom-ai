@@ -23,7 +23,8 @@ export function isNavActive(pathname: string, href: string, also: readonly strin
 }
 
 /**
- * Old paths, answered with a permanent redirect that keeps the query string
+ * Old paths, answered with a redirect that keeps the query string (307 for
+ * now; see proxy.ts)
  * (README › Information architecture). Exact paths only: /agents/[agentId]
  * becomes Agent detail, so only the bare /agents moves.
  *

@@ -97,10 +97,11 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
 describe('the route renames (P0.5)', () => {
   const location = (res: Response | undefined) => (res ? new URL(res.headers.get('location') ?? '', 'https://x').pathname + new URL(res.headers.get('location') ?? '', 'https://x').search : null);
 
-  it('moves the old paths permanently', () => {
+  it('redirects the old paths, temporarily and uncached until the release settles', () => {
     for (const [from, to] of [['/agents', '/home'], ['/governance', '/controls'], ['/dashboard', '/fleet-key']]) {
       const res = proxy(req(APP, from, { withSession: true }));
-      expect(res?.status).toBe(301);
+      expect(res?.status).toBe(307);
+      expect(res?.headers.get('cache-control')).toBe('no-store');
       expect(verdict(res)).toBe(`redirect:${to}`);
     }
   });
