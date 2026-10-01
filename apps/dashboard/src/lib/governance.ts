@@ -59,6 +59,7 @@ export interface GovernanceTally {
 }
 
 export interface GovernanceCounts extends GovernanceTally {
+  /** Keyed by agent id; decisions recorded without an agent are under '' (never a real id). */
   byAgent: Record<string, GovernanceTally>;
   byRule: Record<GovernanceRuleType, GovernanceTally>;
 }
@@ -81,7 +82,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     const n = occurrences(e);
     const key: keyof GovernanceTally = e.type === GOVERNANCE_BLOCK ? 'blocks' : 'wouldBlocks';
     out[key] += n;
-    const agent = e.agentId ?? 'unknown';
+    const agent = e.agentId ?? '';
     (out.byAgent[agent] ??= emptyTally())[key] += n;
     const rule = out.byRule[e.ruleType as GovernanceRuleType];
     if (rule) rule[key] += n;

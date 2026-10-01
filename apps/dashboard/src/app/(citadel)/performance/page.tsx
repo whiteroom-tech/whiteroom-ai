@@ -544,8 +544,8 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
                 <tbody>{agents.length === 0 ? (
                   <tr><td style={TD} colSpan={3}>—</td></tr>
                 ) : agents.map(([agent, t]) => (
-                  <tr key={agent} style={{ borderTop: '1px solid var(--line)' }}>
-                    <td style={{ ...TD, fontFamily: FONT_MONO }}>{agent}</td>
+                  <tr key={agent || '(none)'} style={{ borderTop: '1px solid var(--line)' }}>
+                    <td style={{ ...TD, fontFamily: FONT_MONO }}>{agent || <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--tx2)' }}>Unattributed</span>}</td>
                     <td style={{ ...TDR, color: t.blocks ? 'var(--bad)' : 'var(--tx3)' }}>{t.blocks.toLocaleString()}</td>
                     <td style={{ ...TDR, color: t.wouldBlocks ? 'var(--warn)' : 'var(--tx3)' }}>{t.wouldBlocks.toLocaleString()}</td>
                   </tr>
@@ -702,7 +702,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   );
 }
 
-function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, ruleActions, savingsPartialSince, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, ruleActions, savingsPartialSince, byAgentPartial, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
@@ -710,6 +710,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
   ruleActions?: Record<string, { blocks: number; wouldBlocks: number }>;
   /** Local day the loaded history starts, when that's inside the 7 days. */
   savingsPartialSince: string | null;
+  /** The loaded events start inside the By agent range too. */
+  byAgentPartial: boolean;
   /** "last 24 h", for panels that follow the range. */
   rangeLabel: string;
   onSelectAgent: (id: string) => void;
@@ -879,7 +881,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
 
       {savingsPartialSince && (savingsDays || byAgent) && (
         <div style={{ marginBottom: 12 }}>
-          <Banner variant="warn">Partial history: events are loaded from {savingsPartialSince}, so Savings and By agent start there. Earlier days show as empty.</Banner>
+          <Banner variant="warn">Partial history: events are loaded from {savingsPartialSince}, so {byAgentPartial ? 'Savings and By agent start' : 'Savings starts'} there. Earlier days show as empty.</Banner>
         </div>
       )}
       <div className="wr-perf-row wr-perf-row--cost">
@@ -1342,15 +1344,18 @@ export default function PerformancePage() {
     if (!govCounts) return undefined;
     const out: Record<string, { blocks: number; wouldBlocks: number }> = {};
     for (const [agent, t] of Object.entries(govCounts.byAgent)) {
-      const key = agent === 'unknown' ? '' : agent.toLowerCase();
+      const key = agent.toLowerCase();
       const prev = out[key] ?? { blocks: 0, wouldBlocks: 0 };
       out[key] = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
     }
     return out;
   }, [govCounts]);
   // The audit read is the newest 2,000 events; on a busy fleet they can start
-  // inside the 7 days, and the older bars would read as quiet days.
+  // inside a panel's window, and its older part would read as quiet. Savings
+  // covers 7 calendar days; By agent covers the rolling range.
   const savingsPartialSince = partialCoverageSince('7d', auditCoverage, Date.now());
+  const byAgentPartial = !!(auditCoverage.historyTruncated && auditCoverage.retainedSince
+    && Date.parse(auditCoverage.retainedSince) > Date.now() - hoursBack * 3_600_000);
   const rangeLabel = hoursBack === 24 ? 'last 24 h' : hoursBack === 72 ? 'last 3 days' : 'last 7 days';
 
   // A refetch is in flight while the previous data is still on screen
@@ -1395,7 +1400,7 @@ export default function PerformancePage() {
         {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
         {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} savingsPartialSince={savingsPartialSince} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} savingsPartialSince={savingsPartialSince} byAgentPartial={byAgentPartial} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>
