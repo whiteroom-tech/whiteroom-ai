@@ -157,6 +157,15 @@ describe('controlAccessError', () => {
     expect(updates.map(([, params]) => params)).toEqual([['u1', 'tok', 'f1'], ['u1', 'tok', 'f1']]);
   });
 
+  it('counts holders by fleet id or, for rows without one, by this fleet’s token', async () => {
+    signedIn();
+    fakeDb([{ token: 'tok', fleetId: 'f1' }]);
+    await controlAccessError('f1', 'tok');
+    const [sql, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
+    expect(params).toEqual(['f1', 'tok']);
+    expect(String(sql).match(/fleet_id = \$1 OR \(fleet_id IS NULL AND fleet_token = \$2\)/g)).toHaveLength(2);
+  });
+
   it('refuses when nobody can be shown to own the fleet, and fails closed if the owner lookup fails', async () => {
     signedIn();
     fakeDb([{ token: 'tok', fleetId: 'f1' }], []);

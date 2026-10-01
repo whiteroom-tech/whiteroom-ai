@@ -139,13 +139,16 @@ export async function controlAccessError(fleetId: string | null, token: string):
     await recordFleetId(userId, token, fleetId);
   }
   try {
+    // Holders are rows saved for this fleet, plus rows with no fleet id that
+    // hold this fleet's token: a fleet token belongs to one fleet, so an old
+    // row's owner still counts before anyone who linked the fleet later.
     const { rows } = await db().query(
       `SELECT id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
-         FROM users WHERE fleet_id = $1
+         FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND fleet_token = $2)
        UNION ALL
        SELECT user_id, false, extract(epoch FROM created_at)::float8
-         FROM user_fleets WHERE fleet_id = $1`,
-      [fleetId],
+         FROM user_fleets WHERE fleet_id = $1 OR (fleet_id IS NULL AND fleet_token = $2)`,
+      [fleetId, token],
     );
     return fleetOwner(rows) === userId ? null : NOT_OWNER;
   } catch {
@@ -154,9 +157,9 @@ export async function controlAccessError(fleetId: string | null, token: string):
 }
 
 /**
- * Saves the engine-verified fleet id on the account's rows that have none, so
- * the ownership query sees them. Best effort: if it fails, those rows stay
- * invisible to fleetOwner, which can only refuse, never wrongly allow.
+ * Saves the engine-verified fleet id on the account's rows that have none.
+ * Best effort: the ownership query already counts fleet-id-less rows by
+ * their token, so a missed write changes nothing.
  */
 async function recordFleetId(userId: string, token: string, fleetId: string): Promise<void> {
   try {
