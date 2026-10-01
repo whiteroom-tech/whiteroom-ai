@@ -2,7 +2,7 @@ import type Stripe from 'stripe';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
 import { syncEntitlementsToEngine } from '@/lib/entitlements';
-import { planForPriceId } from '@/lib/plans';
+import { planItem } from '@/lib/plans';
 
 // Signature verification runs over the exact bytes Stripe signed, and the
 // Node crypto it uses isn't available on the edge runtime.
@@ -141,11 +141,11 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   }
 
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
-  const item = sub.items.data[0];
-  const plan = planForPriceId(item?.price?.id ?? null);
+  const found = planItem(sub.items.data);
+  const plan = found?.plan ?? 'none';
   // Only Pro is billed per agent; a Starter quantity is always 1 and means
   // nothing to the billing sync.
-  const billedAgents = plan === 'pro' ? (item?.quantity ?? null) : null;
+  const billedAgents = found?.plan === 'pro' ? (found.item.quantity ?? null) : null;
 
   await db().query(
     `INSERT INTO subscriptions (

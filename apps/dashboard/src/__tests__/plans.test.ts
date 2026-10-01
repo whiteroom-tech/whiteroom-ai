@@ -10,6 +10,7 @@ import {
   limitsFor,
   monthlyCostCents,
   planForPriceId,
+  planItem,
   PLANS,
   purchasablePlans,
 } from '../lib/plans';
@@ -176,5 +177,24 @@ describe('hasLiveSubscription', () => {
     expect(hasLiveSubscription({ stripeSubscriptionId: 'sub_1', status: 'canceled' })).toBe(false);
     expect(hasLiveSubscription({ stripeSubscriptionId: null, status: 'active' })).toBe(false);
     expect(hasLiveSubscription(null)).toBe(false);
+  });
+});
+
+describe('planItem', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('finds the plan item by price wherever it sits', () => {
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+    const items = [{ price: { id: 'price_addon' } }, { price: { id: 'price_pro' }, quantity: 9 }];
+    expect(planItem(items)).toEqual({ plan: 'pro', item: items[1] });
+  });
+
+  it('is null when no item is one of our plans', () => {
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+    expect(planItem([{ price: { id: 'price_retired' } }])).toBeNull();
+    expect(planItem([])).toBeNull();
   });
 });

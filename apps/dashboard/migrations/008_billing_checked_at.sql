@@ -1,0 +1,11 @@
+-- When the billing sync last looked at a Pro subscription.
+--
+-- The sync works through Pro accounts on a time budget and orders them by
+-- this, oldest first, so a run cut short starts next time with the accounts
+-- it never reached. It's a separate column because the sync writes it on
+-- every check: ordering by updated_at, which only changes when something
+-- actually changed, would put the same accounts first on every run and never
+-- reach the rest.
+--
+-- Idempotent: safe to re-run, same as 001-007.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_checked_at timestamptz;
