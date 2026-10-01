@@ -352,3 +352,15 @@ a.wr-btn { text-decoration: none; }
 
 /* Shared states (components/citadel/States) */
 .wr-refresh-failed { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12.5px; color: var(--tx2); }
+
+/* Touch targets (README › Screens › 12): on touch screens and narrow
+   windows every control gets at least a 44×44 tap area. The area is an
+   invisible box centred on the control, so nothing moves or grows. */
+@media (pointer: coarse), (max-width: 720px) {
+  .wr-btn, .wr-seg__item, .wr-hint, .wr-link, .wr-crumb, .wr-stat-link, .wr-copy-chip > button { position: relative; }
+  .wr-btn::after, .wr-seg__item::after, .wr-hint::after, .wr-link::after, .wr-crumb::after, .wr-stat-link::after, .wr-copy-chip > button::after {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);
+  }
+  .wr-select select, .wr-shell select { min-height: 44px; }
+}

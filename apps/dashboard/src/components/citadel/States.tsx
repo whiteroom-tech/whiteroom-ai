@@ -4,7 +4,8 @@
 import { Icon } from '@whiteroom/ui';
 
 function clockTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  // Some ICU versions put a narrow no-break space before am/pm.
+  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
 }
 
 /**

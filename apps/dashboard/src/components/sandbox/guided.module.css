@@ -189,6 +189,7 @@
 }
 @media(max-width:720px) {
   .content { padding:20px 16px; }
+  .btn { min-height:44px !important; } /* overrides the compact inline 28px on Retry / Check now */
   .card { padding:16px 18px; }
   .previewScenes { gap:8px; }
   .previewConnector { width:16px; }
