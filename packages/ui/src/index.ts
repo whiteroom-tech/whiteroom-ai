@@ -9,3 +9,4 @@ export * from './CopyButton';
 export * from './CodeBlock';
 export * from './StatCard';
 export * from './TextInput';
+export * from './primitives';
