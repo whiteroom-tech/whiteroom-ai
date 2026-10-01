@@ -392,7 +392,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Failed calls = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as &quot;Other&quot;.</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
-            { label: 'Total Calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
+            { label: 'Model calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
             { label: 'Complete', value: totalComplete.toLocaleString(), color: 'var(--brand)', desc: 'Successful responses' },
             { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)', desc: 'API errors + interrupted' },
             { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)', desc: 'Cancelled, blocked, unknown' },

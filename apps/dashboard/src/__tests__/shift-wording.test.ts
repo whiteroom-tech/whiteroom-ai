@@ -11,6 +11,7 @@ const FILES = [
   '../app/(citadel)/performance/page.tsx',
   '../components/agent/AgentDetail.tsx',
   '../lib/home.ts',
+  '../components/sandbox/TestRunFlow.tsx',
 ];
 
 function userFacingWatch(source: string): string[] {

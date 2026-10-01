@@ -17,7 +17,7 @@ type Language = 'Python' | 'JavaScript';
 
 const PREVIEW_DETAILS = [
   "Your agent’s calls go through WhiteRoom. Nothing about the calls changes.",
-  "When its work period (a “watch”) ends, WhiteRoom packs up the agent’s context into a short handover.",
+  "When its shift ends, WhiteRoom packs up the agent’s context into a short handover.",
   "The agent picks up where it left off, using the handover instead of the full history.",
   "Each step is recorded. Three checks tell you the agent works through WhiteRoom.",
 ];
@@ -28,7 +28,7 @@ const HANDOVER_TYPES = new Set(['handover', 'self_handover', 'paired_handover'])
 /** Plain-language names for the events in the Activity tab. */
 const EVENT_LABELS: Record<string, string> = {
   register: 'Agent connected',
-  watch_start: 'Work period started',
+  watch_start: 'Shift started',
   task_complete: 'Call completed',
   handover_begin: 'Work period ended, preparing handover',
   self_handover: 'Handed over its context',
@@ -48,7 +48,7 @@ const EVENT_LABELS: Record<string, string> = {
  */
 const DEMO_STORY = [
   { title: 'Your agent connects', text: 'A demo agent sends its calls through WhiteRoom and finishes a task. Nothing about its calls changes.' },
-  { title: 'It hands over when the watch ends', text: 'Its work period (a “watch”) ends. WhiteRoom packs its context into a short handover.' },
+  { title: 'It hands over when the shift ends', text: 'Its shift ends. WhiteRoom packs its context into a short handover.' },
   { title: 'It picks up where it left off', text: 'The work carries on from the handover instead of the full history, and the next task completes.' },
 ];
 
@@ -117,7 +117,7 @@ function formatTimer(seconds: number | null | undefined): string {
 
 function checkLabel(controlId: string, name: string): string {
   if (controlId === 'core.connect') return 'Your agent connects';
-  if (controlId === 'core.handoff') return 'It hands over when the watch ends';
+  if (controlId === 'core.handoff') return 'It hands over when the shift ends';
   if (controlId === 'core.resume') return 'It picks up where it left off';
   return name;
 }
@@ -141,7 +141,7 @@ function checkGuidance(controlId: string, status: string | undefined, run: RunSt
     const worked = agent.currentWatch?.minutesWorked ?? 0;
     const left = Math.max(0, (total - worked) * 60);
     return {
-      detail: left > 0 ? `About ${formatCountdown(left)} left in this watch.` : 'The watch is over. The handover happens on your agent’s next call.',
+      detail: left > 0 ? `About ${formatCountdown(left)} left in this shift.` : 'The shift is over. The handover happens on your agent’s next call.',
       action: 'Keep your agent making calls. The handover starts on its own.',
       progress: { current: Math.min(worked, total), total, label: `${formatCountdown(Math.min(worked, total) * 60)} of ${total}:00` },
     };
@@ -159,7 +159,7 @@ const TIMER_ICON = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 
 /** The steps rail (README › Sandbox), mapped onto this flow's real stages. */
 export const SANDBOX_STEPS = [
-  { title: 'Start a test', sub: 'Paste the key your agent uses, or watch the demo' },
+  { title: 'Start a test', sub: 'Paste the key your agent uses, or see the demo' },
   { title: 'Point your agent', sub: 'Swap in the test address' },
   { title: 'Run one task', sub: 'Calls show up as they arrive' },
   { title: 'Results', sub: 'Three checks, and a report to keep' },
