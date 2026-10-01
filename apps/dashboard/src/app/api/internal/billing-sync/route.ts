@@ -1,6 +1,7 @@
+import type { PoolClient } from 'pg';
 import { db } from '@/lib/db';
 import { countAgents } from '@/lib/entitlements';
-import { billableAgents } from '@/lib/plans';
+import { billableAgents, planItem } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
 import { syncSecretMatches } from '@/lib/sync-secret';
 
@@ -16,6 +17,13 @@ const TRIAL_BATCH = 500;
  * engine shortens a run instead of getting it killed partway.
  */
 const PRO_BUDGET_MS = 60_000;
+
+/**
+ * How long one account's agent count may take. Shorter than fetchFleetUsage's
+ * default so a slow engine costs a few seconds per account, not ten, and the
+ * budget above still covers a useful number of them.
+ */
+const AGENT_COUNT_TIMEOUT_MS = 5_000;
 
 /**
  * Billing housekeeping that nothing else triggers. Called by Cloud Scheduler.
@@ -51,8 +59,11 @@ export async function POST(req: Request): Promise<Response> {
 
 /** Number of trials queued, or null if the database refused. */
 async function queueExpiredTrials(): Promise<number | null> {
-  const client = await db().connect();
+  // connect() is inside the try: a pool that can't reach the database is the
+  // same "database refused" as a failed query, and must not skip the Pro pass.
+  let client: PoolClient | null = null;
   try {
+    client = await db().connect();
     await client.query('BEGIN');
     // Flag and enqueue in one transaction, so a trial is never flagged
     // without its sync being queued.
@@ -77,17 +88,16 @@ async function queueExpiredTrials(): Promise<number | null> {
     await client.query('COMMIT');
     return rows.length;
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client?.query('ROLLBACK').catch(() => {});
     console.error('[billing-sync] could not queue expired trials:', err instanceof Error ? err.message : err);
     return null;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
 async function syncProQuantities(): Promise<{ checked: number; updated: number; skipped: number; deferred: number }> {
-  const priceId = process.env.STRIPE_PRICE_PRO;
-  if (!priceId) return { checked: 0, updated: 0, skipped: 0, deferred: 0 };
+  if (!process.env.STRIPE_PRICE_PRO) return { checked: 0, updated: 0, skipped: 0, deferred: 0 };
 
   const { rows } = await db().query(
     `SELECT user_id, stripe_subscription_id, billed_agents
@@ -95,9 +105,10 @@ async function syncProQuantities(): Promise<{ checked: number; updated: number; 
      WHERE plan = 'pro'
        AND status IN ('active', 'trialing', 'past_due')
        AND stripe_subscription_id IS NOT NULL
-     -- Least recently touched first, so when the time budget cuts a run short
-     -- the accounts it never reached are first in line next time.
-     ORDER BY updated_at`,
+     -- Least recently checked first (never-checked before everything), so
+     -- when the time budget cuts a run short, the accounts it didn't reach
+     -- are first in line next time. See migration 008.
+     ORDER BY billing_checked_at NULLS FIRST, user_id`,
   );
 
   const deadline = Date.now() + PRO_BUDGET_MS;
@@ -108,7 +119,7 @@ async function syncProQuantities(): Promise<{ checked: number; updated: number; 
     if (Date.now() > deadline) break;
     checked++;
     try {
-      const agents = await countAgents(row.user_id);
+      const agents = await countAgents(row.user_id, { timeoutMs: AGENT_COUNT_TIMEOUT_MS });
       // Engine unreachable: leave the bill alone rather than guess.
       if (agents === null) {
         skipped++;
@@ -120,11 +131,12 @@ async function syncProQuantities(): Promise<{ checked: number; updated: number; 
       // billed_agents is only a cache of Stripe's quantity. Check the real
       // item before writing, so a stale cache can't cause a pointless update.
       const sub = await stripe().subscriptions.retrieve(row.stripe_subscription_id);
-      const item = sub.items.data.find((i) => i.price.id === priceId);
-      if (!item) {
+      const found = planItem(sub.items.data);
+      if (found?.plan !== 'pro') {
         skipped++;
         continue;
       }
+      const { item } = found;
       if (item.quantity !== want) {
         await stripe().subscriptionItems.update(item.id, {
           quantity: want,
@@ -141,6 +153,13 @@ async function syncProQuantities(): Promise<{ checked: number; updated: number; 
     } catch (err) {
       skipped++;
       console.error(`[billing-sync] quantity sync failed for user ${row.user_id}:`, err instanceof Error ? err.message : err);
+    } finally {
+      // Every outcome counts as checked, including a skip or an error, or the
+      // account that keeps failing would stay first and eat every run's
+      // budget. It is retried when its turn comes round again.
+      await db()
+        .query(`UPDATE subscriptions SET billing_checked_at = now() WHERE user_id = $1`, [row.user_id])
+        .catch(() => {});
     }
   }
 

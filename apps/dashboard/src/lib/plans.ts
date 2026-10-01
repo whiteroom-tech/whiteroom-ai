@@ -228,6 +228,23 @@ export function hasLiveSubscription(
 }
 
 /**
+ * The line item on a Stripe subscription that decides its plan: the first
+ * item whose price is one of ours. Looked up by price rather than taken from
+ * position 0, because an add-on or a portal plan switch can put another item
+ * first. The webhook and the billing sync both use this so they can't
+ * disagree about which item is the plan.
+ */
+export function planItem<T extends { price: { id: string } }>(
+  items: T[],
+): { plan: PaidPlanId; item: T } | null {
+  for (const item of items) {
+    const plan = planForPriceId(item.price.id);
+    if (plan !== 'none') return { plan, item };
+  }
+  return null;
+}
+
+/**
  * Reverse of stripePriceId, for reading a subscription back off a webhook.
  * An unrecognised price grants nothing: `none` is not a plan, so
  * effectivePlan falls through to the trial or `expired`.

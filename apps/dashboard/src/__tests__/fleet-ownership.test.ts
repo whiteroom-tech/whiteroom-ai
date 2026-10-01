@@ -89,4 +89,45 @@ describe('server-side fleet ownership', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.query).not.toHaveBeenCalled();
   });
+
+  describe('fleet limit', () => {
+    /** Answers addUserFleet's queries by SQL: the locked user row, the subscription, the fleet count. */
+    function account({ trialEndsAt, fleets, sub = null }: { trialEndsAt: string; fleets: number; sub?: Record<string, unknown> | null }) {
+      fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+      mocks.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('trial_ends_at') && sql.includes('FOR UPDATE')) return { rows: [{ trial_ends_at: trialEndsAt }] };
+        if (sql.includes('FROM subscriptions')) return { rows: sub ? [sub] : [] };
+        if (sql.includes('distinct_fleets')) return { rows: [{ n: fleets }] };
+        return { rows: [] };
+      });
+    }
+    const future = () => new Date(Date.now() + 86_400_000).toISOString();
+    const past = () => new Date(Date.now() - 86_400_000).toISOString();
+
+    it('holds a trial account to the Starter limit, by name', async () => {
+      account({ trialEndsAt: future(), fleets: 1 });
+      const res = await addUserFleet('test-token', 'owned', 'Fleet');
+      expect(res).toEqual({ ok: false, error: expect.stringContaining('Starter plan includes 1 fleet') });
+    });
+
+    it('tells an expired account to subscribe, not that it has a plan called "Trial ended"', async () => {
+      account({ trialEndsAt: past(), fleets: 1 });
+      const res = await addUserFleet('test-token', 'owned', 'Fleet');
+      expect(res).toEqual({ ok: false, error: 'Your free trial has ended. Subscribe in Settings to link more fleets.' });
+    });
+
+    it('lets a paying Pro account past the Starter limit, trial or not', async () => {
+      account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'active', plan_override: null } });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+    });
+
+    // The trial date is read under the same lock as the quota check, so two
+    // concurrent links can't both see room for one more fleet.
+    it('reads the trial date under the user-row lock', async () => {
+      account({ trialEndsAt: future(), fleets: 0 });
+      await addUserFleet('test-token', 'owned', 'Fleet');
+      const lock = mocks.query.mock.calls.find((c) => String(c[0]).includes('FOR UPDATE'));
+      expect(String(lock?.[0])).toContain('trial_ends_at');
+    });
+  });
 });

@@ -89,7 +89,9 @@ export async function addUserFleet(
       await client.query('ROLLBACK');
       return {
         ok: false,
-        error: `Your ${PLANS[plan].name} plan includes ${limit} fleet${limit === 1 ? '' : 's'} and you're using ${used}. Upgrade in Settings to link more.`,
+        error: plan === 'expired'
+          ? 'Your free trial has ended. Subscribe in Settings to link more fleets.'
+          : `Your ${PLANS[plan].name} plan includes ${limit} fleet${limit === 1 ? '' : 's'} and you're using ${used}. Upgrade in Settings to link more.`,
       };
     }
 
