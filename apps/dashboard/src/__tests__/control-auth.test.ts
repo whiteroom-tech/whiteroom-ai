@@ -92,6 +92,30 @@ describe('controlAccessError', () => {
     expect(await controlAccessError('f2', 'tok')).toMatchObject({ status: 403 });
   });
 
+  it('refuses a fleet-id-less row when the engine answers without confirming the fleet', async () => {
+    signedIn();
+    holds({ token: 'tok', fleetId: null });
+    mocks.tokenLogin.mockResolvedValueOnce({ success: false, error: 'Invalid fleet token.' });
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403 });
+    mocks.tokenLogin.mockResolvedValueOnce({ success: true });
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403 });
+  });
+
+  it('fails closed (503) when the engine errors on a fleet-id-less row', async () => {
+    signedIn();
+    holds({ token: 'tok', fleetId: null });
+    mocks.tokenLogin.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 500', 500));
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
+  });
+
+  it('never matches the account’s API key: only fleet tokens are held credentials', async () => {
+    signedIn();
+    holds();
+    expect(await controlAccessError('f1', 'sk-ant-api-key')).toMatchObject({ status: 403 });
+    expect(String(mocks.query.mock.calls[0][0])).not.toContain('api_key');
+    expect(mocks.tokenLogin).not.toHaveBeenCalled();
+  });
+
   it('refuses a fleet-id-less row when the engine rejects the token, and fails closed when it can’t be reached', async () => {
     signedIn();
     holds({ token: 'tok', fleetId: null });

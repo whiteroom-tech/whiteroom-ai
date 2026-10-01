@@ -71,6 +71,12 @@ const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check you
  * For a row saved without a fleet id, the engine's token_login says which
  * fleet the token is for, and it must be the requested one.
  *
+ * Only fleet tokens are matched, never users.api_key. A session can't hold
+ * anything else: /api/fleet/session validates its cookie with token_login,
+ * which knows fleet tokens only, and swaps a rejected one (an API key from an
+ * older login, say) for the account's fleet token. Accepting the API key
+ * here would only widen what an agent holding it could try.
+ *
  * Returns the refusal, or null when the call may go ahead. Any failed lookup
  * refuses, so the check fails closed.
  */
