@@ -7,6 +7,7 @@
 
 import type {
   ListRunsResult,
+  RunDaysResult,
   RunEventsResult,
   FleetDiagnosis,
   AgentInfo,
@@ -49,6 +50,7 @@ import type {
   StoreKeyResult,
   TokenLoginResult,
 } from './types';
+import { viewerTimeZone } from '@/lib/runs';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -779,28 +781,43 @@ export function governanceDeleteRule(fleetId: string, ruleId: string, key?: stri
 
 // -- Runs (P1R) --
 
+type RunsQuery = { fromDay: string; toDay: string; agentId?: string };
+
 /**
- * Runs that started in a UTC day range, newest first. `unsupported` when the
- * engine predates list_runs, so the page can fall back to the event feed.
+ * POSTs a runs action with the days in the viewer's time zone. `unsupported`
+ * when the engine predates the action: it answers 400 "Unknown action."
+ * (white-room.ts, default case). An engine without `tz` ignores it and reads
+ * the days as UTC.
  */
-export async function listRuns(
-  fleetId: string,
-  opts: { fromDay: string; toDay: string; agentId?: string; cursor?: string | null; pageSize?: number },
-  key?: string,
-): Promise<ListRunsResult | { unsupported: true }> {
+async function runsAction<T>(action: string, fleetId: string, q: RunsQuery, extra: Record<string, unknown>, key?: string): Promise<T | { unsupported: true }> {
   const res = await postRaw({
-    action: 'list_runs', fleet_id: fleetId, from_day: opts.fromDay, to_day: opts.toDay,
-    ...(opts.agentId ? { agent_id: opts.agentId } : {}),
-    ...(opts.cursor ? { cursor: opts.cursor } : {}),
-    ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
+    action, fleet_id: fleetId, from_day: q.fromDay, to_day: q.toDay, tz: viewerTimeZone(),
+    ...(q.agentId ? { agent_id: q.agentId } : {}),
+    ...extra,
   }, key);
   if (res.status === 400) {
     const body = await res.clone().json().catch(() => null);
-    // An engine without list_runs answers 400 "Unknown action." (white-room.ts, default case).
     if (typeof body?.error === 'string' && /^unknown action/i.test(body.error)) return { unsupported: true };
   }
   if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
-  return (await res.json()) as ListRunsResult;
+  return (await res.json()) as T;
+}
+
+/** Runs that started in a range of the viewer's days, newest first; `unsupported` sends Runs to the event feed. */
+export function listRuns(
+  fleetId: string,
+  opts: RunsQuery & { cursor?: string | null; pageSize?: number },
+  key?: string,
+): Promise<ListRunsResult | { unsupported: true }> {
+  return runsAction<ListRunsResult>('list_runs', fleetId, opts, {
+    ...(opts.cursor ? { cursor: opts.cursor } : {}),
+    ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
+  }, key);
+}
+
+/** Runs per day of the viewer's, for the day strip; `unsupported` hides the strip. */
+export function runDays(fleetId: string, opts: RunsQuery, key?: string): Promise<RunDaysResult | { unsupported: true }> {
+  return runsAction<RunDaysResult>('run_days', fleetId, opts, {}, key);
 }
 
 export function getRunEvents(

@@ -18,7 +18,8 @@ export type Segment<V extends string> = {
  */
 export function SegmentedControl<V extends string>({ options, value, onChange, label, size = 26 }: {
   options: Segment<V>[];
-  value: V;
+  /** null: no segment is on (another control, like a picked day, decides). */
+  value: V | null;
   onChange: (v: V) => void;
   /** Accessible name for the group, e.g. "Time range". */
   label: string;

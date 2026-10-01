@@ -597,6 +597,12 @@ export interface RunSummary {
   coverage: { calls: number; checked: number };
 }
 
+export interface RunDaysResult {
+  fleetId: string;
+  /** Oldest first; days with no runs are left out. */
+  days: { day: string; runs: number }[];
+}
+
 export interface ListRunsResult {
   fleetId: string;
   runs: RunSummary[];

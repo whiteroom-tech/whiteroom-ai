@@ -16,6 +16,8 @@ const RUNS: RunSummary[] = [
   run('scout-agent', 5, 300, 8, { calls: 3, coverage: { calls: 3, checked: 0 } }),
   run('lead-agent', 12, 1500, 27, { unpricedAttempts: 2 }),
   run('archive-agent', 2, 2900, 1, { lengthSeconds: 45, calls: 1, coverage: { calls: 1, checked: 1 } }),
+  // Older days, so the day strip has shape.
+  ...[3, 3, 4, 6, 6, 6, 6, 9, 12, 12, 15, 19, 19, 19, 22, 26].map((d, i) => run(i % 3 ? 'lead-agent' : 'writer-agent', 40 - i, d * 1440 + i * 37, 9 + (i % 5))),
 ];
 
 export function RunsPreview() {

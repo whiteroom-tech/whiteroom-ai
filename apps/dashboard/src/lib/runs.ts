@@ -9,14 +9,55 @@ import { activityRow, clock } from '@/lib/home';
 export type RunsRange = 'today' | '7d' | '30d';
 export const RUNS_RANGES: RunsRange[] = ['today', '7d', '30d'];
 
-function utcDay(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+/**
+ * The viewer's IANA time zone, which Runs' days are in. Anything that isn't a
+ * plain IANA name (the engine accepts only those) falls back to UTC.
+ */
+export function viewerTimeZone(): string {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return tz && /^(?:UTC|[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){1,2})$/.test(tz) ? tz : 'UTC';
 }
 
-/** Whole UTC days, the same days "Model calls today" counts: today, or the last 7 / 30 including today. */
+/** "2026-09-30" for the viewer's local day holding `ms`. */
+export function localDay(ms: number = Date.now()): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** The calendar day `n` days after `day` (negative for before). */
+export function addDays(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number);
+  return localDay(new Date(y, m - 1, d + n, 12).getTime());
+}
+
+/** The viewer's local days: today, or the last 7 / 30 including today. */
 export function runsDays(range: RunsRange, now: number = Date.now()): { fromDay: string; toDay: string } {
   const back = range === 'today' ? 0 : range === '7d' ? 6 : 29;
-  return { fromDay: utcDay(now - back * 86_400_000), toDay: utcDay(now) };
+  const today = localDay(now);
+  return { fromDay: addDays(today, -back), toDay: today };
+}
+
+/** The days a Runs view covers: one picked day, else the range. */
+export function runsWindow(view: { range: RunsRange; day: string | null }, now: number = Date.now()): { fromDay: string; toDay: string } {
+  return view.day ? { fromDay: view.day, toDay: view.day } : runsDays(view.range, now);
+}
+
+/** "Tue, Sep 30"; with `relative`, "Today · Wed, Oct 1" and "Yesterday · …" for the two latest days. */
+export function dayLabel(day: string, now: number = Date.now(), relative = true): string {
+  const [y, m, d] = day.split('-').map(Number);
+  const text = new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  if (!relative) return text;
+  const today = localDay(now);
+  if (day === today) return `Today · ${text}`;
+  if (day === addDays(today, -1)) return `Yesterday · ${text}`;
+  return text;
+}
+
+/** The day strip: every day of the last `n` ending today, oldest first, zero where no runs started. */
+export function stripDays(counts: { day: string; runs: number }[], n = 30, now: number = Date.now()): { day: string; runs: number }[] {
+  const byDay = new Map(counts.map((c) => [c.day, c.runs]));
+  const today = localDay(now);
+  return Array.from({ length: n }, (_, i) => { const day = addDays(today, i - n + 1); return { day, runs: byDay.get(day) ?? 0 }; });
 }
 
 /** "45 s", "23 min", "1 h 05 min". */
@@ -67,9 +108,10 @@ export function zoneName(now: number = Date.now()): string {
   return part?.value ?? 'local time';
 }
 
-/** "6 in the last 7 days" / "2 today". */
-export function runsCount(total: number, range: RunsRange): string {
-  const span = range === 'today' ? 'today' : range === '7d' ? 'in the last 7 days' : 'in the last 30 days';
+/** "6 in the last 7 days" / "2 today" / "8 on Tue, Sep 30". */
+export function runsCount(total: number, view: { range: RunsRange; day: string | null }, now: number = Date.now()): string {
+  if (view.day) return view.day === localDay(now) ? `${total} today` : `${total} on ${dayLabel(view.day, now, false)}`;
+  const span = view.range === 'today' ? 'today' : view.range === '7d' ? 'in the last 7 days' : 'in the last 30 days';
   return `${total} ${span}`;
 }
 

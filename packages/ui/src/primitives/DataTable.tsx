@@ -1,5 +1,7 @@
 'use client';
 
+import { Fragment } from 'react';
+
 export type Column<R> = {
   key: string;
   header: React.ReactNode;
@@ -16,9 +18,10 @@ export type Column<R> = {
  * tabular. With `onOpen`, the whole row is the target: it's focusable and
  * Enter or Space opens it, and the table is exposed as an ARIA grid (where
  * focusable rows and aria-selected are valid). Without it, a plain table.
- * `selectedKey` tints a row with brand-dim.
+ * `selectedKey` tints a row with brand-dim. `group` puts a header row (a
+ * day, say) above the first row of each run of rows sharing its key.
  */
-export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHeight = 42, caption, empty, footer }: {
+export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHeight = 42, caption, empty, footer, group }: {
   columns: Column<R>[];
   rows: R[];
   rowKey: (row: R) => string;
@@ -29,12 +32,13 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
   caption: string;
   empty?: React.ReactNode;
   footer?: React.ReactNode;
+  group?: (row: R) => { key: string; label: React.ReactNode };
 }) {
   const grid = columns.map((c) => c.width).join(' ');
   const interactive = !!onOpen;
   const cellRole = interactive ? 'gridcell' : 'cell';
   return (
-    <div role={interactive ? 'grid' : 'table'} aria-label={caption} aria-rowcount={rows.length + 1} className="wr-table">
+    <div role={interactive ? 'grid' : 'table'} aria-label={caption} className="wr-table">
       <div role="rowgroup" className="wr-table__head">
         <div role="row" className="wr-table__row wr-table__row--head" style={{ gridTemplateColumns: grid }}>
           {columns.map((c) => (
@@ -48,11 +52,18 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
             <span role={cellRole} aria-colspan={columns.length}>{empty}</span>
           </div>
         )}
-        {rows.map((r) => {
+        {rows.map((r, i) => {
           const k = rowKey(r);
+          const g = group?.(r);
+          const startsGroup = g && (i === 0 || group!(rows[i - 1]).key !== g.key);
           return (
+            <Fragment key={k}>
+            {startsGroup && (
+              <div role="row" className="wr-table__group">
+                <span role={cellRole} aria-colspan={columns.length}>{g.label}</span>
+              </div>
+            )}
             <div
-              key={k}
               role="row"
               tabIndex={onOpen ? 0 : undefined}
               aria-selected={interactive && selectedKey !== undefined ? selectedKey === k : undefined}
@@ -70,6 +81,7 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
                 </span>
               ))}
             </div>
+            </Fragment>
           );
         })}
       </div>
