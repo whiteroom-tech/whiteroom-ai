@@ -17,7 +17,6 @@ const SESSION_PROTECTED = [
 ];
 const SESSION_PUBLIC_UNDER_SETTINGS = new Set(['/settings/confirm-email']);
 
-
 function notFound(request: NextRequest) {
   return NextResponse.rewrite(new URL('/_admin_absent', request.url), { status: 404 });
 }
@@ -34,7 +33,6 @@ function forward(request: NextRequest) {
   headers.set(PATH_HEADER, request.nextUrl.pathname);
   return NextResponse.next({ request: { headers } });
 }
-
 
 export function proxy(request: NextRequest) {
   const ADMIN_HOST = adminHost();

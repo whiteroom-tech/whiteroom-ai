@@ -29,7 +29,7 @@ import { computeSuggestions, convertSpendCap, RULE_LABELS, type GovernanceSugges
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO } from "@whiteroom/ui";
-import { ROUTES } from '@/lib/routes';
+import { ROUTES } from "@/lib/routes";
 
 // ── Types ──────────────────────────────────────────────────────────
 

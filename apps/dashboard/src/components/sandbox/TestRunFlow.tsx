@@ -7,8 +7,8 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
-import s from './guided.module.css';
 import { ROUTES } from '@/lib/routes';
+import s from './guided.module.css';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
