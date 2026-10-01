@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countsFromRuleActions, responseOptions, tallyTotal, tallyWords,
+import { countsFromRuleActions, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
   convertSpendCap,
   computeSuggestions,
   governanceCounts,
@@ -154,5 +154,9 @@ describe('rule responses and rule actions (P2.3/P2.4)', () => {
       byAgent: { a: { blocked: 5, paused: 1, stopped: 0, toldYou: 2, wouldAct: 3 } },
     }, byRule);
     expect(c).toMatchObject({ blocks: 5, wouldBlocks: 3, paused: 1, toldYou: 2, byRule, byAgent: { a: { blocks: 5, paused: 1 } } });
+  });
+  it('merges agents that differ only in case, keeping every kind of action', () => {
+    const merged = ruleActionsByAgent({ 'Lead-Agent': { blocks: 1, wouldBlocks: 0, paused: 1 }, 'lead-agent': { blocks: 2, wouldBlocks: 1, stopped: 1, toldYou: 3 } });
+    expect(merged['lead-agent']).toEqual({ blocks: 3, wouldBlocks: 1, paused: 1, stopped: 1, toldYou: 3 });
   });
 });

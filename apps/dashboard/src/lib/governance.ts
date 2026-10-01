@@ -107,7 +107,12 @@ export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Re
   for (const [agent, t] of Object.entries(byAgent)) {
     const key = agent.toLowerCase();
     const prev = out[key] ?? emptyTally();
-    out[key] = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
+    const merged: GovernanceTally = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
+    // The rule_actions kinds, only where a source has them (the audit log doesn't).
+    for (const k of ['paused', 'stopped', 'toldYou'] as const) {
+      if (prev[k] !== undefined || t[k] !== undefined) merged[k] = (prev[k] ?? 0) + (t[k] ?? 0);
+    }
+    out[key] = merged;
   }
   return out;
 }
