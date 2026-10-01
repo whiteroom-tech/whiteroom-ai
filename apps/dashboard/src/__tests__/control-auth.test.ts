@@ -49,6 +49,17 @@ describe('controlAccessError', () => {
     expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'someone-elses-fleet', 'tok']);
   });
 
+  it('accepts the account’s own API key and rows saved before fleet ids were recorded', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    mocks.query.mockResolvedValue({ rows: [] });
+    await controlAccessError('f1', 'sk-key');
+    const sql = String(mocks.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    // Sessions migrated from older logins can hold the fleet's API key.
+    expect(sql).toContain('(fleet_token = $3 OR api_key = $3)');
+    // The engine still checks the credential grants the body's fleet.
+    expect(sql.match(/\(fleet_id = \$2 OR fleet_id IS NULL\)/g)).toHaveLength(2);
+  });
+
   it('allows a linked account', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     mocks.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
