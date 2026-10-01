@@ -173,3 +173,16 @@ export function destroyRun(sandboxId: string): Promise<{
 export function getReport(sandboxId: string): Promise<ReportResult> {
   return bffFetch(`${sandboxId}/report`);
 }
+
+/** One finished test, as the engine records it. */
+export interface PastTest {
+  sandboxId: string;
+  destroyedAt: string;
+  overall: "pass" | "fail" | "partial";
+  totalTasks: number;
+  isTrial: boolean;
+}
+
+export function getHistory(): Promise<{ success?: boolean; sessions?: PastTest[]; error?: string }> {
+  return bffFetch("history");
+}
