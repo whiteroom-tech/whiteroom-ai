@@ -13,6 +13,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ActivityFeed } from '@/components/ActivityFeed';
+import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import type { FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 
@@ -160,7 +161,9 @@ export default function RunsPage() {
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: 24 }}>
         {fetchError && !loading && (
-          <Banner variant="warn">Couldn&rsquo;t refresh. Retrying&hellip;{lastUpdated !== null ? ` Showing what was loaded at ${fmtTime(lastUpdated)}.` : ''}</Banner>
+          lastUpdated !== null
+            ? <RefreshFailed since={lastUpdated} />
+            : <Banner variant="warn">Couldn&rsquo;t load events yet. Retrying&hellip;</Banner>
         )}
         {partialSince && (
           <Banner variant="warn">Partial range: history is only kept from {partialSince}, so this range and its export start there.</Banner>
@@ -183,7 +186,7 @@ export default function RunsPage() {
           }
         >
           {loading ? (
-            <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Loading&hellip;</p>
+            <LoadingLine />
           ) : (
             <ActivityFeed
               entries={rangedEntries}

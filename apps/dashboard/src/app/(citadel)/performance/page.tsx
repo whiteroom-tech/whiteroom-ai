@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, partialCoverageSince, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
+import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
@@ -960,7 +961,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           </div>
         )) : (
           <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-            {recLoading ? 'Loading...' : recError ? 'Recommendations unavailable.' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
+            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
           </div>
         )}
 
@@ -975,7 +976,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
             <button onClick={() => fetchRecs(recCursor)} disabled={recLoading} style={{
               fontSize: 12, fontWeight: 600, padding: '6px 16px', borderRadius: 6, cursor: recLoading ? 'wait' : 'pointer',
               background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)', opacity: recLoading ? 0.5 : 1,
-            }}>{recLoading ? 'Loading...' : 'Load more'}</button>
+            }}>{recLoading ? 'Loading…' : 'Load more'}</button>
           </div>
         )}
 
@@ -1104,10 +1105,10 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
       {recommendationId && !diagDetector && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button onClick={() => exportBrief('copy')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
-            {briefCopied ? 'Copied!' : briefLoading ? 'Loading...' : 'Copy implementation brief'}
+            {briefCopied ? 'Copied' : briefLoading ? 'Loading…' : 'Copy implementation brief'}
           </button>
           <button onClick={() => exportBrief('download')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
-            {briefLoading ? 'Loading...' : 'Download Markdown'}
+            {briefLoading ? 'Loading…' : 'Download Markdown'}
           </button>
         </div>
       )}
@@ -1396,8 +1397,12 @@ export default function PerformancePage() {
       {/* Content — dimmed while a range/agent fetch is in flight over data
           already on screen, so stale charts read as "refreshing", not current. */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, ...(refreshing ? { opacity: 0.55, pointerEvents: 'none' as const, transition: 'opacity 0.15s' } : { transition: 'opacity 0.15s' }) }}>
-        {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
-        {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
+        {/* With data on screen, a failed refresh keeps it and says so; with
+            nothing yet, the error stands alone. */}
+        {error && (view === 'index' ? indexData : view === 'agent' ? agentData : evidenceData)
+          ? <div style={{ marginBottom: 16 }}><RefreshFailed /></div>
+          : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
+        {loading && !indexData && !agentData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
         {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} savingsPartialSince={savingsPartialSince} byAgentPartial={byAgentPartial} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}

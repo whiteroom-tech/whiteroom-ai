@@ -16,6 +16,7 @@ import {
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
+import { RefreshFailed } from '@/components/citadel/States';
 import { EmptyHome } from './EmptyHome';
 
 export type AgentsView = 'cards' | 'table';
@@ -172,12 +173,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <div className="wr-home" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {failing && (
-          <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--tx2)' }}>
-            <span style={{ color: 'var(--warn)', display: 'flex' }}><Icon name="alertCircle" size={13} /></span>
-            Couldn&rsquo;t refresh. Retrying&hellip; Showing the last data we had.
-          </div>
-        )}
+        {failing && <RefreshFailed />}
 
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />
