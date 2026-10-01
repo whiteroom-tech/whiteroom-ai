@@ -103,11 +103,11 @@ describe('the route renames (P0.5)', () => {
     return url.pathname + url.search;
   };
 
-  it('redirects the old paths, temporarily and uncached until the release settles', () => {
+  it('redirects the old paths permanently, cached for a day', () => {
     for (const [from, to] of [['/agents', '/home'], ['/governance', '/controls'], ['/dashboard', '/fleet-key']]) {
       const res = proxy(req(APP, from, { withSession: true }));
-      expect(res?.status).toBe(307);
-      expect(res?.headers.get('cache-control')).toBe('no-store');
+      expect(res?.status).toBe(301);
+      expect(res?.headers.get('cache-control')).toBe('public, max-age=86400');
       expect(verdict(res)).toBe(`redirect:${to}`);
     }
   });
@@ -123,6 +123,7 @@ describe('the route renames (P0.5)', () => {
 
   it('sends every legacy /fleet tab to its current page', () => {
     expect(verdict(proxy(req(APP, '/fleet?tab=analytics')))).toBe('redirect:/runs');
+    expect(proxy(req(APP, '/fleet'))?.status).toBe(301);
     for (const tab of ['visualization', 'live', 'overview']) {
       expect(verdict(proxy(req(APP, `/fleet?tab=${tab}`)))).toBe('redirect:/home');
     }

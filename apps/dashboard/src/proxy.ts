@@ -34,6 +34,17 @@ function forward(request: NextRequest) {
   return NextResponse.next({ request: { headers } });
 }
 
+/**
+ * The renamed routes have settled, so old links redirect permanently. The
+ * one-day cache bounds how long a browser would keep the hop if a rollback
+ * ever brought an old route back.
+ */
+function movedPermanently(url: URL) {
+  const response = NextResponse.redirect(url, 301);
+  response.headers.set('Cache-Control', 'public, max-age=86400');
+  return response;
+}
+
 export function proxy(request: NextRequest) {
   const ADMIN_HOST = adminHost();
   const { pathname, searchParams } = request.nextUrl;
@@ -65,24 +76,16 @@ export function proxy(request: NextRequest) {
       target = ROUTES.runs;
     }
     // The visualization and live tabs became parts of Home.
-    const url = new URL(target, request.url);
-    const response = NextResponse.redirect(url, 307);
-    response.headers.set('Cache-Control', 'no-store');
-    return response;
+    return movedPermanently(new URL(target, request.url));
   }
 
   // Renamed routes, query string kept (/governance?rec=… still opens that
-  // draft on /controls). Temporary (307) for the first release: browsers
-  // cache a 301 forever, so a rollback would leave cached /agents -> /home
-  // hops pointing at a page the old revision doesn't have. Switch to 301
-  // once the new routes have settled.
+  // draft on /controls).
   const moved = LEGACY_REDIRECTS[pathname];
   if (moved) {
     const url = new URL(moved, request.url);
     url.search = request.nextUrl.search;
-    const response = NextResponse.redirect(url, 307);
-    response.headers.set('Cache-Control', 'no-store');
-    return response;
+    return movedPermanently(url);
   }
 
   if (!SESSION_PUBLIC_UNDER_SETTINGS.has(pathname) &&

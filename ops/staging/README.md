@@ -10,7 +10,7 @@ A full copy of prod in its own GCP project, `whiteroom-staging`, so a bad deploy
 | Data | real users | none — staging started empty, with prod's schema only |
 | Engine scaling | always 1 instance | 0–1, cold-starts after ~15 min idle |
 
-Nothing is shared between the two except the image registry (prod's `cloud-run-source-deploy`, which staging's Cloud Run agent can read) and three third-party keys copied into staging's Secret Manager: Anthropic platform key, Resend, Google OAuth client secret. Every other secret (`AUTH_SECRET`, DB passwords, key pepper, signing key, sync and sandbox secrets) was generated fresh for staging, so a staging session or API key is useless against prod.
+Nothing is shared between the two except the image registry (prod's `cloud-run-source-deploy`, which staging's Cloud Run agent can read) and two third-party keys copied into staging's Secret Manager: Resend and the Google OAuth client secret. Every other secret (`AUTH_SECRET`, DB passwords, key pepper, signing key, sync and sandbox secrets) was generated fresh for staging, so a staging session or API key is useless against prod.
 
 ## How a change ships
 
@@ -54,6 +54,6 @@ https://whiteroom-dashboard-667088277671.us-central1.run.app/api/auth/callback/g
 
 ## Known gaps
 
-- Staging uses the prod Anthropic platform key, so staging traffic bills to and shares limits with prod. Swap `whiteroom-engine-platform-anthropic-key` in `whiteroom-staging` for a capped key when one exists.
+- The staging engine has no Anthropic platform key (`WR_PLATFORM_ANTHROPIC_KEY` was removed on 2026-10-01 so staging can't bill to prod). That key only seeds task-cost estimates, so on staging those estimates are the built-in defaults. Give staging its own capped key if you need real estimates there.
 - The copy-paste setup snippets in `onboarding.tsx` hard-code `https://proxy.whiteroom.tech`, so on staging they point at the prod engine.
 - No Stripe keys are set on staging (none are set on prod either yet).
