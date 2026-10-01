@@ -9,13 +9,22 @@ import { activityRow, clock } from '@/lib/home';
 export type RunsRange = 'today' | '7d' | '30d';
 export const RUNS_RANGES: RunsRange[] = ['today', '7d', '30d'];
 
+/** IANA zone names the engine accepts: "UTC", "GMT", "America/New_York", "America/Argentina/Salta". Matches run-id.ts in the engine. */
+export const TIME_ZONE_NAME = /^[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/;
+
 /**
- * The viewer's IANA time zone, which Runs' days are in. Anything that isn't a
- * plain IANA name (the engine accepts only those) falls back to UTC.
+ * The viewer's IANA time zone, which Runs' days are in. Browsers report IANA
+ * names; if one ever didn't fit, days here stay local while the engine would
+ * read UTC, so that (unseen) case falls back to UTC rather than a 400.
  */
 export function viewerTimeZone(): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return tz && /^(?:UTC|[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){1,2})$/.test(tz) ? tz : 'UTC';
+  return tz && TIME_ZONE_NAME.test(tz) ? tz : 'UTC';
+}
+
+/** A ?day= that's a real date and not after today, else null. */
+export function validDay(v: string | null, now: number = Date.now()): string | null {
+  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && addDays(v, 0) === v && v <= localDay(now) ? v : null;
 }
 
 /** "2026-09-30" for the viewer's local day holding `ms`. */

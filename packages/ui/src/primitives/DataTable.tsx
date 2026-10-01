@@ -13,6 +13,11 @@ export type Column<R> = {
   render: (row: R) => React.ReactNode;
 };
 
+/** True when row `i` is the first of its group: the first row, or a key change from the row above. */
+export function startsNewGroup<R>(rows: R[], i: number, group: (row: R) => { key: string }): boolean {
+  return i === 0 || group(rows[i - 1]).key !== group(rows[i]).key;
+}
+
 /**
  * Mono uppercase header, 40–44px rows, numeric columns right-aligned and
  * tabular. With `onOpen`, the whole row is the target: it's focusable and
@@ -55,7 +60,7 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
         {rows.map((r, i) => {
           const k = rowKey(r);
           const g = group?.(r);
-          const startsGroup = g && (i === 0 || group!(rows[i - 1]).key !== g.key);
+          const startsGroup = g && startsNewGroup(rows, i, group!);
           return (
             <Fragment key={k}>
             {startsGroup && (

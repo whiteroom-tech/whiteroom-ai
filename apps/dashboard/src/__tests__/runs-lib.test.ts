@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
 
 afterEach(() => { vi.unstubAllEnvs(); });
@@ -189,5 +190,31 @@ describe('exports', () => {
     expect(t[8]).toBe('lookup(id=1)  |  save');
     expect(all.rows[1][4]).toBe('');
     expect(all.rows[1][2]).toBeUndefined();
+  });
+});
+
+describe('picked day (?day=)', () => {
+  const now = Date.parse('2026-10-01T03:00:00Z');
+  it('accepts real past or current days only', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    expect(validDay('2026-09-14', now)).toBe('2026-09-14');
+    expect(validDay('2026-09-30', now)).toBe('2026-09-30'); // today in LA
+    expect(validDay('2026-10-01', now)).toBeNull(); // tomorrow in LA
+    for (const bad of ['2026-02-30', '2026-13-01', '2026-9-14', 'yesterday', '', null]) expect(validDay(bad, now)).toBeNull();
+  });
+});
+
+describe('time zone names the engine accepts', () => {
+  it('takes IANA names, single-word ones included, and refuses offsets', () => {
+    for (const tz of ['UTC', 'GMT', 'America/New_York', 'America/Argentina/Salta', 'Etc/GMT+5']) expect(TIME_ZONE_NAME.test(tz)).toBe(true);
+    for (const tz of ['+05:30', '-0400', 'EST5EDT', "UTC'--"]) expect(TIME_ZONE_NAME.test(tz)).toBe(false);
+  });
+});
+
+describe('day groups in the table', () => {
+  const key = (r: { d: string }) => ({ key: r.d });
+  it('starts a group at the first row and at each change of day only', () => {
+    const rows = [{ d: 'a' }, { d: 'a' }, { d: 'b' }, { d: 'b' }, { d: 'a' }];
+    expect(rows.map((_, i) => startsNewGroup(rows, i, key))).toEqual([true, false, true, false, true]);
   });
 });
