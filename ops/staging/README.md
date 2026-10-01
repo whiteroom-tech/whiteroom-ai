@@ -20,7 +20,7 @@ Nothing is shared between the two except the image registry (prod's `cloud-run-s
 
 The engine repo (`whiteroom-ai-whiteroom`) has the same two workflows. Engine images are environment-agnostic, so prod gets the exact digest staging ran.
 
-`cloudbuild.yaml` still works as a manual escape hatch, but it skips staging.
+`cloudbuild.yaml` still works as a manual escape hatch, but it skips staging. No Cloud Build trigger deploys the dashboard on push: the only push trigger in `whiteroom-prod` (checked Oct 1, 2026) builds the `whiteroom-tech/website` repo into the `whiteroom-tech` service.
 
 ## Auth
 

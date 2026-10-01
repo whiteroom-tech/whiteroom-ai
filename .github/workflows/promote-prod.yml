@@ -56,7 +56,7 @@ jobs:
             --format='value(metadata.labels.commit-sha)')
           sha="${INPUT_SHA:-$staging_sha}"
           if [ -z "$sha" ] || [ "$sha" != "$staging_sha" ]; then
-            echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first."
+            echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first (Actions → Deploy staging → Run workflow, from main at that commit)."
             exit 1
           fi
           # Set by deploy-staging only after staging's smoke test passed.
@@ -69,8 +69,13 @@ jobs:
             echo "::error::No prod image $IMAGE:$sha. Re-run Deploy staging for this commit."
             exit 1
           fi
-          prev=$(gcloud run services describe "$SERVICE" --project whiteroom-prod --region "$REGION" \
-            --format='value(status.traffic[0].revisionName)')
+          # The rollback target is whichever revision serves the most traffic now.
+          prev=$(gcloud run services describe "$SERVICE" --project whiteroom-prod --region "$REGION" --format=json \
+            | jq -r '[.status.traffic[] | select(.revisionName != null)] | max_by(.percent // 0) | .revisionName // empty')
+          if [ -z "$prev" ]; then
+            echo "::error::Couldn't find the revision prod is serving, so there would be nothing to roll back to. Not promoting."
+            exit 1
+          fi
           {
             echo "sha=$sha"
             echo "digest=$digest"
@@ -105,6 +110,11 @@ jobs:
           echo "::error::$PROD_URL/sign-in failed after promote; sending traffic back to $PREV"
           gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" \
             --to-revisions "$PREV=100" --quiet
+          # Relabelling the service here would create yet another revision, so
+          # it isn't done: after a rollback the service's commit-sha label names
+          # the commit that was tried; the serving revision's own label names
+          # the commit actually live.
+          echo "::error::Rolled back. $PREV serves 100%; its revision label has the live commit."
           exit 1
 
       - name: Summary
