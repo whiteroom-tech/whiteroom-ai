@@ -7,7 +7,7 @@ import type { AuditEntry } from '@/lib/whiteroom/types';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { liveRow, matchesFilter, pageWindow, refreshWhileOpen, type LiveFilter, type LiveKind } from '@/lib/home';
+import { liveRow, matchesFilter, pageWindow, onRefreshSignal, type LiveFilter, type LiveKind } from '@/lib/home';
 
 const PAGE = 20;
 const FETCH_LIMIT = 200;
@@ -73,9 +73,9 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   // count as handled, so reveal() is the only load when the feed opens.
   const handledSignal = useRef(refreshSignal);
   useEffect(() => {
-    const due = refreshWhileOpen(open, refreshSignal, handledSignal.current);
-    handledSignal.current = refreshSignal;
-    if (due) load();
+    const next = onRefreshSignal(open, refreshSignal, handledSignal.current);
+    handledSignal.current = next.handled;
+    if (next.load) load();
   }, [refreshSignal, open, load]);
 
   const rows = useMemo(() => entries.map(liveRow), [entries]);

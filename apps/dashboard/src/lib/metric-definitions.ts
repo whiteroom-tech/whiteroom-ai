@@ -67,7 +67,7 @@ export const HELP = {
   alerts: 'Where WhiteRoom sends a message when a rule says Just tell me, when a run is flagged, or when a claim does not match the record.',
   slackWebhook: 'A private link from Slack that lets WhiteRoom post into one channel.',
   pastTests: 'Earlier Sandbox tests, with the tokens each one used compared to the same task without WhiteRoom.',
-  shift: 'One stretch of an agent’s working time. Was “watch”, which clashed with the Watch only mode.',
+  shift: 'One stretch of an agent’s working time.',
   watchOnlyEnforce: 'Watch only: a rule notes what it would have done but changes nothing. Enforce: it really steps in.',
   tryLast7Days: 'Replays last week’s real activity against a rule and shows what it would have done. Nothing changes.',
 } as const;

@@ -128,15 +128,6 @@ export function afterFanOut(clock: FanOutClock, now: number, complete: boolean):
   return { nextAt: now + Math.min(FANOUT_INTERVAL_MS, FANOUT_RETRY_MS * 2 ** (failures - 1)), failures };
 }
 
-/**
- * The live feed reloads on the header's Refresh, but only while revealed.
- * Every signal is marked handled, even while hidden, so revealing after a
- * hidden Refresh loads once (from reveal) rather than twice.
- */
-export function refreshWhileOpen(open: boolean, signal: number, handled: number): boolean {
-  return open && signal !== handled;
-}
-
 /** Whether the report has agents the cached details don't cover yet. */
 export function hasUnknownAgents(report: Pick<FleetReport, 'status'>, cached: AgentInfo[]): boolean {
   const known = new Set(cached.map((d) => d.agentId));
@@ -276,6 +267,15 @@ export function liveRow(e: AuditEntry): LiveRow {
   };
 }
 
+/**
+ * The live feed reloads on the header's Refresh, but only while revealed.
+ * Every signal is marked handled, even while hidden, so revealing after a
+ * hidden Refresh loads once (from reveal) rather than twice.
+ */
+export function onRefreshSignal(open: boolean, signal: number, handled: number): { load: boolean; handled: number } {
+  return { load: open && signal !== handled, handled: signal };
+}
+
 export function matchesFilter(row: LiveRow, f: LiveFilter): boolean {
   if (f === 'all') return true;
   if (f === 'web') return row.kind === 'web';
@@ -285,17 +285,19 @@ export function matchesFilter(row: LiveRow, f: LiveFilter): boolean {
 
 // ── Today (UTC) ──────────────────────────────────────────────────────────
 
+function utcMidnight(now: number): number {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
 /** Hours to ask for so the window reaches back to 00:00 UTC today. */
 export function hoursSinceUtcMidnight(now: number = Date.now()): number {
-  const d = new Date(now);
-  const midnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  return Math.max(1, Math.ceil((now - midnight) / 3_600_000));
+  return Math.max(1, Math.ceil((now - utcMidnight(now)) / 3_600_000));
 }
 
 /** Calls and spend since 00:00 UTC, from hourly points. */
 export function todayTotals(hourly: FleetHourlyDataPoint[], now: number = Date.now()): { calls: number; costUsd: number } {
-  const d = new Date(now);
-  const midnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const midnight = utcMidnight(now);
   return hourly
     .filter((h) => Date.parse(h.hour) >= midnight)
     .reduce((t, h) => ({ calls: t.calls + (h.calls || 0), costUsd: t.costUsd + (h.costMicros || 0) / 1e6 }), { calls: 0, costUsd: 0 });

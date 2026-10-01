@@ -35,6 +35,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [today, setToday] = useState<{ calls: number; costUsd: number } | null>(null);
+  const [todayFailing, setTodayFailing] = useState(false);
   const [failing, setFailing] = useState(false);
   const [view, setView] = useState<AgentsView>(() => (safeGet('wr_home_agents_view') === 'table' ? 'table' : 'cards'));
   const fanOutClock = useRef(FANOUT_START);
@@ -64,7 +65,6 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     } else {
       details = overlayStatuses(data, fanOutDetails.current);
     }
-    if (stale()) return;
     setReport(data);
     setAgents(details);
   }, [fleetId, authKey]);
@@ -80,13 +80,20 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
 
   const fetchToday = useCallback(async (stale: () => boolean) => {
     const res = await performanceFleetHourly(fleetId, hoursSinceUtcMidnight(), authKey);
-    if (stale() || res.error || !Array.isArray(res.hourly)) return;
+    if (stale()) return;
+    if (res.error || !Array.isArray(res.hourly)) throw new Error('hourly unavailable');
     setToday(todayTotals(res.hourly));
   }, [fleetId, authKey]);
 
   const { refresh } = usePoll(async (stale) => {
     try {
-      await Promise.all([fetchReport(stale), fetchActivity(stale), fetchToday(stale).catch(() => {})]);
+      // Today's numbers failing alone shouldn't fail the page, but the two
+      // cards must say they're out of date rather than look live.
+      const todayOk = fetchToday(stale).then(() => true, () => false);
+      await Promise.all([fetchReport(stale), fetchActivity(stale)]);
+      const ok = await todayOk;
+      if (stale()) return;
+      setTodayFailing(!ok);
       if (stale()) return;
       setFailing(false);
       onUpdated?.(Date.now(), false);
@@ -119,6 +126,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       agents={agents}
       entries={entries}
       today={today}
+      todayFailing={todayFailing}
       failing={failing}
       view={view}
       onViewChange={changeView}
@@ -131,11 +139,12 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
  * Home's layout from plain data, so it can be previewed with sample data
  * (/dev/home) without a fleet.
  */
-export function HomeView({ report, agents, entries, today, failing, view, onViewChange, liveFeed }: {
+export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed }: {
   report: FleetReport;
   agents: AgentInfo[];
   entries: AuditEntry[];
   today: { calls: number; costUsd: number } | null;
+  todayFailing?: boolean;
   failing: boolean;
   view: AgentsView;
   onViewChange: (v: AgentsView) => void;
@@ -148,6 +157,7 @@ export function HomeView({ report, agents, entries, today, failing, view, onView
   const blocks = recentBlocksByAgent(entries);
   const lastEvents = lastEventByAgent(entries);
   const activity = latestActivity(entries, 4);
+  const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -161,14 +171,14 @@ export function HomeView({ report, agents, entries, today, failing, view, onView
 
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />
-          <StatCard variant="card" label="Model calls today" hint={HELP.modelCallsToday} value={today ? today.calls.toLocaleString('en-US') : '—'} sub="counted hourly" />
+          <StatCard variant="card" label="Model calls today" hint={HELP.modelCallsToday} value={today ? today.calls.toLocaleString('en-US') : '—'} sub={todaySub} />
           <StatCard
             variant="card"
             label="Spend today"
             hint={HELP.spendToday}
             value={today ? usd(today.costUsd) : '—'}
-            sub={savedOverall ? `up to ${usd(savedOverall)} saved overall →` : 'counted hourly'}
-            subHref={savedOverall ? ROUTES.performance : undefined}
+            sub={savedOverall && !todayFailing ? `up to ${usd(savedOverall)} saved overall →` : todaySub}
+            subHref={savedOverall && !todayFailing ? ROUTES.performance : undefined}
           />
           <StatCard variant="card" label="Smaller handovers" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? undefined : 'no handovers yet'} />
         </div>

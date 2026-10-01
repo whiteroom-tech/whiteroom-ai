@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, refreshWhileOpen, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -251,26 +251,14 @@ describe('fan-out throttle', () => {
 
 describe('live feed refresh', () => {
   it('reloads on a new signal only while open', () => {
-    expect(refreshWhileOpen(true, 2, 1)).toBe(true);
-    expect(refreshWhileOpen(false, 2, 1)).toBe(false);
-    expect(refreshWhileOpen(true, 1, 1)).toBe(false);
+    expect(onRefreshSignal(true, 2, 1)).toEqual({ load: true, handled: 2 });
+    expect(onRefreshSignal(false, 2, 1)).toEqual({ load: false, handled: 2 });
+    expect(onRefreshSignal(true, 1, 1)).toEqual({ load: false, handled: 1 });
   });
 
-  it('loads once when revealed after a Refresh made while hidden', () => {
-    // Mirrors the panel's effect: every run marks the signal handled.
-    let handled = 0;
-    let loads = 0;
-    const effect = (open: boolean, signal: number) => {
-      const due = refreshWhileOpen(open, signal, handled);
-      handled = signal;
-      if (due) loads += 1;
-    };
-    effect(false, 0); // mount, hidden
-    effect(false, 1); // Refresh while hidden
-    loads += 1; effect(true, 1); // reveal() loads, then the effect sees open
-    expect(loads).toBe(1);
-    effect(true, 2); // Refresh while open
-    expect(loads).toBe(2);
+  it('marks a Refresh made while hidden as handled, so reveal is the only load', () => {
+    const hidden = onRefreshSignal(false, 1, 0);
+    expect(onRefreshSignal(true, 1, hidden.handled).load).toBe(false);
   });
 });
 
