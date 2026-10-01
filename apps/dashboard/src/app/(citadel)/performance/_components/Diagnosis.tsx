@@ -17,6 +17,8 @@ import { checkedSummary, diagnosisSummary, evidenceHeader, type StatusLine } fro
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
 import { ROUTES } from '@/lib/routes';
+import { Hint } from '@whiteroom/ui';
+import { HELP } from '@/lib/metric-definitions';
 
 // -- The Agent Diagnosis card ---------------------------------------------
 
@@ -32,7 +34,7 @@ export function DiagnosisCard({ data, line, onCheck, onSeeFindings }: {
   const warn = summary?.tone === 'warn';
   return (
     <section aria-labelledby="diagnosis-heading" style={{ ...CARD, marginBottom: 24, ...(warn ? { borderColor: 'var(--warn-line)' } : {}) }}>
-      <h3 id="diagnosis-heading" style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Agent Diagnosis</h3>
+      <h3 id="diagnosis-heading" style={{ fontSize: 15, fontWeight: 700, margin: 0, display: 'inline-flex', alignItems: 'center' }}>Agent health check<Hint text={HELP.agentHealthCheck} /></h3>
       <DiagnosisStatus line={line} onAction={onCheck} />
       {summary && (
         <div role="status" style={{

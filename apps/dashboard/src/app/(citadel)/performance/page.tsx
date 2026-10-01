@@ -10,9 +10,10 @@ import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtTokens } from '@/lib/format';
 import { PageHeader } from '@/components/citadel/PageChrome';
+import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { governanceCounts, RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
-import { Banner, TextInput, FONT_MONO } from '@whiteroom/ui';
+import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { DiagnosisCard, DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
 import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
@@ -641,7 +642,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   if (loadError) {
     return (
       <div style={CARD}>
-        <h3 style={H3}>Cost Tracking</h3>
+        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
         <div style={{ fontSize: 12, color: 'var(--bad)' }}>
           Couldn&apos;t load cost tracking: {loadError}
           {loadError === 'Unknown action.' && ' — the backend hasn’t been deployed with this feature yet.'}
@@ -655,7 +656,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   return (
     <div style={CARD}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={H3}>Cost Tracking</h3>
+        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
         {forecast.costUnavailable ? (
           <div className="flex items-center gap-2" title="No $/token pricing on file yet for this fleet's model — budget is tracked in tokens instead of dollars until pricing is added.">
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>TOKEN BUDGET</span>
@@ -675,9 +676,9 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
-            ${forecast.burnRateUsdPerHour.toFixed(2)}/hr
+            ${forecast.burnRateUsdPerHour.toFixed(2)} / h
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>estimated burn rate</div>
+          <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>spending per hour</div>
         </div>
         <div>
           {forecast.remainingTasks == null ? (
@@ -807,6 +808,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
   };
 
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
+  // README › Performance removes these cards and charts for simplicity but
+  // keeps their endpoints: they live behind this drill-down.
+  const [moreDetail, setMoreDetail] = useState(false);
   const toggleMetric = (m: string) => setExpandedMetric(prev => prev === m ? null : m);
 
   const hourly = hourlyData?.hourly ?? [];
@@ -825,39 +829,69 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
     return { totalMicros, cacheMicros, cacheReadTokens: totalCacheRead, govTokensSaved: govSavings?.tokensSaved ?? 0, govCostMicros };
   }, [displayHourly, govSavings]);
 
+  const hoursInRange = Math.max(1, (Date.parse(data.period.end) - Date.parse(data.period.start)) / 3_600_000 || 1);
+  const failedCalls = Math.round(s.errorRate * s.totalCalls);
+  const ruleSub = [blocked > 0 ? `${blocked.toLocaleString()} blocked` : null, govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-act (Watch only)` : null].filter(Boolean).join(' · ');
+
   return (
     <>
-      <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
-        <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
-        <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-        <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
-        <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
-        <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
-        <MetricCard label="Governance Blocks" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
+      {/* README › Performance: four cards, each following the page range. */}
+      <div className="wr-perf-strip">
+        <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(s.totalCost)} sub={`${fmtCost(s.totalCost / hoursInRange)} / h`} />
+        <StatCard
+          variant="card"
+          label="Savings"
+          hint={HELP.savings}
+          value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>up to </span>{fmtCost(savings.totalMicros)}</>}
+          sub={savings.govTokensSaved > 0 ? `${fmtTokens(savings.govTokensSaved)} tokens not spent, a ceiling` : 'nothing saved in this range'}
+        />
+        <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
+        <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={(blocked + (govCounts?.wouldBlocks ?? 0)).toLocaleString()} sub={ruleSub || 'no rule stepped in'} />
       </div>
 
-      {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
+      <div style={{ margin: '10px 0 24px' }}>
+        <button type="button" className="wr-link" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-expanded={moreDetail} onClick={() => setMoreDetail((v) => !v)}>
+          {moreDetail ? 'Hide detail' : 'More detail: requests, response time, models'}
+        </button>
+      </div>
+      {moreDetail && (
+        <section aria-label="More detail">
+          <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
+            <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
+            <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+            <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
+            <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
+            <MetricCard label="Governance Blocks" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
+          </div>
 
-      <CostTrackingSection fleetId={fleetId} authKey={authKey} />
+          {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
+
+          {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
+
+          <div style={{ display: 'grid', gridTemplateColumns: s.models.length > 0 ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 24 }}>
+            {s.models.length > 0 && <CostDonut models={s.models} />}
+            {s.models.length > 0 && <TrafficByModel models={s.models} />}
+          </div>
+
+        </section>
+      )}
 
       {savingsPartialSince && (savingsDays || byAgent) && (
         <div style={{ marginBottom: 12 }}>
           <Banner variant="warn">Partial history: events are loaded from {savingsPartialSince}, so Savings and By agent start there. Earlier days show as empty.</Banner>
         </div>
       )}
-      {savingsDays && <div style={{ marginBottom: 24 }}><SavingsChart days={savingsDays} /></div>}
+      <div className="wr-perf-row wr-perf-row--cost">
+        <CostTrackingSection fleetId={fleetId} authKey={authKey} />
+        {savingsDays && <SavingsChart days={savingsDays} />}
+      </div>
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} /></div>}
 
-      {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
-
-      <div style={{ display: 'grid', gridTemplateColumns: s.models.length > 0 ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 24 }}>
-        {s.models.length > 0 && <CostDonut models={s.models} />}
-        {s.models.length > 0 && <TrafficByModel models={s.models} />}
-      </div>
-
+      <div className="wr-perf-row">
       <DiagnosisCard data={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onSeeFindings={seeFindings} />
 
-      <div style={CARD} id="recommendations">
+      <div style={{ ...CARD, marginBottom: 0 }} id="recommendations">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <h3 style={H3} id="recommendations-heading" tabIndex={-1}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
           <input value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />
@@ -937,6 +971,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
 
       </div>
 
+      </div>
     </>
   );
 }
@@ -1344,17 +1379,14 @@ export default function PerformancePage() {
           </span>
         </>}
       >
-        <span className="citadel-hide-mobile" style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Rolling · last {hoursBack} hours</span>
-        <div role="group" aria-label="Time range" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {([24, 72, 168] as const).map(h => (
-            <button key={h} onClick={() => setHoursBack(h)} aria-pressed={hoursBack === h} title={`Last ${h} hours, counted back from now`} style={{
-              fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-              background: hoursBack === h ? 'var(--brand-dim)' : 'transparent',
-              color: hoursBack === h ? 'var(--brand)' : 'var(--tx3)',
-              border: `1px solid ${hoursBack === h ? 'var(--brand)' : 'var(--line)'}`,
-            }}>{h === 24 ? '24h' : h === 72 ? '3d' : '7d'}</button>
-          ))}
-        </div>
+        <SegmentedControl<'24' | '72' | '168'>
+          label="Time range, counted back from now"
+          value={String(hoursBack) as '24' | '72' | '168'}
+          onChange={(v) => setHoursBack(Number(v))}
+          size={26}
+          options={[{ value: '24', label: '24h' }, { value: '72', label: '3d' }, { value: '168', label: '7d' }]}
+        />
+        <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>rolling, from now</span>
       </PageHeader>
 
       {/* Content — dimmed while a range/agent fetch is in flight over data
