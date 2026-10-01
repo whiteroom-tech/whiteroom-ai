@@ -10,16 +10,11 @@ import { HELP } from '@/lib/metric-definitions';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
-  agentState, clock, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import { LiveFeedPanel } from './LiveFeedPanel';
 
 export type AgentsView = 'cards' | 'table';
-
-// Without agentDetails in the report, details come from one checkWatch per
-// agent. Doing that every 10s tick is an N+1 storm, so it runs at most once a
-// minute; in between, the last details get the report's fresh statuses.
-const DETAIL_FANOUT_INTERVAL_MS = 60_000;
 
 /**
  * Home (redesign screens 1a/1b): the five-second check. A 4-number strip,
@@ -42,7 +37,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const [today, setToday] = useState<{ calls: number; costUsd: number } | null>(null);
   const [failing, setFailing] = useState(false);
   const [view, setView] = useState<AgentsView>(() => (safeGet('wr_home_agents_view') === 'table' ? 'table' : 'cards'));
-  const lastFanOut = useRef(0);
+  const fanOutClock = useRef(FANOUT_START);
   const fanOutDetails = useRef<AgentInfo[]>([]);
 
   const fetchReport = useCallback(async (stale: () => boolean) => {
@@ -52,10 +47,11 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     let details: AgentInfo[];
     if (data.agentDetails?.length) {
       details = data.agentDetails;
-    } else if (Date.now() - lastFanOut.current >= DETAIL_FANOUT_INTERVAL_MS || hasUnknownAgents(data, fanOutDetails.current)) {
+    } else if (fanOutDue(fanOutClock.current, Date.now(), hasUnknownAgents(data, fanOutDetails.current))) {
       // One agent's failed lookup must not empty the panel or show made-up
       // numbers: it keeps its last good detail (mergeFanOut), and the fan-out
-      // runs again on the next poll instead of after the full interval.
+      // retries with a backoff (afterFanOut). Between fan-outs, the last
+      // details get the report's fresh statuses.
       const statuses = reportStatuses(data);
       const results = await Promise.all([...statuses.keys()].map((id) =>
         checkWatch(id, fleetId, authKey).then((d): AgentInfo | null => d, () => null),
@@ -64,7 +60,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       const merged = mergeFanOut(statuses, results, fanOutDetails.current);
       details = merged.details;
       fanOutDetails.current = details;
-      if (merged.complete) lastFanOut.current = Date.now();
+      fanOutClock.current = afterFanOut(fanOutClock.current, Date.now(), merged.complete);
     } else {
       details = overlayStatuses(data, fanOutDetails.current);
     }

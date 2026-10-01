@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, agentState, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, refreshWhileOpen, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -211,6 +211,66 @@ describe('merging a fan-out', () => {
 
   it('is complete only when every lookup worked', () => {
     expect(mergeFanOut(statuses, [{ agentId: 'a', status: 'working' }, { agentId: 'b', status: 'resting' }, { agentId: 'c', status: 'idle' }], []).complete).toBe(true);
+  });
+});
+
+describe('fan-out throttle', () => {
+  it('runs at once, then waits a minute after a complete fan-out', () => {
+    expect(fanOutDue(FANOUT_START, 1_000, false)).toBe(true);
+    const c = afterFanOut(FANOUT_START, 1_000, true);
+    expect(c).toEqual({ nextAt: 61_000, failures: 0 });
+    expect(fanOutDue(c, 60_999, false)).toBe(false);
+    expect(fanOutDue(c, 61_000, false)).toBe(true);
+  });
+
+  it('fetches a new agent at once after a complete fan-out', () => {
+    expect(fanOutDue(afterFanOut(FANOUT_START, 0, true), 5_000, true)).toBe(true);
+  });
+
+  it('backs off when one lookup keeps failing, so polls every 10s do not all fan out', () => {
+    let c = FANOUT_START;
+    let now = 0;
+    let runs = 0;
+    // Ten minutes of 10s polls with one agent that always fails, including a
+    // never-seen agent (failed lookups leave it unknown).
+    for (; now < 600_000; now += 10_000) {
+      if (fanOutDue(c, now, true)) { runs += 1; c = afterFanOut(c, now, false); }
+    }
+    expect(runs).toBeLessThanOrEqual(13); // 0,10,30,70 then once a minute
+    expect(c.failures).toBe(runs);
+  });
+
+  it('steps the retry 10s, 20s, 40s, then a minute, and resets on success', () => {
+    const gaps: number[] = [];
+    let c = FANOUT_START;
+    for (let i = 0; i < 5; i++) { const next = afterFanOut(c, 0, false); gaps.push(next.nextAt); c = next; }
+    expect(gaps).toEqual([10_000, 20_000, 40_000, 60_000, 60_000]);
+    expect(afterFanOut(c, 0, true)).toEqual({ nextAt: 60_000, failures: 0 });
+  });
+});
+
+describe('live feed refresh', () => {
+  it('reloads on a new signal only while open', () => {
+    expect(refreshWhileOpen(true, 2, 1)).toBe(true);
+    expect(refreshWhileOpen(false, 2, 1)).toBe(false);
+    expect(refreshWhileOpen(true, 1, 1)).toBe(false);
+  });
+
+  it('loads once when revealed after a Refresh made while hidden', () => {
+    // Mirrors the panel's effect: every run marks the signal handled.
+    let handled = 0;
+    let loads = 0;
+    const effect = (open: boolean, signal: number) => {
+      const due = refreshWhileOpen(open, signal, handled);
+      handled = signal;
+      if (due) loads += 1;
+    };
+    effect(false, 0); // mount, hidden
+    effect(false, 1); // Refresh while hidden
+    loads += 1; effect(true, 1); // reveal() loads, then the effect sees open
+    expect(loads).toBe(1);
+    effect(true, 2); // Refresh while open
+    expect(loads).toBe(2);
   });
 });
 

@@ -78,7 +78,7 @@ export function overlayStatuses(report: Pick<FleetReport, 'status'>, cached: Age
  * Combine one fan-out's lookups (null where a lookup failed) with the last
  * good details. A failed agent keeps its previous detail under the report's
  * fresh status, or just the status if it has none yet. `complete` is false
- * when any lookup failed, so the caller retries on the next poll instead of
+ * when any lookup failed, so the caller retries sooner (afterFanOut) instead of
  * waiting out the throttle.
  */
 export function mergeFanOut(
@@ -94,6 +94,47 @@ export function mergeFanOut(
     return { ...(prev.get(id) ?? { agentId: id }), agentId: id, status: statuses.get(id) ?? 'idle' };
   });
   return { details, complete: results.every(Boolean) };
+}
+
+// Without agentDetails in the report, details come from one checkWatch per
+// agent. Doing that every 10s tick is an N+1 storm, so a complete fan-out
+// waits a minute; a partial one retries sooner, backing off so one agent whose
+// lookup keeps failing can't bring the storm back.
+export const FANOUT_INTERVAL_MS = 60_000;
+const FANOUT_RETRY_MS = 10_000;
+
+export interface FanOutClock {
+  /** Earliest time the next fan-out may run. */
+  nextAt: number;
+  /** Partial fan-outs in a row since the last complete one. */
+  failures: number;
+}
+
+export const FANOUT_START: FanOutClock = { nextAt: 0, failures: 0 };
+
+/**
+ * Whether this poll should fan out. A new agent (one the cached details don't
+ * cover) is fetched at once, but only after a complete fan-out: if lookups
+ * are already failing, it waits for the backoff like the rest.
+ */
+export function fanOutDue(clock: FanOutClock, now: number, unknownAgents: boolean): boolean {
+  return now >= clock.nextAt || (unknownAgents && clock.failures === 0);
+}
+
+/** The clock after a fan-out: a minute when complete, else 10s, 20s, 40s, then a minute. */
+export function afterFanOut(clock: FanOutClock, now: number, complete: boolean): FanOutClock {
+  if (complete) return { nextAt: now + FANOUT_INTERVAL_MS, failures: 0 };
+  const failures = clock.failures + 1;
+  return { nextAt: now + Math.min(FANOUT_INTERVAL_MS, FANOUT_RETRY_MS * 2 ** (failures - 1)), failures };
+}
+
+/**
+ * The live feed reloads on the header's Refresh, but only while revealed.
+ * Every signal is marked handled, even while hidden, so revealing after a
+ * hidden Refresh loads once (from reveal) rather than twice.
+ */
+export function refreshWhileOpen(open: boolean, signal: number, handled: number): boolean {
+  return open && signal !== handled;
 }
 
 /** Whether the report has agents the cached details don't cover yet. */
