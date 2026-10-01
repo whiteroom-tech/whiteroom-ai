@@ -5,17 +5,23 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   cookie: vi.fn(),
   origin: vi.fn(),
+  tokenLogin: vi.fn(),
 }));
 vi.mock('@/auth', () => ({ auth: mocks.auth }));
 vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
 vi.mock('@/lib/origin-check', () => ({ checkSameOrigin: mocks.origin }));
+vi.mock('@/lib/whiteroom/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/whiteroom/client')>()),
+  tokenLogin: mocks.tokenLogin,
+}));
 vi.mock('@/lib/fleet-session', () => ({
   getFleetAuthCookie: mocks.cookie,
   setFleetAuthCookie: vi.fn(),
   tokenFromUserFleets: async () => null,
 }));
 
-import { controlAccessError, controlActionOf, DASHBOARD_ONLY_ACTIONS } from '@/lib/control-auth';
+import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS } from '@/lib/control-auth';
+import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
 
 const body = (b: Record<string, unknown>) => JSON.stringify(b);
@@ -32,8 +38,19 @@ describe('controlActionOf', () => {
   });
 });
 
+describe('credentialGrant', () => {
+  it('matches token and fleet together; a row without a fleet id needs the engine', () => {
+    expect(credentialGrant([{ token: 't', fleetId: 'f1' }], 'f1', 't')).toBe('linked');
+    expect(credentialGrant([{ token: 't', fleetId: 'f1' }], 'f2', 't')).toBe('none');
+    expect(credentialGrant([{ token: 'other', fleetId: 'f1' }], 'f1', 't')).toBe('none');
+    expect(credentialGrant([{ token: 't', fleetId: null }], 'f1', 't')).toBe('unknown-fleet');
+    expect(credentialGrant([{ token: 't', fleetId: null }, { token: 't', fleetId: 'f1' }], 'f1', 't')).toBe('linked');
+    expect(credentialGrant([], 'f1', 't')).toBe('none');
+  });
+});
+
 describe('controlAccessError', () => {
-  beforeEach(() => { mocks.query.mockReset(); mocks.auth.mockReset(); });
+  beforeEach(() => { mocks.query.mockReset(); mocks.auth.mockReset(); mocks.tokenLogin.mockReset(); });
 
   it('needs a signed-in WhiteRoom account (a pasted fleet key is not enough)', async () => {
     mocks.auth.mockResolvedValue(null);
@@ -41,29 +58,47 @@ describe('controlAccessError', () => {
     expect(mocks.query).not.toHaveBeenCalled();
   });
 
-  it('needs the account to be linked to that fleet', async () => {
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [] });
-    expect(await controlAccessError('someone-elses-fleet', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/isn’t linked to this fleet/) });
-    // The fleet and the forwarded token are checked together.
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'someone-elses-fleet', 'tok']);
-  });
+  const signedIn = () => mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+  const holds = (...rows: { token: string; fleetId: string | null }[]) => mocks.query.mockResolvedValue({ rows });
 
-  it('accepts the account’s own API key and rows saved before fleet ids were recorded', async () => {
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [] });
-    await controlAccessError('f1', 'sk-key');
-    const sql = String(mocks.query.mock.calls[0][0]).replace(/\s+/g, ' ');
-    // Sessions migrated from older logins can hold the fleet's API key.
-    expect(sql).toContain('(fleet_token = $3 OR api_key = $3)');
-    // The engine still checks the credential grants the body's fleet.
-    expect(sql.match(/\(fleet_id = \$2 OR fleet_id IS NULL\)/g)).toHaveLength(2);
-  });
-
-  it('allows a linked account', async () => {
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+  it('allows the fleet token the account holds for that fleet, without asking the engine', async () => {
+    signedIn();
+    holds({ token: 'tok', fleetId: 'f1' });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'tok']);
+    expect(mocks.tokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('refuses a token the account doesn’t hold', async () => {
+    signedIn();
+    holds();
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/isn’t linked to this fleet/) });
+    expect(mocks.tokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('refuses the account’s token for a different fleet', async () => {
+    signedIn();
+    holds({ token: 'tok', fleetId: 'f1' });
+    expect(await controlAccessError('f2', 'tok')).toMatchObject({ status: 403 });
+    expect(mocks.tokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('for a row saved without a fleet id, allows only the fleet the engine says the token is for', async () => {
+    signedIn();
+    holds({ token: 'tok', fleetId: null });
+    mocks.tokenLogin.mockResolvedValue({ success: true, fleetId: 'f1' });
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+    expect(mocks.tokenLogin).toHaveBeenCalledWith('tok');
+    expect(await controlAccessError('f2', 'tok')).toMatchObject({ status: 403 });
+  });
+
+  it('refuses a fleet-id-less row when the engine rejects the token, and fails closed when it can’t be reached', async () => {
+    signedIn();
+    holds({ token: 'tok', fleetId: null });
+    mocks.tokenLogin.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 401', 401));
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403 });
+    mocks.tokenLogin.mockRejectedValueOnce(new Error('network'));
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
   });
 
   it('asks for a fleet_id', async () => {
@@ -87,9 +122,9 @@ describe('the engine BFF', () => {
     mocks.cookie.mockResolvedValue('wr_fleet_token');
     mocks.auth.mockReset();
     mocks.query.mockReset();
-    process.env.WR_DASHBOARD_SERVICE_SECRET = 'dash-secret';
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'dash-secret');
   });
-  afterEach(() => { vi.unstubAllGlobals(); delete process.env.WR_DASHBOARD_SERVICE_SECRET; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   const call = (b: Record<string, unknown>) => POST(new Request('http://localhost/api/fleet/engine', { method: 'POST', body: body(b) }));
   const sentHeaders = () => fetchMock.mock.calls[0][1].headers as Record<string, string>;
@@ -108,7 +143,7 @@ describe('the engine BFF', () => {
 
   it('adds the secret for a linked, signed-in user', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [{}] });
+    mocks.query.mockResolvedValue({ rows: [{ token: 'wr_fleet_token', fleetId: 'f1' }] });
     expect((await call({ action: 'governance_update_rule', fleet_id: 'f1', rule_id: 'r' })).status).toBe(200);
     expect(sentHeaders()['x-wr-dashboard-secret']).toBe('dash-secret');
   });
@@ -118,7 +153,7 @@ describe('the engine BFF', () => {
     mocks.query.mockResolvedValue({ rows: [] });
     const res = await call({ action: 'pause_agent', fleet_id: 'fleet-a', agent_id: 'a' });
     expect(res.status).toBe(403);
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'fleet-a', 'wr_fleet_token']);
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'wr_fleet_token']);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -137,9 +172,9 @@ describe('the engine BFF', () => {
   });
 
   it('forwards without the secret while it isn’t configured (old engines accept, new ones refuse)', async () => {
-    delete process.env.WR_DASHBOARD_SERVICE_SECRET;
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [{}] });
+    mocks.query.mockResolvedValue({ rows: [{ token: 'wr_fleet_token', fleetId: 'f1' }] });
     await call({ action: 'resume_agent', fleet_id: 'f1', agent_id: 'a' });
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
   });

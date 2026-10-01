@@ -2,6 +2,7 @@ import 'server-only';
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
+import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 
 /**
  * Engine actions that change what an agent may do (rules) or whether it works
@@ -37,37 +38,66 @@ export interface ControlDenial {
   error: string;
 }
 
+/** A fleet credential stored on the signed-in account, and the fleet it was saved for. */
+export interface HeldCredential {
+  token: string;
+  /** NULL for rows saved before fleet ids were recorded. */
+  fleetId: string | null;
+}
+
+/**
+ * How the forwarded credential relates to the account's stored ones:
+ * - `linked`: the account holds it for exactly this fleet.
+ * - `unknown-fleet`: the account holds it, but on a row with no fleet id, so
+ *   which fleet it grants has to be asked of the engine.
+ * - `none`: the account doesn't hold it, or holds it for another fleet.
+ */
+export function credentialGrant(held: HeldCredential[], fleetId: string, token: string): 'linked' | 'unknown-fleet' | 'none' {
+  const same = held.filter((h) => h.token === token);
+  if (same.some((h) => h.fleetId === fleetId)) return 'linked';
+  return same.some((h) => h.fleetId === null) ? 'unknown-fleet' : 'none';
+}
+
+const NOT_LINKED: ControlDenial = { status: 403, error: 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its rules or pause its agents.' };
+const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check your access to this fleet. Try again.' };
+
 /**
  * Who may send a control action through the BFF: a signed-in WhiteRoom user
- * whose account holds the very credential this session forwards: their own
- * fleet's token or API key, or a user_fleets token. A browser session made by
- * pasting a fleet key isn't enough: an agent holds that key too and could
- * script the same login. The engine still checks that the credential grants
- * the fleet in the body; here, a stored fleet id must match it, and a row
- * saved before fleet ids were recorded (NULL) is accepted on the credential.
+ * whose account holds the fleet token this session forwards, saved for the
+ * fleet the request names (users.fleet_token for their own fleet, or a
+ * user_fleets row). A session made by pasting a fleet key isn't enough: an
+ * agent holds that key too and could script the same login.
  *
- * Returns the refusal, or null when the call may go ahead. A failed lookup
- * refuses (503), so the check fails closed.
+ * For a row saved without a fleet id, the engine's token_login says which
+ * fleet the token is for, and it must be the requested one.
+ *
+ * Returns the refusal, or null when the call may go ahead. Any failed lookup
+ * refuses, so the check fails closed.
  */
 export async function controlAccessError(fleetId: string | null, token: string): Promise<ControlDenial | null> {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change rules or pause agents.' };
   if (!fleetId) return { status: 400, error: 'fleet_id is required.' };
-  let linked: boolean;
+  let held: HeldCredential[];
   try {
     const { rows } = await db().query(
-      `SELECT 1 FROM users
-        WHERE id = $1 AND (fleet_id = $2 OR fleet_id IS NULL) AND (fleet_token = $3 OR api_key = $3)
+      `SELECT fleet_token AS token, fleet_id AS "fleetId" FROM users WHERE id = $1 AND fleet_token = $2
        UNION ALL
-       SELECT 1 FROM user_fleets
-        WHERE user_id = $1 AND (fleet_id = $2 OR fleet_id IS NULL) AND fleet_token = $3
-       LIMIT 1`,
-      [userId, fleetId, token],
+       SELECT fleet_token, fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_token = $2`,
+      [userId, token],
     );
-    linked = rows.length > 0;
+    held = rows;
   } catch {
-    return { status: 503, error: 'Couldn’t check your access to this fleet. Try again.' };
+    return LOOKUP_FAILED;
   }
-  return linked ? null : { status: 403, error: 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its rules or pause its agents.' };
+  const grant = credentialGrant(held, fleetId, token);
+  if (grant === 'linked') return null;
+  if (grant === 'none') return NOT_LINKED;
+  try {
+    const login = await tokenLogin(token);
+    return login.fleetId === fleetId ? null : NOT_LINKED;
+  } catch (e) {
+    return isAuthError(e) ? NOT_LINKED : LOOKUP_FAILED;
+  }
 }
