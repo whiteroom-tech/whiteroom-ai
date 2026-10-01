@@ -329,6 +329,8 @@ a.wr-btn { text-decoration: none; }
 @media (max-width: 1100px) {
   .wr-perf-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wr-perf-row, .wr-perf-row--cost { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* Fleet key (app/fleet-key/onboarding) */
 .wr-key-field { flex: 1; min-width: 0; min-height: 32px; display: flex; align-items: center; padding: 6px 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; color: var(--tx); word-break: break-all; }
 .wr-key-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
