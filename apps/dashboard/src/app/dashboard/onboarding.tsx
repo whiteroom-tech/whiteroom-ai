@@ -393,89 +393,89 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
     <>
       <PageHeader title="Fleet key" fleetId={email} fleetTitle="Signed in as" />
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-      <main className="max-w-[860px] mx-auto px-7 py-14 space-y-10">
-        {/* Welcome banner */}
-        {isNew ? (
-          <div className="rounded-xl p-6" style={{ border: '1px solid color-mix(in srgb, var(--ok) 30%, transparent)', background: 'var(--ok-bg)' }}>
-            <h2 className="text-xl font-display font-bold" style={{ color: 'var(--ok)' }}>
-              Welcome, {name}
-            </h2>
-            <p className="text-sm mt-1.5" style={{ color: 'var(--tx2)' }}>
-              Your account is ready. Follow the steps below to connect your first agent.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <h2 className="text-xl font-display font-bold">Welcome back, {name}</h2>
-          </div>
-        )}
-
-        {active && liveRow}
-
-        {/* Provider selector */}
-        <ProviderPills value={tab} onChange={setTab} />
-
-        {/* Getting Started — collapsed once the fleet has run work, so
-            returning users land on the Control Room link, not setup. */}
-        {active ? (
-          <details className="group/setup space-y-4">
-            <summary className="rounded-xl cursor-pointer list-none px-6 py-4 flex items-center justify-between text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--tx2)' }}>
-              Setup guide
-              <span aria-hidden="true" className="transition-transform group-open/setup:rotate-90">▸</span>
-            </summary>
-            {setupSteps}
-          </details>
-        ) : (
-          setupSteps
-        )}
-
-        {/* Bring Your Own Key */}
-        <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} />
-
-        {!active && liveRow}
-
-        {/* API Key */}
-        <section className="rounded-xl p-6 space-y-3" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: 'var(--tx2)' }}>Your API Key</h3>
-              <p className="text-xs mt-1" style={{ color: 'var(--tx2)' }}>Use this key to authenticate all CLI commands and API requests.</p>
+        <main className="max-w-[860px] mx-auto px-7 py-14 space-y-10">
+          {/* Welcome banner */}
+          {isNew ? (
+            <div className="rounded-xl p-6" style={{ border: '1px solid color-mix(in srgb, var(--ok) 30%, transparent)', background: 'var(--ok-bg)' }}>
+              <h2 className="text-xl font-display font-bold" style={{ color: 'var(--ok)' }}>
+                Welcome, {name}
+              </h2>
+              <p className="text-sm mt-1.5" style={{ color: 'var(--tx2)' }}>
+                Your account is ready. Follow the steps below to connect your first agent.
+              </p>
             </div>
-            <button
-              onClick={() => setShowKey(!showKey)}
-              className="text-xs font-mono transition-colors cursor-pointer"
-              style={{ color: 'var(--tx2)' }}
-            >
-              {showKey ? 'Hide' : 'Reveal'}
-            </button>
-          </div>
-          <div className="flex items-center rounded-lg px-4 py-3" style={{ background: 'var(--sunk)', border: '1px solid var(--line)' }}>
-            <code className="text-sm font-mono flex-1 break-all" style={{ color: 'var(--warn)' }}>
-              {showKey ? apiKey : '•'.repeat(46)}
-            </code>
-            <CopyButton text={apiKey} disabled={!showKey} />
-          </div>
-        </section>
+          ) : (
+            <div>
+              <h2 className="text-xl font-display font-bold">Welcome back, {name}</h2>
+            </div>
+          )}
 
-        {/* Footer links */}
-        <footer className="flex items-center gap-6 pt-4 pb-8">
-          {[
-            { label: 'Docs', href: 'https://whiteroom.tech/docs.html' },
-            { label: 'SDK', href: 'https://whiteroom.tech/docs.html#sdk' },
-            { label: 'OpenAPI', href: 'https://whiteroom.tech/openapi.yaml' },
-            { label: 'GitHub', href: 'https://github.com/rashadhaque/whiteroom-ai' },
-          ].map(link => (
-            <a
-              key={link.label}
-              href={link.href}
-              className="text-sm transition-colors hover:text-[var(--brand)]"
-              style={{ color: 'var(--tx2)' }}
-            >
-              {link.label}
-            </a>
-          ))}
-        </footer>
-      </main>
+          {active && liveRow}
+
+          {/* Provider selector */}
+          <ProviderPills value={tab} onChange={setTab} />
+
+          {/* Getting Started — collapsed once the fleet has run work, so
+              returning users land on the Control Room link, not setup. */}
+          {active ? (
+            <details className="group/setup space-y-4">
+              <summary className="rounded-xl cursor-pointer list-none px-6 py-4 flex items-center justify-between text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--tx2)' }}>
+                Setup guide
+                <span aria-hidden="true" className="transition-transform group-open/setup:rotate-90">▸</span>
+              </summary>
+              {setupSteps}
+            </details>
+          ) : (
+            setupSteps
+          )}
+
+          {/* Bring Your Own Key */}
+          <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} />
+
+          {!active && liveRow}
+
+          {/* API Key */}
+          <section className="rounded-xl p-6 space-y-3" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-[11px] font-mono tracking-[.28em] uppercase font-medium" style={{ color: 'var(--tx2)' }}>Your API Key</h3>
+                <p className="text-xs mt-1" style={{ color: 'var(--tx2)' }}>Use this key to authenticate all CLI commands and API requests.</p>
+              </div>
+              <button
+                onClick={() => setShowKey(!showKey)}
+                className="text-xs font-mono transition-colors cursor-pointer"
+                style={{ color: 'var(--tx2)' }}
+              >
+                {showKey ? 'Hide' : 'Reveal'}
+              </button>
+            </div>
+            <div className="flex items-center rounded-lg px-4 py-3" style={{ background: 'var(--sunk)', border: '1px solid var(--line)' }}>
+              <code className="text-sm font-mono flex-1 break-all" style={{ color: 'var(--warn)' }}>
+                {showKey ? apiKey : '•'.repeat(46)}
+              </code>
+              <CopyButton text={apiKey} disabled={!showKey} />
+            </div>
+          </section>
+
+          {/* Footer links */}
+          <footer className="flex items-center gap-6 pt-4 pb-8">
+            {[
+              { label: 'Docs', href: 'https://whiteroom.tech/docs.html' },
+              { label: 'SDK', href: 'https://whiteroom.tech/docs.html#sdk' },
+              { label: 'OpenAPI', href: 'https://whiteroom.tech/openapi.yaml' },
+              { label: 'GitHub', href: 'https://github.com/rashadhaque/whiteroom-ai' },
+            ].map(link => (
+              <a
+                key={link.label}
+                href={link.href}
+                className="text-sm transition-colors hover:text-[var(--brand)]"
+                style={{ color: 'var(--tx2)' }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </footer>
+        </main>
       </div>
     </>
   );

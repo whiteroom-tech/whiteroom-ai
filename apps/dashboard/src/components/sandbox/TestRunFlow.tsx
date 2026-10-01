@@ -411,8 +411,10 @@ export function TestRunFlow() {
     setRun(null); setReport(null); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed');
   });
 
-  if (authStatus === 'loading') return <div className={s.content}>Loading your workspace…</div>;
+  if (authStatus === 'loading') return <><PageHeader title="Sandbox" /><div className={s.content}>Loading your workspace…</div></>;
   if (!session?.user?.id) return (
+    <>
+    <PageHeader title="Sandbox" />
     <main className={s.content}>
       <div className={s.eyebrow}>WHITEROOM / TEST RUNS</div>
       <h2 className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
@@ -423,6 +425,7 @@ export function TestRunFlow() {
         </div>
       </div>
     </main>
+    </>
   );
 
   // ── Preview icons ──

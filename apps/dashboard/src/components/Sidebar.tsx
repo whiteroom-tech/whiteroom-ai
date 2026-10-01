@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import { myOrganizationSummary } from '@/lib/organization-actions';
 import { safeGet } from '@/lib/safe-storage';
-import { ROUTES } from '@/lib/routes';
+import { ROUTES, isNavActive } from '@/lib/routes';
 import { APP_VERSION } from '@/components/citadel/PageChrome';
 import { AccountMenu } from '@/components/AccountMenu';
 
@@ -58,8 +58,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
 ];
-
-const isUnder = (path: string, href: string) => path === href || path.startsWith(href + '/');
 
 function NavIcon({ name }: { name: NavKey }) {
   return (
@@ -114,7 +112,7 @@ export function Sidebar() {
           <div key={group} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div className="wr-sidebar__eyebrow">{group}</div>
             {items.map((item) => {
-              const active = isUnder(pathname, item.href) || (item.also ?? []).some((p) => isUnder(pathname, p));
+              const active = isNavActive(pathname, item.href, item.also);
               return (
                 <Link
                   key={item.key}

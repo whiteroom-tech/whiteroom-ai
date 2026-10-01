@@ -1,12 +1,9 @@
 /* ── Topbar ── */
-.topbar { display:flex; align-items:center; gap:14px; padding:12px 28px; border-bottom:1px solid var(--line); background:var(--card); }
-.topbarTitle { font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; letter-spacing:.02em; }
 
 /* ── Badges ── */
 .badgeMode { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:9px; font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; }
 .badgeMode.live { background:var(--ok-bg); color:var(--ok); }
 .badgeMode.demo { background:var(--brand-dim); color:var(--brand); }
-.badgeEnv { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:9px; font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; color:var(--brand); border:1px solid var(--line2); }
 
 /* ── Timer ── */
 .timer { margin-left:auto; font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:12px; font-weight:500; display:flex; align-items:center; gap:5px; }
@@ -169,7 +166,6 @@
 
 /* ── Responsive ── */
 @media(max-width:720px) {
-  .topbar { padding:10px 16px; }
   .content { padding:20px 16px; }
   .card { padding:16px 18px; }
   .previewScenes { gap:8px; }

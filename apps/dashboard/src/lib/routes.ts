@@ -11,3 +11,13 @@ export const ROUTES = {
   organization: '/organization',
   signOut: '/auth/sign-out',
 } as const;
+
+/** Whether `pathname` is `href` or a page under it (not just a shared prefix). */
+export function isUnder(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(href + '/');
+}
+
+/** Nav highlighting: the item's own path, or one of its extra paths. */
+export function isNavActive(pathname: string, href: string, also: readonly string[] = []): boolean {
+  return isUnder(pathname, href) || also.some((p) => isUnder(pathname, p));
+}
