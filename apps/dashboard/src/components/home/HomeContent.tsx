@@ -200,7 +200,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               {sorted.map((a) => {
                 const block = blocks[a.agentId];
                 return (
-                  <Link key={a.agentId} href={agentHref(a.agentId)} className="wr-agent-card" aria-label={`${a.agentId}, open details`}>
+                  <Link key={a.agentId} href={agentHref(a.agentId)} className="wr-agent-card">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
                       <StatusPill state={agentState(a)} />
