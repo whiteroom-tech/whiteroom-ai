@@ -6,6 +6,8 @@
 //   - no key -> unauthenticated (e.g. token_login)
 
 import type {
+  ListRunsResult,
+  RunEventsResult,
   FleetDiagnosis,
   AgentInfo,
   AgentPerformanceResult,
@@ -773,4 +775,44 @@ export function governanceUpdateRule(
 
 export function governanceDeleteRule(fleetId: string, ruleId: string, key?: string): Promise<{ success?: boolean }> {
   return apiCall<{ success?: boolean }>({ action: 'governance_delete_rule', fleet_id: fleetId, rule_id: ruleId }, key);
+}
+
+// -- Runs (P1R) --
+
+/**
+ * Runs that started in a UTC day range, newest first. `unsupported` when the
+ * engine predates list_runs, so the page can fall back to the event feed.
+ */
+export async function listRuns(
+  fleetId: string,
+  opts: { fromDay: string; toDay: string; agentId?: string; cursor?: string | null; pageSize?: number },
+  key?: string,
+): Promise<ListRunsResult | { unsupported: true }> {
+  const res = await postRaw({
+    action: 'list_runs', fleet_id: fleetId, from_day: opts.fromDay, to_day: opts.toDay,
+    ...(opts.agentId ? { agent_id: opts.agentId } : {}),
+    ...(opts.cursor ? { cursor: opts.cursor } : {}),
+    ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
+  }, key);
+  if (res.status === 400) {
+    const body = await res.clone().json().catch(() => null);
+    // An engine without list_runs answers 400 "Unknown action." (white-room.ts, default case).
+    if (typeof body?.error === 'string' && /^unknown action/i.test(body.error)) return { unsupported: true };
+  }
+  if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
+  return (await res.json()) as ListRunsResult;
+}
+
+export function getRunEvents(
+  fleetId: string,
+  runId: string,
+  opts: { cursor?: string | null; eventId?: string | null; kind?: 'all' | 'events' } = {},
+  key?: string,
+): Promise<RunEventsResult> {
+  return apiCall<RunEventsResult>({
+    action: 'get_run_events', fleet_id: fleetId, run_id: runId,
+    ...(opts.cursor ? { cursor: opts.cursor } : {}),
+    ...(opts.eventId ? { event_id: opts.eventId } : {}),
+    kind: opts.kind ?? 'all',
+  }, key);
 }

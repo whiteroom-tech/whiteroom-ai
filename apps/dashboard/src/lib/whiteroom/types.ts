@@ -579,3 +579,48 @@ export interface GovernanceListResult {
   history: GovernanceHistoryEntry[];
   agents: string[];
 }
+
+// -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
+
+export interface RunSummary {
+  runId: string;
+  agentId: string;
+  shift: number;
+  startedAt: string;
+  endedAt: string;
+  lengthSeconds: number;
+  calls: number;
+  failedCalls: number;
+  blockedCalls: number;
+  spendMicros: number;
+  unpricedAttempts: number;
+  coverage: { calls: number; checked: number };
+}
+
+export interface ListRunsResult {
+  fleetId: string;
+  runs: RunSummary[];
+  total: number;
+  cursor: string | null;
+}
+
+export interface RunEvent {
+  id: string;
+  kind: 'call' | 'event';
+  at: string;
+  type: string;
+  model?: string | null;
+  tools?: string[];
+  durationMs?: number | null;
+  detail?: Record<string, unknown>;
+}
+
+export interface RunEventsResult {
+  fleetId: string;
+  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string };
+  events: RunEvent[];
+  page: number;
+  pages: number;
+  total: number;
+  eventFound: boolean | null;
+}

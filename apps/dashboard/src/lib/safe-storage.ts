@@ -29,3 +29,22 @@ export function safeRemove(key: string): void {
     /* as above */
   }
 }
+
+/** sessionStorage, for state that should last only as long as the tab (e.g. Run detail's "← Runs" target). */
+export function safeSessionGet(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function safeSessionSet(key: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    /* as above */
+  }
+}

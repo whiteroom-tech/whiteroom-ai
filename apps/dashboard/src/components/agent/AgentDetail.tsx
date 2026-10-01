@@ -12,6 +12,7 @@ import { ROUTES } from '@/lib/routes';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { ActivityRows } from '@/components/home/ActivityRows';
+import { RecentRuns } from '@/components/agent/RecentRuns';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
@@ -311,7 +312,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
               </div>
 
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
-                <Panel title="Recent activity" bodyPadding={0} actions={<Link href={ROUTES.runs} className="wr-link">All runs &rarr;</Link>}>
+                <RecentRuns fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? [] : undefined} />
+                <Panel title="Recent activity" bodyPadding={0}>
                   <ActivityRows rows={activity} empty="Nothing yet for this agent." />
                 </Panel>
               </div>
