@@ -20,11 +20,22 @@ vi.mock('@/lib/fleet-session', () => ({
   tokenFromUserFleets: async () => null,
 }));
 
-import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS } from '@/lib/control-auth';
+import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
 
 const body = (b: Record<string, unknown>) => JSON.stringify(b);
+
+type Held = { token: string; fleetId: string | null };
+type Holder = { userId: string; provisioned: boolean; since: number };
+/** Answers the access check's queries: the account's held tokens, then the fleet's holders. */
+function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: true, since: 1 }]) {
+  mocks.query.mockImplementation(async (sql: string) => {
+    if (sql.startsWith('UPDATE')) return { rows: [] };
+    if (sql.includes('extract(epoch')) return { rows: holders };
+    return { rows: held };
+  });
+}
 
 describe('controlActionOf', () => {
   it('picks out exactly the dashboard-only actions', () => {
@@ -49,6 +60,16 @@ describe('credentialGrant', () => {
   });
 });
 
+describe('fleetOwner', () => {
+  const h = (userId: string, provisioned: boolean, since: number) => ({ userId, provisioned, since });
+  it('is the provisioning account, else the first to link, ties to the lower id', () => {
+    expect(fleetOwner([h('late', false, 1), h('prov', true, 9)])).toBe('prov');
+    expect(fleetOwner([h('b', false, 5), h('a', false, 3)])).toBe('a');
+    expect(fleetOwner([h('z', false, 3), h('y', false, 3)])).toBe('y');
+    expect(fleetOwner([])).toBeNull();
+  });
+});
+
 describe('controlAccessError', () => {
   beforeEach(() => { mocks.query.mockReset(); mocks.auth.mockReset(); mocks.tokenLogin.mockReset(); });
 
@@ -59,7 +80,7 @@ describe('controlAccessError', () => {
   });
 
   const signedIn = () => mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-  const holds = (...rows: { token: string; fleetId: string | null }[]) => mocks.query.mockResolvedValue({ rows });
+  const holds = (...rows: Held[]) => fakeDb(rows);
 
   it('allows the fleet token the account holds for that fleet, without asking the engine', async () => {
     signedIn();
@@ -105,6 +126,45 @@ describe('controlAccessError', () => {
     signedIn();
     holds({ token: 'tok', fleetId: null });
     mocks.tokenLogin.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 500', 500));
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
+  });
+
+  it('refuses an account that holds the fleet but isn’t its owner', async () => {
+    signedIn();
+    // An agent's own account that linked the fleet after the person who provisioned it.
+    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
+      { userId: 'u-owner', provisioned: true, since: 100 },
+      { userId: 'u1', provisioned: false, since: 50 },
+    ]);
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/Only this fleet’s owner/) });
+  });
+
+  it('allows the account that linked the fleet first when nobody provisioned it', async () => {
+    signedIn();
+    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
+      { userId: 'u-later', provisioned: false, since: 200 },
+      { userId: 'u1', provisioned: false, since: 100 },
+    ]);
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+  });
+
+  it('records the engine-verified fleet id on a fleet-id-less row, then judges ownership with it', async () => {
+    signedIn();
+    fakeDb([{ token: 'tok', fleetId: null }], [{ userId: 'u1', provisioned: false, since: 1 }]);
+    mocks.tokenLogin.mockResolvedValue({ success: true, fleetId: 'f1' });
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+    const updates = mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'));
+    expect(updates.map(([, params]) => params)).toEqual([['u1', 'tok', 'f1'], ['u1', 'tok', 'f1']]);
+  });
+
+  it('refuses when nobody can be shown to own the fleet, and fails closed if the owner lookup fails', async () => {
+    signedIn();
+    fakeDb([{ token: 'tok', fleetId: 'f1' }], []);
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403 });
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('extract(epoch')) throw new Error('db down');
+      return { rows: [{ token: 'tok', fleetId: 'f1' }] };
+    });
     expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
   });
 
@@ -162,12 +222,14 @@ describe('the engine BFF', () => {
     mocks.auth.mockResolvedValue(null);
     const res = await call({ action: 'pause_agent', fleet_id: 'f1', agent_id: 'a' });
     expect(res.status).toBe(403);
+    // Marked so the client shows the reason instead of signing the user out.
+    expect(await res.json()).toMatchObject({ code: 'control_denied', error: expect.any(String) });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('adds the secret for a linked, signed-in user', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [{ token: 'wr_fleet_token', fleetId: 'f1' }] });
+    fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
     expect((await call({ action: 'governance_update_rule', fleet_id: 'f1', rule_id: 'r' })).status).toBe(200);
     expect(sentHeaders()['x-wr-dashboard-secret']).toBe('dash-secret');
   });
@@ -198,7 +260,7 @@ describe('the engine BFF', () => {
   it('forwards without the secret while it isn’t configured (old engines accept, new ones refuse)', async () => {
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.query.mockResolvedValue({ rows: [{ token: 'wr_fleet_token', fleetId: 'f1' }] });
+    fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
     await call({ action: 'resume_agent', fleet_id: 'f1', agent_id: 'a' });
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
   });

@@ -20,7 +20,7 @@ import {
   setFleetAuthCookie,
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
-import { engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
+import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
 import { CONTROL_SECRET_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
 
 export const runtime = 'nodejs';
@@ -51,7 +51,10 @@ export async function POST(req: Request) {
   const control = controlActionOf(body);
   if (control) {
     const denied = await controlAccessError(control.fleetId, token);
-    if (denied) return Response.json({ error: denied.error }, { status: denied.status });
+    if (denied) {
+      const code = denied.status === 403 ? { code: CONTROL_DENIED } : {};
+      return Response.json({ error: denied.error, ...code }, { status: denied.status });
+    }
     // Unset during rollout: the request goes without it, which engines from
     // before R1 accept and engines with R1 refuse (fail closed).
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;

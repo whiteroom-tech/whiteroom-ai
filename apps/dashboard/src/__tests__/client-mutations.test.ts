@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { ControlDeniedError, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -41,5 +41,24 @@ describe('mutation results', () => {
   it('resolves a confirmed change', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ success: true }));
     await expect(pauseAgent('f', 'a', 'sk-key')).resolves.toEqual({ success: true });
+  });
+});
+
+// A control refusal from the BFF (not the owner, not signed in) is a 403, but
+// the session is fine: treating it as an auth error signed people out.
+describe('control refusals', () => {
+  it('throw ControlDeniedError with the server’s reason, which isn’t an auth error', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'Only this fleet’s owner can change its rules or pause its agents.', code: 'control_denied' }, 403));
+    const e = await pauseAgent('f', 'a', 'sk-key').catch((x) => x);
+    expect(e).toBeInstanceOf(ControlDeniedError);
+    expect(e.message).toMatch(/Only this fleet’s owner/);
+    expect(isAuthError(e)).toBe(false);
+  });
+
+  it('leave a plain 403 as an auth error', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'Unauthorized' }, 403));
+    const e = await pauseAgent('f', 'a', 'sk-key').catch((x) => x);
+    expect(e).not.toBeInstanceOf(ControlDeniedError);
+    expect(isAuthError(e)).toBe(true);
   });
 });
