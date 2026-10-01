@@ -172,6 +172,6 @@ async function recordFleetId(userId: string, token: string, fleetId: string): Pr
       [userId, token, fleetId],
     );
   } catch {
-    // See above: a missed write fails closed.
+    // Only an optimisation: the ownership query counts these rows by token anyway.
   }
 }

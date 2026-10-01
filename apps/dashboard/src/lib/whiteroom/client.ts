@@ -83,6 +83,18 @@ export class ControlDeniedError extends WhiteRoomApiError {
 }
 
 /**
+ * How a page should react to a failed rule change or pause/resume:
+ * - `sign-out`: the credential was rejected; the session is gone.
+ * - `refused`: this account may not do this (ControlDeniedError). Show the
+ *   reason as it is; trying again gives the same answer, so offer no retry.
+ * - `failed`: anything else (network, 5xx, engine refusal). Worth a retry.
+ */
+export function controlFailure(e: unknown): 'sign-out' | 'refused' | 'failed' {
+  if (e instanceof ControlDeniedError) return 'refused';
+  return isAuthError(e) ? 'sign-out' : 'failed';
+}
+
+/**
  * True only for a genuine credential rejection (401/403). A timeout, network
  * failure, or 5xx is NOT an auth error — credentials should be kept and the
  * call retried. Nor is a control refusal: signing out wouldn't help.
