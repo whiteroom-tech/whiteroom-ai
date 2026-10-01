@@ -26,6 +26,9 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const enabled = options.filter((o) => !o.disabled);
+  // The tab stop: the selected segment, or the first enabled one when the
+  // value isn't a selectable option, so the group is always reachable.
+  const tabStop = enabled.some((o) => o.value === value) ? value : enabled[0]?.value;
 
   function move(from: V, step: 1 | -1) {
     const i = enabled.findIndex((o) => o.value === from);
@@ -46,7 +49,7 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
             type="button"
             role="radio"
             aria-checked={on}
-            tabIndex={on ? 0 : -1}
+            tabIndex={o.value === tabStop ? 0 : -1}
             disabled={o.disabled}
             title={o.title}
             className={`wr-seg__item${on ? ' is-on' : ''}`}

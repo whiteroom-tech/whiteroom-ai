@@ -48,6 +48,15 @@ describe('SegmentedControl', () => {
   it('draws the status dot', () => {
     expect(out).toContain('wr-dot--warn');
   });
+
+  it('stays reachable by keyboard when the value is disabled or unknown', () => {
+    const disabledValue = html(h(SegmentedControl<'off' | 'watch' | 'enforce'>, {
+      label: 'Mode', value: 'enforce', onChange: noop,
+      options: [{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', disabled: true }],
+    }));
+    expect(disabledValue.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(disabledValue).toMatch(/tabindex="0"[^>]*>Off/);
+  });
 });
 
 describe('StatusPill', () => {
@@ -108,18 +117,33 @@ describe('DataTable', () => {
     expect(plain).not.toContain('tabindex');
   });
 
+  it('uses grid semantics (where aria-selected is valid) only when rows open', () => {
+    const linked = html(h(DataTable<Row>, { caption: 'Runs', columns, rows, rowKey: (r) => r.id, onOpen: noop, selectedKey: '14' }));
+    expect(linked).toContain('role="grid"');
+    expect(linked).toContain('role="gridcell"');
+    expect(linked).toContain('aria-selected="true"');
+    const plain = html(h(DataTable<Row>, { caption: 'Runs', columns, rows, rowKey: (r) => r.id, selectedKey: '14' }));
+    expect(plain).toContain('role="table"');
+    expect(plain).not.toContain('aria-selected');
+  });
+
   it('right-aligns and tabulates numeric columns', () => {
     const out = html(h(DataTable<Row>, { caption: 'Runs', columns, rows, rowKey: (r) => r.id }));
     expect(out).toContain('class="is-right is-num"');
     expect(out).toContain('aria-label="Runs"');
   });
 
-  it('shows the empty state', () => {
-    expect(html(h(DataTable<Row>, { caption: 'Runs', columns, rows: [], rowKey: (r) => r.id, empty: 'No runs yet.' }))).toContain('No runs yet.');
+  it('shows the empty state inside a row', () => {
+    const out = html(h(DataTable<Row>, { caption: 'Runs', columns, rows: [], rowKey: (r) => r.id, empty: 'No runs yet.' }));
+    expect(out).toMatch(/role="row"[^>]*><span role="cell" aria-colspan="2">No runs yet\.<\/span>/);
   });
 });
 
 describe('Panel, Tag, SelectChip', () => {
+  it('shows a count even without a title', () => {
+    expect(html(h(Panel, { count: '4' }, 'x'))).toContain('wr-panel__count');
+  });
+
   it('renders the panel header slots', () => {
     const out = html(h(Panel, { title: 'Runs', count: '6 today', actions: h('span', null, 'x') }, 'body'));
     expect(out).toContain('wr-panel__title');

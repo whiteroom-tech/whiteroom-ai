@@ -12,7 +12,7 @@ export function Panel({ title, count, actions, children, bodyPadding = '16px 18p
 }) {
   return (
     <section id={id} className={`wr-panel ${className}`.trim()}>
-      {(title || actions) && (
+      {(title || actions || count != null) && (
         <div className="wr-panel__head">
           {title && <h2 className="wr-panel__title">{title}</h2>}
           {count != null && <span className="wr-panel__count">{count}</span>}
