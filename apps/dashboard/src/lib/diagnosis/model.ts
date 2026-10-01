@@ -213,7 +213,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
       const counts = new Map<number, number>();
       for (const c of calls) if (typeof c.watchNumber === 'number') counts.set(c.watchNumber, (counts.get(c.watchNumber) ?? 0) + 1);
       const watches = [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([watch, n]) => ({ watch, calls: n }));
-      return { kind: 'watches', caption: 'Calls in each watch before it handed over', watches };
+      return { kind: 'watches', caption: 'Calls in each shift before it handed over', watches };
     }
     case 'review_tool_loops': {
       const groups = new Map<string, { name: string; hash: string; watch: string; calls: number }>();
