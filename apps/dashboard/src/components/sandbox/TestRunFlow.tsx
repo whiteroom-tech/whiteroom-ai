@@ -30,7 +30,7 @@ const EVENT_LABELS: Record<string, string> = {
   register: 'Agent connected',
   watch_start: 'Shift started',
   task_complete: 'Call completed',
-  handover_begin: 'Work period ended, preparing handover',
+  handover_begin: 'Shift ended, preparing handover',
   self_handover: 'Handed over its context',
   handover: 'Handed over to a partner agent',
   paired_handover: 'Handed over to a partner agent',
