@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
 
@@ -41,7 +41,7 @@ describe('runs days, in the viewer’s time zone', () => {
 
   it('fills the strip’s empty days with zero, oldest first, ending today', () => {
     vi.stubEnv('TZ', 'America/Los_Angeles');
-    const strip = stripDays([{ day: '2026-09-28', runs: 3 }, { day: '2026-08-01', runs: 9 }], 5, now);
+    const strip = stripDays([{ day: '2026-09-28', runs: 3 }, { day: '2026-08-01', runs: 9 }], 5, '2026-09-30');
     expect(strip).toEqual([
       { day: '2026-09-26', runs: 0 }, { day: '2026-09-27', runs: 0 }, { day: '2026-09-28', runs: 3 },
       { day: '2026-09-29', runs: 0 }, { day: '2026-09-30', runs: 0 },
@@ -216,5 +216,41 @@ describe('day groups in the table', () => {
   it('starts a group at the first row and at each change of day only', () => {
     const rows = [{ d: 'a' }, { d: 'a' }, { d: 'b' }, { d: 'b' }, { d: 'a' }];
     expect(rows.map((_, i) => startsNewGroup(rows, i, key))).toEqual([true, false, true, false, true]);
+  });
+});
+
+describe('older records: custom ranges, plan history, strip paging', () => {
+  const now = Date.parse('2026-10-01T15:00:00Z');
+  const today = '2026-10-01';
+
+  it('shows a custom from–to, or the last 30 days until both ends are set', () => {
+    vi.stubEnv('TZ', 'America/New_York');
+    expect(runsWindow({ range: 'custom', day: null, from: '2026-06-01', to: '2026-06-30' }, now)).toEqual({ fromDay: '2026-06-01', toDay: '2026-06-30' });
+    expect(runsWindow({ range: 'custom', day: null }, now)).toEqual({ fromDay: '2026-09-02', toDay: '2026-10-01' });
+    expect(runsWindow({ range: 'custom', day: '2026-06-03', from: '2026-06-01', to: '2026-06-30' }, now)).toEqual({ fromDay: '2026-06-03', toDay: '2026-06-03' });
+    expect(runsCount(5, { range: 'custom', day: null, from: '2026-06-01', to: '2026-06-30' }, now)).toBe('5 from Mon, Jun 1 to Tue, Jun 30');
+  });
+
+  it('keeps a custom range to what the engine takes', () => {
+    expect(clampSpan('2026-06-30', '2026-06-01', { today })).toEqual({ from: '2026-06-01', to: '2026-06-30' }); // reversed
+    expect(clampSpan('2026-09-20', '2026-10-09', { today })).toEqual({ from: '2026-09-20', to: today }); // no future
+    expect(clampSpan('2025-01-01', '2026-09-01', { today, oldest: '2026-07-01' }).from).toBe('2026-07-01'); // plan history
+    // Over 92 days: the end just moved wins.
+    expect(clampSpan('2026-01-01', '2026-09-30', { today, moved: 'from' })).toEqual({ from: '2026-01-01', to: '2026-04-02' });
+    expect(clampSpan('2026-01-01', '2026-09-30', { today, moved: 'to' })).toEqual({ from: '2026-07-01', to: '2026-09-30' });
+    const { from, to } = clampSpan('2025-01-01', today, { today });
+    expect((Date.parse(to) - Date.parse(from)) / 86_400_000 + 1).toBe(MAX_SPAN_DAYS);
+  });
+
+  it('knows the first day the plan keeps', () => {
+    vi.stubEnv('TZ', 'America/New_York');
+    expect(oldestKept(30, now)).toBe('2026-09-02');
+    expect(oldestKept(undefined, now)).toBeNull();
+  });
+
+  it('moves the strip only when the shown days are off it', () => {
+    expect(stripEndFor({ fromDay: '2026-09-28', toDay: '2026-09-28' }, today, 30)).toBe(today); // on the strip: stays
+    expect(stripEndFor({ fromDay: '2026-06-03', toDay: '2026-06-03' }, today, 30)).toBe('2026-06-03'); // older: jumps
+    expect(stripEndFor({ fromDay: '2026-09-25', toDay: today }, '2026-06-03', 30)).toBe(today); // back to the range
   });
 });

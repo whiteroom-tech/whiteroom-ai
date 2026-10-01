@@ -6,8 +6,14 @@ import type { Sheet } from '@/lib/xlsx';
 import type { IconName, TagTone } from '@whiteroom/ui';
 import { activityRow, clock } from '@/lib/home';
 
-export type RunsRange = 'today' | '7d' | '30d';
-export const RUNS_RANGES: RunsRange[] = ['today', '7d', '30d'];
+export type RunsPreset = 'today' | '7d' | '30d';
+export type RunsRange = RunsPreset | 'custom';
+export const RUNS_RANGES: RunsRange[] = ['today', '7d', '30d', 'custom'];
+/** The engine reads at most this many days per request (run-id.ts MAX_RUN_DAYS). */
+export const MAX_SPAN_DAYS = 92;
+
+/** What Runs shows: one picked day, else a custom from–to, else a preset range. */
+export type RunsView = { range: RunsRange; day: string | null; from?: string | null; to?: string | null };
 
 /** IANA zone names the engine accepts: "UTC", "GMT", "America/New_York", "America/Argentina/Salta". Matches run-id.ts in the engine. */
 export const TIME_ZONE_NAME = /^[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/;
@@ -40,15 +46,54 @@ export function addDays(day: string, n: number): string {
 }
 
 /** The viewer's local days: today, or the last 7 / 30 including today. */
-export function runsDays(range: RunsRange, now: number = Date.now()): { fromDay: string; toDay: string } {
+export function runsDays(range: RunsPreset, now: number = Date.now()): { fromDay: string; toDay: string } {
   const back = range === 'today' ? 0 : range === '7d' ? 6 : 29;
   const today = localDay(now);
   return { fromDay: addDays(today, -back), toDay: today };
 }
 
-/** The days a Runs view covers: one picked day, else the range. */
-export function runsWindow(view: { range: RunsRange; day: string | null }, now: number = Date.now()): { fromDay: string; toDay: string } {
-  return view.day ? { fromDay: view.day, toDay: view.day } : runsDays(view.range, now);
+/** The days a Runs view covers. A custom range without both ends shows the last 30 days. */
+export function runsWindow(view: RunsView, now: number = Date.now()): { fromDay: string; toDay: string } {
+  if (view.day) return { fromDay: view.day, toDay: view.day };
+  if (view.range === 'custom') return view.from && view.to ? { fromDay: view.from, toDay: view.to } : runsDays('30d', now);
+  return runsDays(view.range, now);
+}
+
+/** Whole days from `a` to `b` (b − a). */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * A custom range the engine will take: ends in order, not after today, not
+ * before `oldest` (what the plan keeps), and at most MAX_SPAN_DAYS long. When
+ * it's too long, the end the person just moved (`moved`) wins.
+ */
+export function clampSpan(from: string, to: string, opts: { today: string; oldest?: string | null; moved?: 'from' | 'to' }): { from: string; to: string } {
+  let f = from <= to ? from : to;
+  let t = from <= to ? to : from;
+  if (t > opts.today) t = opts.today;
+  if (opts.oldest && f < opts.oldest) f = opts.oldest;
+  if (f > t) f = t;
+  if (daysBetween(f, t) + 1 > MAX_SPAN_DAYS) {
+    if (opts.moved === 'from') t = addDays(f, MAX_SPAN_DAYS - 1);
+    else f = addDays(t, 1 - MAX_SPAN_DAYS);
+  }
+  return { from: f, to: t };
+}
+
+/** The first day the plan still keeps, or null when the plan isn't known. */
+export function oldestKept(retentionDays: number | null | undefined, now: number = Date.now()): string | null {
+  return retentionDays && retentionDays > 0 ? addDays(localDay(now), 1 - retentionDays) : null;
+}
+
+/**
+ * Where the day strip should end so the shown days are on it: unchanged when
+ * their last day is already on the strip, else that last day.
+ */
+export function stripEndFor(span: { fromDay: string; toDay: string }, end: string, n: number): string {
+  const start = addDays(end, 1 - n);
+  return span.toDay >= start && span.toDay <= end ? end : span.toDay;
 }
 
 /** "Tue, Sep 30"; with `relative`, "Today · Wed, Oct 1" and "Yesterday · …" for the two latest days. */
@@ -62,11 +107,10 @@ export function dayLabel(day: string, now: number = Date.now(), relative = true)
   return text;
 }
 
-/** The day strip: every day of the last `n` ending today, oldest first, zero where no runs started. */
-export function stripDays(counts: { day: string; runs: number }[], n = 30, now: number = Date.now()): { day: string; runs: number }[] {
+/** The day strip: the `n` days ending on `end` (default today), oldest first, zero where no runs started. */
+export function stripDays(counts: { day: string; runs: number }[], n = 30, end: string = localDay()): { day: string; runs: number }[] {
   const byDay = new Map(counts.map((c) => [c.day, c.runs]));
-  const today = localDay(now);
-  return Array.from({ length: n }, (_, i) => { const day = addDays(today, i - n + 1); return { day, runs: byDay.get(day) ?? 0 }; });
+  return Array.from({ length: n }, (_, i) => { const day = addDays(end, i - n + 1); return { day, runs: byDay.get(day) ?? 0 }; });
 }
 
 /** "45 s", "23 min", "1 h 05 min". */
@@ -118,8 +162,12 @@ export function zoneName(now: number = Date.now()): string {
 }
 
 /** "6 in the last 7 days" / "2 today" / "8 on Tue, Sep 30". */
-export function runsCount(total: number, view: { range: RunsRange; day: string | null }, now: number = Date.now()): string {
+export function runsCount(total: number, view: RunsView, now: number = Date.now()): string {
   if (view.day) return view.day === localDay(now) ? `${total} today` : `${total} on ${dayLabel(view.day, now, false)}`;
+  if (view.range === 'custom') {
+    const { fromDay, toDay } = runsWindow(view, now);
+    return `${total} from ${dayLabel(fromDay, now, false)} to ${dayLabel(toDay, now, false)}`;
+  }
   const span = view.range === 'today' ? 'today' : view.range === '7d' ? 'in the last 7 days' : 'in the last 30 days';
   return `${total} ${span}`;
 }

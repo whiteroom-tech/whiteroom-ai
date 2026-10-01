@@ -1,19 +1,26 @@
 'use client';
 
-import { FONT_MONO } from '@whiteroom/ui';
-import { dayLabel } from '@/lib/runs';
+import { Button, FONT_MONO } from '@whiteroom/ui';
+import { dayLabel, localDay } from '@/lib/runs';
 
 /**
- * Runs per day for the last 30 of the viewer's days, one bar each. Picking a
- * bar shows that day; picking the picked bar again goes back to the range.
- * Bars inside the current range are a step brighter than the rest.
+ * Runs per day for 30 of the viewer's days, one bar each, with ‹ › to page
+ * 30 days back or forward. Picking a bar shows that day; picking the picked
+ * bar again goes back to the range. Bars inside the shown days are a step
+ * brighter than the rest.
  */
-export function DayStrip({ days, selected, inRange, onPick }: {
+export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }: {
   days: { day: string; runs: number }[];
   selected: string | null;
   inRange: (day: string) => boolean;
   onPick: (day: string | null) => void;
+  /** Absent when there's nothing earlier the plan keeps. */
+  onEarlier?: () => void;
+  /** Absent when the strip already ends today. */
+  onLater?: () => void;
 }) {
+  const first = days[0]?.day;
+  const last = days[days.length - 1]?.day;
   const max = Math.max(1, ...days.map((d) => d.runs));
   return (
     <div>
@@ -36,9 +43,11 @@ export function DayStrip({ days, selected, inRange, onPick }: {
           );
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>
-        <span>{days[0] ? dayLabel(days[0].day) : ''}</span>
-        <span>Today</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>
+        <Button variant="ghost" size={28} aria-label="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
+        <span>{first ? dayLabel(first, Date.now(), false) : ''}</span>
+        <span style={{ marginLeft: 'auto' }}>{last ? (last === localDay() ? 'Today' : dayLabel(last, Date.now(), false)) : ''}</span>
+        <Button variant="ghost" size={28} aria-label="Later 30 days" disabled={!onLater} onClick={onLater}>&rsaquo;</Button>
       </div>
     </div>
   );
