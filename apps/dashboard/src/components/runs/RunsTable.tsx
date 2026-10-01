@@ -51,7 +51,8 @@ export function RunsTable({ preview, retentionDays }: {
   const [agent, setAgent] = useState(() => params.get('agent') ?? 'all');
   const oldest = oldestKept(retentionDays);
   // One picked day (the viewer's local day) overrides the range.
-  const [day, setDay] = useState<string | null>(() => validDay(params.get('day')));
+  // A shared link can name a day the plan no longer keeps: start at the oldest kept.
+  const [day, setDay] = useState<string | null>(() => { const d = validDay(params.get('day')); return d && oldest && d < oldest ? oldest : d; });
   // A custom range's ends, kept to what the engine takes (see clampSpan).
   const [span0] = useState(() => {
     const f = validDay(params.get('from'));
@@ -61,8 +62,12 @@ export function RunsTable({ preview, retentionDays }: {
   const [from, setFrom] = useState<string | null>(span0?.from ?? null);
   const [to, setTo] = useState<string | null>(span0?.to ?? null);
   const view: RunsView = { range, day, from, to };
-  // The day strip shows 30 days ending here; it follows the shown days.
-  const [stripEnd, setStripEnd] = useState(() => runsWindow(view).toDay);
+  // The day strip shows 30 days ending on `stripEnd`, following the shown
+  // days. Pinned to a day only when paged back; null follows today, so a tab
+  // left open past midnight moves on with it.
+  const [stripPin, setStripPin] = useState<string | null>(() => { const end = runsWindow(view).toDay; return end === localDay() ? null : end; });
+  const stripEnd = stripPin ?? localDay();
+  const pinStrip = (end: string) => setStripPin(end >= localDay() ? null : end);
   const [dayCounts, setDayCounts] = useState<{ day: string; runs: number }[] | null>(() => (preview ? countByDay(preview) : null));
   // Cursors of the pages visited, so Newer goes back without refetching from the start.
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
@@ -103,14 +108,16 @@ export function RunsTable({ preview, retentionDays }: {
     }
     if (change.day !== undefined) nextView.day = change.day;
     if (change.from !== undefined || change.to !== undefined) {
-      const c = clampSpan(change.from ?? from ?? today, change.to ?? to ?? today, { today, oldest, moved: change.from !== undefined ? 'from' : 'to' });
+      // The end not moved keeps what the picker showed (the 30-day fallback when unset).
+      const shownSpan = runsWindow({ range, day, from, to });
+      const c = clampSpan(change.from ?? shownSpan.fromDay, change.to ?? shownSpan.toDay, { today, oldest, moved: change.from !== undefined ? 'from' : 'to' });
       Object.assign(nextView, { range: 'custom', day: null, from: c.from, to: c.to });
     }
     setRange(nextView.range);
     setDay(nextView.day);
     setFrom(nextView.from ?? null);
     setTo(nextView.to ?? null);
-    setStripEnd((end) => stripEndFor(runsWindow(nextView), end, STRIP_DAYS));
+    pinStrip(stripEndFor(runsWindow(nextView), stripEnd, STRIP_DAYS));
     if (change.agent !== undefined) setAgent(change.agent);
     setCursors([null]);
     setRuns(null);
@@ -247,8 +254,8 @@ export function RunsTable({ preview, retentionDays }: {
             selected={day}
             inRange={inSpan}
             onPick={(d) => changeFilter({ day: d })}
-            onEarlier={oldest && addDays(stripEnd, 1 - STRIP_DAYS) <= oldest ? undefined : () => setStripEnd(addDays(stripEnd, -STRIP_DAYS))}
-            onLater={stripEnd >= today ? undefined : () => setStripEnd(addDays(stripEnd, STRIP_DAYS) > today ? today : addDays(stripEnd, STRIP_DAYS))}
+            onEarlier={oldest && addDays(stripEnd, 1 - STRIP_DAYS) <= oldest ? undefined : () => pinStrip(addDays(stripEnd, -STRIP_DAYS))}
+            onLater={stripEnd >= today ? undefined : () => pinStrip(addDays(stripEnd, STRIP_DAYS))}
           />
         )}
         {exportNote && <Banner variant={exportNote.ok ? 'info' : 'error'}>{exportNote.text}</Banner>}
