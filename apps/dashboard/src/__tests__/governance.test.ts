@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
+import { countsFromRuleActions, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
   convertSpendCap,
   computeSuggestions,
   governanceCounts,
@@ -129,5 +129,34 @@ describe('governanceCounts agent keys', () => {
     ] as AuditEntry[]);
     expect(c.byAgent['']).toEqual({ blocks: 1, wouldBlocks: 0 });
     expect(c.byAgent.unknown).toEqual({ blocks: 1, wouldBlocks: 0 });
+  });
+});
+
+describe('rule responses and rule actions (P2.3/P2.4)', () => {
+  it('offers Pause and Stop only on Gov v1 fleets, but keeps a rule’s current one', () => {
+    expect(responseOptions(false, 'block').map((o) => o.value)).toEqual(['notify', 'block']);
+    expect(responseOptions(false, 'stop').map((o) => o.value)).toEqual(['notify', 'block', 'stop']);
+    expect(responseOptions(true, 'block').map((o) => o.label)).toEqual(['Just tell me', 'Block the call', 'Pause the agent', 'Stop the agent']);
+  });
+
+  it('words every action, worst first, and totals them', () => {
+    const t = { blocks: 3, wouldBlocks: 2, paused: 1, stopped: 0, toldYou: 4 };
+    expect(tallyWords(t).map((w) => w.text)).toEqual(['1 paused', '3 blocked', '4 told you', '2 would act (Watch only)']);
+    expect(tallyTotal(t)).toBe(10);
+    expect(tallyWords({ blocks: 0, wouldBlocks: 0 })).toEqual([]);
+  });
+
+  it('takes durable counts from rule_actions, keeping the audit log’s per-rule split', () => {
+    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 } };
+    const c = countsFromRuleActions({
+      fleetId: 'f',
+      totals: { blocked: 5, paused: 1, stopped: 0, toldYou: 2, wouldAct: 3 },
+      byAgent: { a: { blocked: 5, paused: 1, stopped: 0, toldYou: 2, wouldAct: 3 } },
+    }, byRule);
+    expect(c).toMatchObject({ blocks: 5, wouldBlocks: 3, paused: 1, toldYou: 2, byRule, byAgent: { a: { blocks: 5, paused: 1 } } });
+  });
+  it('merges agents that differ only in case, keeping every kind of action', () => {
+    const merged = ruleActionsByAgent({ 'Lead-Agent': { blocks: 1, wouldBlocks: 0, paused: 1 }, 'lead-agent': { blocks: 2, wouldBlocks: 1, stopped: 1, toldYou: 3 } });
+    expect(merged['lead-agent']).toEqual({ blocks: 3, wouldBlocks: 1, paused: 1, stopped: 1, toldYou: 3 });
   });
 });

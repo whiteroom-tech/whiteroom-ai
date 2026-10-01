@@ -552,6 +552,8 @@ export interface CustomControlInput {
 
 export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
+/** What Enforce does (engine P2.3): notify, block, pause or stop. */
+export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
 export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed';
 export type GovernanceScope = 'all' | string[];
 
@@ -566,6 +568,8 @@ export interface GovernanceRule {
   ruleType: GovernanceRuleType;
   params: GovernanceParams;
   mode: GovernanceMode;
+  /** Absent from older engines, where Enforce always blocks. */
+  response?: GovernanceResponse;
   appliesTo: GovernanceScope;
   version: number;
   changedBy: string;
@@ -588,7 +592,14 @@ export interface GovernanceListResult {
   rules: GovernanceRule[];
   history: GovernanceHistoryEntry[];
   agents: string[];
+  /** Pause and Stop responses are offered (Gov v1 fleets). */
+  govV1?: boolean;
 }
+
+/** Rule actions in words (engine rule_actions). */
+export interface RuleActionCounts { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number }
+export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts> }
+export interface RunRuleAction { at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 
@@ -640,7 +651,7 @@ export interface RunEvent {
 
 export interface RunEventsResult {
   fleetId: string;
-  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string; flags?: RunFlag[] };
+  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string; flags?: RunFlag[]; ruleActions?: RunRuleAction[] };
   events: RunEvent[];
   page: number;
   pages: number;

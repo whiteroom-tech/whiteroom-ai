@@ -20,6 +20,7 @@ import type {
   GovernanceMode,
   GovernanceParams,
   GovernanceRule,
+  GovernanceResponse,
   GovernanceRuleType,
   GovernanceScope,
   LoopBreakerParams,
@@ -29,7 +30,9 @@ import type {
 import { computeSuggestions, convertSpendCap, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
-import { FONT_MONO } from "@whiteroom/ui";
+import { FONT_MONO, SelectChip } from "@whiteroom/ui";
+import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
+import { RESPONSE_EFFECT, RESPONSE_LABEL, responseOptions } from "@/lib/governance";
 import { ROUTES } from "@/lib/routes";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -60,12 +63,15 @@ const REASON: Record<RuleType, string> = {
   model_allowlist: "model_not_allowed",
 };
 
-/** The 403 the engine returns for this rule (see the engine's blockResponseBody). */
+/** What the agent gets for this rule (see the engine's blockResponseBody): nothing for Just tell me. */
 function agentResponse(rule: FleetRule): string {
-  const resets = rule.ruleType === "model_allowlist"
+  const response = rule.response ?? "block";
+  if (response === "notify") return "Nothing: the call goes through.\nYou get told; the agent doesn't.";
+  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "model_allowlist"
     ? "never"
     : (rule.params as SpendCapParams | LoopBreakerParams).scope === "day" ? "next day (00:00 UTC)" : "next run";
   return `403 governance_block
+response: ${response}
 reason: ${REASON[rule.ruleType]}
 retryable: false
 resets: ${resets}`;
@@ -484,6 +490,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
+  const [govV1, setGovV1] = useState(false);
+  // A rule about to get "Stop the agent": confirmed first (README › Screen 6b).
+  const [confirmStopRule, setConfirmStopRule] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
@@ -516,6 +525,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       setRules(d.rules);
       setHistory(d.history);
       setAgents(d.agents);
+      setGovV1(!!d.govV1);
       setLoaded(true);
       return true;
     } catch (e) {
@@ -573,7 +583,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
     } catch (e) { handleError(e, "remove the rule"); void fetchData(); }
   };
 
-  const update = async (ruleId: string, updates: { mode?: RuleMode; params?: AnyRuleParams; appliesTo?: RuleScope }, what: string, logsHistory: boolean) => {
+  const update = async (ruleId: string, updates: { mode?: RuleMode; response?: GovernanceResponse; params?: AnyRuleParams; appliesTo?: RuleScope }, what: string, logsHistory: boolean) => {
     startChange();
     // Optimistic: the controls reflect the change immediately.
     setRules((rs) => rs.map((r) => (r.id === ruleId ? { ...r, ...updates } : r)));
@@ -582,6 +592,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       applyRule(rule);
       if (logsHistory) refreshHistory();
     } catch (e) { handleError(e, what); void fetchData(); }
+  };
+
+  const changeResponse = (ruleId: string, response: GovernanceResponse, confirmed = false) => {
+    selectRule(ruleId);
+    if ((rules.find((r) => r.id === ruleId)?.response ?? "block") === response) return;
+    if (response === "stop" && !confirmed) { setConfirmStopRule(ruleId); return; }
+    setConfirmStopRule(null);
+    void update(ruleId, { response }, "change what the rule does", true);
   };
 
   const changeMode = (ruleId: string, _ruleType: RuleType, mode: RuleMode) => {
@@ -801,6 +819,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                           </button>
                         )}
                       </div>
+                      {rule.response !== undefined && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, fontSize: 12.5, color: "var(--tx2)", flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
+                          <span style={{ fontWeight: 600, color: "var(--tx)" }}>then</span>
+                          <SelectChip label="What the rule does" value={rule.response} onChange={(v) => changeResponse(rule.id, v)} options={responseOptions(govV1, rule.response)} />
+                          <span style={{ flex: "1 1 220px" }}>{RESPONSE_EFFECT[rule.response]}{rule.mode !== "enforce" && " Only once the rule is set to Enforce."}</span>
+                        </div>
+                      )}
                       <ScopePicker
                         scope={rule.appliesTo}
                         agents={agents}
@@ -913,6 +938,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
         )}
       </div>
 
+      <ConfirmDialog
+        open={confirmStopRule !== null}
+        title="Let this rule stop agents?"
+        body={<>{RESPONSE_EFFECT.stop} It applies to every agent the rule covers, once the rule is set to Enforce.</>}
+        confirmLabel={RESPONSE_LABEL.stop}
+        confirmPhrase="stop"
+        onConfirm={() => { if (confirmStopRule) changeResponse(confirmStopRule, "stop", true); }}
+        onCancel={() => setConfirmStopRule(null)}
+      />
     </div>
   );
 }

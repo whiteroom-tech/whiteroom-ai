@@ -5,11 +5,10 @@ import Link from 'next/link';
 import { Button, Hint, Icon, Panel, StatusPill, FONT_MONO } from '@whiteroom/ui';
 import { listRuns } from '@/lib/whiteroom/client';
 import type { AgentInfo, RunSummary } from '@/lib/whiteroom/types';
-import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { HELP } from '@/lib/metric-definitions';
 import { fmtTime } from '@/lib/format';
-import { flagText, runHref, runsDays } from '@/lib/runs';
+import { flagText, ignoresFlagged, runHref, runsDays } from '@/lib/runs';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 
 const SEEN_KEY = 'wr.needsYou.seenRuns';
@@ -25,8 +24,9 @@ function readSeen(): string[] {
  * today's flagged runs until marked as seen (kept in this browser). Hidden
  * until the engine reports holds or flags, so older engines show nothing.
  */
-export function NeedsYou({ agents, holdsKnown }: { agents: AgentInfo[]; holdsKnown: boolean }) {
-  const { fleetId, authKey } = useFleetAuth();
+export function NeedsYou({ agents, holdsKnown, fleet }: { agents: AgentInfo[]; holdsKnown: boolean; fleet?: { fleetId: string; authKey?: string } }) {
+  const fleetId = fleet?.fleetId;
+  const authKey = fleet?.authKey;
   const [flagged, setFlagged] = useState<RunSummary[] | null>(null);
   const [seen, setSeen] = useState<string[]>([]);
   const [undo, setUndo] = useState<string | null>(null);
@@ -36,8 +36,7 @@ export function NeedsYou({ agents, holdsKnown }: { agents: AgentInfo[]; holdsKno
     if (!fleetId) return;
     const res = await listRuns(fleetId, { ...runsDays('today'), flagged: true, pageSize: 10 }, authKey).catch(() => null);
     if (stale() || !res || 'unsupported' in res) return;
-    // An engine without flags ignores `flagged` and lists every run.
-    setFlagged(res.runs.every((r) => r.flags) ? res.runs.filter((r) => r.flags!.length) : null);
+    setFlagged(ignoresFlagged(res.runs) ? null : res.runs.filter((r) => r.flags?.length));
   }, [fleetId, authKey]);
   usePoll(load, { intervalMs: 60_000, enabled: !!fleetId });
 
@@ -49,7 +48,9 @@ export function NeedsYou({ agents, holdsKnown }: { agents: AgentInfo[]; holdsKno
 
   function markSeen(runId: string | null, add: boolean) {
     if (!runId) return;
-    const next = add ? [...seen.filter((s) => s !== runId), runId].slice(-200) : seen.filter((s) => s !== runId);
+    // From storage, not state: another tab may have marked runs since.
+    const current = readSeen();
+    const next = add ? [...current.filter((s) => s !== runId), runId].slice(-200) : current.filter((s) => s !== runId);
     setSeen(next);
     safeSet(SEEN_KEY, JSON.stringify(next));
     setUndo(add ? runId : null);

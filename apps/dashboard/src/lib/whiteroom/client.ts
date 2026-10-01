@@ -7,6 +7,8 @@
 
 import type {
   ListRunsResult,
+  GovernanceResponse,
+  RuleActionsResult,
   RunDaysResult,
   RunEventsResult,
   FleetDiagnosis,
@@ -733,7 +735,7 @@ export function governanceList(fleetId: string, key?: string): Promise<Governanc
 export function governanceCreateRule(
   fleetId: string,
   rule: {
-    ruleType: GovernanceRuleType; mode?: GovernanceMode; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
+    ruleType: GovernanceRuleType; mode?: GovernanceMode; response?: GovernanceResponse; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
     /** The Diagnosis recommendation it comes from; the engine makes at most one rule per suggestion. */
     sourceRecommendationId?: string;
   },
@@ -744,6 +746,7 @@ export function governanceCreateRule(
     fleet_id: fleetId,
     rule_type: rule.ruleType,
     mode: rule.mode,
+    response: rule.response,
     params: rule.params,
     applies_to: rule.appliesTo,
     description: rule.description,
@@ -766,7 +769,7 @@ export function diagnoseFleet(fleetId: string, opts: { force?: boolean } = {}, k
 export function governanceUpdateRule(
   fleetId: string,
   ruleId: string,
-  updates: { mode?: GovernanceMode; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  updates: { mode?: GovernanceMode; response?: GovernanceResponse; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
   key?: string,
 ): Promise<{ rule: GovernanceRule }> {
   return apiCall<{ rule: GovernanceRule }>({
@@ -774,6 +777,7 @@ export function governanceUpdateRule(
     fleet_id: fleetId,
     rule_id: ruleId,
     mode: updates.mode,
+    response: updates.response,
     params: updates.params,
     applies_to: updates.appliesTo,
     description: updates.description,
@@ -819,6 +823,11 @@ export function listRuns(
     ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
     ...(opts.flagged ? { flagged: true } : {}),
   }, key);
+}
+
+/** Rule actions for a range of the viewer's days; `unsupported` keeps the audit-log counts. */
+export function ruleActions(fleetId: string, opts: RunsQuery, key?: string): Promise<RuleActionsResult | { unsupported: true }> {
+  return runsAction<RuleActionsResult>('rule_actions', fleetId, opts, {}, key);
 }
 
 /** Runs per day of the viewer's, for the day strip; `unsupported` hides the strip. */

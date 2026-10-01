@@ -17,7 +17,7 @@ const EVENTS: RunEvent[] = [
 ];
 const DATA: RunEventsResult = {
   fleetId: 'acme-claims-prod',
-  run: { runId: 'lead-agent~14', agentId: 'lead-agent', shift: 14, startedAt: t(23), endedAt: t(0), flags: [{ signal: 'repeating_call', tool: 'fetch_page', calls: 6 }] },
+  run: { runId: 'lead-agent~14', agentId: 'lead-agent', shift: 14, startedAt: t(23), endedAt: t(0), flags: [{ signal: 'repeating_call', tool: 'fetch_page', calls: 6 }], ruleActions: [{ at: t(9), ruleId: 'gr_1', ruleType: 'model_allowlist', response: 'block', mode: 'enforce', occurrences: 1 }, { at: t(5), ruleId: 'gr_2', ruleType: 'spend_cap', response: 'pause', mode: 'watch', occurrences: 3 }] },
   events: EVENTS, page: 0, pages: 1, total: EVENTS.length, eventFound: null,
 };
 
