@@ -1,0 +1,135 @@
+name: Promote to prod
+
+# Ships to app.whiteroom.tech the prod image that deploy-staging.yml built
+# from the commit staging is running. Nothing is rebuilt here, and a commit
+# that isn't on staging is refused.
+#
+# Only the image changes: env, secrets and scaling on the prod service are left
+# as they are. The new revision gets no traffic until it's created; if
+# anything after that fails (traffic move or /sign-in), traffic goes back to
+# the previous revision automatically.
+#
+# The gh-deploy-prod service account only trusts this file on refs/heads/main.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full commit SHA to promote (blank = whatever staging is running)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+# Shared with deploy-staging.yml, so staging can't change under a promotion.
+concurrency:
+  group: dashboard-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard
+  SERVICE: whiteroom-dashboard
+  REGION: us-central1
+  PROD_URL: https://app.whiteroom.tech
+
+jobs:
+  promote:
+    name: Promote staging image to prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://app.whiteroom.tech
+    steps:
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/272235454263/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: gh-deploy-prod@whiteroom-prod.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Check staging is running this commit
+        id: resolve
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          staging_sha=$(gcloud run services describe "$SERVICE" --project whiteroom-staging --region "$REGION" \
+            --format='value(metadata.labels.commit-sha)')
+          sha="${INPUT_SHA:-$staging_sha}"
+          if [ -z "$sha" ] || [ "$sha" != "$staging_sha" ]; then
+            echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first (Actions → Deploy staging → Run workflow, from main at that commit)."
+            exit 1
+          fi
+          digest=$(gcloud artifacts docker images describe "$IMAGE:$sha" --format='value(image_summary.digest)')
+          # deploy-staging points <sha>-verified at this prod image only after
+          # staging's latest run for the commit passed its smoke test.
+          verified=$(gcloud artifacts docker images describe "$IMAGE:$sha-verified" --format='value(image_summary.digest)' 2>/dev/null || true)
+          if [ -z "$digest" ] || [ "$verified" != "$digest" ]; then
+            echo "::error::Staging's latest run for $sha didn't pass its smoke test. Fix staging first."
+            exit 1
+          fi
+          # The rollback target is whichever revision serves the most traffic now.
+          prev=$(gcloud run services describe "$SERVICE" --project whiteroom-prod --region "$REGION" --format=json \
+            | jq -r '[.status.traffic[] | select(.revisionName != null)] | max_by(.percent // 0) | .revisionName // empty')
+          if [ -z "$prev" ]; then
+            echo "::error::Couldn't find the revision prod is serving, so there would be nothing to roll back to. Not promoting."
+            exit 1
+          fi
+          {
+            echo "sha=$sha"
+            echo "digest=$digest"
+            echo "prev=$prev"
+          } >> "$GITHUB_OUTPUT"
+          echo "Promoting $sha ($digest); rollback target is $prev"
+
+      - name: Deploy to prod (no traffic yet)
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+        run: |
+          gcloud run services update "$SERVICE" --project whiteroom-prod --region "$REGION" \
+            --image "$IMAGE@$DIGEST" \
+            --update-labels "managed-by=github-actions,commit-sha=$SHA" \
+            --no-traffic \
+            --quiet
+
+      # One explicit move. A revision pinned in an earlier manual deploy would
+      # otherwise leave the new one at 0%.
+      - name: Send traffic to the new revision
+        id: traffic
+        run: gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" --to-latest --quiet
+
+      - name: Smoke test
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            if curl -fsS "$PROD_URL/sign-in" | grep -q "Sign in"; then
+              echo "Prod is healthy."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$PROD_URL/sign-in failed after promote."
+          exit 1
+
+      # Runs when the traffic move or the smoke test failed (or the deploy
+      # step, harmlessly: its revision got no traffic). Not when the resolve
+      # step failed, since nothing was changed then.
+      - name: Roll back to the previous revision
+        if: failure() && steps.resolve.outcome == 'success'
+        env:
+          PREV: ${{ steps.resolve.outputs.prev }}
+        run: |
+          gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" \
+            --to-revisions "$PREV=100" --quiet
+          # Relabelling the service here would create yet another revision, so
+          # it isn't done: after a rollback the service's commit-sha label names
+          # the commit that was tried; the serving revision's own label names
+          # the commit actually live.
+          echo "::error::Rolled back. $PREV serves 100%; its revision label has the live commit."
+
+      - name: Summary
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          echo "### Prod: \`${SHA::7}\` is live on $PROD_URL" >> "$GITHUB_STEP_SUMMARY"

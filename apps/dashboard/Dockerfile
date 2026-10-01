@@ -15,7 +15,11 @@ COPY packages/ui ./packages/ui
 COPY --from=deps /repo/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY apps/dashboard ./apps/dashboard
 WORKDIR /repo/apps/dashboard
-ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* is inlined into the bundle at build time, so the engine URL is
+# fixed per image. Staging passes its own; left empty, client.ts falls back to
+# https://proxy.whiteroom.tech.
+ARG NEXT_PUBLIC_PROXY_URL=
+ENV NEXT_PUBLIC_PROXY_URL=$NEXT_PUBLIC_PROXY_URL NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:20-alpine AS runner
