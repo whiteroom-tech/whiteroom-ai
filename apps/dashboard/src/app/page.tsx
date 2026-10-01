@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { ROUTES } from '@/lib/routes';
 
 export default async function Home() {
   const session = await auth();
-  redirect(session ? '/dashboard' : '/sign-in');
+  redirect(session ? ROUTES.fleetKey : '/sign-in');
 }

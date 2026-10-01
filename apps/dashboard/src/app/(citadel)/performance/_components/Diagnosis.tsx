@@ -16,6 +16,7 @@ import {
 import { checkedSummary, diagnosisSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
+import { ROUTES } from '@/lib/routes';
 
 // -- The Agent Diagnosis card ---------------------------------------------
 
@@ -118,7 +119,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
 
       <div className="dx-acts" style={{ display: 'flex', gap: '8px 16px', flexWrap: 'wrap', marginTop: 2 }}>
         {open && action?.kind === 'rule' && (
-          <Link href={`/governance?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
+          <Link href={`${ROUTES.controls}?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, padding: '6px 14px', borderRadius: 6,
             background: 'var(--brand)', color: 'var(--bg)', border: '1px solid var(--brand)', textDecoration: 'none',
           }}>Add {RULE_LABEL[action.rule]} in Watch</Link>

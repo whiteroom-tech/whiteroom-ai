@@ -26,8 +26,8 @@ const LAST_EMAIL_KEY = 'wr_last_email';
  * Read at the moment of the click rather than held in state, so it cannot be
  * stale and cannot be missing because an effect had not run yet.
  *
- * Almost always /dashboard. The exception is the admin host, which serves the
- * panel and nothing else: /dashboard 404s there, so the admin gate sends
+ * Almost always /fleet-key (DEFAULT_DESTINATION). The exception is the admin host,
+ * which serves the panel and nothing else: /fleet-key 404s there, so the admin gate sends
  * people here with ?callbackUrl=/admin and this is what honours it.
  * safeCallbackUrl() is what keeps that from being an open redirect.
  */

@@ -8,6 +8,8 @@
  * Deliberately free of server-only imports — proxy.ts runs as middleware.
  */
 
+import { ROUTES } from '@/lib/routes';
+
 /**
  * Request header carrying the path the visitor actually asked for.
  *
@@ -18,7 +20,7 @@
 export const PATH_HEADER = 'x-wr-path';
 
 /** The sign-in page's destination when nothing better is known. */
-export const DEFAULT_DESTINATION = '/dashboard';
+export const DEFAULT_DESTINATION: string = ROUTES.fleetKey;
 
 /**
  * Accepts only a path on this origin, falling back when handed anything else.
