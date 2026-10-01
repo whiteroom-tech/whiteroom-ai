@@ -16,6 +16,7 @@ import {
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
+import { EmptyHome } from './EmptyHome';
 
 export type AgentsView = 'cards' | 'table';
 
@@ -29,8 +30,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   fleetId: string;
   authKey?: string;
   onAuthError?: (msg: string) => void;
-  /** Reports each successful refresh, for the header's "updated" time. */
-  onUpdated?: (at: number | null, failing: boolean) => void;
+  /** Reports each refresh, for the header: when, whether it failed, and whether the fleet has no agents yet. */
+  onUpdated?: (at: number | null, failing: boolean, empty: boolean) => void;
   /** Bumped by the header's Refresh button. */
   refreshSignal: number;
 }) {
@@ -43,6 +44,9 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const [view, setView] = useState<AgentsView>(() => (safeGet('wr_home_agents_view') === 'table' ? 'table' : 'cards'));
   const fanOutClock = useRef(FANOUT_START);
   const fanOutDetails = useRef<AgentInfo[]>([]);
+  // No agents yet (README › Screens › 8): check every 5 s for the first call.
+  const empty = report !== null && report.agentCount === 0;
+  const emptyRef = useRef(false);
 
   const fetchReport = useCallback(async (stale: () => boolean) => {
     const data = await fleetReport(fleetId, authKey);
@@ -68,6 +72,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     } else {
       details = overlayStatuses(data, fanOutDetails.current);
     }
+    emptyRef.current = data.agentCount === 0;
     setReport(data);
     setAgents(details);
   }, [fleetId, authKey]);
@@ -99,15 +104,15 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       setTodayFailing(!ok);
       if (stale()) return;
       setFailing(false);
-      onUpdated?.(Date.now(), false);
+      onUpdated?.(Date.now(), false, emptyRef.current);
     } catch (e) {
       if (stale()) return;
       if (isAuthError(e)) { onAuthError?.('Session expired. Please sign in again.'); return; }
       // Keep the last good data on screen and say so (README › Live updates).
       setFailing(true);
-      onUpdated?.(null, true);
+      onUpdated?.(null, true, emptyRef.current);
     }
-  }, { intervalMs: 10_000, enabled: !!fleetId });
+  }, { intervalMs: empty ? 5_000 : 10_000, enabled: !!fleetId });
 
   // The header's Refresh button bumps refreshSignal; skip the initial value,
   // since usePoll already fetched on mount.
@@ -122,6 +127,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   }
 
   if (!report) return <HomeSkeleton failing={failing} />;
+  if (empty) return <EmptyHome />;
 
   return (
     <HomeView

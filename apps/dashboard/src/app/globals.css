@@ -309,3 +309,14 @@
 /* A panel that fills the rest of the page, its body scrolling (Runs' event feed). */
 .wr-panel--fill { flex: 1; min-height: 320px; display: flex; flex-direction: column; }
 .wr-panel--fill > div:last-child { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* Home with no agents (components/home/EmptyHome) */
+.wr-steps { margin: 0; padding: 0; list-style: none; counter-reset: wr-step; display: grid; gap: 14px; }
+.wr-steps > li { counter-increment: wr-step; display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 12px; font-size: 13.5px; line-height: 1.5; }
+.wr-steps > li::before { content: counter(wr-step); grid-row: span 2; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--brand-dim); color: var(--brand); font-size: 12px; font-weight: 600; }
+.wr-copy-chip { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); min-width: 0; }
+.wr-copy-chip > code { flex: 1; min-width: 0; }
+.wr-copy-chip > button { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; border: 0; background: transparent; color: var(--tx2); cursor: pointer; }
+.wr-copy-chip > button:hover { color: var(--tx); background: var(--raised); }
+.wr-copy-chip > button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+a.wr-btn { text-decoration: none; }
