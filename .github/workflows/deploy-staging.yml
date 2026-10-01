@@ -49,6 +49,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # History, so the freshness check below can compare against main.
+          fetch-depth: 0
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
@@ -67,9 +70,27 @@ jobs:
           docker push "$IMAGE:$GITHUB_SHA-staging"
           docker push "$IMAGE:$GITHUB_SHA"
 
+      # Two merges seconds apart start two runs; the older one can finish
+      # last and put an older commit back on staging (Oct 1: #117 over #118).
+      # Just before deploying, skip if main already has a newer commit that
+      # changes the image: that commit's own run deploys it. Only commits
+      # touching the image's paths count, so a docs-only push can't stall it.
+      - name: Check this is still the newest image commit
+        id: fresh
+        run: |
+          git fetch --quiet origin main
+          newest=$(git log -1 --format=%H origin/main -- apps/dashboard packages .dockerignore .github/workflows/deploy-staging.yml)
+          if [ -n "$newest" ] && [ "$newest" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$newest"; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping: main has a newer image commit (${newest::7}); its run deploys staging."
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # The full staging config lives here, so this step is its source of truth.
       # Env is split on "|" because AUTH_EMAIL_FROM contains spaces and "<>".
       - name: Deploy to staging
+        if: steps.fresh.outputs.stale != 'true'
         run: |
           gcloud run deploy whiteroom-dashboard \
             --project "$PROJECT" --region "$REGION" --platform managed \
@@ -84,6 +105,7 @@ jobs:
             --quiet
 
       - name: Smoke test
+        if: steps.fresh.outputs.stale != 'true'
         run: |
           for _ in 1 2 3 4 5 6; do
             if curl -fsS "$STAGING_URL/sign-in" | grep -q "Sign in"; then
@@ -102,9 +124,11 @@ jobs:
       # and it only needs tag create (the deploy account can't delete or move
       # tags; moving one is a delete plus a create).
       - name: Mark verified
+        if: steps.fresh.outputs.stale != 'true'
         run: gcloud artifacts docker tags add "$IMAGE:$GITHUB_SHA" "$IMAGE:$GITHUB_SHA-verified-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --quiet
 
       - name: Summary
+        if: steps.fresh.outputs.stale != 'true'
         run: |
           {
             echo "### Staging: \`${GITHUB_SHA::7}\`"
