@@ -95,7 +95,13 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
 });
 
 describe('the route renames (P0.5)', () => {
-  const location = (res: Response | undefined) => (res ? new URL(res.headers.get('location') ?? '', 'https://x').pathname + new URL(res.headers.get('location') ?? '', 'https://x').search : null);
+  /** Where a redirect points: path plus query string. */
+  const location = (res: Response | undefined) => {
+    const raw = res?.headers.get('location');
+    if (!raw) return null;
+    const url = new URL(raw);
+    return url.pathname + url.search;
+  };
 
   it('redirects the old paths, temporarily and uncached until the release settles', () => {
     for (const [from, to] of [['/agents', '/home'], ['/governance', '/controls'], ['/dashboard', '/fleet-key']]) {

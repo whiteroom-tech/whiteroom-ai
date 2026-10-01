@@ -457,7 +457,7 @@ function InlineNumber({ value, onChange, allowDecimals = false, ariaLabel }: { v
 
 // ── Page ───────────────────────────────────────────────────────────
 
-export default function GovernancePage() {
+export default function ControlsPage() {
   const auth = useFleetAuth();
 
   if (auth.status !== "authenticated") {
@@ -469,12 +469,12 @@ export default function GovernancePage() {
   // useSearchParams (the ?rec= Diagnosis suggestion) needs a Suspense boundary.
   return (
     <Suspense fallback={null}>
-      <GovernanceContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />
+      <ControlsContent fleetId={auth.fleetId} authKey={auth.authKey} onAuthError={auth.resetSession} />
     </Suspense>
   );
 }
 
-function GovernanceContent({ fleetId, authKey, onAuthError }: {
+function ControlsContent({ fleetId, authKey, onAuthError }: {
   fleetId: string;
   authKey: string | undefined;
   onAuthError: (msg?: string) => void;
@@ -486,7 +486,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
-  // A Diagnosis suggestion opened from Performance: /governance?rec=<id>.
+  // A Diagnosis suggestion opened from Performance: /controls?rec=<id>.
   const searchParams = useSearchParams();
   const router = useRouter();
   const suggestionRec = searchParams.get("rec");

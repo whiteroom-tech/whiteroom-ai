@@ -1,4 +1,3 @@
-import { ROUTES } from '@/lib/routes';
 /**
  * Where someone should land once they have signed in.
  *
@@ -8,6 +7,8 @@ import { ROUTES } from '@/lib/routes';
  *
  * Deliberately free of server-only imports — proxy.ts runs as middleware.
  */
+
+import { ROUTES } from '@/lib/routes';
 
 /**
  * Request header carrying the path the visitor actually asked for.

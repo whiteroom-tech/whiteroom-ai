@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
  *     so an admin arriving there fresh needs to authenticate rather than hit a
  *     wall. Carrying the path matters as much as the redirect does: this host
  *     serves nothing but the panel, so the sign-in page's usual destination of
- *     /dashboard 404s here, and a successful sign-in would otherwise dead-end
+ *     /fleet-key 404s here, and a successful sign-in would otherwise dead-end
  *     on the one screen that looks exactly like being refused. On the app host
  *     this branch is unreachable: proxy.ts 404s /admin before the layout ever
  *     runs.

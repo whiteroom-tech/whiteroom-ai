@@ -23,10 +23,9 @@ export function isNavActive(pathname: string, href: string, also: readonly strin
 }
 
 /**
- * Old paths, answered with a redirect that keeps the query string (307 for
- * now; see proxy.ts)
- * (README › Information architecture). Exact paths only: /agents/[agentId]
- * becomes Agent detail, so only the bare /agents moves.
+ * Old paths, redirected with the query string kept (README › Information
+ * architecture). 307 for now; proxy.ts explains why. Exact paths only:
+ * /agents/[agentId] becomes Agent detail, so only the bare /agents moves.
  *
  * /controls used to be the Sandbox and is now Controls; an old bookmark to it
  * lands on Controls on purpose (call it out in release notes).

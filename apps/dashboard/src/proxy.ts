@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { PATH_HEADER } from '@/lib/callback-url';
-import { LEGACY_REDIRECTS, ROUTES } from '@/lib/routes';
+import { LEGACY_REDIRECTS, ROUTES, isUnder } from '@/lib/routes';
 
 function adminHost(): string | undefined {
   return process.env.ADMIN_HOST?.toLowerCase().trim() || undefined;
@@ -17,9 +17,6 @@ const SESSION_PROTECTED = [
 ];
 const SESSION_PUBLIC_UNDER_SETTINGS = new Set(['/settings/confirm-email']);
 
-function isUnder(pathname: string, prefix: string): boolean {
-  return pathname === prefix || pathname.startsWith(prefix + '/');
-}
 
 function notFound(request: NextRequest) {
   return NextResponse.rewrite(new URL('/_admin_absent', request.url), { status: 404 });
