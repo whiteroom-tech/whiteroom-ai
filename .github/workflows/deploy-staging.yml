@@ -14,7 +14,8 @@ name: Deploy staging
 on:
   push:
     branches: [main]
-    # Everything the dashboard image is built from. A commit outside these
+    # Everything the dashboard image is built from. Keep in step with the
+    # pathspec in "Check this is still the newest image commit" below. A commit outside these
     # gets no image; run this workflow by hand (Actions → Deploy staging →
     # Run workflow) if it still needs promoting.
     paths:
