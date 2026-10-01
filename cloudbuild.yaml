@@ -1,6 +1,7 @@
-# Build and deploy the dashboard (app.whiteroom.tech) to Cloud Run.
-# Wired to a push trigger on main; images are tagged by commit so the tag in
-# Cloud Run always identifies exactly what is serving.
+# Build and deploy the dashboard (app.whiteroom.tech) straight to prod.
+# Manual escape hatch only: the normal path is deploy-staging.yml then
+# promote-prod.yml (see ops/staging/README.md), and this skips staging.
+# Images are tagged by commit so the tag in Cloud Run identifies what is serving.
 #
 # To run by hand, pass the commit yourself:
 #   gcloud builds submit --substitutions=COMMIT_SHA=$(git rev-parse HEAD)

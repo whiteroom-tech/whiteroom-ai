@@ -1,0 +1,99 @@
+name: Deploy staging
+
+# Every merge to main lands on staging first (GCP project whiteroom-staging,
+# its own Cloud SQL, secrets and service accounts — nothing shared with prod).
+# Prod only ever gets an image built here, via promote-prod.yml.
+#
+# NEXT_PUBLIC_PROXY_URL is baked into the bundle at build time, so one commit
+# produces two images from the same build: <sha>-staging (points at the
+# staging engine) and <sha> (points at proxy.whiteroom.tech, the one prod runs).
+#
+# Auth is keyless (Workload Identity Federation). The gh-deploy-staging service
+# account only trusts this file on refs/heads/main — renaming it or running it
+# from another branch fails at the auth step.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - "packages/**"
+      - ".github/workflows/deploy-staging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  IMAGE: us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard
+  PROJECT: whiteroom-staging
+  REGION: us-central1
+  SQL_INSTANCE: whiteroom-staging:us-central1:whiteroom-db-staging
+  STAGING_URL: https://whiteroom-dashboard-667088277671.us-central1.run.app
+  STAGING_ENGINE_URL: https://whiteroom-engine-667088277671.us-central1.run.app
+
+jobs:
+  deploy:
+    name: Build and deploy to staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/272235454263/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: gh-deploy-staging@whiteroom-prod.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Build images
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+          docker build -f apps/dashboard/Dockerfile \
+            --build-arg NEXT_PUBLIC_PROXY_URL="$STAGING_ENGINE_URL" \
+            -t "$IMAGE:$GITHUB_SHA-staging" .
+          docker build -f apps/dashboard/Dockerfile -t "$IMAGE:$GITHUB_SHA" .
+          docker push "$IMAGE:$GITHUB_SHA-staging"
+          docker push "$IMAGE:$GITHUB_SHA"
+
+      # The full staging config lives here, so this step is its source of truth.
+      # Env is split on "|" because AUTH_EMAIL_FROM contains spaces and "<>".
+      - name: Deploy to staging
+        run: |
+          gcloud run deploy whiteroom-dashboard \
+            --project "$PROJECT" --region "$REGION" --platform managed \
+            --image "$IMAGE:$GITHUB_SHA-staging" \
+            --service-account "whiteroom-dashboard-run@$PROJECT.iam.gserviceaccount.com" \
+            --set-cloudsql-instances "$SQL_INSTANCE" \
+            --set-secrets "AUTH_SECRET=whiteroom-dashboard-auth-secret:latest,DB_PASSWORD=whiteroom-dashboard-db-password:latest,AUTH_GOOGLE_SECRET=whiteroom-dashboard-google-client-secret:latest,AUTH_RESEND_KEY=whiteroom-dashboard-resend-key:latest,WR_ENTITLEMENT_SYNC_SECRET=whiteroom-entitlement-sync-secret:latest,WR_SANDBOX_SERVICE_SECRET=whiteroom-sandbox-service-secret:latest" \
+            --set-env-vars "^|^DB_SOCKET_PATH=/cloudsql/$SQL_INSTANCE|DB_USER=whiteroom_dashboard_app|DB_NAME=whiteroom_dashboard|AUTH_GOOGLE_ID=272235454263-pbmhape0njeuhtr700s9ae8qct4f14e5.apps.googleusercontent.com|AUTH_URL=$STAGING_URL|AUTH_TRUST_HOST=true|AUTH_EMAIL_FROM=WhiteRoom Staging <no-reply@whiteroom.tech>|NEXT_PUBLIC_PROXY_URL=$STAGING_ENGINE_URL" \
+            --min-instances 0 --max-instances 2 --cpu-boost --memory 512Mi --cpu 1 --port 8080 \
+            --no-invoker-iam-check \
+            --labels "env=staging,managed-by=github-actions,commit-sha=$GITHUB_SHA" \
+            --quiet
+
+      - name: Smoke test
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            if curl -fsS "$STAGING_URL/sign-in" | grep -q "Sign in"; then
+              echo "Staging is serving $GITHUB_SHA: $STAGING_URL"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$STAGING_URL/sign-in did not render after deploy"
+          exit 1
+
+      - name: Summary
+        run: |
+          {
+            echo "### Staging: \`${GITHUB_SHA::7}\`"
+            echo "$STAGING_URL"
+            echo
+            echo "When it checks out, run **Promote to prod** (it defaults to this commit)."
+          } >> "$GITHUB_STEP_SUMMARY"

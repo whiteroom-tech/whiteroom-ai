@@ -1,0 +1,109 @@
+name: Promote to prod
+
+# Ships to app.whiteroom.tech the prod image that deploy-staging.yml built
+# from the commit staging is running. Nothing is rebuilt here, and a commit
+# that isn't on staging is refused.
+#
+# Only the image changes: env, secrets and scaling on the prod service are left
+# as they are. If /sign-in fails afterwards, traffic goes back to the previous
+# revision automatically.
+#
+# The gh-deploy-prod service account only trusts this file on refs/heads/main.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full commit SHA to promote (blank = whatever staging is running)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+env:
+  IMAGE: us-central1-docker.pkg.dev/whiteroom-prod/cloud-run-source-deploy/whiteroom-dashboard
+  SERVICE: whiteroom-dashboard
+  REGION: us-central1
+  PROD_URL: https://app.whiteroom.tech
+
+jobs:
+  promote:
+    name: Promote staging image to prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://app.whiteroom.tech
+    steps:
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/272235454263/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: gh-deploy-prod@whiteroom-prod.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Check staging is running this commit
+        id: resolve
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          staging_sha=$(gcloud run services describe "$SERVICE" --project whiteroom-staging --region "$REGION" \
+            --format='value(metadata.labels.commit-sha)')
+          sha="${INPUT_SHA:-$staging_sha}"
+          if [ -z "$sha" ] || [ "$sha" != "$staging_sha" ]; then
+            echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first."
+            exit 1
+          fi
+          digest=$(gcloud artifacts docker images describe "$IMAGE:$sha" --format='value(image_summary.digest)')
+          if [ -z "$digest" ]; then
+            echo "::error::No prod image $IMAGE:$sha. Re-run Deploy staging for this commit."
+            exit 1
+          fi
+          prev=$(gcloud run services describe "$SERVICE" --project whiteroom-prod --region "$REGION" \
+            --format='value(status.traffic[0].revisionName)')
+          {
+            echo "sha=$sha"
+            echo "digest=$digest"
+            echo "prev=$prev"
+          } >> "$GITHUB_OUTPUT"
+          echo "Promoting $sha ($digest); rollback target is $prev"
+
+      - name: Deploy to prod
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+        run: |
+          gcloud run services update "$SERVICE" --project whiteroom-prod --region "$REGION" \
+            --image "$IMAGE@$DIGEST" \
+            --update-labels "managed-by=github-actions,commit-sha=$SHA" \
+            --quiet
+          # A revision pinned in an earlier manual deploy would leave the new
+          # one at 0% traffic, so always move traffic explicitly.
+          gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" --to-latest --quiet
+
+      - name: Smoke test (rolls back on failure)
+        env:
+          PREV: ${{ steps.resolve.outputs.prev }}
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            if curl -fsS "$PROD_URL/sign-in" | grep -q "Sign in"; then
+              echo "Prod is healthy."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$PROD_URL/sign-in failed after promote; sending traffic back to $PREV"
+          gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" \
+            --to-revisions "$PREV=100" --quiet
+          exit 1
+
+      - name: Summary
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          echo "### Prod: \`${SHA::7}\` is live on $PROD_URL" >> "$GITHUB_STEP_SUMMARY"
