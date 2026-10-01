@@ -175,6 +175,22 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-primary' });
   });
 
+  // The control access check (lib/control-auth) matches fleet tokens only.
+  // That's safe because a session can't keep anything else: token_login
+  // knows fleet tokens only, so an API key in the cookie is dropped and the
+  // account's own fleet token adopted.
+  it('replaces a cookie the engine rejects, such as an API key, with the account\'s fleet token', async () => {
+    jar.set('wr_fleet_auth', 'sk-ant-api-key');
+    jar.set('wr_fleet_auth_owner', 'u-primary');
+    session.current = { user: { id: 'u-primary' } };
+    mockTokenLogin.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 401', 401));
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: 'primary-1', fleet_token: 'ft-primary' }] });
+    const res = await GET();
+    expect(await res.json()).toEqual({ fleetId: 'primary-1' });
+    expect(setCalls.filter((c) => c.name === 'wr_fleet_auth').at(-1)).toMatchObject({ value: 'ft-primary' });
+    expect(jar.get('wr_fleet_auth')).not.toBe('sk-ant-api-key');
+  });
+
   it('propagates 502 (session kept) when the cookie cannot be verified', async () => {
     jar.set('wr_fleet_auth', 'ft-cookie');
     mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('timeout'));
