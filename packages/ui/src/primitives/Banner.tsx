@@ -15,7 +15,9 @@ export function Banner({ variant = 'info', icon, children, actions }: {
   actions?: React.ReactNode;
 }) {
   return (
-    <div className={`wr-banner wr-banner--${variant}`} role={variant === 'error' ? 'alert' : undefined}>
+    // Errors interrupt (alert); everything else is announced politely
+    // (status), so "Profile saved." reaches screen readers too.
+    <div className={`wr-banner wr-banner--${variant}`} role={variant === 'error' ? 'alert' : 'status'}>
       <span className="wr-banner__icon"><Icon name={icon ?? ICON[variant]} size={18} /></span>
       <div className="wr-banner__body">{children}</div>
       {actions && <div className="wr-banner__actions">{actions}</div>}

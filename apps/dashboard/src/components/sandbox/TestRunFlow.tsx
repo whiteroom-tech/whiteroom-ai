@@ -157,8 +157,46 @@ const CHECK_ICON_PASS = <svg viewBox="0 0 12 12" fill="none" stroke="currentColo
 const CHECK_ICON_WAIT = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3v3.5l2 1.5"/></svg>;
 const TIMER_ICON = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>;
 
-export function TestRunFlow() {
-  const { data: session, status: authStatus } = useSession();
+/** The steps rail (README › Sandbox), mapped onto this flow's real stages. */
+export const SANDBOX_STEPS = [
+  { title: 'Start a test', sub: 'Paste the key your agent uses, or watch the demo' },
+  { title: 'Point your agent', sub: 'Swap in the test address' },
+  { title: 'Run one task', sub: 'Calls show up as they arrive' },
+  { title: 'Results', sub: 'Three checks, and a report to keep' },
+] as const;
+
+/** Which rail step is current: 0 before a test exists, then by what the test has seen. */
+export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stage: number; allPassed: boolean; expired: boolean; demo: boolean }): number {
+  if (phase !== 'workspace') return 0;
+  if (opts.allPassed || opts.expired || opts.demo) return 3;
+  return opts.stage >= 3 ? 2 : 1;
+}
+
+function StepsRail({ current }: { current: number }) {
+  return (
+    <ol className={s.rail} aria-label="Test steps">
+      {SANDBOX_STEPS.map((step, i) => {
+        const done = i < current;
+        const now = i === current;
+        return (
+          <li key={step.title} className={`${s.railStep} ${now ? s.railStepCurrent : ''}`} aria-current={now ? 'step' : undefined}>
+            <span className={`${s.railNum} ${done ? s.railNumDone : now ? s.railNumCurrent : ''}`}>{done ? CHECK_ICON_PASS : i + 1}</span>
+            <span className={`${s.railTitle} ${!done && !now ? s.railTitleTodo : ''}`}>{step.title}</span>
+            <span className={s.railSub}>{step.sub}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export function TestRunFlow({ previewUserId }: {
+  /** /dev/sandbox only: render as this signed-in user without a real session. */
+  previewUserId?: string;
+} = {}) {
+  const live = useSession();
+  const session = previewUserId ? { user: { id: previewUserId } } : live.data;
+  const authStatus = previewUserId ? 'authenticated' : live.status;
   const [phase, setPhase] = useState<Phase>('start');
   const [wsTab, setWsTab] = useState<WorkspaceTab>('setup');
   const [run, setRun] = useState<RunStatusResult | null>(null);
@@ -510,6 +548,9 @@ export function TestRunFlow() {
     )}
 
     <main className={s.content}>
+      <div className={s.layout}>
+      <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo })} />
+      <div className={s.body}>
       {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Retry</button></div>}
       {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Check now</button></div>}
 
@@ -709,6 +750,9 @@ export function TestRunFlow() {
         {/* Footer */}
         {run && <div className={s.footer}>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()} · ` : ''}Test {run.sandboxId}{expired ? ' · Expired' : ''}</div>}
       </>}
+
+      </div>
+      </div>
 
       {/* ── Confirm-end modal ── */}
       {confirmEnd && (
