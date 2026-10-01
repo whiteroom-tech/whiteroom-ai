@@ -13,7 +13,7 @@ import { ROUTES } from '@/lib/routes';
  */
 export function AccountMenu({ organization, invitations }: { organization: string | null; invitations: number }) {
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemeChoice>('system');
+  const [theme, setTheme] = useState<ThemeChoice>('dark');
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const id = useId();

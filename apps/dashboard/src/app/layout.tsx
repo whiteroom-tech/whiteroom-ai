@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   description: 'Agent governance dashboard',
 };
 
-const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-wr-theme',t)}catch(e){}";
+const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark'||t==='system')document.documentElement.setAttribute('data-wr-theme',t)}catch(e){}";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
