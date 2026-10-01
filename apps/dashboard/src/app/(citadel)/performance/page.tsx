@@ -388,15 +388,15 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const errorHours = hourly.filter(h => h.errorCount > 0).sort((a, b) => b.errorCount - a.errorCount);
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Error Rate Breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Error rate = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as &quot;Other&quot;.</div>
+        <h3 style={H3}>Failed calls, broken down</h3>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Failed calls = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as &quot;Other&quot;.</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { label: 'Total Calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
             { label: 'Complete', value: totalComplete.toLocaleString(), color: 'var(--brand)', desc: 'Successful responses' },
             { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)', desc: 'API errors + interrupted' },
             { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)', desc: 'Cancelled, blocked, unknown' },
-            ...(blockedCount ? [{ label: 'Governance Blocks', value: blockedCount.toLocaleString(), color: 'var(--bad)', desc: 'Stopped by Controls rules (in Other)' }] : []),
+            ...(blockedCount ? [{ label: 'Blocked by rules', value: blockedCount.toLocaleString(), color: 'var(--bad)', desc: 'Stopped by Controls rules (in Other)' }] : []),
             { label: 'Error Rate', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 100 }}>
@@ -868,12 +868,12 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
       {moreDetail && (
         <section aria-label="More detail">
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
-            <MetricCard label="Recorded Requests" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
-            <MetricCard label="Estimated Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-            <MetricCard label="Est. Savings" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
-            <MetricCard label="≈ Median Response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
-            <MetricCard label="Error Rate" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
-            <MetricCard label="Governance Blocks" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
+            <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
+            <MetricCard label="Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+            <MetricCard label="Savings, up to" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
+            <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
+            <MetricCard label="Blocked by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
           </div>
 
           {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
@@ -996,8 +996,8 @@ function AgentView({ data }: { data: AgentPerformanceResult }) {
         <MetricCard label="Total Calls" value={t.calls.toLocaleString()} />
         <MetricCard label="Estimated Cost" value={fmtCost(t.costMicros)} />
         <MetricCard label="Avg Latency" value={fmtLatency(t.avgLatencyMs)} />
-        <MetricCard label="Error Rate" value={fmtPct(t.errorRate)} warn={t.errorRate > 0.05} />
-        {t.blockedCount !== undefined && <MetricCard label="Governance Blocks" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Stopped by Controls rules" />}
+        <MetricCard label="Failed calls" value={fmtPct(t.errorRate)} warn={t.errorRate > 0.05} />
+        {t.blockedCount !== undefined && <MetricCard label="Blocked by rules" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Stopped by Controls rules" />}
       </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <MetricCard label="Input Tokens" value={fmtTokens(t.inputTokens)} />
@@ -1144,7 +1144,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    {((diagDetector ? ['Call ID', 'Model', 'Watch', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
+                    {((diagDetector ? ['Call ID', 'Model', 'Shift', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
                       if (typeof h === 'string') return <th key={h} style={{ padding: '6px 8px', textAlign: 'left' }}>{h}</th>;
                       const [label, k] = h;
                       return (

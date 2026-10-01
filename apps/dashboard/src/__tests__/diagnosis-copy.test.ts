@@ -62,7 +62,7 @@ describe('cost, limitations, reasons, how-to', () => {
   it('not-measured reasons read as short clauses, using the engine\'s numbers', () => {
     // The engine's exact wording (diagnosis/detectors.ts and run.ts).
     const cases: Array<[string, string, string]> = [
-      ['few_watches', 'Needs 5 watches with watch numbers; has 3', '3 of 5 watches so far'],
+      ['few_watches', 'Needs 5 watches with watch numbers; has 3', '3 of 5 shifts so far'],
       ['short_history', 'Needs 14 days of history; has 6', '6 of 14 days of history so far'],
       ['low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)', 'can only see 40% of its tool calls'],
       ['few_results', 'Needs 20 tool results; has 7', '7 of 20 tool results so far'],
@@ -88,10 +88,10 @@ describe('cost, limitations, reasons, how-to', () => {
   it('counts of one read in the singular', () => {
     const text = (d: DiagnosisDetectorId, m: DiagnosisMeasures) => sentenceText(findingSentence(d, m));
     expect(text('review_tool_loops', { toolName: 'search', maxRepeats: 1, worstWatch: 2, watchesAffected: 1 }))
-      .toBe('search repeated 1 time in watch 2, and in 1 watch this week.');
+      .toBe('search repeated 1 time in shift 2, and in 1 shift this week.');
     expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5×.');
     expect(text('review_tool_errors', { ...MEASURES.review_tool_errors, toolErrors: 1 })).toContain('failed 1 time this week');
-    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 call on average, 1 watch in a row');
+    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 call on average, 1 shift in a row');
     expect(text('review_tool_silence', { ...MEASURES.review_tool_silence, recentCalls: 1 })).toContain('(1 call)');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 1 })).toContain('1 other model is also failing.');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');

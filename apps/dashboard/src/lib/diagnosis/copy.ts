@@ -1,8 +1,9 @@
 /**
  * Agent Diagnosis copy (spec Rev 4.4 §6.5). Written from the user's side, in
  * sentence case. Every number printed comes from a finding's `measures`, so a
- * sentence can never claim something the data doesn't hold. "Watch" stays
- * (Citadel glossary) and is defined once, in What we checked.
+ * sentence can never claim something the data doesn't hold. "Shift" (the
+ * redesign's word for a watch, README › Labels) is defined once, in What we
+ * checked.
  */
 import type { DiagnosisDetectorId, DiagnosisMeasures } from '@/lib/whiteroom/types';
 
@@ -37,7 +38,7 @@ export const titleLower = (d: string) => {
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
 export const SNOOZE_DAYS = 7;
 
-export const WATCH_DEFINITION = 'A watch is one stretch of work before an agent hands over to a fresh context.';
+export const WATCH_DEFINITION = 'A shift is one stretch of work before an agent hands over to a fresh context.';
 
 const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
 const has = (m: DiagnosisMeasures, k: string) => m[k] !== undefined && m[k] !== null && m[k] !== '';
@@ -48,7 +49,7 @@ const t = (text: string): SentencePart => ({ text });
 const v = (x: unknown): SentencePart => ({ value: num(x) });
 const code = (x: unknown): SentencePart => ({ value: String(x ?? ''), code: true });
 
-/** "1 watch" / "3 watches": the number as a value, the noun agreeing with it. */
+/** "1 shift" / "3 shifts": the number as a value, the noun agreeing with it. */
 const count = (x: unknown, one: string, many: string): SentencePart[] => [v(x), t(` ${Number(x) === 1 ? one : many}`)];
 
 /** The finding sentence, as parts so the row can style values. */
@@ -57,15 +58,15 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
     case 'review_handover_churn': {
       const parts = [
         t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
-        ...count(m.longestStreak, 'watch', 'watches'), t(' in a row. This often means tool results are too large for one watch. If so, return smaller results (page them, drop raw HTML, summarise first).'),
+        ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. This often means tool results are too large for one shift. If so, return smaller results (page them, drop raw HTML, summarise first).'),
       ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;
     }
     case 'review_tool_loops':
       return [
-        code(m.toolName), t(' repeated '), ...count(m.maxRepeats, 'time', 'times'), t(' in watch '), v(m.worstWatch), t(', and in '),
-        ...count(m.watchesAffected, 'watch', 'watches'), t(' this week.'),
+        code(m.toolName), t(' repeated '), ...count(m.maxRepeats, 'time', 'times'), t(' in shift '), v(m.worstWatch), t(', and in '),
+        ...count(m.watchesAffected, 'shift', 'shifts'), t(' this week.'),
       ];
     case 'review_spend_outliers': {
       const one = Number(m.flaggedDays) === 1;
@@ -128,7 +129,7 @@ export function notMeasuredShort(code: string, reason: string): string {
     return x === undefined ? engineText() : build(x);
   };
   switch (code) {
-    case 'few_watches': return n(/has (\d+)/, (x) => `${x} of 5 watches so far`);
+    case 'few_watches': return n(/has (\d+)/, (x) => `${x} of 5 shifts so far`);
     case 'short_history': return n(/has (\d+)/, (x) => `${x} of 14 days of history so far`);
     case 'low_coverage': return n(/for (\d+)%/, (x) => `can only see ${x}% of its tool calls`);
     case 'hashing_off':
@@ -151,8 +152,8 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
   switch (howtoId) {
     case 'handover_churn':
       return [
-        'Return smaller tool results so one watch can hold several steps: page long lists, drop raw HTML, and summarise before returning.',
-        'Open the calls to see how many calls each watch held before it handed over.',
+        'Return smaller tool results so one shift can hold several steps: page long lists, drop raw HTML, and summarise before returning.',
+        'Open the calls to see how many calls each shift held before it handed over.',
       ];
     case 'tool_errors':
       return [
