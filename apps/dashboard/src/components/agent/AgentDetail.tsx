@@ -51,6 +51,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [actionError, setActionError] = useState<{ text: string; retry?: () => void } | null>(null);
   const [confirmBreak, setConfirmBreak] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const resumingHold = useRef(false);
   const [taskDraft, setTaskDraft] = useState<string | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskNote, setTaskNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -115,7 +116,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     if (!pending || !agent) return;
     const s = agentState(agent);
     const held = s === 'paused' || s === 'stopped';
-    if ((pending === 'pausing' && (s === 'resting' || held)) || (pending === 'stopping' && s === 'stopped') || (pending === 'resuming' && s !== 'resting' && !held)) setPending(null);
+    // Releasing a hold is done once it's gone, whatever the watch status underneath.
+    const resumed = resumingHold.current ? !held : s !== 'resting' && !held;
+    if ((pending === 'pausing' && (s === 'resting' || held)) || (pending === 'stopping' && s === 'stopped') || (pending === 'resuming' && resumed)) setPending(null);
   }, [pending, agent]);
 
   // While waiting for confirmation, check more often than the 10s poll.
@@ -168,6 +171,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   async function resume() {
     if (preview) return;
     setActionError(null);
+    resumingHold.current = !!agent?.hold;
     setPending('resuming');
     try {
       await resumeAgent(fleetId, agentId, authKey);

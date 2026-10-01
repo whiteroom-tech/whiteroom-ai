@@ -16,7 +16,7 @@ export interface AgentInfo {
   status: string;
   /** Set while held (P2.2). Wins over the status. */
   hold?: AgentHold | null;
-  /** Whether this fleet has Pause/Stop as holds (Gov v1). */
+  /** Whether this fleet has Pause/Stop as holds (Gov v1). The engine's check_watch returns it with `hold` (engine #90). */
   govV1?: boolean;
   taskType?: string | null;
   watchNumber?: number;
