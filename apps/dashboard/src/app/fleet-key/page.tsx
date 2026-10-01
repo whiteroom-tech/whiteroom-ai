@@ -9,7 +9,6 @@ import { ThemedShell } from '@/components/ThemedShell';
 import { AppShell } from '@/components/AppShell';
 import { posthog, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
-import type { FleetReport } from '@/lib/whiteroom/types';
 
 function generateApiKey() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -27,7 +26,7 @@ export default function DashboardPage() {
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [props, setProps] = useState<{
     name: string; email: string; apiKey: string; fleetId: string;
-    fleetToken: string | null; report: FleetReport | null; isNew: boolean;
+    fleetToken: string | null; isNew: boolean;
   } | null>(null);
   const started = useRef(false);
 
@@ -112,7 +111,7 @@ export default function DashboardPage() {
         await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
       }
 
-      setProps({ name, email, apiKey, fleetId, fleetToken, report: null, isNew });
+      setProps({ name, email, apiKey, fleetId, fleetToken, isNew });
       setLoading(false);
 
       initAnalytics();
@@ -124,12 +123,10 @@ export default function DashboardPage() {
 
         if (fleetToken) {
           try {
+            // Only a health check now: a token the engine no longer knows
+            // means the fleet needs re-registering.
             const r = await tokenLogin(fleetToken);
-            if (r.success && r.report) {
-              setProps((prev) => (prev ? { ...prev, report: r.report ?? null } : prev));
-            } else {
-              needsReRegister = true;
-            }
+            if (!(r.success && r.report)) needsReRegister = true;
           } catch {
             needsReRegister = true;
           }

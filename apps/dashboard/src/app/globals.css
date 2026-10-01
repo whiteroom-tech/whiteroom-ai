@@ -330,4 +330,22 @@ a.wr-btn { text-decoration: none; }
   .wr-perf-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wr-perf-row, .wr-perf-row--cost { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Fleet key (app/fleet-key/onboarding) */
+.wr-key-field { flex: 1; min-width: 0; min-height: 32px; display: flex; align-items: center; padding: 6px 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; color: var(--tx); word-break: break-all; }
+.wr-key-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.wr-key-list > li { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; border-radius: 8px; background: var(--sunk); border: 1px solid var(--line); min-width: 0; }
+.wr-key-list > li > * { flex: none; white-space: nowrap; }
+.wr-key-list .wr-key-endpoint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 720px) { .wr-key-list > li { flex-wrap: wrap; } .wr-key-list .wr-key-endpoint { flex-basis: 100%; order: 5; } }
+.wr-input { height: 34px; padding: 0 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-family: var(--font-mono); font-size: 12.5px; }
+.wr-input:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* Narrow screens: segmented controls and panel headers wrap instead of
+   pushing content past the edge (P1.8 rule: no sideways scrolling). */
+@media (max-width: 720px) {
+  .wr-seg { flex-wrap: wrap; max-width: 100%; }
+  .wr-panel__head { flex-wrap: wrap; }
+  .wr-panel__actions { margin-left: 0; }
+}
 .wr-panel--danger { border-color: var(--bad-line); }

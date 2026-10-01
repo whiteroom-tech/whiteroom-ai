@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { COLOR_TOKENS } from '@whiteroom/ui';
+import postcss from 'postcss';
 
 // Reads the theme blocks straight from globals.css, so the test checks the
 // values the browser actually gets.
@@ -97,5 +98,21 @@ describe('light theme blocks', () => {
 
   it('dark and light define the same tokens', () => {
     expect(Object.keys(light).sort()).toEqual(Object.keys(dark).sort());
+  });
+});
+
+describe('globals.css', () => {
+  // A dropped brace (e.g. from a merge) nests every later rule inside a media
+  // query: typecheck and lint pass, only the production build fails.
+  it('parses, with every block closed', () => {
+    expect(() => postcss.parse(css)).not.toThrow();
+  });
+
+  it('keeps component rules at the top level, not inside a media query by accident', () => {
+    const nested: string[] = [];
+    postcss.parse(css).walkAtRules('media', (m) => {
+      m.walkRules((r) => { if (/^\.wr-(key|perf-strip|steps|copy-chip)/.test(r.selector) && !/max-width: (720|900|1100)px/.test(m.params)) nested.push(r.selector); });
+    });
+    expect(nested).toEqual([]);
   });
 });
