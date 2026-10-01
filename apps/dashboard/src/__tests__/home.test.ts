@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, agentState, clock, hasUnknownAgents, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
+  activityRow, agentState, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -194,5 +194,28 @@ describe('handover subjects', () => {
     const e = { id: 'h', type: 'handover_out', timestamp: '2026-09-30T14:00:00Z', fromAgent: 'lead-agent', toAgent: 'writer-agent' } as AuditEntry;
     expect(activityRow(e).text.startsWith('lead-agent ')).toBe(true);
     expect(lastEventByAgent([e])['lead-agent']).toBeDefined();
+  });
+});
+
+describe('merging a fan-out', () => {
+  const statuses = new Map([['lead-agent', 'working'], ['scout-agent', 'resting'], ['new-agent', 'idle']]);
+  const previous: AgentInfo[] = [{ agentId: 'scout-agent', status: 'working', watchNumber: 3, tasksCompleted: 17 }];
+
+  it('keeps the last good detail for a failed lookup, under the fresh status', () => {
+    const { details, complete } = mergeFanOut(statuses, [{ agentId: 'x', status: 'working', watchNumber: 8 }, null, null], previous);
+    expect(complete).toBe(false);
+    expect(details[0]).toMatchObject({ agentId: 'lead-agent', watchNumber: 8 });
+    expect(details[1]).toMatchObject({ agentId: 'scout-agent', status: 'resting', watchNumber: 3, tasksCompleted: 17 });
+    expect(details[2]).toEqual({ agentId: 'new-agent', status: 'idle' });
+  });
+
+  it('is complete only when every lookup worked', () => {
+    expect(mergeFanOut(statuses, [{ agentId: 'a', status: 'working' }, { agentId: 'b', status: 'resting' }, { agentId: 'c', status: 'idle' }], []).complete).toBe(true);
+  });
+});
+
+describe('live rows for handovers', () => {
+  it('fill the agent from fromAgent when agentId is missing', () => {
+    expect(liveRow({ id: 'h', type: 'task_complete', timestamp: '2026-09-30T14:00:00Z', fromAgent: 'lead-agent', taskName: 'reply: done' } as AuditEntry).agent).toBe('lead-agent');
   });
 });

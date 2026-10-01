@@ -53,6 +53,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
     if (preview) return;
     const id = ++request.current;
     setLoading(true);
+    setError(false);
     try {
       const res = await performanceLiveFeed(fleetId, { limit: FETCH_LIMIT }, authKey);
       if (id !== request.current) return;
@@ -81,7 +82,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const pageRows = win.rows;
 
   function reveal() { setOpen(true); load(); }
-  function hide() { request.current += 1; setOpen(false); setEntries([]); setPage(0); setLoading(false); }
+  function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 
   const title = <>Live feed<Hint text={HELP.liveFeed.replace('72 hours', `${ttlHours} hours`)} /></>;

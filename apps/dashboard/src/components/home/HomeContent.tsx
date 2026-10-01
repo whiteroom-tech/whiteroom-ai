@@ -10,7 +10,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
-  agentState, clock, hasUnknownAgents, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  agentState, clock, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import { LiveFeedPanel } from './LiveFeedPanel';
 
@@ -53,17 +53,18 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     if (data.agentDetails?.length) {
       details = data.agentDetails;
     } else if (Date.now() - lastFanOut.current >= DETAIL_FANOUT_INTERVAL_MS || hasUnknownAgents(data, fanOutDetails.current)) {
-      // One agent's failed lookup must not empty the panel: it falls back to
-      // what the report says about it, and the next fan-out tries again.
+      // One agent's failed lookup must not empty the panel or show made-up
+      // numbers: it keeps its last good detail (mergeFanOut), and the fan-out
+      // runs again on the next poll instead of after the full interval.
       const statuses = reportStatuses(data);
-      details = await Promise.all([...statuses].map(([id, status]) =>
-        checkWatch(id, fleetId, authKey)
-          .then((d): AgentInfo => ({ ...d, agentId: id }))
-          .catch((): AgentInfo => ({ agentId: id, status })),
+      const results = await Promise.all([...statuses.keys()].map((id) =>
+        checkWatch(id, fleetId, authKey).then((d): AgentInfo | null => d, () => null),
       ));
       if (stale()) return;
+      const merged = mergeFanOut(statuses, results, fanOutDetails.current);
+      details = merged.details;
       fanOutDetails.current = details;
-      lastFanOut.current = Date.now();
+      if (merged.complete) lastFanOut.current = Date.now();
     } else {
       details = overlayStatuses(data, fanOutDetails.current);
     }
@@ -74,7 +75,10 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
 
   const fetchActivity = useCallback(async (stale: () => boolean) => {
     const data = await auditLog({ fleetId, limit: 200 }, authKey);
-    if (stale() || 'error' in data || !Array.isArray(data.entries)) return;
+    if (stale()) return;
+    // An error payload is a failed refresh, not an empty fleet: throw so the
+    // header says Retrying instead of advancing "updated".
+    if ('error' in data || !Array.isArray(data.entries)) throw new Error('activity unavailable');
     setEntries(data.entries);
   }, [fleetId, authKey]);
 
@@ -141,7 +145,6 @@ export function HomeView({ report, agents, entries, today, failing, view, onView
   onViewChange: (v: AgentsView) => void;
   liveFeed: React.ReactNode;
 }) {
-  const changeView = onViewChange;
   const sorted = sortAgents(agents);
   const working = agents.filter((a) => agentState(a) === 'working').length;
   const compression = report.energySavings.compressionRatio ?? 0;
@@ -178,7 +181,7 @@ export function HomeView({ report, agents, entries, today, failing, view, onView
           title={<>Agents<Hint text={HELP.agents} /></>}
           count={agents.length}
           bodyPadding={view === 'cards' ? '16px 18px' : 0}
-          actions={<SegmentedControl<AgentsView> label="Agents view" value={view} onChange={changeView} size={24} options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]} />}
+          actions={<SegmentedControl<AgentsView> label="Agents view" value={view} onChange={onViewChange} size={24} options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]} />}
         >
           {agents.length === 0 ? (
             <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No agents connected yet. They appear here on their first call through WhiteRoom.</p>

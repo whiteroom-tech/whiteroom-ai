@@ -74,6 +74,28 @@ export function overlayStatuses(report: Pick<FleetReport, 'status'>, cached: Age
   return [...reportStatuses(report)].map(([id, status]) => ({ ...(byId.get(id) ?? { agentId: id }), agentId: id, status }));
 }
 
+/**
+ * Combine one fan-out's lookups (null where a lookup failed) with the last
+ * good details. A failed agent keeps its previous detail under the report's
+ * fresh status, or just the status if it has none yet. `complete` is false
+ * when any lookup failed, so the caller retries on the next poll instead of
+ * waiting out the throttle.
+ */
+export function mergeFanOut(
+  statuses: Map<string, string>,
+  results: (AgentInfo | null)[],
+  previous: AgentInfo[],
+): { details: AgentInfo[]; complete: boolean } {
+  const prev = new Map(previous.map((d) => [d.agentId, d]));
+  const ids = [...statuses.keys()];
+  const details = ids.map((id, i) => {
+    const got = results[i];
+    if (got) return { ...got, agentId: id };
+    return { ...(prev.get(id) ?? { agentId: id }), agentId: id, status: statuses.get(id) ?? 'idle' };
+  });
+  return { details, complete: results.every(Boolean) };
+}
+
 /** Whether the report has agents the cached details don't cover yet. */
 export function hasUnknownAgents(report: Pick<FleetReport, 'status'>, cached: AgentInfo[]): boolean {
   const known = new Set(cached.map((d) => d.agentId));
@@ -189,7 +211,7 @@ export function pageWindow<T>(rows: T[], page: number, size: number): { page: nu
 export function liveRow(e: AuditEntry): LiveRow {
   const name = String(e.taskName ?? '');
   const details = Array.isArray(e.details) ? e.details : [];
-  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: String(e.agentId ?? '') };
+  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e) };
   if (/^reply:/i.test(name) && details.length === 0) {
     return { ...base, kind: 'reply', summary: `“${name.replace(/^reply:\s*/i, '')}”`, detail: '' };
   }
