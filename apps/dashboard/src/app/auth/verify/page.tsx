@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import { ThemedShell } from '@/components/ThemedShell';
+import { ROUTES } from '@/lib/routes';
 
 export const metadata: Metadata = {
   title: 'Confirm sign-in',
@@ -28,7 +29,7 @@ export default async function VerifyPage({
 
   const token = one(params.token);
   const email = one(params.email);
-  const callbackUrl = one(params.callbackUrl) || '/dashboard';
+  const callbackUrl = one(params.callbackUrl) || ROUTES.fleetKey;
 
   const valid = Boolean(token && email);
 

@@ -53,7 +53,7 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
   });
 
   it('redirects protected paths to sign-in without a session', () => {
-    for (const path of ['/admin', '/settings', '/dashboard', '/organization']) {
+    for (const path of ['/admin', '/settings', '/fleet-key', '/organization']) {
       expect(verdict(proxy(req(APP, path)))).toBe('redirect:/sign-in');
     }
   });
@@ -62,36 +62,66 @@ describe('single-host mode (ADMIN_HOST unset)', () => {
     expect(verdict(proxy(req(APP, '/settings/confirm-email')))).toBe('pass');
   });
 
-  it('redirects legacy routes to Citadel equivalents', () => {
-    // /performance is NOT a legacy route -- Sidebar.tsx links it directly and
-    // (citadel)/performance/page.tsx serves it live. Only /fleet and /sandbox
-    // were ever renamed. It is session-protected, so checking that it isn't
-    // renamed needs a signed-in request; signed out it goes to /sign-in
-    // (covered below), which is a different question.
-    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
+  it('redirects legacy routes to their current pages', () => {
+    // /performance and /runs never moved. /sandbox used to redirect to
+    // /controls; since the swap it is the Sandbox's own route.
+    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/home');
     expect(verdict(proxy(req(APP, '/performance', { withSession: true })))).toBe('pass');
-    expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
+    expect(verdict(proxy(req(APP, '/sandbox', { withSession: true })))).toBe('pass');
   });
 
   it('sends signed-out visitors on Citadel routes to sign-in', () => {
     // Without this the Citadel pages rendered the fleet API-key card to a
     // signed-out visitor instead of sending them to sign in.
-    for (const path of ['/agents', '/runs', '/performance', '/controls']) {
+    for (const path of ['/home', '/runs', '/performance', '/controls', '/sandbox', '/fleet-key', '/agents/lead-agent']) {
       expect(verdict(proxy(req(APP, path)))).toBe('redirect:/sign-in');
       expect(verdict(proxy(req(APP, path, { withSession: true })))).toBe('pass');
     }
   });
 
   it('still redirects legacy routes before the session gate', () => {
-    // /fleet and /sandbox are renamed, not protected: a signed-out visitor is
+    // Renamed paths are not protected themselves: a signed-out visitor is
     // sent to the new path first, and only that path asks them to sign in.
-    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
-    expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
+    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/home');
+    expect(verdict(proxy(req(APP, '/agents')))).toBe('redirect:/home');
+    expect(verdict(proxy(req(APP, '/governance')))).toBe('redirect:/controls');
+    expect(verdict(proxy(req(APP, '/dashboard')))).toBe('redirect:/fleet-key');
   });
 
   it('treats an empty ADMIN_HOST as unset rather than as a host named ""', () => {
     process.env.ADMIN_HOST = '   ';
     expect(verdict(proxy(req(APP, '/admin', { withSession: true })))).toBe('pass');
+  });
+});
+
+describe('the route renames (P0.5)', () => {
+  const location = (res: Response | undefined) => (res ? new URL(res.headers.get('location') ?? '', 'https://x').pathname + new URL(res.headers.get('location') ?? '', 'https://x').search : null);
+
+  it('moves the old paths permanently', () => {
+    for (const [from, to] of [['/agents', '/home'], ['/governance', '/controls'], ['/dashboard', '/fleet-key']]) {
+      const res = proxy(req(APP, from, { withSession: true }));
+      expect(res?.status).toBe(301);
+      expect(verdict(res)).toBe(`redirect:${to}`);
+    }
+  });
+
+  it('keeps the query string', () => {
+    expect(location(proxy(req(APP, '/governance?rec=r-12', { withSession: true })))).toBe('/controls?rec=r-12');
+    expect(location(proxy(req(APP, '/dashboard?welcome=1', { withSession: true })))).toBe('/fleet-key?welcome=1');
+  });
+
+  it('moves only the bare /agents: /agents/[agentId] is Agent detail', () => {
+    expect(verdict(proxy(req(APP, '/agents/lead-agent', { withSession: true })))).toBe('pass');
+  });
+
+  it('serves Controls at /controls and the Sandbox at /sandbox', () => {
+    expect(verdict(proxy(req(APP, '/controls', { withSession: true })))).toBe('pass');
+    expect(verdict(proxy(req(APP, '/sandbox', { withSession: true })))).toBe('pass');
+  });
+
+  it('lands signed-in visitors on Fleet key after sign-in by default', async () => {
+    const { DEFAULT_DESTINATION } = await import('@/lib/callback-url');
+    expect(DEFAULT_DESTINATION).toBe('/fleet-key');
   });
 });
 
@@ -113,9 +143,9 @@ describe('the app host', () => {
 
   it('redirects legacy routes even with ADMIN_HOST set', () => {
     process.env.ADMIN_HOST = ADMIN;
-    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/agents');
+    expect(verdict(proxy(req(APP, '/fleet')))).toBe('redirect:/home');
     expect(verdict(proxy(req(APP, '/performance', { withSession: true })))).toBe('pass');
-    expect(verdict(proxy(req(APP, '/sandbox')))).toBe('redirect:/controls');
+    expect(verdict(proxy(req(APP, '/governance')))).toBe('redirect:/controls');
   });
 
   // /administrators would start with "/admin" on a naive prefix check.

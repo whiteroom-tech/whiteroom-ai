@@ -1,3 +1,4 @@
+import { ROUTES } from '@/lib/routes';
 /**
  * Where someone should land once they have signed in.
  *
@@ -18,7 +19,7 @@
 export const PATH_HEADER = 'x-wr-path';
 
 /** The sign-in page's destination when nothing better is known. */
-export const DEFAULT_DESTINATION = '/dashboard';
+export const DEFAULT_DESTINATION: string = ROUTES.fleetKey;
 
 /**
  * Accepts only a path on this origin, falling back when handed anything else.

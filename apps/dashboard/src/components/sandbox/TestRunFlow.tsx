@@ -8,6 +8,7 @@ import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
 import s from './guided.module.css';
+import { ROUTES } from '@/lib/routes';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
@@ -421,7 +422,7 @@ export function TestRunFlow() {
       <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
         <p className={s.pageSub}>Sandbox uses your WhiteRoom account sign-in, so sign in to create and manage your test environments.</p>
         <div className={s.btnRow} style={{ marginTop: 16 }}>
-          <a className={`${s.btn} ${s.btnPrimary}`} href={`/sign-in?callbackUrl=${encodeURIComponent('/sandbox')}`} style={{ textDecoration: 'none' }}>Sign in →</a>
+          <a className={`${s.btn} ${s.btnPrimary}`} href={`/sign-in?callbackUrl=${encodeURIComponent(ROUTES.sandbox)}`} style={{ textDecoration: 'none' }}>Sign in →</a>
         </div>
       </div>
     </main>

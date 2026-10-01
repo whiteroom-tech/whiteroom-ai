@@ -8,6 +8,7 @@ import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
 import { CopyButton, CodeBlock, StatCard } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
+import { ROUTES } from '@/lib/routes';
 
 interface Props {
   name: string;
@@ -342,7 +343,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
                 <p className="text-sm font-semibold" style={{ color: 'var(--tx)' }}>View your dashboard</p>
                 <p className="text-sm mt-1" style={{ color: 'var(--tx2)' }}>Watch your agents in real time — tasks completed, token savings, handover history, and the full audit trail.</p>
               </div>
-              <a href="/agents" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold hover:underline" style={{ color: 'var(--brand)' }}>
+              <a href={ROUTES.home} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold hover:underline" style={{ color: 'var(--brand)' }}>
                 Open the Control Room
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>
                 <span className="sr-only">(opens in a new tab)</span>
@@ -356,7 +357,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, report, i
   const liveRow = (
       <div className={`grid gap-4 ${report ? 'grid-cols-[1fr_1fr]' : ''}`}>
         <a
-          href="/agents"
+          href={ROUTES.home}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-xl p-6 flex items-center gap-4 transition-all group"
