@@ -59,6 +59,7 @@ export interface GovernanceTally {
 }
 
 export interface GovernanceCounts extends GovernanceTally {
+  /** Keyed by agent id; decisions recorded without an agent are under '' (never a real id). */
   byAgent: Record<string, GovernanceTally>;
   byRule: Record<GovernanceRuleType, GovernanceTally>;
 }
@@ -81,10 +82,25 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     const n = occurrences(e);
     const key: keyof GovernanceTally = e.type === GOVERNANCE_BLOCK ? 'blocks' : 'wouldBlocks';
     out[key] += n;
-    const agent = e.agentId ?? 'unknown';
+    const agent = e.agentId ?? '';
     (out.byAgent[agent] ??= emptyTally())[key] += n;
     const rule = out.byRule[e.ruleType as GovernanceRuleType];
     if (rule) rule[key] += n;
+  }
+  return out;
+}
+
+/**
+ * Per-agent tallies keyed the way the By agent table keys its rows: agent ids
+ * lower-cased (so "Lead-Agent" and "lead-agent" merge, as their tokens do),
+ * and '' kept for decisions recorded without an agent (the Unattributed row).
+ */
+export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Record<string, GovernanceTally> {
+  const out: Record<string, GovernanceTally> = {};
+  for (const [agent, t] of Object.entries(byAgent)) {
+    const key = agent.toLowerCase();
+    const prev = out[key] ?? emptyTally();
+    out[key] = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
   }
   return out;
 }

@@ -120,3 +120,14 @@ describe('convertSpendCap', () => {
     expect(convertSpendCap(0.000001, 'tokens')).toBe(1);
   });
 });
+
+describe('governanceCounts agent keys', () => {
+  it('keeps decisions without an agent apart from a real agent called "unknown"', () => {
+    const c = governanceCounts([
+      { id: '1', type: 'governance_block', timestamp: '2026-10-01T10:00:00Z' },
+      { id: '2', type: 'governance_block', timestamp: '2026-10-01T10:01:00Z', agentId: 'unknown' },
+    ] as AuditEntry[]);
+    expect(c.byAgent['']).toEqual({ blocks: 1, wouldBlocks: 0 });
+    expect(c.byAgent.unknown).toEqual({ blocks: 1, wouldBlocks: 0 });
+  });
+});
