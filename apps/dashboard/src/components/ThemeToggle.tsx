@@ -1,19 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
-
-type WrTheme = 'system' | 'light' | 'dark';
-
-function applyTheme(theme: WrTheme) {
-  // Keep <html data-wr-theme> (set before paint by app/layout.tsx) in step.
-  if (theme === 'system') document.documentElement.removeAttribute('data-wr-theme');
-  else document.documentElement.setAttribute('data-wr-theme', theme);
-  const shell = document.querySelector('.wr-shell');
-  if (!shell) return;
-  if (theme === 'system') shell.removeAttribute('data-theme');
-  else shell.setAttribute('data-theme', theme);
-}
+import { applyTheme, chooseTheme, storedTheme, type ThemeChoice as WrTheme } from '@/lib/theme';
 
 const THEME_ICON: Record<WrTheme, React.ReactNode> = {
   system: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>,
@@ -25,20 +13,16 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<WrTheme>('system');
 
   useEffect(() => {
-    const stored = safeGet('wr_theme') as WrTheme | null;
-    if (stored && (stored === 'light' || stored === 'dark')) {
-      setTheme(stored);
-      applyTheme(stored);
-    }
+    const stored = storedTheme();
+    setTheme(stored);
+    applyTheme(stored);
   }, []);
 
   function cycleTheme() {
     const order: WrTheme[] = ['system', 'light', 'dark'];
     const next = order[(order.indexOf(theme) + 1) % order.length];
     setTheme(next);
-    if (next === 'system') safeRemove('wr_theme');
-    else safeSet('wr_theme', next);
-    applyTheme(next);
+    chooseTheme(next);
   }
 
   return (
@@ -46,7 +30,7 @@ export function ThemeToggle() {
       onClick={cycleTheme}
       title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
       aria-label={`Theme: ${theme}. Switch theme`}
-      style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, minWidth: 30, minHeight: 28, padding: '6px 8px', cursor: 'pointer', color: 'var(--tx3)', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+      style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, minWidth: 30, minHeight: 28, padding: '6px 8px', cursor: 'pointer', color: 'var(--tx2)', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
     >
       {THEME_ICON[theme]}
     </button>

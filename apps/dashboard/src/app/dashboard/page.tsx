@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { ThemedShell } from '@/components/ThemedShell';
+import { AppShell } from '@/components/AppShell';
 import { posthog, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
@@ -193,8 +194,8 @@ export default function DashboardPage() {
   if (!props) return null;
 
   return (
-    <ThemedShell>
+    <AppShell>
       <Onboarding {...props} />
-    </ThemedShell>
+    </AppShell>
   );
 }

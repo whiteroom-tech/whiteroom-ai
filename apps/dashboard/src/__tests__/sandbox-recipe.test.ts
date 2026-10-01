@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: null }) }));
-vi.mock("@/components/ThemeToggle", () => ({ ThemeToggle: () => null }));
 vi.mock("@whiteroom/ui", () => ({ FONT_DISPLAY: { className: "" }, FONT_MONO: { className: "" } }));
 vi.mock("@/lib/analytics", () => ({ posthog: { capture: vi.fn() } }));
 vi.mock("@/lib/whiteroom/client", () => ({ PROXY_URL: "https://proxy.whiteroom.ai" }));

@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sidebar } from '@/components/Sidebar';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { SignOutButton } from '@/components/citadel/PageChrome';
+import { PageHeader } from '@/components/citadel/PageChrome';
+import { AppShell } from '@/components/AppShell';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
   cancelEmailChange,
@@ -128,13 +127,6 @@ export function SettingsView({
         : null,
   );
 
-  useEffect(() => {
-    const stored = localStorage.getItem('wr_theme');
-    if (stored === 'light' || stored === 'dark') {
-      document.querySelector('.wr-shell')?.setAttribute('data-theme', stored);
-    }
-  }, []);
-
   function run(action: () => Promise<{ ok: boolean; error?: string }>, successText: string) {
     startTransition(async () => {
       try {
@@ -152,14 +144,10 @@ export function SettingsView({
   }
 
   return (
-    <div className="wr-shell" style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)', color: 'var(--tx)' }}>
-        <div style={{ maxWidth: 760, margin: '0 auto', padding: '26px 24px 80px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
-            <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, margin: 0 }}>Settings</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><ThemeToggle /><SignOutButton /></div>
-          </div>
+    <AppShell>
+      <PageHeader title="Settings" fleetId={account.email} fleetTitle="Signed in as" />
+      <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px' }}>
 
           {banner && (
             <div
@@ -186,7 +174,7 @@ export function SettingsView({
           <DangerSection account={account} pending={pending} />
         </div>
       </main>
-    </div>
+    </AppShell>
   );
 }
 

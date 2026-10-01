@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { OverviewContent } from '@/components/citadel/OverviewContent';
-import { PageFooter, PageHeader } from '@/components/citadel/PageChrome';
+import { PageHeader } from '@/components/citadel/PageChrome';
 
 export default function AgentsPage() {
   const searchParams = useSearchParams();
@@ -20,7 +20,7 @@ export default function AgentsPage() {
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
-      <PageHeader title="Overview" fleetId={auth.fleetId} />
+      <PageHeader title="Home" fleetId={auth.fleetId} />
 
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -32,7 +32,6 @@ export default function AgentsPage() {
         />
       </div>
 
-      <PageFooter />
     </div>
   );
 }

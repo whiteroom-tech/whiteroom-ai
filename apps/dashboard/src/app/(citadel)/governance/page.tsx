@@ -27,7 +27,7 @@ import type {
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, convertSpendCap, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
-import { PageFooter, PageHeader } from "@/components/citadel/PageChrome";
+import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO } from "@whiteroom/ui";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -813,6 +813,11 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
               </div>
             );
           })}
+          {/* Was the page footer; the shell has no footer now (README › Screen 5). */}
+          <p style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 0", fontSize: 12.5, color: "var(--tx2)" }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flex: "none" }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
+            Traffic that bypasses the proxy, such as Claude Code signed in with OAuth, is not covered by these rules.
+          </p>
         </div>
 
         {/* Right column — a Diagnosis suggestion's draft, or the selected rule */}
@@ -904,7 +909,6 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
         )}
       </div>
 
-      <PageFooter note="Traffic that bypasses the proxy, such as Claude Code signed in with OAuth, is not covered." />
     </div>
   );
 }

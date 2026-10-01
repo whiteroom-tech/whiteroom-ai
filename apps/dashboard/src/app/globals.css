@@ -95,13 +95,33 @@
   --cr-cyan: #0369a1;
 }
 
-@keyframes cr-spin { to { transform: rotate(360deg) } }
-@media (prefers-reduced-motion: reduce) {
-  .cr-sweep { animation: none !important; }
-}
-
 /* In-app confirm dialogs (ConfirmDialog). */
 .wr-confirm-dialog::backdrop { background: rgba(3, 6, 12, .6); }
+
+/* ── App shell (components/AppShell.tsx, Sidebar.tsx, AccountMenu.tsx) ──
+   README › Global shell: a 220px sidebar and the page column, full height. */
+.citadel-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; overflow: hidden; background: var(--bg); color: var(--tx); font-family: var(--font-sans); font-size: 14.5px; }
+.wr-sidebar { width: 220px; box-sizing: border-box; height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 18px 12px 14px; background: var(--card); border-right: 1px solid var(--line); }
+.wr-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 16px; }
+.wr-sidebar__eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--tx2); padding: 12px 10px 4px; }
+.wr-sidebar__item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--tx2); text-decoration: none; white-space: nowrap; transition: color .12s, background-color .12s; }
+.wr-sidebar__item:hover { color: var(--tx); }
+.wr-sidebar__item.is-active { color: var(--brand); background: var(--brand-dim); }
+.wr-sidebar__item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wr-sidebar__account { position: relative; margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 2px 0 6px; border-top: 1px solid var(--line); }
+.wr-sidebar__avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 99px; background: var(--sunk); border: 1px solid var(--line2); font-size: 12px; font-weight: 600; color: var(--tx); }
+.wr-account-btn { position: relative; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--tx2); cursor: pointer; }
+.wr-account-btn:hover, .wr-account-btn[aria-expanded="true"] { color: var(--tx); background: var(--sunk); }
+.wr-account-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wr-account-btn__dot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 99px; background: var(--brand); }
+.wr-account-menu { position: absolute; bottom: calc(100% + 8px); left: 0; right: 0; z-index: 40; display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line2); box-shadow: 0 8px 24px var(--shadow); }
+.wr-account-menu__label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--tx2); padding: 2px 2px 4px; }
+.wr-account-menu__item { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 7px; font-size: 13px; color: var(--tx); text-decoration: none; white-space: nowrap; }
+.wr-account-menu__item:first-of-type { margin-top: 6px; }
+.wr-account-menu__item:hover { background: var(--sunk); }
+.wr-account-menu__item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wr-account-menu__item--bad { color: var(--bad); }
+.wr-account-menu__count { font-family: var(--font-mono); font-size: 11px; color: var(--brand); }
 
 /* Keep the shared navigation usable on narrow screens without squeezing content. */
 .citadel-mobile-menu { display: none; }
@@ -109,14 +129,12 @@
   .citadel-layout { grid-template-columns: 1fr !important; }
   .citadel-layout > aside { display: none !important; }
   .citadel-mobile-menu { display: flex; align-items: center; gap: 8px; min-height: 44px; text-align: left; background: var(--card); color: var(--brand); border-bottom: 1px solid var(--line); padding: 10px 16px; font-size: 12px; flex-shrink: 0; }
-  .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: 44px; bottom: 0; left: 0; width: 212px; z-index: 30; }
+  .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: 44px; bottom: 0; left: 0; width: 220px; height: auto; z-index: 30; }
 
   /* Header: keep the page name and actions on one line; the fleet ID yields. */
   .citadel-page-header { padding: 0 16px !important; gap: 8px !important; }
   .citadel-page-fleet { display: none; }
   .citadel-hide-mobile { display: none !important; }
-  /* The footer only repeats the copyright; give the space back to content. */
-  .citadel-page-footer { display: none !important; }
 
   /* Stat strip: swipe sideways instead of clipping, with a fade that shows
      there is more to the right. */

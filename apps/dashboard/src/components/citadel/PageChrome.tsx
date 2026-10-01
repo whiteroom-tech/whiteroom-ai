@@ -1,63 +1,44 @@
 'use client';
 
-// Shared header and footer for every Citadel page. Each page used to draw its
-// own top bar, so titles, badges and sign-out drifted apart page to page.
+// The shared page header for every signed-in page (README › Header patterns).
+// Theme and sign out moved to the account menu in the sidebar, and the footer
+// is gone; the version now sits on the sidebar's account row.
 
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { FONT_MONO } from '@whiteroom/ui';
+import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 
 export const APP_VERSION = 'v1.1 Beta';
-
-export function SignOutButton() {
-  return (
-    <button
-      onClick={() => { window.location.href = '/auth/sign-out'; }}
-      style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx2)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 12px', background: 'var(--card)', cursor: 'pointer', whiteSpace: 'nowrap' }}
-    >
-      Sign out
-    </button>
-  );
-}
 
 export function PageHeader({
   title,
   fleetId,
+  fleetTitle = 'Fleet ID',
   badge,
   children,
 }: {
-  /** Page name. A node so Performance can render its drill-down breadcrumb. */
+  /** Page name, or a breadcrumb on detail pages. */
   title: React.ReactNode;
-  /** Shown as secondary context next to the title. */
+  /** Shown after the title as "/ fleet-id". */
   fleetId?: string | null;
-  /** Optional status pill, e.g. the Sandbox run mode. */
+  /** Tooltip for that context; Settings shows the account email there. */
+  fleetTitle?: string;
+  /** Live status or a status pill, after the fleet id. */
   badge?: React.ReactNode;
-  /** Page-level controls, placed before the theme toggle. */
+  /** Page-level actions, right-aligned. At most two buttons. */
   children?: React.ReactNode;
 }) {
   return (
-    <header className="citadel-page-header flex items-center gap-3" style={{ height: 54, flexShrink: 0, borderBottom: '1px solid var(--line)', padding: '0 20px', minWidth: 0 }}>
-      <h1 style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+    <header className="citadel-page-header" style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', padding: '0 24px', minWidth: 0 }}>
+      <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: 'var(--tx)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, whiteSpace: 'nowrap' }}>
         {title}
       </h1>
       {fleetId && (
-        <span className="citadel-page-fleet" title="Fleet ID" style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+        <span className="citadel-page-fleet" title={fleetTitle} style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
           / {fleetId}
         </span>
       )}
       {badge}
       <span style={{ marginLeft: 'auto' }} />
       {children}
-      <ThemeToggle />
-      <SignOutButton />
     </header>
-  );
-}
-
-export function PageFooter({ note }: { note?: React.ReactNode }) {
-  return (
-    <footer className="citadel-page-footer flex justify-between gap-4" style={{ padding: '6px 20px', borderTop: '1px solid var(--line)', background: 'var(--sunk)', fontSize: 11.5, color: 'var(--tx3)', flexShrink: 0 }}>
-      <span>{note}</span>
-      <span style={{ whiteSpace: 'nowrap' }}>© 2026 WhiteRoom</span>
-    </footer>
   );
 }

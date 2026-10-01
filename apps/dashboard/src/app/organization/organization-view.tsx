@@ -1,9 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Sidebar } from '@/components/Sidebar';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { SignOutButton } from '@/components/citadel/PageChrome';
+import { PageHeader } from '@/components/citadel/PageChrome';
+import { AppShell } from '@/components/AppShell';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
   acceptOrgInvitation,
@@ -39,36 +37,21 @@ function permissionsFor(role: OrgRole): RosterPermissions {
 }
 
 export function OrganizationView({ mine, viewerId }: { mine: MyOrganization; viewerId: string }) {
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('wr_theme');
-      if (stored === 'light' || stored === 'dark') {
-        document.querySelector('.wr-shell')?.setAttribute('data-theme', stored);
-      }
-    } catch {
-      // Storage blocked — keep the default theme.
-    }
-  }, []);
-
   const { membership, org, invitations } = mine;
   const manager = membership ? canManage(membership.role) : false;
 
   return (
-    <div className="wr-shell" style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)', color: 'var(--tx)' }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '26px 24px 80px' }}>
+    <AppShell>
+      <PageHeader title="Organization" />
+      <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 24px 80px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--tx3)', textTransform: 'uppercase' }}>
-                Organization
-              </div>
-              <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
                 {org?.name ?? 'Your organization'}
                 {membership && <Pill tone={membership.role === 'owner' ? 'ho' : 'muted'}>{ROLE_LABELS[membership.role]}</Pill>}
-              </h1>
+              </h2>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><ThemeToggle /><SignOutButton /></div>
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>
@@ -106,7 +89,7 @@ export function OrganizationView({ mine, viewerId }: { mine: MyOrganization; vie
           </div>
         </div>
       </main>
-    </div>
+    </AppShell>
   );
 }
 
