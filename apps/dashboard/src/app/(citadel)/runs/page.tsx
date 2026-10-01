@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auditLog, clearAuditLog, isAuthError } from '@/lib/whiteroom/client';
+import { auditLog, isAuthError } from '@/lib/whiteroom/client';
 import { agentDaySavings, auditSavingsEvent, getCutoff, handoverAgent, isHandoverEntry, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
 import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
 import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/governance';
@@ -10,7 +10,6 @@ import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { PageHeader } from '@/components/citadel/PageChrome';
-import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { InfoTip } from '@/components/citadel/InfoTip';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { isFeedVariant, type FeedVariant } from '@/lib/activity';
@@ -102,20 +101,6 @@ export default function RunsPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [clearError, setClearError] = useState('');
-  const [clearOpen, setClearOpen] = useState(false);
-  const [clearBusy, setClearBusy] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const actionsRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!actionsOpen) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !actionsRef.current?.contains(e.target as Node)) setActionsOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
-  }, [actionsOpen]);
   const [coverage, setCoverage] = useState<{ retainedSince?: string | null; historyTruncated?: boolean }>({});
   const [scopedDay, setScopedDay] = useState<string | null>(() => {
     const d = searchParams.get('day');
@@ -255,31 +240,6 @@ export default function RunsPage() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
   }
 
-  async function handleClearAudit() {
-    if (!fleetId) return;
-    setClearBusy(true);
-    try {
-      const res = await clearAuditLog(fleetId, authKey);
-      if (res.error || res.success === false) {
-        setClearError(res.error || 'Could not clear the audit log.');
-        return;
-      }
-      setClearError('');
-      setClearOpen(false);
-      // The engine clears asynchronously: an immediate refetch resurrects the
-      // deleted rows. Empty the local state and let the next poll catch up.
-      setAllEntries([]);
-    } catch (e) {
-      if (isAuthError(e)) {
-        resetSession('Your session expired. Please sign in again.');
-        return;
-      }
-      setClearError('Could not clear the audit log.');
-    } finally {
-      setClearBusy(false);
-    }
-  }
-
   function toggleFeedExpanded(key: string) {
     setFeedExpandedTasks(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
@@ -349,25 +309,6 @@ export default function RunsPage() {
             <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(lastUpdated)}</span>
           )}
           <button onClick={exportWorkbook} disabled={!rangedEntries.length} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: rangedEntries.length ? 'pointer' : 'not-allowed', opacity: rangedEntries.length ? 1 : 0.4 }} title="Export to Excel">⬇ .xlsx</button>
-          <div ref={actionsRef} style={{ position: 'relative' }}>
-            <button
-              onClick={() => setActionsOpen(v => !v)}
-              aria-haspopup="menu"
-              aria-expanded={actionsOpen}
-              aria-label="More actions"
-              style={{ minWidth: 30, fontSize: 14, fontWeight: 700, lineHeight: 1, padding: '4px 8px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }}
-            >⋯</button>
-            {actionsOpen && (
-              <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20, minWidth: 190, padding: 4, borderRadius: 8, background: 'var(--card)', border: '1px solid var(--line2)', boxShadow: '0 6px 20px var(--shadow)' }}>
-                <button
-                  role="menuitem"
-                  autoFocus
-                  onClick={() => { setActionsOpen(false); setClearOpen(true); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--bad)', border: 'none', cursor: 'pointer' }}
-                >Clear run history…</button>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Fetch / clear error banners */}
@@ -384,11 +325,6 @@ export default function RunsPage() {
             </div>
           ) : null;
         })()}
-        {clearError && (
-          <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--bad)', color: 'var(--bad)', fontSize: 12.5 }}>
-            {clearError}
-          </div>
-        )}
 
         {/* 8-col metrics row */}
         <div className="citadel-kpi-strip" style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
@@ -602,16 +538,6 @@ export default function RunsPage() {
         </div>
       </div>
 
-      <ConfirmDialog
-        open={clearOpen}
-        title="Clear run history?"
-        body={<>This permanently deletes every audit entry for <b>{fleetId}</b>, resets agent counters and clears the current watch, status and alarm/rest fields. It can't be undone. Export an .xlsx first if you need a record.</>}
-        confirmLabel="Clear history"
-        confirmPhrase="clear"
-        busy={clearBusy}
-        onConfirm={handleClearAudit}
-        onCancel={() => setClearOpen(false)}
-      />
     </div>
   );
 }
