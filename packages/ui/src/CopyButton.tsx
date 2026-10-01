@@ -20,7 +20,7 @@ export function CopyButton({ text, disabled }: { text: string; disabled?: boolea
       className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all"
       style={{
         borderColor: copied ? color.ok : color.line,
-        color: disabled ? color.tx2 : copied ? color.ok : color.tx2,
+        color: copied ? color.ok : color.tx2,
         background: copied ? 'var(--ok-bg)' : 'transparent',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,

@@ -6,6 +6,9 @@ import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 type WrTheme = 'system' | 'light' | 'dark';
 
 function applyTheme(theme: WrTheme) {
+  // Keep <html data-wr-theme> (set before paint by app/layout.tsx) in step.
+  if (theme === 'system') document.documentElement.removeAttribute('data-wr-theme');
+  else document.documentElement.setAttribute('data-wr-theme', theme);
   const shell = document.querySelector('.wr-shell');
   if (!shell) return;
   if (theme === 'system') shell.removeAttribute('data-theme');

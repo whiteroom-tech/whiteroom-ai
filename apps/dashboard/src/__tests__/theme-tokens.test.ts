@@ -17,8 +17,8 @@ function block(selector: string): Record<string, string> {
 }
 
 const dark = block('.wr-shell');
-const lightSystem = block('.wr-shell:not([data-theme="dark"])');
-const light = block('.wr-shell[data-theme="light"]');
+const lightSystem = block(':root:not([data-wr-theme="dark"]) .wr-shell:not([data-theme="dark"])');
+const light = block('.wr-shell[data-theme="light"],\n:root[data-wr-theme="light"] .wr-shell:not([data-theme="dark"])');
 
 type RGBA = [number, number, number, number];
 
