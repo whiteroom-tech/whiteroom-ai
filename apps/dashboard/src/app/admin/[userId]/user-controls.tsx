@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { resyncEntitlements, setPlanOverride } from '@/lib/admin-actions';
-import { PLAN_IDS, PLANS } from '@/lib/plans';
+import { OVERRIDE_PLAN_IDS, PLANS } from '@/lib/plans';
 
 /**
  * The two mutations the panel offers.
@@ -53,7 +53,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
             }}
           >
             <option value="">No override — follow Stripe</option>
-            {PLAN_IDS.map((p) => (
+            {OVERRIDE_PLAN_IDS.map((p) => (
               <option key={p} value={p}>{PLANS[p].name}</option>
             ))}
           </select>

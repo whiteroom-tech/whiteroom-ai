@@ -17,7 +17,7 @@ import {
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
-import { PLANS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
+import { PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, monthlyCostCents, type PlanId } from '@/lib/plans';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -297,7 +297,14 @@ function PlanSection({
   // A paying customer switches plan in the portal (Checkout would start a
   // second subscription), so the cards route there instead.
   const subscribed = hasLiveSubscription(subscription);
-  const offers = purchasablePlans.filter((p) => p !== plan);
+  // On the free period, Starter is still worth offering: subscribing is how
+  // they keep it once the 90 days are up.
+  const offers = purchasablePlans.filter((p) => p !== plan || entitlement.onTrial);
+  const trialEnd = entitlement.trialEndsAt.slice(0, 10);
+  // ceil so an active trial never reads "0 days left"; capped because a DST
+  // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
+  const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / 86_400_000)));
+  const proCost = plan === 'pro' && usage.agents !== null ? monthlyCostCents('pro', usage.agents) : null;
 
   return (
     <Section title="Plan" description="What your subscription currently allows. Limits apply to every fleet on the account.">
@@ -316,6 +323,11 @@ function PlanSection({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 19, fontWeight: 700 }}>{PLANS[plan].name}</span>
+            {entitlement.onTrial && (
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
+                free · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left
+              </span>
+            )}
             {subscription?.planOverride && (
               <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
                 comped
@@ -346,7 +358,12 @@ function PlanSection({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
         <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} atLimit={fleetsAtLimit} />
-        <Stat label="Agents per fleet" value={String(limits.maxAgentsPerFleet)} />
+        {plan === 'pro' ? (
+          <Stat label="Agents billed" value={usage.agents === null ? '—' : String(usage.agents)} />
+        ) : (
+          <Meter label="Agents" used={usage.agents ?? 0} limit={limits.maxAgentsPerFleet} atLimit={(usage.agents ?? 0) >= limits.maxAgentsPerFleet} />
+        )}
+        {proCost !== null && <Stat label="This month" value={`${formatPrice(proCost)}/mo`} />}
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
 
@@ -360,7 +377,7 @@ function PlanSection({
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700 }}>{PLANS[p].name}</span>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: 'var(--tx2)' }}>
-                  {formatPrice(PLANS[p].priceCents)}<span style={{ color: 'var(--tx3)', fontSize: 11 }}>/mo</span>
+                  {formatPrice(PLANS[p].pricing?.monthlyCents ?? null)}<span style={{ color: 'var(--tx3)', fontSize: 11 }}>/mo</span>
                 </span>
               </div>
               <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 14px', display: 'grid', gap: 5 }}>
@@ -375,7 +392,11 @@ function PlanSection({
                 disabled={busy !== null || pending}
                 onClick={() => go(() => (subscribed ? openBillingPortal() : startCheckout(p)), p)}
               >
-                {busy === p ? 'Opening…' : `Switch to ${PLANS[p].name}`}
+                {busy === p
+                  ? 'Opening…'
+                  : p === 'starter' && entitlement.onTrial
+                    ? `Subscribe, free until ${trialEnd}`
+                    : `Switch to ${PLANS[p].name}`}
               </button>
             </div>
           ))}

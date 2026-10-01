@@ -41,7 +41,10 @@ const ENGINE_BATCH = 200;
  * as unavailable — a page showing live numbers for some fleets and silent
  * zeros for others would be worse than one that says usage is missing.
  */
-export async function fetchFleetUsage(fleetIds: string[]): Promise<FleetUsageResult> {
+export async function fetchFleetUsage(
+  fleetIds: string[],
+  { timeoutMs = 10_000 }: { timeoutMs?: number } = {},
+): Promise<FleetUsageResult> {
   const empty: FleetUsageResult = { byFleet: new Map(), windowDays: null };
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   const ids = [...new Set(fleetIds)];
@@ -51,7 +54,7 @@ export async function fetchFleetUsage(fleetIds: string[]): Promise<FleetUsageRes
   for (let i = 0; i < ids.length; i += ENGINE_BATCH) batches.push(ids.slice(i, i + ENGINE_BATCH));
 
   try {
-    const responses = await Promise.all(batches.map((batch) => fetchBatch(batch, secret)));
+    const responses = await Promise.all(batches.map((batch) => fetchBatch(batch, secret, timeoutMs)));
     if (responses.some((r) => r === null)) return empty;
 
     const byFleet = new Map<string, FleetUsageStats>();
@@ -74,10 +77,11 @@ export async function fetchFleetUsage(fleetIds: string[]): Promise<FleetUsageRes
 async function fetchBatch(
   fleetIds: string[],
   secret: string,
+  timeoutMs: number,
 ): Promise<{ windowDays: number; fleets: Array<Omit<FleetUsage, 'label'>> } | null> {
   const res = await fetch(`${PROXY_URL}/internal/fleet-usage`, {
     method: 'POST',
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(timeoutMs),
     redirect: 'error',
     headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
     body: JSON.stringify({ fleetIds, sinceDays: 7 }),

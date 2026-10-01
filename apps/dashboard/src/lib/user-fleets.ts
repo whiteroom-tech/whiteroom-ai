@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync, getSubscriptionRow, revokeFleetEntitlement } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
-import { effectivePlan, limitsFor } from '@/lib/plans';
+import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
 
 export interface UserFleet {
   id: string;
@@ -54,7 +54,10 @@ export async function addUserFleet(
   const client = await db().connect();
   try {
     await client.query('BEGIN');
-    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    const { rows: locked } = await client.query(
+      'SELECT trial_ends_at::text FROM users WHERE id = $1 FOR UPDATE',
+      [userId],
+    );
 
     const [subRow, quotaRows] = await Promise.all([
       client.query(
@@ -78,7 +81,7 @@ export async function addUserFleet(
       status: subRow.rows[0].status,
       planOverride: subRow.rows[0].plan_override,
     } : null;
-    const plan = effectivePlan(sub);
+    const plan = effectivePlan(sub, locked[0]?.trial_ends_at ?? null);
     const limit = limitsFor(plan).maxFleets;
     const used = quotaRows.rows[0]?.n ?? 0;
 
@@ -86,7 +89,7 @@ export async function addUserFleet(
       await client.query('ROLLBACK');
       return {
         ok: false,
-        error: `Your ${plan} plan includes ${limit} fleet${limit === 1 ? '' : 's'} and you're using ${used}. Upgrade in Settings to link more.`,
+        error: `Your ${PLANS[plan].name} plan includes ${limit} fleet${limit === 1 ? '' : 's'} and you're using ${used}. Upgrade in Settings to link more.`,
       };
     }
 

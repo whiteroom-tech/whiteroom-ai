@@ -1,22 +1,14 @@
-import { timingSafeEqual } from 'node:crypto';
 import { db } from '@/lib/db';
 import { syncEntitlementsToEngine } from '@/lib/entitlements';
+import { syncSecretMatches } from '@/lib/sync-secret';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const BATCH_SIZE = 50;
 
-function secretMatches(secret: string | null, expected: string | undefined): boolean {
-  if (!secret || !expected) return false;
-  const a = Buffer.from(secret);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 export async function POST(req: Request): Promise<Response> {
-  const secret = req.headers.get('x-wr-sync-secret');
-  if (!secretMatches(secret, process.env.WR_ENTITLEMENT_SYNC_SECRET)) {
+  if (!syncSecretMatches(req.headers.get('x-wr-sync-secret'))) {
     return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 

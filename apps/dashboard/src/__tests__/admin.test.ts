@@ -96,20 +96,20 @@ describe('setPlanOverride', () => {
     session.current = { user: { id: PLAIN.id } };
     results([PLAIN]);
 
-    const res = await setPlanOverride('u-target', 'team');
+    const res = await setPlanOverride('u-target', 'enterprise');
     expect(res).toEqual({ ok: false, error: 'Not allowed.' });
   });
 
   it('refuses an anonymous caller', async () => {
     results([]);
-    expect(await setPlanOverride('u-target', 'team')).toEqual({ ok: false, error: 'Not allowed.' });
+    expect(await setPlanOverride('u-target', 'enterprise')).toEqual({ ok: false, error: 'Not allowed.' });
   });
 
   it('rejects a plan that does not exist', async () => {
     session.current = { user: { id: ADMIN.id } };
     results([ADMIN]);
 
-    const res = await setPlanOverride('u-target', 'enterprise');
+    const res = await setPlanOverride('u-target', 'team');
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('not a plan');
   });
@@ -129,7 +129,7 @@ describe('setPlanOverride', () => {
     // requireAdmin, BEGIN, SELECT email, SELECT plan_override FOR UPDATE
     results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: null }]);
 
-    expect(await setPlanOverride('u-target', 'team')).toEqual({ ok: true });
+    expect(await setPlanOverride('u-target', 'enterprise')).toEqual({ ok: true });
 
     const statements = query.mock.calls.map((c) => String(c[0]));
     const upsert = statements.find((s) => s.includes('INSERT INTO subscriptions'));
@@ -143,7 +143,7 @@ describe('setPlanOverride', () => {
     // requireAdmin, BEGIN, SELECT email, SELECT plan_override FOR UPDATE
     results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: 'pro' }]);
 
-    await setPlanOverride('u-target', 'team');
+    await setPlanOverride('u-target', 'enterprise');
 
     const auditCall = query.mock.calls.find((c) => String(c[0]).includes('admin_audit_log'));
     expect(auditCall).toBeDefined();
@@ -151,13 +151,13 @@ describe('setPlanOverride', () => {
     expect(params[0]).toBe(ADMIN.id);
     expect(params[2]).toBe('plan_override.set');
     expect(params[4]).toBe('target@example.com');
-    expect(JSON.parse(params[5] as string)).toEqual({ from: 'pro', to: 'team' });
+    expect(JSON.parse(params[5] as string)).toEqual({ from: 'pro', to: 'enterprise' });
   });
 
   it('logs a clear, not a set, when the override is removed', async () => {
     session.current = { user: { id: ADMIN.id } };
     // requireAdmin, BEGIN, SELECT email, SELECT plan_override FOR UPDATE
-    results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: 'team' }]);
+    results([ADMIN], [], [{ email: 'target@example.com' }], [{ plan_override: 'enterprise' }]);
 
     await setPlanOverride('u-target', null);
 

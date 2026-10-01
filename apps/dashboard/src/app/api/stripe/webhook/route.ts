@@ -141,14 +141,17 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   }
 
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
-  const priceId = sub.items.data[0]?.price?.id ?? null;
-  const plan = planForPriceId(priceId);
+  const item = sub.items.data[0];
+  const plan = planForPriceId(item?.price?.id ?? null);
+  // Only Pro is billed per agent; a Starter quantity is always 1 and means
+  // nothing to the billing sync.
+  const billedAgents = plan === 'pro' ? (item?.quantity ?? null) : null;
 
   await db().query(
     `INSERT INTO subscriptions (
        user_id, stripe_customer_id, stripe_subscription_id, plan, status,
-       current_period_end, cancel_at_period_end, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       current_period_end, cancel_at_period_end, billed_agents, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
      ON CONFLICT (user_id) DO UPDATE SET
        stripe_customer_id     = EXCLUDED.stripe_customer_id,
        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
@@ -156,6 +159,7 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
        status                 = EXCLUDED.status,
        current_period_end     = EXCLUDED.current_period_end,
        cancel_at_period_end   = EXCLUDED.cancel_at_period_end,
+       billed_agents          = EXCLUDED.billed_agents,
        updated_at             = now()`,
     [
       userId,
@@ -165,6 +169,7 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
       sub.status,
       periodEnd(sub),
       sub.cancel_at_period_end ?? false,
+      billedAgents,
     ],
   );
 
