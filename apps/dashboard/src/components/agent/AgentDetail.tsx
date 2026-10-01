@@ -12,6 +12,7 @@ import { ROUTES } from '@/lib/routes';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { ActivityRows } from '@/components/home/ActivityRows';
+import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
   breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary,
@@ -240,7 +241,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
             </Banner>
           )}
           {failing && (
-            <p role="status" style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>Couldn&rsquo;t refresh. Retrying&hellip; Showing the last data we had.</p>
+            <RefreshFailed />
           )}
           {state === 'resting' && (
             <Banner variant="info" icon="clock">
