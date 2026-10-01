@@ -1,37 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { Icon, Panel, FONT_MONO } from '@whiteroom/ui';
+import { CopyChip } from '@/components/citadel/CopyChip';
+import { SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 import { ROUTES } from '@/lib/routes';
-
-// The same lines the Fleet key page shows (onboarding.tsx): the base-URL
-// path needs no SDK and no WhiteRoom key in the agent.
-export const SETUP_LINES = [
-  'export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech',
-  'export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1',
-] as const;
-
-function CopyChip({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard blocked (permissions, insecure context): the text stays selectable.
-    }
-  }
-  return (
-    <div className="wr-copy-chip">
-      <code style={{ fontFamily: FONT_MONO, fontSize: 12, overflowWrap: 'anywhere' }}>{text}</code>
-      <button type="button" onClick={copy} aria-label={copied ? 'Copied' : `Copy ${text}`} title="Copy">
-        <Icon name={copied ? 'check' : 'copy'} size={13} />
-      </button>
-    </div>
-  );
-}
 
 /**
  * Home with no agents yet (README › Screens › 8). The strip, Agents, Activity
@@ -55,7 +28,7 @@ export function EmptyHome() {
               <li>
                 <span>Change one URL so your agent&rsquo;s calls go through WhiteRoom.</span>
                 <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                  {SETUP_LINES.map((l) => <CopyChip key={l} text={l} />)}
+                  {Object.values(SETUP_LINES).map((l) => <CopyChip key={l} text={l} />)}
                 </div>
               </li>
               <li><span>Run your agent exactly as before. No CLI commands needed.</span></li>
@@ -65,7 +38,7 @@ export function EmptyHome() {
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 4 }}>
               <Link href={ROUTES.sandbox} className="wr-btn wr-btn--primary wr-btn--h32">Test in Sandbox &rarr;</Link>
-              <a href="https://whiteroom.tech/docs.html" target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--ghost wr-btn--h32">Read the setup guide</a>
+              <a href={SETUP_GUIDE_URL} target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--ghost wr-btn--h32">Read the setup guide</a>
               <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }}>Checks for a call every 5 s</span>
             </div>
           </div>
