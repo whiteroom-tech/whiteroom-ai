@@ -9,7 +9,7 @@
 //
 // Usage: node scripts/check-colors.mjs [--update]
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,11 +59,21 @@ function scan() {
   return found;
 }
 
+/** The saved baseline, or {} when there isn't one yet. Read once, no exists-check race. */
+function readBaseline() {
+  try {
+    return JSON.parse(readFileSync(BASELINE, 'utf8'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return {};
+    throw e;
+  }
+}
+
 const found = scan();
 const counts = Object.fromEntries(Object.entries(found).map(([f, h]) => [f, h.length]).sort());
 
 if (process.argv.includes('--update')) {
-  const old = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {};
+  const old = readBaseline();
   const grew = Object.entries(counts).filter(([f, n]) => n > (old[f] ?? 0));
   if (grew.length && Object.keys(old).length) {
     console.error('Refusing to raise the baseline. These files gained raw colors:');
@@ -76,7 +86,7 @@ if (process.argv.includes('--update')) {
   process.exit(0);
 }
 
-const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {};
+const baseline = readBaseline();
 let failed = false;
 for (const [file, hits] of Object.entries(found)) {
   const allowed = baseline[file] ?? 0;
