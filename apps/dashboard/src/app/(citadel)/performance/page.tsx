@@ -1218,6 +1218,8 @@ export default function PerformancePage() {
   }, [router, hoursBack, view, selectedAgent]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // When the shown index data arrived, for the refresh-failed line.
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(null);
   const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(null);
@@ -1257,6 +1259,7 @@ export default function PerformancePage() {
       if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
       setIndexData(idx);
+      setLoadedAt(Date.now());
       if (!hourly.error) setHourlyData(hourly);
 
       if (audit) {
@@ -1337,7 +1340,6 @@ export default function PerformancePage() {
       fetchIndex();
       return result;
     } catch {
-      setError('Failed to submit feedback.');
       setFeedbackError({ recId, message: 'Failed to submit feedback. Try again.' });
       return 'failed';
     }
@@ -1400,7 +1402,7 @@ export default function PerformancePage() {
         {/* With data on screen, a failed refresh keeps it and says so; with
             nothing yet, the error stands alone. */}
         {error && (view === 'index' ? indexData : view === 'agent' ? agentData : evidenceData)
-          ? <div style={{ marginBottom: 16 }}><RefreshFailed /></div>
+          ? <div style={{ marginBottom: 16 }}><RefreshFailed since={view === 'index' ? loadedAt : null} /></div>
           : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
         {loading && !indexData && !agentData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 

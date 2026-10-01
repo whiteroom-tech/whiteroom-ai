@@ -37,7 +37,7 @@ export function StatCard({ label, value, variant = 'tile', hint, suffix, sub, su
         {value}{suffix != null && <span style={{ color: color.tx2, fontWeight: 600 }}> {suffix}</span>}
       </div>
       {sub != null && (subHref
-        ? <a href={subHref} style={{ ...subStyle, color: color.brand, textDecoration: 'none' }}>{sub}</a>
+        ? <a href={subHref} className="wr-stat-link" style={{ ...subStyle, color: color.brand, textDecoration: 'none' }}>{sub}</a>
         : <span style={{ ...subStyle, color: color.tx2 }}>{sub}</span>)}
     </div>
   );
