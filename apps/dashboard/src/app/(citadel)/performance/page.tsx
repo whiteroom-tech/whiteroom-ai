@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog } from '@/lib/whiteroom/client';
-import { agentDaySavings, auditSavingsEvent, estimateCost, localDayFromTs } from '@/lib/analytics-metrics';
+import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
+import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
@@ -700,8 +701,13 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   );
 }
 
-function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
+  /** From the audit log; null when it couldn't be read. */
+  savingsDays: DaySavings[] | null;
+  byAgent: AgentTotals[] | null;
+  /** "last 24 h", for panels that follow the range. */
+  rangeLabel: string;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
   onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<FeedbackResult>;
@@ -830,6 +836,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, fleetId, authKey, 
       {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
 
       <CostTrackingSection fleetId={fleetId} authKey={authKey} />
+
+      {savingsDays && <div style={{ marginBottom: 24 }}><SavingsChart days={savingsDays} /></div>}
+      {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} /></div>}
 
       {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
 
@@ -1164,6 +1173,7 @@ export default function PerformancePage() {
   const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
   const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
   const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[] | null>(null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
@@ -1199,9 +1209,11 @@ export default function PerformancePage() {
         for (const v of agentDaySavings(events).byDay.values()) tokensSaved += v;
         setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
         setGovCounts(governanceCounts(audit.entries, cutoff));
+        setAuditEntries(audit.entries);
       } else {
         setGovSavings(null);
         setGovCounts(null);
+        setAuditEntries(null);
       }
     } catch { if (!stale()) setError('Failed to load performance data.'); }
     finally { if (!stale()) setLoading(false); }
@@ -1270,6 +1282,11 @@ export default function PerformancePage() {
     finally { setFeedbackLoading(null); }
   }
 
+  // Savings is always the last 7 days; By agent follows the range.
+  const savingsDays = useMemo(() => (auditEntries ? dailySavings(auditEntries, 7, Date.now()) : null), [auditEntries]);
+  const byAgent = useMemo(() => (auditEntries ? agentTotals(auditEntries, Date.now() - hoursBack * 3_600_000) : null), [auditEntries, hoursBack]);
+  const rangeLabel = hoursBack === 24 ? 'last 24 h' : hoursBack === 72 ? 'last 3 days' : 'last 7 days';
+
   // A refetch is in flight while the previous data is still on screen
   // (e.g. switching 24h→3d, or picking another agent).
   const refreshing = loading && (view === 'index' ? indexData != null : view === 'agent' ? agentData != null : evidenceData != null);
@@ -1315,7 +1332,7 @@ export default function PerformancePage() {
         {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
         {loading && !indexData && !agentData && <div style={{ color: 'var(--tx3)', fontSize: 14, textAlign: 'center', padding: 40 }}>Loading...</div>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>
