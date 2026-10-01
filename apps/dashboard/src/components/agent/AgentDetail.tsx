@@ -135,7 +135,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       refresh();
     } catch (e) {
       setPending(null);
-      setActionError(controlFailure(e) === 'refused'
+      const failure = controlFailure(e);
+      if (failure === 'sign-out') { onAuthError?.('Session expired. Please sign in again.'); return; }
+      setActionError(failure === 'refused'
         ? { text: (e as Error).message }
         : { text: `Couldn’t start a break for ${agentId}. ${e instanceof Error ? e.message : ''} It’s still working; nothing changed.`, retry: startBreak });
     }
@@ -150,7 +152,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       refresh();
     } catch (e) {
       setPending(null);
-      setActionError(controlFailure(e) === 'refused'
+      const failure = controlFailure(e);
+      if (failure === 'sign-out') { onAuthError?.('Session expired. Please sign in again.'); return; }
+      setActionError(failure === 'refused'
         ? { text: (e as Error).message }
         : { text: `Couldn’t resume ${agentId}. ${e instanceof Error ? e.message : ''}`, retry: resume });
     }

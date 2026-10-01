@@ -1,33 +1,31 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { Banner, Button, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
 import { auditLog, isAuthError } from '@/lib/whiteroom/client';
-import { agentDaySavings, auditSavingsEvent, getCutoff, handoverAgent, isHandoverEntry, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
-import { estimateCost, fmtTokens, fmtTime, KWH_PER_TOKEN } from '@/lib/format';
-import { GOVERNANCE_BLOCK, GOVERNANCE_WOULD_BLOCK, occurrences } from '@/lib/governance';
+import { getCutoff, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
+import { fmtTime } from '@/lib/format';
+import { ROUTES } from '@/lib/routes';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { PageHeader } from '@/components/citadel/PageChrome';
-import { InfoTip } from '@/components/citadel/InfoTip';
 import { ActivityFeed } from '@/components/ActivityFeed';
-import { isFeedVariant, type FeedVariant } from '@/lib/activity';
+import type { FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
-import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
-import { metricDefinition } from '@/lib/metric-definitions';
-
-function pctOf(used: number, saved: number): number { const b = used + saved; return b ? (saved / b) * 100 : 0; }
 
 // --- URL state sync ---
 
 const ANALYTICS_RANGES = ['today', '7d', '30d', 'recent'] as const;
 type AnalyticsRange = typeof ANALYTICS_RANGES[number];
+const RANGE_LABEL: Record<AnalyticsRange, string> = { today: 'Today', '7d': '7D', '30d': '30D', recent: 'All' };
 
-/** Plain-language window for the scope row: these ranges are calendar days, not rolling hours. */
+/** Plain-language window: these ranges are calendar days, not rolling hours. */
 function rangeDescription(range: AnalyticsRange, nowMs: number): string {
-  if (range === 'recent') return 'All loaded history';
-  if (range === 'today') return 'Today, since midnight';
+  if (range === 'recent') return 'all loaded history';
+  if (range === 'today') return 'today, since midnight';
   const since = new Date(getCutoff(range, nowMs) + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   return `${range === '7d' ? 7 : 30} calendar days, since ${since}`;
 }
@@ -35,7 +33,12 @@ function rangeDescription(range: AnalyticsRange, nowMs: number): string {
 function isAnalyticsRange(v: string | null): v is AnalyticsRange {
   return (ANALYTICS_RANGES as readonly (string | null)[]).includes(v);
 }
-const DAY_PARAM_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const FEED_VARIANTS: { value: FeedVariant; label: string }[] = [
+  { value: 'log', label: 'Log' },
+  { value: 'tape', label: 'Tape' },
+  { value: 'manifest', label: 'Manifest' },
+];
 
 /** Merge the given params into the current URL (null removes), replacing in place without a scroll reset. */
 function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<string, string | null>) {
@@ -53,47 +56,20 @@ function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<st
   router.replace(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { scroll: false });
 }
 
-// --- Table sort ---
-
-type SortDir = 'asc' | 'desc';
-type SortState<K extends string> = { key: K; dir: SortDir } | null;
-
-/** Tiny sort-state holder: click toggles asc/desc on the active column, first click uses defaultDir. */
-function useTableSort<K extends string>() {
-  const [sort, setSort] = useState<SortState<K>>(null);
-  const toggleSort = useCallback((key: K, defaultDir: SortDir = 'desc') => {
-    setSort(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: defaultDir });
-  }, []);
-  return { sort, toggleSort };
-}
-
-/** Returns a sorted copy (never mutates); no sort selected keeps the incoming order. */
-function sortRows<T, K extends string>(rows: T[], sort: SortState<K>, getters: Record<K, (row: T) => string | number>): T[] {
-  if (!sort) return rows;
-  const get = getters[sort.key];
-  const mul = sort.dir === 'asc' ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    const av = get(a), bv = get(b);
-    return mul * (typeof av === 'string' || typeof bv === 'string' ? String(av).localeCompare(String(bv)) : av - bv);
-  });
-}
-
-function ariaSort<K extends string>(sort: SortState<K>, key: K): 'ascending' | 'descending' | 'none' {
-  return sort?.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
-}
-function sortArrow<K extends string>(sort: SortState<K>, key: K): string {
-  return sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
-}
-
+/**
+ * Runs, interim (P1.2): today's event feed in the shell. The totals, the
+ * daily chart and the per-agent table moved to Performance; a run list
+ * replaces this page once the engine runs API exists (P1R).
+ */
 export default function RunsPage() {
   const auth = useFleetAuth();
   const { fleetId, authKey, resetSession } = auth;
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Range and day scope live in the URL (?range=…&day=…) so they survive
-  // refresh and can be deep-linked; invalid values fall back to defaults.
-  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(() => {
+  // The range lives in the URL (?range=…) so it survives refresh and can be
+  // deep-linked; an invalid value falls back to 7D.
+  const [range, setRange] = useState<AnalyticsRange>(() => {
     const r = searchParams.get('range');
     return isAnalyticsRange(r) ? r : '7d';
   });
@@ -102,25 +78,15 @@ export default function RunsPage() {
   const [fetchError, setFetchError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [coverage, setCoverage] = useState<{ retainedSince?: string | null; historyTruncated?: boolean }>({});
-  const [scopedDay, setScopedDay] = useState<string | null>(() => {
-    const d = searchParams.get('day');
-    return d && DAY_PARAM_RE.test(d) ? d : null;
-  });
-  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
-  const [openWatches, setOpenWatches] = useState<Set<string>>(new Set());
-  const [analyticsFeedWidth, setAnalyticsFeedWidth] = useState<number | null>(null);
   const [feedExpandedTasks, setFeedExpandedTasks] = useState<Set<string>>(new Set());
   const [feedPage, setFeedPage] = useState(0);
   const [feedVariant, setFeedVariant] = useState<FeedVariant>('log');
   const [feedTechnical, setFeedTechnical] = useState(false);
 
-  // Keep the URL in sync: defaults drop their param, clearing the scope removes ?day.
+  // Defaults drop their param; a ?day= from the old chart scope is cleared.
   useEffect(() => {
-    syncQueryParams(router, {
-      range: analyticsRange === '7d' ? null : analyticsRange,
-      day: scopedDay,
-    });
-  }, [router, analyticsRange, scopedDay]);
+    syncQueryParams(router, { range: range === '7d' ? null : range, day: null });
+  }, [router, range]);
 
   const fetchAllEntries = useCallback(async (stale: () => boolean) => {
     if (!fleetId) return;
@@ -150,84 +116,13 @@ export default function RunsPage() {
 
   usePoll(fetchAllEntries, { intervalMs: 15000, enabled: auth.status === 'authenticated' });
 
-  // --- Analytics computation (memoized: up to 2000 entries, several passes) ---
-  const analytics = useMemo(() => {
-    const cutoff = getCutoff(analyticsRange, Date.now());
-    // Precompute each entry's local day once; localDayFromTs allocates a Date per call.
-    const ranged = allEntries
-      .map((e) => ({ e, day: localDayFromTs(e.timestamp) }))
-      .filter(({ day }) => day >= cutoff);
-    const rangedEntries = ranged.map(({ e }) => e);
+  const rangedEntries = useMemo(() => {
+    const cutoff = getCutoff(range, Date.now());
+    return allEntries.filter((e) => localDayFromTs(e.timestamp) >= cutoff);
+  }, [allEntries, range]);
 
-    const dayMap = new Map<string, { used: number; saved: number; tasks: number; handovers: number; entries: AuditEntry[] }>();
-    ranged.forEach(({ e, day }) => {
-      const d = dayMap.get(day) || { used: 0, saved: 0, tasks: 0, handovers: 0, entries: [] };
-      d.entries.push(e);
-      if (e.type === 'task_complete') d.tasks++;
-      if (e.tokensUsed) d.used += e.tokensUsed;
-      if (isHandoverEntry(e)) d.handovers++;
-      dayMap.set(day, d);
-    });
-    const rangeSavings = agentDaySavings(ranged.map(({ e, day }) => auditSavingsEvent(e as AuditEntry & Record<string, unknown>, day)));
-    for (const [day, d] of dayMap) d.saved = rangeSavings.byDay.get(day) ?? 0;
-    const dailyStats = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const chartMax = Math.max(...dailyStats.map(([, d]) => d.used + d.saved), 1);
-
-    const scopedEntries = scopedDay ? ranged.filter(({ day }) => day === scopedDay).map(({ e }) => e) : rangedEntries;
-
-    const agentMap = new Map<string, { tasks: number; used: number; handovers: number; saved: number; ctxTokens: number; hdTokens: number; blocks: number; wouldBlocks: number }>();
-    scopedEntries.forEach(e => {
-      const isHandover = isHandoverEntry(e);
-      const rawAid = isHandover ? handoverAgent(e) : e.agentId;
-      if (!rawAid) return;
-      const aid = rawAid.toLowerCase();
-      const a = agentMap.get(aid) || { tasks: 0, used: 0, handovers: 0, saved: 0, ctxTokens: 0, hdTokens: 0, blocks: 0, wouldBlocks: 0 };
-      if (e.type === 'task_complete') a.tasks++;
-      // Controls rules: Enforce blocks and Watch would-blocks.
-      if (e.type === GOVERNANCE_BLOCK) a.blocks += occurrences(e);
-      if (e.type === GOVERNANCE_WOULD_BLOCK) a.wouldBlocks += occurrences(e);
-      if (e.tokensUsed) a.used += e.tokensUsed;
-      if (isHandover) {
-        a.handovers++;
-        const ctx = ((e as Record<string, unknown>).contextTokens as number) ?? 0;
-        const hd = ((e as Record<string, unknown>).handoverDocTokens as number) || 300;
-        if (ctx > 0) { a.ctxTokens += ctx; a.hdTokens += hd; }
-      }
-      agentMap.set(aid, a);
-    });
-    const scopedSavings = scopedDay
-      ? agentDaySavings(ranged.filter(({ day }) => day === scopedDay).map(({ e, day }) => auditSavingsEvent(e as AuditEntry & Record<string, unknown>, day)))
-      : rangeSavings;
-    for (const [aid, a] of agentMap) a.saved = scopedSavings.byAgent.get(aid) ?? 0;
-    const agentBreakdown = [...agentMap.entries()].sort(([, a], [, b]) => b.used - a.used);
-
-    const scopedCtxTokens = agentBreakdown.reduce((s, [, v]) => s + v.ctxTokens, 0);
-    const scopedHdTokens = agentBreakdown.reduce((s, [, v]) => s + v.hdTokens, 0);
-    const scopedCompression = scopedCtxTokens > 0 ? Math.max(0, Math.min(100, (1 - scopedHdTokens / scopedCtxTokens) * 100)) : 0;
-
-    const rangeTotals = (scopedDay ? [dailyStats.find(([k]) => k === scopedDay)].filter(Boolean) as [string, typeof dailyStats[0][1]][] : dailyStats).reduce((acc, [, d]) => ({
-      tasks: acc.tasks + d.tasks, used: acc.used + d.used, saved: acc.saved + d.saved, handovers: acc.handovers + d.handovers,
-    }), { tasks: 0, used: 0, saved: 0, handovers: 0 });
-
-    const scopeLabel = scopedDay ? new Date(scopedDay + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase() : null;
-
-    return { rangedEntries, dailyStats, chartMax, scopedEntries, agentBreakdown, scopedCompression, rangeTotals, scopeLabel };
-  }, [allEntries, analyticsRange, scopedDay]);
-
-  const { rangedEntries, dailyStats, chartMax, scopedEntries, agentBreakdown, scopedCompression, rangeTotals, scopeLabel } = analytics;
-
-  // Per-agent table sort; no selection keeps the default order (tokens desc).
-  type AgentSortKey = 'agent' | 'tasks' | 'tokens' | 'handovers' | 'saved' | 'compression' | 'blocks';
-  const { sort: agentSort, toggleSort: toggleAgentSort } = useTableSort<AgentSortKey>();
-  const sortedAgentBreakdown = useMemo(() => sortRows(agentBreakdown, agentSort, {
-    agent: ([agent]) => agent,
-    tasks: ([, v]) => v.tasks,
-    tokens: ([, v]) => v.used,
-    handovers: ([, v]) => v.handovers,
-    saved: ([, v]) => v.saved,
-    compression: ([, v]) => v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0,
-    blocks: ([, v]) => v.blocks * 1e6 + v.wouldBlocks,
-  }), [agentBreakdown, agentSort]);
+  // A new range starts the feed from its first page.
+  useEffect(() => { setFeedPage(0); }, [range]);
 
   async function exportWorkbook() {
     if (!rangedEntries.length) return;
@@ -236,297 +131,62 @@ export default function RunsPage() {
     const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const ab = new ArrayBuffer(xlsx.byteLength); new Uint8Array(ab).set(xlsx);
     const blob = new Blob([ab], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `whiteroom-runs-${analyticsRange}-${ts}.xlsx`;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `whiteroom-runs-${range}-${ts}.xlsx`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
   }
 
   function toggleFeedExpanded(key: string) {
     setFeedExpandedTasks(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
-  function changeFeedVariant(v: string) {
-    if (isFeedVariant(v)) setFeedVariant(v);
-  }
-
-  // --- Splitter ---
-  const analyticsGridRef = useRef<HTMLDivElement>(null);
-  const clampFeedWidth = (w: number, containerWidth: number) => Math.min(containerWidth * 0.75, Math.max(240, w));
-  function handleAnalyticsSplitterDown(e: React.MouseEvent) {
-    e.preventDefault();
-    const container = analyticsGridRef.current;
-    if (!container) return;
-    const containerWidth = container.getBoundingClientRect().width;
-    // rAF-throttled: one state update per frame instead of per mousemove pixel.
-    let raf: number | null = null;
-    let lastX = 0;
-    const onMove = (ev: MouseEvent) => {
-      lastX = ev.clientX;
-      if (raf !== null) return;
-      raf = requestAnimationFrame(() => {
-        raf = null;
-        setAnalyticsFeedWidth(clampFeedWidth(container.getBoundingClientRect().right - lastX, containerWidth));
-      });
-    };
-    const onUp = () => {
-      if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
-      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.userSelect = ''; document.body.style.cursor = '';
-    };
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }
-  function handleAnalyticsSplitterKeyDown(e: React.KeyboardEvent) {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    const container = analyticsGridRef.current;
-    if (!container) return;
-    const containerWidth = container.getBoundingClientRect().width;
-    const step = e.key === 'ArrowLeft' ? 24 : -24; // left widens the feed
-    setAnalyticsFeedWidth(prev => clampFeedWidth((prev ?? containerWidth / 2) + step, containerWidth));
-  }
 
   if (auth.status !== 'authenticated') {
     return <FleetLogin auth={auth} />;
   }
 
+  const partialSince = loading ? null : partialCoverageSince(range, coverage, Date.now());
+
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
-      <PageHeader title="Runs" fleetId={fleetId} />
+      <PageHeader title="Runs" fleetId={fleetId}>
+        <SegmentedControl<AnalyticsRange>
+          label="Range"
+          value={range}
+          onChange={setRange}
+          size={26}
+          options={ANALYTICS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))}
+        />
+        <Button onClick={exportWorkbook} disabled={!rangedEntries.length} title="Download this range as an Excel workbook">Export .xlsx</Button>
+      </PageHeader>
 
-      {/* Analytics content */}
-      <div className="flex flex-col flex-1 min-h-0">
-        {/* Range selector */}
-        <div className="flex items-center gap-3" style={{ padding: '14px 20px 0' }}>
-          <div className="flex items-center" style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 6, padding: 3 }}>
-            {ANALYTICS_RANGES.map((r) => (
-              <button key={r} onClick={() => setAnalyticsRange(r)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 4, border: 'none', background: analyticsRange === r ? 'var(--card)' : 'transparent', color: analyticsRange === r ? 'var(--brand)' : 'var(--tx3)', boxShadow: analyticsRange === r ? 'inset 0 0 0 1px var(--line2)' : 'none', cursor: 'pointer' }}>
-                {r.toUpperCase()}
-              </button>
-            ))}
-          </div>
-          <span style={{ marginLeft: 'auto' }} />
-          {lastUpdated !== null && (
-            <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(lastUpdated)}</span>
-          )}
-          <button onClick={exportWorkbook} disabled={!rangedEntries.length} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px', borderRadius: 6, background: 'var(--line)', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: rangedEntries.length ? 'pointer' : 'not-allowed', opacity: rangedEntries.length ? 1 : 0.4 }} title="Export to Excel">⬇ .xlsx</button>
-        </div>
-
-        {/* Fetch / clear error banners */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: 24 }}>
         {fetchError && !loading && (
-          <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--warn-bg)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 12.5 }}>
-            Connection lost — retrying{lastUpdated !== null ? ` · last updated ${fmtTime(lastUpdated)}` : ''}
-          </div>
+          <Banner variant="warn">Couldn&rsquo;t refresh. Retrying&hellip;{lastUpdated !== null ? ` Showing what was loaded at ${fmtTime(lastUpdated)}.` : ''}</Banner>
         )}
-        {(() => {
-          const since = partialCoverageSince(analyticsRange, coverage, Date.now());
-          return since && !loading ? (
-            <div style={{ margin: '10px 20px 0', padding: '8px 14px', borderRadius: 8, background: 'var(--warn-bg)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 12.5 }}>
-              Partial range: history is only kept from {since}, so totals and exports for {analyticsRange.toUpperCase()} cover {since} onward.
-            </div>
-          ) : null;
-        })()}
+        {partialSince && (
+          <Banner variant="warn">Partial range: history is only kept from {partialSince}, so this range and its export start there.</Banner>
+        )}
+        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+          Totals, the daily savings chart and the per-agent table are on <Link href={ROUTES.performance} className="wr-link">Performance &rarr;</Link>
+        </p>
 
-        {/* 8-col metrics row */}
-        <div className="citadel-kpi-strip" style={{ display: 'grid', gridTemplateColumns: '2fr repeat(6, 1fr)', gap: 11, padding: '12px 20px 0' }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 18 }}>
-            <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
-              <svg viewBox="0 0 72 72" width={72} height={72} style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx={36} cy={36} r={30} fill="none" stroke="var(--line)" strokeWidth={6} />
-                <circle cx={36} cy={36} r={30} fill="none" stroke="var(--ok)" strokeWidth={6}
-                  strokeDasharray={2 * Math.PI * 30}
-                  strokeDashoffset={2 * Math.PI * 30 * (1 - Math.min(scopedCompression, 100) / 100)}
-                  strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s' }} />
-              </svg>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 19, color: 'var(--ok)' }}>
-                  {scopedCompression > 0 ? Math.round(scopedCompression) + '%' : '—'}
-                </span>
-              </div>
-            </div>
-            <div>
-              <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Context Compression</span><InfoTip label="Context Compression">{metricDefinition('compression', 'range')}</InfoTip>
-              <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 34, color: 'var(--ok)', lineHeight: 1.1, marginTop: 2 }}>
-                {scopedCompression > 0 ? scopedCompression.toFixed(1) + '%' : '—'}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 3 }}>
-                {scopedCompression > 0 ? `${Math.round(scopedCompression)}% smaller at each handover` : 'No handovers yet'}
-              </div>
-            </div>
-          </div>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tasks</span>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5 }}>{rangeTotals.tasks ? String(rangeTotals.tasks) : '—'}</div>
-          </div>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/ WhiteRoom</span><InfoTip label="Tokens w/ WhiteRoom">{metricDefinition('tokensWith', 'range')}</InfoTip>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.used > 0 ? fmtTokens(rangeTotals.used) : '—'}</div>
-          </div>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Tokens w/o WhiteRoom</span><InfoTip label="Tokens w/o WhiteRoom">{metricDefinition('tokensWithout', 'range')}</InfoTip>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--bad)' }}>{rangeTotals.used + rangeTotals.saved > 0 ? fmtTokens(rangeTotals.used + rangeTotals.saved) : '—'}</div>
-          </div>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Handovers</span>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ho)' }}>{rangeTotals.handovers ? String(rangeTotals.handovers) : '—'}</div>
-          </div>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>$ Saved</span><InfoTip label="$ Saved">{metricDefinition('costSaved', 'range')}</InfoTip>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? '$' + estimateCost(rangeTotals.saved).toFixed(4) : '—'}</div>
-          </div>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 15px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.7, color: 'var(--tx3)', textTransform: 'uppercase' as const }}>Energy Saved</span><InfoTip label="Energy Saved">{metricDefinition('energySaved', 'range')}</InfoTip>
-            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 24, marginTop: 5, color: 'var(--ok)' }}>{rangeTotals.saved > 0 ? (rangeTotals.saved * KWH_PER_TOKEN).toFixed(4) + ' kWh' : '—'}</div>
-          </div>
-        </div>
-
-        {/* Scope row */}
-        <div className="flex items-center gap-2.5" style={{ padding: '12px 20px 0', fontSize: 11.5, color: 'var(--tx2)' }}>
-          <span>METRIC SCOPE:</span>
-          {scopedDay ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--info-bg)', border: '1px solid var(--info)', color: 'var(--info)', borderRadius: 12, padding: '3px 10px', fontSize: 11.5, fontWeight: 700 }}>
-              VIEWING: {scopeLabel}
-              <button onClick={() => setScopedDay(null)} aria-label="Clear day scope" style={{ background: 'none', border: 'none', color: 'var(--info)', fontSize: 12.5, padding: 0, cursor: 'pointer' }}>✕</button>
-            </span>
+        <Panel
+          className="wr-panel--fill"
+          title="Events"
+          count={`${rangedEntries.length} · ${rangeDescription(range, Date.now())}`}
+          bodyPadding={0}
+          actions={
+            <>
+              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
+              <SelectChip<FeedVariant> label="Feed view" value={feedVariant} onChange={setFeedVariant} options={FEED_VARIANTS} />
+              <Button size={28} aria-pressed={feedTechnical} onClick={() => setFeedTechnical((t) => !t)} title="Show raw event types and tool arguments">Technical</Button>
+            </>
+          }
+        >
+          {loading ? (
+            <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Loading&hellip;</p>
           ) : (
-            <span style={{ color: 'var(--tx2)' }}>{rangeDescription(analyticsRange, Date.now())}</span>
-          )}
-          <span style={{ color: 'var(--tx3)' }}>· click a chart day to scope</span>
-        </div>
-
-        {/* Split panel: charts + feed */}
-        <div ref={analyticsGridRef} className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateColumns: analyticsFeedWidth ? `1fr 6px ${analyticsFeedWidth}px` : '1fr 6px 1fr', gridTemplateRows: 'minmax(0, 1fr)' }}>
-          {/* Left: Chart + Breakdown */}
-          <div style={{ overflowY: 'auto', padding: 12 }}>
-            {/* Daily Tokens Chart */}
-            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, marginBottom: 10, boxShadow: '0 1px 3px var(--shadow)' }}>
-              <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>DAILY TOKENS — W/ WHITEROOM vs W/O WHITEROOM</span>
-                <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>click a day to scope</span>
-              </div>
-              <div className="flex items-end" style={{ height: 150, padding: '0 4px 4px', gap: 14 }}>
-                {loading ? (
-                  <div style={{ flex: 1, textAlign: 'center', color: 'var(--tx3)', paddingTop: 50, fontSize: 12.5 }}>Loading…</div>
-                ) : dailyStats.length === 0 ? (
-                  <div style={{ flex: 1, textAlign: 'center', color: 'var(--tx3)', paddingTop: 50, fontSize: 12.5 }}>No data in range</div>
-                ) : dailyStats.map(([day, d]) => {
-                  const withoutWR = d.used + d.saved;
-                  const usedH = Math.max(2, (d.used / chartMax) * 110);
-                  const withoutH = Math.max(2, (withoutWR / chartMax) * 110);
-                  const pct = pctOf(d.used, d.saved);
-                  const label = new Date(day + 'T12:00:00').toLocaleDateString([], { month: 'numeric', day: 'numeric' });
-                  const isSel = scopedDay === day;
-                  return (
-                    <div
-                      key={day}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setScopedDay(isSel ? null : day)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setScopedDay(isSel ? null : day); } }}
-                      className="flex flex-col items-center justify-end"
-                      style={{ flex: 1, height: '100%', cursor: 'pointer', borderRadius: 6, padding: 4, background: isSel ? 'var(--info-bg)' : undefined, outline: isSel ? '1px solid var(--info)' : undefined }}
-                      title={`${day} — w/ WR ${fmtTokens(d.used)}, w/o WR ${fmtTokens(withoutWR)}, saved ${fmtTokens(d.saved)}`}
-                    >
-                      <span style={{ fontSize: 10.5, color: 'var(--ok)', fontWeight: 700, marginBottom: 4 }}>{pct > 0 ? pct.toFixed(0) + '%' : ''}</span>
-                      <div className="flex items-end" style={{ gap: 3, flex: 1, justifyContent: 'center' }}>
-                        <div style={{ width: 16, height: usedH, background: 'var(--ok)', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                        <div style={{ width: 16, height: withoutH, background: 'var(--bad)', borderRadius: '2px 2px 0 0', minHeight: 2 }} />
-                      </div>
-                      <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 5 }}>{label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-4" style={{ fontSize: 11.5, color: 'var(--tx2)', marginTop: 8, paddingLeft: 4 }}>
-                <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: 'var(--ok)' }} /> TOKENS (W/ WHITEROOM)</span>
-                <span className="flex items-center gap-1"><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: 'var(--bad)' }} /> TOKENS (W/O WHITEROOM)</span>
-              </div>
-            </div>
-
-            {/* Per-Agent Breakdown */}
-            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px var(--shadow)' }}>
-              <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>PER-AGENT BREAKDOWN</span>
-                <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>scope: {scopeLabel || analyticsRange} · saved = handovers + offloads</span>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                    {([['AGENT', 'agent'], ['TASKS', 'tasks'], ['TOKENS', 'tokens'], ['HANDOVERS', 'handovers'], ['SAVED', 'saved'], ['COMPRESSION', 'compression'], ['BLOCKS', 'blocks']] as [string, AgentSortKey][]).map(([h, k]) => (
-                      <th key={k} aria-sort={ariaSort(agentSort, k)} style={{ padding: 0, textAlign: h === 'AGENT' ? 'left' : 'right' }}>
-                        <button onClick={() => toggleAgentSort(k, k === 'agent' ? 'asc' : 'desc')} title={`Sort by ${h.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: agentSort?.key === k ? 'var(--tx)' : 'var(--tx2)', padding: '4px 8px', textAlign: h === 'AGENT' ? 'left' : 'right' }}>
-                          {h}{sortArrow(agentSort, k)}
-                        </button>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {agentBreakdown.length === 0 ? (
-                    <tr><td colSpan={7} style={{ color: 'var(--tx3)', padding: 14, textAlign: 'center', fontSize: 12.5 }}>{loading ? 'Loading…' : 'No events in scope.'}</td></tr>
-                  ) : sortedAgentBreakdown.map(([agent, v]) => {
-                    const pct = v.ctxTokens > 0 ? Math.max(0, Math.min(100, (1 - v.hdTokens / v.ctxTokens) * 100)) : 0;
-                    return (
-                      <tr key={agent} style={{ borderBottom: '1px solid var(--sunk)' }}>
-                        <td style={{ padding: '6px 8px', fontWeight: 700, fontFamily: FONT_MONO, fontSize: 12.5 }}>{agent.toUpperCase()}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{v.tasks}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--info)' }}>{fmtTokens(v.used)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ho)' }}>{v.handovers || '—'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--ok)' }}>{v.handovers ? fmtTokens(v.saved) : '—'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                          {v.handovers ? (
-                            <div>
-                              <span style={{ color: 'var(--ok)', fontWeight: 700 }}>{pct.toFixed(1)}%</span>
-                              <div style={{ height: 3, borderRadius: 2, background: 'var(--line)', overflow: 'hidden', marginTop: 3 }}>
-                                <div style={{ height: '100%', background: 'var(--ok)', width: `${Math.min(100, pct)}%` }} />
-                              </div>
-                            </div>
-                          ) : <span style={{ color: 'var(--tx2)' }}>—</span>}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' }} title="Calls stopped by a Controls rule (Enforce) · would-blocks recorded in Watch">
-                          {v.blocks || v.wouldBlocks ? (
-                            <>
-                              {v.blocks > 0 && <span style={{ color: 'var(--bad)', fontWeight: 700 }}>{v.blocks}</span>}
-                              {v.wouldBlocks > 0 && <span style={{ color: 'var(--warn)', fontSize: 11.5 }}>{v.blocks > 0 ? ' · ' : ''}{v.wouldBlocks} watch</span>}
-                            </>
-                          ) : <span style={{ color: 'var(--tx2)' }}>—</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Splitter */}
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize the event feed"
-            tabIndex={0}
-            onMouseDown={handleAnalyticsSplitterDown}
-            onKeyDown={handleAnalyticsSplitterKeyDown}
-            style={{ background: 'var(--line)', cursor: 'col-resize' }}
-            title="Drag to resize the feed"
-          />
-
-          {/* Right: Detail Event Feed */}
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-            <div className="flex items-center justify-between" style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 700, color: 'var(--tx2)', letterSpacing: 1 }}>
-              <span>EVENT FEED — DETAIL</span>
-              <span style={{ fontWeight: 400, color: 'var(--tx3)' }}>{scopedEntries.length} in {scopeLabel || 'range'}</span>
-            </div>
-            <div className="flex items-center gap-2" style={{ padding: '6px 12px', borderBottom: '1px solid var(--line)' }}>
-              <select value={feedVariant} onChange={(e) => changeFeedVariant(e.target.value)} aria-label="Feed variant" style={{ borderRadius: 4, padding: '3px 6px', fontSize: 11.5, background: 'var(--sunk)', color: 'var(--tx2)', border: '1px solid var(--line2)' }}>
-                <option value="log">Log</option>
-                <option value="tape">Tape</option>
-                <option value="manifest">Manifest</option>
-              </select>
-              <button onClick={() => setFeedTechnical(t => !t)} style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: feedTechnical ? 'var(--info-bg)' : 'var(--sunk)', color: feedTechnical ? 'var(--info)' : 'var(--tx3)', border: `1px solid ${feedTechnical ? 'var(--info)' : 'var(--line2)'}`, cursor: 'pointer' }}>Tech</button>
-              <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>click rows to expand tool calls</span>
-            </div>
             <ActivityFeed
-              entries={scopedEntries}
+              entries={rangedEntries}
               page={feedPage}
               onPageChange={setFeedPage}
               variant={feedVariant}
@@ -534,10 +194,9 @@ export default function RunsPage() {
               expanded={feedExpandedTasks}
               onToggleExpanded={toggleFeedExpanded}
             />
-          </div>
-        </div>
+          )}
+        </Panel>
       </div>
-
     </div>
   );
 }

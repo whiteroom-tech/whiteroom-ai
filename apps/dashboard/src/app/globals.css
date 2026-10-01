@@ -300,3 +300,12 @@
 .wr-crumb:hover { text-decoration: underline; }
 .wr-crumb:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
 @media (max-width: 1100px) { .wr-agent-grid { grid-template-columns: 1fr; } }
+
+/* Performance › Savings: one focusable day per pair of bars. */
+.wr-savings-day { border-radius: 6px; padding: 2px 0; outline: none; }
+.wr-savings-day:hover, .wr-savings-day:focus-visible { background: var(--sunk); }
+.wr-savings-day:focus-visible { box-shadow: 0 0 0 2px var(--brand); }
+
+/* A panel that fills the rest of the page, its body scrolling (Runs' event feed). */
+.wr-panel--fill { flex: 1; min-height: 320px; display: flex; flex-direction: column; }
+.wr-panel--fill > div:last-child { flex: 1; min-height: 0; display: flex; flex-direction: column; }

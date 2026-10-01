@@ -130,3 +130,51 @@ export function handoverSaved(e: { contextTokens?: number; handoverDocTokens?: n
 export function watchKey(day: string, agentId: string, watchNumber: number): string {
   return `${day}:${agentId}:${watchNumber}`;
 }
+
+/** An audit entry as the savings math reads it. */
+type SavingsEntry = { type: string; timestamp: string; agentId?: string; tokensUsed?: number } & Record<string, unknown>;
+
+function entryAgent(e: SavingsEntry): string {
+  return ((isHandoverEntry(e) ? handoverAgent(e) : e.agentId) || '').toLowerCase();
+}
+
+/** One day of the Savings chart: tokens used with WhiteRoom, and tokens saved. */
+export interface DaySavings { day: string; used: number; saved: number }
+
+/**
+ * The last `days` local days, oldest first, with tokens used and saved. Days
+ * with no events are zeros, so the chart always shows every day of the window.
+ * Saved uses the per-agent-day math (agentDaySavings), as Run History did.
+ */
+export function dailySavings(entries: SavingsEntry[], days: number, nowMs: number): DaySavings[] {
+  const order: string[] = [];
+  const d = new Date(nowMs);
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(d);
+    day.setDate(d.getDate() - i); // calendar days, so DST can't skip one
+    order.push(localDay(day));
+  }
+  const first = order[0];
+  const ranged = entries.map((e) => ({ e, day: localDayFromTs(e.timestamp) })).filter(({ day }) => day >= first);
+  const used = new Map<string, number>();
+  for (const { e, day } of ranged) if (e.tokensUsed) used.set(day, (used.get(day) ?? 0) + e.tokensUsed);
+  const saved = agentDaySavings(ranged.map(({ e, day }) => auditSavingsEvent(e, day))).byDay;
+  return order.map((day) => ({ day, used: used.get(day) ?? 0, saved: saved.get(day) ?? 0 }));
+}
+
+/** One row of the By agent table. */
+export interface AgentTotals { agent: string; used: number; saved: number }
+
+/** Tokens used and saved per agent, for events at or after `sinceMs`, most tokens first. */
+export function agentTotals(entries: SavingsEntry[], sinceMs: number): AgentTotals[] {
+  const inRange = entries.filter((e) => Date.parse(e.timestamp) >= sinceMs);
+  const used = new Map<string, number>();
+  for (const e of inRange) {
+    const agent = entryAgent(e);
+    if (agent) used.set(agent, (used.get(agent) ?? 0) + (e.tokensUsed ?? 0));
+  }
+  const saved = agentDaySavings(inRange.map((e) => auditSavingsEvent(e, localDayFromTs(e.timestamp)))).byAgent;
+  return [...used.keys()]
+    .map((agent) => ({ agent, used: used.get(agent) ?? 0, saved: saved.get(agent) ?? 0 }))
+    .sort((a, b) => b.used - a.used || a.agent.localeCompare(b.agent));
+}
