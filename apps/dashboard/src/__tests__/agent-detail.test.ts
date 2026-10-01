@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, shiftProgress, shiftSummary } from '@/lib/agent-detail';
+import { agentIdFromSegment, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, shiftProgress, shiftSummary } from '@/lib/agent-detail';
 import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
 
 const now = Date.parse('2026-10-01T14:00:00Z');
@@ -69,5 +69,12 @@ describe('details', () => {
     expect(isNotFound({ error: "Agent 'x' not found." })).toBe(true);
     expect(isNotFound({ error: 'Fleet unavailable' })).toBe(false);
     expect(isNotFound({ agentId: 'x', status: 'working' })).toBe(false);
+  });
+});
+
+describe('agent ids from the URL', () => {
+  it('decodes, and keeps a malformed escape raw instead of crashing', () => {
+    expect(agentIdFromSegment('lead%20agent')).toBe('lead agent');
+    expect(agentIdFromSegment('%E0%A4%A')).toBe('%E0%A4%A');
   });
 });

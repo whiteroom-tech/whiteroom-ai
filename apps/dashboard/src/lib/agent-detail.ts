@@ -97,3 +97,12 @@ export function isNotFound(res: unknown): boolean {
   const err = (res as { error?: unknown } | null)?.error;
   return typeof err === 'string' && /not found/i.test(err);
 }
+
+/** The agent id from a URL segment; a malformed escape stays raw instead of throwing. */
+export function agentIdFromSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}

@@ -46,6 +46,13 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskNote, setTaskNote] = useState<{ ok: boolean; text: string } | null>(null);
   const lastShift = useRef<number | null>(null);
+  // Break and shift gates depend on the clock, not only on new data: tick
+  // every 15s so Resume enables and "min left" counts down between polls.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   const load = useCallback(async (stale: () => boolean) => {
     try {
@@ -56,13 +63,23 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       setNotFound(false);
       setAgent({ ...res, agentId });
       // Handover notes change once per shift; fetch them when the shift does.
-      if (res.watchNumber !== lastShift.current) {
-        lastShift.current = res.watchNumber ?? null;
-        getHandover(agentId, fleetId, authKey).then((h) => { if (!stale()) setHandover(h.handoverDoc ?? null); }).catch(() => {});
+      // The shift is remembered only after a successful fetch, so a failed
+      // one is retried on the next poll.
+      const shift = res.watchNumber ?? null;
+      if (shift !== lastShift.current) {
+        getHandover(agentId, fleetId, authKey)
+          .then((h) => {
+            if (stale() || h.error) return;
+            lastShift.current = shift;
+            setHandover(h.handoverDoc ?? null);
+          })
+          .catch(() => {});
       }
       const log = await auditLog({ fleetId, agentId, limit: 50 }, authKey);
       if (stale()) return;
-      if (!('error' in log) && Array.isArray(log.entries)) setEntries(log.entries);
+      // An error payload is a failed refresh, not an empty history.
+      if ('error' in log || !Array.isArray(log.entries)) throw new Error('activity unavailable');
+      setEntries(log.entries);
       setFailing(false);
     } catch (e) {
       if (stale()) return;
@@ -120,11 +137,14 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   async function saveTaskType() {
     const value = (taskDraft ?? '').trim();
-    if (!value) return;
+    if (!value || taskSaving) return;
     setTaskSaving(true);
     setTaskNote(null);
     try {
       await updateAgentTaskType(fleetId, agentId, value, authKey);
+      // Show the saved value right away instead of the old one until the
+      // next poll brings it back.
+      setAgent((a) => (a ? { ...a, taskType: value } : a));
       setTaskDraft(null);
       setTaskNote({ ok: true, text: 'Saved.' });
       refresh();
@@ -163,8 +183,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   const state: AgentState | null = agent ? (pending ?? agentState(agent)) : null;
   const breakGate = agent ? canStartBreak(agent) : { allowed: false };
-  const resumeGate = agent ? canResume(agent) : { allowed: false };
-  const progress = agent ? shiftProgress(agent) : null;
+  const resumeGate = agent ? canResume(agent, now) : { allowed: false };
+  const progress = agent ? shiftProgress(agent, now) : null;
   const notes = handoverLines(handover);
   const model = lastModel(entries);
   const activity = latestActivity(entries, 8);
@@ -243,7 +263,6 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                         ariaLabel="Task type"
                         value={taskDraft ?? agent.taskType ?? ''}
                         onChange={setTaskDraft}
-                        onCommit={() => { if (taskDraft !== null) void saveTaskType(); }}
                         placeholder="e.g. claims triage"
                         className="w-full"
                       />
