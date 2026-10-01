@@ -4,8 +4,8 @@ import { appOrigin } from '@/lib/app-origin';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
-import { getSubscriptionRow } from '@/lib/entitlements';
-import { hasLiveSubscription, isPlanId, stripePriceId, type PlanId } from '@/lib/plans';
+import { countAgents, getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
+import { billableAgents, hasLiveSubscription, isPaidPlanId, isTrialActive, stripePriceId } from '@/lib/plans';
 
 type UrlResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -61,11 +61,11 @@ async function ensureCustomer(userId: string, email: string | null): Promise<str
 }
 
 export async function startCheckout(plan: string): Promise<UrlResult> {
-  if (!isPlanId(plan) || plan === 'free') {
+  if (!isPaidPlanId(plan)) {
     return { ok: false, error: 'Pick a paid plan to continue.' };
   }
 
-  const priceId = stripePriceId(plan as PlanId);
+  const priceId = stripePriceId(plan);
   if (!priceId) return { ok: false, error: `No Stripe price is configured for the ${plan} plan.` };
 
   try {
@@ -76,16 +76,41 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     const customerId = await ensureCustomer(user.id, user.email);
     const base = appOrigin();
 
+    // Pro is one graduated price whose quantity is the agent count, so Stripe
+    // works out "$200 for the first 5, $10 each after". Starting at the real
+    // count means the first invoice is right; the billing sync keeps it right
+    // afterwards. An unreachable engine falls back to 1, which costs the same
+    // as anything up to 5 and gets corrected on the next sync.
+    let quantity = 1;
+    if (plan === 'pro') quantity = billableAgents((await countAgents(user.id)) ?? 1);
+
+    // Subscribing to Starter during the free period shouldn't end it early:
+    // carry the remaining days over as a Stripe trial, so the first charge
+    // lands when the 90 days would have ended anyway. Stripe refuses a
+    // trial_end under 48 hours out, and at that point there's nothing left
+    // worth carrying. Pro is an upgrade and bills immediately.
+    let trialEnd: number | undefined;
+    if (plan === 'starter') {
+      const trialEndsAt = await getTrialEndsAt(user.id);
+      const ms = trialEndsAt ? new Date(trialEndsAt).getTime() : 0;
+      if (isTrialActive(trialEndsAt) && ms - Date.now() > 48 * 3600 * 1000) {
+        trialEnd = Math.floor(ms / 1000);
+      }
+    }
+
     const session = await stripe().checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity }],
       success_url: `${base}/settings?billing=success`,
       cancel_url: `${base}/settings?billing=cancelled`,
       // Carried onto the subscription so checkout.session.completed and every
       // later subscription event can be traced back to a user without a
       // customer lookup.
-      subscription_data: { metadata: { whiteroom_user_id: user.id } },
+      subscription_data: {
+        metadata: { whiteroom_user_id: user.id },
+        ...(trialEnd ? { trial_end: trialEnd } : {}),
+      },
       allow_promotion_codes: true,
     });
 

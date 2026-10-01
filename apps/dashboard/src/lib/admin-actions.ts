@@ -11,7 +11,7 @@
 import { db } from '@/lib/db';
 import { logAdminAction, NotAdminError, requireAdmin } from '@/lib/admin';
 import { enqueueEntitlementSync, syncEntitlementsToEngine } from '@/lib/entitlements';
-import { isPlanId } from '@/lib/plans';
+import { isOverridePlanId } from '@/lib/plans';
 
 export type AdminResult = { ok: true } | { ok: false; error: string };
 
@@ -35,8 +35,8 @@ export async function setPlanOverride(userId: string, plan: string | null): Prom
   try {
     const actor = await requireAdmin();
 
-    if (plan !== null && !isPlanId(plan)) {
-      return { ok: false, error: `'${plan}' is not a plan.` };
+    if (plan !== null && !isOverridePlanId(plan)) {
+      return { ok: false, error: `'${plan}' is not a plan that can be comped.` };
     }
 
     const client = await db().connect();

@@ -14,6 +14,7 @@ import 'server-only';
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
+import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
 
@@ -25,21 +26,28 @@ export interface SubscriptionRow {
   stripeSubscriptionId: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** Agents the Pro subscription is billed for, as Stripe last reported it. */
+  billedAgents: number | null;
 }
 
 export interface Entitlement {
   plan: PlanId;
   planName: string;
   limits: PlanLimits;
-  /** Null when the user has never reached Checkout — they are on free by default. */
+  /** Null when the user has never reached Checkout. */
   subscription: SubscriptionRow | null;
-  usage: { fleets: number };
+  /** End of the free Starter period, ISO. In the past once it has run out. */
+  trialEndsAt: string;
+  /** On Starter because of the free period, not because they pay for it. */
+  onTrial: boolean;
+  /** `agents` is null when the engine couldn't be reached. */
+  usage: { fleets: number; agents: number | null };
 }
 
 export async function getSubscriptionRow(userId: string): Promise<SubscriptionRow | null> {
   const { rows } = await db().query(
     `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
-            current_period_end::text, cancel_at_period_end
+            current_period_end::text, cancel_at_period_end, billed_agents
      FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
@@ -53,7 +61,39 @@ export async function getSubscriptionRow(userId: string): Promise<SubscriptionRo
     stripeSubscriptionId: r.stripe_subscription_id,
     currentPeriodEnd: r.current_period_end,
     cancelAtPeriodEnd: r.cancel_at_period_end,
+    billedAgents: r.billed_agents ?? null,
   };
+}
+
+/**
+ * When this user's free Starter period ends. Null only if the user row is
+ * gone, which effectivePlan treats as an expired trial.
+ */
+export async function getTrialEndsAt(userId: string): Promise<string | null> {
+  const { rows } = await db().query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
+  return rows[0]?.trial_ends_at ?? null;
+}
+
+/** The plan this user is on right now, read fresh from the database. */
+export async function resolvePlan(userId: string): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
+  const [sub, trialEndsAt] = await Promise.all([getSubscriptionRow(userId), getTrialEndsAt(userId)]);
+  return { plan: effectivePlan(sub, trialEndsAt), sub, trialEndsAt };
+}
+
+/**
+ * Total agents across every fleet this user controls, as the engine counts
+ * them — the same number the engine admits against and Pro is billed on.
+ * Null when the engine can't be reached, so callers never mistake an outage
+ * for an account with no agents.
+ */
+export async function countAgents(userId: string): Promise<number | null> {
+  const fleetIds = await fleetIdsFor(userId);
+  if (fleetIds.length === 0) return 0;
+  const { byFleet, windowDays } = await fetchFleetUsage(fleetIds);
+  if (windowDays === null) return null;
+  let total = 0;
+  for (const f of byFleet.values()) total += f.agentCount ?? 0;
+  return total;
 }
 
 export async function getEntitlement(): Promise<Entitlement> {
@@ -61,18 +101,21 @@ export async function getEntitlement(): Promise<Entitlement> {
   const userId = session?.user?.id;
   if (!userId) throw new Error('Not authenticated');
 
-  const [sub, fleetCount] = await Promise.all([
-    getSubscriptionRow(userId),
+  const [{ plan, sub, trialEndsAt }, fleetCount, agents] = await Promise.all([
+    resolvePlan(userId),
     countFleets(userId),
+    countAgents(userId),
   ]);
 
-  const plan = effectivePlan(sub);
   return {
     plan,
     planName: PLANS[plan].name,
     limits: limitsFor(plan),
     subscription: sub,
-    usage: { fleets: fleetCount },
+    trialEndsAt: trialEndsAt ?? new Date(0).toISOString(),
+    // Starter that disappears without the trial: nothing paid or comped it.
+    onTrial: plan === 'starter' && effectivePlan(sub, null) === 'expired',
+    usage: { fleets: fleetCount, agents },
   };
 }
 
@@ -166,10 +209,9 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     return false;
   }
 
-  const [sub, fleetIds] = await Promise.all([getSubscriptionRow(userId), fleetIdsFor(userId)]);
+  const [{ plan }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
   if (fleetIds.length === 0) return true;
 
-  const plan = effectivePlan(sub);
   const limits = limitsFor(plan);
 
   const payload = {
@@ -177,8 +219,9 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
       fleetId,
       plan,
       // The engine only ever gates on "is this allowed to run"; the nuance of
-      // why (no subscription vs. a cancelled one) stays on this side.
-      status: 'active',
+      // why (trial over vs. a cancelled subscription) stays on this side. An
+      // inactive fleet refuses every agent, including ones already in it.
+      status: plan === 'expired' ? 'inactive' : 'active',
       maxAgents: limits.maxAgentsPerFleet,
       retentionDays: limits.retentionDays,
     })),
@@ -204,17 +247,17 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
 }
 
 /**
- * Drops one fleet back to free limits on the engine.
+ * Drops one fleet back to Starter limits on the engine.
  *
- * Called when a fleet is unlinked from an account. Sends the free plan rather
- * than deleting the row, so the engine is left holding an explicit "this fleet
- * is on free" instead of an absence it has to interpret.
+ * Called when a fleet is unlinked from an account. Sends Starter rather than
+ * deleting the row, so the engine is left holding an explicit "this fleet is
+ * on the entry tier" instead of an absence it has to interpret.
  */
 export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   if (!secret) return;
 
-  const free = limitsFor('free');
+  const starter = limitsFor('starter');
   try {
     const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
       method: 'POST',
@@ -224,10 +267,10 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
       body: JSON.stringify({
         fleets: [{
           fleetId,
-          plan: 'free',
+          plan: 'starter',
           status: 'active',
-          maxAgents: free.maxAgentsPerFleet,
-          retentionDays: free.retentionDays,
+          maxAgents: starter.maxAgentsPerFleet,
+          retentionDays: starter.retentionDays,
         }],
       }),
     });

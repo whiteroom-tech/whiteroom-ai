@@ -166,7 +166,7 @@ export async function listUsers(opts: { query?: string; page?: number } = {}): P
     db().query(`SELECT count(*)::int AS n FROM users u ${where}`, params),
     db().query(
       `SELECT u.id, u.email, u.name, u.role, u.created_at::text, u."emailVerified",
-              s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end,
+              s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, u.trial_ends_at::text,
               ${fleetCountSql('u')} AS fleet_count
        FROM users u
        LEFT JOIN subscriptions s ON s.user_id = u.id
@@ -194,6 +194,7 @@ function toAdminUserRow(r: Record<string, unknown>): AdminUserRow {
           planOverride: (r.plan_override as string) ?? null,
         }
       : null,
+    (r.trial_ends_at as string) ?? null,
   );
   return {
     id: r.id as string,
@@ -230,7 +231,7 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
 
   const { rows } = await db().query(
     `SELECT u.id, u.email, u.name, u.role, u.created_at::text, u."emailVerified", u.fleet_id,
-            s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end,
+            s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, u.trial_ends_at::text,
             ${fleetCountSql('u')} AS fleet_count
      FROM users u
      LEFT JOIN subscriptions s ON s.user_id = u.id
