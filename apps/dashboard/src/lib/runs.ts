@@ -1,7 +1,7 @@
 // Pure helpers for Runs (README › Screens › 2a / 2b). A run is one agent's
 // shift; the engine's list_runs / get_run_events serve them.
 
-import type { AuditEntry, RunEvent, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
+import type { AuditEntry, RunEvent, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 import type { Sheet } from '@/lib/xlsx';
 import type { IconName, TagTone } from '@whiteroom/ui';
 import { activityRow, clock } from '@/lib/home';
@@ -122,16 +122,23 @@ export function fmtLength(seconds: number): string {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
 }
 
-export type StandOutTone = 'rule' | 'failed' | 'coverage' | 'clean';
+export type StandOutTone = 'flag' | 'rule' | 'failed' | 'coverage' | 'clean';
+
+/** One flag in words: "Repeating the same call: fetch_page ×6", "4 failed calls in a row". */
+export function flagText(f: RunFlag): string {
+  return f.signal === 'repeating_call' ? `Repeating the same call: ${f.tool} ×${f.calls}` : `${f.calls} failed calls in a row`;
+}
 
 /**
- * The run table's "What stood out", from what the run's record shows.
- * Unusual-behaviour flags arrive with P2; until then a rule block or failed
- * calls lead, and otherwise coverage: "Nothing unusual" only when every call
- * could be read, never a clean answer for something that wasn't measured.
+ * The run table's "What stood out", from what the run's record shows. A flag
+ * leads, then a rule block or failed calls, and otherwise coverage: "Nothing
+ * unusual" only when every call could be read, never a clean answer for
+ * something that wasn't measured.
  */
-export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage'>): { tone: StandOutTone; text: string } {
+export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'>): { tone: StandOutTone; text: string } {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const [first, ...more] = run.flags ?? [];
+  if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${plural(more.length, 'more flag')}` : flagText(first) };
   if (run.blockedCalls > 0) return { tone: 'rule', text: `A rule blocked ${plural(run.blockedCalls, 'call')}` };
   if (run.failedCalls > 0) return { tone: 'failed', text: `${plural(run.failedCalls, 'call')} failed` };
   const { calls, checked } = run.coverage;

@@ -595,7 +595,14 @@ export interface RunSummary {
   spendMicros: number;
   unpricedAttempts: number;
   coverage: { calls: number; checked: number };
+  /** What stood out (engine P2.1). Absent from older engines. */
+  flags?: RunFlag[];
 }
+
+/** A run flag: flags only, nothing was blocked. */
+export type RunFlag =
+  | { signal: 'repeating_call'; tool: string; calls: number }
+  | { signal: 'error_streak'; calls: number };
 
 export interface RunDaysResult {
   fleetId: string;
@@ -623,7 +630,7 @@ export interface RunEvent {
 
 export interface RunEventsResult {
   fleetId: string;
-  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string };
+  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string; flags?: RunFlag[] };
   events: RunEvent[];
   page: number;
   pages: number;
