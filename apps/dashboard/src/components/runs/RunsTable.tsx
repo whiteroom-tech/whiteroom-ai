@@ -14,7 +14,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { addDays, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, runHref, RUNS_EXPORT_HEADER, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, zoneName, type RunsRange } from '@/lib/runs';
+import { addDays, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, runHref, RUNS_EXPORT_HEADER, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, validDay, zoneName, type RunsRange } from '@/lib/runs';
 import { DayStrip } from '@/components/runs/DayStrip';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
@@ -28,11 +28,6 @@ const STAND_OUT_ICON = { rule: 'lock', failed: 'alertCircle', coverage: 'info', 
 
 function isRange(v: string | null): v is RunsRange {
   return (RUNS_RANGES as (string | null)[]).includes(v);
-}
-
-/** A ?day= that's a real date and not in the future, else null. */
-function validDay(v: string | null): string | null {
-  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && addDays(v, 0) === v && v <= localDay() ? v : null;
 }
 
 const STRIP_DAYS = 30;
@@ -94,15 +89,9 @@ export function RunsTable({ preview }: {
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
     try {
-      const agentId = agent === 'all' ? undefined : agent;
-      // The strip is extra: if it fails or the engine predates run_days, the list still shows.
-      const [res, days] = await Promise.all([
-        listRuns(fleetId, { ...runsWindow({ range, day }), agentId, cursor: cursors[cursors.length - 1], pageSize: PAGE }, authKey),
-        runDays(fleetId, { fromDay: addDays(localDay(), 1 - STRIP_DAYS), toDay: localDay(), agentId }, authKey).catch(() => null),
-      ]);
+      const res = await listRuns(fleetId, { ...runsWindow({ range, day }), agentId: agent === 'all' ? undefined : agent, cursor: cursors[cursors.length - 1], pageSize: PAGE }, authKey);
       if (stale()) return;
       if ('unsupported' in res) { setUnsupported(true); return; }
-      setDayCounts(days && !('unsupported' in days) ? days.days : null);
       setRuns(res.runs);
       setTotal(res.total);
       setNext(res.cursor);
@@ -122,6 +111,23 @@ export function RunsTable({ preview }: {
     if (firstQuery.current) { firstQuery.current = false; return; }
     refresh();
   }, [range, day, agent, cursors, refresh]);
+
+  // The strip depends only on the agent, so it loads on its own: paging or
+  // picking a day doesn't refetch it, and a slow strip never holds up the
+  // list. It's extra: if it fails or the engine predates run_days, it hides.
+  const loadStrip = useCallback(async (stale: () => boolean) => {
+    if (!fleetId || preview) return;
+    const today = localDay();
+    const days = await runDays(fleetId, { fromDay: addDays(today, 1 - STRIP_DAYS), toDay: today, agentId: agent === 'all' ? undefined : agent }, authKey).catch(() => null);
+    if (stale()) return;
+    setDayCounts(days && !('unsupported' in days) ? days.days : null);
+  }, [fleetId, authKey, agent, preview]);
+  const { refresh: refreshStrip } = usePoll(loadStrip, { intervalMs: 60_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
+  const firstStrip = useRef(true);
+  useEffect(() => {
+    if (firstStrip.current) { firstStrip.current = false; return; }
+    refreshStrip();
+  }, [agent, refreshStrip]);
 
   // The agent filter lists every agent in the fleet, not just this page's.
   useEffect(() => {
