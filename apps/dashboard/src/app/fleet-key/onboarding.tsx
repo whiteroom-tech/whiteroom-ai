@@ -5,7 +5,7 @@ import { setByok } from '@/lib/users';
 import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
-import type { FleetReport, ProviderKey } from '@/lib/whiteroom/types';
+import type { ProviderKey } from '@/lib/whiteroom/types';
 import { Banner, Button, Panel, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
@@ -19,7 +19,6 @@ interface Props {
   apiKey: string;
   fleetId: string;
   fleetToken: string | null;
-  report: FleetReport | null;
   isNew: boolean;
 }
 

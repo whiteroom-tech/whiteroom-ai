@@ -19,7 +19,6 @@ export function FleetKeyPreview({ withKeys }: { withKeys: boolean }) {
         apiKey="sk-wr-0000000000000000000000000000000000000000000000000000000000007f3a"
         fleetId="acme-claims-prod"
         fleetToken={null}
-        report={null}
         isNew={!withKeys}
         previewKeys={withKeys ? KEYS : []}
       />
