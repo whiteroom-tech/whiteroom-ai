@@ -46,6 +46,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskNote, setTaskNote] = useState<{ ok: boolean; text: string } | null>(null);
   const lastShift = useRef<number | null>(null);
+  // The shift whose handover is being fetched right now, so a slow or failing
+  // request isn't started again by every 2s poll while an action is pending.
+  const handoverInFlight = useRef<number | null | undefined>(undefined);
   // Break and shift gates depend on the clock, not only on new data: tick
   // every 15s so Resume enables and "min left" counts down between polls.
   const [now, setNow] = useState(() => Date.now());
@@ -66,14 +69,18 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       // The shift is remembered only after a successful fetch, so a failed
       // one is retried on the next poll.
       const shift = res.watchNumber ?? null;
-      if (shift !== lastShift.current) {
+      if (shift !== lastShift.current && handoverInFlight.current !== shift) {
+        handoverInFlight.current = shift;
         getHandover(agentId, fleetId, authKey)
           .then((h) => {
             if (stale() || h.error) return;
             lastShift.current = shift;
             setHandover(h.handoverDoc ?? null);
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            if (handoverInFlight.current === shift) handoverInFlight.current = undefined;
+          });
       }
       const log = await auditLog({ fleetId, agentId, limit: 50 }, authKey);
       if (stale()) return;
