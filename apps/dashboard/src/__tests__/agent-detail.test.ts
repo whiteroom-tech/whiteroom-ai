@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest';
+import { breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, shiftProgress, shiftSummary } from '@/lib/agent-detail';
+import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
+
+const now = Date.parse('2026-10-01T14:00:00Z');
+const working: AgentInfo = { agentId: 'lead-agent', status: 'working', minutesRemaining: 3.2, percentComplete: '41%', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, tokensUsed: 12_400 };
+const resting = (x: Partial<AgentInfo> = {}): AgentInfo => ({ agentId: 'scout-agent', status: 'resting', ...x });
+
+describe('break timing', () => {
+  it('prefers the alarm, else start + restMinutes (a manual break has no alarm)', () => {
+    expect(breakEndsAt({ alarmAt: '2026-10-01T14:05:00Z' })).toBe(Date.parse('2026-10-01T14:05:00Z'));
+    expect(breakEndsAt({ restStartedAt: '2026-10-01T13:58:00Z', restMinutes: 2 })).toBe(Date.parse('2026-10-01T14:00:00Z'));
+    expect(breakEndsAt({})).toBeNull();
+  });
+});
+
+describe('what the operator may do', () => {
+  it('starts a break only for a working agent', () => {
+    expect(canStartBreak(working).allowed).toBe(true);
+    expect(canStartBreak(resting()).allowed).toBe(false);
+    expect(canStartBreak({ agentId: 'a', status: 'idle' })).toEqual({ allowed: false, why: 'Only a working agent can be sent on a break.' });
+  });
+
+  it('resumes only after the mandatory break, and says how long is left', () => {
+    expect(canResume(working, now)).toEqual({ allowed: false, why: 'It isn’t on a break.' });
+    expect(canResume(resting({ alarmAt: '2026-10-01T14:03:30Z' }), now)).toEqual({ allowed: false, why: 'The break is mandatory; it can resume in 4 min.' });
+    expect(canResume(resting({ alarmAt: '2026-10-01T13:59:00Z' }), now).allowed).toBe(true);
+    // Unknown end: let the engine decide (its answer is shown if it refuses).
+    expect(canResume(resting(), now).allowed).toBe(true);
+  });
+});
+
+describe('progress and summary', () => {
+  it('shows shift progress with minutes left', () => {
+    expect(shiftProgress(working, now)).toEqual({ pct: 41, onBreak: false, label: '41% · 3.2 min left' });
+  });
+
+  it('shows break progress while resting', () => {
+    expect(shiftProgress(resting({ restPercent: '50', alarmAt: '2026-10-01T14:02:00Z' }), now)).toEqual({ pct: 50, onBreak: true, label: '50% of the break · 2 min left' });
+  });
+
+  it('clamps junk percentages', () => {
+    expect(shiftProgress({ ...working, percentComplete: '140%' }, now).pct).toBe(100);
+    expect(shiftProgress({ ...working, percentComplete: 'n/a' }, now).pct).toBe(0);
+  });
+
+  it('summarises the shift', () => {
+    expect(shiftSummary(working, (n) => `${n / 1000}K`)).toBe('#8 · 62 tasks · 9.4 min worked · 12.4K tokens');
+    expect(shiftSummary({ agentId: 'a', status: 'idle' }, String)).toBe('#1 · 0 tasks · 0 min worked');
+  });
+});
+
+describe('details', () => {
+  it('takes the model from the newest entry that names one', () => {
+    const e = (ts: string, model?: string) => ({ id: ts, type: 'task_complete', timestamp: ts, model }) as AuditEntry;
+    expect(lastModel([e('2026-10-01T13:00:00Z', 'claude-haiku-4-5'), e('2026-10-01T13:30:00Z', 'claude-sonnet-4-5'), e('2026-10-01T13:45:00Z')])).toBe('claude-sonnet-4-5');
+    expect(lastModel([])).toBeNull();
+  });
+
+  it('turns handover notes into labelled lines, skipping empty parts', () => {
+    expect(handoverLines({ state: 'Triaging batch', pending: [{ task: 'policy lookup' }, { task: '' }], warnings: [] })).toEqual([
+      { label: 'State', text: 'Triaging batch' },
+      { label: 'Pending', text: 'policy lookup' },
+    ]);
+    expect(handoverLines(null)).toEqual([]);
+  });
+
+  it('recognises the engine\'s not-found answer', () => {
+    expect(isNotFound({ error: "Agent 'x' not found." })).toBe(true);
+    expect(isNotFound({ error: 'Fleet unavailable' })).toBe(false);
+    expect(isNotFound({ agentId: 'x', status: 'working' })).toBe(false);
+  });
+});

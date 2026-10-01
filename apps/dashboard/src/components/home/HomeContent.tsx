@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DataTable, Hint, Icon, Panel, SegmentedControl, StatCard, StatusPill, Tag, FONT_MONO } from '@whiteroom/ui';
 import { auditLog, checkWatch, fleetReport, isAuthError, performanceFleetHourly } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
@@ -150,6 +152,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   onViewChange: (v: AgentsView) => void;
   liveFeed: React.ReactNode;
 }) {
+  const router = useRouter();
   const sorted = sortAgents(agents);
   const working = agents.filter((a) => agentState(a) === 'working').length;
   const compression = report.energySavings.compressionRatio ?? 0;
@@ -196,7 +199,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               {sorted.map((a) => {
                 const block = blocks[a.agentId];
                 return (
-                  <article key={a.agentId} className="wr-agent-card" aria-label={a.agentId}>
+                  <Link key={a.agentId} href={agentHref(a.agentId)} className="wr-agent-card" aria-label={`${a.agentId}, open details`}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
                       <StatusPill state={agentState(a)} />
@@ -210,7 +213,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                         </span>
                       </div>
                     )}
-                  </article>
+                  </Link>
                 );
               })}
             </div>
@@ -219,6 +222,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               caption="Agents"
               rows={sorted}
               rowKey={(a) => a.agentId}
+              onOpen={(a) => router.push(agentHref(a.agentId))}
               rowHeight={42}
               columns={[
                 { key: 'agent', header: 'Agent', width: 'minmax(140px,1.2fr)', render: (a) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{a.agentId}</span> },
@@ -271,4 +275,9 @@ function HomeSkeleton({ failing }: { failing: boolean }) {
       <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, height: 190 }} />
     </div>
   );
+}
+
+/** Agent detail for one agent. */
+function agentHref(agentId: string): string {
+  return `/agents/${encodeURIComponent(agentId)}`;
 }
