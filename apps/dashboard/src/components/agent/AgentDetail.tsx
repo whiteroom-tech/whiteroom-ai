@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, Hint, Panel, StatusPill, Tag, TextInput, FONT_MONO, type AgentState } from '@whiteroom/ui';
-import { auditLog, checkWatch, getHandover, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { fmtTokens } from '@/lib/format';
@@ -45,7 +45,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [entries, setEntries] = useState<AuditEntry[]>(preview?.entries ?? []);
   const [failing, setFailing] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
-  const [actionError, setActionError] = useState<{ text: string; retry: () => void } | null>(null);
+  // No retry for a refusal: asking again gets the same answer.
+  const [actionError, setActionError] = useState<{ text: string; retry?: () => void } | null>(null);
   const [confirmBreak, setConfirmBreak] = useState(false);
   const [taskDraft, setTaskDraft] = useState<string | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
@@ -134,7 +135,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       refresh();
     } catch (e) {
       setPending(null);
-      setActionError({ text: `Couldn’t start a break for ${agentId}. ${e instanceof Error ? e.message : ''} It’s still working; nothing changed.`, retry: startBreak });
+      setActionError(controlFailure(e) === 'refused'
+        ? { text: (e as Error).message }
+        : { text: `Couldn’t start a break for ${agentId}. ${e instanceof Error ? e.message : ''} It’s still working; nothing changed.`, retry: startBreak });
     }
   }
 
@@ -147,7 +150,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       refresh();
     } catch (e) {
       setPending(null);
-      setActionError({ text: `Couldn’t resume ${agentId}. ${e instanceof Error ? e.message : ''}`, retry: resume });
+      setActionError(controlFailure(e) === 'refused'
+        ? { text: (e as Error).message }
+        : { text: `Couldn’t resume ${agentId}. ${e instanceof Error ? e.message : ''}`, retry: resume });
     }
   }
 
@@ -226,7 +231,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {actionError && (
-            <Banner variant="error" actions={<><Button size={28} onClick={() => { const r = actionError.retry; setActionError(null); r(); }}>Try again</Button><Button variant="ghost" size={28} onClick={() => setActionError(null)}>Dismiss</Button></>}>
+            <Banner variant="error" actions={<>{actionError.retry && <Button size={28} onClick={() => { const r = actionError.retry; setActionError(null); r?.(); }}>Try again</Button>}<Button variant="ghost" size={28} onClick={() => setActionError(null)}>Dismiss</Button></>}>
               {actionError.text}
             </Banner>
           )}
