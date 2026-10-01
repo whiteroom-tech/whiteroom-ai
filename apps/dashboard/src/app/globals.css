@@ -200,6 +200,11 @@
 .wr-btn--danger:hover:not(:disabled), .wr-btn--danger:active:not(:disabled) { background: var(--bad-dim); }
 .wr-btn--danger-fill { background: var(--bad); color: var(--on-brand); font-weight: 600; }
 .wr-btn:disabled { opacity: .45; cursor: not-allowed; }
+/* A disabled filled button looks like a disabled secondary one; at 45% the
+   brand fill still read as the page's main action. Busy ("Resuming…") is
+   disabled too but keeps its fill. */
+.wr-btn--primary:disabled:not([aria-busy]),
+.wr-btn--danger-fill:disabled:not([aria-busy]) { background: var(--raised); color: var(--tx); border-color: var(--line2); }
 
 .wr-seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; flex: none; }
 .wr-seg__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: var(--tx2); font: inherit; font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: color .12s; }
