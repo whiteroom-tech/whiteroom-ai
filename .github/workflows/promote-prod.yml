@@ -5,8 +5,9 @@ name: Promote to prod
 # that isn't on staging is refused.
 #
 # Only the image changes: env, secrets and scaling on the prod service are left
-# as they are. If /sign-in fails afterwards, traffic goes back to the previous
-# revision automatically.
+# as they are. The new revision gets no traffic until it's created; if
+# anything after that fails (traffic move or /sign-in), traffic goes back to
+# the previous revision automatically.
 #
 # The gh-deploy-prod service account only trusts this file on refs/heads/main.
 on:
@@ -21,8 +22,9 @@ permissions:
   contents: read
   id-token: write
 
+# Shared with deploy-staging.yml, so staging can't change under a promotion.
 concurrency:
-  group: promote-prod
+  group: dashboard-deploy
   cancel-in-progress: false
 
 env:
@@ -59,14 +61,12 @@ jobs:
             echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first (Actions → Deploy staging → Run workflow, from main at that commit)."
             exit 1
           fi
-          # Set by deploy-staging only after staging's smoke test passed.
-          if ! gcloud artifacts docker images describe "$IMAGE:$sha-verified" --format='value(image_summary.digest)' >/dev/null 2>&1; then
-            echo "::error::Staging never passed its smoke test for $sha (no $sha-verified tag). Fix staging first."
-            exit 1
-          fi
           digest=$(gcloud artifacts docker images describe "$IMAGE:$sha" --format='value(image_summary.digest)')
-          if [ -z "$digest" ]; then
-            echo "::error::No prod image $IMAGE:$sha. Re-run Deploy staging for this commit."
+          # deploy-staging points <sha>-verified at this prod image only after
+          # staging's latest run for the commit passed its smoke test.
+          verified=$(gcloud artifacts docker images describe "$IMAGE:$sha-verified" --format='value(image_summary.digest)' 2>/dev/null || true)
+          if [ -z "$digest" ] || [ "$verified" != "$digest" ]; then
+            echo "::error::Staging's latest run for $sha didn't pass its smoke test. Fix staging first."
             exit 1
           fi
           # The rollback target is whichever revision serves the most traffic now.
@@ -83,7 +83,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Promoting $sha ($digest); rollback target is $prev"
 
-      - name: Deploy to prod
+      - name: Deploy to prod (no traffic yet)
         env:
           SHA: ${{ steps.resolve.outputs.sha }}
           DIGEST: ${{ steps.resolve.outputs.digest }}
@@ -91,14 +91,16 @@ jobs:
           gcloud run services update "$SERVICE" --project whiteroom-prod --region "$REGION" \
             --image "$IMAGE@$DIGEST" \
             --update-labels "managed-by=github-actions,commit-sha=$SHA" \
+            --no-traffic \
             --quiet
-          # A revision pinned in an earlier manual deploy would leave the new
-          # one at 0% traffic, so always move traffic explicitly.
-          gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" --to-latest --quiet
 
-      - name: Smoke test (rolls back on failure)
-        env:
-          PREV: ${{ steps.resolve.outputs.prev }}
+      # One explicit move. A revision pinned in an earlier manual deploy would
+      # otherwise leave the new one at 0%.
+      - name: Send traffic to the new revision
+        id: traffic
+        run: gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" --to-latest --quiet
+
+      - name: Smoke test
         run: |
           for _ in 1 2 3 4 5 6; do
             if curl -fsS "$PROD_URL/sign-in" | grep -q "Sign in"; then
@@ -107,7 +109,17 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::$PROD_URL/sign-in failed after promote; sending traffic back to $PREV"
+          echo "::error::$PROD_URL/sign-in failed after promote."
+          exit 1
+
+      # Runs when the traffic move or the smoke test failed (or the deploy
+      # step, harmlessly: its revision got no traffic). Not when the resolve
+      # step failed, since nothing was changed then.
+      - name: Roll back to the previous revision
+        if: failure() && steps.resolve.outcome == 'success'
+        env:
+          PREV: ${{ steps.resolve.outputs.prev }}
+        run: |
           gcloud run services update-traffic "$SERVICE" --project whiteroom-prod --region "$REGION" \
             --to-revisions "$PREV=100" --quiet
           # Relabelling the service here would create yet another revision, so
@@ -115,7 +127,6 @@ jobs:
           # the commit that was tried; the serving revision's own label names
           # the commit actually live.
           echo "::error::Rolled back. $PREV serves 100%; its revision label has the live commit."
-          exit 1
 
       - name: Summary
         env:

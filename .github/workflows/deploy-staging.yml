@@ -28,8 +28,10 @@ permissions:
   contents: read
   id-token: write
 
+# Shared with promote-prod.yml: a staging deploy and a promotion never run
+# at the same time, so promote can't check a commit staging is replacing.
 concurrency:
-  group: deploy-staging
+  group: dashboard-deploy
   cancel-in-progress: false
 
 env:
@@ -64,6 +66,14 @@ jobs:
           docker build -f apps/dashboard/Dockerfile -t "$IMAGE:$GITHUB_SHA" .
           docker push "$IMAGE:$GITHUB_SHA-staging"
           docker push "$IMAGE:$GITHUB_SHA"
+
+      # <sha>-verified must point at the prod image for promote-prod to accept
+      # the commit. Point it at the staging image first, so a re-run for a
+      # commit that passed before has to earn it again; "Mark verified" moves
+      # it back only after the smoke test. (The deploy account can add and
+      # move tags but not delete them.)
+      - name: Withdraw an earlier verification
+        run: gcloud artifacts docker tags add "$IMAGE:$GITHUB_SHA-staging" "$IMAGE:$GITHUB_SHA-verified" --quiet
 
       # The full staging config lives here, so this step is its source of truth.
       # Env is split on "|" because AUTH_EMAIL_FROM contains spaces and "<>".

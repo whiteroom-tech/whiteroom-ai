@@ -16,7 +16,7 @@ Nothing is shared between the two except the image registry (prod's `cloud-run-s
 
 1. Merge to `main`. **Deploy staging** (`.github/workflows/deploy-staging.yml`) builds the image and deploys it to staging. The dashboard is built twice from the same checkout, because `NEXT_PUBLIC_PROXY_URL` is baked into the bundle: `<sha>-staging` points at the staging engine, `<sha>` at proxy.whiteroom.tech.
 2. Test on the staging URL.
-3. Run **Promote to prod** (`promote-prod.yml`, Actions → Run workflow). It refuses any commit staging isn't running, deploys the prebuilt `<sha>` image by digest, moves traffic to it, and rolls back automatically if `/sign-in` stops rendering.
+3. Run **Promote to prod** (`promote-prod.yml`, Actions → Run workflow). It refuses any commit staging isn't running or whose latest staging run didn't pass its smoke test (`<sha>-verified` must point at the prod image), deploys the prebuilt `<sha>` image by digest with no traffic, then moves traffic to it, and rolls back automatically if the traffic move or `/sign-in` fails. Staging deploys and promotions share one concurrency group, so they never overlap.
 
 The engine repo (`whiteroom-ai-whiteroom`) has the same two workflows. Engine images are environment-agnostic, so prod gets the exact digest staging ran.
 
