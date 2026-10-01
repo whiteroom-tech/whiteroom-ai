@@ -269,7 +269,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                       {notesState === 'failed' ? 'Couldn’t load this shift’s notes. Retrying…' : 'Loading notes…'}
                     </p>
                   ) : notes.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No handover yet. Notes appear here after this agent’s first shift ends.</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+                      {(agent.watchNumber ?? 1) > 1
+                        ? 'No handover notes saved for this agent.'
+                        : 'No handover yet. Notes appear here after this agent’s first shift ends.'}
+                    </p>
                   ) : (
                     <div style={{ display: 'grid', gap: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
                       {notes.map((n) => <div key={n.label}><span style={{ color: 'var(--tx)', fontWeight: 600 }}>{n.label}</span> · {n.text}</div>)}
