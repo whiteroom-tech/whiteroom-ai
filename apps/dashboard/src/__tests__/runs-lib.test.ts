@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
 
@@ -252,5 +252,19 @@ describe('older records: custom ranges, plan history, strip paging', () => {
     expect(stripEndFor({ fromDay: '2026-09-28', toDay: '2026-09-28' }, today, 30)).toBe(today); // on the strip: stays
     expect(stripEndFor({ fromDay: '2026-06-03', toDay: '2026-06-03' }, today, 30)).toBe('2026-06-03'); // older: jumps
     expect(stripEndFor({ fromDay: '2026-09-25', toDay: today }, '2026-06-03', 30)).toBe(today); // back to the range
+  });
+});
+
+describe('what stood out: run flags', () => {
+  const base = { calls: 10, failedCalls: 0, blockedCalls: 0, coverage: { calls: 10, checked: 10 } };
+  it('puts a flag first, in words, and counts the rest', () => {
+    expect(flagText({ signal: 'repeating_call', tool: 'fetch_page', calls: 6 })).toBe('Repeating the same call: fetch_page ×6');
+    expect(flagText({ signal: 'error_streak', calls: 4 })).toBe('4 failed calls in a row');
+    expect(standOut({ ...base, blockedCalls: 1, flags: [{ signal: 'error_streak', calls: 3 }] })).toEqual({ tone: 'flag', text: '3 failed calls in a row' });
+    expect(standOut({ ...base, flags: [{ signal: 'repeating_call', tool: 'x', calls: 5 }, { signal: 'error_streak', calls: 3 }] }).text).toBe('Repeating the same call: x ×5 · 1 more flag');
+  });
+  it('falls back to rule blocks, failures and coverage without flags (or on older engines)', () => {
+    expect(standOut({ ...base, flags: [] }).tone).toBe('clean');
+    expect(standOut({ ...base, blockedCalls: 2 }).text).toBe('A rule blocked 2 calls');
   });
 });

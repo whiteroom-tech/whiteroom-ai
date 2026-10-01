@@ -806,12 +806,13 @@ async function runsAction<T>(action: string, fleetId: string, q: RunsQuery, extr
 /** Runs that started in a range of the viewer's days, newest first; `unsupported` sends Runs to the event feed. */
 export function listRuns(
   fleetId: string,
-  opts: RunsQuery & { cursor?: string | null; pageSize?: number },
+  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean },
   key?: string,
 ): Promise<ListRunsResult | { unsupported: true }> {
   return runsAction<ListRunsResult>('list_runs', fleetId, opts, {
     ...(opts.cursor ? { cursor: opts.cursor } : {}),
     ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
+    ...(opts.flagged ? { flagged: true } : {}),
   }, key);
 }
 

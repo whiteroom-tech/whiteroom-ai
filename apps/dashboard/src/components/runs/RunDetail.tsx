@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Button, Hint, Icon, Panel, SegmentedControl, Tag, FONT_MONO } from '@whiteroom/ui';
+import { Banner, Button, Hint, Icon, Panel, SegmentedControl, Tag, FONT_MONO } from '@whiteroom/ui';
 import { getRunEvents, isAuthError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import type { RunEventsResult } from '@/lib/whiteroom/types';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { loadRunPage, parseRunId, runMeta, RUNS_LIST_URL_KEY, timelineRow, type RunKind } from '@/lib/runs';
+import { flagText, loadRunPage, parseRunId, runMeta, RUNS_LIST_URL_KEY, timelineRow, type RunKind } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
@@ -115,6 +115,12 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
         {data && <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 12.5, color: 'var(--tx2)' }}>{runMeta(data.run)}</p>}
         {failing && data && <RefreshFailed />}
+        {!!data?.run.flags?.length && (
+          <Banner variant="warn">
+            <span style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--warn-tx)', marginBottom: 2 }}>What stood out</span>
+            {data.run.flags.map(flagText).join(' · ')}. These are flags; they don&rsquo;t block anything.
+          </Banner>
+        )}
         <Panel
           title={<>What happened<Hint text={HELP.whatHappened} /></>}
           count={data ? `${data.total} ${kind === 'events' ? 'events' : 'calls and events'}` : undefined}
