@@ -9,7 +9,7 @@ import type { ProviderKey } from '@/lib/whiteroom/types';
 import { Banner, Button, Panel, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
-import { CopyButton, CopyChip } from '@/components/citadel/CopyChip';
+import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
 import { PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 
@@ -265,7 +265,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                 <code className="wr-key-field">{showKey ? apiKey : maskKey(apiKey)}</code>
                 <Button onClick={() => setShowKey((v) => !v)} aria-pressed={showKey}>{showKey ? 'Hide' : 'Reveal'}</Button>
                 {/* Reveal first: copying a secret you can't see is easy to do by accident. */}
-                <CopyButton text={apiKey} label="Copy your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
+                <CopyValueButton text={apiKey} what="your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
               </div>
               <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
                 Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet.

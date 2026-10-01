@@ -397,7 +397,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             { label: 'Errors', value: totalErrors.toLocaleString(), color: 'var(--bad)', desc: 'API errors + interrupted' },
             { label: 'Other', value: totalOther.toLocaleString(), color: 'var(--tx3)', desc: 'Cancelled, blocked, unknown' },
             ...(blockedCount ? [{ label: 'Blocked by rules', value: blockedCount.toLocaleString(), color: 'var(--bad)', desc: 'Stopped by Controls rules (in Other)' }] : []),
-            { label: 'Error Rate', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
+            { label: 'Failed calls', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 100 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
@@ -519,7 +519,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const agents = counts ? Object.entries(counts.byAgent).sort(([, a], [, b]) => (b.blocks - a.blocks) || (b.wouldBlocks - a.wouldBlocks)) : [];
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Governance</h3>
+        <h3 style={H3}>Rule actions</h3>
         <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>
           Calls stopped by rules on the Controls page. Blocked = Enforce stopped the call; would-block = a Watch rule matched but the call went through. Per-rule and per-agent counts come from recent audit events.
         </div>
@@ -993,9 +993,9 @@ function AgentView({ data }: { data: AgentPerformanceResult }) {
   return (
     <>
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <MetricCard label="Total Calls" value={t.calls.toLocaleString()} />
-        <MetricCard label="Estimated Cost" value={fmtCost(t.costMicros)} />
-        <MetricCard label="Avg Latency" value={fmtLatency(t.avgLatencyMs)} />
+        <MetricCard label="Model calls" value={t.calls.toLocaleString()} />
+        <MetricCard label="Spend" value={fmtCost(t.costMicros)} />
+        <MetricCard label="Average response" value={fmtLatency(t.avgLatencyMs)} />
         <MetricCard label="Failed calls" value={fmtPct(t.errorRate)} warn={t.errorRate > 0.05} />
         {t.blockedCount !== undefined && <MetricCard label="Blocked by rules" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Stopped by Controls rules" />}
       </div>

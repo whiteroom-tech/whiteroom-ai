@@ -205,7 +205,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
               border: `1px solid ${w.calls <= 2 ? 'var(--warn-line)' : 'var(--line2)'}`,
               background: w.calls <= 2 ? 'var(--warn-bg)' : 'transparent',
               color: w.calls <= 2 ? 'var(--warn-tx)' : 'var(--tx2)',
-            }}>watch {w.watch} · {w.calls} {w.calls === 1 ? 'call' : 'calls'}</span>
+            }}>shift {w.watch} · {w.calls} {w.calls === 1 ? 'call' : 'calls'}</span>
           ))}
         </div>
       </div>

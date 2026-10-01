@@ -40,12 +40,18 @@ export function CopyChip({ text, display, label }: { text: string; display?: Rea
   );
 }
 
-/** A secondary "Copy" button for a secret or value shown elsewhere. */
-export function CopyButton({ text, label, disabled, title }: { text: string; label: string; disabled?: boolean; title?: string }) {
+/**
+ * A secondary "Copy" button for a value shown elsewhere (named apart from
+ * @whiteroom/ui's CopyButton). `what` completes the accessible name, "Copy your
+ * API key", while the visible word stays "Copy" / "Copied".
+ */
+export function CopyValueButton({ text, what, disabled, title }: { text: string; what: string; disabled?: boolean; title?: string }) {
   const { copied, copy } = useCopy(text);
   return (
     <>
-      <Button onClick={copy} disabled={disabled} aria-label={label} title={title}>{copied ? 'Copied' : 'Copy'}</Button>
+      <Button onClick={copy} disabled={disabled} title={title}>
+        {copied ? 'Copied' : 'Copy'}<span className="sr-only"> {what}</span>
+      </Button>
       <span className="sr-only" aria-live="polite">{copied ? 'Copied' : ''}</span>
     </>
   );
