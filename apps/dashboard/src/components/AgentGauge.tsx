@@ -9,11 +9,10 @@
 // fleet/page.tsx's <style> block), so a reduced-motion viewer sees the same
 // glyphs perfectly still.
 
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
-  const n = parseInt(full, 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+/** `color` at `alpha` opacity. Works for any CSS color, including theme
+ *  tokens like `var(--ok)`, so the tints follow light and dark. */
+function tint(color: string, alpha: number): string {
+  return `color-mix(in srgb, ${color} ${Math.round(alpha * 100)}%, transparent)`;
 }
 
 const clampPct = (n: number) => Math.min(100, Math.max(0, n));
@@ -55,12 +54,12 @@ export function RingGauge({
       viewBox={`0 0 ${size} ${size}`}
       style={{ transform: 'rotate(-90deg)', animation: animate ? 'ring-glow 2.4s ease-in-out infinite' : undefined }}
     >
-      <circle cx={cx} cy={cy} r={outerR} fill="none" stroke={hexToRgba(progressColor, 0.16)} strokeWidth={outerStroke} />
+      <circle cx={cx} cy={cy} r={outerR} fill="none" stroke={tint(progressColor, 0.16)} strokeWidth={outerStroke} />
       <circle
         cx={cx} cy={cy} r={outerR} fill="none" stroke={progressColor} strokeWidth={outerStroke} strokeLinecap="round"
         strokeDasharray={outerC} strokeDashoffset={outerOffset} style={{ transition: 'stroke-dashoffset .6s ease' }}
       />
-      <circle cx={cx} cy={cy} r={innerR} fill="none" stroke={hexToRgba(healthColor, 0.18)} strokeWidth={innerStroke} />
+      <circle cx={cx} cy={cy} r={innerR} fill="none" stroke={tint(healthColor, 0.18)} strokeWidth={innerStroke} />
       <circle
         cx={cx} cy={cy} r={innerR} fill="none" stroke={healthColor} strokeWidth={innerStroke} strokeLinecap="round"
         strokeDasharray={innerC} strokeDashoffset={innerOffset} style={{ transition: 'stroke-dashoffset .6s ease' }}
@@ -98,8 +97,8 @@ export function Beacon({
       <span
         style={{
           width: size, height: size, borderRadius: '50%',
-          background: `radial-gradient(circle at 35% 30%, ${hexToRgba(color, 0.95)}, ${hexToRgba(color, 0.55)} 70%)`,
-          boxShadow: `0 0 ${animate ? 14 : 6}px ${hexToRgba(color, animate ? 0.7 : 0.32)}`,
+          background: `radial-gradient(circle at 35% 30%, ${tint(color, 0.95)}, ${tint(color, 0.55)} 70%)`,
+          boxShadow: `0 0 ${animate ? 14 : 6}px ${tint(color, animate ? 0.7 : 0.32)}`,
           animation: breathe ? 'beacon-breathe 3.6s ease-in-out infinite' : undefined,
         }}
       />

@@ -203,7 +203,7 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
       {/* Left: Chart + Breakdown */}
       <div style={{ overflowY: 'auto', padding: 12 }}>
       {/* Daily Tokens Chart */}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, marginBottom: 10, boxShadow: '0 1px 3px var(--shadow)' }}>
         <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>DAILY TOKENS — W/ WHITEROOM vs W/O WHITEROOM</span>
           <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>click a day to scope</span>
@@ -237,7 +237,7 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
       </div>
 
       {/* Per-Agent Breakdown */}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px var(--shadow)' }}>
         <div className="flex justify-between items-center" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: 'var(--tx2)' }}>PER-AGENT BREAKDOWN</span>
           <span style={{ fontSize: 11.5, color: 'var(--tx3)' }}>scope: {scopeLabel || analyticsRange} · saved = handovers + offloads</span>
@@ -270,7 +270,7 @@ export function UsageSavingsSection({ fleetId, authKey }: { fleetId: string; aut
                           <div style={{ height: '100%', background: 'var(--ok)', width: `${Math.min(100, pct)}%` }} />
                         </div>
                       </div>
-                    ) : <span style={{ color: 'var(--line2)' }}>—</span>}
+                    ) : <span style={{ color: 'var(--tx2)' }}>—</span>}
                   </td>
                 </tr>
               );

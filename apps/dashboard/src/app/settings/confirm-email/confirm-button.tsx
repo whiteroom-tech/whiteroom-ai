@@ -32,8 +32,8 @@ export function ConfirmButton({
         }
       }}
       style={{
-        background: '#38E1FF',
-        color: '#04222B',
+        background: 'var(--brand)',
+        color: 'var(--on-brand)',
         border: 'none',
         borderRadius: 8,
         padding: '12px 28px',

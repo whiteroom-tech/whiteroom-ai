@@ -669,8 +669,8 @@ const KEYFRAMES_CSS = `
   @keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 12px var(--ok); } 50% { box-shadow: 0 0 24px var(--ok); } }
   @media (prefers-reduced-motion: no-preference) {
     @keyframes ring-glow {
-      0%, 100% { filter: brightness(1) drop-shadow(0 0 1px rgba(255,255,255,0.1)); }
-      50% { filter: brightness(1.18) drop-shadow(0 0 7px rgba(255,255,255,0.35)); }
+      0%, 100% { filter: brightness(1) drop-shadow(0 0 1px rgba(255,255,255,0.1)); } /* color-literal-ok: white glow pulse, same in both themes */
+      50% { filter: brightness(1.18) drop-shadow(0 0 7px rgba(255,255,255,0.35)); } /* color-literal-ok: white glow pulse, same in both themes */
     }
     @keyframes beacon-ping {
       0% { transform: scale(0.6); opacity: 0.85; }

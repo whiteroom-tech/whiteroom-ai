@@ -9,8 +9,7 @@
 // Ported from whiteroom-ai-whiteroom's apps/dashboard/lib/activity.ts. That
 // version keys colors off @whiteroom/ui's CSS-variable design tokens
 // (--success, --border, etc.), which this app doesn't define — TONE_VAR/
-// TONE_BG below use this app's existing navy/hex palette (see feedAccent()'s
-// old color choices in fleet/page.tsx) instead.
+// TONE_BG below use this app's own theme tokens from app/globals.css instead.
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { REASON_LABELS, occurrences, ruleLabel } from '@/lib/governance';
@@ -19,24 +18,23 @@ export type { AuditEntry, ToolDetail };
 
 type Tone = 'task' | 'handover' | 'start' | 'rest' | 'idle' | 'block' | 'wouldBlock';
 
-/** Accent per tone, matching this dashboard's existing hex palette. */
+/** Accent per tone, as theme tokens so every tone reads in light and dark. */
 const TONE_VAR: Record<Tone, string> = {
-  task: '#22c55e',
-  handover: '#a855f7',
-  start: '#38bdf8',
-  rest: '#0ea5e9',
-  idle: '#475569',
-  // Governance tones use the theme tokens so they read in light mode too.
+  task: 'var(--ok)',
+  handover: 'var(--ho)',
+  start: 'var(--info)',
+  rest: 'var(--info)',
+  idle: 'var(--tx2)',
   block: 'var(--bad)',
   wouldBlock: 'var(--warn)',
 };
 
 const TONE_BG: Record<Tone, string> = {
-  task: '#052e16',
-  handover: '#2e1065',
-  start: '#0c4a6e',
-  rest: '#0c4a6e',
-  idle: '#1e293b',
+  task: 'var(--ok-bg)',
+  handover: 'var(--ho-bg)',
+  start: 'var(--info-bg)',
+  rest: 'var(--info-bg)',
+  idle: 'var(--sunk)',
   block: 'var(--bad-bg)',
   wouldBlock: 'var(--warn-bg)',
 };

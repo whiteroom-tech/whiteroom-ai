@@ -35,7 +35,8 @@
    on-brand ok warn warn-bg warn-line bad bad-dim ho overlay.
    Legacy tokens still in use, retired by the P0.2 retokenize: tx3 (use tx2),
    brand2, ok-bg, bad-bg, bad-line, warn-tx (use warn), ho-bg, info, info-bg
-   (the "resting" hue), cr-cyan.
+   (the "resting" hue), cr-cyan, shadow (the design has no shadows; P1
+   removes them).
 
    No raw colors outside this file: `npm run lint` (scripts/check-colors.mjs)
    fails on new hex/rgb/hsl literals in src or @whiteroom/ui. */
@@ -51,7 +52,7 @@
   --warn: #fbbf24; --warn-bg: #2e2410; --warn-line: #4a3a12; --warn-tx: #fbbf24;
   --ho: #a78bfa; --ho-bg: #221540;
   --info: #38bdf8; --info-bg: #0b3a5a;
-  --overlay: rgba(8, 13, 22, .72);
+  --overlay: rgba(8, 13, 22, .72); --shadow: rgba(0, 0, 0, .25);
   --cr-cyan: #39bef8;
 }
 
@@ -69,7 +70,7 @@
     --warn: #92400e; --warn-bg: #fef3c7; --warn-line: #fcd34d; --warn-tx: #92400e;
     --ho: #6d28d9; --ho-bg: #f5f3ff;
     --info: #0369a1; --info-bg: #e0f2fe;
-    --overlay: rgba(17, 24, 39, .5);
+    --overlay: rgba(17, 24, 39, .5); --shadow: rgba(17, 24, 39, .1);
     --cr-cyan: #0369a1;
   }
 }
@@ -86,7 +87,7 @@
   --warn: #92400e; --warn-bg: #fef3c7; --warn-line: #fcd34d; --warn-tx: #92400e;
   --ho: #6d28d9; --ho-bg: #f5f3ff;
   --info: #0369a1; --info-bg: #e0f2fe;
-  --overlay: rgba(17, 24, 39, .5);
+  --overlay: rgba(17, 24, 39, .5); --shadow: rgba(17, 24, 39, .1);
   --cr-cyan: #0369a1;
 }
 

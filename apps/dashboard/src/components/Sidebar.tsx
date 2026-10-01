@@ -103,16 +103,16 @@ export function Sidebar() {
     <aside style={{ width: 212, flex: 'none', boxSizing: 'border-box', borderRight: '1px solid var(--line)', padding: '16px 11px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--card)', minHeight: 0, overflowY: 'auto' }}>
       <div style={{ padding: '5px 10px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <svg width="40" height="40" viewBox="0 0 48 48" style={{ flex: 'none' }}>
-          <circle cx="24" cy="24" r="14" fill="none" stroke="#4a5f78" strokeWidth="1" />
-          <circle cx="24" cy="24" r="7" fill="none" stroke="#4a5f78" strokeWidth="1" />
-          <path d="M24 3V45M3 24H45" stroke="#4a5f78" strokeWidth="1" />
+          <circle cx="24" cy="24" r="14" fill="none" stroke="var(--tx2)" strokeWidth="1" />
+          <circle cx="24" cy="24" r="7" fill="none" stroke="var(--tx2)" strokeWidth="1" />
+          <path d="M24 3V45M3 24H45" stroke="var(--tx2)" strokeWidth="1" />
           <g className="cr-sweep" style={{ transformBox: 'view-box' as const, transformOrigin: '24px 24px', animation: 'cr-spin 4s linear infinite' }}>
-            <path d="M24 24L9.15 9.15A21 21 0 0 1 24 3Z" fill="#34d399" opacity="0.30" />
-            <path d="M24 24V3" stroke="#34d399" strokeWidth="2" />
+            <path d="M24 24L9.15 9.15A21 21 0 0 1 24 3Z" fill="var(--ok)" opacity="0.30" />
+            <path d="M24 24V3" stroke="var(--ok)" strokeWidth="2" />
           </g>
           <circle cx="24" cy="24" r="21" fill="none" stroke="var(--tx)" strokeWidth="2" />
-          <circle cx="31" cy="14" r="2.2" fill="#34d399" />
-          <circle cx="14" cy="30" r="1.7" fill="#34d399" opacity="0.55" />
+          <circle cx="31" cy="14" r="2.2" fill="var(--ok)" />
+          <circle cx="14" cy="30" r="1.7" fill="var(--ok)" opacity="0.55" />
           <circle cx="24" cy="24" r="1.6" fill="var(--tx)" />
         </svg>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

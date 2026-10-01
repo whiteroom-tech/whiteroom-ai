@@ -95,9 +95,9 @@ function ModeToggle({ mode, onChange }: { mode: RuleMode; onChange: (m: RuleMode
             transition: "background 0.15s, color 0.15s",
             ...(mode === m
               ? m === "enforce"
-                ? { background: "#f59e0b", color: "#0f172a" }
+                ? { background: "var(--warn)", color: "var(--on-brand)" }
                 : m === "watch"
-                ? { background: "#06b6d4", color: "#0f172a" }
+                ? { background: "var(--brand)", color: "var(--on-brand)" }
                 : { background: "var(--line2)", color: "var(--tx)" }
               : { background: "transparent", color: "var(--tx3)" }),
           }}
@@ -121,9 +121,9 @@ function TagInput({ tags, onAdd, onRemove, placeholder }: {
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
       {tags.map((t) => (
-        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
           {t}
-          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
+          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
         </span>
       ))}
       <span style={{ display: "inline-flex", alignItems: "center" }}>
@@ -215,9 +215,9 @@ function ModelPicker({ tags, onAdd, onRemove }: {
       {tags.map((t) => {
         const known = ALL_KNOWN_MODELS.find((m) => m.id === t);
         return (
-          <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+          <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
             {known ? known.label : t}
-            <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
+            <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
           </span>
         );
       })}
@@ -240,7 +240,7 @@ function ModelPicker({ tags, onAdd, onRemove }: {
             onBlur={() => { setShowCustom(false); setCustomInput(""); }}
             placeholder="deployment name or model ID"
             aria-label="Custom model or deployment name"
-            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, width: 200, outline: "none" }}
+            style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "var(--brand)", fontFamily: FONT_MONO, width: 200, outline: "none" }}
           />
         </span>
       ) : (
@@ -255,7 +255,7 @@ function ModelPicker({ tags, onAdd, onRemove }: {
               onAdd(val);
             }
           }}
-          style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
+          style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
         >
           <option value="">+ add model</option>
           {MODEL_GROUPS.map((g) => {
@@ -311,9 +311,9 @@ function ToolPicker({ tags, onAdd, onRemove }: {
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
       {tags.map((t) => (
-        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#164e63", color: "#67e8f9", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
           {t}
-          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "#67e8f9", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
+          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
         </span>
       ))}
       {showCustom ? (
@@ -335,7 +335,7 @@ function ToolPicker({ tags, onAdd, onRemove }: {
             onBlur={() => { setShowCustom(false); setCustomInput(""); }}
             placeholder="tool name"
             aria-label="Tool name to ignore"
-            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, width: 140, outline: "none" }}
+            style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "var(--brand)", fontFamily: FONT_MONO, width: 140, outline: "none" }}
           />
         </span>
       ) : (
@@ -350,7 +350,7 @@ function ToolPicker({ tags, onAdd, onRemove }: {
               onAdd(val);
             }
           }}
-          style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
+          style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
         >
           <option value="">+ add tool</option>
           {TOOL_GROUPS.map((g) => {
@@ -391,7 +391,7 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
           if (e.target.value === "__all__") onChange("all");
           else onChange([]);
         }}
-        style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#67e8f9", fontFamily: FONT_MONO, cursor: "pointer" }}
+        style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--brand)", fontFamily: FONT_MONO, cursor: "pointer" }}
       >
         <option value="__all__">All agents</option>
         <option value="__specific__">Specific agents</option>
@@ -399,9 +399,9 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
       {!isAll && (
         <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
           {selected.map((a) => (
-            <span key={a} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#1e3a5f", color: "#93c5fd", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+            <span key={a} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
               {a}
-              <button onClick={() => onChange(selected.filter((x) => x !== a))} aria-label={`Remove ${a}`} style={{ color: "#93c5fd", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
+              <button onClick={() => onChange(selected.filter((x) => x !== a))} aria-label={`Remove ${a}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
             </span>
           ))}
           <select
@@ -412,7 +412,7 @@ function ScopePicker({ scope = "all", agents = [], onChange }: {
                 onChange([...selected, e.target.value]);
               }
             }}
-            style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
+            style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
           >
             <option value="">+ add agent</option>
             {agents.filter((a) => !selected.includes(a)).map((a) => (
@@ -449,7 +449,7 @@ function InlineNumber({ value, onChange, allowDecimals = false, ariaLabel }: { v
           timer.current = setTimeout(() => onChange(n), 300);
         }
       }}
-      style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO, width: 80, textAlign: "center", display: "inline" }}
+      style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 13, color: "var(--brand)", fontFamily: FONT_MONO, width: 80, textAlign: "center", display: "inline" }}
     />
   );
 }
@@ -639,18 +639,18 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
       return (
         <span>
           Stop an agent that spends more than{" "}
-          {p.unit === "dollars" && <span style={{ color: "#67e8f9", fontFamily: FONT_MONO }}>$</span>}
+          {p.unit === "dollars" && <span style={{ color: "var(--brand)", fontFamily: FONT_MONO }}>$</span>}
           <InlineNumber ariaLabel="Spend limit" value={p.dailyCap} allowDecimals={p.unit === "dollars"} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
           {" "}
           <select aria-label="Limit unit" value={p.unit} onChange={(e) => {
             const newUnit = e.target.value as "tokens" | "dollars";
             updateParams(rule.id, { unit: newUnit, dailyCap: convertSpendCap(p.dailyCap, newUnit) });
-          }} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          }} style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "var(--brand)", fontFamily: FONT_MONO }}>
             <option value="tokens">tokens</option>
             <option value="dollars">dollars</option>
           </select>
           {" "}in a{" "}
-          <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "var(--brand)", fontFamily: FONT_MONO }}>
             <option value="run">run</option>
             <option value="day">day</option>
           </select>
@@ -664,7 +664,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
           Stop an agent that makes the same call{" "}
           <InlineNumber ariaLabel="Repeated-call limit" value={p.threshold} onChange={(n) => updateParams(rule.id, { threshold: n })} />
           {" "}times in a{" "}
-          <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "#1e293b", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#67e8f9", fontFamily: FONT_MONO }}>
+          <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "var(--brand)", fontFamily: FONT_MONO }}>
             <option value="run">run</option>
             <option value="day">day</option>
           </select>
@@ -737,7 +737,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                 <div style={{ flexShrink: 0 }}>
                   <button
                     onClick={() => { void addSuggestedAllowlist(allowlistSuggestion); }}
-                    style={{ padding: "6px 12px", fontSize: 11, background: "#06b6d4", color: "#0f172a", fontWeight: 500, borderRadius: 6, border: "none", cursor: "pointer" }}
+                    style={{ padding: "6px 12px", fontSize: 11, background: "var(--brand)", color: "var(--on-brand)", fontWeight: 500, borderRadius: 6, border: "none", cursor: "pointer" }}
                   >
                     Add in Watch
                   </button>
@@ -759,7 +759,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                   </span>
                   <button
                     onClick={() => { void addRule(rt); }}
-                    style={{ fontSize: 10, fontWeight: 600, color: "#06b6d4", background: "transparent", border: "1px solid #06b6d4", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}
+                    style={{ fontSize: 10, fontWeight: 600, color: "var(--brand)", background: "transparent", border: "1px solid var(--brand)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}
                   >
                     + Add rule
                   </button>
@@ -771,7 +771,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
                       onClick={() => selectRule(rule.id)}
                       style={{
                         background: "var(--card)",
-                        border: `1px solid ${selectedId === rule.id ? "#06b6d4" : "var(--line)"}`,
+                        border: `1px solid ${selectedId === rule.id ? "var(--brand)" : "var(--line)"}`,
                         borderRadius: 8,
                         padding: 16,
                         cursor: "pointer",
@@ -863,7 +863,7 @@ function GovernanceContent({ fleetId, authKey, onAuthError }: {
             {selectedRule.mode !== "off" && (
               <div style={{ marginTop: 20 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" as const, color: "var(--tx3)", marginBottom: 8 }}>WHAT THE AGENT GETS</div>
-                <pre style={{ background: "#1e293b", borderRadius: 8, padding: 12, fontSize: 11, color: "#94a3b8", fontFamily: FONT_MONO, lineHeight: 1.6, overflowX: "auto", margin: 0 }}>
+                <pre style={{ background: "var(--sunk)", borderRadius: 8, padding: 12, fontSize: 11, color: "var(--tx2)", fontFamily: FONT_MONO, lineHeight: 1.6, overflowX: "auto", margin: 0 }}>
                   {agentResponse(selectedRule)}
                 </pre>
                 <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 8 }}>

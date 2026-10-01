@@ -70,7 +70,7 @@ export function ConfirmDialog({
           <button type="button" onClick={onCancel} disabled={busy} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }}>
             Cancel
           </button>
-          <button type="submit" disabled={!ready} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: ready ? 'var(--bad)' : 'transparent', color: ready ? '#fff' : 'var(--tx3)', border: `1px solid ${ready ? 'var(--bad)' : 'var(--line2)'}`, cursor: ready ? 'pointer' : 'not-allowed' }}>
+          <button type="submit" disabled={!ready} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: ready ? 'var(--bad)' : 'transparent', color: ready ? 'var(--on-brand)' : 'var(--tx3)', border: `1px solid ${ready ? 'var(--bad)' : 'var(--line2)'}`, cursor: ready ? 'pointer' : 'not-allowed' }}>
             {busy ? 'Working…' : confirmLabel}
           </button>
         </div>

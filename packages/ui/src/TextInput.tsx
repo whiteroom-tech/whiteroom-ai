@@ -1,4 +1,4 @@
-import { FONT_MONO } from './theme';
+import { FONT_MONO, color } from './theme';
 
 /** Styled single-line text input — value + onChange(value), controlled.
  *  Pass onCommit for fields that should only save on an explicit action
@@ -32,9 +32,9 @@ export function TextInput({
       placeholder={placeholder}
       className={className}
       style={{
-        background: 'var(--sunk, #050810)',
-        border: '1px solid var(--line, #1e293b)',
-        color: 'var(--tx, #e2e8f0)',
+        background: color.sunk,
+        border: `1px solid ${color.line}`,
+        color: color.tx,
         borderRadius: 6,
         padding: '4px 8px',
         fontSize: 11,

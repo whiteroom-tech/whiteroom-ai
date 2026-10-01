@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { signOut } from 'next-auth/react';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
 import { clearSandboxToken } from '@/lib/sandbox/api';
+import { ThemedShell } from '@/components/ThemedShell';
 
 export default function SignOut() {
   useEffect(() => {
@@ -24,8 +25,8 @@ export default function SignOut() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
-      <p className="text-sm font-mono" style={{ color: '#6B7C9E' }}>Signing out...</p>
-    </div>
+    <ThemedShell className="min-h-screen flex items-center justify-center">
+      <p className="text-sm font-mono" style={{ color: 'var(--tx2)' }}>Signing out...</p>
+    </ThemedShell>
   );
 }
