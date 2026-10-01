@@ -67,14 +67,6 @@ jobs:
           docker push "$IMAGE:$GITHUB_SHA-staging"
           docker push "$IMAGE:$GITHUB_SHA"
 
-      # <sha>-verified must point at the prod image for promote-prod to accept
-      # the commit. Point it at the staging image first, so a re-run for a
-      # commit that passed before has to earn it again; "Mark verified" moves
-      # it back only after the smoke test. (The deploy account can add and
-      # move tags but not delete them.)
-      - name: Withdraw an earlier verification
-        run: gcloud artifacts docker tags add "$IMAGE:$GITHUB_SHA-staging" "$IMAGE:$GITHUB_SHA-verified" --quiet
-
       # The full staging config lives here, so this step is its source of truth.
       # Env is split on "|" because AUTH_EMAIL_FROM contains spaces and "<>".
       - name: Deploy to staging
@@ -88,7 +80,7 @@ jobs:
             --set-env-vars "^|^DB_SOCKET_PATH=/cloudsql/$SQL_INSTANCE|DB_USER=whiteroom_dashboard_app|DB_NAME=whiteroom_dashboard|AUTH_GOOGLE_ID=272235454263-pbmhape0njeuhtr700s9ae8qct4f14e5.apps.googleusercontent.com|AUTH_URL=$STAGING_URL|AUTH_TRUST_HOST=true|AUTH_EMAIL_FROM=WhiteRoom Staging <no-reply@whiteroom.tech>|NEXT_PUBLIC_PROXY_URL=$STAGING_ENGINE_URL" \
             --min-instances 0 --max-instances 2 --cpu-boost --memory 512Mi --cpu 1 --port 8080 \
             --no-invoker-iam-check \
-            --labels "env=staging,managed-by=github-actions,commit-sha=$GITHUB_SHA" \
+            --labels "env=staging,managed-by=github-actions,commit-sha=$GITHUB_SHA,staging-run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
             --quiet
 
       - name: Smoke test
@@ -104,11 +96,13 @@ jobs:
           exit 1
 
       # Only reached when the smoke test passed (a failed step stops the job).
-      # promote-prod refuses a commit without this tag: the commit-sha label
-      # is set at deploy time, before the smoke test, so on its own it doesn't
-      # prove staging checked out.
+      # The tag names this run and attempt, which staging's staging-run label
+      # also carries; promote-prod requires the tag for the run staging is on.
+      # A new tag per run means a failed re-run can't inherit an older pass,
+      # and it only needs tag create (the deploy account can't delete or move
+      # tags; moving one is a delete plus a create).
       - name: Mark verified
-        run: gcloud artifacts docker tags add "$IMAGE:$GITHUB_SHA" "$IMAGE:$GITHUB_SHA-verified" --quiet
+        run: gcloud artifacts docker tags add "$IMAGE:$GITHUB_SHA" "$IMAGE:$GITHUB_SHA-verified-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --quiet
 
       - name: Summary
         run: |
