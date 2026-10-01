@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { FONT_DISPLAY } from '@whiteroom/ui';
+import { ThemedShell } from '@/components/ThemedShell';
 
 export const metadata: Metadata = {
   title: 'Confirm sign-in',
@@ -36,19 +37,16 @@ export default async function VerifyPage({
     : undefined;
 
   return (
-    <div
-      className="min-h-screen font-sans flex items-center justify-center px-7"
-      style={{ background: '#070B14', color: '#EAF1FF' }}
-    >
+    <ThemedShell className="min-h-screen font-sans flex items-center justify-center px-7">
       <div className="w-full max-w-sm text-center space-y-8">
         <div>
           <h1 className="text-3xl font-display font-bold tracking-tight">
             {valid ? 'Confirm sign-in' : 'Something is missing'}
           </h1>
-          <p className="text-sm mt-2" style={{ color: '#6B7C9E' }}>
+          <p className="text-sm mt-2" style={{ color: 'var(--tx2)' }}>
             {valid ? (
               <>
-                You&apos;re signing in as <span style={{ color: '#EAF1FF' }}>{email}</span>.
+                You&apos;re signing in as <span style={{ color: 'var(--tx)' }}>{email}</span>.
               </>
             ) : (
               'This link is incomplete. Request a new one to continue.'
@@ -56,19 +54,19 @@ export default async function VerifyPage({
           </p>
         </div>
 
-        <div className="rounded-xl p-8 space-y-5" style={{ background: '#0A1020', border: '1px solid #1B2740' }}>
+        <div className="rounded-xl p-8 space-y-5" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
           {valid ? (
             <>
               <form method="POST" action={action}>
                 <button
                   type="submit"
                   className="w-full rounded-lg px-6 py-3 text-sm font-semibold transition-colors cursor-pointer"
-                  style={{ background: '#38E1FF', color: '#04222B', fontFamily: FONT_DISPLAY }}
+                  style={{ background: 'var(--brand)', color: 'var(--on-brand)', fontFamily: FONT_DISPLAY }}
                 >
                   Sign in to WhiteRoom
                 </button>
               </form>
-              <p className="text-xs" style={{ color: '#6B7C9E' }}>
+              <p className="text-xs" style={{ color: 'var(--tx2)' }}>
                 This link can only be used once and expires 24 hours after it was sent.
               </p>
             </>
@@ -76,13 +74,13 @@ export default async function VerifyPage({
             <a
               href="/sign-in"
               className="inline-flex items-center justify-center w-full rounded-lg px-6 py-3 text-sm font-semibold"
-              style={{ background: '#38E1FF', color: '#04222B', textDecoration: 'none', fontFamily: FONT_DISPLAY }}
+              style={{ background: 'var(--brand)', color: 'var(--on-brand)', textDecoration: 'none', fontFamily: FONT_DISPLAY }}
             >
               Back to sign-in
             </a>
           )}
         </div>
       </div>
-    </div>
+    </ThemedShell>
   );
 }

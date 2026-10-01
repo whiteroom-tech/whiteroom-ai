@@ -1,4 +1,5 @@
 import { Logo } from './Logo';
+import { color } from './theme';
 
 // WhiteRoom logo + wordmark linking to the marketing site. Shared by the
 // onboarding and sign-in headers, which used identical markup.
@@ -7,8 +8,8 @@ export function BrandLink() {
     <a href="https://whiteroom.tech" className="flex items-center gap-2.5" style={{ textDecoration: 'none' }}>
       <Logo width={30} height={42} gradientId="wr-lit" />
       <span className="font-sans font-black text-[32px] leading-none" style={{ letterSpacing: '-.02em' }}>
-        <span style={{ color: '#EAF1FF' }}>White</span>
-        <span style={{ color: '#38E1FF' }}>Room</span>
+        <span style={{ color: color.tx }}>White</span>
+        <span style={{ color: color.brand }}>Room</span>
       </span>
     </a>
   );

@@ -156,7 +156,7 @@ export function FleetVisualization({ agents, entries }: { agents: VizAgent[]; en
                       aria-hidden
                       style={{
                         position: 'absolute', inset: 0, width: '40%',
-                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)',
+                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)', // color-literal-ok: white sheen highlight on a colored bar, same in both themes
                         animation: 'bar-sheen 2.6s ease-in-out infinite',
                       }}
                     />

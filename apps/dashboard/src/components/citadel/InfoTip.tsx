@@ -30,7 +30,7 @@ export function InfoTip({ label, children }: { label: string; children: React.Re
         <span
           role="tooltip"
           id={id}
-          style={{ position: 'absolute', top: '100%', left: -8, zIndex: 40, width: 260, marginTop: 4, padding: '9px 11px', borderRadius: 8, background: 'var(--raised, var(--card))', border: '1px solid var(--line2)', boxShadow: '0 6px 20px rgba(0,0,0,.25)', color: 'var(--tx2)', fontSize: 12, fontWeight: 400, lineHeight: 1.45, letterSpacing: 0, textTransform: 'none', whiteSpace: 'normal', textAlign: 'left' }}
+          style={{ position: 'absolute', top: '100%', left: -8, zIndex: 40, width: 260, marginTop: 4, padding: '9px 11px', borderRadius: 8, background: 'var(--raised, var(--card))', border: '1px solid var(--line2)', boxShadow: '0 6px 20px var(--shadow)', color: 'var(--tx2)', fontSize: 12, fontWeight: 400, lineHeight: 1.45, letterSpacing: 0, textTransform: 'none', whiteSpace: 'normal', textAlign: 'left' }}
         >
           {children}
         </span>

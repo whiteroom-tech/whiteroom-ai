@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
+import { ThemedShell } from '@/components/ThemedShell';
 import { posthog, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
 import type { FleetReport } from '@/lib/whiteroom/types';
@@ -166,30 +167,34 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
-        <p className="text-sm font-mono" style={{ color: '#6B7C9E' }}>Loading dashboard...</p>
-      </div>
+      <ThemedShell className="flex items-center justify-center">
+        <p className="text-sm font-mono" style={{ color: 'var(--tx2)' }}>Loading dashboard...</p>
+      </ThemedShell>
     );
   }
 
   if (provisionError) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#070B14' }}>
+      <ThemedShell className="flex items-center justify-center">
         <div className="text-center space-y-4" style={{ maxWidth: 400 }}>
-          <p className="text-sm font-mono" style={{ color: '#ef4444' }}>{provisionError}</p>
+          <p className="text-sm font-mono" style={{ color: 'var(--bad)' }}>{provisionError}</p>
           <button
             onClick={() => { setProvisionError(null); setLoading(true); window.location.reload(); }}
             className="px-6 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' }}
+            style={{ background: 'var(--raised)', color: 'var(--tx)', border: '1px solid var(--line2)' }}
           >
             Retry
           </button>
         </div>
-      </div>
+      </ThemedShell>
     );
   }
 
   if (!props) return null;
 
-  return <Onboarding {...props} />;
+  return (
+    <ThemedShell>
+      <Onboarding {...props} />
+    </ThemedShell>
+  );
 }

@@ -5,15 +5,15 @@
 /* ── Badges ── */
 .badgeMode { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:9px; font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; }
 .badgeMode.live { background:var(--ok-bg); color:var(--ok); }
-.badgeMode.demo { background:var(--brand-dim,#e6eefb); color:var(--brand,#3170e0); }
+.badgeMode.demo { background:var(--brand-dim); color:var(--brand); }
 .badgeEnv { font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:9px; font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; color:var(--brand); border:1px solid var(--line2); }
 
 /* ── Timer ── */
 .timer { margin-left:auto; font-family:var(--font-mono,'JetBrains Mono',monospace); font-size:12px; font-weight:500; display:flex; align-items:center; gap:5px; }
 .timer svg { width:15px; height:15px; }
 .timerGreen { color:var(--ok); }
-.timerAmber { color:var(--warn,#a67108); }
-.timerRed { color:var(--bad,#c03a2e); }
+.timerAmber { color:var(--warn); }
+.timerRed { color:var(--bad); }
 
 /* ── Content area ── */
 /* The full-width area scrolls (scrollbar at the page edge); side padding keeps the content in a centred 960px column. */
@@ -23,7 +23,7 @@
 .pageSub { color:var(--tx2); font-size:14px; max-width:56ch; margin:0 0 24px; line-height:1.6; }
 
 /* ── Data-loss warning ── */
-.dataWarn { background:var(--warn-bg,#fdf4e0); border:1px solid var(--warn,#a67108); border-radius:6px; padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--tx2); display:flex; align-items:center; gap:8px; line-height:1.5; }
+.dataWarn { background:var(--warn-bg); border:1px solid var(--warn); border-radius:6px; padding:10px 14px; margin-bottom:16px; font-size:12px; color:var(--tx2); display:flex; align-items:center; gap:8px; line-height:1.5; }
 .dataWarn svg { flex-shrink:0; color:var(--warn); }
 
 /* ── Tabs ── */
@@ -36,12 +36,12 @@
 .panelActive { display:block; }
 
 /* ── Summary banner ── */
-.summary { border-left:3px solid var(--brand); background:var(--brand-dim,#e6eefb); border-radius:0 7px 7px 0; padding:12px 16px; margin-bottom:18px; font-size:13px; color:var(--tx2); line-height:1.55; }
+.summary { border-left:3px solid var(--brand); background:var(--brand-dim); border-radius:0 7px 7px 0; padding:12px 16px; margin-bottom:18px; font-size:13px; color:var(--tx2); line-height:1.55; }
 .summary strong { color:var(--tx); }
 .summaryPass { border-color:var(--ok); background:var(--ok-bg); }
 
 /* ── Card ── */
-.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:22px 24px; box-shadow:0 1px 3px rgba(24,28,40,0.07); margin-bottom:14px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:22px 24px; box-shadow:0 1px 3px var(--shadow); margin-bottom:14px; }
 .cardBrand { border-color:var(--brand); }
 .card h2 { font-family:'Chakra Petch',sans-serif; font-size:17px; font-weight:700; margin:0 0 8px; }
 .card p { color:var(--tx2); font-size:13px; line-height:1.6; margin:0 0 10px; }
@@ -52,8 +52,8 @@
 .checkIcon { width:24px; height:24px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; margin-top:1px; }
 .checkIcon svg { width:13px; height:13px; }
 .checkPass { background:var(--ok-bg); color:var(--ok); }
-.checkWait { background:var(--warn-bg,#fdf4e0); color:var(--warn,#a67108); }
-.checkFail { background:var(--bad-bg,#fcecea); color:var(--bad,#c03a2e); }
+.checkWait { background:var(--warn-bg); color:var(--warn); }
+.checkFail { background:var(--bad-bg); color:var(--bad); }
 .checkName { font-size:14px; font-weight:600; color:var(--tx); }
 .checkDetail { font-size:12.5px; color:var(--tx3); margin-top:3px; line-height:1.5; }
 .checkDetailPass { color:var(--ok); }
@@ -63,7 +63,7 @@
 .progressWrap { display:flex; align-items:center; gap:8px; margin-top:8px; }
 .progressTrack { flex:1; height:4px; background:var(--sunk); border-radius:2px; overflow:hidden; }
 .progressFill { height:100%; border-radius:2px; transition:width .3s; }
-.progressFillWarn { background:var(--warn,#a67108); }
+.progressFillWarn { background:var(--warn); }
 .progressFillGood { background:var(--ok); }
 .progressLabel { font-size:11px; color:var(--tx3); white-space:nowrap; }
 
@@ -74,7 +74,7 @@
 .diagStep:last-child::before { display:none; }
 .diagDot { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size:10px; position:relative; z-index:1; }
 .diagDone { background:var(--ok-bg); color:var(--ok); }
-.diagActive { background:var(--brand-dim,#e6eefb); color:var(--brand); border:2px solid var(--brand); }
+.diagActive { background:var(--brand-dim); color:var(--brand); border:2px solid var(--brand); }
 .diagPending { background:var(--sunk); color:var(--tx3); }
 .diagLabel { font-size:13px; font-weight:600; color:var(--tx); }
 .diagLabelPending { font-size:13px; font-weight:500; color:var(--tx3); }
@@ -87,7 +87,7 @@
 .formInput:focus { outline:2px solid var(--brand); outline-offset:1px; border-color:var(--brand); }
 .formToggle { display:flex; gap:0; border:1px solid var(--line2); border-radius:6px; overflow:hidden; }
 .formToggleOpt { flex:1; padding:9px 14px; font-size:12.5px; font-weight:600; text-align:center; background:var(--sunk); color:var(--tx3); cursor:pointer; border:none; font:inherit; transition:background .12s,color .12s; }
-.formToggleOptOn { background:var(--brand-dim,#e6eefb); color:var(--brand); }
+.formToggleOptOn { background:var(--brand-dim); color:var(--brand); }
 .formToggleOpt:not(:last-child) { border-right:1px solid var(--line2); }
 .keyWrap { display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden; }
 .keyWrap .formInput { border:none; border-radius:0; }
@@ -101,7 +101,7 @@
 .btn:active { opacity:.85; }
 .btn:focus-visible { outline:2px solid var(--brand); outline-offset:3px; }
 .btn:disabled { opacity:.4; cursor:not-allowed; }
-.btnPrimary { background:var(--brand); color:var(--bg,#fff); border:1px solid var(--brand); }
+.btnPrimary { background:var(--brand); color:var(--on-brand); border:1px solid var(--brand); }
 .btnGood { background:var(--ok); color:var(--bg); border:1px solid var(--ok); }
 .btnSecondary { background:var(--card); color:var(--tx); border:1px solid var(--line2); }
 .btnGhost { background:none; color:var(--tx2); border:1px solid transparent; font-size:12px; }
@@ -113,9 +113,9 @@
 .previewScenes { display:flex; gap:16px; justify-content:center; padding:10px 0; align-items:flex-start; }
 .previewScene { text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; background:none; border:none; padding:4px; font:inherit; }
 .previewScene:focus-visible { outline:2px solid var(--brand); outline-offset:2px; border-radius:6px; }
-.previewIcon { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--brand-dim,#e6eefb); color:var(--brand); transition:all .25s; }
+.previewIcon { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--brand-dim); color:var(--brand); transition:all .25s; }
 .previewIcon svg { width:20px; height:20px; }
-.previewIconActive { background:var(--brand); color:var(--bg,#fff); transform:scale(1.08); }
+.previewIconActive { background:var(--brand); color:var(--on-brand); transform:scale(1.08); }
 .previewIconDone { background:var(--ok-bg); color:var(--ok); }
 .previewLabel { font-size:10.5px; color:var(--tx3); font-weight:500; transition:color .15s; }
 .previewLabelActive { color:var(--brand); font-weight:600; }
@@ -138,19 +138,19 @@
 .activityDot { width:7px; height:7px; border-radius:50%; flex-shrink:0; margin-top:5px; }
 .activityDotConnect { background:var(--ok); }
 .activityDotRequest { background:var(--brand); }
-.activityDotHandover { background:var(--warn,#a67108); }
-.activityDotPolicy { background:var(--cr-cyan,#3ec9a8); }
+.activityDotHandover { background:var(--warn); }
+.activityDotPolicy { background:var(--cr-cyan); }
 .activityType { font-weight:600; color:var(--tx); }
 .activityMeta { font-size:11px; color:var(--tx3); margin-top:2px; }
 
 /* ── Modal overlay ── */
-.overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:grid; place-items:center; z-index:100; }
-.modal { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:24px 28px; max-width:400px; width:90%; box-shadow:0 8px 30px rgba(0,0,0,0.15); }
+.overlay { position:fixed; inset:0; background:var(--overlay); display:grid; place-items:center; z-index:100; }
+.modal { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:24px 28px; max-width:400px; width:90%; box-shadow:0 8px 30px var(--shadow); }
 .modal h2 { font-family:'Chakra Petch',sans-serif; font-size:17px; font-weight:700; margin:0 0 8px; }
 .modal p { color:var(--tx2); font-size:13px; line-height:1.6; margin:0 0 16px; }
 
 /* ── Error / Notice ── */
-.error { padding:12px 16px; border-radius:6px; margin:12px 0; border:1px solid var(--bad,#c03a2e); background:var(--bad-bg,#fcecea); color:var(--bad); font-size:13px; line-height:1.5; display:flex; align-items:center; gap:8px; }
+.error { padding:12px 16px; border-radius:6px; margin:12px 0; border:1px solid var(--bad); background:var(--bad-bg); color:var(--bad); font-size:13px; line-height:1.5; display:flex; align-items:center; gap:8px; }
 .notice { padding:12px 16px; border-radius:6px; margin:12px 0; border:1px solid var(--line2); background:var(--sunk); color:var(--tx2); font-size:13px; line-height:1.5; }
 
 /* ── Small helper ── */
@@ -162,7 +162,7 @@
 /* ── Lang/provider selectors row ── */
 .selectRow { display:flex; gap:6px; margin:8px 0 4px; }
 .selectPill { padding:5px 12px; font-size:11px; font-weight:600; border-radius:4px; border:1px solid var(--line2); background:var(--sunk); color:var(--tx3); cursor:pointer; font-family:inherit; }
-.selectPillOn { background:var(--brand-dim,#e6eefb); color:var(--brand); border-color:var(--brand); }
+.selectPillOn { background:var(--brand-dim); color:var(--brand); border-color:var(--brand); }
 
 /* ── Footer ── */
 .footer { border-top:1px solid var(--line); margin-top:28px; padding-top:14px; font-size:11.5px; color:var(--tx3); font-family:var(--font-mono,'JetBrains Mono',monospace); }

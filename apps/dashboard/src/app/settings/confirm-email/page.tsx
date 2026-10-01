@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { confirmEmailChange } from '@/lib/account';
 import { ConfirmButton } from './confirm-button';
+import { ThemedShell } from '@/components/ThemedShell';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,7 @@ export default async function ConfirmEmailPage({
     return (
       <Shell heading="Email updated">
         <p style={text}>
-          Your account now signs in as <strong style={{ color: '#EAF1FF' }}>{params.done}</strong>. Every
+          Your account now signs in as <strong style={{ color: 'var(--tx)' }}>{params.done}</strong>. Every
           existing session was signed out, so you&apos;ll need to sign in again with the new address.
         </p>
         <Link href="/sign-in" style={linkButton}>Go to sign-in</Link>
@@ -69,15 +70,15 @@ export default async function ConfirmEmailPage({
 const text: React.CSSProperties = {
   fontSize: 14,
   lineHeight: 1.6,
-  color: '#8A9DBF',
+  color: 'var(--tx2)',
   margin: '0 0 24px',
 };
 
 const linkButton: React.CSSProperties = {
   display: 'inline-block',
   background: 'transparent',
-  color: '#38E1FF',
-  border: '1px solid #1B2740',
+  color: 'var(--brand)',
+  border: '1px solid var(--line)',
   borderRadius: 8,
   padding: '10px 20px',
   fontSize: 14,
@@ -87,13 +88,12 @@ const linkButton: React.CSSProperties = {
 
 function Shell({ heading, children }: { heading: string; children: React.ReactNode }) {
   return (
-    <div
+    <ThemedShell
       style={{
         minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#070B14',
         padding: 16,
       }}
     >
@@ -101,8 +101,8 @@ function Shell({ heading, children }: { heading: string; children: React.ReactNo
         style={{
           maxWidth: 440,
           width: '100%',
-          background: '#0A1020',
-          border: '1px solid #1B2740',
+          background: 'var(--card)',
+          border: '1px solid var(--line)',
           borderRadius: 12,
           padding: '36px 32px',
           textAlign: 'center',
@@ -113,7 +113,7 @@ function Shell({ heading, children }: { heading: string; children: React.ReactNo
             fontFamily: "'Chakra Petch', sans-serif",
             fontSize: 20,
             fontWeight: 700,
-            color: '#EAF1FF',
+            color: 'var(--tx)',
             margin: '0 0 10px',
           }}
         >
@@ -121,6 +121,6 @@ function Shell({ heading, children }: { heading: string; children: React.ReactNo
         </h1>
         {children}
       </div>
-    </div>
+    </ThemedShell>
   );
 }

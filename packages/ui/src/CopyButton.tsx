@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { color } from './theme';
 
 /** Copy-to-clipboard button with a transient "Copied" confirmation. */
 export function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
@@ -18,9 +19,9 @@ export function CopyButton({ text, disabled }: { text: string; disabled?: boolea
       }}
       className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all"
       style={{
-        borderColor: copied ? '#3FE0A0' : '#1B2740',
-        color: disabled ? '#334155' : copied ? '#3FE0A0' : '#A9B8D4',
-        background: copied ? 'rgba(63,224,160,.08)' : 'transparent',
+        borderColor: copied ? color.ok : color.line,
+        color: copied ? color.ok : color.tx2,
+        background: copied ? 'var(--ok-bg)' : 'transparent',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
       }}
