@@ -17,12 +17,14 @@ const REPORT: FleetReport = {
   totals: { workMinutes: 22, tokens: 1_645_000, tasks: 119, handovers: 18 },
   energySavings: { compressionRatio: 93.9, estimatedTokensSaved: 1_650_000, estimatedCostSaved: '$2.1700', estimatedEnergySaved: '0.49 kWh', formula: '' },
   compliance: { allAgentsWithinLimits: true, restingAgentsCount: 1, laborScore: '100%' },
+  holds: { 'archive-agent': { state: 'stopped', by: 'dashboard', reason: null, at: t('13:52') } },
+  govV1: true,
 };
 const AGENTS: (AgentInfo & { stale?: boolean })[] = [
   { agentId: 'lead-agent', status: 'working', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4, minutesRemaining: 3 },
   { agentId: 'writer-agent', status: 'working', watchNumber: 5, tasksCompleted: 31, minutesWorked: 6.2, minutesRemaining: 4 },
   { agentId: 'scout-agent', status: 'resting', watchNumber: 3, tasksCompleted: 17 },
-  { agentId: 'archive-agent', status: 'idle', watchNumber: 2, tasksCompleted: 9 },
+  { agentId: 'archive-agent', status: 'idle', watchNumber: 2, tasksCompleted: 9, hold: { state: 'stopped', by: 'dashboard', reason: null, at: t('13:52') } },
   { agentId: 'billing-agent-with-a-long-name', status: 'working', watchNumber: 1, tasksCompleted: 2, minutesWorked: 0.8, stale: true },
 ];
 const ENTRIES: AuditEntry[] = [

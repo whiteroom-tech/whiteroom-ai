@@ -18,7 +18,8 @@ const STATE_OF: Record<string, AgentState> = {
   disconnected: 'disconnected',
 };
 
-export function agentState(a: Pick<AgentInfo, 'status' | 'minutesRemaining'> & { stale?: boolean; disconnected?: boolean }): AgentState {
+export function agentState(a: Pick<AgentInfo, 'status' | 'minutesRemaining' | 'hold'> & { stale?: boolean; disconnected?: boolean }): AgentState {
+  if (a.hold) return a.hold.state;
   return STATE_OF[deriveDisplayStatus(a.status, a.stale, a.minutesRemaining, a.disconnected)] ?? 'idle';
 }
 
@@ -31,6 +32,7 @@ export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): s
   const taskWord = `${tasks} task${tasks === 1 ? '' : 's'}`;
   if (state === 'resting') return `Rest after shift ${shift} · ${taskWord}`;
   if (state === 'idle') return `Shift ${shift} · ${taskWord} · waiting for work`;
+  if (state === 'paused' || state === 'stopped') return `Shift ${shift} · ${taskWord} · waiting to be resumed`;
   return `Shift ${shift} · ${taskWord} · ${oneDecimal(a.minutesWorked || 0)} min worked`;
 }
 

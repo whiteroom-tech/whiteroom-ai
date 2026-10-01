@@ -8,9 +8,16 @@ export interface ToolDetail {
   args: string;
 }
 
+/** A durable pause or stop (engine gov-state.ts): the agent refuses calls until resumed. */
+export interface AgentHold { state: 'paused' | 'stopped'; by: string; reason: string | null; at: string }
+
 export interface AgentInfo {
   agentId: string;
   status: string;
+  /** Set while held (P2.2). Wins over the status. */
+  hold?: AgentHold | null;
+  /** Whether this fleet has Pause/Stop as holds (Gov v1). The engine's check_watch returns it with `hold` (engine #90). */
+  govV1?: boolean;
   taskType?: string | null;
   watchNumber?: number;
   minutesWorked?: number;
@@ -41,6 +48,9 @@ export interface FleetReport {
   fleetId: string;
   agentCount: number;
   status: { working: string[]; resting: string[]; idle: string[]; handover_out?: string[] };
+  /** Held agents (P2.2); absent from older engines. */
+  holds?: Record<string, AgentHold>;
+  govV1?: boolean;
   totals: { workMinutes: number; tokens: number; tasks: number; handovers: number };
   currentWatch?: { tasks: number; tokens: number; workMinutes: number };
   energySavings: { compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };

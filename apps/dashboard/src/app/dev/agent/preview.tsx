@@ -24,6 +24,7 @@ const STATES: Record<string, AgentInfo> = {
   working: { agentId: 'lead-agent', status: 'working', taskType: 'claims triage', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4, minutesRemaining: 3.2, percentComplete: '41%', tokensUsed: 12_400 },
   resting: { agentId: 'lead-agent', status: 'resting', taskType: 'claims triage', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4, restPercent: '40', alarmAt: new Date(Date.now() + 3 * 60_000).toISOString() },
   idle: { agentId: 'lead-agent', status: 'idle', watchNumber: 2, tasksCompleted: 0 },
+  paused: { agentId: 'lead-agent', status: 'working', govV1: true, hold: { state: 'paused', by: 'dashboard', reason: null, at: new Date(Date.now() - 12 * 60_000).toISOString() }, taskType: 'claims triage', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4 },
 };
 
 export function AgentPreview() {
@@ -32,7 +33,7 @@ export function AgentPreview() {
     <AppShell>
       <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--tx2)' }}>
         Preview with sample data
-        <SegmentedControl label="Sample state" value={which} onChange={setWhich} size={24} options={[{ value: 'working', label: 'Working' }, { value: 'resting', label: 'On a break' }, { value: 'idle', label: 'Idle, no notes' }]} />
+        <SegmentedControl label="Sample state" value={which} onChange={setWhich} size={24} options={[{ value: 'working', label: 'Working' }, { value: 'resting', label: 'On a break' }, { value: 'idle', label: 'Idle, no notes' }, { value: 'paused', label: 'Paused (Gov v1)' }]} />
       </div>
       <AgentDetail
         key={which}

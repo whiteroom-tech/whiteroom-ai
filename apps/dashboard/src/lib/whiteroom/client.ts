@@ -505,6 +505,11 @@ export async function pauseAgent(fleetId: string, agentId: string, key?: string)
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
+/** Stop (Gov v1 fleets): the agent refuses every call until resumed, even after a restart. */
+export async function stopAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'stop_agent', fleet_id: fleetId, agent_id: agentId }, key));
+}
+
 export async function resumeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
