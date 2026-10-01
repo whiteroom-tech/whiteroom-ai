@@ -5,7 +5,7 @@ import { HomePreview } from './preview';
 // Local development only: production builds return 404.
 export const metadata = { title: 'Home preview' };
 
-export default function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   if (process.env.NODE_ENV === 'production') notFound();
-  return <HomePreview />;
+  return <HomePreview empty={'empty' in (await searchParams)} />;
 }

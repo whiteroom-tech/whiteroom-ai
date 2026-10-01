@@ -6,6 +6,7 @@ import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HomeView, type AgentsView } from '@/components/home/HomeContent';
 import { LiveFeedPanel } from '@/components/home/LiveFeedPanel';
+import { EmptyHome } from '@/components/home/EmptyHome';
 import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 
 // Sample fleet shaped like the redesign's screen 1a (P1 data only).
@@ -38,8 +39,17 @@ const LIVE: AuditEntry[] = [
   { id: 'l5', type: 'task_complete', timestamp: t('14:14'), agentId: 'scout-agent', details: [{ name: 'policy_lookup', args: '{"id":"PL-20931"}' }, { name: 'persist_note', args: '{}' }] },
 ];
 
-export function HomePreview() {
+/** `empty` (/dev/home?empty=1) shows the no-agents state, screen 8. */
+export function HomePreview({ empty = false }: { empty?: boolean }) {
   const [view, setView] = useState<AgentsView>('cards');
+  if (empty) {
+    return (
+      <AppShell>
+        <PageHeader title="Home" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Waiting for the first call · preview</span>} />
+        <EmptyHome />
+      </AppShell>
+    );
+  }
   return (
     <AppShell>
       <PageHeader title="Home" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>}>
