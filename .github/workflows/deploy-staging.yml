@@ -89,6 +89,13 @@ jobs:
           echo "::error::$STAGING_URL/sign-in did not render after deploy"
           exit 1
 
+      # Only reached when the smoke test passed (a failed step stops the job).
+      # promote-prod refuses a commit without this tag: the commit-sha label
+      # is set at deploy time, before the smoke test, so on its own it doesn't
+      # prove staging checked out.
+      - name: Mark verified
+        run: gcloud artifacts docker tags add "$IMAGE:$GITHUB_SHA" "$IMAGE:$GITHUB_SHA-verified" --quiet
+
       - name: Summary
         run: |
           {

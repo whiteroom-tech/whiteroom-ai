@@ -59,6 +59,11 @@ jobs:
             echo "::error::Staging is running '${staging_sha:-unknown}', not '$sha'. Deploy it to staging first."
             exit 1
           fi
+          # Set by deploy-staging only after staging's smoke test passed.
+          if ! gcloud artifacts docker images describe "$IMAGE:$sha-verified" --format='value(image_summary.digest)' >/dev/null 2>&1; then
+            echo "::error::Staging never passed its smoke test for $sha (no $sha-verified tag). Fix staging first."
+            exit 1
+          fi
           digest=$(gcloud artifacts docker images describe "$IMAGE:$sha" --format='value(image_summary.digest)')
           if [ -z "$digest" ]; then
             echo "::error::No prod image $IMAGE:$sha. Re-run Deploy staging for this commit."
