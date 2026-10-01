@@ -165,13 +165,17 @@ export function dailySavings(entries: SavingsEntry[], days: number, nowMs: numbe
 /** One row of the By agent table. */
 export interface AgentTotals { agent: string; used: number; saved: number }
 
-/** Tokens used and saved per agent, for events at or after `sinceMs`, most tokens first. */
+/**
+ * Tokens used and saved per agent for events at or after `sinceMs` (a rolling
+ * window, unlike dailySavings' calendar days), most tokens first. Tokens on
+ * events with no agent are kept under agent '' so the column adds up.
+ */
 export function agentTotals(entries: SavingsEntry[], sinceMs: number): AgentTotals[] {
   const inRange = entries.filter((e) => Date.parse(e.timestamp) >= sinceMs);
   const used = new Map<string, number>();
   for (const e of inRange) {
     const agent = entryAgent(e);
-    if (agent) used.set(agent, (used.get(agent) ?? 0) + (e.tokensUsed ?? 0));
+    if (agent || e.tokensUsed) used.set(agent, (used.get(agent) ?? 0) + (e.tokensUsed ?? 0));
   }
   const saved = agentDaySavings(inRange.map((e) => auditSavingsEvent(e, localDayFromTs(e.timestamp)))).byAgent;
   return [...used.keys()]

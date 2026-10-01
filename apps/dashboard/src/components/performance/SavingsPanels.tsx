@@ -103,7 +103,12 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
  * per agent for the page's range, most tokens first. Rule actions, flagged
  * runs and claim check join it with the governance engine (P2).
  */
-export function ByAgentTable({ rows, scope }: { rows: AgentTotals[]; scope: string }) {
+export function ByAgentTable({ rows, scope, ruleActions }: {
+  rows: AgentTotals[];
+  scope: string;
+  /** Controls blocks (Enforce) and would-blocks (Watch only) per agent id, lower-cased. */
+  ruleActions?: Record<string, { blocks: number; wouldBlocks: number }>;
+}) {
   return (
     <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
       {rows.length === 0 ? (
@@ -115,9 +120,28 @@ export function ByAgentTable({ rows, scope }: { rows: AgentTotals[]; scope: stri
           rowKey={(r) => r.agent}
           rowHeight={40}
           columns={[
-            { key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)', render: (r) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agent}</span> },
+            {
+              key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)',
+              render: (r) => r.agent
+                ? <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agent}</span>
+                : <span style={{ color: 'var(--tx2)' }} title="Model calls recorded without an agent name">Unattributed</span>,
+            },
             { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
             { key: 'saved', header: 'Saved, up to', width: '120px', numeric: true, render: (r) => (r.saved > 0 ? fmtTokens(r.saved) : '–') },
+            {
+              key: 'rules', header: 'Rule actions', width: '180px', numeric: true,
+              render: (r) => {
+                const t = ruleActions?.[r.agent];
+                if (!t || (!t.blocks && !t.wouldBlocks)) return <span style={{ color: 'var(--tx2)' }}>–</span>;
+                return (
+                  <span title="Calls a Controls rule blocked (Enforce), and calls it would have blocked (Watch only)">
+                    {t.blocks > 0 && <span style={{ color: 'var(--bad)' }}>{t.blocks} blocked</span>}
+                    {t.blocks > 0 && t.wouldBlocks > 0 && ' · '}
+                    {t.wouldBlocks > 0 && <span style={{ color: 'var(--warn)' }}>{t.wouldBlocks} would block</span>}
+                  </span>
+                );
+              },
+            },
           ]}
         />
       )}

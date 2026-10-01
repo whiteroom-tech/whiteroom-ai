@@ -57,3 +57,19 @@ describe('Savings axis', () => {
     expect([axisLabel(150_000), axisLabel(75_000), axisLabel(0), axisLabel(1_500_000)]).toEqual(['150K', '75K', '0', '1.50M']);
   });
 });
+
+describe('agentTotals edge cases', () => {
+  it('keeps tokens from events with no agent, so the column adds up to the chart', () => {
+    const rows = agentTotals([
+      { type: 'task_complete', timestamp: at(1), agentId: 'a', tokensUsed: 100 },
+      { type: 'model_call', timestamp: at(1, 11), tokensUsed: 40 },
+      { type: 'watch_start', timestamp: at(1, 12) },
+    ], new Date(2026, 9, 1, 0, 0).getTime());
+    expect(rows).toEqual([{ agent: 'a', used: 100, saved: 0 }, { agent: '', used: 40, saved: 0 }]);
+    const chartTotal = dailySavings([
+      { type: 'task_complete', timestamp: at(1), agentId: 'a', tokensUsed: 100 },
+      { type: 'model_call', timestamp: at(1, 11), tokensUsed: 40 },
+    ], 1, now)[0].used;
+    expect(rows.reduce((s, r) => s + r.used, 0)).toBe(chartTotal);
+  });
+});
