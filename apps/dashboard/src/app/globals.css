@@ -261,6 +261,17 @@
 .wr-table .is-right { text-align: right; }
 .wr-table .is-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .wr-table__empty { padding: 18px; color: var(--tx2); font-size: 13px; }
+.wr-table__group { display: flex; align-items: center; height: 32px; padding: 0 18px; background: var(--sunk); border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: 11.5px; color: var(--tx2); }
+.wr-table__group strong { color: var(--tx); font-weight: 600; }
+.wr-daystrip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; height: 52px; }
+.wr-daystrip__day { position: relative; display: flex; align-items: flex-end; padding: 0; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
+.wr-daystrip__day:hover { background: var(--brand-dim); }
+.wr-daystrip__day:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.wr-daystrip__bar { display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--line2); }
+.wr-daystrip__day.is-in .wr-daystrip__bar { background: var(--tx3); }
+.wr-daystrip__day.is-selected .wr-daystrip__bar { background: var(--brand); }
+.wr-date { height: 32px; padding: 0 10px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-family: var(--font-mono); font-size: 12px; color-scheme: inherit; }
+.wr-date:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .wr-table__foot { display: flex; align-items: center; gap: 10px; padding: 10px 18px; font-family: var(--font-mono); font-size: 11.5px; color: var(--tx2); }
 
 .wr-btn:focus-visible, .wr-seg__item:focus-visible, .wr-select select:focus-visible, .wr-toggle:focus-visible,

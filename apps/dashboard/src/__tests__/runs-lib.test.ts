@@ -1,15 +1,50 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { collectRuns, eventFeedSheets, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
 import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
-describe('runs range', () => {
+describe('runs days, in the viewer’s time zone', () => {
   const now = Date.parse('2026-10-01T03:00:00Z'); // still Sep 30 in California
-  it('counts whole UTC days, like Model calls today', () => {
+  it('counts the viewer’s own days, not UTC’s', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    expect(localDay(now)).toBe('2026-09-30');
+    expect(runsDays('today', now)).toEqual({ fromDay: '2026-09-30', toDay: '2026-09-30' });
+    expect(runsDays('7d', now)).toEqual({ fromDay: '2026-09-24', toDay: '2026-09-30' });
+    expect(runsDays('30d', now)).toEqual({ fromDay: '2026-09-01', toDay: '2026-09-30' });
+    vi.stubEnv('TZ', 'Asia/Tokyo');
     expect(runsDays('today', now)).toEqual({ fromDay: '2026-10-01', toDay: '2026-10-01' });
-    expect(runsDays('7d', now)).toEqual({ fromDay: '2026-09-25', toDay: '2026-10-01' });
-    expect(runsDays('30d', now)).toEqual({ fromDay: '2026-09-02', toDay: '2026-10-01' });
+  });
+
+  it('steps calendar days across months and DST changes', () => {
+    vi.stubEnv('TZ', 'America/New_York');
+    expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
+    expect(addDays('2026-11-01', 1)).toBe('2026-11-02'); // the 25-hour day
+    expect(addDays('2026-03-08', -1)).toBe('2026-03-07'); // the 23-hour day
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+  });
+
+  it('shows one picked day, else the range', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    expect(runsWindow({ range: '30d', day: '2026-09-14' }, now)).toEqual({ fromDay: '2026-09-14', toDay: '2026-09-14' });
+    expect(runsWindow({ range: 'today', day: null }, now)).toEqual({ fromDay: '2026-09-30', toDay: '2026-09-30' });
+  });
+
+  it('labels days, naming today and yesterday', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    expect(dayLabel('2026-09-30', now)).toBe('Today · Wed, Sep 30');
+    expect(dayLabel('2026-09-29', now)).toBe('Yesterday · Tue, Sep 29');
+    expect(dayLabel('2026-09-14', now)).toBe('Mon, Sep 14');
+    expect(dayLabel('2026-09-29', now, false)).toBe('Tue, Sep 29');
+  });
+
+  it('fills the strip’s empty days with zero, oldest first, ending today', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const strip = stripDays([{ day: '2026-09-28', runs: 3 }, { day: '2026-08-01', runs: 9 }], 5, now);
+    expect(strip).toEqual([
+      { day: '2026-09-26', runs: 0 }, { day: '2026-09-27', runs: 0 }, { day: '2026-09-28', runs: 3 },
+      { day: '2026-09-29', runs: 0 }, { day: '2026-09-30', runs: 0 },
+    ]);
   });
 });
 
@@ -22,8 +57,12 @@ describe('run formatting', () => {
     expect(fmtStarted('2026-09-30T20:52:00Z')).toBe('Sep 30, 1:52 pm');
   });
   it('counts in the range’s words and links by run id', () => {
-    expect(runsCount(6, '7d')).toBe('6 in the last 7 days');
-    expect(runsCount(2, 'today')).toBe('2 today');
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const now = Date.parse('2026-10-01T03:00:00Z');
+    expect(runsCount(6, { range: '7d', day: null }, now)).toBe('6 in the last 7 days');
+    expect(runsCount(2, { range: 'today', day: null }, now)).toBe('2 today');
+    expect(runsCount(8, { range: '7d', day: '2026-09-29' }, now)).toBe('8 on Tue, Sep 29');
+    expect(runsCount(1, { range: '7d', day: '2026-09-30' }, now)).toBe('1 today');
     expect(runHref('lead-agent~8')).toBe('/runs/lead-agent~8');
   });
 });
