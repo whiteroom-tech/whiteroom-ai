@@ -3,7 +3,7 @@
 // No React, so the wording rules can be unit-tested directly.
 
 import type { AgentState, TagTone } from '@whiteroom/ui';
-import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
+import type { AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
 
@@ -53,6 +53,33 @@ export function stateSummary(agents: AgentInfo[]): string {
   return order.filter(([s]) => counts.get(s)).map(([s, word]) => `${counts.get(s)} ${word}`).join(' · ');
 }
 
+// ── Agent details between fan-outs ───────────────────────────────────────
+
+const REPORT_BUCKETS = ['working', 'resting', 'idle', 'handover_out'] as const;
+
+/** Every agent id in the report, with the status bucket it's in. */
+export function reportStatuses(report: Pick<FleetReport, 'status'>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const s of REPORT_BUCKETS) for (const id of report.status[s] ?? []) out.set(id, s);
+  return out;
+}
+
+/**
+ * The agents to show from the report plus the last fetched details. Every
+ * agent in the report appears with the report's fresh status, even one that
+ * joined since the last fetch (shown with what the report knows).
+ */
+export function overlayStatuses(report: Pick<FleetReport, 'status'>, cached: AgentInfo[]): AgentInfo[] {
+  const byId = new Map(cached.map((d) => [d.agentId, d]));
+  return [...reportStatuses(report)].map(([id, status]) => ({ ...(byId.get(id) ?? { agentId: id }), agentId: id, status }));
+}
+
+/** Whether the report has agents the cached details don't cover yet. */
+export function hasUnknownAgents(report: Pick<FleetReport, 'status'>, cached: AgentInfo[]): boolean {
+  const known = new Set(cached.map((d) => d.agentId));
+  return [...reportStatuses(report).keys()].some((id) => !known.has(id));
+}
+
 // ── Activity ─────────────────────────────────────────────────────────────
 
 export interface ActivityRow {
@@ -72,6 +99,11 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   governance_would_block: { label: 'Watch only', tone: 'muted' },
 };
 
+/** Who an event is about. Handovers can carry only fromAgent / toAgent. */
+export function eventAgent(e: AuditEntry): string {
+  return String(e.agentId ?? e.fromAgent ?? e.toAgent ?? '').trim();
+}
+
 /** "2:15 pm" in the viewer's time zone, from an ISO string or epoch ms. */
 export function clock(ts: unknown): string {
   const d = new Date(typeof ts === 'number' ? ts : String(ts ?? ''));
@@ -85,7 +117,7 @@ export function clock(ts: unknown): string {
  */
 export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRow {
   const m = eventModel(e, now);
-  const subject = m.type === 'governance_rule_changed' ? 'Controls:' : String(e.agentId ?? '').trim() || 'An agent';
+  const subject = m.type === 'governance_rule_changed' ? 'Controls:' : eventAgent(e) || 'An agent';
   return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: TAGS[m.type] };
 }
 
@@ -101,7 +133,7 @@ export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.
 export function lastEventByAgent(entries: AuditEntry[]): Record<string, { time: string; text: string }> {
   const out: Record<string, { time: string; text: string; at: number }> = {};
   for (const e of entries) {
-    const id = String(e.agentId ?? '');
+    const id = eventAgent(e);
     const at = Date.parse(String(e.timestamp));
     if (!id || Number.isNaN(at) || (out[id] && out[id].at >= at)) continue;
     out[id] = { time: clock(e.timestamp), text: eventModel(e).said, at };
@@ -124,13 +156,29 @@ export interface LiveRow {
   detail: string;
 }
 
-const WEB = /web|http|url|fetch|browse|navigate|search_web|google|scrape|page/i;
-const FILE = /file|read|write|save|open|path|dir|fs_/i;
+// Matched against whole words of the tool name (read_web_page → read, web,
+// page), so save_lead or open_ticket aren't taken for files and
+// pagerduty_alert isn't taken for the web.
+const WEB_WORDS = new Set(['web', 'http', 'https', 'url', 'fetch', 'browse', 'browser', 'navigate', 'google', 'scrape', 'crawl', 'website', 'webpage']);
+const FILE_WORDS = new Set(['file', 'files', 'fs', 'dir', 'directory', 'folder']);
 
-function kindOf(toolName: string): LiveKind {
-  if (WEB.test(toolName)) return 'web';
-  if (FILE.test(toolName)) return 'file';
+function words(name: string): string[] {
+  return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+export function kindOf(toolName: string): LiveKind {
+  const w = words(toolName);
+  if (w.some((x) => WEB_WORDS.has(x))) return 'web';
+  if (w.some((x) => FILE_WORDS.has(x))) return 'file';
   return 'tool';
+}
+
+/** The slice of rows on `page`, with the page clamped to what exists. */
+export function pageWindow<T>(rows: T[], page: number, size: number): { page: number; rows: T[]; from: number; to: number } {
+  const last = Math.max(0, Math.ceil(rows.length / size) - 1);
+  const p = Math.min(Math.max(0, page), last);
+  const slice = rows.slice(p * size, p * size + size);
+  return { page: p, rows: slice, from: slice.length ? p * size + 1 : 0, to: p * size + slice.length };
 }
 
 /**

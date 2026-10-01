@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, agentState, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, liveRow, matchesFilter, progressLine, sortAgents, stateSummary, todayTotals,
+  activityRow, agentState, clock, hasUnknownAgents, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
+  overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
 
@@ -61,7 +62,7 @@ describe('activity', () => {
   it('shows the newest four, newest first', () => {
     const rows = latestActivity([1, 5, 3, 4, 2].map((m) => e('watch_start', `2026-09-30T14:0${m}:00Z`)), 4, now);
     expect(rows).toHaveLength(4);
-    expect(rows.map((r) => r.key)).toEqual(['watch_start-2026-09-30T14:05:00Z', 'watch_start-2026-09-30T14:04:00Z', 'watch_start-2026-09-30T14:03:00Z', 'watch_start-2026-09-30T14:02:00Z'].map((k) => k));
+    expect(rows.map((r) => r.key)).toEqual(['watch_start-2026-09-30T14:05:00Z', 'watch_start-2026-09-30T14:04:00Z', 'watch_start-2026-09-30T14:03:00Z', 'watch_start-2026-09-30T14:02:00Z']);
   });
 
   it('keeps the latest event per agent', () => {
@@ -118,8 +119,7 @@ describe('today (UTC)', () => {
   });
 });
 
-describe('formatting', async () => {
-  const { clock, usd, parseUsd } = await import('@/lib/home');
+describe('formatting', () => {
   it('formats epoch ms and ISO strings the same way', () => {
     const iso = '2026-09-30T14:16:00Z';
     expect(clock(Date.parse(iso))).toBe(clock(iso));
@@ -135,5 +135,64 @@ describe('formatting', async () => {
     expect(parseUsd('$1.7805')).toBeCloseTo(1.7805);
     expect(parseUsd('$0.0000')).toBeNull();
     expect(parseUsd(undefined)).toBeNull();
+  });
+});
+
+describe('agent details between fan-outs', () => {
+  const report = { status: { working: ['lead-agent', 'new-agent'], resting: ['scout-agent'], idle: [], handover_out: [] } };
+  const cached: AgentInfo[] = [
+    { agentId: 'lead-agent', status: 'resting', watchNumber: 8, tasksCompleted: 62 },
+    { agentId: 'scout-agent', status: 'working', watchNumber: 3 },
+    { agentId: 'gone-agent', status: 'working' },
+  ];
+
+  it('shows every agent in the report with its fresh status, keeping cached detail', () => {
+    const out = overlayStatuses(report, cached);
+    expect(out.map((a) => [a.agentId, a.status])).toEqual([['lead-agent', 'working'], ['new-agent', 'working'], ['scout-agent', 'resting']]);
+    expect(out[0].watchNumber).toBe(8);
+  });
+
+  it('never comes back empty when the cache is empty', () => {
+    expect(overlayStatuses(report, []).map((a) => a.agentId)).toEqual(['lead-agent', 'new-agent', 'scout-agent']);
+  });
+
+  it('notices agents the cache doesn\'t cover', () => {
+    expect(hasUnknownAgents(report, cached)).toBe(true);
+    expect(hasUnknownAgents(report, [...cached, { agentId: 'new-agent', status: 'working' }])).toBe(false);
+  });
+});
+
+describe('tool kinds', () => {
+  it('matches whole words, not fragments', () => {
+    expect(kindOf('web_fetch')).toBe('web');
+    expect(kindOf('fetch_page')).toBe('web');
+    expect(kindOf('read_web_page')).toBe('web');
+    expect(kindOf('read_file')).toBe('file');
+    expect(kindOf('searchFiles')).toBe('file');
+    for (const name of ['save_lead', 'open_ticket', 'spreadsheet_lookup', 'pagerduty_alert', 'update_page', 'persist_lead']) {
+      expect(kindOf(name)).toBe('tool');
+    }
+  });
+});
+
+describe('paging', () => {
+  const rows = Array.from({ length: 45 }, (_, i) => i);
+
+  it('pages in fixed sizes', () => {
+    expect(pageWindow(rows, 1, 20)).toMatchObject({ page: 1, from: 21, to: 40 });
+    expect(pageWindow(rows, 2, 20)).toMatchObject({ page: 2, from: 41, to: 45 });
+  });
+
+  it('clamps a page that no longer exists after the data shrinks', () => {
+    expect(pageWindow(rows.slice(0, 30), 2, 20)).toMatchObject({ page: 1, from: 21, to: 30 });
+    expect(pageWindow([], 3, 20)).toMatchObject({ page: 0, from: 0, to: 0, rows: [] });
+  });
+});
+
+describe('handover subjects', () => {
+  it('names the agent from fromAgent / toAgent when agentId is missing', () => {
+    const e = { id: 'h', type: 'handover_out', timestamp: '2026-09-30T14:00:00Z', fromAgent: 'lead-agent', toAgent: 'writer-agent' } as AuditEntry;
+    expect(activityRow(e).text.startsWith('lead-agent ')).toBe(true);
+    expect(lastEventByAgent([e])['lead-agent']).toBeDefined();
   });
 });

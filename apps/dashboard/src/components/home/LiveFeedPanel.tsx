@@ -7,9 +7,10 @@ import type { AuditEntry } from '@/lib/whiteroom/types';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { liveRow, matchesFilter, type LiveFilter, type LiveKind } from '@/lib/home';
+import { liveRow, matchesFilter, pageWindow, type LiveFilter, type LiveKind } from '@/lib/home';
 
 const PAGE = 20;
+const FETCH_LIMIT = 200;
 const KIND: Record<LiveKind, { word: string; icon: IconName }> = {
   web: { word: 'Web', icon: 'globe' },
   tool: { word: 'Tool', icon: 'wrench' },
@@ -44,20 +45,26 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   });
   const [page, setPage] = useState(0);
 
+  // Each load gets a number; Hide and newer loads bump it, so a response that
+  // arrives late (after Hide, or after a newer Refresh) is dropped.
+  const request = useRef(0);
+
   const load = useCallback(async () => {
     if (preview) return;
+    const id = ++request.current;
     setLoading(true);
     try {
-      const res = await performanceLiveFeed(fleetId, { limit: 200 }, authKey);
+      const res = await performanceLiveFeed(fleetId, { limit: FETCH_LIMIT }, authKey);
+      if (id !== request.current) return;
       if (res.error) { setError(true); return; }
       setEntries(res.entries ?? []);
       setTotal(res.total ?? res.entries?.length ?? 0);
       setTtlHours(res.ttlHours ?? 72);
       setError(false);
     } catch {
-      setError(true);
+      if (id === request.current) setError(true);
     } finally {
-      setLoading(false);
+      if (id === request.current) setLoading(false);
     }
   }, [fleetId, authKey, preview]);
 
@@ -70,13 +77,14 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const rows = useMemo(() => entries.map(liveRow), [entries]);
   const agents = useMemo(() => [...new Set(rows.map((r) => r.agent).filter(Boolean))].sort(), [rows]);
   const shown = rows.filter((r) => (agent === 'all' || r.agent === agent) && matchesFilter(r, filter));
-  const pageRows = shown.slice(page * PAGE, page * PAGE + PAGE);
+  const win = pageWindow(shown, page, PAGE);
+  const pageRows = win.rows;
 
   function reveal() { setOpen(true); load(); }
-  function hide() { setOpen(false); setEntries([]); setPage(0); }
+  function hide() { request.current += 1; setOpen(false); setEntries([]); setPage(0); setLoading(false); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 
-  const title = <>Live feed<Hint text={HELP.liveFeed} /></>;
+  const title = <>Live feed<Hint text={HELP.liveFeed.replace('72 hours', `${ttlHours} hours`)} /></>;
 
   if (!open) {
     return (
@@ -123,11 +131,11 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       {shown.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
           <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
-            {page * PAGE + 1}&ndash;{page * PAGE + pageRows.length} of {shown.length === rows.length ? total : shown.length} in the last {ttlHours} h
+            {win.from}&ndash;{win.to} of {shown.length} in the last {ttlHours} h{total > rows.length ? ` · newest ${rows.length} of ${total} loaded` : ''}
           </span>
           <span style={{ marginLeft: 'auto' }} />
-          {page > 0 && <Button variant="ghost" size={28} onClick={() => setPage((p) => p - 1)}>&larr; Newer</Button>}
-          {(page + 1) * PAGE < shown.length && <Button size={28} onClick={() => setPage((p) => p + 1)}>Older &rarr;</Button>}
+          {win.page > 0 && <Button variant="ghost" size={28} onClick={() => setPage(win.page - 1)}>&larr; Newer</Button>}
+          {win.to < shown.length && <Button size={28} onClick={() => setPage(win.page + 1)}>Older &rarr;</Button>}
           <a href={ROUTES.runs} className="wr-link">Open in Runs &rarr;</a>
         </div>
       )}

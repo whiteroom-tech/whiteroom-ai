@@ -10,7 +10,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
-  agentState, clock, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  agentState, clock, hasUnknownAgents, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import { LiveFeedPanel } from './LiveFeedPanel';
 
@@ -52,15 +52,20 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     let details: AgentInfo[];
     if (data.agentDetails?.length) {
       details = data.agentDetails;
-    } else if (Date.now() - lastFanOut.current >= DETAIL_FANOUT_INTERVAL_MS) {
-      lastFanOut.current = Date.now();
-      const ids = [...(data.status.working || []), ...(data.status.resting || []), ...(data.status.idle || []), ...(data.status.handover_out || [])];
-      details = await Promise.all(ids.map(async (id) => ({ ...(await checkWatch(id, fleetId, authKey)), agentId: id })));
+    } else if (Date.now() - lastFanOut.current >= DETAIL_FANOUT_INTERVAL_MS || hasUnknownAgents(data, fanOutDetails.current)) {
+      // One agent's failed lookup must not empty the panel: it falls back to
+      // what the report says about it, and the next fan-out tries again.
+      const statuses = reportStatuses(data);
+      details = await Promise.all([...statuses].map(([id, status]) =>
+        checkWatch(id, fleetId, authKey)
+          .then((d): AgentInfo => ({ ...d, agentId: id }))
+          .catch((): AgentInfo => ({ agentId: id, status })),
+      ));
+      if (stale()) return;
       fanOutDetails.current = details;
+      lastFanOut.current = Date.now();
     } else {
-      const statusById: Record<string, string> = {};
-      (['working', 'resting', 'idle', 'handover_out'] as const).forEach((s) => (data.status[s] || []).forEach((id) => { statusById[id] = s; }));
-      details = fanOutDetails.current.map((d) => (statusById[d.agentId] ? { ...d, status: statusById[d.agentId] } : d));
+      details = overlayStatuses(data, fanOutDetails.current);
     }
     if (stale()) return;
     setReport(data);
