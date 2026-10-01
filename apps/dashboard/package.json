@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "node scripts/check-colors.mjs",
+    "lint:colors:update": "node scripts/check-colors.mjs --update"
   },
   "dependencies": {
     "@auth/pg-adapter": "^1.11.3",
