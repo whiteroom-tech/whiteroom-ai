@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fmtLength, fmtStarted, runHref, runsCount, runsDays, standOut } from '@/lib/runs';
+import { fmtLength, fmtStarted, runHref, runMeta, runsCount, runsDays, standOut, timelineRow } from '@/lib/runs';
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -39,5 +39,27 @@ describe('what stood out', () => {
     expect(standOut(run({ checked: 4 })).text).toBe('Partly checked: 4 of 6 calls could be read');
     expect(standOut(run({ checked: 0 })).text).toBe('Not assessed: none of its calls could be read');
     expect(standOut(run({}))).toEqual({ tone: 'clean', text: 'Nothing unusual' });
+  });
+});
+
+describe('run detail rows', () => {
+  it('describes a call by model and tools, tagging a non-complete outcome', () => {
+    const row = timelineRow({ id: 'call:1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'upstream_error', model: 'claude-haiku-4-5', tools: ['search', 'read_file'] });
+    expect(row.text).toBe('Model call · claude-haiku-4-5 · used search, read_file');
+    expect(row.tag).toEqual({ label: 'Failed', tone: 'warn' });
+    expect(timelineRow({ id: 'call:2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete' }).tag).toBeUndefined();
+    expect(timelineRow({ id: 'call:3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', tools: ['persist_lead', 'persist_lead', 'persist_lead', 'notify'] }).text)
+      .toBe('Model call · used persist_lead ×3, notify');
+  });
+  it('reads an event with the activity feed’s words and a kind icon', () => {
+    const row = timelineRow({ id: 'e1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'self_handover', detail: { agentId: 'lead-agent' } });
+    expect(row.text).toContain('lead-agent');
+    expect(row.icon).toBe('swap');
+    expect(timelineRow({ id: 'e2', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'governance_block', detail: { agentId: 'a', ruleType: 'spend_cap' } }).icon).toBe('lock');
+  });
+  it('writes the meta line with the shift', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    expect(runMeta({ startedAt: '2026-09-30T20:52:00Z', endedAt: '2026-09-30T21:15:00Z', shift: 8 }, Date.parse('2026-09-30T21:00:00Z')))
+      .toBe('Sep 30 · started 1:52 pm PDT · 23 min · shift 8');
   });
 });

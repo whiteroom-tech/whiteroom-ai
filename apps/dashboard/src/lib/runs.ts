@@ -1,7 +1,9 @@
 // Pure helpers for Runs (README › Screens › 2a / 2b). A run is one agent's
 // shift; the engine's list_runs / get_run_events serve them.
 
-import type { RunSummary } from '@/lib/whiteroom/types';
+import type { RunEvent, RunSummary } from '@/lib/whiteroom/types';
+import type { IconName, TagTone } from '@whiteroom/ui';
+import { activityRow, clock } from '@/lib/home';
 
 export type RunsRange = 'today' | '7d' | '30d';
 export const RUNS_RANGES: RunsRange[] = ['today', '7d', '30d'];
@@ -63,7 +65,67 @@ export function runsCount(total: number, range: RunsRange): string {
   return `${total} ${span}`;
 }
 
+/** Where Run detail's "← Runs" returns to (README › Runs › Leaving and returning). */
+export const RUNS_LIST_URL_KEY = 'wr_runs_list_url';
+
 /** /runs/<runId>, with the list URL to return to. */
 export function runHref(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}`;
+}
+
+// ── Run detail (screen 2b) ─────────────────────────────────────────────────
+
+
+export interface TimelineRow {
+  id: string;
+  time: string;
+  icon: IconName;
+  iconColor: string;
+  text: string;
+  tag?: { label: string; tone: TagTone };
+}
+
+const CALL_OUTCOME: Record<string, { label: string; tone: TagTone } | undefined> = {
+  upstream_error: { label: 'Failed', tone: 'warn' },
+  stream_interrupted: { label: 'Interrupted', tone: 'warn' },
+  governance_blocked: { label: 'Blocked', tone: 'muted' },
+  client_cancelled: { label: 'Cancelled', tone: 'muted' },
+  unknown: { label: 'Status unknown', tone: 'muted' },
+};
+
+/**
+ * One row of What happened. Calls say what the agent called and which tools
+ * it used; events reuse the activity feed's plain-language copy, so the same
+ * event reads the same everywhere.
+ */
+export function timelineRow(e: RunEvent): TimelineRow {
+  if (e.kind === 'call') {
+    // "persist_lead ×3, notify": one entry per tool, with how many times.
+    const counts = new Map<string, number>();
+    for (const t of e.tools ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+    const named = [...counts].map(([t, n]) => (n > 1 ? `${t} ×${n}` : t));
+    const tools = named.length ? ` · used ${named.slice(0, 4).join(', ')}${named.length > 4 ? ` +${named.length - 4} more` : ''}` : '';
+    return {
+      id: e.id, time: clock(e.at), icon: 'dash', iconColor: 'var(--tx2)',
+      text: `Model call${e.model ? ` · ${e.model}` : ''}${tools}`,
+      tag: CALL_OUTCOME[e.type],
+    };
+  }
+  const row = activityRow({ ...(e.detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0]);
+  const handover = /handover|watch_start|watch_end|rest/.test(e.type);
+  const rule = e.type.startsWith('governance');
+  return {
+    id: e.id, time: row.time, text: row.text, tag: row.tag,
+    icon: handover ? 'swap' : rule ? 'lock' : 'info',
+    iconColor: handover ? 'var(--ho)' : rule ? 'var(--tx)' : 'var(--tx2)',
+  };
+}
+
+/** "Sep 30 · started 1:52 pm EDT · 23 min · shift 8". */
+export function runMeta(run: { startedAt: string; endedAt: string; shift: number }, now: number = Date.now()): string {
+  const start = new Date(run.startedAt);
+  const date = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
+  const length = fmtLength((Date.parse(run.endedAt) - start.getTime()) / 1000);
+  return `${date} · started ${time} ${zoneName(now)} · ${length} · shift ${run.shift}`;
 }

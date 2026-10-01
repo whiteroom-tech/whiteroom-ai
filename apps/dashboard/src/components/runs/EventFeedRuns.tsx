@@ -59,11 +59,6 @@ function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<st
 }
 
 /**
- * Runs, interim (P1.2): today's event feed in the shell. The totals, the
- * daily chart and the per-agent table moved to Performance; a run list
- * replaces this page once the engine runs API exists (P1R).
- */
-/**
  * Runs before the engine has list_runs: the event feed in the shell (P1.2).
  * Runs falls back to it when list_runs is unknown, so the dashboard can ship
  * before the engine.

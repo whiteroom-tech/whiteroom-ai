@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button, DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
+import { Banner, Button, DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
+import { fmtTime } from '@/lib/format';
 import { fleetReport, isAuthError, listRuns } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -13,14 +14,14 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { fmtLength, fmtStarted, runHref, runsCount, runsDays, RUNS_RANGES, standOut, zoneName, type RunsRange } from '@/lib/runs';
+import { fmtLength, fmtStarted, runHref, RUNS_LIST_URL_KEY, runsCount, runsDays, RUNS_RANGES, standOut, zoneName, type RunsRange } from '@/lib/runs';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 
 const PAGE = 25;
+/** An export reads at most this many pages of 50; past it, the file says it's the newest N. */
+const EXPORT_MAX_PAGES = 100;
 const RANGE_LABEL: Record<RunsRange, string> = { today: 'Today', '7d': '7D', '30d': '30D' };
-/** Where Run detail's "← Runs" returns to (README › Runs › Leaving and returning). */
-export const RUNS_LIST_URL_KEY = 'wr_runs_list_url';
 
 const STAND_OUT_ICON = { rule: 'lock', failed: 'alertCircle', coverage: 'info', clean: 'check' } as const;
 
@@ -53,6 +54,7 @@ export function RunsTable({ preview }: {
   const [failing, setFailing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<{ ok: boolean; text: string } | null>(null);
   const page = cursors.length - 1;
 
   // The whole filter state lives in the URL; defaults drop out.
@@ -66,12 +68,16 @@ export function RunsTable({ preview }: {
     if (url !== `${window.location.pathname}${window.location.search}`) router.replace(url, { scroll: false });
   }, [range, agent, router]);
 
-  // A new filter starts from the first page.
-  const firstFilter = useRef(true);
-  useEffect(() => {
-    if (firstFilter.current) { firstFilter.current = false; return; }
+  // A new filter starts from the first page with nothing shown, in one
+  // update, so no request ever pairs the new filter with an old cursor and
+  // the count never mixes the old total with the new range.
+  function changeFilter(next: { range?: RunsRange; agent?: string }) {
+    if (next.range !== undefined) setRange(next.range);
+    if (next.agent !== undefined) setAgent(next.agent);
     setCursors([null]);
-  }, [range, agent]);
+    setRuns(null);
+    setNext(null);
+  }
 
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
@@ -93,13 +99,18 @@ export function RunsTable({ preview }: {
   }, [fleetId, authKey, range, agent, cursors, resetSession]);
 
   const { refresh } = usePoll(load, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
-  useEffect(() => { refresh(); }, [range, agent, cursors, refresh]);
+  // usePoll fetches on mount; refetch only when the filter or page changes.
+  const firstQuery = useRef(true);
+  useEffect(() => {
+    if (firstQuery.current) { firstQuery.current = false; return; }
+    refresh();
+  }, [range, agent, cursors, refresh]);
 
   // The agent filter lists every agent in the fleet, not just this page's.
   useEffect(() => {
     if (!fleetId || unsupported || preview) return;
     fleetReport(fleetId, authKey).then((r) => { if (!r.error) setAgents([...reportStatuses(r).keys()].sort()); }, () => {});
-  }, [fleetId, authKey, unsupported]);
+  }, [fleetId, authKey, unsupported, preview]);
 
   const agentOptions = useMemo(() => {
     const names = agent !== 'all' && !agents.includes(agent) ? [...agents, agent] : agents;
@@ -114,22 +125,28 @@ export function RunsTable({ preview }: {
   async function exportAll() {
     if (!fleetId) return;
     setExporting(true);
+    setExportNote(null);
     try {
       const { fromDay, toDay } = runsDays(range);
       const all: RunSummary[] = [];
       let cursor: string | null = null;
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < EXPORT_MAX_PAGES; i++) {
         const res = await listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50 }, authKey);
-        if ('unsupported' in res) break;
+        if ('unsupported' in res) { setExportNote({ ok: false, text: 'This engine can’t list runs yet, so there’s nothing to export.' }); return; }
         all.push(...res.runs);
         cursor = res.cursor;
         if (!cursor) break;
       }
+      const truncated = cursor !== null;
       downloadWorkbook(buildWorkbook([{
         name: 'Runs',
         header: ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'What stood out'],
         rows: all.map((r) => [r.runId, r.agentId, r.shift, r.startedAt, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, Math.round(r.spendMicros) / 1e6, standOut(r).text]),
-      }]), `whiteroom-runs-${fromDay}-to-${toDay}.xlsx`);
+      }]), `whiteroom-runs-${fromDay}-to-${toDay}${truncated ? `-newest-${all.length}` : ''}.xlsx`);
+      if (truncated) setExportNote({ ok: true, text: `Exported the newest ${all.length.toLocaleString('en-US')} runs. Pick a shorter range or one agent for the rest.` });
+    } catch (e) {
+      if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      setExportNote({ ok: false, text: 'Couldn’t export runs. Try again.' });
     } finally {
       setExporting(false);
     }
@@ -142,16 +159,17 @@ export function RunsTable({ preview }: {
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
       <PageHeader title="Runs" fleetId={fleetId}>
         <span title="Whole UTC days, the same days Model calls today counts">
-          <SegmentedControl<RunsRange> label="Range" value={range} onChange={setRange} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
+          <SegmentedControl<RunsRange> label="Range" value={range} onChange={(r) => changeFilter({ range: r })} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
         </span>
         <Button onClick={() => void exportAll()} busy={exporting} busyLabel="Exporting…" disabled={!runs?.length}>Export .xlsx</Button>
       </PageHeader>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <SelectChip label="Agent" value={agent} onChange={setAgent} options={agentOptions} />
-          <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }}>{updatedAt ? `Updated ${fmtStarted(new Date(updatedAt).toISOString()).split(', ')[1]}` : ''}</span>
+          <SelectChip label="Agent" value={agent} onChange={(a) => changeFilter({ agent: a })} options={agentOptions} />
+          <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }}>{updatedAt ? `Updated ${fmtTime(updatedAt)}` : ''}</span>
         </div>
+        {exportNote && <Banner variant={exportNote.ok ? 'info' : 'error'}>{exportNote.text}</Banner>}
         {failing && runs && <RefreshFailed since={updatedAt} />}
 
         <Panel title={<>Runs<Hint text={HELP.runs} /></>} count={runs ? runsCount(total, range) : undefined} bodyPadding={0}>

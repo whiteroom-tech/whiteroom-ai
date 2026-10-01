@@ -364,3 +364,11 @@ a.wr-btn { text-decoration: none; }
   }
   .wr-select select, .wr-shell select { min-height: 44px; }
 }
+
+/* Run detail › What happened (components/runs/RunDetail) */
+.wr-timeline { margin: 0; padding: 0; list-style: none; }
+.wr-timeline > li { display: grid; grid-template-columns: 64px 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 11px 18px; border-bottom: 1px solid var(--line); transition: background-color .6s; }
+.wr-timeline > li:last-child { border-bottom: 0; }
+.wr-timeline > li.is-highlighted { background: var(--brand-dim); transition: none; }
+.wr-timeline > li > .wr-tag { justify-self: start; }
+@media (max-width: 720px) { .wr-timeline > li { grid-template-columns: 52px 16px minmax(0, 1fr); } .wr-timeline > li > :last-child { grid-column: 3; } }
