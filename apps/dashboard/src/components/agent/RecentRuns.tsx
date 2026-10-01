@@ -11,7 +11,7 @@ import { ROUTES } from '@/lib/routes';
 
 /**
  * Agent detail › Recent runs (README › Screens › 3): the agent's newest runs
- * from the last 7 UTC days. Hidden while the engine has no list_runs.
+ * from the last 7 UTC days. Without list_runs it only links to Runs.
  */
 export function RecentRuns({ fleetId, authKey, agentId, preview }: { fleetId: string; authKey?: string; agentId: string; preview?: RunSummary[] }) {
   const [runs, setRuns] = useState<RunSummary[] | null>(preview ?? null);
@@ -28,7 +28,14 @@ export function RecentRuns({ fleetId, authKey, agentId, preview }: { fleetId: st
     return () => { live = false; };
   }, [fleetId, authKey, agentId, preview]);
 
-  if (hidden) return null;
+  // Without list_runs, keep the way to Runs (its event feed still works).
+  if (hidden) {
+    return (
+      <Panel title="Recent runs" actions={<Link href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}`} className="wr-link">All runs &rarr;</Link>}>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Run summaries aren&rsquo;t available yet. Runs shows this agent&rsquo;s events.</p>
+      </Panel>
+    );
+  }
   return (
     <Panel
       title={<>Recent runs<Hint text={HELP.recentRuns} /></>}

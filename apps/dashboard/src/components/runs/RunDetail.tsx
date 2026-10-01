@@ -9,11 +9,9 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { parseRunId, runMeta, RUNS_LIST_URL_KEY, timelineRow } from '@/lib/runs';
+import { loadRunPage, parseRunId, runMeta, RUNS_LIST_URL_KEY, timelineRow, type RunKind } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
-
-type Kind = 'all' | 'events';
 
 /**
  * Run detail (README › Screens › 2b), the P1 part: the meta line and What
@@ -30,7 +28,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   /** /dev/run: a sample page; nothing is fetched. */
   preview?: RunEventsResult;
 }) {
-  const [kind, setKind] = useState<Kind>('all');
+  const [kind, setKind] = useState<RunKind>('all');
   const [cursor, setCursor] = useState<string | null>(null);
   const [data, setData] = useState<RunEventsResult | null>(preview ?? null);
   const [missing, setMissing] = useState(false);
@@ -45,22 +43,16 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     if (preview) return;
     try {
       const target = pendingEvent.current;
-      let res = await getRunEvents(fleetId, runId, target ? { eventId: target, kind } : { cursor, kind }, authKey);
+      const got = await loadRunPage((q) => getRunEvents(fleetId, runId, q, authKey), { target, kind, cursor });
       if (stale()) return;
-      // A call isn't in "Events only": switch to Everything to show it.
-      if (target && res.eventFound === false && kind === 'events') {
-        res = await getRunEvents(fleetId, runId, { eventId: target, kind: 'all' }, authKey);
-        if (stale()) return;
-        setKind('all');
-      }
-      setData(res);
+      setData(got.res);
       setFailing(false);
       setMissing(false);
       if (target) {
         pendingEvent.current = null;
-        // Stay on the page the server picked, so polls and retries reload it.
-        if (res.page > 0) setCursor(String(res.page));
-        if (res.eventFound) setHighlight(target);
+        setKind(got.kind);
+        setCursor(got.cursor);
+        setHighlight(got.highlight);
       }
     } catch (e) {
       if (stale()) return;
@@ -79,13 +71,14 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     refresh();
   }, [kind, cursor, refresh]);
 
-  // Scroll the deep-linked row into view and let its highlight fade after 2 s.
+  // Scroll the deep-linked row into view once (it renders with the same
+  // update that sets the highlight) and let the highlight fade after 2 s.
   useEffect(() => {
     if (!highlight) return;
     document.getElementById(`run-event-${highlight}`)?.scrollIntoView({ block: 'center' });
     const t = setTimeout(() => setHighlight(null), 2000);
     return () => clearTimeout(t);
-  }, [highlight, data]);
+  }, [highlight]);
 
   const parsed = parseRunId(runId);
   const agentId = data?.run.agentId ?? parsed?.agentId ?? runId;
@@ -126,7 +119,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
           title={<>What happened<Hint text={HELP.whatHappened} /></>}
           count={data ? `${data.total} ${kind === 'events' ? 'events' : 'calls and events'}` : undefined}
           bodyPadding={0}
-          actions={<SegmentedControl<Kind> label="Show" value={kind} onChange={(k) => { setKind(k); setCursor(null); }} size={24} options={[{ value: 'all', label: 'Everything' }, { value: 'events', label: 'Events only' }]} />}
+          actions={<SegmentedControl<RunKind> label="Show" value={kind} onChange={(k) => { setKind(k); setCursor(null); }} size={24} options={[{ value: 'all', label: 'Everything' }, { value: 'events', label: 'Events only' }]} />}
         >
           {!data ? (
             failing ? <LoadingLine>Couldn&rsquo;t load this run yet. Retrying&hellip;</LoadingLine> : <LoadingLine />
