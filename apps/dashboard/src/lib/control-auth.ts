@@ -39,11 +39,12 @@ export interface ControlDenial {
 
 /**
  * Who may send a control action through the BFF: a signed-in WhiteRoom user
- * linked to that fleet with the very token this session forwards (their own
- * provisioned fleet, or a user_fleets row). A browser session made by pasting
- * a fleet key isn't enough: an agent holds that key too and could script the
- * same login. Binding the token as well as the fleet means the secret is only
- * ever attached to a credential the account itself holds for that fleet.
+ * whose account holds the very credential this session forwards: their own
+ * fleet's token or API key, or a user_fleets token. A browser session made by
+ * pasting a fleet key isn't enough: an agent holds that key too and could
+ * script the same login. The engine still checks that the credential grants
+ * the fleet in the body; here, a stored fleet id must match it, and a row
+ * saved before fleet ids were recorded (NULL) is accepted on the credential.
  *
  * Returns the refusal, or null when the call may go ahead. A failed lookup
  * refuses (503), so the check fails closed.
@@ -56,9 +57,11 @@ export async function controlAccessError(fleetId: string | null, token: string):
   let linked: boolean;
   try {
     const { rows } = await db().query(
-      `SELECT 1 FROM users WHERE id = $1 AND fleet_id = $2 AND fleet_token = $3
+      `SELECT 1 FROM users
+        WHERE id = $1 AND (fleet_id = $2 OR fleet_id IS NULL) AND (fleet_token = $3 OR api_key = $3)
        UNION ALL
-       SELECT 1 FROM user_fleets WHERE user_id = $1 AND fleet_id = $2 AND fleet_token = $3
+       SELECT 1 FROM user_fleets
+        WHERE user_id = $1 AND (fleet_id = $2 OR fleet_id IS NULL) AND fleet_token = $3
        LIMIT 1`,
       [userId, fleetId, token],
     );
