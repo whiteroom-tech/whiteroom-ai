@@ -86,10 +86,13 @@ export async function resolvePlan(userId: string): Promise<{ plan: PlanId; sub: 
  * Null when the engine can't be reached, so callers never mistake an outage
  * for an account with no agents.
  */
-export async function countAgents(userId: string): Promise<number | null> {
+export async function countAgents(
+  userId: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<number | null> {
   const fleetIds = await fleetIdsFor(userId);
   if (fleetIds.length === 0) return 0;
-  const { byFleet, windowDays } = await fetchFleetUsage(fleetIds);
+  const { byFleet, windowDays } = await fetchFleetUsage(fleetIds, opts);
   if (windowDays === null) return null;
   let total = 0;
   for (const f of byFleet.values()) total += f.agentCount ?? 0;
@@ -104,7 +107,9 @@ export async function getEntitlement(): Promise<Entitlement> {
   const [{ plan, sub, trialEndsAt }, fleetCount, agents] = await Promise.all([
     resolvePlan(userId),
     countFleets(userId),
-    countAgents(userId),
+    // Short timeout: the agent count is one meter on the settings page, and
+    // a slow engine shouldn't hold the rest of the page hostage.
+    countAgents(userId, { timeoutMs: 2_500 }),
   ]);
 
   return {

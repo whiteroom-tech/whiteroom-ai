@@ -11,6 +11,13 @@ export const dynamic = 'force-dynamic';
 const TRIAL_BATCH = 500;
 
 /**
+ * How long the Pro pass may run before leaving the rest for the next run.
+ * Well inside Cloud Scheduler's default 3-minute attempt deadline, so a slow
+ * engine shortens a run instead of getting it killed partway.
+ */
+const PRO_BUDGET_MS = 60_000;
+
+/**
  * Billing housekeeping that nothing else triggers. Called by Cloud Scheduler.
  *
  * 1. Expired trials. A trial ends because time passes, not because anything
@@ -30,12 +37,20 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const trials = await queueExpiredTrials();
-  const pro = process.env.STRIPE_SECRET_KEY ? await syncProQuantities() : { checked: 0, updated: 0, skipped: 0 };
+  const pro = process.env.STRIPE_SECRET_KEY
+    ? await syncProQuantities()
+    : { checked: 0, updated: 0, skipped: 0, deferred: 0 };
 
+  // A failed trial pass is a 500 so Cloud Scheduler records the failure and
+  // retries. The Pro pass still ran, since it doesn't depend on it.
+  if (trials === null) {
+    return Response.json({ error: 'Could not queue expired trials.', pro }, { status: 500 });
+  }
   return Response.json({ trialsQueued: trials, pro });
 }
 
-async function queueExpiredTrials(): Promise<number> {
+/** Number of trials queued, or null if the database refused. */
+async function queueExpiredTrials(): Promise<number | null> {
   const client = await db().connect();
   try {
     await client.query('BEGIN');
@@ -63,28 +78,35 @@ async function queueExpiredTrials(): Promise<number> {
     return rows.length;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('[billing-sync] could not queue expired trials');
-    return 0;
+    console.error('[billing-sync] could not queue expired trials:', err instanceof Error ? err.message : err);
+    return null;
   } finally {
     client.release();
   }
 }
 
-async function syncProQuantities(): Promise<{ checked: number; updated: number; skipped: number }> {
+async function syncProQuantities(): Promise<{ checked: number; updated: number; skipped: number; deferred: number }> {
   const priceId = process.env.STRIPE_PRICE_PRO;
-  if (!priceId) return { checked: 0, updated: 0, skipped: 0 };
+  if (!priceId) return { checked: 0, updated: 0, skipped: 0, deferred: 0 };
 
   const { rows } = await db().query(
     `SELECT user_id, stripe_subscription_id, billed_agents
      FROM subscriptions
      WHERE plan = 'pro'
        AND status IN ('active', 'trialing', 'past_due')
-       AND stripe_subscription_id IS NOT NULL`,
+       AND stripe_subscription_id IS NOT NULL
+     -- Least recently touched first, so when the time budget cuts a run short
+     -- the accounts it never reached are first in line next time.
+     ORDER BY updated_at`,
   );
 
+  const deadline = Date.now() + PRO_BUDGET_MS;
   let updated = 0;
   let skipped = 0;
+  let checked = 0;
   for (const row of rows) {
+    if (Date.now() > deadline) break;
+    checked++;
     try {
       const agents = await countAgents(row.user_id);
       // Engine unreachable: leave the bill alone rather than guess.
@@ -116,11 +138,11 @@ async function syncProQuantities(): Promise<{ checked: number; updated: number; 
         `UPDATE subscriptions SET billed_agents = $2, updated_at = now() WHERE user_id = $1`,
         [row.user_id, want],
       );
-    } catch {
+    } catch (err) {
       skipped++;
-      console.error(`[billing-sync] quantity sync failed for user ${row.user_id}`);
+      console.error(`[billing-sync] quantity sync failed for user ${row.user_id}:`, err instanceof Error ? err.message : err);
     }
   }
 
-  return { checked: rows.length, updated, skipped };
+  return { checked, updated, skipped, deferred: rows.length - checked };
 }

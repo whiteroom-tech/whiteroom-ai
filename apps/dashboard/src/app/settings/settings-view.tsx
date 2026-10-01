@@ -17,7 +17,7 @@ import {
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
-import { PLANS, formatPrice, hasLiveSubscription, monthlyCostCents, type PlanId } from '@/lib/plans';
+import { PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, monthlyCostCents, type PlanId } from '@/lib/plans';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -301,7 +301,9 @@ function PlanSection({
   // they keep it once the 90 days are up.
   const offers = purchasablePlans.filter((p) => p !== plan || entitlement.onTrial);
   const trialEnd = entitlement.trialEndsAt.slice(0, 10);
-  const trialDaysLeft = Math.max(0, Math.round((Date.parse(entitlement.trialEndsAt) - Date.now()) / 86_400_000));
+  // ceil so an active trial never reads "0 days left"; capped because a DST
+  // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
+  const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / 86_400_000)));
   const proCost = plan === 'pro' && usage.agents !== null ? monthlyCostCents('pro', usage.agents) : null;
 
   return (
