@@ -6,9 +6,10 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { posthog } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
+import { type PastTest, clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
+import { PastTests } from './PastTests';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
@@ -190,9 +191,11 @@ function StepsRail({ current }: { current: number }) {
   );
 }
 
-export function TestRunFlow({ previewUserId }: {
+export function TestRunFlow({ previewUserId, previewPastTests }: {
   /** /dev/sandbox only: render as this signed-in user without a real session. */
   previewUserId?: string;
+  /** /dev/sandbox only: sample Past tests. */
+  previewPastTests?: PastTest[];
 } = {}) {
   const live = useSession();
   const session = previewUserId ? { user: { id: previewUserId } } : live.data;
@@ -751,6 +754,7 @@ export function TestRunFlow({ previewUserId }: {
         {run && <div className={s.footer}>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()} · ` : ''}Test {run.sandboxId}{expired ? ' · Expired' : ''}</div>}
       </>}
 
+      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} />}
       </div>
       </div>
 
