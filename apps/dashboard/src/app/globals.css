@@ -330,3 +330,4 @@ a.wr-btn { text-decoration: none; }
   .wr-perf-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wr-perf-row, .wr-perf-row--cost { grid-template-columns: minmax(0, 1fr); }
 }
+.wr-panel--danger { border-color: var(--bad-line); }
