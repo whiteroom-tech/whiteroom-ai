@@ -9,7 +9,7 @@ import type { ProviderKey } from '@/lib/whiteroom/types';
 import { Banner, Button, Panel, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
-import { CopyChip } from '@/components/citadel/CopyChip';
+import { CopyButton, CopyChip } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
 import { PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 
@@ -49,6 +49,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [msg, setMsg] = useState('');
   const [issued, setIssued] = useState<{ proxyUrl: string; keyHint: string; provider: string } | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<ProviderKey | null>(null);
 
   const refresh = useCallback(async (): Promise<ProviderKey[]> => {
     const res = await listProviderKeys(auth);
@@ -135,8 +137,6 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     return `export ANTHROPIC_BASE_URL=${url}`;
   }
 
-  const [adding, setAdding] = useState(false);
-  const [removing, setRemoving] = useState<ProviderKey | null>(null);
   const showForm = adding || keys?.length === 0;
 
   return (
@@ -154,8 +154,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
           <Banner variant="info" icon="check">
             <div style={{ display: 'grid', gap: 8 }}>
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
-              <CopyChip text={issued.proxyUrl} />
-              <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} />
+              <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
+              <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
             </div>
           </Banner>
         )}
@@ -264,7 +264,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <code className="wr-key-field">{showKey ? apiKey : maskKey(apiKey)}</code>
                 <Button onClick={() => setShowKey((v) => !v)} aria-pressed={showKey}>{showKey ? 'Hide' : 'Reveal'}</Button>
-                <CopyKeyButton text={apiKey} />
+                {/* Reveal first: copying a secret you can't see is easy to do by accident. */}
+                <CopyButton text={apiKey} label="Copy your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
               </div>
               <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
                 Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet.
@@ -278,8 +279,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
               {tab === 'direct' ? (
                 <>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. No code changes; run your agent exactly as before.</p>
-                  <CopyChip text={SETUP_LINES.anthropic} />
-                  <CopyChip text={SETUP_LINES.openai} />
+                  <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
+                  <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                 </>
               ) : (
                 <>
@@ -312,19 +313,7 @@ function AzureStep({ label, code }: { label: string; code: string }) {
   return (
     <div style={{ display: 'grid', gap: 6 }}>
       <span style={{ fontSize: 12, color: 'var(--tx2)' }}>{label}</span>
-      <CopyChip text={code} />
+      <CopyChip text={code} label={`Copy: ${label}`} />
     </div>
-  );
-}
-
-function CopyKeyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-  return (
-    <Button onClick={() => { navigator.clipboard.writeText(text).then(() => setCopied(true), () => {}); }}>{copied ? 'Copied' : 'Copy'}</Button>
   );
 }

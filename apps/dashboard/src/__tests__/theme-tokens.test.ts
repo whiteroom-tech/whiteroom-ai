@@ -108,11 +108,12 @@ describe('globals.css', () => {
     expect(() => postcss.parse(css)).not.toThrow();
   });
 
-  it('keeps component rules at the top level, not inside a media query by accident', () => {
-    const nested: string[] = [];
-    postcss.parse(css).walkAtRules('media', (m) => {
-      m.walkRules((r) => { if (/^\.wr-(key|perf-strip|steps|copy-chip)/.test(r.selector) && !/max-width: (720|900|1100)px/.test(m.params)) nested.push(r.selector); });
-    });
-    expect(nested).toEqual([]);
+  // Base rules for components must be top-level; a breakpoint may only
+  // adjust them. A dropped brace still parses, it just nests what follows.
+  it('declares each component base rule at the top level', () => {
+    const base = ['.wr-key-field', '.wr-key-list', '.wr-input', '.wr-copy-chip', '.wr-steps', '.wr-perf-strip', '.wr-perf-row', '.wr-panel', '.wr-btn'];
+    const topLevel = new Set<string>();
+    postcss.parse(css).walkRules((r) => { if (r.parent?.type === 'root') r.selectors.forEach((sel) => topLevel.add(sel)); });
+    expect(base.filter((sel) => !topLevel.has(sel))).toEqual([]);
   });
 });
