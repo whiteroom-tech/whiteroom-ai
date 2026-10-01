@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { collectRuns, fmtLength, fmtStarted, parseRunId, runHref, runMeta, runsCount, runsDays, standOut, timelineRow } from '@/lib/runs';
+import { collectRuns, eventFeedSheets, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -88,5 +89,66 @@ describe('export paging', () => {
   it('reports an engine without list_runs, and lets errors through', async () => {
     expect(await collectRuns(async () => ({ unsupported: true }), 3)).toEqual({ unsupported: true });
     await expect(collectRuns(async () => { throw new Error('HTTP 500'); }, 3)).rejects.toThrow('HTTP 500');
+  });
+});
+
+describe('loadRunPage', () => {
+  const page = (p: Partial<RunEventsResult>): RunEventsResult => ({
+    fleetId: 'f', run: { runId: 'a~1', agentId: 'a', shift: 1, startedAt: '', endedAt: '' },
+    events: [], page: 0, pages: 1, total: 0, eventFound: null, ...p,
+  });
+
+  it('loads the current page when there is no deep link', async () => {
+    const get = vi.fn(async (_q: RunPageQuery) => page({ page: 2 }));
+    const got = await loadRunPage(get, { target: null, kind: 'events', cursor: '2' });
+    expect(get).toHaveBeenCalledWith({ cursor: '2', kind: 'events' });
+    expect(got).toMatchObject({ kind: 'events', cursor: '2', highlight: null });
+  });
+
+  it('keeps the page the server picked for a deep link, so polls stay on it', async () => {
+    const get = vi.fn(async (_q: RunPageQuery) => page({ page: 3, pages: 5, eventFound: true }));
+    const got = await loadRunPage(get, { target: 'e9', kind: 'all', cursor: null });
+    expect(get).toHaveBeenCalledWith({ eventId: 'e9', kind: 'all' });
+    expect(got).toMatchObject({ kind: 'all', cursor: '3', highlight: 'e9' });
+  });
+
+  it('switches to Everything when the linked event is a call', async () => {
+    const get = vi.fn(async (q: RunPageQuery) => (q.kind === 'events' ? page({ eventFound: false }) : page({ page: 1, pages: 2, eventFound: true })));
+    const got = await loadRunPage(get, { target: 'c4', kind: 'events', cursor: null });
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(got).toMatchObject({ kind: 'all', cursor: '1', highlight: 'c4' });
+  });
+
+  it('shows the first page without a highlight when the event is gone', async () => {
+    const got = await loadRunPage(async () => page({ eventFound: false }), { target: 'x', kind: 'all', cursor: null });
+    expect(got).toMatchObject({ kind: 'all', cursor: null, highlight: null });
+  });
+});
+
+describe('exports', () => {
+  it('marks spend as a lower bound with an unpriced calls column', () => {
+    const r: RunSummary = {
+      runId: 'a~2', agentId: 'a', shift: 2, startedAt: '2026-09-30T20:00:00Z', endedAt: '2026-09-30T20:10:00Z', lengthSeconds: 600,
+      calls: 4, failedCalls: 0, blockedCalls: 0, spendMicros: 1_234_567, unpricedAttempts: 2, coverage: { calls: 4, checked: 4 },
+    };
+    const row = runsExportRow(r);
+    expect(row).toHaveLength(RUNS_EXPORT_HEADER.length);
+    expect(row[RUNS_EXPORT_HEADER.indexOf('Spend (USD)')]).toBe(1.234567);
+    expect(row[RUNS_EXPORT_HEADER.indexOf('Unpriced calls')]).toBe(2);
+  });
+
+  it('writes every event, and finished tasks alone on a second sheet', () => {
+    const entries = [
+      { timestamp: '2026-09-30T20:00:00Z', agentId: 'a', type: 'task_complete', taskName: 'triage', watchNumber: 3, tokensUsed: 10, details: [{ name: 'lookup', args: 'id=1' }, { name: 'save' }] },
+      { timestamp: '2026-09-30T20:01:00Z', agentId: 'a', type: 'handover', taskName: 'ignored' },
+    ] as unknown as AuditEntry[];
+    const [all, tasks] = eventFeedSheets(entries);
+    expect(all.rows).toHaveLength(2);
+    expect(tasks.rows).toHaveLength(1);
+    const t = tasks.rows[0];
+    expect(t.slice(1, 6)).toEqual(['a', 3, 'task_complete', 'triage', 10]);
+    expect(t[8]).toBe('lookup(id=1)  |  save');
+    expect(all.rows[1][4]).toBe('');
+    expect(all.rows[1][2]).toBeUndefined();
   });
 });

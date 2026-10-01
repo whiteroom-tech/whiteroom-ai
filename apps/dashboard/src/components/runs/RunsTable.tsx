@@ -14,7 +14,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { collectRuns, fmtLength, fmtStarted, runHref, RUNS_LIST_URL_KEY, runsCount, runsDays, RUNS_RANGES, standOut, zoneName, type RunsRange } from '@/lib/runs';
+import { collectRuns, fmtLength, fmtStarted, runHref, RUNS_EXPORT_HEADER, runsExportRow, RUNS_LIST_URL_KEY, runsCount, runsDays, RUNS_RANGES, standOut, zoneName, type RunsRange } from '@/lib/runs';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 
@@ -71,9 +71,9 @@ export function RunsTable({ preview }: {
   // A new filter starts from the first page with nothing shown, in one
   // update, so no request ever pairs the new filter with an old cursor and
   // the count never mixes the old total with the new range.
-  function changeFilter(next: { range?: RunsRange; agent?: string }) {
-    if (next.range !== undefined) setRange(next.range);
-    if (next.agent !== undefined) setAgent(next.agent);
+  function changeFilter(change: { range?: RunsRange; agent?: string }) {
+    if (change.range !== undefined) setRange(change.range);
+    if (change.agent !== undefined) setAgent(change.agent);
     setCursors([null]);
     setRuns(null);
     setNext(null);
@@ -136,8 +136,8 @@ export function RunsTable({ preview }: {
       const { runs: all, truncated } = got;
       downloadWorkbook(buildWorkbook([{
         name: 'Runs',
-        header: ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'What stood out'],
-        rows: all.map((r) => [r.runId, r.agentId, r.shift, r.startedAt, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, Math.round(r.spendMicros) / 1e6, standOut(r).text]),
+        header: RUNS_EXPORT_HEADER,
+        rows: all.map(runsExportRow),
       }]), `whiteroom-runs-${fromDay}-to-${toDay}${truncated ? `-newest-${all.length}` : ''}.xlsx`);
       if (truncated) setExportNote({ ok: true, text: `Exported the newest ${all.length.toLocaleString('en-US')} runs. Pick a shorter range or one agent for the rest.` });
     } catch (e) {

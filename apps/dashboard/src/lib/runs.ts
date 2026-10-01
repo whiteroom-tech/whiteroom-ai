@@ -1,7 +1,8 @@
 // Pure helpers for Runs (README › Screens › 2a / 2b). A run is one agent's
 // shift; the engine's list_runs / get_run_events serve them.
 
-import type { RunEvent, RunSummary } from '@/lib/whiteroom/types';
+import type { AuditEntry, RunEvent, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
+import type { Sheet } from '@/lib/xlsx';
 import type { IconName, TagTone } from '@whiteroom/ui';
 import { activityRow, clock } from '@/lib/home';
 
@@ -155,10 +156,54 @@ export function timelineRow(e: RunEvent): TimelineRow {
   };
 }
 
-/** "Sep 30 · started 1:52 pm EDT · 23 min · shift 8". */
-/** The zone name is the start time's, so a run from before a DST change keeps its own abbreviation. */
+/**
+ * "Sep 30 · started 1:52 pm EDT · 23 min · shift 8". The zone name is the
+ * start time's, so a run from before a DST change keeps its own abbreviation.
+ */
 export function runMeta(run: { startedAt: string; endedAt: string; shift: number }): string {
   const { date, time } = dateAndTime(run.startedAt);
   const length = fmtLength((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000);
   return `${date} · started ${time} ${zoneName(Date.parse(run.startedAt))} · ${length} · shift ${run.shift}`;
+}
+
+export type RunKind = 'all' | 'events';
+export type RunPageQuery = { cursor?: string | null; eventId?: string | null; kind: RunKind };
+
+/**
+ * One Run detail load. With a deep-linked event it asks for the page holding
+ * it, falls back to Everything when the event is a call (not in Events only),
+ * and returns that page as the cursor so later polls stay on it.
+ */
+export async function loadRunPage(
+  get: (q: RunPageQuery) => Promise<RunEventsResult>,
+  q: { target: string | null; kind: RunKind; cursor: string | null },
+): Promise<{ res: RunEventsResult; kind: RunKind; cursor: string | null; highlight: string | null }> {
+  if (!q.target) return { res: await get({ cursor: q.cursor, kind: q.kind }), kind: q.kind, cursor: q.cursor, highlight: null };
+  let kind = q.kind;
+  let res = await get({ eventId: q.target, kind });
+  if (res.eventFound === false && kind === 'events') {
+    kind = 'all';
+    res = await get({ eventId: q.target, kind });
+  }
+  return { res, kind, cursor: res.page > 0 ? String(res.page) : null, highlight: res.eventFound ? q.target : null };
+}
+
+/** The old event feed's export: every event, and the finished tasks alone. */
+export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
+  const header = ['Time', 'Agent', 'Shift', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
+  const row = (e: AuditEntry) => [
+    new Date(e.timestamp).toLocaleString('en-US', { hour12: false }), e.agentId || '', e.watchNumber, e.type || '',
+    e.type === 'task_complete' ? e.taskName || '' : '', e.tokensUsed, e.minutesSpent, e.remaining,
+    (Array.isArray(e.details) ? e.details : []).map((d) => (d.args ? `${d.name}(${d.args})` : d.name)).join('  |  '),
+  ];
+  return [
+    { name: 'All Events', header, rows: entries.map(row) },
+    { name: 'Tasks Only', header, rows: entries.filter((e) => e.type === 'task_complete').map(row) },
+  ];
+}
+
+/** Runs export: spend is a lower bound when some calls had no price, so that count gets its own column. */
+export const RUNS_EXPORT_HEADER = ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'Unpriced calls', 'What stood out'];
+export function runsExportRow(r: RunSummary): (string | number)[] {
+  return [r.runId, r.agentId, r.shift, r.startedAt, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, standOut(r).text];
 }

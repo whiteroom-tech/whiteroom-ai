@@ -17,6 +17,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import type { FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
+import { eventFeedSheets } from '@/lib/runs';
 
 // --- URL state sync ---
 
@@ -129,16 +130,7 @@ export function EventFeedRuns() {
   function exportWorkbook() {
     if (!rangedEntries.length) return;
     const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const header = ['Time', 'Agent', 'Shift', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
-    const row = (e: AuditEntry) => [
-      new Date(e.timestamp).toLocaleString('en-US', { hour12: false }), e.agentId || '', e.watchNumber as number, e.type || '',
-      e.type === 'task_complete' ? e.taskName || '' : '', e.tokensUsed as number, e.minutesSpent as number, e.remaining as number,
-      (Array.isArray(e.details) ? e.details : []).map((d: { name: string; args?: string }) => (d.args ? `${d.name}(${d.args})` : d.name)).join('  |  '),
-    ];
-    downloadWorkbook(buildWorkbook([
-      { name: 'All Events', header, rows: rangedEntries.map(row) },
-      { name: 'Tasks Only', header, rows: rangedEntries.filter((e) => e.type === 'task_complete').map(row) },
-    ]), `whiteroom-runs-${range}-${ts}.xlsx`);
+    downloadWorkbook(buildWorkbook(eventFeedSheets(rangedEntries)), `whiteroom-runs-${range}-${ts}.xlsx`);
   }
 
   function toggleFeedExpanded(key: string) {
