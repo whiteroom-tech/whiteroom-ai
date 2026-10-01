@@ -68,13 +68,27 @@ export class WhiteRoomApiError extends Error {
   }
 }
 
+/** Marks the BFF's refusal of a rule change or pause/resume (lib/control-auth). */
+export const CONTROL_DENIED = 'control_denied';
+
+/**
+ * The dashboard refused a control action for this account (not signed in, not
+ * the fleet's owner). The session is fine; the message says why.
+ */
+export class ControlDeniedError extends WhiteRoomApiError {
+  constructor(message: string) {
+    super(message, 403);
+    this.name = 'ControlDeniedError';
+  }
+}
+
 /**
  * True only for a genuine credential rejection (401/403). A timeout, network
  * failure, or 5xx is NOT an auth error — credentials should be kept and the
- * call retried.
+ * call retried. Nor is a control refusal: signing out wouldn't help.
  */
 export function isAuthError(e: unknown): boolean {
-  return e instanceof WhiteRoomApiError && (e.status === 401 || e.status === 403);
+  return e instanceof WhiteRoomApiError && !(e instanceof ControlDeniedError) && (e.status === 401 || e.status === 403);
 }
 
 /**
@@ -144,7 +158,13 @@ async function apiCall<T>(
   opts?: PostOptions,
 ): Promise<T> {
   const res = await postRaw(body, key, opts);
-  if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
+  if (!res.ok) {
+    if (res.status === 403) {
+      const denied = await res.json().catch(() => null);
+      if (denied?.code === CONTROL_DENIED && typeof denied.error === 'string') throw new ControlDeniedError(denied.error);
+    }
+    throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
+  }
   try {
     return (await res.json()) as T;
   } catch {

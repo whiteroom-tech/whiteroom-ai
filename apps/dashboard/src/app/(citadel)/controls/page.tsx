@@ -11,6 +11,7 @@ import {
   governanceList,
   governanceUpdateRule,
   isAuthError,
+  ControlDeniedError,
   performanceFleetHourly,
   performanceIndex,
 } from "@/lib/whiteroom/client";
@@ -503,6 +504,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
 
   const handleError = useCallback((e: unknown, what: string) => {
     if (isAuthError(e)) { onAuthError(); return; }
+    if (e instanceof ControlDeniedError) { setError(e.message); return; }
     setError(`Couldn't ${what}. Your last change may not have been saved — refreshed from the server.`);
   }, [onAuthError]);
 

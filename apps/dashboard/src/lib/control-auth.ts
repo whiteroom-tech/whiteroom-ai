@@ -58,6 +58,33 @@ export function credentialGrant(held: HeldCredential[], fleetId: string, token: 
   return same.some((h) => h.fleetId === null) ? 'unknown-fleet' : 'none';
 }
 
+/** An account holding a fleet: its provisioned fleet, or a user_fleets link. */
+export interface FleetHolder {
+  userId: string;
+  /** The fleet is the account's own provisioned fleet (users.fleet_id). */
+  provisioned: boolean;
+  /** When the account got the fleet, epoch seconds: users.created_at or user_fleets.created_at. */
+  since: number;
+}
+
+/**
+ * The fleet's owner: the account that provisioned it, else the one that
+ * linked it first. Anyone holding a fleet's token can link it to their own
+ * account, an agent included, since the engine hands the token to whoever
+ * holds the fleet's provider key. Being first is what an agent linking later
+ * can't fake. Ties go to the lower user id so the answer is stable.
+ */
+export function fleetOwner(holders: FleetHolder[]): string | null {
+  const [first] = [...holders].sort((a, b) =>
+    Number(b.provisioned) - Number(a.provisioned) || a.since - b.since || a.userId.localeCompare(b.userId));
+  return first?.userId ?? null;
+}
+
+const NOT_OWNER: ControlDenial = {
+  status: 403,
+  error: 'Only this fleet’s owner can change its rules or pause its agents. Another WhiteRoom account added it first; you can still view it.',
+};
+
 const NOT_LINKED: ControlDenial = { status: 403, error: 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its rules or pause its agents.' };
 const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check your access to this fleet. Try again.' };
 
@@ -70,6 +97,9 @@ const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check you
  *
  * For a row saved without a fleet id, the engine's token_login says which
  * fleet the token is for, and it must be the requested one.
+ *
+ * The account must also be the fleet's owner (fleetOwner): other accounts
+ * that linked the same fleet can view it but not change its controls.
  *
  * Only fleet tokens are matched, never users.api_key. A session can't hold
  * anything else: /api/fleet/session validates its cookie with token_login,
@@ -98,12 +128,50 @@ export async function controlAccessError(fleetId: string | null, token: string):
     return LOOKUP_FAILED;
   }
   const grant = credentialGrant(held, fleetId, token);
-  if (grant === 'linked') return null;
   if (grant === 'none') return NOT_LINKED;
+  if (grant === 'unknown-fleet') {
+    try {
+      const login = await tokenLogin(token);
+      if (login.fleetId !== fleetId) return NOT_LINKED;
+    } catch (e) {
+      return isAuthError(e) ? NOT_LINKED : LOOKUP_FAILED;
+    }
+    await recordFleetId(userId, token, fleetId);
+  }
   try {
-    const login = await tokenLogin(token);
-    return login.fleetId === fleetId ? null : NOT_LINKED;
-  } catch (e) {
-    return isAuthError(e) ? NOT_LINKED : LOOKUP_FAILED;
+    // Holders are rows saved for this fleet, plus rows with no fleet id that
+    // hold this fleet's token: a fleet token belongs to one fleet, so an old
+    // row's owner still counts before anyone who linked the fleet later.
+    const { rows } = await db().query(
+      `SELECT id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
+         FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND fleet_token = $2)
+       UNION ALL
+       SELECT user_id, false, extract(epoch FROM created_at)::float8
+         FROM user_fleets WHERE fleet_id = $1 OR (fleet_id IS NULL AND fleet_token = $2)`,
+      [fleetId, token],
+    );
+    return fleetOwner(rows) === userId ? null : NOT_OWNER;
+  } catch {
+    return LOOKUP_FAILED;
+  }
+}
+
+/**
+ * Saves the engine-verified fleet id on the account's rows that have none.
+ * Best effort: the ownership query already counts fleet-id-less rows by
+ * their token, so a missed write changes nothing.
+ */
+async function recordFleetId(userId: string, token: string, fleetId: string): Promise<void> {
+  try {
+    await db().query(
+      'UPDATE user_fleets SET fleet_id = $3 WHERE user_id = $1 AND fleet_token = $2 AND fleet_id IS NULL',
+      [userId, token, fleetId],
+    );
+    await db().query(
+      'UPDATE users SET fleet_id = $3 WHERE id = $1 AND fleet_token = $2 AND fleet_id IS NULL',
+      [userId, token, fleetId],
+    );
+  } catch {
+    // See above: a missed write fails closed.
   }
 }
