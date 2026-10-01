@@ -76,7 +76,7 @@ jobs:
             --image "$IMAGE:$GITHUB_SHA-staging" \
             --service-account "whiteroom-dashboard-run@$PROJECT.iam.gserviceaccount.com" \
             --set-cloudsql-instances "$SQL_INSTANCE" \
-            --set-secrets "AUTH_SECRET=whiteroom-dashboard-auth-secret:latest,DB_PASSWORD=whiteroom-dashboard-db-password:latest,AUTH_GOOGLE_SECRET=whiteroom-dashboard-google-client-secret:latest,AUTH_RESEND_KEY=whiteroom-dashboard-resend-key:latest,WR_ENTITLEMENT_SYNC_SECRET=whiteroom-entitlement-sync-secret:latest,WR_SANDBOX_SERVICE_SECRET=whiteroom-sandbox-service-secret:latest" \
+            --set-secrets "AUTH_SECRET=whiteroom-dashboard-auth-secret:latest,DB_PASSWORD=whiteroom-dashboard-db-password:latest,AUTH_GOOGLE_SECRET=whiteroom-dashboard-google-client-secret:latest,AUTH_RESEND_KEY=whiteroom-dashboard-resend-key:latest,WR_ENTITLEMENT_SYNC_SECRET=whiteroom-entitlement-sync-secret:latest,WR_SANDBOX_SERVICE_SECRET=whiteroom-sandbox-service-secret:latest,WR_DASHBOARD_SERVICE_SECRET=whiteroom-dashboard-service-secret:latest" \
             --set-env-vars "^|^DB_SOCKET_PATH=/cloudsql/$SQL_INSTANCE|DB_USER=whiteroom_dashboard_app|DB_NAME=whiteroom_dashboard|AUTH_GOOGLE_ID=272235454263-pbmhape0njeuhtr700s9ae8qct4f14e5.apps.googleusercontent.com|AUTH_URL=$STAGING_URL|AUTH_TRUST_HOST=true|AUTH_EMAIL_FROM=WhiteRoom Staging <no-reply@whiteroom.tech>|NEXT_PUBLIC_PROXY_URL=$STAGING_ENGINE_URL" \
             --min-instances 0 --max-instances 2 --cpu-boost --memory 512Mi --cpu 1 --port 8080 \
             --no-invoker-iam-check \

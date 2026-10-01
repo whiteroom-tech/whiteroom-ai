@@ -7,6 +7,12 @@
 // authorizes by token — no action allowlist, no body rewriting. The engine's
 // status and JSON body come back unchanged, so WhiteRoomApiError/isAuthError
 // semantics in client.ts work exactly as they do for direct calls.
+//
+// One exception to "transparent": the control actions (rule changes, pause /
+// resume) are dashboard-only at the engine (R1). For those, this route checks
+// the caller is a signed-in user linked to the fleet, then adds the
+// dashboard's service secret. Agents never come through here with a user
+// session, so they can't change their own controls.
 
 import { checkSameOrigin } from '@/lib/origin-check';
 import {
@@ -15,6 +21,7 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
+import { CONTROL_SECRET_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +47,17 @@ export async function POST(req: Request) {
 
   const body = await req.text();
 
+  const headers = engineAuthHeaders(token);
+  const control = controlActionOf(body);
+  if (control) {
+    const denied = await controlAccessError(control.fleetId, token);
+    if (denied) return Response.json({ error: denied.error }, { status: denied.status });
+    // Unset during rollout: the request goes without it, which engines from
+    // before R1 accept and engines with R1 refuse (fail closed).
+    const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
+    if (secret) headers[CONTROL_SECRET_HEADER] = secret;
+  }
+
   let upstream: Response;
   try {
     upstream = await fetch(`${PROXY_URL}/api/white-room`, {
@@ -47,7 +65,7 @@ export async function POST(req: Request) {
       signal: AbortSignal.timeout(15_000),
       redirect: 'error',
       cache: 'no-store',
-      headers: engineAuthHeaders(token),
+      headers,
       body,
     });
   } catch {
