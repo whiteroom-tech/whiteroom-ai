@@ -13,6 +13,11 @@ const PATHS = {
   x: 'M18 6L6 18M6 6l12 12',
   chevronDown: 'M6 9l6 6 6-6',
   lock: 'M5 11h14v11H5zM7 11V7a5 5 0 0110 0v4',
+  swap: 'M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3',
+  globe: 'M12 22a10 10 0 100-20 10 10 0 000 20zM2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20',
+  wrench: 'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z',
+  file: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6',
+  reply: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
 } as const;
 
 export type IconName = keyof typeof PATHS;

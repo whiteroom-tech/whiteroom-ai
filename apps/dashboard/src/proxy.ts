@@ -63,11 +63,8 @@ export function proxy(request: NextRequest) {
     let target: string = ROUTES.home;
     if (tab === 'analytics') {
       target = ROUTES.runs;
-    } else if (tab === 'visualization') {
-      target = `${ROUTES.home}?tab=overview&view=visualization`;
-    } else if (tab === 'live') {
-      target = `${ROUTES.home}?tab=overview`;
     }
+    // The visualization and live tabs became parts of Home.
     const url = new URL(target, request.url);
     const response = NextResponse.redirect(url, 307);
     response.headers.set('Cache-Control', 'no-store');

@@ -1,6 +1,10 @@
 import { Icon, type IconName } from './icons';
 
-export type AgentState = 'working' | 'resting' | 'idle' | 'paused' | 'stopped' | 'pausing' | 'stopping' | 'resuming';
+export type AgentState =
+  | 'working' | 'resting' | 'idle' | 'paused' | 'stopped'
+  | 'pausing' | 'stopping' | 'resuming'
+  // What the engine reports today besides the five above.
+  | 'handover' | 'stale' | 'disconnected';
 
 // Icon and word always go together; color is never the only signal
 // (README › Status vocabulary). The pending states show while the engine
@@ -14,6 +18,9 @@ const STATES: Record<AgentState, { word: string; icon: IconName; tone: string; t
   pausing: { word: 'Pausing…', icon: 'clock', tone: 'muted', title: 'Waiting for WhiteRoom to confirm.' },
   stopping: { word: 'Stopping…', icon: 'clock', tone: 'muted', title: 'Waiting for WhiteRoom to confirm.' },
   resuming: { word: 'Resuming…', icon: 'clock', tone: 'muted', title: 'Waiting for WhiteRoom to confirm.' },
+  handover: { word: 'Handing over', icon: 'swap', tone: 'ho', title: 'Passing its notes to a fresh session. It continues in a moment.' },
+  stale: { word: 'Not reporting', icon: 'alertCircle', tone: 'warn', title: 'WhiteRoom hasn’t heard from this agent recently.' },
+  disconnected: { word: 'Disconnected', icon: 'x', tone: 'muted', title: 'The agent’s connection to WhiteRoom dropped.' },
 };
 
 export function StatusPill({ state }: { state: AgentState }) {

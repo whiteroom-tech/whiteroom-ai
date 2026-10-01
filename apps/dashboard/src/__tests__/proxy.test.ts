@@ -121,6 +121,13 @@ describe('the route renames (P0.5)', () => {
     expect(verdict(proxy(req(APP, '/agents/lead-agent', { withSession: true })))).toBe('pass');
   });
 
+  it('sends every legacy /fleet tab to its current page', () => {
+    expect(verdict(proxy(req(APP, '/fleet?tab=analytics')))).toBe('redirect:/runs');
+    for (const tab of ['visualization', 'live', 'overview']) {
+      expect(verdict(proxy(req(APP, `/fleet?tab=${tab}`)))).toBe('redirect:/home');
+    }
+  });
+
   it('serves Controls at /controls and the Sandbox at /sandbox', () => {
     expect(verdict(proxy(req(APP, '/controls', { withSession: true })))).toBe('pass');
     expect(verdict(proxy(req(APP, '/sandbox', { withSession: true })))).toBe('pass');
