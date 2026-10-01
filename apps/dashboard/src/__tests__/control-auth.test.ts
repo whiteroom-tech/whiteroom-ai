@@ -37,21 +37,33 @@ describe('controlAccessError', () => {
 
   it('needs a signed-in WhiteRoom account (a pasted fleet key is not enough)', async () => {
     mocks.auth.mockResolvedValue(null);
-    expect(await controlAccessError('f1')).toMatch(/Sign in with your WhiteRoom account/);
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/Sign in with your WhiteRoom account/) });
     expect(mocks.query).not.toHaveBeenCalled();
   });
 
   it('needs the account to be linked to that fleet', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     mocks.query.mockResolvedValue({ rows: [] });
-    expect(await controlAccessError('someone-elses-fleet')).toMatch(/isn’t linked to this fleet/);
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'someone-elses-fleet']);
+    expect(await controlAccessError('someone-elses-fleet', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/isn’t linked to this fleet/) });
+    // The fleet and the forwarded token are checked together.
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'someone-elses-fleet', 'tok']);
   });
 
   it('allows a linked account', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     mocks.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
-    expect(await controlAccessError('f1')).toBeNull();
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+  });
+
+  it('asks for a fleet_id', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    expect(await controlAccessError(null, 'tok')).toEqual({ status: 400, error: 'fleet_id is required.' });
+  });
+
+  it('fails closed when the lookup fails', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    mocks.query.mockRejectedValue(new Error('connection refused'));
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
   });
 });
 
@@ -88,6 +100,29 @@ describe('the engine BFF', () => {
     mocks.query.mockResolvedValue({ rows: [{}] });
     expect((await call({ action: 'governance_update_rule', fleet_id: 'f1', rule_id: 'r' })).status).toBe(200);
     expect(sentHeaders()['x-wr-dashboard-secret']).toBe('dash-secret');
+  });
+
+  it('refuses a token the account doesn’t hold for that fleet, before reaching the engine', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    mocks.query.mockResolvedValue({ rows: [] });
+    const res = await call({ action: 'pause_agent', fleet_id: 'fleet-a', agent_id: 'a' });
+    expect(res.status).toBe(403);
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'fleet-a', 'wr_fleet_token']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('answers a failed lookup with JSON 503, not an unhandled error', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    mocks.query.mockRejectedValue(new Error('db down'));
+    const res = await call({ action: 'governance_delete_rule', fleet_id: 'f1', rule_id: 'r' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: expect.any(String) });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('answers a control action with no fleet_id with 400', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    expect((await call({ action: 'pause_agent', agent_id: 'a' })).status).toBe(400);
   });
 
   it('forwards without the secret while it isn’t configured (old engines accept, new ones refuse)', async () => {

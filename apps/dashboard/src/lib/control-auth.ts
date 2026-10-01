@@ -32,25 +32,39 @@ export function controlActionOf(body: string): { action: string; fleetId: string
   return { action, fleetId: typeof fleet_id === 'string' && fleet_id ? fleet_id : null };
 }
 
+export interface ControlDenial {
+  status: 403 | 400 | 503;
+  error: string;
+}
+
 /**
  * Who may send a control action through the BFF: a signed-in WhiteRoom user
- * linked to that fleet (their own provisioned fleet, or one in user_fleets).
- * A browser session made by pasting a fleet key isn't enough: an agent holds
- * that key too and could script the same login.
+ * linked to that fleet with the very token this session forwards (their own
+ * provisioned fleet, or a user_fleets row). A browser session made by pasting
+ * a fleet key isn't enough: an agent holds that key too and could script the
+ * same login. Binding the token as well as the fleet means the secret is only
+ * ever attached to a credential the account itself holds for that fleet.
  *
- * Returns the message to show, or null when the call may go ahead.
+ * Returns the refusal, or null when the call may go ahead. A failed lookup
+ * refuses (503), so the check fails closed.
  */
-export async function controlAccessError(fleetId: string | null): Promise<string | null> {
+export async function controlAccessError(fleetId: string | null, token: string): Promise<ControlDenial | null> {
   const session = await auth();
   const userId = session?.user?.id;
-  if (!userId) return 'Sign in with your WhiteRoom account to change rules or pause agents.';
-  if (!fleetId) return 'fleet_id is required.';
-  const { rows } = await db().query(
-    `SELECT 1 FROM users WHERE id = $1 AND fleet_id = $2
-     UNION ALL
-     SELECT 1 FROM user_fleets WHERE user_id = $1 AND fleet_id = $2
-     LIMIT 1`,
-    [userId, fleetId],
-  );
-  return rows.length ? null : 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its rules or pause its agents.';
+  if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change rules or pause agents.' };
+  if (!fleetId) return { status: 400, error: 'fleet_id is required.' };
+  let linked: boolean;
+  try {
+    const { rows } = await db().query(
+      `SELECT 1 FROM users WHERE id = $1 AND fleet_id = $2 AND fleet_token = $3
+       UNION ALL
+       SELECT 1 FROM user_fleets WHERE user_id = $1 AND fleet_id = $2 AND fleet_token = $3
+       LIMIT 1`,
+      [userId, fleetId, token],
+    );
+    linked = rows.length > 0;
+  } catch {
+    return { status: 503, error: 'Couldn’t check your access to this fleet. Try again.' };
+  }
+  return linked ? null : { status: 403, error: 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its rules or pause its agents.' };
 }

@@ -50,8 +50,8 @@ export async function POST(req: Request) {
   const headers = engineAuthHeaders(token);
   const control = controlActionOf(body);
   if (control) {
-    const denied = await controlAccessError(control.fleetId);
-    if (denied) return Response.json({ error: denied }, { status: 403 });
+    const denied = await controlAccessError(control.fleetId, token);
+    if (denied) return Response.json({ error: denied.error }, { status: denied.status });
     // Unset during rollout: the request goes without it, which engines from
     // before R1 accept and engines with R1 refuse (fail closed).
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
