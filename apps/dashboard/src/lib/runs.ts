@@ -45,11 +45,18 @@ export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blocke
   return { tone: 'clean', text: 'Nothing unusual' };
 }
 
+/** "Sep 30" and "1:52 pm" in the viewer's time zone (ICU's narrow spaces normalised). */
+function dateAndTime(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase(),
+  };
+}
+
 /** "Sep 30, 1:52 pm" in the viewer's time zone, always with the date. */
 export function fmtStarted(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
+  const { date, time } = dateAndTime(iso);
   return `${date}, ${time}`;
 }
 
@@ -68,13 +75,40 @@ export function runsCount(total: number, range: RunsRange): string {
 /** Where Run detail's "← Runs" returns to (README › Runs › Leaving and returning). */
 export const RUNS_LIST_URL_KEY = 'wr_runs_list_url';
 
-/** /runs/<runId>, with the list URL to return to. */
+/** "lead-agent~8" → agent and shift; null when malformed (no "~", no number). */
+export function parseRunId(runId: string): { agentId: string; shift: number } | null {
+  const at = runId.lastIndexOf('~');
+  if (at <= 0 || !/^\d{1,9}$/.test(runId.slice(at + 1))) return null;
+  return { agentId: runId.slice(0, at), shift: Number(runId.slice(at + 1)) };
+}
+
+/**
+ * Every run in a range for an export, page by page, up to `maxPages`.
+ * `truncated` when there were more; `unsupported` when the engine has no
+ * list_runs. Errors propagate.
+ */
+export async function collectRuns(
+  fetchPage: (cursor: string | null) => Promise<{ runs: RunSummary[]; cursor: string | null } | { unsupported: true }>,
+  maxPages: number,
+): Promise<{ runs: RunSummary[]; truncated: boolean } | { unsupported: true }> {
+  const runs: RunSummary[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < maxPages; i++) {
+    const page = await fetchPage(cursor);
+    if ('unsupported' in page) return page;
+    runs.push(...page.runs);
+    cursor = page.cursor;
+    if (!cursor) return { runs, truncated: false };
+  }
+  return { runs, truncated: true };
+}
+
+/** /runs/<runId>. */
 export function runHref(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}`;
 }
 
 // ── Run detail (screen 2b) ─────────────────────────────────────────────────
-
 
 export interface TimelineRow {
   id: string;
@@ -123,9 +157,7 @@ export function timelineRow(e: RunEvent): TimelineRow {
 
 /** "Sep 30 · started 1:52 pm EDT · 23 min · shift 8". */
 export function runMeta(run: { startedAt: string; endedAt: string; shift: number }, now: number = Date.now()): string {
-  const start = new Date(run.startedAt);
-  const date = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
-  const length = fmtLength((Date.parse(run.endedAt) - start.getTime()) / 1000);
+  const { date, time } = dateAndTime(run.startedAt);
+  const length = fmtLength((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000);
   return `${date} · started ${time} ${zoneName(now)} · ${length} · shift ${run.shift}`;
 }

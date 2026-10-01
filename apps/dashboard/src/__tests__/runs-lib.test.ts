@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fmtLength, fmtStarted, runHref, runMeta, runsCount, runsDays, standOut, timelineRow } from '@/lib/runs';
+import { collectRuns, fmtLength, fmtStarted, parseRunId, runHref, runMeta, runsCount, runsDays, standOut, timelineRow } from '@/lib/runs';
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -61,5 +61,32 @@ describe('run detail rows', () => {
     vi.stubEnv('TZ', 'America/Los_Angeles');
     expect(runMeta({ startedAt: '2026-09-30T20:52:00Z', endedAt: '2026-09-30T21:15:00Z', shift: 8 }, Date.parse('2026-09-30T21:00:00Z')))
       .toBe('Sep 30 · started 1:52 pm PDT · 23 min · shift 8');
+  });
+});
+
+describe('run ids', () => {
+  it('parses agent and shift, and refuses malformed ids instead of guessing', () => {
+    expect(parseRunId('lead-agent~8')).toEqual({ agentId: 'lead-agent', shift: 8 });
+    expect(parseRunId('team.a:w~12')).toEqual({ agentId: 'team.a:w', shift: 12 });
+    for (const bad of ['foo', '~8', 'foo~', 'foo~x']) expect(parseRunId(bad)).toBeNull();
+  });
+});
+
+describe('export paging', () => {
+  const run = (id: string) => ({ runId: id }) as Parameters<typeof standOut>[0] & { runId: string };
+  it('collects every page until the cursor runs out', async () => {
+    const pages = [{ runs: [run('a'), run('b')], cursor: '2' }, { runs: [run('c')], cursor: null }];
+    let i = 0;
+    const got = await collectRuns(async () => pages[i++] as never, 10);
+    expect(got).toEqual({ runs: [run('a'), run('b'), run('c')], truncated: false });
+  });
+  it('stops at the page cap and says it was truncated', async () => {
+    const got = await collectRuns(async (c) => ({ runs: [run(String(c))], cursor: 'more' }) as never, 3);
+    expect('truncated' in got && got.truncated).toBe(true);
+    expect('runs' in got && got.runs).toHaveLength(3);
+  });
+  it('reports an engine without list_runs, and lets errors through', async () => {
+    expect(await collectRuns(async () => ({ unsupported: true }), 3)).toEqual({ unsupported: true });
+    await expect(collectRuns(async () => { throw new Error('HTTP 500'); }, 3)).rejects.toThrow('HTTP 500');
   });
 });

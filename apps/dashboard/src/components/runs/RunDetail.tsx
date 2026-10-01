@@ -9,7 +9,8 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { runMeta, RUNS_LIST_URL_KEY, timelineRow } from '@/lib/runs';
+import { parseRunId, runMeta, RUNS_LIST_URL_KEY, timelineRow } from '@/lib/runs';
+import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
 type Kind = 'all' | 'events';
@@ -40,15 +41,17 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   const [backHref, setBackHref] = useState<string>(ROUTES.runs);
   useEffect(() => { setBackHref(safeSessionGet(RUNS_LIST_URL_KEY) ?? ROUTES.runs); }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (stale: () => boolean) => {
     if (preview) return;
     try {
       const target = pendingEvent.current;
       let res = await getRunEvents(fleetId, runId, target ? { eventId: target, kind } : { cursor, kind }, authKey);
+      if (stale()) return;
       // A call isn't in "Events only": switch to Everything to show it.
       if (target && res.eventFound === false && kind === 'events') {
-        setKind('all');
         res = await getRunEvents(fleetId, runId, { eventId: target, kind: 'all' }, authKey);
+        if (stale()) return;
+        setKind('all');
       }
       setData(res);
       setFailing(false);
@@ -58,13 +61,21 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         if (res.eventFound) setHighlight(target);
       }
     } catch (e) {
+      if (stale()) return;
       if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }
       if (e instanceof WhiteRoomApiError && e.status === 404) { setMissing(true); return; }
       setFailing(true);
     }
   }, [fleetId, authKey, runId, kind, cursor, onAuthError, preview]);
 
-  useEffect(() => { void load(); }, [load]);
+  // usePoll retries a failed load, keeps a live run current, and drops any
+  // response a newer request has overtaken (kind / page changes).
+  const { refresh } = usePoll(load, { intervalMs: 20_000, enabled: !preview && !missing });
+  const firstQuery = useRef(true);
+  useEffect(() => {
+    if (firstQuery.current) { firstQuery.current = false; return; }
+    refresh();
+  }, [kind, cursor, refresh]);
 
   // Scroll the deep-linked row into view and let its highlight fade after 2 s.
   useEffect(() => {
@@ -74,13 +85,14 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     return () => clearTimeout(t);
   }, [highlight, data]);
 
-  const agentId = data?.run.agentId ?? runId.slice(0, runId.lastIndexOf('~'));
-  const shift = data?.run.shift ?? Number(runId.slice(runId.lastIndexOf('~') + 1));
+  const parsed = parseRunId(runId);
+  const agentId = data?.run.agentId ?? parsed?.agentId ?? runId;
+  const shift = data?.run.shift ?? parsed?.shift ?? null;
   const title = (
     <>
       <Link href={backHref} className="wr-crumb">&larr; Runs</Link>
       <span aria-hidden="true" style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', fontWeight: 400 }}>/</span>
-      <span style={{ fontFamily: FONT_MONO }}>{agentId} · run {shift}</span>
+      <span style={{ fontFamily: FONT_MONO }}>{shift === null ? agentId : `${agentId} · run ${shift}`}</span>
     </>
   );
 
@@ -91,7 +103,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         <div style={{ padding: 24, maxWidth: 760 }}>
           <Panel title="Run not found">
             <p style={{ margin: 0, fontSize: 13.5, color: 'var(--tx2)', lineHeight: 1.55 }}>
-              There&rsquo;s no run <span style={{ fontFamily: FONT_MONO, color: 'var(--tx)' }}>{agentId} · {shift}</span> in this fleet. It may be older than your plan keeps; <Link href={ROUTES.settings} className="wr-link">see your plan &rarr;</Link>
+              There&rsquo;s no run <span style={{ fontFamily: FONT_MONO, color: 'var(--tx)' }}>{shift === null ? runId : `${agentId} · ${shift}`}</span> in this fleet. It may be older than your plan keeps; <Link href={ROUTES.settings} className="wr-link">see your plan &rarr;</Link>
             </p>
           </Panel>
         </div>

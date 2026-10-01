@@ -14,7 +14,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { fmtLength, fmtStarted, runHref, RUNS_LIST_URL_KEY, runsCount, runsDays, RUNS_RANGES, standOut, zoneName, type RunsRange } from '@/lib/runs';
+import { collectRuns, fmtLength, fmtStarted, runHref, RUNS_LIST_URL_KEY, runsCount, runsDays, RUNS_RANGES, standOut, zoneName, type RunsRange } from '@/lib/runs';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 
@@ -128,16 +128,12 @@ export function RunsTable({ preview }: {
     setExportNote(null);
     try {
       const { fromDay, toDay } = runsDays(range);
-      const all: RunSummary[] = [];
-      let cursor: string | null = null;
-      for (let i = 0; i < EXPORT_MAX_PAGES; i++) {
-        const res = await listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50 }, authKey);
-        if ('unsupported' in res) { setExportNote({ ok: false, text: 'This engine can’t list runs yet, so there’s nothing to export.' }); return; }
-        all.push(...res.runs);
-        cursor = res.cursor;
-        if (!cursor) break;
-      }
-      const truncated = cursor !== null;
+      const got = await collectRuns(
+        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50 }, authKey),
+        EXPORT_MAX_PAGES,
+      );
+      if ('unsupported' in got) { setExportNote({ ok: false, text: 'This engine can’t list runs yet, so there’s nothing to export.' }); return; }
+      const { runs: all, truncated } = got;
       downloadWorkbook(buildWorkbook([{
         name: 'Runs',
         header: ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'What stood out'],

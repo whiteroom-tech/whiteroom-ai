@@ -16,7 +16,7 @@ function RunDetailPage() {
   const runId = agentIdFromSegment(params.runId);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
-      <RunDetail key={runId} fleetId={auth.fleetId!} authKey={auth.authKey} runId={runId} eventId={search.get('event')} onAuthError={auth.resetSession} />
+      <RunDetail key={`${runId}|${search.get('event') ?? ''}`} fleetId={auth.fleetId!} authKey={auth.authKey} runId={runId} eventId={search.get('event')} onAuthError={auth.resetSession} />
     </div>
   );
 }
