@@ -156,8 +156,9 @@ export function timelineRow(e: RunEvent): TimelineRow {
 }
 
 /** "Sep 30 · started 1:52 pm EDT · 23 min · shift 8". */
-export function runMeta(run: { startedAt: string; endedAt: string; shift: number }, now: number = Date.now()): string {
+/** The zone name is the start time's, so a run from before a DST change keeps its own abbreviation. */
+export function runMeta(run: { startedAt: string; endedAt: string; shift: number }): string {
   const { date, time } = dateAndTime(run.startedAt);
   const length = fmtLength((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000);
-  return `${date} · started ${time} ${zoneName(now)} · ${length} · shift ${run.shift}`;
+  return `${date} · started ${time} ${zoneName(Date.parse(run.startedAt))} · ${length} · shift ${run.shift}`;
 }

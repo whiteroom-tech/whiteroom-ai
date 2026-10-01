@@ -796,7 +796,8 @@ export async function listRuns(
   }, key);
   if (res.status === 400) {
     const body = await res.clone().json().catch(() => null);
-    if (body?.error === 'Unknown action.') return { unsupported: true };
+    // An engine without list_runs answers 400 "Unknown action." (white-room.ts, default case).
+    if (typeof body?.error === 'string' && /^unknown action/i.test(body.error)) return { unsupported: true };
   }
   if (!res.ok) throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
   return (await res.json()) as ListRunsResult;

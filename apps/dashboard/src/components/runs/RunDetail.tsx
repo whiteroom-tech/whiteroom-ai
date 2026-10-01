@@ -58,6 +58,8 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       setMissing(false);
       if (target) {
         pendingEvent.current = null;
+        // Stay on the page the server picked, so polls and retries reload it.
+        if (res.page > 0) setCursor(String(res.page));
         if (res.eventFound) setHighlight(target);
       }
     } catch (e) {

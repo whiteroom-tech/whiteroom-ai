@@ -59,7 +59,7 @@ describe('run detail rows', () => {
   });
   it('writes the meta line with the shift', () => {
     vi.stubEnv('TZ', 'America/Los_Angeles');
-    expect(runMeta({ startedAt: '2026-09-30T20:52:00Z', endedAt: '2026-09-30T21:15:00Z', shift: 8 }, Date.parse('2026-09-30T21:00:00Z')))
+    expect(runMeta({ startedAt: '2026-09-30T20:52:00Z', endedAt: '2026-09-30T21:15:00Z', shift: 8 }))
       .toBe('Sep 30 · started 1:52 pm PDT · 23 min · shift 8');
   });
 });
