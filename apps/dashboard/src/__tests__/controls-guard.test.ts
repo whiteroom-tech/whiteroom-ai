@@ -39,15 +39,24 @@ describe('the Stop guard', () => {
 });
 
 describe('Watching summary', () => {
-  const ev = (o: Partial<AuditEntry>): AuditEntry => ({ id: 'e', timestamp: '', type: 'governance_would_block', ruleId: 'r1', agentId: 'lead-agent', occurrences: 1, ...o } as AuditEntry);
+  const ev = (o: Partial<AuditEntry>): AuditEntry => ({ id: 'e', timestamp: '', type: 'governance_would_block', ruleId: 'r1', ruleVersion: 3, agentId: 'lead-agent', occurrences: 1, ...o } as AuditEntry);
+  const rule = { id: 'r1', version: 3, response: 'pause' as const };
 
-  it('adds up occurrences per agent for this rule only', () => {
+  it('adds up occurrences per agent for this rule as it is now', () => {
     const events = [ev({ occurrences: 10 }), ev({ occurrences: 5 }), ev({ agentId: 'scout' }), ev({ ruleId: 'r2', occurrences: 99 })];
-    expect(watchSummary('r1', 'pause', events)).toBe('Watching: would have paused lead-agent 15 times, scout once in recent activity.');
+    expect(watchSummary(rule, events)).toBe('Watching: would have paused lead-agent 15 times, scout once since its last change.');
+  });
+
+  it('leaves out events from an earlier version, which may have had another response', () => {
+    expect(watchSummary(rule, [ev({ ruleVersion: 2, occurrences: 40 })])).toBeNull();
+  });
+
+  it('counts events with no version (older engines), with a verb that claims no response', () => {
+    expect(watchSummary(rule, [ev({ ruleVersion: undefined, occurrences: 2 })])).toBe('Watching: would have acted on lead-agent 2 times since its last change.');
   });
 
   it('is null when the rule has not fired', () => {
-    expect(watchSummary('r1', 'block', [ev({ ruleId: 'r2' })])).toBeNull();
+    expect(watchSummary(rule, [ev({ ruleId: 'r2' })])).toBeNull();
   });
 });
 

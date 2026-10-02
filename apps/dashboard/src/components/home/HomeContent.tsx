@@ -148,6 +148,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       liveFeed={<LiveFeedPanel fleetId={fleetId} authKey={authKey} refreshSignal={refreshSignal} />}
       fleet={{ fleetId, authKey }}
       onActed={refresh}
+      onAuthError={onAuthError}
     />
   );
 }
@@ -156,7 +157,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
  * Home's layout from plain data, so it can be previewed with sample data
  * (/dev/home) without a fleet.
  */
-export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet, onActed }: {
+export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet, onActed, onAuthError }: {
   report: FleetReport;
   agents: AgentInfo[];
   entries: AuditEntry[];
@@ -170,6 +171,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   fleet?: { fleetId: string; authKey?: string };
   /** After Pause, Stop or Resume from a card: reload now rather than at the next poll. */
   onActed?: () => void;
+  onAuthError?: (message: string) => void;
 }) {
   const router = useRouter();
   const sorted = sortAgents(agents);
@@ -217,22 +219,22 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                 const block = blocks[a.agentId];
                 return (
                   <div key={a.agentId} className="wr-agent-card-wrap">
-                  <Link href={agentHref(a.agentId)} className="wr-agent-card">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
-                      <StatusPill state={agentState(a)} />
-                    </div>
-                    <div style={{ fontSize: 13, color: 'var(--tx2)' }}>{progressLine(a)}</div>
-                    {block && (
-                      <div>
-                        <span className="wr-chip-warn">
-                          <Icon name="alert" size={12} strokeWidth={2.2} />
-                          Blocked by {ruleLabel(block.ruleType)}{REASON_LABELS[String(block.reason)] ? ` (${REASON_LABELS[String(block.reason)]})` : ''} at {clock(block.timestamp)}
-                        </span>
+                    <Link href={agentHref(a.agentId)} className="wr-agent-card">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
+                        <StatusPill state={agentState(a)} />
                       </div>
-                    )}
-                  </Link>
-                  {fleet && a.govV1 && <AgentActions agent={a} fleetId={fleet.fleetId} authKey={fleet.authKey} onChanged={() => onActed?.()} />}
+                      <div style={{ fontSize: 13, color: 'var(--tx2)' }}>{progressLine(a)}</div>
+                      {block && (
+                        <div>
+                          <span className="wr-chip-warn">
+                            <Icon name="alert" size={12} strokeWidth={2.2} />
+                            Blocked by {ruleLabel(block.ruleType)}{REASON_LABELS[String(block.reason)] ? ` (${REASON_LABELS[String(block.reason)]})` : ''} at {clock(block.timestamp)}
+                          </span>
+                        </div>
+                      )}
+                    </Link>
+                    {fleet && a.govV1 && <AgentActions agent={a} fleetId={fleet.fleetId} authKey={fleet.authKey} onChanged={() => onActed?.()} onAuthError={onAuthError} />}
                   </div>
                 );
               })}
