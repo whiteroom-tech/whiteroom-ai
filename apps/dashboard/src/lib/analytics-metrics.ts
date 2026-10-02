@@ -2,9 +2,12 @@
 // tests guard the real implementation instead of a hand-mirrored copy that
 // can silently drift out of sync with the dashboard.
 
-/** Blended $/token cost of the tokens WhiteRoom saved (mirrors the engine's pricing). */
+/**
+ * Blended $/token cost of the tokens WhiteRoom saved: 80% input at $1, 20%
+ * output at $5 per MTok (Haiku 4.5). Mirrors the engine's SAVINGS_RATE_PER_TOKEN.
+ */
 export function estimateCost(tokensSaved: number): number {
-  return tokensSaved * 0.8 * 0.0000008 + tokensSaved * 0.2 * 0.000004;
+  return tokensSaved * (0.8 * 1 + 0.2 * 5) / 1_000_000;
 }
 
 /** YYYY-MM-DD in the browser's local timezone. */
