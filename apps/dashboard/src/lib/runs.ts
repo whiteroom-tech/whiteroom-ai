@@ -341,10 +341,9 @@ export function unusualSummary(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 
   const bySignal: Record<string, number> = {};
   const agents = new Map<string, number[]>();
   for (const r of runs) {
-    if (!r.flags?.length) continue;
-    for (const s of new Set(r.flags.map((f) => f.signal))) bySignal[s] = (bySignal[s] ?? 0) + 1;
     const i = days.indexOf(localDay(Date.parse(r.startedAt)));
-    if (i < 0) continue;
+    if (!r.flags?.length || i < 0) continue;
+    for (const s of new Set(r.flags.map((f) => f.signal))) bySignal[s] = (bySignal[s] ?? 0) + 1;
     const perDay = agents.get(r.agentId) ?? days.map(() => 0);
     perDay[i]++;
     agents.set(r.agentId, perDay);

@@ -848,3 +848,25 @@ export function getRunEvents(
     kind: opts.kind ?? 'all',
   }, key);
 }
+
+// -- Alerts (P2.7) --
+
+export interface AlertsStatus { slack: { ending: string } | null }
+
+/**
+ * Alerts actions. The engine answers a refused change with 400 and a plain
+ * reason, which is thrown as the message; an engine without alerts makes
+ * alerts_get return null so Settings hides the section.
+ */
+async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null> {
+  const res = await postRaw(body);
+  const data = await res.json().catch(() => null);
+  if (res.status === 400 && /^unknown action/i.test(String(data?.error ?? ''))) return null;
+  if (res.status === 403 && data?.code === CONTROL_DENIED && typeof data.error === 'string') throw new ControlDeniedError(data.error);
+  if (!res.ok || data?.success === false) throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`);
+  return data as T;
+}
+
+export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
+export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
+export const alertsTest = (fleetId: string) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId });
