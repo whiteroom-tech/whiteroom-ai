@@ -271,4 +271,9 @@ describe('script policy (report-only CSP)', () => {
     expect(a.headers.get('x-middleware-request-x-nonce')).toBe(nonce);
     expect(b.headers.get('content-security-policy-report-only')).not.toContain(nonce);
   });
+
+  it('sends reports to /api/csp-report, and adds the policy on the admin host too', () => {
+    const policy = proxy(req(APP, '/home', { withSession: true }))!.headers.get('content-security-policy-report-only')!;
+    expect(policy).toContain('report-uri /api/csp-report');
+  });
 });
