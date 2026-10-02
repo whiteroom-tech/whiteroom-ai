@@ -8,7 +8,7 @@ import { safeGet, safeSet } from '@/lib/safe-storage';
 import { liveFeedHelp } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { LoadingLine } from '@/components/citadel/States';
-import { liveRow, matchesFilter, pageWindow, onRefreshSignal, type LiveFilter, type LiveKind } from '@/lib/home';
+import { liveExpandable, liveRow, matchesFilter, pageWindow, onRefreshSignal, type LiveFilter, type LiveKind, type LiveRow, type LiveStep } from '@/lib/home';
 
 const PAGE = 20;
 const FETCH_LIMIT = 200;
@@ -45,6 +45,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
     return FILTERS.includes(v as LiveFilter) ? (v as LiveFilter) : 'all';
   });
   const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Each load gets a number; Hide and newer loads bump it, so a response that
   // arrives late (after Hide, or after a newer Refresh) is dropped.
@@ -89,7 +90,8 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const pageRows = win.rows;
 
   function reveal() { setOpen(true); load(); }
-  function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); }
+  function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
+  function toggle(key: string) { setExpanded((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 
   const title = <>Live feed<Hint text={liveFeedHelp(ttlHours)} /></>;
@@ -125,17 +127,29 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       {!loading && !error && shown.length === 0 && (
         <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</p>
       )}
-      {pageRows.map((r) => (
-        <div key={r.key} className="wr-live-row">
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)', paddingTop: 2 }}>{r.time}</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{r.summary}</div>
-            {r.detail && <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.detail}>{r.detail}</div>}
+      {pageRows.map((r) => {
+        const canOpen = liveExpandable(r);
+        const isOpen = canOpen && expanded.has(r.key);
+        const id = `live-${r.key}`;
+        return (
+          <div key={r.key} className="wr-live-row">
+            <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)', paddingTop: 2 }}>{r.time}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
+            <div style={{ minWidth: 0 }}>
+              {canOpen ? (
+                <button type="button" className="wr-live-toggle" aria-expanded={isOpen} aria-controls={id} onClick={() => toggle(r.key)}>
+                  <span className="wr-live-chevron" data-open={isOpen || undefined}><Icon name="chevronDown" size={12} strokeWidth={2.5} /></span>
+                  <span className="wr-live-summary">{r.summary}</span>
+                </button>
+              ) : (
+                <div className="wr-live-summary" style={{ paddingLeft: 20 }}>{r.summary}</div>
+              )}
+              {isOpen && <LiveDetail id={id} row={r} />}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       {shown.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
           <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
@@ -148,5 +162,32 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         </div>
       )}
     </Panel>
+  );
+}
+
+function Steps({ title, steps }: { title: string; steps: LiveStep[] }) {
+  if (steps.length === 0) return null;
+  return (
+    <div className="wr-live-steps">
+      <div className="wr-live-steps__title">{title}</div>
+      {steps.map((st, i) => (
+        <div key={i} className="wr-live-step" data-failed={st.failed || undefined}>
+          <span className="wr-live-step__label">{st.failed ? 'Failed' : st.label}{st.tool && <span className="wr-live-step__tool"> {st.tool}</span>}</span>
+          <span className="wr-live-step__text">{st.text || '(no arguments)'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The drill-down under a row: every call with its real arguments, and what came back. */
+function LiveDetail({ id, row }: { id: string; row: LiveRow }) {
+  return (
+    <div id={id} className="wr-live-detail">
+      {row.reply && <p className="wr-live-reply">{row.reply}</p>}
+      <Steps title={`What it did · ${row.calls.length}`} steps={row.calls} />
+      <Steps title={`What came back from earlier calls · ${row.results.length}`} steps={row.results} />
+      {row.tokens !== null && <div className="wr-live-meta">{row.tokens.toLocaleString()} tokens</div>}
+    </div>
   );
 }

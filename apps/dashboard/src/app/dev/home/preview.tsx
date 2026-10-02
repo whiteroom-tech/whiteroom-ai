@@ -34,7 +34,13 @@ const ENTRIES: AuditEntry[] = [
   { id: '4', type: 'task_complete', timestamp: t('13:40'), agentId: 'writer-agent', taskName: 'Summary: Q3 claims' },
 ];
 const LIVE: AuditEntry[] = [
-  { id: 'l1', type: 'task_complete', timestamp: t('14:16'), agentId: 'lead-agent', details: [{ name: 'web_fetch', args: '{"url":"https://content.naic.org/model-laws"}' }] },
+  { id: 'l1', type: 'task_complete', timestamp: t('14:16'), agentId: 'lead-agent', tokensUsed: 14210, details: [
+    { name: 'tool_result', args: 'Our Programs · Family Folklore and Popular Culture · Saturdays 10:00 AM–3:00 PM' },
+    { name: 'tool_result', args: 'https://example-charities.org/agencies  ·  [Blocked by robots.txt: https://example-charities.org/agencies]' },
+    { name: 'tool_result', args: '[Fetch error: nodename nor servname provided, or not known]' },
+    { name: 'web_fetch', args: '{"url":"https://content.naic.org/model-laws"}' },
+    { name: 'web_fetch', args: '{"url":"https://content.naic.org/model-laws/index"}' },
+  ] },
   { id: 'l2', type: 'task_complete', timestamp: t('14:16'), agentId: 'writer-agent', taskName: 'reply: Here is the Q3 claims summary. 3 claims are still open pending a policy lookup.' },
   { id: 'l3', type: 'task_complete', timestamp: t('14:15'), agentId: 'scout-agent', details: [{ name: 'search_files', args: '{"query":"hartwell endorsement","path":"/data/claims"}' }] },
   { id: 'l4', type: 'task_complete', timestamp: t('14:15'), agentId: 'lead-agent', details: [{ name: 'read_file', args: '{"path":"/data/policies/meridian.md"}' }] },

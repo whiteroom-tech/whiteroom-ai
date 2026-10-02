@@ -207,14 +207,32 @@ export function lastEventByAgent(entries: AuditEntry[]): Record<string, { time: 
 export type LiveKind = 'web' | 'tool' | 'file' | 'reply';
 export type LiveFilter = 'all' | 'web' | 'tools' | 'replies';
 
+/** One tool call, or one result handed back to the model, in an expanded row. */
+export interface LiveStep {
+  /** "Read", "Searched", ... for calls; "Returned" for results. */
+  label: string;
+  /** The tool, in words: "fetch page". Empty for results. */
+  tool: string;
+  /** The real argument or result text, untrimmed. */
+  text: string;
+  /** A result that came back as an error or a refusal (fetch error, robots.txt). */
+  failed: boolean;
+}
+
 export interface LiveRow {
   key: string;
   time: string;
   agent: string;
   kind: LiveKind;
+  /** One line; the full detail is in calls/results/reply. */
   summary: string;
-  /** Raw detail in mono: the call with its real arguments. */
-  detail: string;
+  /** Tool calls the agent made in this step. */
+  calls: LiveStep[];
+  /** Results of its earlier calls that came in with this step: page text, errors. */
+  results: LiveStep[];
+  /** A reply's full text. */
+  reply: string;
+  tokens: number | null;
 }
 
 // Matched against whole words of the tool name (read_web_page → read, web,
@@ -247,31 +265,62 @@ export function pageWindow<T>(rows: T[], page: number, size: number): { page: nu
  * "reply: <text>" and tool work as details [{ name, args }]; the first call
  * decides the row's kind.
  */
+const FAILED_RESULT = /\[(?:fetch error|blocked|error)\b|^(?:error|failed)\b/i;
+
+/** JSON arguments as "url: https://… · depth: 2"; anything else as it came. */
+export function readableArgs(args: unknown): string {
+  const s = String(args ?? '').trim();
+  if (!/^\{/.test(s)) return s;
+  try {
+    const o = JSON.parse(s) as Record<string, unknown>;
+    const parts = Object.entries(o).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+    return parts.length ? parts.join('  ·  ') : '';
+  } catch {
+    return s;
+  }
+}
+
+function step(d: { name?: unknown; args?: unknown }): LiveStep {
+  const result = /^tool_result$/i.test(String(d.name ?? ''));
+  const text = result ? String(d.args ?? '').trim() : readableArgs(d.args);
+  return {
+    label: !result && kindOf(String(d.name ?? '')) === 'web' ? 'Opened' : classifyAction(d.name).label,
+    tool: result ? '' : prettyToolName(d.name),
+    text,
+    failed: result && FAILED_RESULT.test(text),
+  };
+}
+
 export function liveRow(e: AuditEntry): LiveRow {
   const name = String(e.taskName ?? '');
   const details = Array.isArray(e.details) ? e.details : [];
-  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e) };
+  const tokens = Number.isFinite(Number(e.tokensUsed)) ? Number(e.tokensUsed) : null;
+  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e), tokens, reply: '' };
   if (/^reply:/i.test(name) && details.length === 0) {
-    return { ...base, kind: 'reply', summary: `“${name.replace(/^reply:\s*/i, '')}”`, detail: '' };
+    const reply = name.replace(/^reply:\s*/i, '');
+    return { ...base, kind: 'reply', summary: `“${reply}”`, calls: [], results: [], reply };
   }
-  const first = details[0];
-  if (!first) return { ...base, kind: 'tool', summary: name || 'Model call', detail: '' };
+  // The engine lists the results of the agent's earlier calls before the
+  // calls it made this step; the summary is about the calls.
+  const calls = details.filter((d) => !/^tool_result$/i.test(String(d?.name ?? '')));
+  const results = details.filter((d) => /^tool_result$/i.test(String(d?.name ?? ''))).map(step);
+  const first = calls[0];
+  if (!first) return { ...base, kind: 'tool', summary: name || 'Model call', calls: [], results };
   const kind = kindOf(first.name);
   const arg = shortArg(first.args);
-  const more = details.length > 1 ? ` · +${details.length - 1} more` : '';
-  const raw = String(first.args ?? '').replace(/\s+/g, ' ').trim();
+  const more = calls.length > 1 ? ` · +${calls.length - 1} more` : '';
   // Say what happened without repeating the tool's name: "Opened <url>",
   // "Read <path>", or "<tool>: <argument>" when the name is the only clue.
   const summary =
-    kind === 'web' && arg ? `Opened ${arg}`
+    kind === 'web' && arg ? `Opened ${arg.replace(/^url:\s*/i, '')}`
     : kind === 'file' && arg ? `${classifyAction(first.name).label} ${arg}`
     : `${prettyToolName(first.name)}${arg ? `: ${arg}` : ''}`;
-  return {
-    ...base,
-    kind,
-    summary: `${summary}${more}`,
-    detail: `${first.name}(${raw.length > 300 ? `${raw.slice(0, 300)}…` : raw})`,
-  };
+  return { ...base, kind, summary: `${summary}${more}`, calls: calls.map(step), results };
+}
+
+/** Whether a row has more to show than its one line. */
+export function liveExpandable(r: LiveRow): boolean {
+  return r.calls.length > 0 || r.results.length > 0 || r.reply.length > 120;
 }
 
 /**
