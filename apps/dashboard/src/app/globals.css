@@ -267,6 +267,17 @@
 /* ── Home (components/home) ── README › Screens › 1a/1b */
 .wr-home-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .wr-home-agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.wr-agent-card-wrap { position: relative; min-width: 0; }
+.wr-agent-card-wrap > .wr-agent-card { height: 100%; padding-right: 48px; }
+.wr-agent-actions { position: absolute; top: 10px; right: 10px; }
+.wr-agent-actions__btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--tx2); cursor: pointer; }
+.wr-agent-actions__btn:hover, .wr-agent-actions__btn[aria-expanded="true"] { border-color: var(--line2); background: var(--card); color: var(--tx); }
+.wr-agent-actions__btn:focus-visible, .wr-agent-actions__item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wr-agent-actions__menu { position: absolute; top: 34px; right: 0; z-index: 20; min-width: 140px; padding: 4px; border-radius: 10px; border: 1px solid var(--line2); background: var(--raised); box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; }
+.wr-agent-actions__item { padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--tx); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.wr-agent-actions__item:hover { background: var(--sunk); }
+.wr-agent-actions__item[data-danger] { color: var(--bad); }
+.wr-agent-actions__error { position: absolute; top: 34px; right: 0; width: 220px; margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-size: 12px; z-index: 19; }
 .wr-agent-card { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 14px; background: var(--sunk); border: 1px solid var(--line);  color: var(--tx); text-decoration: none; transition: border-color .12s; }
 .wr-agent-card:hover { border-color: var(--line2); }
 .wr-agent-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

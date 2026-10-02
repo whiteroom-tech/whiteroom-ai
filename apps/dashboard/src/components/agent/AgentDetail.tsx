@@ -58,8 +58,14 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   useEffect(() => {
     if (!holdAt || preview) return;
     let live = true;
-    fetchControlActors(fleetId, holdAt).then((a) => { if (live) setActors(a); });
-    return () => { live = false; };
+    // The hold can show up (a poll, another tab) before its row is written: try once more shortly.
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    fetchControlActors(fleetId, holdAt).then((a) => {
+      if (!live) return;
+      setActors(a);
+      if (a.length === 0) retry = setTimeout(() => { fetchControlActors(fleetId, holdAt).then((b) => { if (live) setActors(b); }); }, 5_000);
+    });
+    return () => { live = false; clearTimeout(retry); };
   }, [fleetId, holdAt, preview]);
   const [notesOpen, setNotesOpen] = useState(false);
   const resumingHold = useRef(false);

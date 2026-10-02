@@ -276,7 +276,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
       setFleetId(result.fleetId);
       setFleetToken(null);
       setNeeds(null);
-          setStatus('authenticated');
+      setStatus('authenticated');
       pingOtherTabs();
     } catch (e) {
       setLoginError(isAuthError(e)

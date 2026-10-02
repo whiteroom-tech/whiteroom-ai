@@ -148,6 +148,13 @@ describe('GET /api/fleet/session', () => {
     expect(res.status).toBe(401);
   });
 
+  it('says on the 401 whether an account session exists, so the page knows where to send the visitor', async () => {
+    session.current = null;
+    expect(await (await GET()).json()).toMatchObject({ signedIn: false });
+    session.current = { user: { id: 'u-no-fleet' } };
+    expect(await (await GET()).json()).toMatchObject({ signedIn: true });
+  });
+
   it('adopts the preferred (production over sandbox) linked fleet into the cookie', async () => {
     mockGetUserFleets.mockResolvedValue([
       { id: '1', fleet_token: 'ft-sandbox', fleet_id: 'sandbox-abc', label: 's', created_at: '' },
