@@ -59,7 +59,7 @@ export function createPoller(getFn: () => PollFn) {
 export function usePoll(
   fn: PollFn,
   { intervalMs, enabled = true, pauseWhenHidden = true }: UsePollOptions,
-): { refresh: () => void } {
+): { refresh: () => void; tick: () => void } {
   const fnRef = useRef(fn);
   fnRef.current = fn;
   const pollerRef = useRef<ReturnType<typeof createPoller> | null>(null);
@@ -67,6 +67,8 @@ export function usePoll(
   const poller = pollerRef.current;
 
   const refresh = useCallback(() => poller.refresh(), [poller]);
+  // A scheduled check: skipped while a request is still running, unlike refresh.
+  const tick = useCallback(() => poller.tick(), [poller]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -86,5 +88,5 @@ export function usePoll(
     };
   }, [enabled, intervalMs, pauseWhenHidden, poller]);
 
-  return { refresh };
+  return { refresh, tick };
 }

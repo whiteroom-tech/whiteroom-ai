@@ -1,35 +1,42 @@
 'use client';
 
-import posthog from 'posthog-js';
+type PostHog = typeof import('posthog-js').default;
 
-let initialized = false;
+// posthog-js loads only once analytics starts, so it isn't in every page's bundle.
+let loaded: Promise<PostHog> | null = null;
 
 export function initAnalytics() {
-  if (initialized || typeof window === 'undefined') return;
-  posthog.init('phc_kkHTFEiVyW2Bto9QDvoBK5JB8aS62cwzYZBZNexerM9J', {
-    api_host: 'https://us.i.posthog.com',
-    defaults: '2025-05-24',
-    // This application renders live credentials. Keep collection explicit,
-    // and never record authentication/confirmation pages or their URL tokens.
-    autocapture: false,
-    capture_pageview: false,
-    capture_pageleave: false,
-    disable_session_recording: true,
-    persistence: 'memory',
-    before_send: (event) => {
-      if (window.location.pathname.startsWith('/auth/') ||
-          window.location.pathname.startsWith('/settings/confirm-email') ||
-          window.location.pathname === '/sign-in') return null;
-      if (event?.properties) {
-        event.properties = scrubAnalyticsProperties(event.properties);
-      }
-      return event;
-    },
+  if (loaded || typeof window === 'undefined') return;
+  loaded = import('posthog-js').then(({ default: posthog }) => {
+    posthog.init('phc_kkHTFEiVyW2Bto9QDvoBK5JB8aS62cwzYZBZNexerM9J', {
+      api_host: 'https://us.i.posthog.com',
+      defaults: '2025-05-24',
+      // This application renders live credentials. Keep collection explicit,
+      // and never record authentication/confirmation pages or their URL tokens.
+      autocapture: false,
+      capture_pageview: false,
+      capture_pageleave: false,
+      disable_session_recording: true,
+      persistence: 'memory',
+      before_send: (event) => {
+        if (window.location.pathname.startsWith('/auth/') ||
+            window.location.pathname.startsWith('/settings/confirm-email') ||
+            window.location.pathname === '/sign-in') return null;
+        if (event?.properties) {
+          event.properties = scrubAnalyticsProperties(event.properties);
+        }
+        return event;
+      },
+    });
+    return posthog;
   });
-  initialized = true;
 }
 
-export { posthog };
+/** Events before initAnalytics are dropped, as posthog-js did before it was initialised. */
+export const analytics = {
+  capture(event: string, properties?: Record<string, unknown>) { void loaded?.then((p) => p.capture(event, properties)); },
+  identify(id: string, properties?: Record<string, unknown>) { void loaded?.then((p) => p.identify(id, properties)); },
+};
 
 export function scrubAnalyticsProperties(properties: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(properties).flatMap(([key, value]) => {
