@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FONT_DISPLAY } from '@whiteroom/ui';
-import { safeGet } from '@/lib/safe-storage';
+import { applyTheme, storedTheme } from '@/lib/theme';
 
 /**
  * Chrome for the admin section.
@@ -69,10 +69,7 @@ export function AdminShell({
   const current = activeHref(usePathname());
 
   useEffect(() => {
-    const stored = safeGet('wr_theme');
-    if (stored === 'light' || stored === 'dark') {
-      document.querySelector('.wr-shell')?.setAttribute('data-theme', stored);
-    }
+    applyTheme(storedTheme());
   }, []);
 
   return (

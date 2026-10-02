@@ -31,6 +31,7 @@ import { computeSuggestions, convertSpendCap, RESPONSE_EFFECT, RESPONSE_LABEL, r
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, SelectChip } from "@whiteroom/ui";
+import { timeAgo } from "@/lib/format";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
 
@@ -885,7 +886,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                       <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
                         <span style={{ color: "var(--tx)" }}>{h.description}</span>
                         <span style={{ color: "var(--tx3)", fontSize: 11, flexShrink: 0, marginLeft: 12 }}>
-                          {formatTimeAgo(h.time)} · {h.by}
+                          {timeAgo(h.time)} · {h.by}
                         </span>
                       </div>
                     ))}
@@ -911,13 +912,3 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
 }
 
 
-function formatTimeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}

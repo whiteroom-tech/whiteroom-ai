@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import type { OrgAuditEntry, OrgDetail, OrgFleetRow, OrgMemberRow } from '@/lib/organizations';
 import { ORG_ROLES, ROLE_LABELS, type OrgRole } from '@/lib/org-roles';
-import { fmtCost, fmtTokens } from '@/lib/format';
+import { fmtCost, fmtTokens, timeAgo } from '@/lib/format';
 
 // The organization screens, shared by the customer's /organization page and the
 // admin panel's organization page. Both render the same roster and fleets; they
@@ -311,12 +311,7 @@ function ago(iso: string | null | undefined): string {
   if (!iso) return 'never';
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return '—';
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  return timeAgo(iso);
 }
 
 export function FleetsPanel({ fleets, windowDays }: { fleets: OrgFleetRow[]; windowDays: number | null }) {

@@ -13,6 +13,7 @@
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { REASON_LABELS, occurrences, ruleLabel } from '@/lib/governance';
+import { timeAgo } from '@/lib/format';
 
 export type { AuditEntry, ToolDetail };
 
@@ -120,12 +121,8 @@ function humanizeType(type: unknown): string {
 export function relTime(timestamp: unknown, now: number = Date.now()): string {
   const ms = new Date(String(timestamp ?? '')).getTime();
   if (!Number.isFinite(ms)) return '';
-  const diff = now - ms;
-  if (diff < 45_000) return 'just now';
-  const mins = Math.round(diff / 60_000);
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(diff / 3_600_000);
-  if (hrs < 24) return `${hrs} ${hrs === 1 ? 'hr' : 'hrs'} ago`;
+  // Within a day, the shared wording; older events show their date instead.
+  if (now - ms < 23.5 * 3_600_000) return timeAgo(ms, now);
   return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
@@ -259,7 +256,8 @@ export function eventModel(e: AuditEntry, now: number = Date.now()): EventModel 
     accentBg: TONE_BG[tone],
     rel: relTime(e.timestamp, now),
     clock: clockTime(e.timestamp),
-    watch: e.watchNumber != null ? `W${e.watchNumber}` : '',
+    // The shift number, as Runs shows it ("#12"); the UI says shift, not watch.
+    watch: e.watchNumber != null ? `#${e.watchNumber}` : '',
   };
 }
 
@@ -277,7 +275,7 @@ export function technicalLine(m: EventModel): string {
   const bits: string[] = [];
   if (m.type) bits.push(m.type);
   if (e.agentId) bits.push(String(e.agentId));
-  if (e.watchNumber != null) bits.push(`watch #${e.watchNumber}`);
+  if (e.watchNumber != null) bits.push(`shift #${e.watchNumber}`);
   if (Number.isFinite(Number(e.tokensUsed))) bits.push(`${Number(e.tokensUsed).toLocaleString()} tokens`);
   if (Number.isFinite(Number(e.minutesSpent))) bits.push(`${Number(e.minutesSpent)} min spent`);
   if (Number.isFinite(Number(e.remaining))) bits.push(`${Number(e.remaining)} min remaining`);

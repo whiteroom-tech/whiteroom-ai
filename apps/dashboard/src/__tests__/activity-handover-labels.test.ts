@@ -11,7 +11,7 @@ describe('handover health labels', () => {
     expect(m.who).toBe('Lead-agent');
     expect(m.said).toBe('kept handing over after a call or two, so WhiteRoom raised its context limit to 40,000 tokens to keep it working');
     expect(m.code).toBe('H/L');
-    expect(m.watch).toBe('W12');
+    expect(m.watch).toBe('#12');
   });
 
   it('handover loop still reads well without a limit', () => {

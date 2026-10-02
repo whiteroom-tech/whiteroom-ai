@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { listUsers, recentAuditEntries } from '@/lib/admin';
 import { AdminShell } from './admin-shell';
 import { UserSearch } from './user-search';
+import { Pill } from '@/components/organization/OrgPanels';
+import { FONT_MONO as mono } from '@whiteroom/ui';
 
 export const dynamic = 'force-dynamic';
 
-const mono = "'JetBrains Mono', monospace";
 
 export default async function AdminUsersPage({
   searchParams,
@@ -143,18 +144,6 @@ const cell: React.CSSProperties = {
   verticalAlign: 'top',
 };
 
-function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'ho'; children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontSize: 10.5, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
-        background: `var(--${tone}-bg)`, color: `var(--${tone})`, whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </span>
-  );
-}
 
 function SubscriptionCell({
   status,

@@ -2,7 +2,7 @@
 // calls go through the /api/fleet/engine BFF (no credential in the page),
 // while explicit-key calls, token_login, and server-side calls stay direct.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   fleetReport,
   isAuthError,
