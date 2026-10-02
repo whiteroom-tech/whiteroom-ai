@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns } from '@/components/agent/RecentRuns';
+import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
@@ -51,6 +52,15 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [actionError, setActionError] = useState<{ text: string; retry?: () => void } | null>(null);
   const [confirmBreak, setConfirmBreak] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [actors, setActors] = useState<ControlActor[]>([]);
+  // Who set the hold: looked up once per hold, not on every poll.
+  const holdAt = agent?.hold?.at;
+  useEffect(() => {
+    if (!holdAt || preview) return;
+    let live = true;
+    fetchControlActors(fleetId).then((a) => { if (live) setActors(a); });
+    return () => { live = false; };
+  }, [fleetId, holdAt, preview]);
   const [notesOpen, setNotesOpen] = useState(false);
   const resumingHold = useRef(false);
   const [taskDraft, setTaskDraft] = useState<string | null>(null);
@@ -278,7 +288,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           )}
           {agent?.hold && (
             <Banner variant="warn" icon={agent.hold.state === 'stopped' ? 'square' : 'pause'}>
-              {agentId} was {agent.hold.state} at {fmtTime(agent.hold.at)} from the dashboard. It refuses every call until someone resumes it, even after a restart.
+              {agentId} was {agent.hold.state} at {fmtTime(agent.hold.at)} {holdWho(agent.hold, agentId, actors)}. It refuses every call until someone resumes it, even after a restart.
             </Banner>
           )}
           {failing && (

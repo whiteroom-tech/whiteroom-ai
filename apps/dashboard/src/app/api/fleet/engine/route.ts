@@ -22,6 +22,8 @@ import {
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
 import { CONTROL_SECRET_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
+import { recordControlAction } from '@/lib/control-actions';
+import { auth } from '@/auth';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -85,6 +87,18 @@ export async function POST(req: Request) {
       { error: 'engine_unreachable', retryable: true },
       { status: 502 },
     );
+  }
+
+  // A control change the engine accepted: note who made it, since the engine
+  // only knows "dashboard". Control replies are small, so read them whole.
+  if (control?.fleetId && upstream.ok) {
+    const reply = await upstream.text();
+    const userId = (await auth())?.user?.id;
+    if (userId) await recordControlAction(userId, control.fleetId, control.action, body, reply);
+    return new Response(reply, {
+      status: upstream.status,
+      headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   // Pass the engine's status and body through unchanged (a 401 here means

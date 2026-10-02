@@ -32,6 +32,7 @@ import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, SelectChip } from "@whiteroom/ui";
 import { timeAgo } from "@/lib/format";
+import { fetchControlActors, historyWho, type ControlActor } from "@/lib/control-actors";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
 
@@ -403,6 +404,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   const [rules, setRules] = useState<FleetRule[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [actors, setActors] = useState<ControlActor[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
   // A rule about to get "Stop the agent": confirmed first (README › Screen 6b).
@@ -435,9 +437,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   /** Reloads the rules; resolves false if that failed. */
   const fetchData = useCallback(async (): Promise<boolean> => {
     try {
-      const d = await governanceList(fleetId, authKey);
+      const [d, who] = await Promise.all([governanceList(fleetId, authKey), fetchControlActors(fleetId)]);
       setRules(d.rules);
       setHistory(d.history);
+      setActors(who);
       setAgents(d.agents);
       setGovV1(!!d.govV1);
       setLoaded(true);
@@ -472,6 +475,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
 
   const refreshHistory = () => {
     governanceList(fleetId, authKey).then((d) => { setHistory(d.history); setAgents(d.agents); }).catch(() => {});
+    fetchControlActors(fleetId).then(setActors);
   };
 
   const rulesBy = (rt: RuleType) => rules.filter((r) => r.ruleType === rt);
@@ -840,7 +844,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                       <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
                         <span style={{ color: "var(--tx)" }}>{h.description}</span>
                         <span style={{ color: "var(--tx3)", fontSize: 11, flexShrink: 0, marginLeft: 12 }}>
-                          {timeAgo(h.time)} · {h.by}
+                          {timeAgo(h.time)} · {historyWho(h, actors)}
                         </span>
                       </div>
                     ))}
