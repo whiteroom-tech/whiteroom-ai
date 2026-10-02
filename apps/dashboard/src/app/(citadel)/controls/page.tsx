@@ -27,12 +27,11 @@ import type {
   ModelAllowlistParams,
   SpendCapParams,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, convertSpendCap, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, convertSpendCap, RESPONSE_EFFECT, RESPONSE_LABEL, responseOptions, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, SelectChip } from "@whiteroom/ui";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
-import { RESPONSE_EFFECT, RESPONSE_LABEL, responseOptions } from "@/lib/governance";
 import { ROUTES } from "@/lib/routes";
 
 // ── Types ──────────────────────────────────────────────────────────

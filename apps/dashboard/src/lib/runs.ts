@@ -318,3 +318,38 @@ export const RUNS_EXPORT_HEADER = ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Le
 export function runsExportRow(r: RunSummary): (string | number)[] {
   return [r.runId, r.agentId, r.shift, r.startedAt, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, standOut(r).text];
 }
+
+// ── Unusual behaviour (P2.5) ────────────────────────────────────────
+
+/** The five signals (README › Screen 4). Only the first two are measured today; the rest need call data the engine doesn't record yet. */
+export const UNUSUAL_SIGNALS = [
+  { key: 'repeating_call', label: 'Repeating the same call', measured: true },
+  { key: 'error_streak', label: 'Failed calls in a row', measured: true },
+  { key: 'new_tool', label: 'A tool it hasn’t used before', measured: false },
+  { key: 'token_burst', label: 'A burst of tokens', measured: false },
+  { key: 'workaround', label: 'A workaround after a block', measured: false },
+] as const;
+
+/**
+ * Flagged runs over `days` (oldest first): how many runs showed each signal,
+ * and per agent, flagged runs per day, busiest agent first.
+ */
+export function unusualSummary(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 'flags'>[], days: string[]): {
+  bySignal: Record<string, number>;
+  byAgent: { agentId: string; perDay: number[]; total: number }[];
+} {
+  const bySignal: Record<string, number> = {};
+  const agents = new Map<string, number[]>();
+  for (const r of runs) {
+    if (!r.flags?.length) continue;
+    for (const s of new Set(r.flags.map((f) => f.signal))) bySignal[s] = (bySignal[s] ?? 0) + 1;
+    const i = days.indexOf(localDay(Date.parse(r.startedAt)));
+    if (i < 0) continue;
+    const perDay = agents.get(r.agentId) ?? days.map(() => 0);
+    perDay[i]++;
+    agents.set(r.agentId, perDay);
+  }
+  const byAgent = [...agents].map(([agentId, perDay]) => ({ agentId, perDay, total: perDay.reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => b.total - a.total || a.agentId.localeCompare(b.agentId));
+  return { bySignal, byAgent };
+}

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, flagText, ignoresFlagged, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, ignoresFlagged, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
-import type { AuditEntry, RunEventsResult, RunSummary } from '@/lib/whiteroom/types';
+import type { AuditEntry, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -274,5 +274,19 @@ describe('older engines and the Flagged filter', () => {
     expect(ignoresFlagged([{}, {}])).toBe(true);
     expect(ignoresFlagged([{ flags: [] }])).toBe(false);
     expect(ignoresFlagged([])).toBe(false);
+  });
+});
+
+describe('unusual behaviour (P2.5)', () => {
+  it('counts runs per signal and flagged runs per agent per day, busiest first', () => {
+    vi.stubEnv('TZ', 'UTC');
+    const days = ['2026-09-29', '2026-09-30', '2026-10-01'];
+    const run = (agentId: string, day: string, signals: string[]) => ({ agentId, startedAt: `${day}T12:00:00Z`, flags: signals.map((signal) => (signal === 'error_streak' ? { signal, calls: 3 } : { signal, tool: 't', calls: 5 })) as RunFlag[] });
+    const s = unusualSummary([
+      run('a', '2026-09-30', ['repeating_call', 'error_streak']), run('a', '2026-10-01', ['error_streak']),
+      run('b', '2026-09-29', ['repeating_call']), run('c', '2026-10-01', []), run('d', '2026-08-01', ['repeating_call']),
+    ], days);
+    expect(s.bySignal).toEqual({ repeating_call: 3, error_streak: 2 });
+    expect(s.byAgent).toEqual([{ agentId: 'a', perDay: [0, 1, 1], total: 2 }, { agentId: 'b', perDay: [1, 0, 0], total: 1 }]);
   });
 });
