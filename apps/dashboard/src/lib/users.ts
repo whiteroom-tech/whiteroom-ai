@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, revokeFleetEntitlement } from '@/lib/entitlements';
+import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 
 export interface UserProvisioning {
@@ -79,8 +79,10 @@ export async function upsertUserProvisioning(input: {
     client.release();
   }
 
+  // The provisioned fleet is always its account's own, so letting it go hands
+  // it to the next holder's plan, or to starter limits when there's none.
   if (oldFleetId && oldFleetId !== input.fleetId) {
-    await revokeFleetEntitlement(oldFleetId);
+    await releaseFleet(oldFleetId);
   }
 }
 

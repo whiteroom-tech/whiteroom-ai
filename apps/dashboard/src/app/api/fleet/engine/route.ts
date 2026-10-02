@@ -23,6 +23,8 @@ import {
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
 import { CONTROL_SECRET_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
 
+const MAX_BODY_BYTES = 64 * 1024;
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +47,11 @@ export async function POST(req: Request) {
     return Response.json({ error: 'No fleet session.' }, { status: 401 });
   }
 
+  // Engine actions are small JSON bodies; refuse anything bigger before reading it.
+  const length = Number(req.headers.get('content-length') ?? 0);
+  if (length > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
   const body = await req.text();
+  if (body.length > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
 
   const headers = engineAuthHeaders(token);
   const control = controlActionOf(body);

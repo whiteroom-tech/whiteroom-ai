@@ -2,7 +2,8 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, getSubscriptionRow, revokeFleetEntitlement } from '@/lib/entitlements';
+import { enqueueEntitlementSync, getSubscriptionRow, releaseFleet } from '@/lib/entitlements';
+import { fleetOwnerId } from '@/lib/control-auth';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
 
@@ -115,19 +116,20 @@ export async function addUserFleet(
 
 export async function removeUserFleet(id: string): Promise<void> {
   const userId = await requireUserId();
-  // Read the fleet id before deleting the row — afterwards there's nothing
-  // left to tell the engine which entitlement to drop.
-  const { rows } = await db().query(
-    `DELETE FROM user_fleets WHERE id = $1 AND user_id = $2 RETURNING fleet_id`,
+  const { rows: linked } = await db().query(
+    `SELECT fleet_id FROM user_fleets WHERE id = $1 AND user_id = $2`,
     [id, userId],
   );
+  const fleetId: string | null = linked[0]?.fleet_id ?? null;
+  // Ownership is read before the row goes, while this account still counts.
+  const wasOwner = fleetId ? (await fleetOwnerId(fleetId)) === userId : false;
+  await db().query(`DELETE FROM user_fleets WHERE id = $1 AND user_id = $2`, [id, userId]);
 
-  // Unlinking has to revoke on the engine too, or a paid fleet could be
+  // The owner unlinking has to change the engine too, or a paid fleet could be
   // unlinked and keep its raised limits forever — link, unlink, repeat, and
-  // one subscription entitles any number of fleets. The fleet itself survives;
-  // it just drops back to free limits, which is what an unclaimed fleet gets.
-  const fleetId: string | null = rows[0]?.fleet_id ?? null;
-  if (fleetId) await revokeFleetEntitlement(fleetId);
+  // one subscription entitles any number of fleets. The next owner's plan
+  // applies, else free limits. Anyone else unlinking leaves the owner's plan.
+  if (fleetId && wasOwner) await releaseFleet(fleetId);
 }
 
 export async function updateFleetLabel(id: string, label: string): Promise<void> {
