@@ -16,7 +16,7 @@ import { RecentRuns } from '@/components/agent/RecentRuns';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
-  breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary,
+  breakEndsAt, canResume, canStartBreak, handoverLines, notesAreLong, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary,
 } from '@/lib/agent-detail';
 
 type Pending = 'pausing' | 'stopping' | 'resuming' | null;
@@ -51,6 +51,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [actionError, setActionError] = useState<{ text: string; retry?: () => void } | null>(null);
   const [confirmBreak, setConfirmBreak] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const resumingHold = useRef(false);
   const [taskDraft, setTaskDraft] = useState<string | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
@@ -241,6 +242,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const progress = agent ? shiftProgress(agent, now) : null;
   const notesState = agent ? notesStatus(notesShift, agent.watchNumber ?? null, notesFailed) : 'loading';
   const notes = notesState === 'current' ? handoverLines(handover) : [];
+  const notesLong = notesAreLong(notes);
   const model = lastModel(entries);
   const activity = latestActivity(entries, 8);
   const breakEnd = agent ? breakEndsAt(agent) : null;
@@ -320,7 +322,17 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     </p>
                   ) : (
                     <div style={{ display: 'grid', gap: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
-                      {notes.map((n) => <div key={n.label}><span style={{ color: 'var(--tx)', fontWeight: 600 }}>{n.label}</span> · {n.text}</div>)}
+                      {/* Long notes start as two lines each; the toggle shows them in full. */}
+                      {notes.map((n) => (
+                        <div key={n.label} className={notesLong && !notesOpen ? 'wr-clamp-2' : undefined}>
+                          <span style={{ color: 'var(--tx)', fontWeight: 600 }}>{n.label}</span> · {n.text}
+                        </div>
+                      ))}
+                      {notesLong && (
+                        <button type="button" className="wr-link" aria-expanded={notesOpen} onClick={() => setNotesOpen((o) => !o)} style={{ justifySelf: 'start', background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 12.5 }}>
+                          {notesOpen ? 'Show less' : 'Show full notes'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </Panel>
