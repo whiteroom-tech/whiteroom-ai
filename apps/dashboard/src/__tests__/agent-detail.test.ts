@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentIdFromSegment, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary } from '@/lib/agent-detail';
+import { agentIdFromSegment, notesAreLong, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary } from '@/lib/agent-detail';
 import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
 import { agentState } from '@/lib/home';
 
@@ -100,5 +100,12 @@ describe('durable holds (P2.2)', () => {
   });
   it('lets a held agent resume right away', () => {
     expect(canResume(held('stopped'))).toEqual({ allowed: true });
+  });
+});
+
+describe('handover notes length', () => {
+  it('collapses only notes longer than a few lines', () => {
+    expect(notesAreLong([{ text: 'Triaging the 2:00 pm batch.' }])).toBe(false);
+    expect(notesAreLong([{ text: 'x'.repeat(200) }, { text: 'y'.repeat(200) }])).toBe(true);
   });
 });

@@ -93,6 +93,11 @@ export function handoverLines(doc: HandoverDoc | null | undefined): { label: str
   return out;
 }
 
+/** Notes long enough to start collapsed: more than about four lines of text in the panel. */
+export function notesAreLong(lines: { text: string }[]): boolean {
+  return lines.reduce((n, l) => n + l.text.length, 0) > 320;
+}
+
 /**
  * What the Handover notes panel can show. Notes belong to a shift: when the
  * agent moves on, the previous shift's notes are out of date, so they're
