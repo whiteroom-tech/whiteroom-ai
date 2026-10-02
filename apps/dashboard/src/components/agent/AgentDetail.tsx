@@ -58,7 +58,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   useEffect(() => {
     if (!holdAt || preview) return;
     let live = true;
-    fetchControlActors(fleetId).then((a) => { if (live) setActors(a); });
+    fetchControlActors(fleetId, holdAt).then((a) => { if (live) setActors(a); });
     return () => { live = false; };
   }, [fleetId, holdAt, preview]);
   const [notesOpen, setNotesOpen] = useState(false);

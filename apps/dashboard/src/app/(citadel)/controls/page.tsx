@@ -32,7 +32,7 @@ import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, SelectChip } from "@whiteroom/ui";
 import { timeAgo } from "@/lib/format";
-import { fetchControlActors, historyWho, type ControlActor } from "@/lib/control-actors";
+import { fetchControlActors, historyWho, oldestTime, type ControlActor } from "@/lib/control-actors";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
 
@@ -437,10 +437,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   /** Reloads the rules; resolves false if that failed. */
   const fetchData = useCallback(async (): Promise<boolean> => {
     try {
-      const [d, who] = await Promise.all([governanceList(fleetId, authKey), fetchControlActors(fleetId)]);
+      const d = await governanceList(fleetId, authKey);
       setRules(d.rules);
       setHistory(d.history);
-      setActors(who);
+      void fetchControlActors(fleetId, oldestTime(d.history)).then(setActors);
       setAgents(d.agents);
       setGovV1(!!d.govV1);
       setLoaded(true);
@@ -474,8 +474,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   };
 
   const refreshHistory = () => {
-    governanceList(fleetId, authKey).then((d) => { setHistory(d.history); setAgents(d.agents); }).catch(() => {});
-    fetchControlActors(fleetId).then(setActors);
+    governanceList(fleetId, authKey).then((d) => {
+      setHistory(d.history);
+      setAgents(d.agents);
+      return fetchControlActors(fleetId, oldestTime(d.history)).then(setActors);
+    }).catch(() => {});
   };
 
   const rulesBy = (rt: RuleType) => rules.filter((r) => r.ruleType === rt);

@@ -10,7 +10,6 @@ const RECORDED = new Set([
   'alerts_set_slack',
 ]);
 
-
 /**
  * The agent and rule a control body names. A new rule's id comes from the
  * engine's reply, since the request can't know it.
@@ -55,14 +54,18 @@ export async function holdsFleet(userId: string, fleetId: string): Promise<boole
   return rows.length > 0;
 }
 
-/** The fleet's recent control actions, newest first, with each person's display name. */
-export async function recentControlActions(fleetId: string, limit = 200): Promise<ControlActor[]> {
+/**
+ * The fleet's control actions since `since` (newest first, at most 500),
+ * with each person's display name. Never an email address: any account
+ * holding the fleet may read this, so unnamed people show as "a teammate".
+ */
+export async function recentControlActions(fleetId: string, since: Date): Promise<ControlActor[]> {
   const { rows } = await db().query(
     `SELECT c.action, c.agent_id AS "agentId", c.rule_id AS "ruleId", c.created_at AS at,
-            COALESCE(NULLIF(u.name, ''), u.email, 'a teammate') AS by
+            COALESCE(NULLIF(u.name, ''), 'a teammate') AS by
        FROM control_actions c JOIN users u ON u.id = c.user_id
-      WHERE c.fleet_id = $1 ORDER BY c.created_at DESC LIMIT $2`,
-    [fleetId, limit],
+      WHERE c.fleet_id = $1 AND c.created_at >= $2 ORDER BY c.created_at DESC LIMIT 500`,
+    [fleetId, since],
   );
   return rows.map((r: ControlActor & { at: Date | string }) => ({ ...r, at: new Date(r.at).toISOString() }));
 }

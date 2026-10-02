@@ -59,12 +59,15 @@ export async function POST(req: Request) {
 
   const headers = engineAuthHeaders(token);
   const control = controlActionOf(body);
+  // Set only once the access check has passed, so recording can't be reached around it.
+  let allowed: { action: string; fleetId: string } | null = null;
   if (control) {
     const denied = await controlAccessError(control.fleetId, token);
     if (denied) {
       const code = denied.status === 403 ? { code: CONTROL_DENIED } : {};
       return Response.json({ error: denied.error, ...code }, { status: denied.status });
     }
+    if (control.fleetId) allowed = { action: control.action, fleetId: control.fleetId };
     // Unset during rollout: the request goes without it, which engines from
     // before R1 accept and engines with R1 refuse (fail closed).
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
@@ -91,10 +94,19 @@ export async function POST(req: Request) {
 
   // A control change the engine accepted: note who made it, since the engine
   // only knows "dashboard". Control replies are small, so read them whole.
-  if (control?.fleetId && upstream.ok) {
-    const reply = await upstream.text();
-    const userId = (await auth())?.user?.id;
-    if (userId) await recordControlAction(userId, control.fleetId, control.action, body, reply);
+  // Everything here is best effort: the change already happened, so a failed
+  // lookup or record must never turn it into an error the user would retry.
+  if (allowed && upstream.ok) {
+    let reply: string;
+    try {
+      reply = await upstream.text();
+    } catch {
+      return Response.json({ success: true }, { status: upstream.status, headers: { 'Cache-Control': 'no-store' } });
+    }
+    try {
+      const userId = (await auth())?.user?.id;
+      if (userId) await recordControlAction(userId, allowed.fleetId, allowed.action, body, reply);
+    } catch { /* not recorded; the change stands */ }
     return new Response(reply, {
       status: upstream.status,
       headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store' },
