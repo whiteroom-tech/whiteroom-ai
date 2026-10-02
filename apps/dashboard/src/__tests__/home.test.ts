@@ -127,6 +127,7 @@ describe('live feed rows', () => {
   it('shows HTML-escaped page text as characters', () => {
     expect(decodeEntities('Bakery &amp; Cake &#8220;Sudamengue&#8221; &#x27;x&#x27; &lt;b&gt; &bogus; &#0;')).toBe('Bakery & Cake “Sudamengue” \'x\' <b> &bogus; &#0;');
     expect(liveRow({ ...base, details: [{ name: 'tool_result', args: 'Tuesday &amp; Thursday' }] }).results[0].text).toBe('Tuesday & Thursday');
+    expect(liveRow({ ...base, details: [{ name: 'fetch_page', args: 'url: https://x.com/?a=1&amp;b=2' }] }).calls[0].text).toBe('url: https://x.com/?a=1&amp;b=2');
   });
 
   it('expands a long reply but not a short one or a bare model call', () => {

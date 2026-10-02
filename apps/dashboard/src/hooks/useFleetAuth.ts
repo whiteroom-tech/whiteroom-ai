@@ -49,7 +49,15 @@ export interface FleetAuthState {
   retry: () => void;
   /** Sign out: clears credentials and returns to the login form. */
   resetSession: (loginError?: string) => void;
+  /**
+   * Where a session-less visitor belongs instead of the key form: 'sign_in'
+   * when there is no account session, 'setup' when the account has no fleet
+   * yet (or its fleet session was rejected) — Fleet key provisions it.
+   */
+  needs: FleetAuthNeeds;
 }
+
+export type FleetAuthNeeds = 'sign_in' | 'setup' | null;
 
 const SESSION_URL = '/api/fleet/session';
 const RETRYABLE_MESSAGE =
@@ -117,6 +125,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [retryableError, setRetryableError] = useState<string | null>(null);
+  const [needs, setNeeds] = useState<FleetAuthNeeds>(null);
   // Bumped to re-run the bootstrap effect (retry, cross-tab pings).
   const [attempt, setAttempt] = useState(0);
 
@@ -130,6 +139,8 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     setFleetToken(null);
     setRetryableError(null);
     setStatus('unauthenticated');
+    // The engine rejected the session: Fleet key re-provisions and re-links it.
+    setNeeds('setup');
     if (message) setLoginError(message);
     pingOtherTabs();
   }, []);
@@ -152,6 +163,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setFleetId(result.fleetId || legacy.fleetId);
           setFleetToken(null);
           setRetryableError(null);
+          setNeeds(null);
           setStatus('authenticated');
         } else if (result.outcome === 'rejected') {
           clearFleetCredentials();
@@ -181,10 +193,14 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setFleetId(data.fleetId ?? null);
           setFleetToken(null);
           setRetryableError(null);
+          setNeeds(null);
           setStatus('authenticated');
         } else if (res.status === 401) {
+          const body = (await res.json().catch(() => ({}))) as { signedIn?: boolean };
+          if (cancelled) return;
           setFleetId(null);
           setFleetToken(null);
+          setNeeds(body.signedIn ? 'setup' : 'sign_in');
           setStatus('unauthenticated');
         } else {
           setRetryableError(RETRYABLE_MESSAGE);
@@ -259,7 +275,8 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
 
       setFleetId(result.fleetId);
       setFleetToken(null);
-      setStatus('authenticated');
+      setNeeds(null);
+          setStatus('authenticated');
       pingOtherTabs();
     } catch (e) {
       setLoginError(isAuthError(e)
@@ -287,5 +304,6 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     login,
     retry,
     resetSession,
+    needs,
   };
 }

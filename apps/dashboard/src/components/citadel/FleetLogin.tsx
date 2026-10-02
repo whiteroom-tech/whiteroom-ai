@@ -8,15 +8,34 @@
 //
 // While the stored session is still being checked it renders only the page
 // background, so the form never flashes for an already-signed-in user.
+//
+// The key form is the last resort. A visitor whose account session is gone
+// goes to sign-in (and back here after), and a signed-in account without a
+// working fleet session goes to Fleet key, which provisions and links one.
 
-import { useState } from 'react';
-import type { FleetAuthState } from '@/hooks/useFleetAuth';
+import { useEffect, useState } from 'react';
+import { ROUTES } from '@/lib/routes';
+import type { FleetAuthNeeds, FleetAuthState } from '@/hooks/useFleetAuth';
 import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+
+/** Where a session-less visitor is sent instead of the key form. */
+export function redirectFor(needs: FleetAuthNeeds, here: string): string | null {
+  if (needs === 'sign_in') return `/sign-in?callbackUrl=${encodeURIComponent(here)}`;
+  if (needs === 'setup') return ROUTES.fleetKey;
+  return null;
+}
 
 export function FleetLogin({ auth }: { auth: FleetAuthState }) {
   const [loginToken, setLoginToken] = useState('');
+  const target = auth.status === 'unauthenticated' && !auth.retryableError
+    ? redirectFor(auth.needs, window.location.pathname + window.location.search)
+    : null;
 
-  if (auth.status === 'checking') {
+  useEffect(() => {
+    if (target) window.location.replace(target);
+  }, [target]);
+
+  if (auth.status === 'checking' || target) {
     return <div className="min-h-screen" style={{ background: 'var(--bg)' }} />;
   }
 

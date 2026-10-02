@@ -290,7 +290,8 @@ export function decodeEntities(s: string): string {
 
 function step(d: { name?: unknown; args?: unknown }): LiveStep {
   const result = /^tool_result$/i.test(String(d.name ?? ''));
-  const text = decodeEntities(result ? String(d.args ?? '').trim() : readableArgs(d.args));
+  // Only results (page text) arrive escaped; a call's args are shown as sent.
+  const text = result ? decodeEntities(String(d.args ?? '').trim()) : readableArgs(d.args);
   return {
     label: !result && kindOf(String(d.name ?? '')) === 'web' ? 'Opened' : classifyAction(d.name).label,
     tool: result ? '' : prettyToolName(d.name),
