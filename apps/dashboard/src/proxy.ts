@@ -8,7 +8,7 @@ function adminHost(): string | undefined {
   return process.env.ADMIN_HOST?.toLowerCase().trim() || undefined;
 }
 
-const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth'];
+const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth', '/api/csp-report'];
 
 const SESSION_PROTECTED = [
   ROUTES.home, ROUTES.runs, ROUTES.performance, ROUTES.controls, ROUTES.sandbox, ROUTES.fleetKey,
@@ -42,7 +42,6 @@ function forward(request: NextRequest) {
   response.headers.set('Content-Security-Policy-Report-Only', csp);
   return response;
 }
-
 
 /**
  * The renamed routes have settled, so old links redirect permanently. The

@@ -16,4 +16,11 @@ describe('CSP report endpoint', () => {
     expect((await post('x'.repeat(9000))).status).toBe(413);
     expect((await post('not json')).status).toBe(204);
   });
+  it('reads the Reporting API format, logs at most five, and strips control characters', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const one = { body: { effectiveDirective: 'script-src-elem', blockedURL: 'inline', documentURL: 'https://app.test/runs\n[csp] forged' } };
+    expect((await post(JSON.stringify(Array(7).fill(one)))).status).toBe(204);
+    expect(warn).toHaveBeenCalledTimes(5);
+    expect(warn.mock.calls[0][0]).toBe('[csp] script-src-elem blocked inline on https://app.test/runs [csp] forged');
+  });
 });

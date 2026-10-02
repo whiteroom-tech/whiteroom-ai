@@ -272,8 +272,15 @@ describe('script policy (report-only CSP)', () => {
     expect(b.headers.get('content-security-policy-report-only')).not.toContain(nonce);
   });
 
-  it('sends reports to /api/csp-report, and adds the policy on the admin host too', () => {
+  it('sends reports to /api/csp-report, which the admin host also serves', () => {
     const policy = proxy(req(APP, '/home', { withSession: true }))!.headers.get('content-security-policy-report-only')!;
     expect(policy).toContain('report-uri /api/csp-report');
+    process.env.ADMIN_HOST = ADMIN;
+    try {
+      expect(verdict(proxy(req(ADMIN, '/api/csp-report')))).toBe('pass');
+      expect(verdict(proxy(req(ADMIN, '/api/fleet/engine')))).toBe('notFound');
+    } finally {
+      delete process.env.ADMIN_HOST;
+    }
   });
 });
