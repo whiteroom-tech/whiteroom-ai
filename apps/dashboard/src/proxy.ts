@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { PATH_HEADER } from '@/lib/callback-url';
+import { NONCE_HEADER, scriptPolicy } from '@/lib/csp';
 import { LEGACY_REDIRECTS, ROUTES, isUnder } from '@/lib/routes';
 
 function adminHost(): string | undefined {
   return process.env.ADMIN_HOST?.toLowerCase().trim() || undefined;
 }
 
-const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth'];
+const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth', '/api/csp-report'];
 
 const SESSION_PROTECTED = [
   ROUTES.home, ROUTES.runs, ROUTES.performance, ROUTES.controls, ROUTES.sandbox, ROUTES.fleetKey,
@@ -31,7 +32,15 @@ function notFound(request: NextRequest) {
 function forward(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.set(PATH_HEADER, request.nextUrl.pathname);
-  return NextResponse.next({ request: { headers } });
+  // A fresh nonce per request: Next.js reads it from the request's CSP header
+  // and puts it on its own scripts; the root layout puts it on the theme script.
+  const nonce = btoa(crypto.randomUUID());
+  const csp = scriptPolicy(nonce);
+  headers.set(NONCE_HEADER, nonce);
+  headers.set('content-security-policy', csp);
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.set('Content-Security-Policy-Report-Only', csp);
+  return response;
 }
 
 /**

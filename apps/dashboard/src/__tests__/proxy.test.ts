@@ -259,3 +259,28 @@ describe('host matching', () => {
     }
   });
 });
+
+describe('script policy (report-only CSP)', () => {
+  it('sends a fresh nonce to the app and the same policy to the browser, report-only', () => {
+    const a = proxy(req(APP, '/settings', { withSession: true }))!;
+    const b = proxy(req(APP, '/settings', { withSession: true }))!;
+    const policy = a.headers.get('content-security-policy-report-only')!;
+    const nonce = /'nonce-([^']+)'/.exec(policy)![1];
+    expect(policy).toContain("'strict-dynamic'");
+    expect(a.headers.get('content-security-policy')).toBeNull();
+    expect(a.headers.get('x-middleware-request-x-nonce')).toBe(nonce);
+    expect(b.headers.get('content-security-policy-report-only')).not.toContain(nonce);
+  });
+
+  it('sends reports to /api/csp-report, which the admin host also serves', () => {
+    const policy = proxy(req(APP, '/home', { withSession: true }))!.headers.get('content-security-policy-report-only')!;
+    expect(policy).toContain('report-uri /api/csp-report');
+    process.env.ADMIN_HOST = ADMIN;
+    try {
+      expect(verdict(proxy(req(ADMIN, '/api/csp-report')))).toBe('pass');
+      expect(verdict(proxy(req(ADMIN, '/api/fleet/engine')))).toBe('notFound');
+    } finally {
+      delete process.env.ADMIN_HOST;
+    }
+  });
+});
