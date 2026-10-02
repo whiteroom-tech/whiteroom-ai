@@ -168,7 +168,7 @@ export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
 
 /** What each response does, under the select (README › Screen 5). */
 export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
-  notify: 'It shows in Rule actions and the run, with a link to the run. The agent keeps going.',
+  notify: 'You get a Slack message (Settings › Alerts) with a link to the run, and it shows in Rule actions. The agent keeps going.',
   block: 'That one call fails with a plain reason. The agent keeps going.',
   pause: 'Its current run ends. It can’t make calls until someone resumes it, even after a restart.',
   stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',

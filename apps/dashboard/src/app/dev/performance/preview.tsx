@@ -3,6 +3,7 @@
 import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
+import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import type { RunSummary } from '@/lib/whiteroom/types';
 
@@ -16,7 +17,6 @@ const FLAGGED = [
   flagged('lead-agent', 3, [{ signal: 'repeating_call', tool: 'search', calls: 5 }]),
   flagged('scout-agent', 1, [{ signal: 'error_streak', calls: 3 }]),
 ];
-import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
 
 // Sample week shaped like the redesign's screen 4: tasks most days, a
 // handover now and then, one quiet day.

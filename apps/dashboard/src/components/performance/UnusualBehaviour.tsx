@@ -18,19 +18,27 @@ const DAYS = 7;
  */
 export function UnusualBehaviour({ fleetId, authKey, preview }: { fleetId: string; authKey?: string; preview?: RunSummary[] }) {
   const [runs, setRuns] = useState<RunSummary[] | null>(preview ?? null);
+  const [truncated, setTruncated] = useState(false);
+  const [failed, setFailed] = useState(false);
   const today = localDay();
   const days = Array.from({ length: DAYS }, (_, i) => addDays(today, i - DAYS + 1));
 
   useEffect(() => {
     if (preview) return;
     let live = true;
+    setRuns(null);
+    setFailed(false);
     collectRuns((cursor) => listRuns(fleetId, { fromDay: days[0], toDay: today, flagged: true, cursor, pageSize: 50 }, authKey), 20)
-      .then((got) => { if (live && !('unsupported' in got) && !ignoresFlagged(got.runs)) setRuns(got.runs); }, () => {});
+      .then(
+        (got) => { if (live && !('unsupported' in got) && !ignoresFlagged(got.runs)) { setRuns(got.runs); setTruncated(got.truncated); } },
+        () => { if (live) setFailed(true); },
+      );
     return () => { live = false; };
     // days is derived from today
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fleetId, authKey, today, preview]);
 
+  if (failed) return <Panel title="Unusual behaviour"><p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Couldn&rsquo;t load flagged runs. Reload to try again.</p></Panel>;
   if (!runs) return null;
   const { bySignal, byAgent } = unusualSummary(runs, days);
   const max = Math.max(1, ...byAgent.flatMap((a) => a.perDay));
@@ -67,6 +75,7 @@ export function UnusualBehaviour({ fleetId, authKey, preview }: { fleetId: strin
         </div>
       )}
       <p style={{ margin: '12px 0 0', fontSize: 11.5, color: 'var(--tx2)' }}>
+        {truncated && <>Showing the newest {runs.length.toLocaleString('en-US')} flagged runs. </>}
         Repeats can only be seen in calls WhiteRoom could read, so streamed calls don&rsquo;t count toward them. Three signals need call data WhiteRoom doesn&rsquo;t record yet.
       </p>
     </Panel>

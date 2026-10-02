@@ -286,7 +286,8 @@ describe('unusual behaviour (P2.5)', () => {
       run('a', '2026-09-30', ['repeating_call', 'error_streak']), run('a', '2026-10-01', ['error_streak']),
       run('b', '2026-09-29', ['repeating_call']), run('c', '2026-10-01', []), run('d', '2026-08-01', ['repeating_call']),
     ], days);
-    expect(s.bySignal).toEqual({ repeating_call: 3, error_streak: 2 });
+    // The run from August is outside the shown days, so it counts nowhere.
+    expect(s.bySignal).toEqual({ repeating_call: 2, error_streak: 2 });
     expect(s.byAgent).toEqual([{ agentId: 'a', perDay: [0, 1, 1], total: 2 }, { agentId: 'b', perDay: [1, 0, 0], total: 1 }]);
   });
 });
