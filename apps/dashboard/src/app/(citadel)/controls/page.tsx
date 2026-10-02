@@ -169,28 +169,35 @@ const MODEL_GROUPS: { provider: string; models: { id: string; label: string }[] 
   },
 ];
 
-const ALL_KNOWN_MODELS = MODEL_GROUPS.flatMap((g) => g.models);
+// One picker for both lists: chips for what's chosen, a grouped select to
+// add more, and "Other…" for a value that isn't listed.
+type PickGroup = { label: string; options: { id: string; label: string }[] };
 
-function ModelPicker({ tags, onAdd, onRemove }: {
+function GroupPicker({ tags, onAdd, onRemove, groups, addLabel, addAria, otherLabel, placeholder, inputAria, inputWidth }: {
   tags: string[];
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
+  groups: PickGroup[];
+  addLabel: string;
+  addAria: string;
+  otherLabel: string;
+  placeholder: string;
+  inputAria: string;
+  inputWidth: number;
 }) {
   const [showCustom, setShowCustom] = useState(false);
   const [customInput, setCustomInput] = useState("");
   const tagSet = new Set(tags);
+  const labelOf = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id)?.label ?? id;
 
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
-      {tags.map((t) => {
-        const known = ALL_KNOWN_MODELS.find((m) => m.id === t);
-        return (
-          <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
-            {known ? known.label : t}
-            <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
-          </span>
-        );
-      })}
+      {tags.map((t) => (
+        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
+          {labelOf(t)}
+          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
+        </span>
+      ))}
       {showCustom ? (
         <span style={{ display: "inline-flex", alignItems: "center" }}>
           <input
@@ -208,14 +215,14 @@ function ModelPicker({ tags, onAdd, onRemove }: {
               if (e.key === "Escape") { setShowCustom(false); setCustomInput(""); }
             }}
             onBlur={() => { setShowCustom(false); setCustomInput(""); }}
-            placeholder="deployment name or model ID"
-            aria-label="Custom model or deployment name"
-            style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "var(--brand)", fontFamily: FONT_MONO, width: 200, outline: "none" }}
+            placeholder={placeholder}
+            aria-label={inputAria}
+            style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "var(--brand)", fontFamily: FONT_MONO, width: inputWidth, outline: "none" }}
           />
         </span>
       ) : (
         <select
-          aria-label="Add a model"
+          aria-label={addAria}
           value=""
           onChange={(e) => {
             const val = e.target.value;
@@ -227,22 +234,32 @@ function ModelPicker({ tags, onAdd, onRemove }: {
           }}
           style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
         >
-          <option value="">+ add model</option>
-          {MODEL_GROUPS.map((g) => {
-            const available = g.models.filter((m) => !tagSet.has(m.id));
+          <option value="">{addLabel}</option>
+          {groups.map((g) => {
+            const available = g.options.filter((o) => !tagSet.has(o.id));
             if (available.length === 0) return null;
             return (
-              <optgroup key={g.provider} label={g.provider}>
-                {available.map((m) => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
+              <optgroup key={g.label} label={g.label}>
+                {available.map((o) => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
                 ))}
               </optgroup>
             );
           })}
-          <option value="__custom__">Other (type deployment name or model ID)...</option>
+          <option value="__custom__">{otherLabel}</option>
         </select>
       )}
     </span>
+  );
+}
+
+const MODEL_PICK_GROUPS: PickGroup[] = MODEL_GROUPS.map((g) => ({ label: g.provider, options: g.models }));
+
+function ModelPicker(props: { tags: string[]; onAdd: (tag: string) => void; onRemove: (tag: string) => void }) {
+  return (
+    <GroupPicker {...props} groups={MODEL_PICK_GROUPS} addLabel="+ add model" addAria="Add a model"
+      otherLabel="Other (type deployment name or model ID)..." placeholder="deployment name or model ID"
+      inputAria="Custom model or deployment name" inputWidth={200} />
   );
 }
 
@@ -267,75 +284,12 @@ const TOOL_GROUPS: { category: string; tools: string[] }[] = [
   },
 ];
 
-function ToolPicker({ tags, onAdd, onRemove }: {
-  tags: string[];
-  onAdd: (tag: string) => void;
-  onRemove: (tag: string) => void;
-}) {
-  const [showCustom, setShowCustom] = useState(false);
-  const [customInput, setCustomInput] = useState("");
-  const tagSet = new Set(tags);
+const TOOL_PICK_GROUPS: PickGroup[] = TOOL_GROUPS.map((g) => ({ label: g.category, options: g.tools.map((t) => ({ id: t, label: t })) }));
 
+function ToolPicker(props: { tags: string[]; onAdd: (tag: string) => void; onRemove: (tag: string) => void }) {
   return (
-    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
-      {tags.map((t) => (
-        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
-          {t}
-          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
-        </span>
-      ))}
-      {showCustom ? (
-        <span style={{ display: "inline-flex", alignItems: "center" }}>
-          <input
-            autoFocus
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value.slice(0, 64))}
-            onKeyDown={(e) => {
-              const trimmed = customInput.trim();
-              if (e.key === "Enter" && trimmed) {
-                if (!tagSet.has(trimmed)) onAdd(trimmed);
-                setCustomInput("");
-                setShowCustom(false);
-                e.preventDefault();
-              }
-              if (e.key === "Escape") { setShowCustom(false); setCustomInput(""); }
-            }}
-            onBlur={() => { setShowCustom(false); setCustomInput(""); }}
-            placeholder="tool name"
-            aria-label="Tool name to ignore"
-            style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "var(--brand)", fontFamily: FONT_MONO, width: 140, outline: "none" }}
-          />
-        </span>
-      ) : (
-        <select
-          aria-label="Add a tool to ignore"
-          value=""
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val === "__custom__") {
-              setShowCustom(true);
-            } else if (val && !tagSet.has(val)) {
-              onAdd(val);
-            }
-          }}
-          style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "var(--tx3)", fontFamily: FONT_MONO, cursor: "pointer" }}
-        >
-          <option value="">+ add tool</option>
-          {TOOL_GROUPS.map((g) => {
-            const available = g.tools.filter((t) => !tagSet.has(t));
-            if (available.length === 0) return null;
-            return (
-              <optgroup key={g.category} label={g.category}>
-                {available.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </optgroup>
-            );
-          })}
-          <option value="__custom__">Other (type tool name)...</option>
-        </select>
-      )}
-    </span>
+    <GroupPicker {...props} groups={TOOL_PICK_GROUPS} addLabel="+ add tool" addAria="Add a tool to ignore"
+      otherLabel="Other (type tool name)..." placeholder="tool name" inputAria="Tool name to ignore" inputWidth={140} />
   );
 }
 
