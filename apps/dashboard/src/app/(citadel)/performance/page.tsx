@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
+import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, partialCoverageSince, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -899,6 +900,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
         {savingsDays && <SavingsChart days={savingsDays} />}
       </div>
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} /></div>}
+      <div style={{ marginBottom: 24 }}><UnusualBehaviour fleetId={fleetId} authKey={authKey} /></div>
 
       <div className="wr-perf-row">
       <DiagnosisCard data={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onSeeFindings={seeFindings} />
@@ -1275,11 +1277,13 @@ export default function PerformancePage() {
         setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
         const fromAudit = governanceCounts(audit.entries, cutoff);
         setGovCounts(fromAudit);
-        // Durable counts (engine rule_actions) replace the audit log's when there.
-        const durable = await fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey).catch(() => null);
-        if (!stale() && durable && !('unsupported' in durable)) setGovCounts(countsFromRuleActions(durable, fromAudit.byRule));
         setAuditEntries(audit.entries);
         setAuditCoverage({ retainedSince: audit.retainedSince, historyTruncated: audit.historyTruncated });
+        // Durable counts (engine rule_actions) replace the audit log's when they arrive.
+        void fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey).then(
+          (d) => { if (!stale() && !('unsupported' in d)) setGovCounts(countsFromRuleActions(d, fromAudit.byRule)); },
+          () => {},
+        );
       } else {
         setGovSavings(null);
         setGovCounts(null);

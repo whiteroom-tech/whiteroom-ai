@@ -142,7 +142,7 @@ export function ByAgentTable({ rows, scope, ruleActions }: {
             { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
             { key: 'saved', header: 'Saved, up to', width: '120px', numeric: true, render: (r) => (r.saved > 0 ? fmtTokens(r.saved) : '–') },
             {
-              key: 'rules', header: 'Rule actions', width: '180px', numeric: true,
+              key: 'rules', header: 'Rule actions', width: 'minmax(180px, 280px)', numeric: true,
               render: (r) => {
                 const words = ruleActions?.[r.agent] ? tallyWords(ruleActions[r.agent]) : [];
                 if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
