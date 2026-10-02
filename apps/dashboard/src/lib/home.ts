@@ -275,9 +275,22 @@ export function readableArgs(args: unknown): string {
   }
 }
 
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+/** Page text arrives HTML-escaped ("&amp;"); show the characters. Rendered as text, never as HTML. */
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, code: string) => {
+    if (code[0] === '#') {
+      const n = code[1].toLowerCase() === 'x' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
+    }
+    return ENTITIES[code.toLowerCase()] ?? m;
+  });
+}
+
 function step(d: { name?: unknown; args?: unknown }): LiveStep {
   const result = /^tool_result$/i.test(String(d.name ?? ''));
-  const text = result ? String(d.args ?? '').trim() : readableArgs(d.args);
+  const text = decodeEntities(result ? String(d.args ?? '').trim() : readableArgs(d.args));
   return {
     label: !result && kindOf(String(d.name ?? '')) === 'web' ? 'Opened' : classifyAction(d.name).label,
     tool: result ? '' : prettyToolName(d.name),
@@ -299,7 +312,7 @@ export function liveRow(e: AuditEntry): LiveRow {
   const tokens = rawTokens == null || rawTokens === '' || !Number.isFinite(Number(rawTokens)) ? null : Number(rawTokens);
   const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e), tokens, reply: '' };
   if (/^reply:/i.test(name) && details.length === 0) {
-    const reply = name.replace(/^reply:\s*/i, '');
+    const reply = decodeEntities(name.replace(/^reply:\s*/i, ''));
     return { ...base, kind: 'reply', summary: `“${reply}”`, calls: [], results: [], reply };
   }
   // The engine lists the results of the agent's earlier calls before the

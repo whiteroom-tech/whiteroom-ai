@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveExpandable, liveRow, readableArgs, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -122,6 +122,11 @@ describe('live feed rows', () => {
     expect(liveRow({ ...base, tokensUsed: null } as unknown as AuditEntry).tokens).toBeNull();
     expect(liveRow({ ...base, tokensUsed: '' } as unknown as AuditEntry).tokens).toBeNull();
     expect(liveRow({ ...base, details: [{ name: 'tool_result', args: 'Error: timed out' }] }).results[0].failed).toBe(true);
+  });
+
+  it('shows HTML-escaped page text as characters', () => {
+    expect(decodeEntities('Bakery &amp; Cake &#8220;Sudamengue&#8221; &#x27;x&#x27; &lt;b&gt; &bogus; &#0;')).toBe('Bakery & Cake “Sudamengue” \'x\' <b> &bogus; &#0;');
+    expect(liveRow({ ...base, details: [{ name: 'tool_result', args: 'Tuesday &amp; Thursday' }] }).results[0].text).toBe('Tuesday & Thursday');
   });
 
   it('expands a long reply but not a short one or a bare model call', () => {

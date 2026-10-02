@@ -98,10 +98,8 @@ describe("cost estimation", () => {
   it("matches the engine formula", () => {
     const saved = 10000;
     const cost = estimateCost(saved);
-    // 10000 * 0.8 * 0.0000008 = 0.0064
-    // 10000 * 0.2 * 0.000004  = 0.008
-    // Total = 0.0144
-    expect(cost).toBeCloseTo(0.0144, 6);
+    // 10000 * (0.8 * $1 + 0.2 * $5) / 1M = 0.018
+    expect(cost).toBeCloseTo(0.018, 6);
   });
 
   it("returns zero for zero savings", () => {
