@@ -16,6 +16,7 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
+import { auth } from '@/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,7 +86,10 @@ export async function GET() {
   // in user_fleets — adopt the preferred one into the cookie.
   const linked = await tokenFromUserFleets();
   if (!linked) {
-    return Response.json({ error: 'No fleet session.' }, { status: 401 });
+    // signedIn tells the page where to send the visitor: sign-in when the
+    // account session is gone, Fleet key (which provisions) when it isn't.
+    const signedIn = !!(await auth())?.user;
+    return Response.json({ error: 'No fleet session.', signedIn }, { status: 401 });
   }
 
   if (linked.fleetId) {
