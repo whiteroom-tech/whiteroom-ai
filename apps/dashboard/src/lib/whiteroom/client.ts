@@ -867,6 +867,7 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
   return data as T;
 }
 
+// Dashboard-only like the other two (engine #93): agent keys can't read it.
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
 export const alertsTest = (fleetId: string) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId });
