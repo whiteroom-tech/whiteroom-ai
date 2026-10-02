@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveRow, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveExpandable, liveRow, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -84,7 +84,9 @@ describe('live feed rows', () => {
     expect(liveRow({ ...base, details: [{ name: 'web_fetch', args: '{"url":"https://content.naic.org/model-laws"}' }] }).kind).toBe('web');
     const file = liveRow({ ...base, details: [{ name: 'read_file', args: '{"path":"/data/policies/meridian.md"}' }] });
     expect(file.kind).toBe('file');
-    expect(file.detail).toBe('read_file({"path":"/data/policies/meridian.md"})');
+    expect(file.calls).toEqual([{ label: 'Read', tool: 'read file', text: 'path: /data/policies/meridian.md', failed: false }]);
+    expect(liveRow({ ...base, details: [{ name: 'web_fetch', args: '{"url":"https://a.example","depth":2}' }] }).calls[0])
+      .toMatchObject({ label: 'Opened', text: 'url: https://a.example  ·  depth: 2' });
     const tool = liveRow({ ...base, details: [{ name: 'persist_lead', args: '{"name":"Acme"}' }, { name: 'x', args: '' }] });
     expect(tool.kind).toBe('tool');
     expect(tool.summary).toBe('persist lead: Acme · +1 more');
@@ -94,6 +96,30 @@ describe('live feed rows', () => {
     expect(liveRow({ ...base, details: [{ name: 'web_fetch', args: '{"url":"https://a.example/x"}' }] }).summary).toBe('Opened https://a.example/x');
     expect(liveRow({ ...base, details: [{ name: 'read_file', args: '{"path":"/data/m.md"}' }] }).summary).toBe('Read /data/m.md');
     expect(liveRow({ ...base, details: [{ name: 'search_files', args: '{"query":"hartwell"}' }] }).summary).toBe('Searched hartwell');
+  });
+
+  it('sums up the calls, not the earlier results listed before them, and keeps every result', () => {
+    const r = liveRow({ ...base, tokensUsed: 1200, details: [
+      { name: 'tool_result', args: 'Our Programs Family Folklore' },
+      { name: 'tool_result', args: 'https://x.org/a  ·  [Blocked by robots.txt: https://x.org/a]' },
+      { name: 'tool_result', args: '[Fetch error: nodename nor servname provided]' },
+      { name: 'fetch_page', args: 'url: https://www.example.org/' },
+      { name: 'fetch_page', args: 'url: https://www.example.org/about' },
+    ] });
+    expect(r.kind).toBe('web');
+    expect(r.summary).toBe('Opened https://www.example.org/ · +1 more');
+    expect(r.calls.map((c) => c.text)).toEqual(['url: https://www.example.org/', 'url: https://www.example.org/about']);
+    expect(r.results.map((x) => x.failed)).toEqual([false, true, true]);
+    expect(r.tokens).toBe(1200);
+    expect(liveExpandable(r)).toBe(true);
+  });
+
+  it('expands a long reply but not a short one or a bare model call', () => {
+    expect(liveExpandable(liveRow({ ...base, taskName: 'reply: ok' }))).toBe(false);
+    const long = liveRow({ ...base, taskName: `reply: ${'word '.repeat(40)}` });
+    expect(long.reply.length).toBeGreaterThan(120);
+    expect(liveExpandable(long)).toBe(true);
+    expect(liveExpandable(liveRow({ ...base, taskName: 'think' }))).toBe(false);
   });
 
   it('filters by kind; Tools covers files', () => {
