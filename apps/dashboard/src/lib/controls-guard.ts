@@ -83,10 +83,14 @@ const WOULD_VERB: Record<GovernanceResponse, string> = { notify: 'told you about
 export function watchSummary(rule: { id: string; version: number; response?: GovernanceResponse }, events: AuditEntry[]): string | null {
   const response = rule.response ?? 'block';
   const byAgent = new Map<string, number>();
+  let unversioned = false;
   for (const e of events) {
-    // Only events from the rule as it is now: an older version may have had
-    // another response, threshold or scope.
-    if (e.type !== 'governance_would_block' || e.ruleId !== rule.id || Number(e.ruleVersion) !== rule.version) continue;
+    if (e.type !== 'governance_would_block' || e.ruleId !== rule.id) continue;
+    // Events from an older version may have had another response, threshold
+    // or scope, so they're left out. Events with no version (older engines)
+    // are counted, but then the verb can't claim a response.
+    if (e.ruleVersion == null) unversioned = true;
+    else if (Number(e.ruleVersion) !== rule.version) continue;
     const agent = String(e.agentId ?? 'an agent');
     const n = Number(e.occurrences);
     byAgent.set(agent, (byAgent.get(agent) ?? 0) + (Number.isFinite(n) && n > 0 ? n : 1));
@@ -94,5 +98,5 @@ export function watchSummary(rule: { id: string; version: number; response?: Gov
   if (byAgent.size === 0) return null;
   const parts = [...byAgent].sort((a, b) => b[1] - a[1]).map(([a, n]) => `${a} ${n === 1 ? 'once' : `${n.toLocaleString()} times`}`);
   const shown = parts.slice(0, 3).join(', ') + (parts.length > 3 ? ` and ${parts.length - 3} more` : '');
-  return `Watching: would have ${WOULD_VERB[response]} ${shown} since its last change.`;
+  return `Watching: would have ${unversioned ? 'acted on' : WOULD_VERB[response]} ${shown} since its last change.`;
 }
