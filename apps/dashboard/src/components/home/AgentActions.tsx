@@ -21,11 +21,13 @@ const VERB: Record<Act, string> = { pause: 'pause', stop: 'stop', resume: 'resum
  * opening the agent. Gov v1 fleets only; elsewhere Agent detail has the
  * break controls. Sits beside the card's link, never inside it.
  */
-export function AgentActions({ agent, fleetId, authKey, onChanged }: {
+export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }: {
   agent: AgentInfo;
   fleetId: string;
   authKey?: string;
   onChanged: () => void;
+  /** The page's session-expired handler; without one, a note asks to reload. */
+  onAuthError?: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -53,7 +55,11 @@ export function AgentActions({ agent, fleetId, authKey, onChanged }: {
       onChanged();
     } catch (e) {
       const failure = controlFailure(e);
-      if (failure === 'sign-out') { setError('Your session expired. Reload the page to sign in again.'); return; }
+      if (failure === 'sign-out') {
+        if (onAuthError) onAuthError('Session expired. Please sign in again.');
+        else setError('Your session expired. Reload the page to sign in again.');
+        return;
+      }
       setError(failure === 'refused' ? (e as Error).message : `Couldn’t ${VERB[act]} ${agent.agentId}. Nothing changed.`);
     } finally {
       setBusy(false);

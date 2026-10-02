@@ -782,8 +782,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                         </div>
                       )}
                       {rule.mode === "watch" && wouldEvents && (() => {
-                        const seen = watchSummary(rule.id, rule.response ?? "block", wouldEvents);
-                        return <p style={{ margin: "10px 0 0", fontSize: 12, color: seen ? "var(--warn-tx)" : "var(--tx3)" }}>{seen ?? "Watching: it hasn’t fired yet."}</p>;
+                        const seen = watchSummary(rule, wouldEvents);
+                        return <p style={{ margin: "10px 0 0", fontSize: 12, color: seen ? "var(--warn-tx)" : "var(--tx3)" }}>{seen ?? "Watching: it hasn’t fired since its last change."}</p>;
                       })()}
                       <ScopePicker
                         scope={rule.appliesTo}
