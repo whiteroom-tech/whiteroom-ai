@@ -81,6 +81,29 @@ export function fleetOwner(holders: FleetHolder[]): string | null {
   return first?.userId ?? null;
 }
 
+/** Each fleet's owner (fleetOwner over every account holding it), in one query; absent when nobody holds it. */
+export async function fleetOwners(fleetIds: string[]): Promise<Map<string, string>> {
+  if (fleetIds.length === 0) return new Map();
+  const { rows } = await db().query(
+    `SELECT fleet_id AS "fleetId", id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
+       FROM users WHERE fleet_id = ANY($1)
+     UNION ALL
+     SELECT fleet_id, user_id, false, extract(epoch FROM created_at)::float8
+       FROM user_fleets WHERE fleet_id = ANY($1)`,
+    [fleetIds],
+  );
+  const holders = new Map<string, FleetHolder[]>();
+  for (const r of rows as (FleetHolder & { fleetId: string })[]) {
+    holders.set(r.fleetId, [...(holders.get(r.fleetId) ?? []), r]);
+  }
+  const owners = new Map<string, string>();
+  for (const [fleetId, list] of holders) {
+    const owner = fleetOwner(list);
+    if (owner) owners.set(fleetId, owner);
+  }
+  return owners;
+}
+
 const NOT_OWNER: ControlDenial = {
   status: 403,
   error: 'Only this fleet’s owner can change its rules or pause its agents. Another WhiteRoom account added it first; you can still view it.',

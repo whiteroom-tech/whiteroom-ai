@@ -26,6 +26,9 @@ async function readRole(userId: string | undefined): Promise<string> {
   }
 }
 
+/** Sign-in emails one address can be sent per 10 minutes. */
+const MAGIC_LINKS_PER_WINDOW = 3;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // The adapter is what makes email sign-in possible at all: magic links need
   // their one-time tokens persisted server-side (verification_token), which a
@@ -49,6 +52,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // and whose button POSTs to the real callback. Scanners issue GETs, so
       // the token survives until a person actually clicks.
       async sendVerificationRequest({ identifier: to, provider, url }) {
+        // At most MAGIC_LINKS_PER_WINDOW links per address per 10 minutes, so
+        // the form can't be used to flood an inbox or burn the sending domain's
+        // reputation. Tokens store only their expiry (now + maxAge), so a token
+        // created in the window expires within maxAge of now.
+        const { rows } = await db().query(
+          `SELECT count(*)::int AS n FROM verification_token
+            WHERE identifier = $1 AND expires > now() + make_interval(secs => $2) - interval '10 minutes'`,
+          [to, provider.maxAge ?? 24 * 60 * 60],
+        );
+        if ((rows[0]?.n ?? 0) > MAGIC_LINKS_PER_WINDOW) throw new Error('Too many sign-in emails. Try again in a few minutes.');
+
         const callback = new URL(url);
         const confirmUrl = new URL('/auth/verify', callback.origin);
         confirmUrl.search = callback.search;

@@ -30,6 +30,9 @@ export function initAnalytics() {
     });
     return posthog;
   });
+  // A chunk that fails to load (offline, a deploy in between) leaves analytics
+  // off for this page instead of an unhandled rejection; the next init retries.
+  loaded.catch(() => { loaded = null; });
 }
 
 /** Events before initAnalytics are dropped, as posthog-js did before it was initialised. */

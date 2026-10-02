@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, getSubscriptionRow, revokeFleetEntitlement } from '@/lib/entitlements';
+import { enqueueEntitlementSync, getSubscriptionRow } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
 
@@ -111,32 +111,4 @@ export async function addUserFleet(
   }
 
   return { ok: true };
-}
-
-export async function removeUserFleet(id: string): Promise<void> {
-  const userId = await requireUserId();
-  // Read the fleet id before deleting the row — afterwards there's nothing
-  // left to tell the engine which entitlement to drop.
-  const { rows } = await db().query(
-    `DELETE FROM user_fleets WHERE id = $1 AND user_id = $2 RETURNING fleet_id`,
-    [id, userId],
-  );
-
-  // Unlinking has to revoke on the engine too, or a paid fleet could be
-  // unlinked and keep its raised limits forever — link, unlink, repeat, and
-  // one subscription entitles any number of fleets. The fleet itself survives;
-  // it just drops back to free limits, which is what an unclaimed fleet gets.
-  const fleetId: string | null = rows[0]?.fleet_id ?? null;
-  if (fleetId) await revokeFleetEntitlement(fleetId);
-}
-
-export async function updateFleetLabel(id: string, label: string): Promise<void> {
-  const userId = await requireUserId();
-  if (typeof label !== 'string' || label.trim().length === 0 || label.length > 120) {
-    throw new Error('Fleet label must be between 1 and 120 characters.');
-  }
-  await db().query(
-    `UPDATE user_fleets SET label = $3 WHERE id = $1 AND user_id = $2`,
-    [id, userId, label],
-  );
 }

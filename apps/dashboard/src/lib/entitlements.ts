@@ -16,6 +16,7 @@ import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
+import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
 
 export interface SubscriptionRow {
@@ -158,13 +159,17 @@ async function countFleets(userId: string): Promise<number> {
 }
 
 /**
- * Every fleet id this user controls.
+ * Every fleet id this user owns, so their plan is what applies there.
  *
  * Two sources, because there are two ways a fleet becomes theirs: the one
  * provisioned for them at sign-in (users.fleet_id) and any they linked by
  * token afterwards (user_fleets). The provisioned fleet has no user_fleets
  * row, so reading only that table would leave the account's main fleet
  * un-entitled and silently on free limits.
+ *
+ * Only owned fleets (control-auth fleetOwner): anyone holding a fleet's token
+ * can link it, an agent or a teammate included, and their plan must not
+ * replace the owner's.
  */
 async function fleetIdsFor(userId: string): Promise<string[]> {
   const { rows } = await db().query(
@@ -173,7 +178,21 @@ async function fleetIdsFor(userId: string): Promise<string[]> {
      SELECT fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL`,
     [userId],
   );
-  return rows.map((r) => r.fleet_id as string);
+  const ids = rows.map((r) => r.fleet_id as string);
+  const owners = await fleetOwners(ids);
+  return ids.filter((id) => owners.get(id) === userId);
+}
+
+/**
+ * A fleet an account stopped holding: whoever owns it now gets their plan
+ * applied, and with no owner left it drops to starter limits. Called only
+ * when the account that let go was the owner; anyone else letting go
+ * changes nothing.
+ */
+export async function releaseFleet(fleetId: string): Promise<void> {
+  const owner = (await fleetOwners([fleetId])).get(fleetId);
+  if (owner) await syncEntitlementsToEngine(owner);
+  else await revokeFleetEntitlement(fleetId);
 }
 
 /**
