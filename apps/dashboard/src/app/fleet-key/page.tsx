@@ -7,7 +7,7 @@ import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { ThemedShell } from '@/components/ThemedShell';
 import { AppShell } from '@/components/AppShell';
-import { posthog, initAnalytics } from '@/lib/analytics';
+import { analytics, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
 
 function generateApiKey() {
@@ -115,8 +115,8 @@ export default function DashboardPage() {
       setLoading(false);
 
       initAnalytics();
-      posthog.identify(user.id, { email });
-      posthog.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
+      analytics.identify(user.id, { email });
+      analytics.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
 
       if (!isNew) {
         let needsReRegister = !fleetToken;
