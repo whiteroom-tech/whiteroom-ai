@@ -3,12 +3,14 @@ import 'server-only';
 import { db } from '@/lib/db';
 import type { ControlActor } from '@/lib/control-actors';
 
-/** Control actions worth naming a person for (alerts reads and tests aren't). */
+/** The control actions a page names a person for: holds and rule changes. */
 const RECORDED = new Set([
-  'pause_agent', 'stop_agent', 'resume_agent',
+  'pause_agent', 'stop_agent',
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
-  'alerts_set_slack',
 ]);
+
+/** Pages read 30 days back; keep a little longer, then prune. */
+const KEEP_DAYS = 45;
 
 /**
  * The agent and rule a control body names. A new rule's id comes from the
@@ -39,6 +41,8 @@ export async function recordControlAction(userId: string, fleetId: string, actio
       'INSERT INTO control_actions (fleet_id, action, agent_id, rule_id, user_id) VALUES ($1, $2, $3, $4, $5)',
       [fleetId, action, agentId, ruleId, userId],
     );
+    // Prune this fleet's old rows as it writes; one indexed delete per change.
+    await db().query(`DELETE FROM control_actions WHERE fleet_id = $1 AND created_at < now() - make_interval(days => $2)`, [fleetId, KEEP_DAYS]);
   } catch (e) {
     console.warn('[control-actions] not recorded:', e instanceof Error ? e.message : e);
   }

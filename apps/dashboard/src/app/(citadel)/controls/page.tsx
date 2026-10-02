@@ -6,6 +6,7 @@ import Link from "next/link";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
+  auditLog,
   governanceCreateRule,
   governanceDeleteRule,
   governanceList,
@@ -16,6 +17,7 @@ import {
   performanceIndex,
 } from "@/lib/whiteroom/client";
 import type {
+  AuditEntry,
   GovernanceHistoryEntry,
   GovernanceMode,
   GovernanceParams,
@@ -33,6 +35,7 @@ import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, SelectChip } from "@whiteroom/ui";
 import { timeAgo } from "@/lib/format";
 import { fetchControlActors, historyWho, oldestTime, type ControlActor } from "@/lib/control-actors";
+import { stopBlockedReason, stopPhrase, watchSummary } from "@/lib/controls-guard";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
 
@@ -79,9 +82,9 @@ resets: ${resets}`;
 }
 
 const MODE_DESCRIPTION: Record<RuleType, Record<RuleMode, string>> = {
-  spend_cap: { off: "Off. Not counting.", watch: "Would-block only. Counting.", enforce: "Stops before the next call" },
-  loop_breaker: { off: "Off. Not counting.", watch: "Would-block only. Counting.", enforce: "Stops after the Nth call" },
-  model_allowlist: { off: "Off. Not counting.", watch: "Would-block only. Counting.", enforce: "Stops before the call" },
+  spend_cap: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the next call" },
+  loop_breaker: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts on the Nth call" },
+  model_allowlist: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the call" },
 };
 
 // ── Three-way toggle ───────────────────────────────────────────────
@@ -405,10 +408,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [actors, setActors] = useState<ControlActor[]>([]);
+  // Only the newest lookup may set names: an older one finishing last would undo it.
+  const actorsReq = useRef(0);
+  const loadActors = useCallback((h: HistoryEntry[]) => {
+    const id = ++actorsReq.current;
+    return fetchControlActors(fleetId, oldestTime(h)).then((a) => { if (id === actorsReq.current) setActors(a); });
+  }, [fleetId]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
   // A rule about to get "Stop the agent": confirmed first (README › Screen 6b).
   const [confirmStopRule, setConfirmStopRule] = useState<string | null>(null);
+  // Which change the Stop confirmation is for: picking Stop, or setting a Stop rule to Enforce.
+  const [confirmStopVia, setConfirmStopVia] = useState<"response" | "mode">("response");
+  const [wouldEvents, setWouldEvents] = useState<AuditEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
@@ -437,10 +449,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   /** Reloads the rules; resolves false if that failed. */
   const fetchData = useCallback(async (): Promise<boolean> => {
     try {
-      const d = await governanceList(fleetId, authKey);
+      const [d, would] = await Promise.all([
+        governanceList(fleetId, authKey),
+        auditLog({ fleetId, type: "governance_would_block", limit: 200 }, authKey).catch(() => ({ entries: [] as AuditEntry[] })),
+      ]);
+      setWouldEvents(would.entries ?? []);
       setRules(d.rules);
       setHistory(d.history);
-      void fetchControlActors(fleetId, oldestTime(d.history)).then(setActors);
+      void loadActors(d.history);
       setAgents(d.agents);
       setGovV1(!!d.govV1);
       setLoaded(true);
@@ -477,7 +493,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
     governanceList(fleetId, authKey).then((d) => {
       setHistory(d.history);
       setAgents(d.agents);
-      return fetchControlActors(fleetId, oldestTime(d.history)).then(setActors);
+      return loadActors(d.history);
     }).catch(() => {});
   };
 
@@ -515,17 +531,30 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
     } catch (e) { handleError(e, what); void fetchData(); }
   };
 
+  // A rule that would stop agents for real (Stop + Enforce) must have run in
+  // Watch for a day, and is confirmed by typing who it covers.
+  const askToStop = (rule: FleetRule, via: "response" | "mode") => {
+    const reason = stopBlockedReason(rule.id, history, rule.mode);
+    if (reason) { setError(reason); return; }
+    setConfirmStopVia(via);
+    setConfirmStopRule(rule.id);
+  };
+
   const changeResponse = (ruleId: string, response: GovernanceResponse, confirmed = false) => {
     selectRule(ruleId);
-    if ((rules.find((r) => r.id === ruleId)?.response ?? "block") === response) return;
-    if (response === "stop" && !confirmed) { setConfirmStopRule(ruleId); return; }
+    const rule = rules.find((r) => r.id === ruleId);
+    if ((rule?.response ?? "block") === response) return;
+    if (response === "stop" && rule?.mode === "enforce" && !confirmed) { askToStop(rule, "response"); return; }
     setConfirmStopRule(null);
     void update(ruleId, { response }, "change what the rule does", true);
   };
 
-  const changeMode = (ruleId: string, _ruleType: RuleType, mode: RuleMode) => {
+  const changeMode = (ruleId: string, _ruleType: RuleType, mode: RuleMode, confirmed = false) => {
     selectRule(ruleId);
-    if (rules.find((r) => r.id === ruleId)?.mode === mode) return;
+    const rule = rules.find((r) => r.id === ruleId);
+    if (rule?.mode === mode) return;
+    if (mode === "enforce" && rule?.response === "stop" && !confirmed) { askToStop(rule, "mode"); return; }
+    setConfirmStopRule(null);
     void update(ruleId, { mode }, "change the mode", true);
   };
 
@@ -573,6 +602,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   const suggestionCount = (suggestions.noCaching ? 1 : 0) + (allowlistSuggestion ? 1 : 0);
 
   const selectedRule = selectedId ? rules.find((r) => r.id === selectedId) ?? null : null;
+  const stopRule = confirmStopRule ? rules.find((r) => r.id === confirmStopRule) ?? null : null;
 
   // Render the natural-language params for a rule
   const renderParams = (rule: FleetRule) => {
@@ -581,7 +611,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       const p = rule.params as SpendCapParams;
       return (
         <span>
-          Stop an agent that spends more than{" "}
+          When an agent spends more than{" "}
           {p.unit === "dollars" && <span style={{ color: "var(--brand)", fontFamily: FONT_MONO }}>$</span>}
           <InlineNumber ariaLabel="Spend limit" value={p.dailyCap} allowDecimals={p.unit === "dollars"} onChange={(n) => updateParams(rule.id, { dailyCap: n })} />
           {" "}
@@ -604,7 +634,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       const p = rule.params as LoopBreakerParams;
       return (
         <span>
-          Stop an agent that makes the same call{" "}
+          When an agent makes the same call{" "}
           <InlineNumber ariaLabel="Repeated-call limit" value={p.threshold} onChange={(n) => updateParams(rule.id, { threshold: n })} />
           {" "}times in a{" "}
           <select aria-label="Limit period" value={p.scope} onChange={(e) => updateParams(rule.id, { scope: e.target.value as "run" | "day" })} style={{ background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "var(--brand)", fontFamily: FONT_MONO }}>
@@ -747,6 +777,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                           <span style={{ flex: "1 1 220px" }}>{RESPONSE_EFFECT[rule.response]}{rule.mode !== "enforce" && " Only once the rule is set to Enforce."}</span>
                         </div>
                       )}
+                      {rule.mode === "watch" && (() => {
+                        const seen = watchSummary(rule.id, rule.response ?? "block", wouldEvents);
+                        return <p style={{ margin: "10px 0 0", fontSize: 12, color: seen ? "var(--warn-tx)" : "var(--tx3)" }}>{seen ?? "Watching: it hasn’t fired yet."}</p>;
+                      })()}
                       <ScopePicker
                         scope={rule.appliesTo}
                         agents={agents}
@@ -862,10 +896,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       <ConfirmDialog
         open={confirmStopRule !== null}
         title="Let this rule stop agents?"
-        body={<>{RESPONSE_EFFECT.stop} It applies to every agent the rule covers, once the rule is set to Enforce.</>}
+        body={<>{RESPONSE_EFFECT.stop} It applies to {stopRule?.appliesTo === "all" || !stopRule ? "every agent in this fleet" : stopRule.appliesTo.join(", ")}, and takes effect now.</>}
         confirmLabel={RESPONSE_LABEL.stop}
-        confirmPhrase="stop"
-        onConfirm={() => { if (confirmStopRule) changeResponse(confirmStopRule, "stop", true); }}
+        confirmPhrase={stopRule ? stopPhrase(stopRule.appliesTo) : "stop"}
+        onConfirm={() => {
+          if (!confirmStopRule) return;
+          if (confirmStopVia === "mode") changeMode(confirmStopRule, stopRule!.ruleType, "enforce", true);
+          else changeResponse(confirmStopRule, "stop", true);
+        }}
         onCancel={() => setConfirmStopRule(null)}
       />
     </div>

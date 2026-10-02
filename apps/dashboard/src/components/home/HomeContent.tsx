@@ -18,6 +18,7 @@ import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
 import { fmtKwh } from '@/lib/format';
 import { NeedsYou } from '@/components/home/NeedsYou';
+import { AgentActions } from '@/components/home/AgentActions';
 import { RefreshFailed } from '@/components/citadel/States';
 import { EmptyHome } from './EmptyHome';
 
@@ -146,6 +147,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       onViewChange={changeView}
       liveFeed={<LiveFeedPanel fleetId={fleetId} authKey={authKey} refreshSignal={refreshSignal} />}
       fleet={{ fleetId, authKey }}
+      onActed={refresh}
     />
   );
 }
@@ -154,7 +156,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
  * Home's layout from plain data, so it can be previewed with sample data
  * (/dev/home) without a fleet.
  */
-export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet }: {
+export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet, onActed }: {
   report: FleetReport;
   agents: AgentInfo[];
   entries: AuditEntry[];
@@ -166,6 +168,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   liveFeed: React.ReactNode;
   /** Where Needs you reads today's flagged runs; previews leave it out. */
   fleet?: { fleetId: string; authKey?: string };
+  /** After Pause, Stop or Resume from a card: reload now rather than at the next poll. */
+  onActed?: () => void;
 }) {
   const router = useRouter();
   const sorted = sortAgents(agents);
@@ -212,7 +216,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               {sorted.map((a) => {
                 const block = blocks[a.agentId];
                 return (
-                  <Link key={a.agentId} href={agentHref(a.agentId)} className="wr-agent-card">
+                  <div key={a.agentId} className="wr-agent-card-wrap">
+                  <Link href={agentHref(a.agentId)} className="wr-agent-card">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
                       <StatusPill state={agentState(a)} />
@@ -227,6 +232,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                       </div>
                     )}
                   </Link>
+                  {fleet && a.govV1 && <AgentActions agent={a} fleetId={fleet.fleetId} authKey={fleet.authKey} onChanged={() => onActed?.()} />}
+                  </div>
                 );
               })}
             </div>
