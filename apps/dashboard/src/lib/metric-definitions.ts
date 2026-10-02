@@ -43,7 +43,7 @@ export function liveFeedHelp(ttlHours: number): string {
  */
 export const HELP = {
   smallerHandovers: "When an agent's shift ends, WhiteRoom passes its work to a fresh session as short notes instead of the full history. This is how much smaller those notes are, on average.",
-  savings: "Money not spent because handovers keep each agent's notes short. Shown as an upper limit, so the real figure can be lower.",
+  savings: `Money not spent because handovers keep each agent's notes short. Shown as an upper limit, so the real figure can be lower. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, an estimate.`,
   agentsWorking: 'Agents doing a task right now, out of all the agents connected to this fleet.',
   modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight UTC.',
   spendToday: "What today's model calls cost, at your AI provider's prices.",

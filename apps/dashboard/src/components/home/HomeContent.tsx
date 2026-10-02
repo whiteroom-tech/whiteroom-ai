@@ -16,6 +16,7 @@ import {
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
+import { fmtKwh } from '@/lib/format';
 import { NeedsYou } from '@/components/home/NeedsYou';
 import { RefreshFailed } from '@/components/citadel/States';
 import { EmptyHome } from './EmptyHome';
@@ -175,6 +176,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   const lastEvents = lastEventByAgent(entries);
   const activity = latestActivity(entries, 4);
   const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
+  // The engine's own estimate, so Home and the fleet report agree.
+  const energyOverall = fmtKwh(parseFloat(report.energySavings.estimatedEnergySaved));
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -193,7 +196,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             sub={savedOverall && !todayFailing ? `up to ${usd(savedOverall)} saved overall →` : todaySub}
             subHref={savedOverall && !todayFailing ? ROUTES.performance : undefined}
           />
-          <StatCard variant="card" label="Smaller handovers" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? undefined : 'no handovers yet'} />
+          <StatCard variant="card" label="Smaller handovers" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? (energyOverall ? `${energyOverall} saved overall` : undefined) : 'no handovers yet'} />
         </div>
 
         <Panel
