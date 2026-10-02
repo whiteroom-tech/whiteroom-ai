@@ -22,6 +22,8 @@ import {
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
 import { CONTROL_SECRET_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
+import { recordControlAction } from '@/lib/control-actions';
+import { auth } from '@/auth';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -57,12 +59,15 @@ export async function POST(req: Request) {
 
   const headers = engineAuthHeaders(token);
   const control = controlActionOf(body);
+  // Set only once the access check has passed, so recording can't be reached around it.
+  let allowed: { action: string; fleetId: string } | null = null;
   if (control) {
     const denied = await controlAccessError(control.fleetId, token);
     if (denied) {
       const code = denied.status === 403 ? { code: CONTROL_DENIED } : {};
       return Response.json({ error: denied.error, ...code }, { status: denied.status });
     }
+    if (control.fleetId) allowed = { action: control.action, fleetId: control.fleetId };
     // Unset during rollout: the request goes without it, which engines from
     // before R1 accept and engines with R1 refuse (fail closed).
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
@@ -85,6 +90,27 @@ export async function POST(req: Request) {
       { error: 'engine_unreachable', retryable: true },
       { status: 502 },
     );
+  }
+
+  // A control change the engine accepted: note who made it, since the engine
+  // only knows "dashboard". Control replies are small, so read them whole.
+  // Everything here is best effort: the change already happened, so a failed
+  // lookup or record must never turn it into an error the user would retry.
+  if (allowed && upstream.ok) {
+    let reply: string;
+    try {
+      reply = await upstream.text();
+    } catch {
+      return Response.json({ success: true }, { status: upstream.status, headers: { 'Cache-Control': 'no-store' } });
+    }
+    try {
+      const userId = (await auth())?.user?.id;
+      if (userId) await recordControlAction(userId, allowed.fleetId, allowed.action, body, reply);
+    } catch { /* not recorded; the change stands */ }
+    return new Response(reply, {
+      status: upstream.status,
+      headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   // Pass the engine's status and body through unchanged (a 401 here means
