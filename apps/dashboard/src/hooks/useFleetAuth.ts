@@ -20,7 +20,7 @@
 // - Only a real 401 (credential rejection) signs the user out. A network
 //   blip / 5xx keeps the session and exposes retryableError + retry().
 
-import { useCallback, useEffect, useState } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useState } from 'react';
 import { clearFleetCredentials, getFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, isAuthError, listFleets } from '@/lib/whiteroom/client';
 import { isApiKey, preferProductionFleet, resolveAuthKey } from '@/lib/fleet-helpers';
@@ -89,7 +89,26 @@ async function createSession(
   }
 }
 
+const FleetAuthContext = createContext<FleetAuthState | null>(null);
+
+/**
+ * One fleet session for every page under it ((citadel)/layout): the session
+ * is checked once per page load instead of on every page, so moving between
+ * pages doesn't wait on /api/fleet/session again.
+ */
+export function FleetAuthProvider({ children }: { children: React.ReactNode }) {
+  return createElement(FleetAuthContext.Provider, { value: useOwnFleetAuth(true) }, children);
+}
+
+/** The shared session inside FleetAuthProvider; elsewhere this component's own. */
 export function useFleetAuth(): FleetAuthState {
+  const shared = useContext(FleetAuthContext);
+  const own = useOwnFleetAuth(shared === null);
+  return shared ?? own;
+}
+
+/** The session check itself. Idle (no requests, no listeners) when `active` is false. */
+function useOwnFleetAuth(active: boolean): FleetAuthState {
   const [status, setStatus] = useState<FleetAuthStatus>('checking');
   const [fleetId, setFleetId] = useState<string | null>(null);
   // Always null for cookie-based sessions; kept in state (and in the public
@@ -118,6 +137,7 @@ export function useFleetAuth(): FleetAuthState {
   // Bootstrap: migrate legacy localStorage creds into the cookie, else ask
   // the server whether a cookie/next-auth session already exists.
   useEffect(() => {
+    if (!active) return;
     let cancelled = false;
 
     async function bootstrap() {
@@ -179,13 +199,14 @@ export function useFleetAuth(): FleetAuthState {
 
     bootstrap();
     return () => { cancelled = true; };
-  }, [attempt]);
+  }, [attempt, active]);
 
   // Keep tabs in sync. Legacy wr_* keys still trigger a re-check (a
   // pre-deploy tab may write them); `wr_auth_ping` is the nudge this hook
   // writes after cookie sign-in/sign-out, since httpOnly cookies fire no
   // storage events of their own.
   useEffect(() => {
+    if (!active) return;
     function onStorage(e: StorageEvent) {
       if (
         e.key !== null &&
@@ -198,7 +219,7 @@ export function useFleetAuth(): FleetAuthState {
     }
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [active]);
 
   const login = useCallback(async (token: string) => {
     setLoginError('');
