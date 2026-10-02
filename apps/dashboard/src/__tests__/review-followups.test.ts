@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { syncQueryParams } from '@/lib/url';
 import { MAGIC_LINKS_PER_WINDOW, tooManyMagicLinks } from '@/lib/magic-link-limit';
-import { timeAgo } from '@/lib/format';
+import { fmtTime, timeAgo } from '@/lib/format';
 import { relTime } from '@/lib/activity';
 
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -31,6 +31,14 @@ describe('sign-in email limit', () => {
     expect(query.mock.calls[0][1]).toEqual(['a@example.com', 86_400]);
     query.mockResolvedValueOnce({ rows: [{ n: MAGIC_LINKS_PER_WINDOW + 1 }] });
     expect(await tooManyMagicLinks(query, 'a@example.com', 86_400)).toBe(true);
+  });
+});
+
+describe('fmtTime', () => {
+  it('is lowercase "h:mm am/pm" with a plain space, and empty for bad input', () => {
+    expect(fmtTime(new Date(2026, 9, 1, 23, 42))).toBe('11:42 pm');
+    expect(fmtTime(new Date(2026, 9, 1, 9, 5))).toBe('9:05 am');
+    expect(fmtTime('nope')).toBe('');
   });
 });
 

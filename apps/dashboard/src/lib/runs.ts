@@ -5,6 +5,7 @@ import type { AuditEntry, RunEvent, RunEventsResult, RunFlag, RunSummary } from 
 import type { Sheet } from '@/lib/xlsx';
 import type { IconName, TagTone } from '@whiteroom/ui';
 import { activityRow, clock } from '@/lib/home';
+import { fmtTime } from '@/lib/format';
 
 export type RunsPreset = 'today' | '7d' | '30d';
 export type RunsRange = RunsPreset | 'custom';
@@ -157,7 +158,7 @@ function dateAndTime(iso: string): { date: string; time: string } {
   const d = new Date(iso);
   return {
     date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase(),
+    time: fmtTime(d),
   };
 }
 

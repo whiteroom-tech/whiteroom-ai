@@ -5,6 +5,7 @@
 import type { AgentState, TagTone } from '@whiteroom/ui';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
+import { fmtTime } from '@/lib/format';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
 
 // ── Agents ───────────────────────────────────────────────────────────────
@@ -162,9 +163,7 @@ export function eventAgent(e: AuditEntry): string {
 
 /** "2:15 pm" in the viewer's time zone, from an ISO string or epoch ms. */
 export function clock(ts: unknown): string {
-  const d = new Date(typeof ts === 'number' ? ts : String(ts ?? ''));
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  return fmtTime(typeof ts === 'number' ? ts : String(ts ?? ''));
 }
 
 /**

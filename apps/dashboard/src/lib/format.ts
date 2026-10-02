@@ -37,9 +37,12 @@ export function fmtCost(micros: number): string {
   return d < 0.01 ? `$${d.toFixed(4)}` : d < 1 ? `$${d.toFixed(3)}` : `$${d.toFixed(2)}`;
 }
 
-/** "02:15 PM" in the browser's locale. */
+/** "2:15 pm" in the viewer's time zone: the one clock-time wording. '' for an unreadable time. */
 export function fmtTime(ts: string | number | Date): string {
-  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  // ICU puts a narrow no-break space before "PM"; normalise it so copy and tests match.
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
 }
 
 /** "just now", "5 min ago", "2 hours ago", "3 days ago": the one relative-time wording. '' for an unreadable time. */
