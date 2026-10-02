@@ -7,7 +7,7 @@
 // dark.
 
 import { useEffect, useRef } from 'react';
-import { safeGet } from '@/lib/safe-storage';
+import { applyTheme, storedTheme } from '@/lib/theme';
 
 export function ThemedShell({ children, className = '', style }: {
   children: React.ReactNode;
@@ -16,8 +16,7 @@ export function ThemedShell({ children, className = '', style }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const stored = safeGet('wr_theme');
-    if (stored === 'light' || stored === 'dark') ref.current?.setAttribute('data-theme', stored);
+    applyTheme(storedTheme(), ref.current);
   }, []);
 
   return (

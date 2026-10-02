@@ -4,6 +4,7 @@ import Resend from 'next-auth/providers/resend';
 import PostgresAdapter from '@auth/pg-adapter';
 import { db } from '@/lib/db';
 import { magicLinkEmail } from '@/lib/magic-link-email';
+import { tooManyMagicLinks } from '@/lib/magic-link-limit';
 
 // How long a token may go without being re-checked against
 // users.sessions_valid_after. Also the upper bound on how long a revoked
@@ -25,9 +26,6 @@ async function readRole(userId: string | undefined): Promise<string> {
     return 'user';
   }
 }
-
-/** Sign-in emails one address can be sent per 10 minutes. */
-const MAGIC_LINKS_PER_WINDOW = 3;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // The adapter is what makes email sign-in possible at all: magic links need
@@ -52,16 +50,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // and whose button POSTs to the real callback. Scanners issue GETs, so
       // the token survives until a person actually clicks.
       async sendVerificationRequest({ identifier: to, provider, url }) {
-        // At most MAGIC_LINKS_PER_WINDOW links per address per 10 minutes, so
-        // the form can't be used to flood an inbox or burn the sending domain's
-        // reputation. Tokens store only their expiry (now + maxAge), so a token
-        // created in the window expires within maxAge of now.
-        const { rows } = await db().query(
-          `SELECT count(*)::int AS n FROM verification_token
-            WHERE identifier = $1 AND expires > now() + make_interval(secs => $2) - interval '10 minutes'`,
-          [to, provider.maxAge ?? 24 * 60 * 60],
-        );
-        if ((rows[0]?.n ?? 0) > MAGIC_LINKS_PER_WINDOW) throw new Error('Too many sign-in emails. Try again in a few minutes.');
+        const query = (sql: string, params: unknown[]) => db().query(sql, params);
+        if (await tooManyMagicLinks(query, to, provider.maxAge ?? 24 * 60 * 60)) throw new Error('Too many sign-in emails. Try again in a few minutes.');
 
         const callback = new URL(url);
         const confirmUrl = new URL('/auth/verify', callback.origin);

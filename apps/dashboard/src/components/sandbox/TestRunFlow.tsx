@@ -222,7 +222,6 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [prodFleetId, setProdFleetId] = useState<string | null>(null);
-  const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const ownerRef = useRef<string | undefined>(undefined);
   const modalRef = useRef<HTMLDivElement>(null);

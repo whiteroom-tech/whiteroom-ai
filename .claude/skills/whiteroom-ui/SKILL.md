@@ -28,8 +28,7 @@ Before writing any markup, styling, or a shared token:
 
 Current inventory (snapshot — always re-check `index.ts`):
 
-- **Components:** `Logo`, `BrandLink`, `BannerMetric`, `StatBox`, `StatCard`,
-  `CopyButton`, `CodeBlock`
+- **Components:** `Logo`, `BrandLink`, `StatCard`, `CopyButton`
 - **Typography tokens (`theme.ts`):** `FONT_DISPLAY`, `FONT_MONO`
 
 ## 2. Hoist new reusable components

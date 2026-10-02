@@ -125,7 +125,7 @@ function FleetActivityChart({ hourly }: { hourly: FleetHourlyDataPoint[] }) {
   const maxCalls = Math.max(...hourly.map(h => h.calls), 1);
   return (
     <div style={CARD}>
-      <h3 style={H3}>Fleet Activity</h3>
+      <h3 style={H3}>Fleet activity</h3>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 140 }}>
         {hourly.map((h, i) => {
           const cp = (h.completeCount / maxCalls) * 100;
@@ -173,7 +173,7 @@ function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
 
   return (
     <div style={CARD}>
-      <h3 style={H3}>Cost Breakdown</h3>
+      <h3 style={H3}>Cost breakdown</h3>
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`}>
           {arcs.map((a, i) => <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={sw} strokeLinecap="butt" />)}
@@ -275,11 +275,11 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const peakHour = hourly.length > 0 ? hourly.reduce((a, b) => b.calls > a.calls ? b : a) : null;
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Requests Breakdown</h3>
+        <h3 style={H3}>Requests breakdown</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 16 }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Input Tokens</th><th style={{ ...TH, textAlign: 'right' }}>Output Tokens</th></tr></thead>
+              <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Input tokens</th><th style={{ ...TH, textAlign: 'right' }}>Output tokens</th></tr></thead>
               <tbody>{[...models].sort((a, b) => b.calls - a.calls).map((m, i) => (
                 <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
                   <td style={TD}>{m.model ?? 'unknown'}</td>
@@ -293,7 +293,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
           </div>
           {peakHour && peakHour.calls > 0 && (
             <div style={{ fontSize: 12, color: 'var(--tx2)', minWidth: 140 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Peak Hour</div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Peak hour</div>
               <div style={{ fontFamily: FONT_MONO }}>{new Date(peakHour.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               <div style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: 'var(--tx)' }}>{peakHour.calls} calls</div>
               <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Completion</div>
@@ -309,7 +309,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const totalCost = models.reduce((s, m) => s + m.costMicros, 0);
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Spend Breakdown</h3>
+        <h3 style={H3}>Spend breakdown</h3>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th style={TH}>Model</th><th style={{ ...TH, textAlign: 'right' }}>Cost</th><th style={{ ...TH, textAlign: 'right' }}>Share</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Input</th><th style={{ ...TH, textAlign: 'right' }}>Output</th><th style={{ ...TH, textAlign: 'right' }}>Cost/Call</th></tr></thead>
@@ -345,15 +345,15 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const fastest = withLatency.length > 0 ? withLatency.reduce((a, b) => b.latencyP50Ms! < a.latencyP50Ms! ? b : a) : null;
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Response Time Breakdown</h3>
+        <h3 style={H3}>Response time breakdown</h3>
         <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Approximate p50 — weighted average of per-bucket medians, not a true fleet percentile.</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
-            { label: 'Weighted Avg', value: fmtLatency(weightedAvg) },
-            { label: 'Fastest Hour', value: fastest ? `${fmtLatency(min)} at ${new Date(fastest.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '--' },
-            { label: 'Slowest Hour', value: slowest ? `${fmtLatency(max)} at ${new Date(slowest.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '--' },
-            { label: 'Hours with Data', value: `${withLatency.length} / ${hourly.length}` },
-            { label: 'Total Measured Calls', value: totalWeight.toLocaleString() },
+            { label: 'Weighted avg', value: fmtLatency(weightedAvg) },
+            { label: 'Fastest hour', value: fastest ? `${fmtLatency(min)} at ${new Date(fastest.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '--' },
+            { label: 'Slowest hour', value: slowest ? `${fmtLatency(max)} at ${new Date(slowest.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '--' },
+            { label: 'Hours with data', value: `${withLatency.length} / ${hourly.length}` },
+            { label: 'Measured calls', value: totalWeight.toLocaleString() },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 120 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
@@ -427,12 +427,12 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const totalSavingsMicros = cacheMicros + govCostMicros;
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Savings Breakdown</h3>
+        <h3 style={H3}>Savings breakdown</h3>
         <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and handover compression (handovers and context offloads).</div>
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total Saved</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total saved</div>
             <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
@@ -445,14 +445,14 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
           </div>
         </div>
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache Savings</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache savings</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { label: 'Est. Saved', value: fmtCost(cacheMicros), color: 'var(--ok)' },
-            { label: 'Cache Hit Rate', value: `${(cacheHitRate * 100).toFixed(1)}%`, color: cacheHitRate > 0.3 ? 'var(--ok)' : 'var(--tx)' },
-            { label: 'Cache Read Tokens', value: fmtTokens(totalCacheRead), color: 'var(--tx)' },
-            { label: 'Cache Write Tokens', value: fmtTokens(totalCacheWrite), color: 'var(--tx)' },
-            { label: 'Fresh Input Tokens', value: fmtTokens(totalInput), color: 'var(--tx)' },
+            { label: 'Cache hit rate', value: `${(cacheHitRate * 100).toFixed(1)}%`, color: cacheHitRate > 0.3 ? 'var(--ok)' : 'var(--tx)' },
+            { label: 'Cache read tokens', value: fmtTokens(totalCacheRead), color: 'var(--tx)' },
+            { label: 'Cache write tokens', value: fmtTokens(totalCacheWrite), color: 'var(--tx)' },
+            { label: 'Fresh input tokens', value: fmtTokens(totalInput), color: 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 120 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
@@ -474,12 +474,12 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         )}
         {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Handover Compression Savings</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Handover compression savings</div>
         {govTokens > 0 ? (
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
             {[
               { label: 'Est. Saved', value: fmtCost(govCostMicros), color: 'var(--ok)' },
-              { label: 'Tokens Saved', value: fmtTokens(govTokens), color: 'var(--tx)' },
+              { label: 'Tokens saved', value: fmtTokens(govTokens), color: 'var(--tx)' },
             ].map((s, i) => (
               <div key={i} style={{ minWidth: 120 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
@@ -986,14 +986,14 @@ function AgentView({ data }: { data: AgentPerformanceResult }) {
         {t.blockedCount !== undefined && <MetricCard label="Blocked by rules" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Stopped by Controls rules" />}
       </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <MetricCard label="Input Tokens" value={fmtTokens(t.inputTokens)} />
-        <MetricCard label="Output Tokens" value={fmtTokens(t.outputTokens)} />
-        <MetricCard label="Cache Read" value={fmtTokens(t.cacheReadTokens)} sub={t.inputTokens > 0 ? `${Math.round((t.cacheReadTokens / t.inputTokens) * 100)}% of input` : ''} />
-        <MetricCard label="Cache Write" value={fmtTokens(t.cacheWriteTokens)} />
+        <MetricCard label="Input tokens" value={fmtTokens(t.inputTokens)} />
+        <MetricCard label="Output tokens" value={fmtTokens(t.outputTokens)} />
+        <MetricCard label="Cache read" value={fmtTokens(t.cacheReadTokens)} sub={t.inputTokens > 0 ? `${Math.round((t.cacheReadTokens / t.inputTokens) * 100)}% of input` : ''} />
+        <MetricCard label="Cache write" value={fmtTokens(t.cacheWriteTokens)} />
       </div>
       {data.hourly.length > 0 && (
         <div style={CARD}>
-          <h3 style={H3}>Hourly Activity</h3>
+          <h3 style={H3}>Hourly activity</h3>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 120 }}>
             {data.hourly.map((h, i) => (
               <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', height: '100%' }}>
@@ -1094,7 +1094,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
             {briefCopied ? 'Copied' : briefLoading ? 'Loading…' : 'Copy implementation brief'}
           </button>
           <button onClick={() => exportBrief('download')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
-            {briefLoading ? 'Loading…' : 'Download Markdown'}
+            {briefLoading ? 'Loading…' : 'Download as Markdown'}
           </button>
         </div>
       )}
@@ -1102,7 +1102,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
       {f && (
         <>
           <div style={CARD}>
-            <h3 style={H3}>Finding Details</h3>
+            <h3 style={H3}>Finding details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
               <div><span style={{ color: 'var(--tx3)' }}>{diagDetector ? 'Finding' : 'Detector'}:</span> <span style={{ color: 'var(--tx)' }}>{detectorLabel(f.detector)}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Agent:</span> <span style={{ color: 'var(--tx)' }}>{f.agentId}</span></div>
@@ -1117,9 +1117,9 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
             <DiagnosisEvidence detector={f.detector} calls={data.calls} measures={f.measures} />
           ) : (
           <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-            <MetricCard label="Tool Definitions" value={String(f.measures.avgToolDefs ?? '--')} />
-            <MetricCard label="Tools Requested" value={String(f.measures.uniqueRequestedTools ?? '--')} />
-            <MetricCard label="Schema Share" value={`${f.measures.schemaSharePct ?? '--'}%`} warn={(f.measures.schemaSharePct ?? 0) >= 20} />
+            <MetricCard label="Tool definitions" value={String(f.measures.avgToolDefs ?? '--')} />
+            <MetricCard label="Tools requested" value={String(f.measures.uniqueRequestedTools ?? '--')} />
+            <MetricCard label="Schema share" value={`${f.measures.schemaSharePct ?? '--'}%`} warn={(f.measures.schemaSharePct ?? 0) >= 20} />
             <MetricCard label="Utilization" value={`${f.measures.utilization ?? '--'}%`} />
           </div>
           )}
@@ -1130,7 +1130,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    {((diagDetector ? ['Call ID', 'Model', 'Shift', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema Chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
+                    {((diagDetector ? ['Call ID', 'Model', 'Shift', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
                       if (typeof h === 'string') return <th key={h} style={{ padding: '6px 8px', textAlign: 'left' }}>{h}</th>;
                       const [label, k] = h;
                       return (

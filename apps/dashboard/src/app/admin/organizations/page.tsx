@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { listOrganizations } from '@/lib/organizations';
 import { AdminShell } from '../admin-shell';
 import { CreateOrganizationForm } from './create-form';
+import { FONT_MONO as mono } from '@whiteroom/ui';
 
 export const dynamic = 'force-dynamic';
 
-const mono = "'JetBrains Mono', monospace";
 
 export default async function AdminOrganizationsPage() {
   const orgs = await listOrganizations();

@@ -41,3 +41,15 @@ export function fmtCost(micros: number): string {
 export function fmtTime(ts: string | number | Date): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+/** "just now", "5 min ago", "2 hours ago", "3 days ago": the one relative-time wording. */
+export function timeAgo(ts: string | number | Date, now: number = Date.now()): string {
+  const s = Math.max(0, Math.round((now - new Date(ts).getTime()) / 1000));
+  if (!Number.isFinite(s) || s < 60) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} ${h === 1 ? 'hour' : 'hours'} ago`;
+  const d = Math.round(h / 24);
+  return `${d} ${d === 1 ? 'day' : 'days'} ago`;
+}

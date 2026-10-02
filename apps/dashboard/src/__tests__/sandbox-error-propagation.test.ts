@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/whiteroom/client", () => ({ PROXY_URL: "http://engine:3000" }));

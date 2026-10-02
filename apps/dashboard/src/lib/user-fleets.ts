@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, getSubscriptionRow } from '@/lib/entitlements';
+import { enqueueEntitlementSync } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
 
@@ -14,11 +14,6 @@ export interface UserFleet {
   created_at: string;
 }
 
-async function requireUserId(): Promise<string> {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error('Not authenticated');
-  return session.user.id;
-}
 
 export async function getUserFleets(): Promise<UserFleet[]> {
   const session = await auth();

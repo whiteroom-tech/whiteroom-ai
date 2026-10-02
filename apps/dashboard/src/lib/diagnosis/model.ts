@@ -4,6 +4,7 @@
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { isDiagnosisDetector, notMeasuredShort, titleLower } from './copy';
+import { timeAgo } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -60,16 +61,8 @@ export function createRequestGate() {
   };
 }
 
-export function relativeTime(iso: string, now: number): string {
-  const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (s < 60) return 'just now';
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h} ${h === 1 ? 'hour' : 'hours'} ago`;
-  const d = Math.round(h / 24);
-  return `${d} ${d === 1 ? 'day' : 'days'} ago`;
-}
+/** The shared relative-time wording (lib/format timeAgo). */
+export const relativeTime = timeAgo;
 
 export type RunState = 'idle' | 'checking' | 'error';
 

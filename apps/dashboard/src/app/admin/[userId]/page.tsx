@@ -3,17 +3,11 @@ import { getUserDetail } from '@/lib/admin';
 import { PLANS } from '@/lib/plans';
 import { AdminShell } from '../admin-shell';
 import { UserControls } from './user-controls';
+import { fmtTokens } from '@/lib/format';
+import { FONT_DISPLAY as display, FONT_MONO as mono } from '@whiteroom/ui';
 
 export const dynamic = 'force-dynamic';
 
-const mono = "'JetBrains Mono', monospace";
-const display = "'Chakra Petch', sans-serif";
-
-function fmtTokens(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
-}
 
 function fmtCost(micros: number): string {
   const dollars = micros / 1_000_000;

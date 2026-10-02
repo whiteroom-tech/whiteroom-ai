@@ -84,7 +84,7 @@ function LogRow({ m, open, technical, onToggle }: RowProps) {
     <div className="grid" style={{ gridTemplateColumns: '44px 14px 1fr', borderBottom: '1px solid var(--line)', paddingRight: 8, paddingBottom: 8, marginBottom: 8 }}>
       <div style={{ paddingRight: 8, paddingTop: 6, textAlign: 'right' }}>
         <div style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--tx2)' }}>{m.clock}</div>
-        <div style={{ marginTop: 2, fontSize: 10, letterSpacing: 1, color: 'var(--tx3)' }}>{m.watch}</div>
+        <div title={m.watch ? `Shift ${m.watch}` : undefined} style={{ marginTop: 2, fontSize: 10, letterSpacing: 1, color: 'var(--tx3)' }}>{m.watch}</div>
       </div>
       <div style={{ position: 'relative' }}>
         <div style={{ position: 'absolute', left: '50%', top: -8, bottom: -8, width: 1, transform: 'translateX(-50%)', background: 'var(--line)' }} />
