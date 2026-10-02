@@ -37,16 +37,6 @@ export function fmtCost(micros: number): string {
   return d < 0.01 ? `$${d.toFixed(4)}` : d < 1 ? `$${d.toFixed(3)}` : `$${d.toFixed(2)}`;
 }
 
-/** Cost in dollars (e.g. from estimateCost): "$0.0042". */
-export function fmtUsd(dollars: number): string {
-  return `$${dollars.toFixed(4)}`;
-}
-
-/** "Sep 23, 02:15 PM" in the browser's locale. */
-export function fmtDateTime(ts: string | number | Date): string {
-  return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
 /** "02:15 PM" in the browser's locale. */
 export function fmtTime(ts: string | number | Date): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

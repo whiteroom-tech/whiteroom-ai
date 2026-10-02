@@ -17,6 +17,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import type { FeedVariant } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
+import { syncQueryParams } from '@/lib/url';
 import { eventFeedSheets } from '@/lib/runs';
 
 // --- URL state sync ---
@@ -42,22 +43,6 @@ const FEED_VARIANTS: { value: FeedVariant; label: string }[] = [
   { value: 'tape', label: 'Tape' },
   { value: 'manifest', label: 'Manifest' },
 ];
-
-/** Merge the given params into the current URL (null removes), replacing in place without a scroll reset. */
-function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<string, string | null>) {
-  const sp = new URLSearchParams(window.location.search);
-  let changed = false;
-  for (const [k, v] of Object.entries(params)) {
-    if (v == null) {
-      if (sp.has(k)) { sp.delete(k); changed = true; }
-    } else if (sp.get(k) !== v) {
-      sp.set(k, v); changed = true;
-    }
-  }
-  if (!changed) return;
-  const qs = sp.toString();
-  router.replace(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { scroll: false });
-}
 
 /**
  * Runs before the engine has list_runs: the event feed in the shell (P1.2).

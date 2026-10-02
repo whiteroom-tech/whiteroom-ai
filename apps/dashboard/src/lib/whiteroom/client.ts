@@ -15,10 +15,7 @@ import type {
   AgentInfo,
   AgentPerformanceResult,
   AuditLogResponse,
-  CatalogEntry,
   ClaimFleetResult,
-  ControlDefinition,
-  CustomControlInput,
   DeleteKeyResult,
   FleetReport,
   GetHandoverResult,
@@ -32,21 +29,15 @@ import type {
   ListKeysResult,
   PerformanceEvidenceResult,
   PerformanceFeedbackResult,
-  PerformanceHealthResult,
   PerformanceIndexResult,
   PerformanceLiveFeedResult,
-  PerformanceRecommendation,
   PaginatedRecommendationsResult,
-  ReadinessAssessment,
-  ReadinessResult,
   RecommendationGetResult,
   RecommendationBriefResult,
   RecommendationExportMarkdownResult,
   FleetHourlyResult,
   PerformanceCostForecastResult,
-  GetBudgetResult,
   SetBudgetResult,
-  GetTokenBudgetResult,
   SetTokenBudgetResult,
   RegisterResult,
   StoreKeyResult,
@@ -382,126 +373,7 @@ export function deleteProviderKey(auth: FleetAuth, keyPrefix: string): Promise<D
   });
 }
 
-// -- Sandbox --
-
-export interface CreateSandboxResult {
-  success?: boolean;
-  sandboxId?: string;
-  fleetToken?: string;
-  proxyKey?: string;
-  expiresAt?: string;
-  isTrial?: boolean;
-  experience?: "legacy" | "new";
-  controls?: ControlDefinition[];
-  error?: string;
-}
-
-export interface SandboxAgentInfo {
-  agentId: string;
-  role: string;
-  status: string;
-  watchMinutes: number;
-  watchCount: number;
-  totalTasks: number;
-  totalTokens: number;
-  pairedWith: string | null;
-  currentWatch: { watchNumber: number; minutesWorked: number; tokensUsed: number; tasksCompleted: number } | null;
-}
-
-export interface SandboxAuditEntry {
-  id: string;
-  timestamp: string;
-  type: string;
-  agentId: string | null;
-  taskId?: string;
-  taskName?: string;
-  watchNumber?: number;
-  tokensUsed?: number;
-  minutesSpent?: number;
-  details?: Array<{ name: string; args: string }>;
-  toAgent?: string;
-  fromAgent?: string;
-  [key: string]: unknown;
-}
-
-export interface SandboxStatusResult {
-  success?: boolean;
-  sandboxId?: string;
-  environment?: string;
-  experience?: "legacy" | "new";
-  expiresAt?: string;
-  expiresInSeconds?: number | null;
-  assertionStates?: Record<string, { status: string; observedAt?: string; failedAt?: string; diagnostic?: string; metric?: number }>;
-  controls?: ControlDefinition[];
-  policyMode?: "observe" | "enforce";
-  policyVersion?: number;
-  liveReady?: boolean;
-  demoComplete?: boolean;
-  overallControlResult?: ReadinessResult;
-  agents?: SandboxAgentInfo[];
-  auditLog?: SandboxAuditEntry[];
-  error?: string;
-}
-
-export interface SandboxReportResult {
-  success?: boolean;
-  sandboxId?: string;
-  overall?: string;
-  assertions?: Record<string, { status: string; observedAt?: string; failedAt?: string; diagnostic?: string; metric?: number }>;
-  error?: string;
-}
-
-export function createSandbox(
-  opts: {
-    userId: string;
-    apiKey?: string;
-    isTrial?: boolean;
-    ttlMinutes?: number;
-    selectedCatalogIds?: string[];
-    customControls?: CustomControlInput[];
-    policyMode?: 'observe' | 'enforce';
-  },
-  key?: string,
-): Promise<CreateSandboxResult> {
-  return apiCall<CreateSandboxResult>({
-    action: 'create_sandbox',
-    user_id: opts.userId,
-    is_trial: opts.isTrial,
-    api_key: opts.apiKey,
-    ttl_minutes: opts.ttlMinutes,
-    selected_catalog_ids: opts.selectedCatalogIds,
-    custom_controls: opts.customControls,
-    policy_mode: opts.policyMode,
-  }, key);
-}
-
-export function sandboxStatus(userId: string, key?: string): Promise<SandboxStatusResult> {
-  return apiCall<SandboxStatusResult>({ action: 'sandbox_status', user_id: userId }, key);
-}
-
-export function destroySandbox(sandboxId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'destroy_sandbox', sandbox_id: sandboxId }, key);
-}
-
-export function sandboxReport(sandboxId: string, key?: string): Promise<SandboxReportResult> {
-  return apiCall<SandboxReportResult>({ action: 'test_report', sandbox_id: sandboxId }, key);
-}
-
-export function resetSandboxSession(sandboxId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return apiCall<{ success?: boolean; error?: string }>({ action: 'reset_session', sandbox_id: sandboxId }, key);
-}
-
-export interface DemoStep {
-  step: number;
-  action: string;
-  detail: string;
-  assertion?: string;
-  timestamp: string;
-}
-
-export function startDemo(sandboxId: string, key?: string): Promise<{ success?: boolean; message?: string; steps?: DemoStep[]; error?: string }> {
-  return apiCall<{ success?: boolean; message?: string; steps?: DemoStep[]; error?: string }>({ action: 'start_demo', sandbox_id: sandboxId }, key);
-}
+// -- Agent control --
 
 export async function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
@@ -516,79 +388,6 @@ export async function resumeAgent(fleetId: string, agentId: string, key?: string
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
-export interface SandboxHistoryEntry {
-  sandboxId: string;
-  userId: string;
-  createdAt: string;
-  destroyedAt: string;
-  assertions: Record<string, { status: string; observedAt?: string; metric?: number }>;
-  overall: 'pass' | 'fail' | 'in_progress';
-  agentCount: number;
-  totalTasks: number;
-  isTrial: boolean;
-}
-
-export function sandboxHistory(userId: string, key?: string): Promise<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }> {
-  return apiCall<{ success?: boolean; sessions?: SandboxHistoryEntry[]; error?: string }>({ action: 'sandbox_history', user_id: userId }, key);
-}
-
-export function sandboxAnalytics(key?: string): Promise<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }> {
-  return apiCall<{ success?: boolean; totalSessions?: number; passed?: number; failed?: number; passRate?: number; error?: string }>({ action: 'sandbox_analytics' }, key);
-}
-
-// -- Control Builder --
-
-export function controlCatalog(key?: string): Promise<{ success?: boolean; catalog?: CatalogEntry[]; error?: string }> {
-  return apiCall<{ success?: boolean; catalog?: CatalogEntry[]; error?: string }>({ action: 'control_catalog' }, key);
-}
-
-export function defineControl(
-  sandboxId: string,
-  control: CustomControlInput,
-  key?: string,
-): Promise<{ success?: boolean; control?: ControlDefinition; controls?: ControlDefinition[]; policyVersion?: number; error?: string }> {
-  return apiCall({ action: 'define_control', sandbox_id: sandboxId, control }, key);
-}
-
-export function removeControl(
-  sandboxId: string,
-  controlId: string,
-  key?: string,
-): Promise<{ success?: boolean; controls?: ControlDefinition[]; policyVersion?: number; error?: string }> {
-  return apiCall({ action: 'remove_control', sandbox_id: sandboxId, control_id: controlId }, key);
-}
-
-export function listControls(
-  sandboxId: string,
-  key?: string,
-): Promise<{ success?: boolean; controls?: ControlDefinition[]; readiness?: ReadinessAssessment; error?: string }> {
-  return apiCall({ action: 'list_controls', sandbox_id: sandboxId }, key);
-}
-
-export function setControlRequired(
-  sandboxId: string,
-  controlId: string,
-  requiredByUser: boolean,
-  key?: string,
-): Promise<{ success?: boolean; control?: ControlDefinition; error?: string }> {
-  return apiCall({ action: 'set_control_required', sandbox_id: sandboxId, control_id: controlId, required_by_user: requiredByUser }, key);
-}
-
-export function resetControlEvidence(
-  sandboxId: string,
-  controlId: string,
-  key?: string,
-): Promise<{ success?: boolean; control?: ControlDefinition; error?: string }> {
-  return apiCall({ action: 'reset_control_evidence', sandbox_id: sandboxId, control_id: controlId }, key);
-}
-
-export function goLive(
-  sandboxId: string,
-  key?: string,
-): Promise<{ success?: boolean; readiness?: ReadinessAssessment; error?: string }> {
-  return apiCall({ action: 'go_live', sandbox_id: sandboxId }, key);
-}
-
 // -- Performance --
 
 export function performanceIndex(fleetId: string, hoursBack?: number, key?: string): Promise<PerformanceIndexResult> {
@@ -597,10 +396,6 @@ export function performanceIndex(fleetId: string, hoursBack?: number, key?: stri
 
 export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
   return apiCall<AgentPerformanceResult>({ action: 'performance_agent', fleet_id: fleetId, agent_id: agentId, hours_back: hoursBack ?? 24 }, key);
-}
-
-export function performanceRecommendations(fleetId: string, status?: string, key?: string): Promise<{ fleetId: string; recommendations: PerformanceRecommendation[] }> {
-  return apiCall<{ fleetId: string; recommendations: PerformanceRecommendation[] }>({ action: 'performance_recommendations', fleet_id: fleetId, status }, key);
 }
 
 export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {
@@ -622,10 +417,6 @@ export function performanceFeedback(
     snooze_days: opts.snoozeDays,
     idempotency_key: opts.idempotencyKey,
   }, key);
-}
-
-export function performanceHealth(fleetId: string, key?: string): Promise<PerformanceHealthResult> {
-  return apiCall<PerformanceHealthResult>({ action: 'performance_health', fleet_id: fleetId }, key);
 }
 
 export function performanceFleetHourly(
@@ -710,16 +501,8 @@ export function performanceCostForecast(fleetId: string, taskType?: string, key?
   return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType }, key);
 }
 
-export function getBudgetUsd(fleetId: string, key?: string): Promise<GetBudgetResult> {
-  return apiCall<GetBudgetResult>({ action: 'get_budget_usd', fleet_id: fleetId }, key);
-}
-
 export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {
   return apiCall<SetBudgetResult>({ action: 'set_budget_usd', fleet_id: fleetId, budget_usd: budgetUsd }, key);
-}
-
-export function getTokenBudget(fleetId: string, key?: string): Promise<GetTokenBudgetResult> {
-  return apiCall<GetTokenBudgetResult>({ action: 'get_token_budget', fleet_id: fleetId }, key);
 }
 
 export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {

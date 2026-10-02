@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
+import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, partialCoverageSince, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
@@ -28,24 +29,6 @@ import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
 type ViewMode = 'index' | 'agent' | 'evidence';
-
-// --- URL state sync ---
-
-/** Merge the given params into the current URL (null removes), replacing in place without a scroll reset. */
-function syncQueryParams(router: ReturnType<typeof useRouter>, params: Record<string, string | null>) {
-  const sp = new URLSearchParams(window.location.search);
-  let changed = false;
-  for (const [k, v] of Object.entries(params)) {
-    if (v == null) {
-      if (sp.has(k)) { sp.delete(k); changed = true; }
-    } else if (sp.get(k) !== v) {
-      sp.set(k, v); changed = true;
-    }
-  }
-  if (!changed) return;
-  const qs = sp.toString();
-  router.replace(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { scroll: false });
-}
 
 // --- Table sort ---
 

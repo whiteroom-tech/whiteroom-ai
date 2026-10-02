@@ -23,10 +23,6 @@ export type PaidPlanId = (typeof PAID_PLAN_IDS)[number];
 /** Plans an admin may comp. Comping `expired` would just be a lockout. */
 export const OVERRIDE_PLAN_IDS = ['starter', 'pro', 'enterprise'] as const;
 
-export function isPlanId(value: unknown): value is PlanId {
-  return typeof value === 'string' && (PLAN_IDS as readonly string[]).includes(value);
-}
-
 export function isPaidPlanId(value: unknown): value is PaidPlanId {
   return typeof value === 'string' && (PAID_PLAN_IDS as readonly string[]).includes(value);
 }

@@ -271,13 +271,6 @@ export interface PerformanceFeedbackResult {
   error?: string;
 }
 
-export interface PerformanceHealthResult {
-  collection: boolean;
-  queue: { pending: number; totalEnqueued: number; totalFlushed: number; dropped: number; uncertainIntervals: unknown[] };
-  version: string;
-  error?: string;
-}
-
 // -- Recommendations contract v1 --
 
 export interface RecommendationDetail {
@@ -398,22 +391,10 @@ export interface PerformanceCostForecastResult {
   error?: string;
 }
 
-export interface GetBudgetResult {
-  fleetId: string;
-  budgetUsd: number | null;
-  error?: string;
-}
-
 export interface SetBudgetResult {
   success: boolean;
   fleetId: string;
   budgetUsd: number | null;
-  error?: string;
-}
-
-export interface GetTokenBudgetResult {
-  fleetId: string;
-  tokenBudget: number | null;
   error?: string;
 }
 
@@ -523,24 +504,6 @@ export interface ReadinessResult {
   status: "pass" | "fail" | "partial" | "empty" | "blocked";
   reason?: string;
   blocking?: string[];
-}
-
-export interface ReadinessAssessment {
-  liveReady: boolean;
-  demoComplete: boolean;
-  overall: ReadinessResult;
-}
-
-export interface CatalogEntry {
-  controlId: string;
-  name: string;
-  description: string;
-  source: "core" | "catalog";
-  evaluator: EvaluatorType;
-  tier: "core" | "governance" | "policy";
-  defaultRequired: boolean;
-  rules: ExecutableRule[];
-  testMethod: string;
 }
 
 export interface CustomControlInput {

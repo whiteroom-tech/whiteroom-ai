@@ -136,23 +136,6 @@
   .citadel-page-fleet { display: none; }
   .citadel-hide-mobile { display: none !important; }
 
-  /* Stat strip: swipe sideways instead of clipping, with a fade that shows
-     there is more to the right. */
-  .citadel-kpi-strip {
-    grid-template-columns: none !important;
-    grid-auto-flow: column;
-    grid-auto-columns: 148px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    padding-left: 16px !important; padding-right: 16px !important;
-    -webkit-mask-image: linear-gradient(to right, #000 85%, transparent);
-    mask-image: linear-gradient(to right, #000 85%, transparent);
-  }
-  .citadel-kpi-strip > * { scroll-snap-align: start; }
-  .citadel-kpi-strip > :first-child { grid-column: span 2; }
-
-  /* Agent cards: one per row, so names and stats aren't squeezed. */
-  .citadel-agent-grid { grid-template-columns: 1fr !important; }
 }
 
 /* Agent Diagnosis (Performance → Recommendations). Main buttons are 30px in

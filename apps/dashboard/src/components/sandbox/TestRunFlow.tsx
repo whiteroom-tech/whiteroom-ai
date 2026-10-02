@@ -10,6 +10,7 @@ import { type PastTest, clearSandboxToken, createRun, getStatus, getReport, dest
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
+import { safeGet, safeSet } from '@/lib/safe-storage';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
@@ -246,10 +247,8 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
 
   // Remember the provider for this test so a reload shows the right code.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('wr_sandbox_provider');
-      if (saved === 'anthropic' || saved === 'openai') setProvider(saved);
-    } catch { /* storage unavailable */ }
+    const saved = safeGet('wr_sandbox_provider');
+    if (saved === 'anthropic' || saved === 'openai') setProvider(saved);
   }, []);
 
   // Once every check passes, fill the production snippet with the user's own
@@ -400,12 +399,13 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
       const pastedToken = mode === 'connected' && keyKind === 'fleet' ? pasted : undefined;
       const apiKey = mode === 'connected' && (keyKind === 'anthropic' || keyKind === 'openai') ? pasted : undefined;
       if (mode === 'connected') {
-        try { localStorage.setItem('wr_sandbox_provider', provider); } catch { /* storage unavailable */ }
+        safeSet('wr_sandbox_provider', provider);
       }
       const result = await createRun({ mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' }, pastedToken);
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
       if (result.fleetToken) {
-        localStorage.setItem('wr_sandbox_token', result.fleetToken);
+        // Guarded: storage that throws (privacy modes) mustn't fail a run that was created.
+        safeSet('wr_sandbox_token', result.fleetToken);
         window.dispatchEvent(new Event('storage'));
       }
       posthog.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
