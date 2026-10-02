@@ -260,11 +260,6 @@ export function pageWindow<T>(rows: T[], page: number, size: number): { page: nu
   return { page: p, rows: slice, from: slice.length ? p * size + 1 : 0, to: p * size + slice.length };
 }
 
-/**
- * One live-feed entry as a row. The engine stores replies as a task named
- * "reply: <text>" and tool work as details [{ name, args }]; the first call
- * decides the row's kind.
- */
 const FAILED_RESULT = /\[(?:fetch error|blocked|error)\b|^(?:error|failed)\b/i;
 
 /** JSON arguments as "url: https://… · depth: 2"; anything else as it came. */
@@ -291,10 +286,17 @@ function step(d: { name?: unknown; args?: unknown }): LiveStep {
   };
 }
 
+/**
+ * One live-feed entry as a row. The engine stores replies as a task named
+ * "reply: <text>" and tool work as details [{ name, args }]; earlier results
+ * come first, then this step's calls; the first call decides the row's kind.
+ */
 export function liveRow(e: AuditEntry): LiveRow {
   const name = String(e.taskName ?? '');
   const details = Array.isArray(e.details) ? e.details : [];
-  const tokens = Number.isFinite(Number(e.tokensUsed)) ? Number(e.tokensUsed) : null;
+  // null and '' would read as 0 through Number(); treat them as unknown.
+  const rawTokens: unknown = e.tokensUsed;
+  const tokens = rawTokens == null || rawTokens === '' || !Number.isFinite(Number(rawTokens)) ? null : Number(rawTokens);
   const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e), tokens, reply: '' };
   if (/^reply:/i.test(name) && details.length === 0) {
     const reply = name.replace(/^reply:\s*/i, '');
