@@ -88,7 +88,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
             if (stale()) return;
             if (h.error) { setNotesFailed(true); return; }
             lastShift.current = shift;
-            setHandover(h.handoverDoc ?? null);
+            setHandover(h.handoverDoc ?? h.lastHandoverDoc ?? null);
             setNotesShift(shift);
             setNotesFailed(false);
           })

@@ -291,3 +291,13 @@ describe('unusual behaviour (P2.5)', () => {
     expect(s.byAgent).toEqual([{ agentId: 'a', perDay: [0, 1, 1], total: 2 }, { agentId: 'b', perDay: [1, 0, 0], total: 1 }]);
   });
 });
+
+describe('energy saved', () => {
+  it('shows Wh under 1 kWh, kWh above, nothing when nothing was saved', async () => {
+    const { fmtEnergy } = await import('@/lib/format');
+    expect(fmtEnergy(0)).toBeNull();
+    expect(fmtEnergy(1_225_000)).toBe('≈490 Wh');
+    expect(fmtEnergy(10_000_000)).toBe('≈4.0 kWh');
+    expect(fmtEnergy(10)).toBe('≈1 Wh');
+  });
+});

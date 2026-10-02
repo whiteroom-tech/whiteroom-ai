@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { DataTable, Hint, Panel, FONT_MONO } from '@whiteroom/ui';
 import type { AgentTotals, DaySavings } from '@/lib/analytics-metrics';
-import { fmtTokens } from '@/lib/format';
+import { fmtEnergy, fmtTokens } from '@/lib/format';
 import { tallyWords, type GovernanceTally } from '@/lib/governance';
 import { HELP } from '@/lib/metric-definitions';
 
@@ -48,9 +48,10 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
   const h = (n: number) => Math.max(n > 0 ? 2 : 0, Math.round((n / top) * PLOT_H));
   const empty = days.every((d) => d.used === 0 && d.saved === 0);
   const shown = days.find((d) => d.day === focus);
+  const energy = fmtEnergy(days.reduce((n, d) => n + d.saved, 0));
 
   return (
-    <Panel title={<>Savings<Hint text={HELP.savings} /></>} count="last 7 days">
+    <Panel title={<>Savings<Hint text={HELP.savings} /></>} count={energy ? `last 7 days · ${energy} saved` : 'last 7 days'}>
       {empty ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No model calls in the last 7 days.</p>
       ) : (
