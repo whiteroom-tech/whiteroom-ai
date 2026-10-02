@@ -259,3 +259,16 @@ describe('host matching', () => {
     }
   });
 });
+
+describe('script policy (report-only CSP)', () => {
+  it('sends a fresh nonce to the app and the same policy to the browser, report-only', () => {
+    const a = proxy(req(APP, '/settings', { withSession: true }))!;
+    const b = proxy(req(APP, '/settings', { withSession: true }))!;
+    const policy = a.headers.get('content-security-policy-report-only')!;
+    const nonce = /'nonce-([^']+)'/.exec(policy)![1];
+    expect(policy).toContain("'strict-dynamic'");
+    expect(a.headers.get('content-security-policy')).toBeNull();
+    expect(a.headers.get('x-middleware-request-x-nonce')).toBe(nonce);
+    expect(b.headers.get('content-security-policy-report-only')).not.toContain(nonce);
+  });
+});
