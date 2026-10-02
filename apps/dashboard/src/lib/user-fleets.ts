@@ -2,8 +2,7 @@
 
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, getSubscriptionRow, releaseFleet } from '@/lib/entitlements';
-import { fleetOwnerId } from '@/lib/control-auth';
+import { enqueueEntitlementSync, getSubscriptionRow } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
 
@@ -112,33 +111,4 @@ export async function addUserFleet(
   }
 
   return { ok: true };
-}
-
-export async function removeUserFleet(id: string): Promise<void> {
-  const userId = await requireUserId();
-  const { rows: linked } = await db().query(
-    `SELECT fleet_id FROM user_fleets WHERE id = $1 AND user_id = $2`,
-    [id, userId],
-  );
-  const fleetId: string | null = linked[0]?.fleet_id ?? null;
-  // Ownership is read before the row goes, while this account still counts.
-  const wasOwner = fleetId ? (await fleetOwnerId(fleetId)) === userId : false;
-  await db().query(`DELETE FROM user_fleets WHERE id = $1 AND user_id = $2`, [id, userId]);
-
-  // The owner unlinking has to change the engine too, or a paid fleet could be
-  // unlinked and keep its raised limits forever — link, unlink, repeat, and
-  // one subscription entitles any number of fleets. The next owner's plan
-  // applies, else free limits. Anyone else unlinking leaves the owner's plan.
-  if (fleetId && wasOwner) await releaseFleet(fleetId);
-}
-
-export async function updateFleetLabel(id: string, label: string): Promise<void> {
-  const userId = await requireUserId();
-  if (typeof label !== 'string' || label.trim().length === 0 || label.length > 120) {
-    throw new Error('Fleet label must be between 1 and 120 characters.');
-  }
-  await db().query(
-    `UPDATE user_fleets SET label = $3 WHERE id = $1 AND user_id = $2`,
-    [id, userId, label],
-  );
 }

@@ -16,7 +16,7 @@ import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { fleetOwnerId } from '@/lib/control-auth';
+import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
 
 export interface SubscriptionRow {
@@ -179,8 +179,8 @@ async function fleetIdsFor(userId: string): Promise<string[]> {
     [userId],
   );
   const ids = rows.map((r) => r.fleet_id as string);
-  const owners = await Promise.all(ids.map((id) => fleetOwnerId(id)));
-  return ids.filter((_, i) => owners[i] === userId);
+  const owners = await fleetOwners(ids);
+  return ids.filter((id) => owners.get(id) === userId);
 }
 
 /**
@@ -190,7 +190,7 @@ async function fleetIdsFor(userId: string): Promise<string[]> {
  * changes nothing.
  */
 export async function releaseFleet(fleetId: string): Promise<void> {
-  const owner = await fleetOwnerId(fleetId);
+  const owner = (await fleetOwners([fleetId])).get(fleetId);
   if (owner) await syncEntitlementsToEngine(owner);
   else await revokeFleetEntitlement(fleetId);
 }

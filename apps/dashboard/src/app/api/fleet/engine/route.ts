@@ -50,8 +50,10 @@ export async function POST(req: Request) {
   // Engine actions are small JSON bodies; refuse anything bigger before reading it.
   const length = Number(req.headers.get('content-length') ?? 0);
   if (length > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
-  const body = await req.text();
-  if (body.length > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
+  // Counted in bytes, and checked again after reading: content-length can be absent (chunked).
+  const raw = await req.arrayBuffer();
+  if (raw.byteLength > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
+  const body = new TextDecoder().decode(raw);
 
   const headers = engineAuthHeaders(token);
   const control = controlActionOf(body);
