@@ -9,7 +9,7 @@
 // useFleetAuth can read a pre-migration session once (and move it into the
 // cookie) and so sign-out can sweep the old keys away.
 
-import { safeGet, safeRemove, safeSet } from './safe-storage';
+import { safeGet, safeRemove } from './safe-storage';
 
 export interface FleetCredentials {
   fleetId: string | null;
@@ -22,19 +22,6 @@ export function getFleetCredentials(): FleetCredentials {
     // Fall back to the legacy key for sessions created before the split.
     fleetToken: safeGet('wr_fleet_token') || safeGet('wr_token'),
   };
-}
-
-/**
- * @deprecated Tokens belong in the httpOnly cookie now — POST them to
- * /api/fleet/session instead. Kept only so any straggling caller keeps
- * compiling until it is migrated; do not add new call sites.
- */
-export function setFleetCredentials(fleetId: string, fleetToken: string): void {
-  safeSet('wr_fleet', fleetId);
-  safeSet('wr_fleet_token', fleetToken);
-  // The legacy key is superseded; leaving it behind would let a stale token
-  // win the fallback read above after the next clear.
-  safeRemove('wr_token');
 }
 
 export function clearFleetCredentials(): void {

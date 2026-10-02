@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
 import { DEFAULT_DESTINATION, safeCallbackUrl } from '@/lib/callback-url';
 import { ThemedShell } from '@/components/ThemedShell';
+import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
 type Method = 'google' | 'email';
 
@@ -58,33 +59,6 @@ const OUTCOMES: Record<string, string> = {
   'deleted=1': 'Your account has been deleted.',
 };
 
-// localStorage throws outright in some privacy modes rather than returning
-// null. Remembering the last method is a convenience; it must never be the
-// reason someone can't sign in.
-function readStore(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStore(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    /* storage unavailable — the hint is simply not shown next time */
-  }
-}
-
-function clearStore(key: string): void {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    /* as above */
-  }
-}
-
 export default function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +95,7 @@ export default function SignInPage() {
     const params = new URLSearchParams(window.location.search);
     const url = new URL(window.location.href);
 
-    const stored = readStore(LAST_METHOD_KEY);
+    const stored = safeGet(LAST_METHOD_KEY);
     let remembered: Method | null = stored === 'google' || stored === 'email' ? stored : null;
     let wasSignedOut = false;
 
@@ -135,7 +109,7 @@ export default function SignInPage() {
         setNotice(
           `That email is already registered with a different sign-in method. Try ${OTHER_METHOD[remembered]} instead.`,
         );
-        clearStore(LAST_METHOD_KEY);
+        safeRemove(LAST_METHOD_KEY);
         remembered = null;
       } else {
         setNotice(ERRORS[code] ?? ERRORS.Default);
@@ -150,8 +124,8 @@ export default function SignInPage() {
           // The opposite of a returning user: the account this pointed at is
           // gone, and greeting them with "Welcome back" over the top of
           // "Your account has been deleted" would be absurd.
-          clearStore(LAST_METHOD_KEY);
-          clearStore(LAST_EMAIL_KEY);
+          safeRemove(LAST_METHOD_KEY);
+          safeRemove(LAST_EMAIL_KEY);
           remembered = null;
         } else {
           wasSignedOut = true;
@@ -164,7 +138,7 @@ export default function SignInPage() {
     setLastMethod(remembered);
     setReturning(remembered !== null || wasSignedOut);
 
-    const rememberedEmail = readStore(LAST_EMAIL_KEY);
+    const rememberedEmail = safeGet(LAST_EMAIL_KEY);
     if (remembered === 'email' && rememberedEmail) setEmail(rememberedEmail);
 
     if (url.search !== window.location.search) {
@@ -179,7 +153,7 @@ export default function SignInPage() {
     // Recorded before the redirect rather than after success, because there is
     // no "after" on this page — a working Google sign-in never comes back.
     // The effect above is what reinterprets this value if it does.
-    writeStore(LAST_METHOD_KEY, 'google');
+    safeSet(LAST_METHOD_KEY, 'google');
     try {
       await signIn('google', { callbackUrl: destination() });
     } catch {
@@ -207,8 +181,8 @@ export default function SignInPage() {
     } else {
       // Unlike Google, this path has a real success to observe, so it records
       // one rather than an attempt.
-      writeStore(LAST_METHOD_KEY, 'email');
-      writeStore(LAST_EMAIL_KEY, email.trim());
+      safeSet(LAST_METHOD_KEY, 'email');
+      safeSet(LAST_EMAIL_KEY, email.trim());
       setLinkSent(true);
     }
   }

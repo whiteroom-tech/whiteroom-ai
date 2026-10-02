@@ -116,44 +116,6 @@ function ModeToggle({ mode, onChange }: { mode: RuleMode; onChange: (m: RuleMode
   );
 }
 
-// ── Tag input ──────────────────────────────────────────────────────
-
-function TagInput({ tags, onAdd, onRemove, placeholder }: {
-  tags: string[];
-  onAdd: (tag: string) => void;
-  onRemove: (tag: string) => void;
-  placeholder?: string;
-}) {
-  const [input, setInput] = useState("");
-  return (
-    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
-      {tags.map((t) => (
-        <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--brand-dim)", color: "var(--brand)", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: FONT_MONO }}>
-          {t}
-          <button onClick={() => onRemove(t)} aria-label={`Remove ${t}`} style={{ color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, width: 24, height: 24, margin: "-4px -6px -4px 0", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>&times;</button>
-        </span>
-      ))}
-      <span style={{ display: "inline-flex", alignItems: "center" }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value.slice(0, 64))}
-          onKeyDown={(e) => {
-            const trimmed = input.trim();
-            if (e.key === "Enter" && trimmed) {
-              onAdd(trimmed);
-              setInput("");
-              e.preventDefault();
-            }
-          }}
-          placeholder={placeholder ?? "+ add"}
-          aria-label={placeholder ?? "Add"}
-          style={{ background: "transparent", border: "none", outline: "none", fontSize: 11, color: "var(--tx3)", width: 64 }}
-        />
-      </span>
-    </span>
-  );
-}
-
 // ── Model picker ──────────────────────────────────────────────────
 
 const MODEL_GROUPS: { provider: string; models: { id: string; label: string }[] }[] = [
@@ -303,8 +265,6 @@ const TOOL_GROUPS: { category: string; tools: string[] }[] = [
     tools: ["get_memory", "set_memory", "read_context", "save_state"],
   },
 ];
-
-const ALL_KNOWN_TOOLS = TOOL_GROUPS.flatMap((g) => g.tools);
 
 function ToolPicker({ tags, onAdd, onRemove }: {
   tags: string[];

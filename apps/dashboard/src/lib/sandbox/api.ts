@@ -1,3 +1,4 @@
+import { safeGet, safeRemove } from '@/lib/safe-storage';
 import type {
   ControlDefinition,
   CustomControlInput,
@@ -91,8 +92,7 @@ export interface ReportResult {
 // fleet token belongs in the httpOnly cookie, which the BFF falls back to when
 // no header is sent.
 function sandboxToken(): string | null {
-  try { return localStorage.getItem('wr_sandbox_token'); }
-  catch { return null; }
+  return safeGet('wr_sandbox_token');
 }
 
 /**
@@ -101,10 +101,8 @@ function sandboxToken(): string | null {
  * created it has signed out — so clear it whenever either ends.
  */
 export function clearSandboxToken(): void {
-  try {
-    localStorage.removeItem('wr_sandbox_token');
-    window.dispatchEvent(new Event('storage'));
-  } catch { /* localStorage unavailable */ }
+  safeRemove('wr_sandbox_token');
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
 }
 
 /**

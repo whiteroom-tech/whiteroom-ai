@@ -316,7 +316,3 @@ export function pageSlice<T>(items: T[], page: number, size: number = PAGE_SIZE)
 
 const FEED_VARIANTS = ['log', 'tape', 'manifest'] as const;
 export type FeedVariant = (typeof FEED_VARIANTS)[number];
-
-export function isFeedVariant(v: unknown): v is FeedVariant {
-  return typeof v === 'string' && (FEED_VARIANTS as readonly string[]).includes(v);
-}

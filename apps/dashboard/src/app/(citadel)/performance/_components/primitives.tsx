@@ -5,7 +5,7 @@
 import type React from 'react';
 
 export const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
-export const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 12, margin: 0 };
+export const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', margin: 0 };
 
 export function Badge({ status, size = 'normal', label }: { status: string; size?: 'normal' | 'small'; label?: string }) {
   const map: Record<string, { bg: string; tx: string }> = {
