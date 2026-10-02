@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
-import { posthog } from '@/lib/analytics';
+import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { type PastTest, clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
 import { ROUTES } from '@/lib/routes';
@@ -408,7 +408,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
         localStorage.setItem('wr_sandbox_token', result.fleetToken);
         window.dispatchEvent(new Event('storage'));
       }
-      posthog.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
+      analytics.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
       setRun({ ...result, mode, agents: [] }); setReport(null); setAssessment('Not assessed');
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
       if (mode === 'demo') {
@@ -428,7 +428,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     await act(async () => {
       const result = await getReport(sandboxId);
       if (result.error) throw new Error(result.error);
-      posthog.capture('sandbox_review_opened', { mode: run?.mode });
+      analytics.capture('sandbox_review_opened', { mode: run?.mode });
       setReport(result);
       fetched = result;
     });
@@ -438,7 +438,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const download = (fetched?: ReportResult | null) => {
     if (!run?.sandboxId) return;
     const data = fetched ?? report ?? run;
-    posthog.capture('sandbox_report_exported', { mode: run?.mode });
+    analytics.capture('sandbox_report_exported', { mode: run?.mode });
     const blob = new Blob([JSON.stringify({ ...data, assessment: { source: 'human', result: assessment }, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `whiteroom-test-${run.sandboxId}.json`; a.click();

@@ -70,6 +70,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   const load = useCallback(async (stale: () => boolean) => {
     try {
+      // The activity request starts alongside the status one, not after it.
+      const logP = auditLog({ fleetId, agentId, limit: 50 }, authKey).catch((e: unknown) => e as Error);
       const res = await checkWatch(agentId, fleetId, authKey);
       if (stale()) return;
       if (isNotFound(res)) { setNotFound(true); return; }
@@ -97,8 +99,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
             if (handoverInFlight.current === shift) handoverInFlight.current = undefined;
           });
       }
-      const log = await auditLog({ fleetId, agentId, limit: 50 }, authKey);
+      const log = await logP;
       if (stale()) return;
+      if (log instanceof Error) throw log;
       // An error payload is a failed refresh, not an empty history.
       if ('error' in log || !Array.isArray(log.entries)) throw new Error('activity unavailable');
       setEntries(log.entries);
@@ -110,7 +113,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     }
   }, [agentId, fleetId, authKey, onAuthError]);
 
-  const { refresh } = usePoll(load, { intervalMs: 10_000, enabled: !!fleetId && !preview });
+  const { refresh, tick } = usePoll(load, { intervalMs: 10_000, enabled: !!fleetId && !preview });
 
   // Clear the pending pill once the engine reports the status we asked for.
   useEffect(() => {
@@ -122,16 +125,18 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     if ((pending === 'pausing' && (s === 'resting' || held)) || (pending === 'stopping' && s === 'stopped') || (pending === 'resuming' && resumed)) setPending(null);
   }, [pending, agent]);
 
-  // While waiting for confirmation, check more often than the 10s poll.
+  // While waiting for confirmation, check more often than the 10s poll. A
+  // tick, not a refresh: a refresh would cancel a request still in flight,
+  // so a slow engine would never confirm.
   useEffect(() => {
     if (!pending) return;
-    const id = setInterval(refresh, 2000);
+    const id = setInterval(tick, 2000);
     const giveUp = setTimeout(() => {
       setPending(null);
       setActionError({ text: 'WhiteRoom accepted the request but hasn’t confirmed the new status yet. It may still change; refresh in a moment.', retry: refresh });
     }, 20_000);
     return () => { clearInterval(id); clearTimeout(giveUp); };
-  }, [pending, refresh]);
+  }, [pending, refresh, tick]);
 
   async function startBreak() {
     setConfirmBreak(false);
