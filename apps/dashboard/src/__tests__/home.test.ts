@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveExpandable, liveRow, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, liveExpandable, liveRow, readableArgs, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -112,6 +112,16 @@ describe('live feed rows', () => {
     expect(r.results.map((x) => x.failed)).toEqual([false, true, true]);
     expect(r.tokens).toBe(1200);
     expect(liveExpandable(r)).toBe(true);
+  });
+
+  it('reads arguments and unknown token counts safely', () => {
+    expect(readableArgs('{}')).toBe('');
+    expect(readableArgs('{not json')).toBe('{not json');
+    expect(readableArgs('["a","b"]')).toBe('["a","b"]');
+    expect(readableArgs('url: https://a.example')).toBe('url: https://a.example');
+    expect(liveRow({ ...base, tokensUsed: null } as unknown as AuditEntry).tokens).toBeNull();
+    expect(liveRow({ ...base, tokensUsed: '' } as unknown as AuditEntry).tokens).toBeNull();
+    expect(liveRow({ ...base, details: [{ name: 'tool_result', args: 'Error: timed out' }] }).results[0].failed).toBe(true);
   });
 
   it('expands a long reply but not a short one or a bare model call', () => {
