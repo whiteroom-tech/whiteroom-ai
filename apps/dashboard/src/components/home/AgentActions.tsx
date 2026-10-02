@@ -5,7 +5,14 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { controlFailure, pauseAgent, resumeAgent, stopAgent } from '@/lib/whiteroom/client';
 import type { AgentInfo } from '@/lib/whiteroom/types';
 
-type Act = 'pause' | 'stop' | 'resume';
+export type Act = 'pause' | 'stop' | 'resume';
+
+/** What the ⋯ offers: Resume for a held agent, else Pause and Stop…. */
+export function agentMenu(agent: Pick<AgentInfo, 'hold'>): { act: Act; label: string }[] {
+  return agent.hold
+    ? [{ act: 'resume', label: 'Resume' }]
+    : [{ act: 'pause', label: 'Pause' }, { act: 'stop', label: 'Stop…' }];
+}
 const CALL: Record<Act, typeof pauseAgent> = { pause: pauseAgent, stop: stopAgent, resume: resumeAgent };
 const VERB: Record<Act, string> = { pause: 'pause', stop: 'stop', resume: 'resume' };
 
@@ -53,9 +60,14 @@ export function AgentActions({ agent, fleetId, authKey, onChanged }: {
     }
   }
 
-  const items: { act: Act; label: string }[] = agent.hold
-    ? [{ act: 'resume', label: 'Resume' }]
-    : [{ act: 'pause', label: 'Pause' }, { act: 'stop', label: 'Stop…' }];
+  const items = agentMenu(agent);
+
+  // A failure note clears itself, and on click, so it never sits over the card.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 6_000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   return (
     <div ref={root} className="wr-agent-actions">
@@ -72,7 +84,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged }: {
           ))}
         </div>
       )}
-      {error && <p role="alert" className="wr-agent-actions__error">{error}</p>}
+      {error && <p role="alert" className="wr-agent-actions__error" onClick={() => setError(null)} title="Dismiss">{error}</p>}
       <ConfirmDialog
         open={confirmStop}
         title={`Stop ${agent.agentId}?`}

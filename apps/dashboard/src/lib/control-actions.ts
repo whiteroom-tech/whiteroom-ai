@@ -41,8 +41,9 @@ export async function recordControlAction(userId: string, fleetId: string, actio
       'INSERT INTO control_actions (fleet_id, action, agent_id, rule_id, user_id) VALUES ($1, $2, $3, $4, $5)',
       [fleetId, action, agentId, ruleId, userId],
     );
-    // Prune this fleet's old rows as it writes; one indexed delete per change.
-    await db().query(`DELETE FROM control_actions WHERE fleet_id = $1 AND created_at < now() - make_interval(days => $2)`, [fleetId, KEEP_DAYS]);
+    // Prune this fleet's old rows as it writes, off the response path.
+    void db().query(`DELETE FROM control_actions WHERE fleet_id = $1 AND created_at < now() - make_interval(days => $2)`, [fleetId, KEEP_DAYS])
+      .catch(() => { /* pruned next time */ });
   } catch (e) {
     console.warn('[control-actions] not recorded:', e instanceof Error ? e.message : e);
   }

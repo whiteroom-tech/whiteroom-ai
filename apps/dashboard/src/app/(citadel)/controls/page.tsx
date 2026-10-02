@@ -35,7 +35,7 @@ import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, SelectChip } from "@whiteroom/ui";
 import { timeAgo } from "@/lib/format";
 import { fetchControlActors, historyWho, oldestTime, type ControlActor } from "@/lib/control-actors";
-import { stopBlockedReason, stopPhrase, watchSummary } from "@/lib/controls-guard";
+import { stopCheck, stopPhrase, watchSummary } from "@/lib/controls-guard";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
 
@@ -420,7 +420,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   const [confirmStopRule, setConfirmStopRule] = useState<string | null>(null);
   // Which change the Stop confirmation is for: picking Stop, or setting a Stop rule to Enforce.
   const [confirmStopVia, setConfirmStopVia] = useState<"response" | "mode">("response");
-  const [wouldEvents, setWouldEvents] = useState<AuditEntry[]>([]);
+  // null until loaded, or when loading failed: then no Watch line, rather than a false "hasn't fired".
+  const [wouldEvents, setWouldEvents] = useState<AuditEntry[] | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
@@ -451,9 +452,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
     try {
       const [d, would] = await Promise.all([
         governanceList(fleetId, authKey),
-        auditLog({ fleetId, type: "governance_would_block", limit: 200 }, authKey).catch(() => ({ entries: [] as AuditEntry[] })),
+        // The audit chain keeps at most 500 events, so this is all of them.
+        auditLog({ fleetId, type: "governance_would_block", limit: 500 }, authKey).catch(() => null),
       ]);
-      setWouldEvents(would.entries ?? []);
+      setWouldEvents(would?.entries ?? null);
       setRules(d.rules);
       setHistory(d.history);
       void loadActors(d.history);
@@ -533,18 +535,20 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
 
   // A rule that would stop agents for real (Stop + Enforce) must have run in
   // Watch for a day, and is confirmed by typing who it covers.
-  const askToStop = (rule: FleetRule, via: "response" | "mode") => {
-    const reason = stopBlockedReason(rule.id, history, rule.mode);
-    if (reason) { setError(reason); return; }
-    setConfirmStopVia(via);
-    setConfirmStopRule(rule.id);
+  /** True when the change may go ahead now; otherwise shows why not, or asks to confirm. */
+  const stopGate = (rule: FleetRule | undefined, change: { mode?: RuleMode; response?: GovernanceResponse }, via: "response" | "mode", confirmed: boolean): boolean => {
+    if (!rule || confirmed) return true;
+    const check = stopCheck(rule, change, history);
+    if (check.kind === "blocked") { setError(check.reason); return false; }
+    if (check.kind === "confirm") { setConfirmStopVia(via); setConfirmStopRule(rule.id); return false; }
+    return true;
   };
 
   const changeResponse = (ruleId: string, response: GovernanceResponse, confirmed = false) => {
     selectRule(ruleId);
     const rule = rules.find((r) => r.id === ruleId);
     if ((rule?.response ?? "block") === response) return;
-    if (response === "stop" && rule?.mode === "enforce" && !confirmed) { askToStop(rule, "response"); return; }
+    if (!stopGate(rule, { response }, "response", confirmed)) return;
     setConfirmStopRule(null);
     void update(ruleId, { response }, "change what the rule does", true);
   };
@@ -553,7 +557,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
     selectRule(ruleId);
     const rule = rules.find((r) => r.id === ruleId);
     if (rule?.mode === mode) return;
-    if (mode === "enforce" && rule?.response === "stop" && !confirmed) { askToStop(rule, "mode"); return; }
+    if (!stopGate(rule, { mode }, "mode", confirmed)) return;
     setConfirmStopRule(null);
     void update(ruleId, { mode }, "change the mode", true);
   };
@@ -777,7 +781,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                           <span style={{ flex: "1 1 220px" }}>{RESPONSE_EFFECT[rule.response]}{rule.mode !== "enforce" && " Only once the rule is set to Enforce."}</span>
                         </div>
                       )}
-                      {rule.mode === "watch" && (() => {
+                      {rule.mode === "watch" && wouldEvents && (() => {
                         const seen = watchSummary(rule.id, rule.response ?? "block", wouldEvents);
                         return <p style={{ margin: "10px 0 0", fontSize: 12, color: seen ? "var(--warn-tx)" : "var(--tx3)" }}>{seen ?? "Watching: it hasn’t fired yet."}</p>;
                       })()}

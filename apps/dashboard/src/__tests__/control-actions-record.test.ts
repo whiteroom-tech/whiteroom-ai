@@ -25,8 +25,14 @@ describe('recordControlAction', () => {
     expect(inserts()[0][1]).toEqual(['f1', 'pause_agent', 'a1', null, 'u1']);
   });
 
-  it('skips actions that change nothing, and swallows a failed write', async () => {
-    await recordControlAction('u1', 'f1', 'alerts_test', '{}', '{}');
+  it('prunes the fleet\'s rows older than 45 days as it writes', async () => {
+    await recordControlAction('u1', 'f1', 'stop_agent', '{"agent_id":"a1"}', '{}');
+    const prune = mocks.query.mock.calls.find(([sql]) => String(sql).startsWith('DELETE FROM control_actions'));
+    expect(prune?.[1]).toEqual(['f1', 45]);
+  });
+
+  it('records only holds and rule changes, and swallows a failed write', async () => {
+    for (const a of ['alerts_test', 'alerts_set_slack', 'resume_agent']) await recordControlAction('u1', 'f1', a, '{}', '{}');
     expect(inserts()).toHaveLength(0);
     mocks.query.mockRejectedValueOnce(new Error('db down'));
     vi.spyOn(console, 'warn').mockImplementation(() => {});
