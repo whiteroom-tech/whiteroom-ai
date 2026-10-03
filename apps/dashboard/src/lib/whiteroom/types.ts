@@ -634,3 +634,25 @@ export interface AuditSummaryResult {
 
 /** engine rule_would_act. */
 export interface RuleWouldActResult { fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean }
+
+/** Settings › Audit integrity (engine audit_integrity, Phase 1 spec H2). */
+export interface AuditIntegrity {
+  fleetId: string;
+  mode: 'legacy' | 'sequenced';
+  headSeq: number;
+  verifiedThroughSeq: number;
+  verifiedAt: string | null;
+  prunedBeforeTracking: boolean;
+  legacyEvents: number;
+  gaps: { count: number; recent: Array<{ type: string; from: string | null; to: string | null }> };
+  anchoring: { enabled: boolean };
+}
+
+export interface VerifyAuditResult {
+  valid: boolean | null;
+  complete?: boolean;
+  eventsVerified: number;
+  firstBroken?: string | null;
+  message: string;
+  cached?: boolean;
+}

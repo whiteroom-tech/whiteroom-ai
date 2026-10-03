@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { AlertsSection } from '@/components/settings/AlertsSection';
+import { AuditIntegritySection } from '@/components/settings/AuditIntegritySection';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { AppShell } from '@/components/AppShell';
@@ -115,6 +116,7 @@ export function SettingsView({
           <ProfileSection account={account} pending={pending} run={run} />
           <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
           <AlertsSection />
+          <div id="audit-integrity"><AuditIntegritySection /></div>
           <EmailSection account={account} pending={pending} run={run} />
           <MethodsSection account={account} pending={pending} run={run} />
           <SessionsSection pending={pending} />
