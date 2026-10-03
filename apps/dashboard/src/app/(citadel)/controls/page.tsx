@@ -423,6 +423,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   // null until loaded, or when loading failed: then no Watch line, rather than a false "hasn't fired".
   /** rule_would_act per Watch rule, keyed `${id}@${version}`; missing while loading or after a failed read. */
   const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
+  const wouldReq = useRef(0);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
@@ -455,8 +456,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       // Engine totals over the whole stored trail, one read per Watch rule. A
       // failed read leaves that rule without a line rather than "hasn't fired".
       const watching = d.rules.filter((r) => r.mode === "watch");
+      // Only the newest reload may set them: an older one finishing last would undo it.
+      const req = ++wouldReq.current;
       void Promise.all(watching.map((r) => ruleWouldAct(fleetId, r.id, r.version, authKey).then((c) => [`${r.id}@${r.version}`, c] as const, () => null)))
-        .then((pairs) => setWouldActs(Object.fromEntries(pairs.filter((p) => p !== null))));
+        .then((pairs) => { if (req === wouldReq.current) setWouldActs(Object.fromEntries(pairs.filter((p) => p !== null))); });
       setRules(d.rules);
       setHistory(d.history);
       void loadActors(d.history);
