@@ -234,7 +234,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                         </div>
                       )}
                     </Link>
-                    {fleet && a.govV1 && <AgentActions agent={a} fleetId={fleet.fleetId} authKey={fleet.authKey} onChanged={() => onActed?.()} onAuthError={onAuthError} />}
+                    {fleet && (report.govV1 || a.govV1) && <AgentActions agent={a} fleetId={fleet.fleetId} authKey={fleet.authKey} onChanged={() => onActed?.()} onAuthError={onAuthError} />}
                   </div>
                 );
               })}
