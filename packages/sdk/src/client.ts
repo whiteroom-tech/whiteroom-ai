@@ -4,6 +4,8 @@ import type {
   AutoPairResponse,
   StartWatchResponse,
   CompleteTaskResponse,
+  CompleteTaskReplay,
+  CompleteTaskOptions,
   CheckWatchResponse,
   InitiateHandoverResponse,
   GenerateHandoverResponse,
@@ -108,11 +110,17 @@ export class WhiteRoomClient {
     });
   }
 
+  /**
+   * With `idempotencyKey`, a retry of the same call (same key and input,
+   * within 24 hours) applies nothing and returns a CompleteTaskReplay.
+   */
+  completeTask(agentId: string, taskName: string, opts?: CompleteTaskOptions & { idempotencyKey?: undefined }): Promise<CompleteTaskResponse>;
+  completeTask(agentId: string, taskName: string, opts: CompleteTaskOptions & { idempotencyKey: string }): Promise<CompleteTaskResponse | CompleteTaskReplay>;
   async completeTask(
     agentId: string,
     taskName: string,
-    opts: { fleetId?: string; minutesSpent?: number; tokensUsed?: number } = {}
-  ): Promise<CompleteTaskResponse> {
+    opts: CompleteTaskOptions & { idempotencyKey?: string } = {}
+  ): Promise<CompleteTaskResponse | CompleteTaskReplay> {
     return this.post("/api/white-room", {
       action: "complete_task",
       agent_id: agentId,
@@ -120,6 +128,7 @@ export class WhiteRoomClient {
       fleet_id: opts.fleetId,
       minutes_spent: opts.minutesSpent,
       tokens_used: opts.tokensUsed,
+      idempotency_key: opts.idempotencyKey,
     });
   }
 
