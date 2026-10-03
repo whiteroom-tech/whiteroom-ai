@@ -78,7 +78,12 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
       await resumeAgent(fleetId, agentId, authKey);
       onResumed?.();
     } catch (e) {
-      setResumeError(controlFailure(e) === 'refused' ? (e as Error).message : `Couldn’t resume ${agentId}. Nothing changed; try again.`);
+      const failure = controlFailure(e);
+      setResumeError(
+        failure === 'refused' ? (e as Error).message
+        : failure === 'sign-out' ? 'Your session expired. Reload the page to sign in again.'
+        : `Couldn’t resume ${agentId}. Nothing changed; try again.`,
+      );
     } finally {
       setResuming(null);
     }
@@ -114,7 +119,7 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
           <span style={{ minWidth: 0 }}>
             <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{agentId}</span> was removed while {hold.state}. It&rsquo;s still {hold.state}: if it registers again, its calls are refused until someone resumes it.
           </span>
-          {fleetId && <Button size={28} disabled={resuming === agentId} onClick={() => void resume(agentId)}>{resuming === agentId ? 'Resuming…' : 'Resume'}</Button>}
+          {fleetId && <Button size={28} disabled={resuming !== null} onClick={() => void resume(agentId)}>{resuming === agentId ? 'Resuming…' : 'Resume'}</Button>}
         </div>
       ))}
       {resumeError && <div role="alert" style={{ ...row, gridTemplateColumns: '1fr', color: 'var(--bad)' }}>{resumeError}</div>}
