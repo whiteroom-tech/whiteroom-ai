@@ -1292,6 +1292,15 @@ export default function PerformancePage() {
   }, [fleetId, authKey]);
 
   useEffect(() => { if (authenticated && view === 'index') fetchIndex(); }, [authenticated, view, fetchIndex]);
+  // The Savings chart is 7 local calendar days: reload just after local
+  // midnight so it moves to the new day even when nothing else refreshes.
+  useEffect(() => {
+    if (!authenticated || view !== 'index') return;
+    const next = new Date();
+    next.setHours(24, 0, 5, 0);
+    const t = setTimeout(() => fetchIndex(), next.getTime() - Date.now());
+    return () => clearTimeout(t);
+  }, [authenticated, view, fetchIndex]);
   useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
