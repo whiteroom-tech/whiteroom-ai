@@ -258,9 +258,12 @@ export function timelineRow(e: RunEvent): TimelineRow {
       tag: CALL_OUTCOME[e.type],
     };
   }
-  const row = activityRow({ ...(e.detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0]);
-  const handover = /handover|watch_start|watch_end|rest/.test(e.type);
   const rule = e.type.startsWith('governance');
+  // A rule event's "×N" also counts repeats folded in from before it, which can
+  // be the previous run's; the Rule actions card above counts this run exactly.
+  const detail = rule ? { ...(e.detail ?? {}), occurrences: undefined } : e.detail;
+  const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0]);
+  const handover = /handover|watch_start|watch_end|rest/.test(e.type);
   return {
     id: e.id, time: row.time, text: row.text, tag: row.tag,
     icon: handover ? 'swap' : rule ? 'lock' : 'info',

@@ -56,7 +56,7 @@ export function historyWho(entry: { ruleId: string; time: string; by: string }, 
   const named = userName(entry.by, actions);
   if (named) return named;
   if (entry.by !== 'dashboard') return entry.by;
-  return closest(actions.filter((a) => a.ruleId === entry.ruleId), entry.time)?.by ?? entry.by;
+  return closest(actions.filter((a) => a.ruleId === entry.ruleId), entry.time)?.by ?? 'from the dashboard';
 }
 
 /** The oldest time in a list, as ISO; undefined when empty. */

@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
 import { PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { fmtDay } from '@/lib/format';
 
 interface Props {
   name: string;
@@ -168,7 +169,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <li key={`${k.wrKey}-${k.createdAt}`}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
-                <span style={{ fontSize: 12, color: 'var(--tx2)' }}>added {new Date(k.createdAt).toLocaleDateString()}</span>
+                <span style={{ fontSize: 12, color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
                 <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
                 <Button variant="danger" size={28} disabled={status === 'saving'} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>

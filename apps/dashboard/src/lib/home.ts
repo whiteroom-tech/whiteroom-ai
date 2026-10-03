@@ -5,7 +5,7 @@
 import type { AgentState, TagTone } from '@whiteroom/ui';
 import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
-import { fmtTime } from '@/lib/format';
+import { fmtTime, fmtWhen } from '@/lib/format';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
 
 // ── Agents ───────────────────────────────────────────────────────────────
@@ -185,22 +185,22 @@ function eventTime(e: AuditEntry): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-/** The newest `n` events, newest first. */
+/** The newest `n` events, newest first. An event from before today shows its date, not a time that reads as today's. */
 export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.now()): ActivityRow[] {
   return [...entries]
     .sort((a, b) => eventTime(b) - eventTime(a))
     .slice(0, n)
-    .map((e) => activityRow(e, now));
+    .map((e) => ({ ...activityRow(e, now), time: fmtWhen(String(e.timestamp), now) }));
 }
 
 /** The last thing each agent did, for the Agents table's "Last event" column. */
-export function lastEventByAgent(entries: AuditEntry[]): Record<string, { time: string; text: string }> {
+export function lastEventByAgent(entries: AuditEntry[], now: number = Date.now()): Record<string, { time: string; text: string }> {
   const out: Record<string, { time: string; text: string; at: number }> = {};
   for (const e of entries) {
     const id = eventAgent(e);
     const at = Date.parse(String(e.timestamp));
     if (!id || Number.isNaN(at) || (out[id] && out[id].at >= at)) continue;
-    out[id] = { time: clock(e.timestamp), text: eventModel(e).said, at };
+    out[id] = { time: fmtWhen(String(e.timestamp), now), text: eventModel(e).said, at };
   }
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { time: v.time, text: v.text }]));
 }

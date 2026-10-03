@@ -65,6 +65,14 @@ describe('activity', () => {
     expect(rows.map((r) => r.key)).toEqual(['watch_start-2026-09-30T14:05:00Z', 'watch_start-2026-09-30T14:04:00Z', 'watch_start-2026-09-30T14:03:00Z', 'watch_start-2026-09-30T14:02:00Z']);
   });
 
+  it('dates an event from before today, so its time is never read as today\'s', () => {
+    const today = Date.parse('2026-10-03T19:47:00');
+    const [newest, older] = latestActivity([e('watch_start', '2026-10-03T09:15:00'), e('agent_paused', '2026-10-02T23:31:00')], 4, today);
+    expect(newest.time).toBe('9:15 am');
+    expect(older.time).toBe('Oct 2');
+    expect(lastEventByAgent([e('agent_paused', '2026-10-02T23:31:00')], today)['lead-agent'].time).toBe('Oct 2');
+  });
+
   it('keeps the latest event per agent', () => {
     const last = lastEventByAgent([e('watch_start', '2026-09-30T14:01:00Z'), e('rest_start', '2026-09-30T14:09:00Z'), e('watch_end', '2026-09-30T14:05:00Z')]);
     expect(last['lead-agent'].text).toBe('went on break');

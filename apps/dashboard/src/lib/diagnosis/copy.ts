@@ -130,7 +130,7 @@ export function notMeasuredShort(code: string, reason: string): string {
   };
   switch (code) {
     case 'few_watches': return n(/has (\d+)/, (x) => `${x} of 5 shifts so far`);
-    case 'short_history': return n(/has (\d+)/, (x) => `${x} of 14 days of history so far`);
+    case 'short_history': return n(/has (\d+)/, (x) => `${x} of 14 days of history older than a week`);
     case 'low_coverage': return n(/for (\d+)%/, (x) => `can only see ${x}% of its tool calls`);
     case 'hashing_off':
     case 'detector_off': return 'switched off on this engine';

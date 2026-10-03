@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { syncQueryParams } from '@/lib/url';
 import { MAGIC_LINKS_PER_WINDOW, tooManyMagicLinks } from '@/lib/magic-link-limit';
-import { fmtTime, timeAgo } from '@/lib/format';
+import { fmtDay, fmtTime, fmtWhen, timeAgo } from '@/lib/format';
 import { relTime } from '@/lib/activity';
 
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -57,5 +57,18 @@ describe('timeAgo', () => {
   it('the activity feed switches to a date after about a day', () => {
     expect(relTime(new Date(now - 2 * 3600_000).toISOString(), now)).toBe('2 hours ago');
     expect(relTime(new Date(now - 30 * 3600_000).toISOString(), now)).not.toMatch(/ago$/);
+  });
+});
+
+describe('fmtDay / fmtWhen', () => {
+  const now = Date.parse('2026-10-03T19:47:00');
+  it('writes dates one way: "Oct 1", with the year only outside this one', () => {
+    expect(fmtDay('2026-10-01T10:00:00', now)).toBe('Oct 1');
+    expect(fmtDay('2025-12-30T10:00:00', now)).toBe('Dec 30, 2025');
+    expect(fmtDay('nope', now)).toBe('');
+  });
+  it('shows a time for today and a date otherwise', () => {
+    expect(fmtWhen('2026-10-03T08:05:00', now)).toBe('8:05 am');
+    expect(fmtWhen('2026-10-02T23:31:00', now)).toBe('Oct 2');
   });
 });
