@@ -17,7 +17,7 @@ const REPORT: FleetReport = {
   totals: { workMinutes: 22, tokens: 1_645_000, tasks: 119, handovers: 18 },
   energySavings: { compressionRatio: 93.9, estimatedTokensSaved: 1_650_000, estimatedCostSaved: '$2.1700', estimatedEnergySaved: '0.49 kWh', formula: '' },
   compliance: { allAgentsWithinLimits: true, restingAgentsCount: 1, laborScore: '100%' },
-  holds: { 'archive-agent': { state: 'stopped', by: 'dashboard', reason: null, at: t('13:52') } },
+  holds: { 'archive-agent': { state: 'stopped', by: 'dashboard', reason: null, at: t('13:52') }, 'old-scraper': { state: 'paused', by: 'dashboard', reason: null, at: t('11:05') } },
   govV1: true,
 };
 const AGENTS: (AgentInfo & { stale?: boolean })[] = [
