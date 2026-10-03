@@ -6,6 +6,8 @@
 //   - no key -> unauthenticated (e.g. token_login)
 
 import type {
+  AuditSummaryResult,
+  RuleWouldActResult,
   ListRunsResult,
   GovernanceResponse,
   RuleActionsResult,
@@ -609,6 +611,16 @@ export function listRuns(
     ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
     ...(opts.flagged ? { flagged: true } : {}),
   }, key);
+}
+
+/** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
+export function auditSummary(fleetId: string, from: Date, key?: string): Promise<AuditSummaryResult> {
+  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone() }, key);
+}
+
+/** Would-act counts per agent for one rule version (engine rule_would_act). */
+export function ruleWouldAct(fleetId: string, ruleId: string, ruleVersion: number, key?: string): Promise<RuleWouldActResult> {
+  return apiCall<RuleWouldActResult>({ action: 'rule_would_act', fleet_id: fleetId, rule_id: ruleId, rule_version: ruleVersion }, key);
 }
 
 /** Rule actions for a range of the viewer's days; `unsupported` keeps the audit-log counts. */

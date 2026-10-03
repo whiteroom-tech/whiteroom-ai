@@ -75,6 +75,20 @@ function emptyTally(): GovernanceTally {
   return { blocks: 0, wouldBlocks: 0 };
 }
 
+/** The engine's audit_summary governance totals, shaped like governanceCounts (every rule type present). */
+export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; byAgent: Record<string, GovernanceTally>; byRule: Record<string, GovernanceTally> }): GovernanceCounts {
+  return {
+    blocks: g.blocks,
+    wouldBlocks: g.wouldBlocks,
+    byAgent: g.byAgent,
+    byRule: {
+      spend_cap: g.byRule.spend_cap ?? emptyTally(),
+      loop_breaker: g.byRule.loop_breaker ?? emptyTally(),
+      model_allowlist: g.byRule.model_allowlist ?? emptyTally(),
+    },
+  };
+}
+
 /** Count blocks and would-blocks, optionally only those at or after `sinceMs`. */
 export function governanceCounts(entries: AuditEntry[], sinceMs = 0): GovernanceCounts {
   const out: GovernanceCounts = {
