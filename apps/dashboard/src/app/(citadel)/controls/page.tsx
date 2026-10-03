@@ -6,18 +6,18 @@ import Link from "next/link";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
-  auditLog,
   governanceCreateRule,
   governanceDeleteRule,
   governanceList,
   governanceUpdateRule,
+  ruleWouldAct,
   isAuthError,
   controlFailure,
   performanceFleetHourly,
   performanceIndex,
 } from "@/lib/whiteroom/client";
 import type {
-  AuditEntry,
+  RuleWouldActResult,
   GovernanceHistoryEntry,
   GovernanceMode,
   GovernanceParams,
@@ -421,7 +421,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   // Which change the Stop confirmation is for: picking Stop, or setting a Stop rule to Enforce.
   const [confirmStopVia, setConfirmStopVia] = useState<"response" | "mode">("response");
   // null until loaded, or when loading failed: then no Watch line, rather than a false "hasn't fired".
-  const [wouldEvents, setWouldEvents] = useState<AuditEntry[] | null>(null);
+  /** rule_would_act per Watch rule, keyed `${id}@${version}`; missing while loading or after a failed read. */
+  const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestions>({ noCaching: false, onlyModels: null });
@@ -450,12 +451,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   /** Reloads the rules; resolves false if that failed. */
   const fetchData = useCallback(async (): Promise<boolean> => {
     try {
-      const [d, would] = await Promise.all([
-        governanceList(fleetId, authKey),
-        // The audit chain keeps at most 500 events, so this is all of them.
-        auditLog({ fleetId, type: "governance_would_block", limit: 500 }, authKey).catch(() => null),
-      ]);
-      setWouldEvents(would?.entries ?? null);
+      const d = await governanceList(fleetId, authKey);
+      // Engine totals over the whole stored trail, one read per Watch rule. A
+      // failed read leaves that rule without a line rather than "hasn't fired".
+      const watching = d.rules.filter((r) => r.mode === "watch");
+      void Promise.all(watching.map((r) => ruleWouldAct(fleetId, r.id, r.version, authKey).then((c) => [`${r.id}@${r.version}`, c] as const, () => null)))
+        .then((pairs) => setWouldActs(Object.fromEntries(pairs.filter((p) => p !== null))));
       setRules(d.rules);
       setHistory(d.history);
       void loadActors(d.history);
@@ -781,8 +782,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                           <span style={{ flex: "1 1 220px" }}>{RESPONSE_EFFECT[rule.response]}{rule.mode !== "enforce" && " Only once the rule is set to Enforce."}</span>
                         </div>
                       )}
-                      {rule.mode === "watch" && wouldEvents && (() => {
-                        const seen = watchSummary(rule, wouldEvents);
+                      {rule.mode === "watch" && wouldActs[`${rule.id}@${rule.version}`] && (() => {
+                        const seen = watchSummary(rule, wouldActs[`${rule.id}@${rule.version}`]);
                         return <p style={{ margin: "10px 0 0", fontSize: 12, color: seen ? "var(--warn-tx)" : "var(--tx3)" }}>{seen ?? "Watching: it hasn’t fired since its last change."}</p>;
                       })()}
                       <ScopePicker

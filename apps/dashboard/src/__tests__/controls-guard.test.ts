@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { longestWatchHours, stopBlockedReason, stopCheck, stopPhrase, watchSummary } from '@/lib/controls-guard';
 import { agentMenu } from '@/components/home/AgentActions';
-import type { AuditEntry, GovernanceHistoryEntry } from '@/lib/whiteroom/types';
+import type { GovernanceHistoryEntry } from '@/lib/whiteroom/types';
 
 const h = (time: string, description: string, ruleId = 'r1'): GovernanceHistoryEntry => ({ id: time, ruleId, ruleType: 'spend_cap', description, by: 'dashboard', time });
 const NOW = Date.parse('2026-10-03T12:00:00Z');
@@ -39,24 +39,19 @@ describe('the Stop guard', () => {
 });
 
 describe('Watching summary', () => {
-  const ev = (o: Partial<AuditEntry>): AuditEntry => ({ id: 'e', timestamp: '', type: 'governance_would_block', ruleId: 'r1', ruleVersion: 3, agentId: 'lead-agent', occurrences: 1, ...o } as AuditEntry);
-  const rule = { id: 'r1', version: 3, response: 'pause' as const };
+  const rule = { response: 'pause' as const };
 
-  it('adds up occurrences per agent for this rule as it is now', () => {
-    const events = [ev({ occurrences: 10 }), ev({ occurrences: 5 }), ev({ agentId: 'scout' }), ev({ ruleId: 'r2', occurrences: 99 })];
-    expect(watchSummary(rule, events)).toBe('Watching: would have paused lead-agent 15 times, scout once since its last change.');
+  it('names each agent with its count from the engine, busiest first', () => {
+    expect(watchSummary(rule, { byAgent: { scout: 1, 'lead-agent': 15 }, unversioned: false }))
+      .toBe('Watching: would have paused lead-agent 15 times, scout once since its last change.');
   });
 
-  it('leaves out events from an earlier version, which may have had another response', () => {
-    expect(watchSummary(rule, [ev({ ruleVersion: 2, occurrences: 40 })])).toBeNull();
-  });
-
-  it('counts events with no version (older engines), with a verb that claims no response', () => {
-    expect(watchSummary(rule, [ev({ ruleVersion: undefined, occurrences: 2 })])).toBe('Watching: would have acted on lead-agent 2 times since its last change.');
+  it('claims no response when older, unversioned events are counted', () => {
+    expect(watchSummary(rule, { byAgent: { 'lead-agent': 2 }, unversioned: true })).toBe('Watching: would have acted on lead-agent 2 times since its last change.');
   });
 
   it('is null when the rule has not fired', () => {
-    expect(watchSummary(rule, [ev({ ruleId: 'r2' })])).toBeNull();
+    expect(watchSummary(rule, { byAgent: {}, unversioned: false })).toBeNull();
   });
 });
 

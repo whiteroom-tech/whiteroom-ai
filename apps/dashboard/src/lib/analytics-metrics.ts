@@ -114,12 +114,63 @@ export function agentDaySavings(events: SavingsEvent[]): { byDay: Map<string, nu
   const byDay = new Map<string, number>();
   const byAgent = new Map<string, number>();
   for (const b of buckets.values()) {
-    const perHandover = b.handovers > 0 ? Math.ceil(b.tasks / (b.handovers + 1)) : 0;
-    const saved = b.hSaved * Math.max(perHandover, 1) + b.oSaved;
+    const saved = bucketSaved({ tasks: b.tasks, handovers: b.handovers, handoverSaved: b.hSaved, offloadSaved: b.oSaved });
     byDay.set(b.day, (byDay.get(b.day) ?? 0) + saved);
     if (b.agent) byAgent.set(b.agent, (byAgent.get(b.agent) ?? 0) + saved);
   }
   return { byDay, byAgent };
+}
+
+/**
+ * One agent-day's estimated saving: each handover's saving times the tasks it
+ * carried the context across (tasks per handover, at least 1), plus offloads.
+ */
+function bucketSaved(b: { tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }): number {
+  const perHandover = b.handovers > 0 ? Math.ceil(b.tasks / (b.handovers + 1)) : 0;
+  return b.handoverSaved * Math.max(perHandover, 1) + b.offloadSaved;
+}
+
+/**
+ * One agent-day of the engine's audit_summary: the savings inputs, totalled
+ * in SQL over the whole stored trail (Phase 1 spec H1), not over the newest
+ * events the browser happened to fetch.
+ */
+export interface SavingsBucket { day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }
+
+/** Total tokens saved across buckets: the same per-agent-day math as agentDaySavings. */
+export function savedFromBuckets(buckets: SavingsBucket[]): number {
+  return buckets.reduce((sum, b) => sum + bucketSaved(b), 0);
+}
+
+/** The last `days` local days, oldest first, from engine buckets (zeros for days without any). */
+export function dailySavingsFromBuckets(buckets: SavingsBucket[], days: number, nowMs: number): DaySavings[] {
+  const used = new Map<string, number>();
+  const saved = new Map<string, number>();
+  for (const b of buckets) {
+    used.set(b.day, (used.get(b.day) ?? 0) + b.used);
+    saved.set(b.day, (saved.get(b.day) ?? 0) + bucketSaved(b));
+  }
+  const d = new Date(nowMs);
+  const order: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(d);
+    day.setDate(d.getDate() - i);
+    order.push(localDay(day));
+  }
+  return order.map((day) => ({ day, used: used.get(day) ?? 0, saved: saved.get(day) ?? 0 }));
+}
+
+/** By agent rows from engine buckets: used and saved per agent, most tokens first; '' keeps unattributed tokens. */
+export function agentTotalsFromBuckets(buckets: SavingsBucket[]): AgentTotals[] {
+  const rows = new Map<string, AgentTotals>();
+  for (const b of buckets) {
+    if (!b.agent && !b.used) continue;
+    const r = rows.get(b.agent) ?? { agent: b.agent, used: 0, saved: 0 };
+    r.used += b.used;
+    if (b.agent) r.saved += bucketSaved(b);
+    rows.set(b.agent, r);
+  }
+  return [...rows.values()].sort((a, b) => b.used - a.used || a.agent.localeCompare(b.agent));
 }
 
 /** Tokens saved by a handover: compressed context minus the handover doc (default 300). */

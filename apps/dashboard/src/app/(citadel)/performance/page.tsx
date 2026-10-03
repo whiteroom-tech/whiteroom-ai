@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditLog, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
-import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, estimateCost, localDayFromTs, partialCoverageSince, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
+import { agentTotalsFromBuckets, dailySavingsFromBuckets, estimateCost, savedFromBuckets, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -15,8 +15,8 @@ import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtTokens } from '@/lib/format';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AuditEntry, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
-import { countsFromRuleActions, governanceCounts, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
+import { countsFromRuleActions, governanceFromSummary, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
 import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
 import { DiagnosisCard, DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
@@ -688,16 +688,12 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   );
 }
 
-function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, ruleActions, savingsPartialSince, byAgentPartial, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
   byAgent: AgentTotals[] | null;
   ruleActions?: Record<string, GovernanceTally>;
-  /** Local day the loaded history starts, when that's inside the 7 days. */
-  savingsPartialSince: string | null;
-  /** The loaded events start inside the By agent range too. */
-  byAgentPartial: boolean;
   /** "last 24 h", for panels that follow the range. */
   rangeLabel: string;
   onSelectAgent: (id: string) => void;
@@ -873,11 +869,6 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
         </section>
       )}
 
-      {savingsPartialSince && (savingsDays || byAgent) && (
-        <div style={{ marginBottom: 12 }}>
-          <Banner variant="warn">Partial history: events are loaded from {savingsPartialSince}, so {byAgentPartial ? 'Savings and By agent start' : 'Savings starts'} there. Earlier days show as empty.</Banner>
-        </div>
-      )}
       <div className="wr-perf-row wr-perf-row--cost">
         <CostTrackingSection fleetId={fleetId} authKey={authKey} />
         {savingsDays && <SavingsChart days={savingsDays} />}
@@ -1215,14 +1206,8 @@ export default function PerformancePage() {
   const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
   const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
   const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(null);
-  const [auditEntries, setAuditEntries] = useState<AuditEntry[] | null>(null);
-  const [auditCoverage, setAuditCoverage] = useState<{ retainedSince?: string | null; historyTruncated?: boolean }>({});
-  // The Savings window moves at local midnight even when no new data arrives.
-  const [today, setToday] = useState(() => localDayFromTs(new Date().toISOString()));
-  useEffect(() => {
-    const id = setInterval(() => setToday(localDayFromTs(new Date().toISOString())), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(null);
+  const [byAgent, setByAgent] = useState<AgentTotals[] | null>(null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
@@ -1237,10 +1222,18 @@ export default function PerformancePage() {
     const stale = () => indexReq.current !== req;
     setLoading(true); setError('');
     try {
-      const [idx, hourly, audit] = await Promise.all([
+      const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
+      const weekStart = new Date();
+      weekStart.setHours(0, 0, 0, 0);
+      weekStart.setDate(weekStart.getDate() - 6); // the Savings chart's 7 calendar days
+      // Totals the engine computes over the whole stored audit trail (Phase 1
+      // spec H1): the rolling window for savings, rule counts and By agent,
+      // and 7 calendar days for the chart.
+      const [idx, hourly, audit, week] = await Promise.all([
         performanceIndex(fleetId, hoursBack, authKey),
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
-        auditLog({ fleetId, limit: 2000 }, authKey).catch(() => null),
+        auditSummary(fleetId, new Date(cutoff), authKey).catch(() => null),
+        auditSummary(fleetId, weekStart, authKey).catch(() => null),
       ]);
       if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
@@ -1248,20 +1241,14 @@ export default function PerformancePage() {
       setLoadedAt(Date.now());
       if (!hourly.error) setHourlyData(hourly);
 
-      if (audit) {
-        const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
-        // Same per-agent-day math as Run History (audit F15). Applying one
-        // task multiplier across the whole range overstated the saving.
-        const events = audit.entries
-          .filter((e) => new Date(e.timestamp).getTime() >= cutoff)
-          .map((e) => auditSavingsEvent(e as AuditEntry & Record<string, unknown>, localDayFromTs(e.timestamp)));
-        let tokensSaved = 0;
-        for (const v of agentDaySavings(events).byDay.values()) tokensSaved += v;
+      setSavingsDays(week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, Date.now()) : null);
+      if (audit?.savingsBuckets) {
+        // Same per-agent-day math as before (audit F15), over engine buckets.
+        const tokensSaved = savedFromBuckets(audit.savingsBuckets);
         setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
-        const fromAudit = governanceCounts(audit.entries, cutoff);
+        const fromAudit = governanceFromSummary(audit.governance);
         setGovCounts(fromAudit);
-        setAuditEntries(audit.entries);
-        setAuditCoverage({ retainedSince: audit.retainedSince, historyTruncated: audit.historyTruncated });
+        setByAgent(agentTotalsFromBuckets(audit.savingsBuckets));
         // Durable counts (engine rule_actions) replace the audit log's when they arrive.
         void fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey).then(
           (d) => { if (!stale() && !('unsupported' in d)) setGovCounts(countsFromRuleActions(d, fromAudit.byRule)); },
@@ -1270,7 +1257,7 @@ export default function PerformancePage() {
       } else {
         setGovSavings(null);
         setGovCounts(null);
-        setAuditEntries(null);
+        setByAgent(null);
       }
     } catch { if (!stale()) setError('Failed to load performance data.'); }
     finally { if (!stale()) setLoading(false); }
@@ -1339,17 +1326,7 @@ export default function PerformancePage() {
   }
 
   // Savings is always the last 7 days; By agent follows the range.
-  // `today` is a dependency so the window moves at midnight; the rolling
-  // By agent cutoff refreshes with each fetch.
-  const savingsDays = useMemo(() => (auditEntries ? dailySavings(auditEntries, 7, Date.now()) : null), [auditEntries, today]); // eslint-disable-line react-hooks/exhaustive-deps
-  const byAgent = useMemo(() => (auditEntries ? agentTotals(auditEntries, Date.now() - hoursBack * 3_600_000) : null), [auditEntries, hoursBack]);
   const ruleActions = useMemo(() => (govCounts ? ruleActionsByAgent(govCounts.byAgent) : undefined), [govCounts]);
-  // The audit read is the newest 2,000 events; on a busy fleet they can start
-  // inside a panel's window, and its older part would read as quiet. Savings
-  // covers 7 calendar days; By agent covers the rolling range.
-  const savingsPartialSince = partialCoverageSince('7d', auditCoverage, Date.now());
-  const byAgentPartial = !!(auditCoverage.historyTruncated && auditCoverage.retainedSince
-    && Date.parse(auditCoverage.retainedSince) > Date.now() - hoursBack * 3_600_000);
   const rangeLabel = hoursBack === 24 ? 'last 24 h' : hoursBack === 72 ? 'last 3 days' : 'last 7 days';
 
   // A refetch is in flight while the previous data is still on screen
@@ -1398,7 +1375,7 @@ export default function PerformancePage() {
           : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
         {loading && !indexData && !agentData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} savingsPartialSince={savingsPartialSince} byAgentPartial={byAgentPartial} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

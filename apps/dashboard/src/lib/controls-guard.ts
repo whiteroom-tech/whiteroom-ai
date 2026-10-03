@@ -3,7 +3,7 @@
 // for a day, and turning that on means typing who it applies to. Plus the
 // per-rule "Watching: would have…" line from the engine's Watch events.
 
-import type { AuditEntry, GovernanceHistoryEntry, GovernanceResponse, GovernanceScope } from '@/lib/whiteroom/types';
+import type { GovernanceHistoryEntry, GovernanceResponse, GovernanceScope } from '@/lib/whiteroom/types';
 
 export const STOP_WATCH_HOURS = 24;
 
@@ -77,26 +77,14 @@ const WOULD_VERB: Record<GovernanceResponse, string> = { notify: 'told you about
 
 /**
  * "Watching: would have paused lead-agent 86 times" from the engine's
- * governance_would_block events for this version of the rule. Null when
- * it hasn't fired since its last change.
+ * rule_would_act counts for this version of the rule. Null when it hasn't
+ * fired since its last change. Events with no recorded version (older
+ * engines) are counted, but then the verb can't claim a response.
  */
-export function watchSummary(rule: { id: string; version: number; response?: GovernanceResponse }, events: AuditEntry[]): string | null {
-  const response = rule.response ?? 'block';
-  const byAgent = new Map<string, number>();
-  let unversioned = false;
-  for (const e of events) {
-    if (e.type !== 'governance_would_block' || e.ruleId !== rule.id) continue;
-    // Events from an older version may have had another response, threshold
-    // or scope, so they're left out. Events with no version (older engines)
-    // are counted, but then the verb can't claim a response.
-    if (e.ruleVersion == null) unversioned = true;
-    else if (Number(e.ruleVersion) !== rule.version) continue;
-    const agent = String(e.agentId ?? 'an agent');
-    const n = Number(e.occurrences);
-    byAgent.set(agent, (byAgent.get(agent) ?? 0) + (Number.isFinite(n) && n > 0 ? n : 1));
-  }
-  if (byAgent.size === 0) return null;
-  const parts = [...byAgent].sort((a, b) => b[1] - a[1]).map(([a, n]) => `${a} ${n === 1 ? 'once' : `${n.toLocaleString()} times`}`);
+export function watchSummary(rule: { response?: GovernanceResponse }, counts: { byAgent: Record<string, number>; unversioned: boolean }): string | null {
+  const entries = Object.entries(counts.byAgent).filter(([, n]) => n > 0);
+  if (entries.length === 0) return null;
+  const parts = entries.sort((a, b) => b[1] - a[1]).map(([a, n]) => `${a || 'an agent'} ${n === 1 ? 'once' : `${n.toLocaleString()} times`}`);
   const shown = parts.slice(0, 3).join(', ') + (parts.length > 3 ? ` and ${parts.length - 3} more` : '');
-  return `Watching: would have ${unversioned ? 'acted on' : WOULD_VERB[response]} ${shown} since its last change.`;
+  return `Watching: would have ${counts.unversioned ? 'acted on' : WOULD_VERB[rule.response ?? 'block']} ${shown} since its last change.`;
 }

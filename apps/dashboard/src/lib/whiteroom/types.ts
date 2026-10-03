@@ -624,3 +624,13 @@ export interface RunEventsResult {
   total: number;
   eventFound: boolean | null;
 }
+
+/** engine audit_summary (Phase 1 spec H1). */
+export interface AuditSummaryResult {
+  fleetId: string;
+  savingsBuckets: Array<{ day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }>;
+  governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
+}
+
+/** engine rule_would_act. */
+export interface RuleWouldActResult { fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean }
