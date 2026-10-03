@@ -1,7 +1,8 @@
-// Naming the person behind a control change. The engine records every
-// dashboard change as by "dashboard"; the dashboard keeps who it was
-// (lib/control-actions.ts, served by /api/fleet/control-actions). These match
-// an engine record to that row by target and time.
+// Naming the person behind a control change. The engine records a dashboard
+// change as by "user:<id>" (or "dashboard" before it learned the user); the
+// dashboard keeps each person's name (lib/control-actions.ts, served by
+// /api/fleet/control-actions). A user id is looked up directly; an older
+// "dashboard" record is matched to a row by target and time.
 
 import type { AgentHold } from '@/lib/whiteroom/types';
 
@@ -9,6 +10,8 @@ export interface ControlActor {
   action: string;
   agentId: string | null;
   ruleId: string | null;
+  /** The account that acted: matches the engine's "user:<id>". */
+  userId: string;
   by: string;
   at: string;
 }
@@ -28,17 +31,30 @@ function closest(rows: ControlActor[], at: string): ControlActor | undefined {
   return best;
 }
 
+const USER = 'user:';
+
+/** The name for an engine "user:<id>", from any row by that account; null when the record isn't one. */
+function userName(by: string, actions: ControlActor[]): string | null {
+  if (!by.startsWith(USER)) return null;
+  const id = by.slice(USER.length);
+  return actions.find((a) => a.userId === id)?.by ?? 'a teammate';
+}
+
 const HOLD_ACTION: Record<AgentHold['state'], string> = { paused: 'pause_agent', stopped: 'stop_agent' };
 
 /** "by R Haque", "by a rule", or "from the dashboard" when the person isn't known. */
 export function holdWho(hold: AgentHold, agentId: string, actions: ControlActor[]): string {
   if (hold.by.startsWith('rule:')) return 'by a rule';
+  const named = userName(hold.by, actions);
+  if (named) return `by ${named}`;
   const row = closest(actions.filter((a) => a.agentId === agentId && a.action === HOLD_ACTION[hold.state]), hold.at);
   return row ? `by ${row.by}` : 'from the dashboard';
 }
 
 /** The person behind a rule-history entry, else the engine's own "by". */
 export function historyWho(entry: { ruleId: string; time: string; by: string }, actions: ControlActor[]): string {
+  const named = userName(entry.by, actions);
+  if (named) return named;
   if (entry.by !== 'dashboard') return entry.by;
   return closest(actions.filter((a) => a.ruleId === entry.ruleId), entry.time)?.by ?? entry.by;
 }

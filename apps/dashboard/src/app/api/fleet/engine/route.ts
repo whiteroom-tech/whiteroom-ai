@@ -21,7 +21,7 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { CONTROL_SECRET_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
+import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
 import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
@@ -61,6 +61,7 @@ export async function POST(req: Request) {
   const control = controlActionOf(body);
   // Set only once the access check has passed, so recording can't be reached around it.
   let allowed: { action: string; fleetId: string } | null = null;
+  let actorId: string | null = null;
   if (control) {
     const denied = await controlAccessError(control.fleetId, token);
     if (denied) {
@@ -71,7 +72,13 @@ export async function POST(req: Request) {
     // Unset during rollout: the request goes without it, which engines from
     // before R1 accept and engines with R1 refuse (fail closed).
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
-    if (secret) headers[CONTROL_SECRET_HEADER] = secret;
+    // The access check passed, so there is a signed-in user: the engine records
+    // them as who acted. A failed lookup only loses the name ("dashboard").
+    actorId = await auth().then((s) => s?.user?.id ?? null, () => null);
+    if (secret) {
+      headers[CONTROL_SECRET_HEADER] = secret;
+      if (actorId) headers[CONTROL_USER_HEADER] = actorId;
+    }
   }
 
   let upstream: Response;
@@ -92,8 +99,8 @@ export async function POST(req: Request) {
     );
   }
 
-  // A control change the engine accepted: note who made it, since the engine
-  // only knows "dashboard". Control replies are small, so read them whole.
+  // A control change the engine accepted: keep who made it, so pages can show
+  // their name. Control replies are small, so read them whole.
   // Everything here is best effort: the change already happened, so a failed
   // lookup or record must never turn it into an error the user would retry.
   if (allowed && upstream.ok) {
@@ -104,8 +111,7 @@ export async function POST(req: Request) {
       return Response.json({ success: true }, { status: upstream.status, headers: { 'Cache-Control': 'no-store' } });
     }
     try {
-      const userId = (await auth())?.user?.id;
-      if (userId) await recordControlAction(userId, allowed.fleetId, allowed.action, body, reply);
+      if (actorId) await recordControlAction(actorId, allowed.fleetId, allowed.action, body, reply);
     } catch { /* not recorded; the change stands */ }
     return new Response(reply, {
       status: upstream.status,

@@ -66,7 +66,7 @@ export async function holdsFleet(userId: string, fleetId: string): Promise<boole
  */
 export async function recentControlActions(fleetId: string, since: Date): Promise<ControlActor[]> {
   const { rows } = await db().query(
-    `SELECT c.action, c.agent_id AS "agentId", c.rule_id AS "ruleId", c.created_at AS at,
+    `SELECT c.action, c.agent_id AS "agentId", c.rule_id AS "ruleId", c.user_id AS "userId", c.created_at AS at,
             COALESCE(NULLIF(u.name, ''), 'a teammate') AS by
        FROM control_actions c JOIN users u ON u.id = c.user_id
       WHERE c.fleet_id = $1 AND c.created_at >= $2 ORDER BY c.created_at DESC LIMIT 500`,

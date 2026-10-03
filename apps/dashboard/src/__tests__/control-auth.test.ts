@@ -241,6 +241,14 @@ describe('the engine BFF', () => {
     fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
     expect((await call({ action: 'governance_update_rule', fleet_id: 'f1', rule_id: 'r' })).status).toBe(200);
     expect(sentHeaders()['x-wr-dashboard-secret']).toBe('dash-secret');
+    // So the engine records who acted, not just "dashboard".
+    expect(sentHeaders()['x-wr-dashboard-user']).toBe('u1');
+  });
+
+  it('never sends a user on ordinary actions', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(sentHeaders()['x-wr-dashboard-user']).toBeUndefined();
   });
 
   it('refuses a token the account doesn’t hold for that fleet, before reaching the engine', async () => {
@@ -272,5 +280,6 @@ describe('the engine BFF', () => {
     fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
     await call({ action: 'resume_agent', fleet_id: 'f1', agent_id: 'a' });
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
+    expect(sentHeaders()['x-wr-dashboard-user']).toBeUndefined();
   });
 });

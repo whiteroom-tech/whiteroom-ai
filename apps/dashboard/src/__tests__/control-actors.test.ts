@@ -6,7 +6,7 @@ import { historyWho, holdWho, type ControlActor } from '@/lib/control-actors';
 import { controlTarget } from '@/lib/control-actions';
 
 const at = '2026-10-02T20:00:00.000Z';
-const row = (o: Partial<ControlActor>): ControlActor => ({ action: 'pause_agent', agentId: 'lead-agent', ruleId: null, by: 'R Haque', at, ...o });
+const row = (o: Partial<ControlActor>): ControlActor => ({ action: 'pause_agent', agentId: 'lead-agent', ruleId: null, userId: 'u1', by: 'R Haque', at, ...o });
 
 describe('who held an agent', () => {
   const hold = { state: 'paused' as const, by: 'dashboard', reason: null, at: '2026-10-02T20:00:20.000Z' };
@@ -24,6 +24,20 @@ describe('who held an agent', () => {
     expect(holdWho(hold, 'lead-agent', [row({ action: 'stop_agent' })])).toBe('from the dashboard');
     expect(holdWho(hold, 'lead-agent', [row({ at: '2026-10-02T19:50:00.000Z' })])).toBe('from the dashboard');
     expect(holdWho(hold, 'lead-agent', [])).toBe('from the dashboard');
+  });
+});
+
+describe('who acted, when the engine names the account', () => {
+  it('names the account from any of its rows, whatever the time or target', () => {
+    const hold = { state: 'stopped' as const, by: 'user:u1', reason: null, at: '2026-09-20T10:00:00.000Z' };
+    expect(holdWho(hold, 'lead-agent', [row({ agentId: 'other', action: 'governance_update_rule' })])).toBe('by R Haque');
+    expect(historyWho({ ruleId: 'r9', time: '2026-09-01T00:00:00.000Z', by: 'user:u1' }, [row({})])).toBe('R Haque');
+  });
+
+  it('never shows the raw id when the account has no row in the window', () => {
+    const hold = { state: 'paused' as const, by: 'user:u2', reason: null, at };
+    expect(holdWho(hold, 'lead-agent', [row({})])).toBe('by a teammate');
+    expect(historyWho({ ruleId: 'r1', time: at, by: 'user:u2' }, [])).toBe('a teammate');
   });
 });
 
