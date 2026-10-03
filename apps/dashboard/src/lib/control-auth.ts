@@ -19,6 +19,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
 ]);
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
+/** The signed-in account behind a control action, sent with the secret so the engine records who acted. */
+export const CONTROL_USER_HEADER = 'x-wr-dashboard-user';
 
 /** The action and fleet named in a BFF body, or null when it isn't a control action. */
 export function controlActionOf(body: string): { action: string; fleetId: string | null } | null {
