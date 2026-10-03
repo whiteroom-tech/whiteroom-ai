@@ -3,7 +3,7 @@
 // No React, so the wording rules can be unit-tested directly.
 
 import type { AgentState, TagTone } from '@whiteroom/ui';
-import type { AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport } from '@/lib/whiteroom/types';
+import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { fmtTime } from '@/lib/format';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
@@ -388,4 +388,11 @@ export function usd(n: number): string {
 export function parseUsd(s: unknown): number | null {
   const n = parseFloat(String(s ?? '').replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Holds whose agent is no longer registered (removed while held), oldest first. */
+export function removedHeld(holds: Record<string, AgentHold> | undefined, agents: { agentId: string }[]): [string, AgentHold][] {
+  if (!holds) return [];
+  const present = new Set(agents.map((a) => a.agentId));
+  return Object.entries(holds).filter(([id]) => !present.has(id)).sort((a, b) => a[1].at.localeCompare(b[1].at));
 }

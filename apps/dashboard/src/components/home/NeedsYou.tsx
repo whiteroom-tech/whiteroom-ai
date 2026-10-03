@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button, Hint, Icon, Panel, StatusPill, FONT_MONO } from '@whiteroom/ui';
-import { listRuns } from '@/lib/whiteroom/client';
-import type { AgentInfo, RunSummary } from '@/lib/whiteroom/types';
+import { controlFailure, listRuns, resumeAgent } from '@/lib/whiteroom/client';
+import type { AgentHold, AgentInfo, RunSummary } from '@/lib/whiteroom/types';
+import { removedHeld } from '@/lib/home';
 import { usePoll } from '@/hooks/usePoll';
 import { HELP } from '@/lib/metric-definitions';
 import { fmtTime } from '@/lib/format';
@@ -24,7 +25,15 @@ function readSeen(): string[] {
  * today's flagged runs until marked as seen (kept in this browser). Hidden
  * until the engine reports holds or flags, so older engines show nothing.
  */
-export function NeedsYou({ agents, holdsKnown, fleet }: { agents: AgentInfo[]; holdsKnown: boolean; fleet?: { fleetId: string; authKey?: string } }) {
+export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
+  agents: AgentInfo[];
+  /** The fleet report's holds, which include agents that were removed while held. */
+  holds?: Record<string, AgentHold>;
+  holdsKnown: boolean;
+  fleet?: { fleetId: string; authKey?: string };
+  /** After a Resume here: reload now rather than at the next poll. */
+  onResumed?: () => void;
+}) {
   const fleetId = fleet?.fleetId;
   const authKey = fleet?.authKey;
   const [flagged, setFlagged] = useState<RunSummary[] | null>(null);
@@ -57,9 +66,26 @@ export function NeedsYou({ agents, holdsKnown, fleet }: { agents: AgentInfo[]; h
   }
 
   const held = agents.filter((a) => a.hold);
+  // Held agents that were removed: no Agent detail to open, so Resume is here.
+  const gone = removedHeld(holds, agents);
+  const [resuming, setResuming] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  async function resume(agentId: string) {
+    if (!fleetId) return;
+    setResuming(agentId);
+    setResumeError(null);
+    try {
+      await resumeAgent(fleetId, agentId, authKey);
+      onResumed?.();
+    } catch (e) {
+      setResumeError(controlFailure(e) === 'refused' ? (e as Error).message : `Couldn’t resume ${agentId}. Nothing changed; try again.`);
+    } finally {
+      setResuming(null);
+    }
+  }
   const runs = (flagged ?? []).filter((r) => !seen.includes(r.runId));
   if (!holdsKnown && flagged === null) return null;
-  const count = held.length + runs.length;
+  const count = held.length + gone.length + runs.length;
   if (count === 0) {
     return (
       <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--tx2)' }}>
@@ -82,6 +108,16 @@ export function NeedsYou({ agents, holdsKnown, fleet }: { agents: AgentInfo[]; h
           <Link href={`/agents/${encodeURIComponent(a.agentId)}`} className="wr-link">Open agent &rarr;</Link>
         </div>
       ))}
+      {gone.map(([agentId, hold]) => (
+        <div key={`gone-${agentId}`} style={row}>
+          <StatusPill state={hold.state} />
+          <span style={{ minWidth: 0 }}>
+            <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{agentId}</span> was removed while {hold.state}. It&rsquo;s still {hold.state}: if it registers again, its calls are refused until someone resumes it.
+          </span>
+          {fleetId && <Button size={28} disabled={resuming === agentId} onClick={() => void resume(agentId)}>{resuming === agentId ? 'Resuming…' : 'Resume'}</Button>}
+        </div>
+      ))}
+      {resumeError && <div role="alert" style={{ ...row, gridTemplateColumns: '1fr', color: 'var(--bad)' }}>{resumeError}</div>}
       {runs.map((r) => (
         <div key={r.runId} style={row}>
           <span style={{ display: 'flex', color: 'var(--warn)' }}><Icon name="alert" size={14} /></span>

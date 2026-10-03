@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -315,5 +315,18 @@ describe('live feed refresh', () => {
 describe('live rows for handovers', () => {
   it('fill the agent from fromAgent when agentId is missing', () => {
     expect(liveRow({ id: 'h', type: 'task_complete', timestamp: '2026-09-30T14:00:00Z', fromAgent: 'lead-agent', taskName: 'reply: done' } as AuditEntry).agent).toBe('lead-agent');
+  });
+});
+
+describe('removed agents still held', () => {
+  const hold = (state: 'paused' | 'stopped', at: string) => ({ state, by: 'dashboard', reason: null, at });
+
+  it('lists holds whose agent is no longer registered, oldest first', () => {
+    const holds = { gone2: hold('paused', '2026-10-02T10:00:00Z'), here: hold('stopped', '2026-10-02T08:00:00Z'), gone1: hold('stopped', '2026-10-02T09:00:00Z') };
+    expect(removedHeld(holds, [{ agentId: 'here' }]).map(([id]) => id)).toEqual(['gone1', 'gone2']);
+  });
+
+  it('is empty without holds', () => {
+    expect(removedHeld(undefined, [])).toEqual([]);
   });
 });

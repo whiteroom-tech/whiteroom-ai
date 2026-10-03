@@ -189,7 +189,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <div className="wr-home" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
         {failing && <RefreshFailed />}
-        <NeedsYou agents={agents} holdsKnown={report.holds !== undefined} fleet={fleet} />
+        <NeedsYou agents={agents} holds={report.holds} holdsKnown={report.holds !== undefined} fleet={fleet} onResumed={() => onActed?.()} />
 
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />
