@@ -115,7 +115,7 @@ export class WhiteRoomClient {
    * within 24 hours) applies nothing and returns a CompleteTaskReplay.
    */
   completeTask(agentId: string, taskName: string, opts?: CompleteTaskOptions & { idempotencyKey?: undefined }): Promise<CompleteTaskResponse>;
-  completeTask(agentId: string, taskName: string, opts: CompleteTaskOptions & { idempotencyKey: string }): Promise<CompleteTaskResponse | CompleteTaskReplay>;
+  completeTask(agentId: string, taskName: string, opts: CompleteTaskOptions & { idempotencyKey?: string }): Promise<CompleteTaskResponse | CompleteTaskReplay>;
   async completeTask(
     agentId: string,
     taskName: string,
