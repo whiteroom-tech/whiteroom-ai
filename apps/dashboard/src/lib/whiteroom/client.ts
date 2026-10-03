@@ -44,6 +44,7 @@ import type {
   TokenLoginResult,
 } from './types';
 import { viewerTimeZone } from '@/lib/runs';
+import { activeHold, activeHolds } from '@/lib/holds';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -289,12 +290,14 @@ export function listFleets(apiKey: string): Promise<ListFleetsResult> {
 
 // -- Reporting & monitoring --
 
-export function fleetReport(fleetId: string, key?: string): Promise<FleetReport & { error?: string }> {
-  return apiCall<FleetReport & { error?: string }>({ action: 'fleet_report', fleet_id: fleetId }, key);
+export async function fleetReport(fleetId: string, key?: string): Promise<FleetReport & { error?: string }> {
+  const report = await apiCall<FleetReport & { error?: string }>({ action: 'fleet_report', fleet_id: fleetId }, key);
+  return report.holds ? { ...report, holds: activeHolds(report.holds) } : report;
 }
 
-export function checkWatch(agentId: string, fleetId: string, key?: string): Promise<AgentInfo> {
-  return apiCall<AgentInfo>({ action: 'check_watch', agent_id: agentId, fleet_id: fleetId }, key);
+export async function checkWatch(agentId: string, fleetId: string, key?: string): Promise<AgentInfo> {
+  const agent = await apiCall<AgentInfo>({ action: 'check_watch', agent_id: agentId, fleet_id: fleetId }, key);
+  return 'hold' in agent ? { ...agent, hold: activeHold(agent.hold) } : agent;
 }
 
 export function getHandover(agentId: string, fleetId: string, key?: string): Promise<GetHandoverResult> {
