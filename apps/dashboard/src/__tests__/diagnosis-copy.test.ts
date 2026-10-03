@@ -63,7 +63,7 @@ describe('cost, limitations, reasons, how-to', () => {
     // The engine's exact wording (diagnosis/detectors.ts and run.ts).
     const cases: Array<[string, string, string]> = [
       ['few_watches', 'Needs 5 watches with watch numbers; has 3', '3 of 5 shifts so far'],
-      ['short_history', 'Needs 14 days of history; has 6', '6 of 14 days of history so far'],
+      ['short_history', 'Needs 14 days of history; has 6', '6 of 14 days of history older than a week'],
       ['low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)', 'can only see 40% of its tool calls'],
       ['few_results', 'Needs 20 tool results; has 7', '7 of 20 tool results so far'],
       ['few_measured_calls', 'Needs 50 non-streamed calls this week; has 12', '12 of 50 fully recorded calls this week'],
@@ -179,7 +179,7 @@ describe('what we checked', () => {
       waiting: [{ agentId: 'summarizer', calls7d: 41 }],
     }));
     expect(s.nothingFound).toEqual(['triage']);
-    expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: '6 of 14 days of history so far' }] });
+    expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: '6 of 14 days of history older than a week' }] });
     expect(s.waiting).toEqual([{ agentId: 'summarizer', text: '41 of 50 calls. Checked automatically once it gets there.' }]);
   });
   it("an agent whose findings are only snoozed or dismissed isn't 'nothing found'", () => {

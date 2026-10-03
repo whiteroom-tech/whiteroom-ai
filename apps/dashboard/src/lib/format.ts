@@ -37,6 +37,21 @@ export function fmtCost(micros: number): string {
   return d < 0.01 ? `$${d.toFixed(4)}` : d < 1 ? `$${d.toFixed(3)}` : `$${d.toFixed(2)}`;
 }
 
+/** "Oct 1", or "Oct 1, 2025" outside the current year, in the viewer's time zone. '' for an unreadable time. */
+export function fmtDay(ts: string | number | Date, now: number = Date.now()): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(!sameYear && { year: 'numeric' }) });
+}
+
+/** "2:15 pm" today, else "Oct 1": a time column that's never mistaken for today. '' for an unreadable time. */
+export function fmtWhen(ts: string | number | Date, now: number = Date.now()): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toDateString() === new Date(now).toDateString() ? fmtTime(d) : fmtDay(d, now);
+}
+
 /** "2:15 pm" in the viewer's time zone: the one clock-time wording. '' for an unreadable time. */
 export function fmtTime(ts: string | number | Date): string {
   const d = new Date(ts);

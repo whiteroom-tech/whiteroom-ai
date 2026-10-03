@@ -50,7 +50,7 @@ describe('who changed a rule', () => {
 
   it('keeps the engine\'s own "by" when it already names someone, or no row matches', () => {
     expect(historyWho({ ...entry, by: 'agent' }, [row({ ruleId: 'r1' })])).toBe('agent');
-    expect(historyWho(entry, [row({ ruleId: 'r2' })])).toBe('dashboard');
+    expect(historyWho(entry, [row({ ruleId: 'r2' })])).toBe('from the dashboard');
   });
 });
 
