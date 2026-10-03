@@ -635,7 +635,7 @@ export function listRuns(
   }, key);
 }
 
-/** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
+/** Settings › Audit integrity: how much of the chain is verified, and recorded gaps. */
 export function auditIntegrity(fleetId: string, key?: string): Promise<AuditIntegrity> {
   return apiCall({ action: 'audit_integrity', fleet_id: fleetId }, key);
 }
@@ -650,6 +650,7 @@ export function exportAuditSigned(fleetId: string, key?: string): Promise<Record
   return apiCall({ action: 'export_audit_signed', fleet_id: fleetId }, key);
 }
 
+/** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
 export function auditSummary(fleetId: string, from: Date, key?: string): Promise<AuditSummaryResult> {
   return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone() }, key);
 }
