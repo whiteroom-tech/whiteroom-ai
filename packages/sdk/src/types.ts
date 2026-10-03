@@ -137,12 +137,37 @@ export interface StartWatchResponse {
 
 export interface CompleteTaskResponse {
   success: true;
+  eventId?: string;
+  agentId?: string;
+  watchNumber?: number;
+  taskCount?: number;
+  tokensUsed?: number;
+  status?: AgentStatus;
   task: Task;
   watchProgress: WatchProgress;
   alert?: "WATCH_LIMIT_REACHED";
   reliefAgent?: string;
   action?: string;
   message?: string;
+}
+
+export interface CompleteTaskOptions {
+  fleetId?: string;
+  minutesSpent?: number;
+  tokensUsed?: number;
+}
+
+/** A repeat of a completeTask call with the same idempotencyKey and input: nothing was applied again. */
+export interface CompleteTaskReplay {
+  success: true;
+  replayed: true;
+  content_unavailable: true;
+  eventId: string;
+  agentId: string;
+  watchNumber: number;
+  taskCount: number;
+  tokensUsed: number;
+  status: AgentStatus;
 }
 
 export interface CheckWatchResponse {
