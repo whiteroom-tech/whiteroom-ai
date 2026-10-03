@@ -18,15 +18,19 @@ export function AuditIntegritySection() {
   const [busy, setBusy] = useState<'check' | 'export' | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = useCallback(async (id: string) => {
-    setInfo(await auditIntegrity(id));
+  // After a check, unless the fleet changed meanwhile.
+  const reload = useCallback(async (id: string) => {
+    const i = await auditIntegrity(id);
+    setInfo((cur) => (cur?.fleetId === id ? i : cur));
   }, []);
 
   useEffect(() => {
     setInfo(null);
     if (authStatus !== 'authenticated' || !fleetId) return;
-    load(fleetId).catch(() => {});
-  }, [fleetId, authStatus, load]);
+    let live = true;
+    auditIntegrity(fleetId).then((i) => { if (live) setInfo(i); }, () => {});
+    return () => { live = false; };
+  }, [fleetId, authStatus]);
 
   if (!fleetId || !info) return null;
 
@@ -38,7 +42,7 @@ export function AuditIntegritySection() {
       if (r.valid === true) setNote({ ok: true, text: `All ${r.eventsVerified.toLocaleString('en-US')} events check out${r.cached ? ' (checked in the last minute)' : ''}.` });
       else if (r.valid === false) setNote({ ok: false, text: `A problem was found: ${r.message}` });
       else setNote({ ok: true, text: `${r.eventsVerified.toLocaleString('en-US')} events checked so far. Run the check again to continue.` });
-      await load(fleetId!);
+      await reload(fleetId!);
     } catch {
       setNote({ ok: false, text: 'The check didn’t run. Try again.' });
     } finally {
@@ -70,7 +74,7 @@ export function AuditIntegritySection() {
     : 'Not checked yet';
   const gaps = info.gaps.count === 0
     ? 'nothing recorded missing'
-    : `${info.gaps.count} gap${info.gaps.count === 1 ? '' : 's'} recorded (WhiteRoom restarted unexpectedly)`;
+    : `${info.gaps.count} gap${info.gaps.count === 1 ? '' : 's'} recorded where events may be missing`;
 
   return (
     <Panel title="Audit integrity">
