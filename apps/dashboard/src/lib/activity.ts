@@ -99,7 +99,40 @@ const EVENT_COPY: Record<string, EventCopy> = {
       return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to carry through its handover, so some were cut`;
     },
   },
+  // Audit integrity (Phase 1 spec H6). Fleet-level: the subject is WhiteRoom.
+  unclean_stop: {
+    icon: '⚠', tone: 'wouldBlock', code: 'GAP', who: 'WhiteRoom',
+    say: (e) => `restarted unexpectedly; events ${windowText(e)} may be missing`,
+  },
+  possible_gap: {
+    icon: '⚠', tone: 'wouldBlock', code: 'GAP', who: 'WhiteRoom',
+    say: (e) => `couldn't confirm every event was saved; some ${windowText(e)} may be missing`,
+  },
+  state_recovered: {
+    icon: '↺', tone: 'idle', code: 'REC', who: 'WhiteRoom',
+    say: (e) => `caught up after a database interruption (${windowText(e, 'range')})`,
+  },
+  lost_completion: { icon: '⚠', tone: 'wouldBlock', code: 'LST', say: () => "had a call finish during an update that couldn't be counted" },
+  handover_unrecorded: { icon: '🔄', tone: 'handover', code: 'H/U', say: () => "handed over while records couldn't be saved; it was recorded later" },
+  observations_batch: {
+    icon: '✅', tone: 'task', code: 'TSK',
+    say: (e) => { const n = positiveCount(e.count); return `finished ${n === null ? 'several' : n} calls (grouped during a slowdown)`; },
+  },
+  fleet_reset: { icon: '↺', tone: 'idle', code: 'RST', who: 'WhiteRoom', say: () => "reset the fleet's counters; history is kept" },
+  fleet_created: { icon: '•', tone: 'idle', code: 'NEW', who: 'WhiteRoom', say: () => 'started tracking history' },
+  fleet_sequenced: { icon: '•', tone: 'idle', code: 'NEW', who: 'WhiteRoom', say: () => 'started tracking history' },
 };
+
+/** "between 3:41 and 3:44 pm", or "3:41–3:44 pm", from an event's from/to. */
+function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): string {
+  const t = (v: unknown) => {
+    const d = new Date(String(v ?? ''));
+    return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase() : null;
+  };
+  const from = t(e.from), to = t(e.to);
+  if (!from || !to) return style === 'between' ? 'around then' : 'times unknown';
+  return style === 'between' ? `between ${from} and ${to}` : `${from}–${to}`;
+}
 
 /** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
 function governancePhrase(e: AuditEntry): string {

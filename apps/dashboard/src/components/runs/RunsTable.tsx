@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Banner, Button, DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
 import { fmtTime } from '@/lib/format';
 import { fleetReport, isAuthError, listRuns, runDays } from '@/lib/whiteroom/client';
@@ -237,6 +238,7 @@ export function RunsTable({ preview, retentionDays }: {
       <PageHeader title="Runs" fleetId={fleetId}>
         <SegmentedControl<RunsRange> label="Range" value={day ? null : range} onChange={(r) => changeFilter({ range: r })} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
         <Button onClick={() => void exportAll()} busy={exporting} busyLabel="Exporting…" disabled={!runs?.length}>Export .xlsx</Button>
+        <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Audit integrity</Link>
       </PageHeader>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>

@@ -154,6 +154,8 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   agent_paused: { label: 'Paused', tone: 'warn' },
   governance_block: { label: 'Blocked', tone: 'muted' },
   governance_would_block: { label: 'Watch only', tone: 'muted' },
+  unclean_stop: { label: 'Gap', tone: 'warn' },
+  possible_gap: { label: 'Gap', tone: 'warn' },
 };
 
 /** Who an event is about. Handovers can carry only fromAgent / toAgent. */
@@ -172,7 +174,8 @@ export function clock(ts: unknown): string {
  */
 export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRow {
   const m = eventModel(e, now);
-  const subject = m.type === 'governance_rule_changed' ? 'Controls:' : eventAgent(e) || 'An agent';
+  // Fleet-level events (WhiteRoom itself) name no agent.
+  const subject = m.type === 'governance_rule_changed' ? 'Controls:' : m.who === 'WhiteRoom' ? 'WhiteRoom' : eventAgent(e) || 'An agent';
   return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: TAGS[m.type] };
 }
 

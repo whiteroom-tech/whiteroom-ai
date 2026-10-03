@@ -6,6 +6,8 @@
 //   - no key -> unauthenticated (e.g. token_login)
 
 import type {
+  AuditIntegrity,
+  VerifyAuditResult,
   AuditSummaryResult,
   RuleWouldActResult,
   ListRunsResult,
@@ -125,7 +127,27 @@ interface PostOptions {
   direct?: boolean;
 }
 
+/**
+ * A 503 whiteroom_handoff means the engine is switching instances and did
+ * nothing with the request (spec section 0), so it is retried, twice at most,
+ * after its Retry-After (capped at 1 s). A deploy never shows as an error.
+ */
 async function postRaw(
+  body: Record<string, unknown>,
+  key?: string,
+  opts?: PostOptions,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await postOnce(body, key, opts);
+    if (res.status !== 503 || attempt >= 2) return res;
+    const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
+    if (reason !== 'whiteroom_handoff') return res;
+    const after = Number(res.headers.get('Retry-After'));
+    await new Promise((r) => setTimeout(r, Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250));
+  }
+}
+
+async function postOnce(
   body: Record<string, unknown>,
   key?: string,
   opts?: PostOptions,
@@ -614,6 +636,20 @@ export function listRuns(
 }
 
 /** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
+export function auditIntegrity(fleetId: string, key?: string): Promise<AuditIntegrity> {
+  return apiCall({ action: 'audit_integrity', fleet_id: fleetId }, key);
+}
+
+/** A full chain check; the engine runs at most one a minute per fleet and returns the last result meanwhile. */
+export function verifyAudit(fleetId: string, key?: string): Promise<VerifyAuditResult> {
+  return apiCall({ action: 'verify_audit', fleet_id: fleetId }, key);
+}
+
+/** The redacted audit trail with its chain check, signed (Ed25519) by WhiteRoom. */
+export function exportAuditSigned(fleetId: string, key?: string): Promise<Record<string, unknown>> {
+  return apiCall({ action: 'export_audit_signed', fleet_id: fleetId }, key);
+}
+
 export function auditSummary(fleetId: string, from: Date, key?: string): Promise<AuditSummaryResult> {
   return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone() }, key);
 }
