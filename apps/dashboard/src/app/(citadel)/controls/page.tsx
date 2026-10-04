@@ -84,7 +84,7 @@ function agentResponse(rule: FleetRule): string {
   return `403 governance_block
 response: ${response}
 reason: ${REASON[rule.ruleType]}
-retryable: false
+retryable: ${response === "block" && rule.ruleType === "call_rate"}
 resets: ${resets}`;
 }
 
