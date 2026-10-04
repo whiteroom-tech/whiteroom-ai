@@ -5,6 +5,8 @@ import { countsFromRuleActions, responseOptions, ruleActionsByAgent, tallyTotal,
   governanceCounts,
   occurrences,
   recentBlocksByAgent,
+  REASON_LABELS,
+  RULE_LABELS,
 } from '../lib/governance';
 import { eventModel, technicalLine } from '../lib/activity';
 import type { AuditEntry, FleetHourlyResult, PerformanceIndexResult } from '../lib/whiteroom/types';
@@ -42,6 +44,19 @@ describe('governanceCounts', () => {
   it('treats a missing or bad occurrences as one call', () => {
     expect(occurrences(ev('governance_block'))).toBe(1);
     expect(occurrences(ev('governance_block', { occurrences: -2 }))).toBe(1);
+  });
+});
+
+describe('tool rules', () => {
+  it('counts a blocked tool under Tool list, in words', () => {
+    const c = governanceCounts([
+      ev('governance_block', { agentId: 'a1', ruleType: 'tool_list', reason: 'tool_not_allowed' }),
+      ev('governance_would_block', { agentId: 'a1', ruleType: 'tool_list', reason: 'tool_not_allowed', occurrences: 2 }),
+    ]);
+    expect(c.byRule.tool_list).toEqual({ blocks: 1, wouldBlocks: 2 });
+    expect(RULE_LABELS.tool_list).toBe('Tool list');
+    expect(REASON_LABELS.tool_not_allowed).toBe('tool not allowed');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'tool_list', reason: 'tool_not_allowed' })).said).toBe('was blocked by the tool list (tool not allowed)');
   });
 });
 

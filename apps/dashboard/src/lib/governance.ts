@@ -21,7 +21,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   spend_cap: 'Spend cap',
   loop_breaker: 'Loop breaker',
   model_allowlist: 'Model allowlist',
-  tool_list: 'Blocked tools',
+  tool_list: 'Tool list',
 };
 
 export const REASON_LABELS: Record<string, string> = {
