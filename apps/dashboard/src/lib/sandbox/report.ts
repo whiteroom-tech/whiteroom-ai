@@ -108,7 +108,9 @@ const RESULT_TEXT: Record<CheckResult, string> = { passed: 'Passed', failed: 'Fa
 
 export function reportHtml(r: TestReport): string {
   const verdict = r.passed === r.checks.length ? 'All 3 checks passed' : `${r.passed} of ${r.checks.length} checks passed`;
-  const keyEvents = r.events.filter((e, i, all) => e.type !== 'task_complete' || i === all.findIndex((x) => x.type === 'task_complete') || i === all.length - 1 - [...all].reverse().findIndex((x) => x.type === 'task_complete'));
+  // Every non-call event, plus the first and last call.
+  const calls = r.events.flatMap((e, i) => (e.type === 'task_complete' ? [i] : []));
+  const keyEvents = r.events.filter((e, i) => e.type !== 'task_complete' || i === calls[0] || i === calls.at(-1));
   const data = JSON.stringify(r, null, 2);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
