@@ -34,6 +34,9 @@ export interface TestReport {
   handovers: number;
   firstEventAt: string | null;
   lastEventAt: string | null;
+  /** First and last call: the agent's own activity, without later rests or watchdog handovers. */
+  firstCallAt: string | null;
+  lastCallAt: string | null;
   events: { at: string; type: string; agentId: string | null; text: string }[];
 }
 
@@ -65,6 +68,8 @@ export function buildTestReport(run: RunStatusResult, now: number = Date.now()):
     handovers: log.filter((e) => HANDOVER_TYPES.has(e.type)).length,
     firstEventAt: log[0]?.timestamp ?? null,
     lastEventAt: log.at(-1)?.timestamp ?? null,
+    firstCallAt: log.find((e) => e.type === 'task_complete')?.timestamp ?? null,
+    lastCallAt: log.findLast((e) => e.type === 'task_complete')?.timestamp ?? null,
     // Calls and handovers in plain words; the internal task label and engine wording mean nothing to a reader.
     events: log.map((e) => ({ at: e.timestamp, type: e.type, agentId: e.agentId, text: e.type === 'task_complete' ? 'made a call' : HANDOVER_TYPES.has(e.type) ? 'handed over its work, keeping its context compact' : eventModel(e as unknown as AuditEntry).said })),
   };
@@ -91,7 +96,7 @@ export function summaryText(r: TestReport): string {
   const why = (c: { detail: string | null }) => (c.detail ? ` (${c.detail})` : '');
   if (connect.result === 'failed') return `${names} reached WhiteRoom, but its calls didn’t come back normally${why(connect)}.`;
   if (connect.result !== 'passed') return `${names} hasn’t completed a call through WhiteRoom in this test yet, so nothing could be checked.`;
-  const parts = [`${names} made ${r.calls} call${r.calls === 1 ? '' : 's'} through WhiteRoom over ${spanText(r.firstEventAt, r.lastEventAt)}, and they came back normally.`];
+  const parts = [`${names} made ${r.calls} call${r.calls === 1 ? '' : 's'} through WhiteRoom${r.calls > 1 ? ` over ${spanText(r.firstCallAt, r.lastCallAt)}` : ''}, and they came back normally.`];
   const minutes = r.agents[0]?.shiftMinutes;
   if (handoff.result === 'failed') return [...parts, `When its shift ended, the handover didn’t complete${why(handoff)}.`].join(' ');
   if (handoff.result !== 'passed') return [...parts, 'Its shift hadn’t ended by the time of this report, so the handover wasn’t checked.'].join(' ');
@@ -140,12 +145,12 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 <div class="stat"><b>${r.calls}</b><span class="muted">calls</span></div>
 <div class="stat"><b>${r.tokens.toLocaleString('en-US')}</b><span class="muted">tokens</span></div>
 <div class="stat"><b>${r.handovers}</b><span class="muted">handover${r.handovers === 1 ? '' : 's'}</span></div>
-<div class="stat"><b>${esc(spanText(r.firstEventAt, r.lastEventAt))}</b><span class="muted">first to last event</span></div>
+<div class="stat"><b>${esc(spanText(r.firstCallAt, r.lastCallAt))}</b><span class="muted">first to last call</span></div>
 </div></div>
 
 <h2>The three checks</h2>
 <div class="card"><table><thead><tr><th></th><th>Check</th><th>What it means</th><th>Result</th></tr></thead><tbody>
-${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.detail ? `<br><span class="muted">${esc(c.detail)}</span>` : ''}</td></tr>`).join('\n')}
+${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.detail && c.result === 'failed' ? `<br><span class="muted">${esc(c.detail)}</span>` : ''}</td></tr>`).join('\n')}
 </tbody></table></div>
 
 <h2>What happened</h2>
@@ -162,7 +167,9 @@ ${keyEvents.map((e) => `<tr><td class="mono">${esc(clock(e.at))}</td><td>${esc(e
 <tr><th>Test id</th><td class="mono">${esc(r.testId)}</td></tr>
 <tr><th>Fleet (x-whiteroom-fleet)</th><td class="mono">${esc(r.fleetId)}</td></tr>
 <tr><th>Mode</th><td>${esc(r.mode)}</td></tr>
+<tr><th>First / last call</th><td class="mono">${esc(r.firstCallAt ?? '—')} → ${esc(r.lastCallAt ?? '—')}</td></tr>
 <tr><th>First / last event</th><td class="mono">${esc(r.firstEventAt ?? '—')} → ${esc(r.lastEventAt ?? '—')}</td></tr>
+${r.checks.map((c) => `<tr><th>${esc(c.id)}</th><td class="mono">${esc(c.result)}${c.at ? ` · ${esc(c.at)}` : ''}${c.detail ? ` · ${esc(c.detail)}` : ''}</td></tr>`).join('\n')}
 </tbody></table>
 <h2>Agents</h2>
 <table><thead><tr><th>Agent (x-whiteroom-agent)</th><th>Calls</th><th>Tokens</th><th>Shifts</th><th>Shift length</th></tr></thead><tbody>
