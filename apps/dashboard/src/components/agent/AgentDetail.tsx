@@ -17,7 +17,7 @@ import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-ac
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
-  breakEndsAt, canResume, canStartBreak, handoverLines, notesAreLong, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary,
+  breakEndsAt, canResume, canStartBreak, handoverLines, notesAreLong, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftSummary,
 } from '@/lib/agent-detail';
 
 type Pending = 'pausing' | 'stopping' | 'resuming' | null;
@@ -314,6 +314,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
             <div className="wr-agent-grid">
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
                 <Panel title={<>Current shift<Hint text={HELP.currentShift} /></>} count={shiftSummary(agent, fmtTokens)}>
+                  {!progress && shiftAside(agent, fmtTokens).length > 0 && (
+                    <div style={{ display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--tx2)' }}>
+                      {shiftAside(agent, fmtTokens).map((line) => <div key={line}>{line}</div>)}
+                    </div>
+                  )}
                   {progress && (
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
