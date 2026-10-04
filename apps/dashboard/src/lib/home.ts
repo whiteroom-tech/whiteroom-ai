@@ -375,12 +375,12 @@ export function hoursSinceUtcMidnight(now: number = Date.now()): number {
   return Math.max(1, Math.ceil((now - utcMidnight(now)) / 3_600_000));
 }
 
-/** Calls and spend since 00:00 UTC, from hourly points. */
-export function todayTotals(hourly: FleetHourlyDataPoint[], now: number = Date.now()): { calls: number; costUsd: number } {
+/** Calls and spend since 00:00 UTC, from hourly points; `partial` when some calls have no price on file. */
+export function todayTotals(hourly: FleetHourlyDataPoint[], now: number = Date.now()): { calls: number; costUsd: number; partial: boolean } {
   const midnight = utcMidnight(now);
   return hourly
     .filter((h) => Date.parse(h.hour) >= midnight)
-    .reduce((t, h) => ({ calls: t.calls + (h.calls || 0), costUsd: t.costUsd + (h.costMicros || 0) / 1e6 }), { calls: 0, costUsd: 0 });
+    .reduce<{ calls: number; costUsd: number; partial: boolean }>((t, h) => ({ calls: t.calls + (h.calls || 0), costUsd: t.costUsd + (h.costMicros || 0) / 1e6, partial: t.partial || (h.unpricedAttempts ?? 0) > 0 }), { calls: 0, costUsd: 0, partial: false });
 }
 
 // ── Money ────────────────────────────────────────────────────────────────

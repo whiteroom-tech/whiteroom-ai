@@ -209,7 +209,18 @@ const tally = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wo
  * Counts from the engine's rule_actions, which last as long as the runs (the
  * audit log is pruned). byRule isn't in it, so the audit log's is kept.
  */
-export function countsFromRuleActions(res: RuleActionsResult, byRule: GovernanceCounts['byRule']): GovernanceCounts {
+/**
+ * Rule-action counts for Performance. The per-rule split comes from the same
+ * rows as the totals when the engine sends it, so the two always agree; the
+ * audit-log split is only a fallback for older engines.
+ */
+export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: GovernanceCounts['byRule']): GovernanceCounts {
+  const byRule = res.byRule
+    ? (Object.fromEntries((Object.keys(fallbackByRule) as GovernanceRuleType[]).map((rt) => {
+        const c = res.byRule![rt];
+        return [rt, c ? { blocks: c.blocked, wouldBlocks: c.wouldAct } : emptyTally()];
+      })) as GovernanceCounts['byRule'])
+    : fallbackByRule;
   return { ...tally(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tally(c)])) };
 }
 

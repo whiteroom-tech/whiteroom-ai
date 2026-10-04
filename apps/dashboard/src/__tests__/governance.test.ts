@@ -68,6 +68,23 @@ describe('call rate rules', () => {
   });
 });
 
+describe('rule actions from one source', () => {
+  it('takes the per-rule split from the same rows as the totals', () => {
+    const fallback = { spend_cap: { blocks: 9, wouldBlocks: 9 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 } };
+    const c = countsFromRuleActions({
+      fleetId: 'f',
+      totals: { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 },
+      byAgent: { a: { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 } },
+      byRule: { call_rate: { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, tool_list: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 } },
+    }, fallback);
+    expect(c.byRule.call_rate).toEqual({ blocks: 4, wouldBlocks: 0 });
+    expect(c.byRule.tool_list).toEqual({ blocks: 0, wouldBlocks: 2 });
+    expect(c.byRule.spend_cap).toEqual({ blocks: 0, wouldBlocks: 0 });
+    // Older engines without byRule keep the audit-log split.
+    expect(countsFromRuleActions({ fleetId: 'f', totals: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: {} }, fallback).byRule).toBe(fallback);
+  });
+});
+
 describe('recentBlocksByAgent', () => {
   it('keeps the newest block per agent inside the window', () => {
     const recent = recentBlocksByAgent([

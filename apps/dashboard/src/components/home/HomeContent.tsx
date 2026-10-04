@@ -42,7 +42,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const [report, setReport] = useState<FleetReport | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [today, setToday] = useState<{ calls: number; costUsd: number } | null>(null);
+  const [today, setToday] = useState<{ calls: number; costUsd: number; partial: boolean } | null>(null);
   const [todayFailing, setTodayFailing] = useState(false);
   const [failing, setFailing] = useState(false);
   const [view, setView] = useState<AgentsView>(() => (safeGet('wr_home_agents_view') === 'table' ? 'table' : 'cards'));
@@ -161,7 +161,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   report: FleetReport;
   agents: AgentInfo[];
   entries: AuditEntry[];
-  today: { calls: number; costUsd: number } | null;
+  today: { calls: number; costUsd: number; partial?: boolean } | null;
   todayFailing?: boolean;
   failing: boolean;
   view: AgentsView;
@@ -198,7 +198,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             variant="card"
             label="Spend today"
             hint={HELP.spendToday}
-            value={today ? usd(today.costUsd) : '—'}
+            value={today ? `${usd(today.costUsd)}${today.partial ? '+' : ''}` : '—'}
             sub={savedOverall && !todayFailing ? `up to ${usd(savedOverall)} saved overall →` : todaySub}
             subHref={savedOverall && !todayFailing ? ROUTES.performance : undefined}
           />

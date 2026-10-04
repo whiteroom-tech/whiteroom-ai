@@ -170,7 +170,9 @@ describe('today (UTC)', () => {
   it('adds up only today\'s hours', () => {
     const h = (hour: string, calls: number, costMicros: number) => ({ hour, calls, costMicros } as FleetHourlyDataPoint);
     expect(todayTotals([h('2026-09-29T23:00:00.000Z', 50, 9_000_000), h('2026-09-30T00:00:00.000Z', 10, 1_500_000), h('2026-09-30T13:00:00.000Z', 5, 870_000)], now))
-      .toEqual({ calls: 15, costUsd: 2.37 });
+      .toEqual({ calls: 15, costUsd: 2.37, partial: false });
+    // Some calls with no price on file: the total is a lower bound.
+    expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), unpricedAttempts: 2 }], now).partial).toBe(true);
   });
 });
 

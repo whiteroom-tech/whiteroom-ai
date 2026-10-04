@@ -83,7 +83,8 @@ function Sparkline({ data, color = 'var(--brand)', height = 32, width = 100 }: {
   );
 }
 
-function TrendBadge({ value, invert }: { value: number | null; invert?: boolean }) {
+/** A change against the previous period: "%" is relative change, "pp" a difference between two rates. */
+function TrendBadge({ value, invert, unit = '%' }: { value: number | null; invert?: boolean; unit?: '%' | 'pp' }) {
   if (value == null || !isFinite(value)) return null;
   const positive = invert ? value < 0 : value > 0;
   const negative = invert ? value > 0 : value < 0;
@@ -92,7 +93,7 @@ function TrendBadge({ value, invert }: { value: number | null; invert?: boolean 
   const arrow = value > 0 ? '↑' : value < 0 ? '↓' : '';
   return (
     <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: bg, color, fontFamily: FONT_MONO }}>
-      {arrow}{Math.abs(value).toFixed(1)}%
+      {arrow}{Math.abs(value).toFixed(1)}{unit === 'pp' ? ' pp' : '%'}
     </span>
   );
 }
@@ -242,17 +243,17 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
 
 const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
 
-function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, onClick, active }: {
+function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, trendUnit, onClick, active }: {
   label: string; value: string; sub?: string; warn?: boolean;
   sparklineData?: (number | null)[]; sparklineColor?: string;
-  trend?: number | null; trendInvert?: boolean;
+  trend?: number | null; trendInvert?: boolean; trendUnit?: '%' | 'pp';
   onClick?: () => void; active?: boolean;
 }) {
   return (
     <div onClick={onClick} style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0, cursor: onClick ? 'pointer' : undefined, borderColor: active ? 'var(--brand)' : 'var(--line)', transition: 'border-color 0.15s', position: 'relative', paddingBottom: sparklineData && sparklineData.length > 1 ? 48 : 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--brand)' : 'var(--tx3)' }}>{label}</div>
-        <TrendBadge value={trend ?? null} invert={trendInvert} />
+        <TrendBadge value={trend ?? null} invert={trendInvert} unit={trendUnit} />
       </div>
       <div style={{ fontSize: 24, fontWeight: 700, fontFamily: FONT_MONO, color: warn ? 'var(--warn)' : 'var(--tx)' }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
@@ -703,9 +704,8 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
   feedbackError: { recId: string; message: string } | null;
 }) {
   const s = data.summary;
-  // Both are lower bounds: the engine's rollup trails live traffic by a few
-  // minutes, and the audit tally only covers retained events. Show the larger.
-  const blocked = Math.max(s.blockedCount ?? 0, govCounts?.blocks ?? 0);
+  // Rule decisions, from the same window and ledger as the other action counts.
+  const blocked = govCounts?.blocks ?? s.blockedCount ?? 0;
   const [recStatus, setRecStatus] = useState<string>('all');
   const [recAgent, setRecAgent] = useState('');
   const [recAgentQuery, setRecAgentQuery] = useState('');
@@ -825,8 +825,9 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           variant="card"
           label="Spend"
           hint={HELP.spend}
-          value={fmtCost(s.totalCost)}
-          sub={data.priceInfo.stale
+          // "+", as on Runs: some calls have no price on file, so this is a lower bound.
+          value={`${fmtCost(s.totalCost)}${s.unpricedAttempts ? '+' : ''}`}
+          sub={s.unpricedAttempts ? `${fmtCost(s.totalCost / hoursInRange)} / h · some calls have no price on file` : data.priceInfo.stale
             ? <span style={{ color: 'var(--warn)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · prices {data.priceInfo.ageDays} days old</span>
             : `${fmtCost(s.totalCost / hoursInRange)} / h`}
         />
@@ -850,10 +851,10 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
         <section aria-label="More detail">
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
-            <MetricCard label="Spend" value={fmtCost(s.totalCost)} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+            <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${s.unpricedAttempts ? '+' : ''}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
             <MetricCard label="Savings, up to" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
-            <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
+            <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
             <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
           </div>
 
@@ -1232,7 +1233,7 @@ export default function PerformancePage() {
       const [idx, hourly, audit, week] = await Promise.all([
         performanceIndex(fleetId, hoursBack, authKey),
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
-        auditSummary(fleetId, new Date(cutoff), authKey).catch(() => null),
+        auditSummary(fleetId, new Date(cutoff), authKey, hoursBack).catch(() => null),
         auditSummary(fleetId, weekStart, authKey).catch(() => null),
       ]);
       if (stale()) return;
@@ -1250,7 +1251,7 @@ export default function PerformancePage() {
         setGovCounts(fromAudit);
         setByAgent(agentTotalsFromBuckets(audit.savingsBuckets));
         // Durable counts (engine rule_actions) replace the audit log's when they arrive.
-        void fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey).then(
+        void fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey, hoursBack).then(
           (d) => { if (!stale() && !('unsupported' in d)) setGovCounts(countsFromRuleActions(d, fromAudit.byRule)); },
           () => {},
         );

@@ -145,7 +145,7 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 <div class="stat"><b>${r.calls}</b><span class="muted">calls</span></div>
 <div class="stat"><b>${r.tokens.toLocaleString('en-US')}</b><span class="muted">tokens</span></div>
 <div class="stat"><b>${r.handovers}</b><span class="muted">handover${r.handovers === 1 ? '' : 's'}</span></div>
-<div class="stat"><b>${esc(spanText(r.firstCallAt, r.lastCallAt))}</b><span class="muted">first to last call</span></div>
+<div class="stat"><b>${esc(r.calls > 1 ? spanText(r.firstCallAt, r.lastCallAt) : '—')}</b><span class="muted">first to last call</span></div>
 </div></div>
 
 <h2>The three checks</h2>

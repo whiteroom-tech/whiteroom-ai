@@ -651,8 +651,12 @@ export function exportAuditSigned(fleetId: string, key?: string): Promise<Record
 }
 
 /** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
-export function auditSummary(fleetId: string, from: Date, key?: string): Promise<AuditSummaryResult> {
-  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone() }, key);
+/**
+ * Audit totals since `from`. With `hoursBack`, the engine uses the same hour
+ * window as performance_index instead (older engines ignore it and use `from`).
+ */
+export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number): Promise<AuditSummaryResult> {
+  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone(), ...(hoursBack ? { hours_back: hoursBack } : {}) }, key);
 }
 
 /** Would-act counts per agent for one rule version (engine rule_would_act). */
@@ -661,8 +665,9 @@ export function ruleWouldAct(fleetId: string, ruleId: string, ruleVersion: numbe
 }
 
 /** Rule actions for a range of the viewer's days; `unsupported` keeps the audit-log counts. */
-export function ruleActions(fleetId: string, opts: RunsQuery, key?: string): Promise<RuleActionsResult | { unsupported: true }> {
-  return runsAction<RuleActionsResult>('rule_actions', fleetId, opts, {}, key);
+export function ruleActions(fleetId: string, opts: RunsQuery, key?: string, hoursBack?: number): Promise<RuleActionsResult | { unsupported: true }> {
+  // hours_back: the performance_index window; the days are for older engines.
+  return runsAction<RuleActionsResult>('rule_actions', fleetId, opts, hoursBack ? { hours_back: hoursBack } : {}, key);
 }
 
 /** Runs per day of the viewer's, for the day strip; `unsupported` hides the strip. */
