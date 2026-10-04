@@ -25,6 +25,11 @@ export function fmtKwh(kwh: number): string | null {
 }
 
 /** Token counts: 999 → "999", 1500 → "1.5K", 1_500_000 → "1.50M". */
+/** "+" after a dollar figure that leaves out unpriced usage, so it reads as a lower bound. */
+export function partialMark(partial: boolean): string {
+  return partial ? '+' : '';
+}
+
 export function fmtTokens(n: number): string {
   if (n < 1000) return String(n);
   return n < 1_000_000 ? `${(n / 1000).toFixed(1)}K` : `${(n / 1_000_000).toFixed(2)}M`;
