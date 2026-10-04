@@ -9,7 +9,7 @@
 // names these actions for what they do: "Start a break" and "Resume".
 
 import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
-import { agentState } from '@/lib/home';
+import { agentState, currentShift } from '@/lib/home';
 
 /** When the current break ends (epoch ms), or null when it can't be told. */
 export function breakEndsAt(a: Pick<AgentInfo, 'alarmAt' | 'restStartedAt' | 'restMinutes'>): number | null {
@@ -44,9 +44,10 @@ export function canResume(a: AgentInfo, now: number = Date.now()): ActionGate {
   return { allowed: true };
 }
 
-/** The shift (or break) progress bar: percent and a short caption. */
-export function shiftProgress(a: AgentInfo, now: number = Date.now()): { pct: number; label: string; onBreak: boolean } {
+/** The shift (or break) progress bar: percent and a short caption; null with no shift running, never a made-up 0%. */
+export function shiftProgress(a: AgentInfo, now: number = Date.now()): { pct: number; label: string; onBreak: boolean } | null {
   const s = agentState(a);
+  if (s !== 'resting' && !currentShift(a)) return null;
   if (s === 'resting') {
     const pct = clampPct(parseFloat(String(a.restPercent ?? '0')));
     const end = breakEndsAt(a);
@@ -62,11 +63,22 @@ function clampPct(n: number): number {
   return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
 }
 
-/** "#3 · 17 tasks · 4.1 min worked · 12.4K tokens" for the Current shift header. */
+/**
+ * "#3 · 17 tasks · 4.1 min worked · 12.4K tokens" for the Current shift
+ * header. With no shift running it says so and labels what it shows instead
+ * (last shift, lifetime), so lifetime totals never read as one shift (M14).
+ */
 export function shiftSummary(a: AgentInfo, fmtTokens: (n: number) => string): string {
-  const tasks = a.tasksCompleted || 0;
-  const bits = [`#${a.watchNumber || 1}`, `${tasks} task${tasks === 1 ? '' : 's'}`, `${Math.round((a.minutesWorked || 0) * 10) / 10} min worked`];
-  if (a.tokensUsed) bits.push(`${fmtTokens(a.tokensUsed)} tokens`);
+  const tasks = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
+  const shift = currentShift(a);
+  if (shift) {
+    const bits = [`#${shift.watchNumber || 1}`, tasks(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
+    if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
+    return bits.join(' · ');
+  }
+  const bits = ['none running'];
+  if (a.lastShift) bits.push(`last #${a.lastShift.watchNumber}: ${tasks(a.lastShift.tasksCompleted)}`);
+  if (a.lifetime) bits.push(`lifetime ${tasks(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
   return bits.join(' · ');
 }
 

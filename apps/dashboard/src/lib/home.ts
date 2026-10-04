@@ -3,7 +3,7 @@
 // No React, so the wording rules can be unit-tested directly.
 
 import type { AgentState, TagTone } from '@whiteroom/ui';
-import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport } from '@/lib/whiteroom/types';
+import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport, ShiftMeasures } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { fmtTime, fmtWhen } from '@/lib/format';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
@@ -26,15 +26,33 @@ export function agentState(a: Pick<AgentInfo, 'status' | 'minutesRemaining' | 'h
 
 const oneDecimal = (n: number) => Math.round(n * 10) / 10;
 
-/** "Shift 8 · 62 tasks · 9.4 min worked"; "Rest after shift 5 · 31 tasks" while resting. */
+/**
+ * The agent's shift under way, or null when it has none (audit M14). Older
+ * engines send no currentShift and, for an agent not working or resting,
+ * lifetime totals in the shift fields: those never count as a shift.
+ */
+export function currentShift(a: AgentInfo): ShiftMeasures | null {
+  if (a.currentShift !== undefined) return a.currentShift;
+  if (a.status !== 'working' && a.status !== 'resting') return null;
+  return { watchNumber: a.watchNumber || 1, tokensUsed: a.tokensUsed || 0, tasksCompleted: a.tasksCompleted || 0, minutesWorked: a.minutesWorked || 0 };
+}
+
+const taskWord = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
+
+/** "Shift 8 · 62 tasks · 9.4 min worked"; "Rest after shift 5 · 31 tasks" while resting; no shift figures without a shift. */
 export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
-  const shift = a.watchNumber || 1;
-  const tasks = a.tasksCompleted || 0;
-  const taskWord = `${tasks} task${tasks === 1 ? '' : 's'}`;
-  if (state === 'resting') return `Rest after shift ${shift} · ${taskWord}`;
-  if (state === 'idle') return `Shift ${shift} · ${taskWord} · waiting for work`;
-  if (state === 'paused' || state === 'stopped') return `Shift ${shift} · ${taskWord} · waiting to be resumed`;
-  return `Shift ${shift} · ${taskWord} · ${oneDecimal(a.minutesWorked || 0)} min worked`;
+  const shift = currentShift(a);
+  if (!shift) {
+    const last = a.lastShift;
+    if (state === 'resting') return last ? `Rest after shift ${last.watchNumber} · ${taskWord(last.tasksCompleted)}` : 'On a break';
+    const waiting = state === 'paused' || state === 'stopped' ? 'waiting to be resumed' : 'waiting for work';
+    return last ? `Last shift ${last.watchNumber} · ${taskWord(last.tasksCompleted)} · ${waiting}` : `No shift running · ${waiting}`;
+  }
+  const head = `Shift ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
+  if (state === 'resting') return `Rest after shift ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
+  if (state === 'idle') return `${head} · waiting for work`;
+  if (state === 'paused' || state === 'stopped') return `${head} · waiting to be resumed`;
+  return `${head} · ${oneDecimal(shift.minutesWorked)} min worked`;
 }
 
 // Needs-you items come first once P2 ships; until then working agents lead.

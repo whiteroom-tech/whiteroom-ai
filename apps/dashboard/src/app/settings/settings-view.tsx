@@ -140,6 +140,9 @@ function ProfileSection({
 }) {
   const [name, setName] = useState(account.name ?? '');
   const [timezone, setTimezone] = useState(account.timezone ?? '');
+  const [browserZone, setBrowserZone] = useState('your local zone');
+  // After mount: the server's zone isn't the viewer's, and rendering it would mismatch hydration.
+  useEffect(() => { setBrowserZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local zone'); }, []);
 
   // Populated after mount, never during render.
   //
@@ -184,6 +187,10 @@ function ProfileSection({
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
+          {/* M15: dashboard dates follow the browser; say so rather than imply this setting moves them. */}
+          <p style={{ fontSize: 12, color: 'var(--tx3)', margin: '6px 0 0' }}>
+            Saved with your profile. Dashboard dates and day boundaries use this browser&apos;s time zone ({browserZone}).
+          </p>
         </div>
         <div>
           <Button
@@ -295,12 +302,15 @@ function PlanSection({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
         <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} atLimit={fleetsAtLimit} />
-        {plan === 'pro' ? (
-          <Stat label="Agents billed" value={usage.agents === null ? '—' : String(usage.agents)} />
+        {/* Live registered agents, never 0 when the engine can't be reached (M16).
+            Pro's billed quantity is Stripe's last confirmed one, which can lag a change. */}
+        {plan === 'pro' || usage.agents === null ? (
+          <Stat label="Agents registered" value={usage.agents === null ? 'Unavailable' : String(usage.agents)} />
         ) : (
-          <Meter label="Agents" used={usage.agents ?? 0} limit={limits.maxAgentsPerFleet} atLimit={(usage.agents ?? 0) >= limits.maxAgentsPerFleet} />
+          <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} atLimit={usage.agents >= limits.maxAgentsPerFleet} />
         )}
-        {proCost !== null && <Stat label="This month" value={`${formatPrice(proCost)}/mo`} />}
+        {plan === 'pro' && subscription?.billedAgents != null && <Stat label="Billed for" value={`${subscription.billedAgents} agent${subscription.billedAgents === 1 ? '' : 's'}`} />}
+        {proCost !== null && <Stat label="Est. monthly" value={`${formatPrice(proCost)}/mo`} />}
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '-8px 0 20px' }}>

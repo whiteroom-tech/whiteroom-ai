@@ -198,7 +198,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             variant="card"
             label="Spend today"
             hint={HELP.spendToday}
-            value={today ? `${usd(today.costUsd)}${today.partial ? '+' : ''}` : '—'}
+            value={today ? `${usd(today.costUsd)}${partialMark(!!today.partial)}` : '—'}
             sub={savedOverall && !todayFailing ? `est. ${usd(savedOverall)}${partialMark(!!report.energySavings.unpricedTokensSaved)} saved overall →` : todaySub}
             subHref={savedOverall && !todayFailing ? ROUTES.performance : undefined}
           />
