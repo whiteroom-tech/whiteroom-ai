@@ -20,7 +20,14 @@ describe('agents', () => {
   it('writes the progress line in shifts, never "watch"', () => {
     expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Shift 8 · 62 tasks · 9.4 min worked');
     expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Rest after shift 5 · 1 task');
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('Shift 1 · 0 tasks · waiting for work');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No shift running · waiting for work');
+  });
+
+  it('shows the last shift, not lifetime, once a shift has ended (M14)', () => {
+    const last = { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 };
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last shift 41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Rest after shift 41 · 5 tasks');
+    expect(progressLine(agent('a', 'working', { currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Shift 42 · 2 tasks · 1.3 min worked');
   });
 
   it('sorts problems first, then working, resting, idle, then by id', () => {

@@ -7,14 +7,13 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
-import { partialMark } from '@/lib/format';
 import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
-import { fmtCost, fmtDay, fmtTokens } from '@/lib/format';
+import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
@@ -692,8 +691,16 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
   );
 }
 
-function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
-  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: GovSavings | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
+/** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
+const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
+
+function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
+  /** Savings and rule counts couldn't be read: show them as unknown. */
+  auditFailed: boolean;
+  /** When this data arrived. */
+  loadedAt: number | null;
+  govSavings: GovSavings | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
   byAgent: AgentTotals[] | null;
@@ -831,7 +838,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           label="Spend"
           hint={HELP.spend}
           // "+", as on Runs: some calls have no price on file, so this is a lower bound.
-          value={`${fmtCost(s.totalCost)}${s.unpricedAttempts ? '+' : ''}`}
+          value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts)}`}
           sub={s.unpricedAttempts ? `${fmtCost(s.totalCost / hoursInRange)} / h · some calls have no price on file` : data.priceInfo.stale
             ? <span style={{ color: 'var(--warn)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · prices {data.priceInfo.ageDays} days old</span>
             : `${fmtCost(s.totalCost / hoursInRange)} / h`}
@@ -840,23 +847,24 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           variant="card"
           label="Savings"
           hint={HELP.savings}
-          value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
-          sub={savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
+          value={auditFailed ? '—' : <><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
+          sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
-        <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={ruleSub || 'no rule stepped in'} />
+        <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
       </div>
 
       <div style={{ margin: '10px 0 24px' }}>
         <button type="button" className="wr-link" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-expanded={moreDetail} onClick={() => setMoreDetail((v) => !v)}>
           {moreDetail ? 'Hide detail' : 'More detail: requests, response time, models'}
         </button>
+        {loadedAt && <span style={{ marginLeft: 12, fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</span>}
       </div>
       {moreDetail && (
         <section aria-label="More detail">
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
-            <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${s.unpricedAttempts ? '+' : ''}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+            <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts)}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
             <MetricCard label="Savings, est." value={`${fmtCost(savings.totalMicros)}${partialMark(savings.partial)}`} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
@@ -1203,6 +1211,8 @@ export default function PerformancePage() {
   const [error, setError] = useState('');
   // When the shown index data arrived, for the refresh-failed line.
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  // audit_summary failed: savings and rule counts are unknown, not zero (M13).
+  const [auditFailed, setAuditFailed] = useState(false);
 
   const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(null);
   const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(null);
@@ -1245,7 +1255,8 @@ export default function PerformancePage() {
       if (idx.error) { setError(idx.error); return; }
       setIndexData(idx);
       setLoadedAt(Date.now());
-      if (!hourly.error) setHourlyData(hourly);
+      // A failed hourly read clears the chart rather than leave the last range's under the new label (M13).
+      setHourlyData(hourly.error ? null : hourly);
 
       setSavingsDays(week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, Date.now()) : null);
       if (audit?.savingsBuckets) {
@@ -1264,6 +1275,7 @@ export default function PerformancePage() {
         setGovCounts(null);
         setByAgent(null);
       }
+      setAuditFailed(!audit?.savingsBuckets);
     } catch { if (!stale()) setError('Failed to load performance data.'); }
     finally { if (!stale()) setLoading(false); }
   }, [fleetId, hoursBack, authKey]);
@@ -1391,7 +1403,7 @@ export default function PerformancePage() {
           : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
         {loading && !indexData && !agentData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

@@ -241,17 +241,29 @@ const CALL_OUTCOME: Record<string, { label: string; tone: TagTone } | undefined>
 };
 
 /**
+ * What a call row says about tools (audit M18): the tools the model asked to
+ * call, never the tools it was merely offered. Asking isn't proof a tool ran,
+ * so the word is "asked for". A streamed call's reply isn't read: unknown,
+ * so nothing is claimed. Older engines only send offered tools: nothing.
+ */
+export function callToolsText(e: Pick<RunEvent, 'requestedTools'>): string {
+  const requested = e.requestedTools;
+  if (!requested?.length) return '';
+  // "persist_lead ×3, notify": one entry per tool, with how many times.
+  const counts = new Map<string, number>();
+  for (const t of requested) counts.set(t, (counts.get(t) ?? 0) + 1);
+  const named = [...counts].map(([t, n]) => (n > 1 ? `${t} ×${n}` : t));
+  return ` · asked for ${named.slice(0, 4).join(', ')}${named.length > 4 ? ` +${named.length - 4} more` : ''}`;
+}
+
+/**
  * One row of What happened. Calls say what the agent called and which tools
- * it used; events reuse the activity feed's plain-language copy, so the same
- * event reads the same everywhere.
+ * it asked for; events reuse the activity feed's plain-language copy, so the
+ * same event reads the same everywhere.
  */
 export function timelineRow(e: RunEvent): TimelineRow {
   if (e.kind === 'call') {
-    // "persist_lead ×3, notify": one entry per tool, with how many times.
-    const counts = new Map<string, number>();
-    for (const t of e.tools ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
-    const named = [...counts].map(([t, n]) => (n > 1 ? `${t} ×${n}` : t));
-    const tools = named.length ? ` · used ${named.slice(0, 4).join(', ')}${named.length > 4 ? ` +${named.length - 4} more` : ''}` : '';
+    const tools = callToolsText(e);
     return {
       id: e.id, time: clock(e.at), icon: 'dash', iconColor: 'var(--tx2)',
       text: `Model call${e.model ? ` · ${e.model}` : ''}${tools}`,

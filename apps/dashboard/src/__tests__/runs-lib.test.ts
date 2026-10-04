@@ -85,15 +85,23 @@ describe('what stood out', () => {
 
 describe('run detail rows', () => {
   it('describes a call by model and tools, tagging a non-complete outcome', () => {
-    const row = timelineRow({ id: 'call:1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'upstream_error', model: 'claude-haiku-4-5', tools: ['search', 'read_file'] });
-    expect(row.text).toBe('Model call · claude-haiku-4-5 · used search, read_file');
+    const row = timelineRow({ id: 'call:1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'upstream_error', model: 'claude-haiku-4-5', requestedTools: ['search', 'read_file'] });
+    expect(row.text).toBe('Model call · claude-haiku-4-5 · asked for search, read_file');
     expect(row.tag).toEqual({ label: 'Failed', tone: 'warn' });
     expect(timelineRow({ id: 'call:2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete' }).tag).toBeUndefined();
     // A rule event's ×N can include the run before's repeats; Rule actions has this run's exact count.
     const rule = timelineRow({ id: 'ev:1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'governance_would_block', detail: { ruleType: 'spend_cap', reason: 'budget_exceeded', occurrences: 10, agentId: 'lead-agent' } } as Parameters<typeof timelineRow>[0]);
     expect(rule.text).toBe('lead-agent would have been blocked by the spend cap (budget exceeded) (Watch only)');
-    expect(timelineRow({ id: 'call:3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', tools: ['persist_lead', 'persist_lead', 'persist_lead', 'notify'] }).text)
-      .toBe('Model call · used persist_lead ×3, notify');
+    expect(timelineRow({ id: 'call:3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', requestedTools: ['persist_lead', 'persist_lead', 'persist_lead', 'notify'] }).text)
+      .toBe('Model call · asked for persist_lead ×3, notify');
+  });
+
+  it('names only the tools the reply asked for, never the ones offered (M18)', () => {
+    const offered = ['search_places', 'fetch_page', 'persist_lead', 'get_lead_list'];
+    const base = { id: 'call:4', kind: 'call' as const, at: '2026-10-01T14:00:00Z', type: 'complete' };
+    expect(timelineRow({ ...base, availableTools: offered, requestedTools: ['get_lead_list'] }).text).toBe('Model call · asked for get_lead_list');
+    expect(timelineRow({ ...base, availableTools: offered, requestedTools: null }).text).toBe('Model call'); // streamed: unknown
+    expect(timelineRow({ ...base, tools: offered }).text).toBe('Model call'); // older engine: offered only
   });
   it('reads an event with the activity feed’s words and a kind icon', () => {
     const row = timelineRow({ id: 'e1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'self_handover', detail: { agentId: 'lead-agent' } });

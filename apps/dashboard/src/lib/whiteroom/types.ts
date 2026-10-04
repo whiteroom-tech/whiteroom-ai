@@ -35,7 +35,18 @@ export interface AgentInfo {
   handoverMinutes?: number;
   stale?: boolean;
   disconnected?: boolean;
+  /**
+   * The shift under way; null when there is none (audit M14). Older engines
+   * leave it out and put lifetime totals in the flat fields while idle.
+   */
+  currentShift?: ShiftMeasures | null;
+  /** An idle agent's most recent shift, when the engine still has it. */
+  lastShift?: ShiftMeasures | null;
+  lifetime?: { tokensUsed: number; tasksCompleted: number; minutesWorked: number };
 }
+
+/** One shift's measurements (engine check_watch). */
+export interface ShiftMeasures { watchNumber: number; tokensUsed: number; tasksCompleted: number; minutesWorked: number }
 
 export interface HandoverDoc {
   state?: string;
@@ -57,7 +68,8 @@ export interface FleetReport {
     compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string;
     /** Saved tokens with no price to value them: estimatedCostSaved leaves them out (absent on older engines). */
     unpricedTokensSaved?: number;
-    pricing?: 'cache_aware_input';
+    /** in_memory_estimate: the engine couldn't read its stored trail; newest events only, at the fallback rate. */
+    pricing?: 'cache_aware_input' | 'in_memory_estimate';
   };
   compliance: { allAgentsWithinLimits: boolean; restingAgentsCount: number; laborScore: string };
   agentDetails?: Array<AgentInfo & { handoverDoc?: HandoverDoc }>;
@@ -651,7 +663,12 @@ export interface RunEvent {
   at: string;
   type: string;
   model?: string | null;
+  /** Older engines: the tools the request offered, which is not use. Current engines: requested tools. */
   tools?: string[];
+  /** Tools the model's reply asked for; null when the reply wasn't read (streamed). Absent on older engines. */
+  requestedTools?: string[] | null;
+  /** Tools the request offered the model. */
+  availableTools?: string[];
   durationMs?: number | null;
   detail?: Record<string, unknown>;
 }
