@@ -96,10 +96,6 @@ export function destroyRun(ownerSubject: string, sandboxId: string, key?: string
   return proxyCall({ action: "destroy_sandbox", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }
 
-export function getReport(ownerSubject: string, sandboxId: string, key?: string) {
-  return proxyCall({ action: "test_report", user_id: ownerSubject, sandbox_id: sandboxId }, key);
-}
-
 /** The owner's finished tests (Sandbox › Past tests), oldest first. */
 export function getHistory(ownerSubject: string, key?: string) {
   return proxyCall({ action: "sandbox_history", user_id: ownerSubject }, key);

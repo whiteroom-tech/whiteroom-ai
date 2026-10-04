@@ -66,28 +66,6 @@ export interface DemoStep {
   timestamp: string;
 }
 
-export interface ReportResult {
-  success?: boolean;
-  sandboxId?: string;
-  overall?: string;
-  controls?: ControlDefinition[];
-  mode?: "demo" | "connected";
-  isTrial?: boolean;
-  totalTokens?: number | null;
-  totalTasks?: number;
-  assertions?: Record<
-    string,
-    {
-      status: string;
-      observedAt?: string;
-      failedAt?: string;
-      diagnostic?: string;
-      metric?: number;
-    }
-  >;
-  error?: string;
-}
-
 // Only the short-lived sandbox token is ever read from storage. A production
 // fleet token belongs in the httpOnly cookie, which the BFF falls back to when
 // no header is sent.
@@ -166,10 +144,6 @@ export function destroyRun(sandboxId: string): Promise<{
   error?: string;
 }> {
   return bffFetch(`${sandboxId}/destroy`, { method: "POST" });
-}
-
-export function getReport(sandboxId: string): Promise<ReportResult> {
-  return bffFetch(`${sandboxId}/report`);
 }
 
 /** One finished test, as the engine records it. */
