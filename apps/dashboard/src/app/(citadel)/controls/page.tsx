@@ -77,7 +77,7 @@ const REASON: Record<RuleType, string> = {
 function agentResponse(rule: FleetRule): string {
   const response = rule.response ?? "block";
   if (response === "notify") return "Nothing: the call goes through.\nYou get told; the agent doesn't.";
-  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "call_rate" ? "next minute"
+  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "call_rate" ? "once the last minute is back under the limit"
     : rule.ruleType === "model_allowlist" || rule.ruleType === "tool_list"
     ? "never"
     : (rule.params as SpendCapParams | LoopBreakerParams).scope === "day" ? "next day (00:00 UTC)" : "next run";
