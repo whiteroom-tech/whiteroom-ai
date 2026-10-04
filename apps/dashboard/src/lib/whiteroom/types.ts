@@ -516,17 +516,19 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
 export interface LoopBreakerParams { threshold: number; scope: 'run' | 'day'; ignoreTools: string[] }
 export interface ModelAllowlistParams { allowedModels: string[] }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams;
+/** Tools an agent may not run; judged on the model's reply before the agent gets it. */
+export interface ToolListParams { blockedTools: string[] }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams;
 
 export interface GovernanceRule {
   id: string;

@@ -21,12 +21,14 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   spend_cap: 'Spend cap',
   loop_breaker: 'Loop breaker',
   model_allowlist: 'Model allowlist',
+  tool_list: 'Blocked tools',
 };
 
 export const REASON_LABELS: Record<string, string> = {
   budget_exceeded: 'budget exceeded',
   loop_detected: 'loop detected',
   model_not_allowed: 'model not allowed',
+  tool_not_allowed: 'tool not allowed',
 };
 
 /** Blended rate the engine applies to dollar spend caps: $0.003 per 1K tokens. */
@@ -85,6 +87,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       spend_cap: g.byRule.spend_cap ?? emptyTally(),
       loop_breaker: g.byRule.loop_breaker ?? emptyTally(),
       model_allowlist: g.byRule.model_allowlist ?? emptyTally(),
+      tool_list: g.byRule.tool_list ?? emptyTally(),
     },
   };
 }
@@ -95,7 +98,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;
