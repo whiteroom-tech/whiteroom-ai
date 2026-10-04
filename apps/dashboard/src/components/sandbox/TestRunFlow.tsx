@@ -7,7 +7,7 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { type PastTest, clearSandboxToken, createRun, getStatus, destroyRun, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml } from '@/lib/sandbox/report';
+import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
@@ -24,8 +24,6 @@ const PREVIEW_DETAILS = [
   "The agent picks up where it left off, using the handover instead of the full history.",
   "Each step is recorded. Three checks tell you the agent works through WhiteRoom.",
 ];
-
-/** Audit types that mean the agent handed its work over. */
 
 /** Plain-language names for the events in the Activity tab. */
 const EVENT_LABELS: Record<string, string> = {
@@ -415,7 +413,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     if (!run?.sandboxId) return;
     const latest = await getStatus();
     if (latest.error) throw new Error(latest.error);
-    const report = buildTestReport(latest.sandboxId === run.sandboxId ? withRunMode(latest, run.mode) : run);
+    const report = buildTestReport(reportSource(latest, run));
     analytics.capture('sandbox_report_exported', { mode: run.mode });
     const url = URL.createObjectURL(new Blob([reportHtml(report)], { type: 'text/html' }));
     const a = document.createElement('a'); a.href = url; a.download = reportFileName(report); a.click();

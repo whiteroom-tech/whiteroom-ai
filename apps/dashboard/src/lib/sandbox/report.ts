@@ -4,7 +4,7 @@
 
 import { eventModel } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
-import type { RunStatusResult } from './api';
+import { withRunMode, type RunStatusResult } from './api';
 
 export const HANDOVER_TYPES = new Set(['handover', 'self_handover', 'paired_handover']);
 
@@ -37,6 +37,11 @@ export interface TestReport {
   events: { at: string; type: string; agentId: string | null; text: string }[];
 }
 
+/** The fresh status when it's still this test, else the page's last copy of it. */
+export function reportSource(latest: RunStatusResult, current: RunStatusResult): RunStatusResult {
+  return latest.sandboxId && latest.sandboxId === current.sandboxId ? withRunMode(latest, current.mode) : current;
+}
+
 export function buildTestReport(run: RunStatusResult, now: number = Date.now()): TestReport {
   const mode = run.mode === 'demo' ? 'demo' : 'connected';
   const checks = CHECKS.map((c) => {
@@ -66,8 +71,11 @@ export function buildTestReport(run: RunStatusResult, now: number = Date.now()):
 }
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' }) : '—');
+// Readable times are in the downloader's zone, named once in the header; the
+// technical section stays UTC.
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : '—');
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).toLowerCase();
+const zoneName = (iso: string) => new Intl.DateTimeFormat('en-US', { timeZoneName: 'long' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')?.value ?? 'local time';
 
 /** "8 min 38 s". */
 export function spanText(from: string | null, to: string | null): string {
@@ -76,20 +84,27 @@ export function spanText(from: string | null, to: string | null): string {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
-/** The plain-language paragraph: only what the passed checks support. */
+/** The plain-language paragraph: what each check found, and no more. */
 export function summaryText(r: TestReport): string {
   const names = r.agents.map((a) => a.agentId).join(', ') || 'Your agent';
-  const [connect, handoff, resume] = r.checks.map((c) => c.result === 'passed');
-  if (!connect) return `${names} hasn’t completed a call through WhiteRoom in this test yet, so nothing could be checked.`;
+  const [connect, handoff, resume] = r.checks;
+  const why = (c: { detail: string | null }) => (c.detail ? ` (${c.detail})` : '');
+  if (connect.result === 'failed') return `${names} reached WhiteRoom, but its calls didn’t come back normally${why(connect)}.`;
+  if (connect.result !== 'passed') return `${names} hasn’t completed a call through WhiteRoom in this test yet, so nothing could be checked.`;
   const parts = [`${names} made ${r.calls} call${r.calls === 1 ? '' : 's'} through WhiteRoom over ${spanText(r.firstEventAt, r.lastEventAt)}, and they came back normally.`];
   const minutes = r.agents[0]?.shiftMinutes;
-  if (handoff) parts.push(`When its${minutes ? ` ${minutes}-minute` : ''} shift ended, WhiteRoom handed its work over ${r.handovers > 1 ? `${r.handovers} times` : 'once'}, keeping its context compact.`);
-  else parts.push('Its shift hadn’t ended by the time of this report, so the handover wasn’t checked.');
-  if (handoff) parts.push(resume ? 'The agent carried on from where it left off.' : 'Its next call after the handover hadn’t arrived yet.');
+  if (handoff.result === 'failed') return [...parts, `When its shift ended, the handover didn’t complete${why(handoff)}.`].join(' ');
+  if (handoff.result !== 'passed') return [...parts, 'Its shift hadn’t ended by the time of this report, so the handover wasn’t checked.'].join(' ');
+  parts.push(`When its${minutes ? ` ${minutes}-minute` : ''} shift ended, WhiteRoom handed its work over ${r.handovers > 1 ? `${r.handovers} times` : 'once'}, keeping its context compact.`);
+  parts.push(resume.result === 'passed' ? 'The agent carried on from where it left off.'
+    : resume.result === 'failed' ? `Its next call after the handover didn’t work${why(resume)}.`
+    : 'Its next call after the handover hadn’t arrived yet.');
   return parts.join(' ');
 }
 
 const ICON: Record<CheckResult, string> = { passed: '✓', failed: '✕', 'not yet': '○' };
+const TONE: Record<CheckResult, string> = { passed: 'ok', failed: 'bad', 'not yet': 'wait' };
+const RESULT_TEXT: Record<CheckResult, string> = { passed: 'Passed', failed: 'Failed', 'not yet': 'Not yet' };
 
 export function reportHtml(r: TestReport): string {
   const verdict = r.passed === r.checks.length ? 'All 3 checks passed' : `${r.passed} of ${r.checks.length} checks passed`;
@@ -110,12 +125,12 @@ h1{font-size:24px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 10px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}
 .stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px}.stat b{display:block;font-size:20px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}th{font-size:12px;color:var(--ink2);font-weight:600;border-top:0}
-.r-passed{color:var(--ok)}.r-failed{color:var(--bad)}.r-not\\ yet{color:var(--wait)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.wait{color:var(--wait)}
 details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:pre-wrap;word-break:break-all;margin:10px 0 0}
 </style></head><body><main>
 <p class="muted mono">WHITEROOM · SANDBOX TEST REPORT</p>
-<h1 class="${r.passed === r.checks.length ? 'r-passed' : 'r-not yet'}">${esc(verdict)}</h1>
-<p class="muted">Test ${esc(r.testId)} · ${r.mode === 'demo' ? 'Demo run' : 'Your agent'} · Report made ${esc(when(r.generatedAt))}</p>
+<h1 class="${r.passed === r.checks.length ? 'ok' : r.checks.some((c) => c.result === 'failed') ? 'bad' : 'wait'}">${esc(verdict)}</h1>
+<p class="muted">Test ${esc(r.testId)} · ${r.mode === 'demo' ? 'Demo run' : 'Your agent'} · Report made ${esc(when(r.generatedAt))} · Times below are ${esc(zoneName(r.generatedAt))}</p>
 
 <div class="card">
 <p>${esc(summaryText(r))}</p>
@@ -128,7 +143,7 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 
 <h2>The three checks</h2>
 <div class="card"><table><thead><tr><th></th><th>Check</th><th>What it means</th><th>Result</th></tr></thead><tbody>
-${r.checks.map((c) => `<tr><td class="r-${c.result}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="r-${c.result}">${esc(c.result === 'passed' ? 'Passed' : c.result === 'failed' ? 'Failed' : 'Not yet')}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.detail ? `<br><span class="muted">${esc(c.detail)}</span>` : ''}</td></tr>`).join('\n')}
+${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.detail ? `<br><span class="muted">${esc(c.detail)}</span>` : ''}</td></tr>`).join('\n')}
 </tbody></table></div>
 
 <h2>What happened</h2>

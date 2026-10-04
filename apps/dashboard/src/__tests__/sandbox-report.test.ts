@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTestReport, reportFileName, reportHtml, spanText, summaryText } from '@/lib/sandbox/report';
+import { buildTestReport, reportFileName, reportHtml, reportSource, spanText, summaryText } from '@/lib/sandbox/report';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 
 // A connected test like a real one: 20 calls, one handover, all three checks.
@@ -59,5 +59,33 @@ describe('sandbox test report', () => {
   it('names the file by date and test', () => {
     expect(reportFileName(buildTestReport(run(), Date.UTC(2026, 9, 4, 20)))).toBe('whiteroom-test-report-2026-10-04-00000000.html');
     expect(spanText(null, t(1))).toBe('—');
+  });
+
+  it('says when a check failed, with its reason, instead of calling it unchecked', () => {
+    const failed = (controlId: string, diagnostic: string) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'failed', timestamp: t(30), diagnostic, requestId: 'r', testedRevision: 1, testedPolicyVersion: 1 } } });
+    const withControls = (controls: unknown[]) => buildTestReport(run({ controls: controls as RunStatusResult['controls'] }));
+    const noConnect = withControls([failed('core.connect', 'upstream 401')]);
+    expect(noConnect.checks[0]).toMatchObject({ result: 'failed', detail: 'upstream 401' });
+    expect(summaryText(noConnect)).toBe('demo-agent reached WhiteRoom, but its calls didn’t come back normally (upstream 401).');
+    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('the handover didn’t complete (no handover doc)');
+    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call after the handover didn’t work (next call failed)');
+    const html = reportHtml(noConnect);
+    expect(html).toContain('<td class="bad">Failed');
+    expect(html).toMatch(/<h1 class="bad">0 of 3 checks passed/);
+  });
+
+  it('colours checks that are still waiting, and names the time zone once', () => {
+    const html = reportHtml(buildTestReport(run({ controls: [control('core.connect', 25)] as unknown as RunStatusResult['controls'] })));
+    expect(html).toContain('<td class="wait">Not yet');
+    expect(html).toMatch(/<h1 class="wait">1 of 3 checks passed/);
+    expect(html).toMatch(/Times below are [A-Za-z ]+/);
+  });
+
+  it('builds from the fresh status for this test, else from the page’s copy', () => {
+    const current = run();
+    expect(reportSource({ ...current, mode: undefined, agents: [] }, current).agents).toEqual([]);
+    expect(reportSource({ ...current, mode: undefined }, current).mode).toBe('connected');
+    expect(reportSource({ sandboxId: 'another-test' }, current)).toBe(current);
+    expect(reportSource({}, current)).toBe(current);
   });
 });
