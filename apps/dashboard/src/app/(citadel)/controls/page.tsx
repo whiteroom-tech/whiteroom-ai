@@ -673,6 +673,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
             onAdd={(t) => { if (!p.blockedTools.includes(t)) updateParams(rule.id, { blockedTools: [...p.blockedTools, t] }); }}
             onRemove={(t) => updateParams(rule.id, { blockedTools: p.blockedTools.filter((x) => x !== t) })}
           />
+          <span style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--tx2)" }}>Checks replies that aren’t streamed. Streamed replies pass unchecked for now.</span>
         </span>
       );
     }
