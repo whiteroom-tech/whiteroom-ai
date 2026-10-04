@@ -516,11 +516,11 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
@@ -528,7 +528,9 @@ export interface LoopBreakerParams { threshold: number; scope: 'run' | 'day'; ig
 export interface ModelAllowlistParams { allowedModels: string[] }
 /** Tools an agent may not run; judged on the model's reply before the agent gets it. */
 export interface ToolListParams { blockedTools: string[] }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams;
+/** More than maxCalls model calls in any 60 seconds. */
+export interface CallRateParams { maxCalls: number }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams;
 
 export interface GovernanceRule {
   id: string;

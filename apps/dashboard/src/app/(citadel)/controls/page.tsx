@@ -29,6 +29,7 @@ import type {
   ModelAllowlistParams,
   SpendCapParams,
   ToolListParams,
+  CallRateParams,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, convertSpendCap, RESPONSE_EFFECT, RESPONSE_LABEL, responseOptions, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -59,6 +60,7 @@ const SUGGESTION_HOURS = 14 * 24;
 const RULE_SECTIONS: { key: RuleType; section: string }[] = [
   { key: "spend_cap", section: "SPEND" },
   { key: "loop_breaker", section: "BEHAVIOR" },
+  { key: "call_rate", section: "RATE" },
   { key: "model_allowlist", section: "MODELS" },
   { key: "tool_list", section: "TOOLS" },
 ];
@@ -68,13 +70,15 @@ const REASON: Record<RuleType, string> = {
   loop_breaker: "loop_detected",
   model_allowlist: "model_not_allowed",
   tool_list: "tool_not_allowed",
+  call_rate: "rate_exceeded",
 };
 
 /** What the agent gets for this rule (see the engine's blockResponseBody): nothing for Just tell me. */
 function agentResponse(rule: FleetRule): string {
   const response = rule.response ?? "block";
   if (response === "notify") return "Nothing: the call goes through.\nYou get told; the agent doesn't.";
-  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "model_allowlist" || rule.ruleType === "tool_list"
+  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "call_rate" ? "next minute"
+    : rule.ruleType === "model_allowlist" || rule.ruleType === "tool_list"
     ? "never"
     : (rule.params as SpendCapParams | LoopBreakerParams).scope === "day" ? "next day (00:00 UTC)" : "next run";
   return `403 governance_block
@@ -89,6 +93,7 @@ const MODE_DESCRIPTION: Record<RuleType, Record<RuleMode, string>> = {
   loop_breaker: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts on the Nth call" },
   model_allowlist: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the call" },
   tool_list: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the agent gets the tool call" },
+  call_rate: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts on the call over the limit" },
 };
 
 // ── Three-way toggle ───────────────────────────────────────────────
@@ -575,7 +580,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   // let a debounced number edit land after a select change and revert it.
   const rulesRef = useRef(rules);
   rulesRef.current = rules;
-  const updateParams = (ruleId: string, patch: Partial<SpendCapParams & LoopBreakerParams & ModelAllowlistParams & ToolListParams>) => {
+  const updateParams = (ruleId: string, patch: Partial<SpendCapParams & LoopBreakerParams & ModelAllowlistParams & ToolListParams & CallRateParams>) => {
     const latest = rulesRef.current.find((r) => r.id === ruleId);
     if (!latest) return;
     const params = { ...latest.params, ...patch } as AnyRuleParams;
@@ -659,6 +664,16 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
             onAdd={(t) => { if (!p.ignoreTools.includes(t)) updateParams(rule.id, { ignoreTools: [...p.ignoreTools, t] }); }}
             onRemove={(t) => updateParams(rule.id, { ignoreTools: p.ignoreTools.filter((x) => x !== t) })}
           />
+        </span>
+      );
+    }
+    if (rt === "call_rate") {
+      const p = rule.params as CallRateParams;
+      return (
+        <span>
+          When an agent makes more than{" "}
+          <InlineNumber ariaLabel="Calls per minute limit" value={p.maxCalls} onChange={(n) => updateParams(rule.id, { maxCalls: n })} />
+          {" "}calls in a minute
         </span>
       );
     }
@@ -886,6 +901,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                   {selectedRule.ruleType === "spend_cap" && "Stops before the next call. Non-retryable, so SDKs should not retry."}
                   {selectedRule.ruleType === "loop_breaker" && "Stops after the repeated call. Non-retryable within the same run."}
                   {selectedRule.ruleType === "model_allowlist" && "Stops before the call. The agent must switch to an allowed model."}
+                  {selectedRule.ruleType === "call_rate" && "Stops the call that goes over the limit. Refused calls count too, so an agent that keeps retrying stays over until it slows down."}
                   {selectedRule.ruleType === "tool_list" && "Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent."}
                 </p>
                 {selectedRule.ruleType === "spend_cap" && (selectedRule.params as SpendCapParams).unit === "dollars" && (
