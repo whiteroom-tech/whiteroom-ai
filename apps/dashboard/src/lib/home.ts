@@ -168,9 +168,9 @@ export function clock(ts: unknown): string {
   return fmtTime(typeof ts === 'number' ? ts : String(ts ?? ''));
 }
 
-/** clock() for today, else the date ("Oct 2"), so an older time never reads as today's. */
-function when(ts: unknown, now: number): string {
-  return fmtWhen(typeof ts === 'number' ? ts : String(ts ?? ''), now);
+/** Epoch ms of an ISO string or epoch-ms timestamp; NaN when unreadable. */
+function epochMs(ts: unknown): number {
+  return typeof ts === 'number' ? ts : Date.parse(String(ts ?? ''));
 }
 
 /**
@@ -186,7 +186,7 @@ export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRo
 
 /** Epoch ms of an event; 0 for an unreadable timestamp, so it sorts last instead of breaking the sort. */
 function eventTime(e: AuditEntry): number {
-  const t = Date.parse(String(e.timestamp));
+  const t = epochMs(e.timestamp);
   return Number.isNaN(t) ? 0 : t;
 }
 
@@ -195,7 +195,7 @@ export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.
   return [...entries]
     .sort((a, b) => eventTime(b) - eventTime(a))
     .slice(0, n)
-    .map((e) => ({ ...activityRow(e, now), time: when(e.timestamp, now) }));
+    .map((e) => ({ ...activityRow(e, now), time: fmtWhen(eventTime(e) || '', now) }));
 }
 
 /** The last thing each agent did, for the Agents table's "Last event" column. */
@@ -203,9 +203,9 @@ export function lastEventByAgent(entries: AuditEntry[], now: number = Date.now()
   const out: Record<string, { time: string; text: string; at: number }> = {};
   for (const e of entries) {
     const id = eventAgent(e);
-    const at = Date.parse(String(e.timestamp));
+    const at = epochMs(e.timestamp);
     if (!id || Number.isNaN(at) || (out[id] && out[id].at >= at)) continue;
-    out[id] = { time: when(e.timestamp, now), text: eventModel(e).said, at };
+    out[id] = { time: fmtWhen(at, now), text: eventModel(e).said, at };
   }
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { time: v.time, text: v.text }]));
 }
