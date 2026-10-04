@@ -65,20 +65,27 @@ function clampPct(n: number): number {
 
 /**
  * "#3 · 17 tasks · 4.1 min worked · 12.4K tokens" for the Current shift
- * header. With no shift running it says so and labels what it shows instead
- * (last shift, lifetime), so lifetime totals never read as one shift (M14).
+ * header; "none running" when there is no shift (M14).
  */
 export function shiftSummary(a: AgentInfo, fmtTokens: (n: number) => string): string {
   const shift = currentShift(a);
-  if (shift) {
-    const bits = [`#${shift.watchNumber || 1}`, taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
-    if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
-    return bits.join(' · ');
-  }
-  const bits = ['none running'];
-  if (a.lastShift) bits.push(`last #${a.lastShift.watchNumber}: ${taskWord(a.lastShift.tasksCompleted)}`);
-  if (a.lifetime) bits.push(`lifetime ${taskWord(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
+  if (!shift) return 'none running';
+  const bits = [`#${shift.watchNumber || 1}`, taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
+  if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
   return bits.join(' · ');
+}
+
+/**
+ * With no shift running, what the panel shows instead, each labelled so
+ * lifetime totals never read as one shift: "Last shift #41: 5 tasks",
+ * "Lifetime: 332 tasks, 4.03M tokens". Empty while a shift runs.
+ */
+export function shiftAside(a: AgentInfo, fmtTokens: (n: number) => string): string[] {
+  if (currentShift(a)) return [];
+  const out: string[] = [];
+  if (a.lastShift) out.push(`Last shift #${a.lastShift.watchNumber}: ${taskWord(a.lastShift.tasksCompleted)}`);
+  if (a.lifetime) out.push(`Lifetime: ${taskWord(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
+  return out;
 }
 
 /** The model the agent last called, from its newest audit entry that names one. */

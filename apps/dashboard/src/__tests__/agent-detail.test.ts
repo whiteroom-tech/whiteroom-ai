@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentIdFromSegment, notesAreLong, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftProgress, shiftSummary } from '@/lib/agent-detail';
+import { agentIdFromSegment, notesAreLong, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftSummary } from '@/lib/agent-detail';
 import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
 import { agentState } from '@/lib/home';
 
@@ -52,7 +52,9 @@ describe('progress and summary', () => {
 
   it('never shows lifetime totals as the current shift (M14)', () => {
     const idle = { agentId: 'a', status: 'idle', currentShift: null, lastShift: { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 }, lifetime: { tokensUsed: 4_030_000, tasksCompleted: 332, minutesWorked: 40 } };
-    expect(shiftSummary(idle, (n) => `${n / 1e6}M`)).toBe('none running · last #41: 5 tasks · lifetime 332 tasks, 4.03M tokens');
+    expect(shiftSummary(idle, (n) => `${n / 1e6}M`)).toBe('none running');
+    expect(shiftAside(idle, (n) => `${n / 1e6}M`)).toEqual(['Last shift #41: 5 tasks', 'Lifetime: 332 tasks, 4.03M tokens']);
+    expect(shiftAside(working, String)).toEqual([]);
     // Older engine: an idle agent's flat fields are lifetime totals, so no shift is claimed.
     expect(shiftSummary({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332, tokensUsed: 4_030_000 }, String)).toBe('none running');
     expect(shiftProgress(idle)).toBeNull(); // no made-up 0% bar

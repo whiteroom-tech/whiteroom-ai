@@ -90,9 +90,15 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
                         <div style={{ width: 12, height: h(without), background: 'var(--line2)', borderRadius: '2px 2px 0 0' }} />
                       </div>
                       <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>{weekday(d.day)}</div>
+                      {/* Two lines, so neighbouring days' figures never run into each other. */}
                       <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx)', whiteSpace: 'nowrap' }}>
-                        {without ? `${fmtTokens(d.used)} / ${fmtTokens(without)}` : '–'}
+                        {without ? fmtTokens(d.used) : '–'}
                       </div>
+                      {without > 0 && (
+                        <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                          / {fmtTokens(without)}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
