@@ -31,7 +31,7 @@ describe('sandbox test report', () => {
 
   it('says only what the passed checks support, in plain words', () => {
     expect(summaryText(buildTestReport(run()))).toBe(
-      'demo-agent made 20 calls through WhiteRoom over 5 min 29 s, and they came back normally. When its 2-minute shift ended, WhiteRoom handed its work over once, keeping its context compact. The agent carried on from where it left off.');
+      'demo-agent made 20 calls through WhiteRoom over 5 min 4 s, and they came back normally. When its 2-minute shift ended, WhiteRoom handed its work over once, keeping its context compact. The agent carried on from where it left off.');
     const early = buildTestReport(run({ controls: [control('core.connect', 25), control('core.handoff', null), control('core.resume', null)] as unknown as RunStatusResult['controls'] }));
     expect(early.passed).toBe(1);
     expect(summaryText(early)).toContain('the handover wasn’t checked');
@@ -87,5 +87,21 @@ describe('sandbox test report', () => {
     expect(reportSource({ ...current, mode: undefined }, current).mode).toBe('connected');
     expect(reportSource({ sandboxId: 'another-test' }, current)).toBe(current);
     expect(reportSource({}, current)).toBe(current);
+  });
+
+  it('times the calls, not rests or watchdog handovers after the agent stopped', () => {
+    const later = run({ auditLog: [...run().auditLog!, { id: 'w', timestamp: t(900), type: 'self_handover', agentId: 'demo-agent' }] });
+    const r = buildTestReport(later);
+    expect(r).toMatchObject({ firstCallAt: t(25), lastCallAt: t(25 + 19 * 16), handovers: 2 });
+    expect(summaryText(r)).toContain('over 5 min 4 s');
+    expect(reportHtml(r)).toContain('first to last call');
+  });
+
+  it('keeps engine notes out of passed checks, and in the technical details', () => {
+    const noted = run({ controls: [{ controlId: 'core.connect', name: 'x', result: { liveEvidence: { status: 'observed', timestamp: t(25), diagnostic: 'proxied request abc', requestId: 'r', testedRevision: 1, testedPolicyVersion: 1 } } }] as unknown as RunStatusResult['controls'] });
+    const html = reportHtml(buildTestReport(noted));
+    const checks = html.slice(html.indexOf('The three checks'), html.indexOf('What happened'));
+    expect(checks).not.toContain('proxied request abc');
+    expect(html.slice(html.indexOf('Technical details'))).toContain('proxied request abc');
   });
 });
