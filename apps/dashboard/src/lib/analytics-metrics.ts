@@ -15,12 +15,15 @@ export function estimateCost(tokensSaved: number): number {
   return tokensSaved / 1_000_000;
 }
 
+/** Handover and offload savings for a range; partial when some saved tokens had no price. */
+export interface GovSavings { tokensSaved: number; costSaved: number; partial: boolean }
+
 /**
  * Tokens and dollars saved for a range: the engine's figures when it sends
  * them, else the same per-agent-day tokens at the fallback rate. `partial`:
  * some saved tokens had no price, so the dollars are a lower bound.
  */
-export function savingsDollars(buckets: SavingsBucket[], engine?: SavingsTotals): { tokensSaved: number; costSaved: number; partial: boolean } {
+export function savingsDollars(buckets: SavingsBucket[], engine?: SavingsTotals): GovSavings {
   if (engine) return { tokensSaved: engine.tokens, costSaved: engine.usdMicros / 1_000_000, partial: engine.unpricedTokens > 0 };
   const tokensSaved = savedFromBuckets(buckets);
   return { tokensSaved, costSaved: estimateCost(tokensSaved), partial: false };

@@ -7,10 +7,8 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
-import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings } from '@/lib/analytics-metrics';
-
-/** Handover and offload savings for the range; partial when some saved tokens had no price. */
-type GovSavings = { tokensSaved: number; costSaved: number; partial: boolean };
+import { partialMark } from '@/lib/format';
+import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -439,7 +437,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total saved</div>
-            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}{govSavings?.partial || c.unpricedReadTokens ? '+' : ''}</div>
+            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}{partialMark(!!govSavings?.partial || c.unpricedReadTokens > 0)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Cache</div>
@@ -842,7 +840,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           variant="card"
           label="Savings"
           hint={HELP.savings}
-          value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{savings.partial ? '+' : ''}</>}
+          value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
           sub={savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
@@ -859,7 +857,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
             <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${s.unpricedAttempts ? '+' : ''}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-            <MetricCard label="Savings, est." value={`${fmtCost(savings.totalMicros)}${savings.partial ? '+' : ''}`} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="Savings, est." value={`${fmtCost(savings.totalMicros)}${partialMark(savings.partial)}`} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
             <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />

@@ -4,7 +4,11 @@ import type { PerformanceCostForecastResult } from './whiteroom/types';
 
 /** What the burn rate averages: hours with calls, over the engine's lookback. */
 export function burnCaption(f: Pick<PerformanceCostForecastResult, 'burnLookbackHours'>): string {
-  return f.burnLookbackHours ? `per working hour, last ${Math.round(f.burnLookbackHours / 24)} days` : 'spending per hour';
+  const h = f.burnLookbackHours;
+  if (!h) return 'spending per hour';
+  if (h < 24) return `per working hour, last ${h} ${h === 1 ? 'hour' : 'hours'}`;
+  const d = Math.round(h / 24);
+  return `per working hour, last ${d === 1 ? 'day' : `${d} days`}`;
 }
 
 /** Why there's no tasks-remaining figure (audit M11): a saved budget is never asked for again. */

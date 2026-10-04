@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cacheFigures, savingsDollars } from '../lib/analytics-metrics';
 import { burnCaption, remainingTasksNote } from '../lib/cost-tracking';
+import { partialMark } from '../lib/format';
 
 const bucket = (agent: string, b: Partial<{ tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }>) =>
   ({ day: '2026-10-04', agent, used: 0, tasks: 0, handovers: 0, handoverSaved: 0, offloadSaved: 0, ...b });
@@ -42,11 +43,20 @@ describe('cost tracking captions (audit M10, M11)', () => {
   it('names the burn rate lookback', () => {
     expect(burnCaption({ burnLookbackHours: 336 })).toBe('per working hour, last 14 days');
     expect(burnCaption({})).toBe('spending per hour');
+    expect(burnCaption({ burnLookbackHours: 24 })).toBe('per working hour, last day');
+    expect(burnCaption({ burnLookbackHours: 6 })).toBe('per working hour, last 6 hours');
+    expect(burnCaption({ burnLookbackHours: 1 })).toBe('per working hour, last 1 hour');
   });
 
   it('does not ask for a saved budget again when the task-cost data is what is missing', () => {
     expect(remainingTasksNote({ costUnavailable: false, remainingTasksReason: 'task_type_missing' })).toMatch(/task type/);
     expect(remainingTasksNote({ costUnavailable: false, remainingTasksReason: 'budget_missing' })).toBe('set a daily budget to see tasks left');
     expect(remainingTasksNote({ costUnavailable: true })).toBe('set a daily token budget to see tasks left');
+    expect(remainingTasksNote({ costUnavailable: false, remainingTasksReason: 'partial_coverage' })).toMatch(/no price on file/);
+  });
+
+  it('marks a dollar figure that leaves out unpriced usage', () => {
+    expect(partialMark(true)).toBe('+');
+    expect(partialMark(false)).toBe('');
   });
 });
