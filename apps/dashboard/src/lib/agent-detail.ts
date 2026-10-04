@@ -9,7 +9,7 @@
 // names these actions for what they do: "Start a break" and "Resume".
 
 import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
-import { agentState, currentShift } from '@/lib/home';
+import { agentState, currentShift, taskWord } from '@/lib/home';
 
 /** When the current break ends (epoch ms), or null when it can't be told. */
 export function breakEndsAt(a: Pick<AgentInfo, 'alarmAt' | 'restStartedAt' | 'restMinutes'>): number | null {
@@ -69,16 +69,15 @@ function clampPct(n: number): number {
  * (last shift, lifetime), so lifetime totals never read as one shift (M14).
  */
 export function shiftSummary(a: AgentInfo, fmtTokens: (n: number) => string): string {
-  const tasks = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
   const shift = currentShift(a);
   if (shift) {
-    const bits = [`#${shift.watchNumber || 1}`, tasks(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
+    const bits = [`#${shift.watchNumber || 1}`, taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
     if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
     return bits.join(' · ');
   }
   const bits = ['none running'];
-  if (a.lastShift) bits.push(`last #${a.lastShift.watchNumber}: ${tasks(a.lastShift.tasksCompleted)}`);
-  if (a.lifetime) bits.push(`lifetime ${tasks(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
+  if (a.lastShift) bits.push(`last #${a.lastShift.watchNumber}: ${taskWord(a.lastShift.tasksCompleted)}`);
+  if (a.lifetime) bits.push(`lifetime ${taskWord(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
   return bits.join(' · ');
 }
 

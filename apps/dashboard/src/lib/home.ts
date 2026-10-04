@@ -37,7 +37,8 @@ export function currentShift(a: AgentInfo): ShiftMeasures | null {
   return { watchNumber: a.watchNumber || 1, tokensUsed: a.tokensUsed || 0, tasksCompleted: a.tasksCompleted || 0, minutesWorked: a.minutesWorked || 0 };
 }
 
-const taskWord = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
+/** "1 task", "5 tasks". */
+export const taskWord = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
 
 /** "Shift 8 · 62 tasks · 9.4 min worked"; "Rest after shift 5 · 31 tasks" while resting; no shift figures without a shift. */
 export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
