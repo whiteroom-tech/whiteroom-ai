@@ -206,7 +206,10 @@ export interface PerformanceIndexResult {
   summary: {
     totalCalls: number;
     totalCost: number;
+    /** Median response time (ms) on current engines. */
     avgLatencyMs: number | null;
+    /** Attempts with no catalogue price: totalCost is a lower bound when > 0 (absent on older engines). */
+    unpricedAttempts?: number;
     errorRate: number;
     /** Calls stopped by a governance rule in Enforce (absent on older engines). */
     blockedCount?: number;
@@ -365,6 +368,8 @@ export interface FleetHourlyDataPoint {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** Attempts with no catalogue price in this hour (absent on older engines). */
+  unpricedAttempts?: number;
 }
 
 export interface FleetHourlyResult {
@@ -568,7 +573,7 @@ export interface GovernanceListResult {
 
 /** Rule actions in words (engine rule_actions). */
 export interface RuleActionCounts { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number }
-export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts> }
+export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts> }
 export interface RunRuleAction { at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --

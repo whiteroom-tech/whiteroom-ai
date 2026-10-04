@@ -124,7 +124,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
           </Banner>
         )}
         {!!data?.run.ruleActions?.length && (
-          <Panel title="Rule actions" count={data.run.ruleActions.length} bodyPadding={0}>
+          <Panel title="Rule actions" count={data.run.ruleActions.reduce((n, a) => n + a.occurrences, 0)} bodyPadding={0}>
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {data.run.ruleActions.map((a) => (
                 <li key={`${a.at}-${a.ruleId}-${a.mode}`} style={{ display: 'flex', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 13 }}>
