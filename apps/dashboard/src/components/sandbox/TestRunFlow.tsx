@@ -411,9 +411,10 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   // above show, so the file and the page can't disagree.
   const downloadReport = () => act(async () => {
     if (!run?.sandboxId) return;
-    const latest = await getStatus();
-    if (latest.error) throw new Error(latest.error);
-    const report = buildTestReport(reportSource(latest, run));
+    // A failed refresh (test just expired, network blip) falls back to the
+    // page's last copy: losing the report is worse than one slightly old.
+    const latest = await getStatus().catch(() => ({}) as RunStatusResult);
+    const report = buildTestReport(reportSource(latest.error ? {} : latest, run));
     analytics.capture('sandbox_report_exported', { mode: run.mode });
     const url = URL.createObjectURL(new Blob([reportHtml(report)], { type: 'text/html' }));
     const a = document.createElement('a'); a.href = url; a.download = reportFileName(report); a.click();
