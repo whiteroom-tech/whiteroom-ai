@@ -71,6 +71,11 @@ describe('activity', () => {
     expect(newest.time).toBe('9:15 am');
     expect(older.time).toBe('Oct 2');
     expect(lastEventByAgent([e('agent_paused', '2026-10-02T23:31:00')], today)['lead-agent'].time).toBe('Oct 2');
+    // Epoch-ms timestamps too, as clock() accepts them: sorted, formatted, and kept as an agent's last event.
+    const epoch = { ...e('watch_start', ''), timestamp: Date.parse('2026-10-03T09:15:00') } as unknown as AuditEntry;
+    const mixed = latestActivity([e('agent_paused', '2026-10-03T08:00:00'), epoch, e('rest_start', '2026-10-03T07:00:00')], 4, today);
+    expect(mixed.map((r) => r.time)).toEqual(['9:15 am', '8:00 am', '7:00 am']);
+    expect(lastEventByAgent([e('agent_paused', '2026-10-03T08:00:00'), epoch], today)['lead-agent']).toEqual({ time: '9:15 am', text: 'started a shift' });
   });
 
   it('keeps the latest event per agent', () => {

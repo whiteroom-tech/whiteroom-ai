@@ -91,7 +91,7 @@ describe('run detail rows', () => {
     expect(timelineRow({ id: 'call:2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete' }).tag).toBeUndefined();
     // A rule event's ×N can include the run before's repeats; Rule actions has this run's exact count.
     const rule = timelineRow({ id: 'ev:1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'governance_would_block', detail: { ruleType: 'spend_cap', reason: 'budget_exceeded', occurrences: 10, agentId: 'lead-agent' } } as Parameters<typeof timelineRow>[0]);
-    expect(rule.text).not.toMatch(/×/);
+    expect(rule.text).toBe('lead-agent would have been blocked by the spend cap (budget exceeded) (Watch only)');
     expect(timelineRow({ id: 'call:3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', tools: ['persist_lead', 'persist_lead', 'persist_lead', 'notify'] }).text)
       .toBe('Model call · used persist_lead ×3, notify');
   });
