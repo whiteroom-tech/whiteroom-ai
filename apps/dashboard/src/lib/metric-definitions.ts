@@ -17,7 +17,7 @@ export function liveFeedHelp(ttlHours: number): string {
  */
 export const HELP = {
   smallerHandovers: "When an agent's shift ends, WhiteRoom passes its work to a fresh session as short notes instead of the full history. This is how much smaller those notes are, on average.",
-  savings: `Money not spent because handovers keep each agent's notes short. Shown as an upper limit, so the real figure can be lower. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, an estimate.`,
+  savings: `An estimate of money not spent. Handovers keep each agent's notes short, so later calls send fewer tokens; each agent's saved tokens are valued at the input price it actually pays, cache discounts included. Prompt caching adds what cache reads saved, less what cache writes cost. A "+" means some tokens had no price on file. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, also an estimate.`,
   agentsWorking: 'Agents doing a task right now, out of all the agents connected to this fleet.',
   modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight UTC.',
   spendToday: "What today's model calls cost, at your AI provider's prices.",
@@ -37,7 +37,7 @@ export const HELP = {
   rulesThatApply: 'The rules from Controls that cover this agent, and what each one has done to it lately.',
   spend: "What the fleet's model calls cost in this time range.",
   failedCalls: 'The share of model calls that came back with an error.',
-  costTracking: 'How fast the fleet is spending, and where today will end against your daily budget.',
+  costTracking: 'How fast the fleet spends in the hours it is working (over the last 14 days), and how many more tasks today’s budget covers. The budget is daily: today’s spend counts from your midnight, and it resets each day.',
   byAgent: 'The same numbers, one row per agent.',
   agentHealthCheck: "An automatic review of each agent's recent work: cost, errors and habits.",
   recommendations: 'Changes that would save money or prevent problems, based on how your agents have been working.',

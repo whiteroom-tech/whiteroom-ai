@@ -77,9 +77,9 @@ describe('agentTotals edge cases', () => {
 
 describe('Savings card caption', () => {
   it('names every part of the total it sits under', () => {
-    expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, a ceiling');
-    expect(savingsCaption(0, 12_000)).toBe('cache reads, a ceiling');
-    expect(savingsCaption(2_000, 12_000)).toBe('2.0K tokens not spent + cache reads, a ceiling');
+    expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, estimated');
+    expect(savingsCaption(0, 12_000)).toBe('cache reads, estimated');
+    expect(savingsCaption(2_000, 12_000)).toBe('2.0K tokens not spent + cache reads, estimated');
     expect(savingsCaption(0, 0)).toBe('nothing saved in this range');
   });
 });

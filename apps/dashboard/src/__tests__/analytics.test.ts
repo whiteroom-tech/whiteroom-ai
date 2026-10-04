@@ -95,11 +95,9 @@ describe("savings calculation", () => {
 });
 
 describe("cost estimation", () => {
-  it("matches the engine formula", () => {
-    const saved = 10000;
-    const cost = estimateCost(saved);
-    // 10000 * (0.8 * $1 + 0.2 * $5) / 1M = 0.018
-    expect(cost).toBeCloseTo(0.018, 6);
+  it("prices saved tokens as input ($1 per MTok), never at the output rate", () => {
+    // The engine's FALLBACK_SAVINGS_RATE_PER_TOKEN; current engines price per agent.
+    expect(estimateCost(10_000)).toBeCloseTo(0.01, 6);
   });
 
   it("returns zero for zero savings", () => {

@@ -315,7 +315,8 @@ export function listFleets(apiKey: string): Promise<ListFleetsResult> {
 // -- Reporting & monitoring --
 
 export async function fleetReport(fleetId: string, key?: string): Promise<FleetReport & { error?: string }> {
-  const report = await apiCall<FleetReport & { error?: string }>({ action: 'fleet_report', fleet_id: fleetId }, key);
+  // tz: savings group per agent-day in the viewer's days, as on Performance.
+  const report = await apiCall<FleetReport & { error?: string }>({ action: 'fleet_report', fleet_id: fleetId, tz: viewerTimeZone() }, key);
   return report.holds ? { ...report, holds: activeHolds(report.holds) } : report;
 }
 
@@ -525,7 +526,8 @@ export function performanceRecommendationExport(
 }
 
 export function performanceCostForecast(fleetId: string, taskType?: string, key?: string): Promise<PerformanceCostForecastResult> {
-  return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType }, key);
+  // tz: the daily budget resets at the viewer's midnight.
+  return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType, tz: viewerTimeZone() }, key);
 }
 
 export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {

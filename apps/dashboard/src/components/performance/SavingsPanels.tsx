@@ -18,7 +18,7 @@ export function savingsCaption(handoverTokens: number, cacheMicros: number): str
     handoverTokens > 0 ? `${fmtTokens(handoverTokens)} tokens not spent` : null,
     cacheMicros > 0 ? 'cache reads' : null,
   ].filter(Boolean);
-  return parts.length ? `${parts.join(' + ')}, a ceiling` : 'nothing saved in this range';
+  return parts.length ? `${parts.join(' + ')}, estimated` : 'nothing saved in this range';
 }
 
 /** Round a max up to a tidy axis top, so the tallest bar fills most of the plot. */
@@ -71,7 +71,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
               <div role="list" aria-label="Tokens per day, last 7 days" style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, gap: 6 }}>
                 {days.map((d) => {
                   const without = d.used + d.saved;
-                  const label = `${weekday(d.day)}: ${fmtTokens(d.used)} tokens with WhiteRoom, up to ${fmtTokens(without)} without`;
+                  const label = `${weekday(d.day)}: ${fmtTokens(d.used)} tokens with WhiteRoom, est. ${fmtTokens(without)} without`;
                   return (
                     <div
                       key={d.day}
@@ -101,9 +101,9 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, fontSize: 12, color: 'var(--tx2)', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--brand)' }} />With WhiteRoom</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--line2)' }} />Without, up to</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--line2)' }} />Without, est.</span>
             <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx)' }}>
-              {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, up to ${fmtTokens(shown.used + shown.saved)} without` : ''}
+              {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, est. ${fmtTokens(shown.used + shown.saved)} without` : ''}
             </span>
           </div>
         </>
@@ -141,7 +141,7 @@ export function ByAgentTable({ rows, scope, ruleActions }: {
                 : <span style={{ color: 'var(--tx2)' }} title="Model calls recorded without an agent name">Unattributed</span>,
             },
             { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
-            { key: 'saved', header: 'Saved, up to', width: '120px', numeric: true, render: (r) => (r.saved > 0 ? fmtTokens(r.saved) : '–') },
+            { key: 'saved', header: 'Saved, est.', width: '120px', numeric: true, render: (r) => (r.saved > 0 ? fmtTokens(r.saved) : '–') },
             {
               key: 'rules', header: 'Rule actions', width: 'minmax(180px, 280px)', numeric: true,
               render: (r) => {
