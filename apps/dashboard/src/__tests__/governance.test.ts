@@ -147,7 +147,7 @@ describe('rule responses and rule actions (P2.3/P2.4)', () => {
   });
 
   it('takes durable counts from rule_actions, keeping the audit log’s per-rule split', () => {
-    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 } };
+    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 } };
     const c = countsFromRuleActions({
       fleetId: 'f',
       totals: { blocked: 5, paused: 1, stopped: 0, toldYou: 2, wouldAct: 3 },

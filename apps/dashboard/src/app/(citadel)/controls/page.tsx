@@ -28,6 +28,7 @@ import type {
   LoopBreakerParams,
   ModelAllowlistParams,
   SpendCapParams,
+  ToolListParams,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, convertSpendCap, RESPONSE_EFFECT, RESPONSE_LABEL, responseOptions, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -59,19 +60,21 @@ const RULE_SECTIONS: { key: RuleType; section: string }[] = [
   { key: "spend_cap", section: "SPEND" },
   { key: "loop_breaker", section: "BEHAVIOR" },
   { key: "model_allowlist", section: "MODELS" },
+  { key: "tool_list", section: "TOOLS" },
 ];
 
 const REASON: Record<RuleType, string> = {
   spend_cap: "budget_exceeded",
   loop_breaker: "loop_detected",
   model_allowlist: "model_not_allowed",
+  tool_list: "tool_not_allowed",
 };
 
 /** What the agent gets for this rule (see the engine's blockResponseBody): nothing for Just tell me. */
 function agentResponse(rule: FleetRule): string {
   const response = rule.response ?? "block";
   if (response === "notify") return "Nothing: the call goes through.\nYou get told; the agent doesn't.";
-  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "model_allowlist"
+  const resets = response !== "block" ? "when someone resumes it" : rule.ruleType === "model_allowlist" || rule.ruleType === "tool_list"
     ? "never"
     : (rule.params as SpendCapParams | LoopBreakerParams).scope === "day" ? "next day (00:00 UTC)" : "next run";
   return `403 governance_block
@@ -85,6 +88,7 @@ const MODE_DESCRIPTION: Record<RuleType, Record<RuleMode, string>> = {
   spend_cap: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the next call" },
   loop_breaker: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts on the Nth call" },
   model_allowlist: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the call" },
+  tool_list: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the agent gets the tool call" },
 };
 
 // ── Three-way toggle ───────────────────────────────────────────────
@@ -290,10 +294,10 @@ const TOOL_GROUPS: { category: string; tools: string[] }[] = [
 
 const TOOL_PICK_GROUPS: PickGroup[] = TOOL_GROUPS.map((g) => ({ label: g.category, options: g.tools.map((t) => ({ id: t, label: t })) }));
 
-function ToolPicker(props: { tags: string[]; onAdd: (tag: string) => void; onRemove: (tag: string) => void }) {
+function ToolPicker({ purpose = "ignore", ...props }: { tags: string[]; onAdd: (tag: string) => void; onRemove: (tag: string) => void; purpose?: "ignore" | "block" }) {
   return (
-    <GroupPicker {...props} groups={TOOL_PICK_GROUPS} addLabel="+ add tool" addAria="Add a tool to ignore"
-      otherLabel="Other (type tool name)..." placeholder="tool name" inputAria="Tool name to ignore" inputWidth={140} />
+    <GroupPicker {...props} groups={TOOL_PICK_GROUPS} addLabel="+ add tool" addAria={`Add a tool to ${purpose}`}
+      otherLabel="Other (type tool name)..." placeholder="tool name" inputAria={`Tool name to ${purpose}`} inputWidth={140} />
   );
 }
 
@@ -571,7 +575,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
   // let a debounced number edit land after a select change and revert it.
   const rulesRef = useRef(rules);
   rulesRef.current = rules;
-  const updateParams = (ruleId: string, patch: Partial<SpendCapParams & LoopBreakerParams & ModelAllowlistParams>) => {
+  const updateParams = (ruleId: string, patch: Partial<SpendCapParams & LoopBreakerParams & ModelAllowlistParams & ToolListParams>) => {
     const latest = rulesRef.current.find((r) => r.id === ruleId);
     if (!latest) return;
     const params = { ...latest.params, ...patch } as AnyRuleParams;
@@ -655,6 +659,21 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
             onAdd={(t) => { if (!p.ignoreTools.includes(t)) updateParams(rule.id, { ignoreTools: [...p.ignoreTools, t] }); }}
             onRemove={(t) => updateParams(rule.id, { ignoreTools: p.ignoreTools.filter((x) => x !== t) })}
           />
+        </span>
+      );
+    }
+    if (rt === "tool_list") {
+      const p = rule.params as ToolListParams;
+      return (
+        <span>
+          When an agent is about to run any of these tools:{" "}
+          <ToolPicker
+            purpose="block"
+            tags={p.blockedTools}
+            onAdd={(t) => { if (!p.blockedTools.includes(t)) updateParams(rule.id, { blockedTools: [...p.blockedTools, t] }); }}
+            onRemove={(t) => updateParams(rule.id, { blockedTools: p.blockedTools.filter((x) => x !== t) })}
+          />
+          <span style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--tx2)" }}>Checks replies that aren’t streamed. Streamed replies pass unchecked for now.</span>
         </span>
       );
     }
@@ -867,6 +886,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                   {selectedRule.ruleType === "spend_cap" && "Stops before the next call. Non-retryable, so SDKs should not retry."}
                   {selectedRule.ruleType === "loop_breaker" && "Stops after the repeated call. Non-retryable within the same run."}
                   {selectedRule.ruleType === "model_allowlist" && "Stops before the call. The agent must switch to an allowed model."}
+                  {selectedRule.ruleType === "tool_list" && "Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent. Streamed replies aren’t checked yet."}
                 </p>
                 {selectedRule.ruleType === "spend_cap" && (selectedRule.params as SpendCapParams).unit === "dollars" && (
                   <p style={{ fontSize: 10, color: "var(--tx3)", marginTop: 8 }}>
