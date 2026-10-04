@@ -667,7 +667,7 @@ export interface RunEvent {
   tools?: string[];
   /** Tools the model's reply asked for; null when the reply wasn't read (streamed). Absent on older engines. */
   requestedTools?: string[] | null;
-  /** Tools the request offered the model. */
+  /** Tools the request offered the model. Not shown as use; kept for exports and investigations. */
   availableTools?: string[];
   durationMs?: number | null;
   detail?: Record<string, unknown>;

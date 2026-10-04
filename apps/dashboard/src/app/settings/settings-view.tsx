@@ -18,7 +18,8 @@ import {
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
-import { PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, monthlyCostCents, type PlanId } from '@/lib/plans';
+import { PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
+import { agentPlanStats } from '@/lib/metric-display';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -248,7 +249,6 @@ function PlanSection({
   // ceil so an active trial never reads "0 days left"; capped because a DST
   // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
   const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / 86_400_000)));
-  const proCost = plan === 'pro' && usage.agents !== null ? monthlyCostCents('pro', usage.agents) : null;
 
   return (
     <Section title="Plan" description="What your subscription currently allows. Limits apply to every fleet on the account.">
@@ -304,13 +304,11 @@ function PlanSection({
         <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} atLimit={fleetsAtLimit} />
         {/* Live registered agents, never 0 when the engine can't be reached (M16).
             Pro's billed quantity is Stripe's last confirmed one, which can lag a change. */}
-        {plan === 'pro' || usage.agents === null ? (
-          <Stat label="Agents registered" value={usage.agents === null ? 'Unavailable' : String(usage.agents)} />
-        ) : (
+        {plan !== 'pro' && usage.agents !== null ? (
           <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} atLimit={usage.agents >= limits.maxAgentsPerFleet} />
+        ) : (
+          agentPlanStats(plan, usage.agents, subscription?.billedAgents).map((s) => <Stat key={s.label} label={s.label} value={s.value} />)
         )}
-        {plan === 'pro' && subscription?.billedAgents != null && <Stat label="Billed for" value={`${subscription.billedAgents} agent${subscription.billedAgents === 1 ? '' : 's'}`} />}
-        {proCost !== null && <Stat label="Est. monthly" value={`${formatPrice(proCost)}/mo`} />}
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '-8px 0 20px' }}>

@@ -7,6 +7,7 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
+import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -267,7 +268,7 @@ function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, tr
   );
 }
 
-function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blockedCount, cache }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: GovSavings | null; govCounts?: GovernanceCounts | null; blockedCount?: number; cache?: CacheFigures }) {
+function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blockedCount, cache, auditFailed }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: GovSavings | null; govCounts?: GovernanceCounts | null; blockedCount?: number; cache?: CacheFigures; auditFailed?: boolean }) {
   const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' };
   const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 12, fontFamily: FONT_MONO, color: 'var(--tx)' };
   const TDR: React.CSSProperties = { ...TD, textAlign: 'right' };
@@ -436,7 +437,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total saved</div>
-            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}{partialMark(!!govSavings?.partial || c.unpricedReadTokens > 0)}</div>
+            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{savingsFigure(!!auditFailed, totalSavingsMicros, !!govSavings?.partial || c.unpricedReadTokens > 0)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Cache</div>
@@ -444,7 +445,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
           </div>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Handover compression</div>
-            <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(govCostMicros)}</div>
+            <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{savingsFigure(!!auditFailed, govCostMicros, !!govSavings?.partial)}</div>
           </div>
         </div>
 
@@ -865,13 +866,13 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
             <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts)}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-            <MetricCard label="Savings, est." value={`${fmtCost(savings.totalMicros)}${partialMark(savings.partial)}`} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="Savings, est." value={savingsFigure(auditFailed, savings.totalMicros, savings.partial)} sub={auditFailed ? UNAVAILABLE : savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
             <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
           </div>
 
-          {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} cache={cache} /></div>}
+          {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} cache={cache} auditFailed={auditFailed} /></div>}
 
           {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
 
