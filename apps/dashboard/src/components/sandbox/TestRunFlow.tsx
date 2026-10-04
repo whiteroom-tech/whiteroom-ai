@@ -6,7 +6,8 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { type PastTest, clearSandboxToken, createRun, getStatus, getReport, destroyRun, startDemo, withRunMode, type RunStatusResult, type ReportResult } from '@/lib/sandbox/api';
+import { type PastTest, clearSandboxToken, createRun, getStatus, destroyRun, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
@@ -25,7 +26,6 @@ const PREVIEW_DETAILS = [
 ];
 
 /** Audit types that mean the agent handed its work over. */
-const HANDOVER_TYPES = new Set(['handover', 'self_handover', 'paired_handover']);
 
 /** Plain-language names for the events in the Activity tab. */
 const EVENT_LABELS: Record<string, string> = {
@@ -117,13 +117,6 @@ function formatTimer(seconds: number | null | undefined): string {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-function checkLabel(controlId: string, name: string): string {
-  if (controlId === 'core.connect') return 'Your agent connects';
-  if (controlId === 'core.handoff') return 'It hands over when the shift ends';
-  if (controlId === 'core.resume') return 'It picks up where it left off';
-  return name;
-}
-
 function checkGuidance(controlId: string, status: string | undefined, run: RunStatusResult | null): { detail: string; action?: string; progress?: { current: number; total: number; label: string } } {
   const agent = run?.agents?.[0];
   const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
@@ -213,9 +206,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const [error, setError] = useState('');
   const [reconnecting, setReconnecting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [report, setReport] = useState<ReportResult | null>(null);
   const [scene, setScene] = useState(0);
-  const [assessment, setAssessment] = useState('Not assessed');
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [pollTick, setPollTick] = useState(0);
   const [previewStep, setPreviewStep] = useState(0);
@@ -279,7 +270,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
       // token belongs to the previous one.
       if (ownerRef.current && owner) clearSandboxToken();
       ownerRef.current = owner;
-      setRun(null); setReport(null); setCredential(''); setPhase('start'); setBooting(true);
+      setRun(null); setCredential(''); setPhase('start'); setBooting(true);
     }
     if (!owner) return;
     let disposed = false;
@@ -408,7 +399,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
         window.dispatchEvent(new Event('storage'));
       }
       analytics.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
-      setRun({ ...result, mode, agents: [] }); setReport(null); setAssessment('Not assessed');
+      setRun({ ...result, mode, agents: [] });
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
       if (mode === 'demo') {
         const d = await startDemo(result.sandboxId);
@@ -418,38 +409,25 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     } finally { setCredential(''); setShowKey(false); }
   });
 
-  // Returns the fetched report (null on failure) so callers can export it
-  // directly — the `report` state they closed over is a render behind.
-  const review = async (): Promise<ReportResult | null> => {
-    const sandboxId = run?.sandboxId;
-    if (!sandboxId) return null;
-    let fetched: ReportResult | null = null;
-    await act(async () => {
-      const result = await getReport(sandboxId);
-      if (result.error) throw new Error(result.error);
-      analytics.capture('sandbox_review_opened', { mode: run?.mode });
-      setReport(result);
-      fetched = result;
-    });
-    return fetched;
-  };
-
-  const download = (fetched?: ReportResult | null) => {
+  // The report is built from a fresh status read, the same data the checks
+  // above show, so the file and the page can't disagree.
+  const downloadReport = () => act(async () => {
     if (!run?.sandboxId) return;
-    const data = fetched ?? report ?? run;
-    analytics.capture('sandbox_report_exported', { mode: run?.mode });
-    const blob = new Blob([JSON.stringify({ ...data, assessment: { source: 'human', result: assessment }, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `whiteroom-test-${run.sandboxId}.json`; a.click();
+    const latest = await getStatus();
+    if (latest.error) throw new Error(latest.error);
+    const report = buildTestReport(latest.sandboxId === run.sandboxId ? withRunMode(latest, run.mode) : run);
+    analytics.capture('sandbox_report_exported', { mode: run.mode });
+    const url = URL.createObjectURL(new Blob([reportHtml(report)], { type: 'text/html' }));
+    const a = document.createElement('a'); a.href = url; a.download = reportFileName(report); a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
+  });
 
   const end = () => act(async () => {
     if (!run?.sandboxId) return;
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
     clearSandboxToken();
-    setRun(null); setReport(null); setConfirmEnd(false); setPhase('start'); setAssessment('Not assessed');
+    setRun(null); setConfirmEnd(false); setPhase('start');
   });
 
   if (authStatus === 'loading') return <><PageHeader title="Sandbox" /><div className={s.content}>Loading your workspace…</div></>;
@@ -721,20 +699,20 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
               <pre className={s.recipe} style={{ fontFamily: FONT_MONO, fontSize: 10.5 }}>{connectionRecipe(provider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, language)}</pre>
               <div className={s.btnRow} style={{ marginTop: 8 }}>
                 <CopyButton text={connectionRecipe(provider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, language)} />
-                <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(r => { if (r) download(r); }); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
+                <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
               </div>
             </div>
           )}
 
           {/* Actions */}
           <div className={s.btnRow}>
-            {!allPassed && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(r => { if (r) download(r); }); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>}
+            {!allPassed && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>}
             {isDemo && <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => act(async () => {
               if (!run?.sandboxId) return;
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
               clearSandboxToken();
-              setRun(null); setReport(null); setConfirmEnd(false); setAssessment('Not assessed');
+              setRun(null); setConfirmEnd(false);
               setPhase('setup');
             })} disabled={busy} style={{ fontSize: 12 }}>Now test my agent →</button>}
             <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
@@ -765,7 +743,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
             <p>Your results disappear when the test ends, so download the report first if you want to keep it. Ending doesn’t stop your agent; its calls just stop being part of this test.</p>
             <div className={s.btnRow}>
               <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => void end()} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}>End test</button>
-              <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void review().then(r => { if (r) download(r); }); }} disabled={busy}>Download report</button>
+              <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy}>Download report</button>
               <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(false)}>Keep testing</button>
             </div>
           </div>
