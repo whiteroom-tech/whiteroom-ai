@@ -2,12 +2,68 @@
 // tests guard the real implementation instead of a hand-mirrored copy that
 // can silently drift out of sync with the dashboard.
 
+import type { CacheSummary, SavingsTotals } from './whiteroom/types';
+
 /**
- * Blended $/token cost of the tokens WhiteRoom saved: 80% input at $1, 20%
- * output at $5 per MTok (Haiku 4.5). Mirrors the engine's SAVINGS_RATE_PER_TOKEN.
+ * Dollars for saved tokens when the engine doesn't price them (older
+ * engines): Haiku 4.5's uncached input rate, $1 per MTok. Saved tokens are
+ * input the model never read, so never the output rate. Mirrors the engine's
+ * FALLBACK_SAVINGS_RATE_PER_TOKEN; current engines price each agent at its
+ * own cache-aware input rate (savingsDollars).
  */
 export function estimateCost(tokensSaved: number): number {
-  return tokensSaved * (0.8 * 1 + 0.2 * 5) / 1_000_000;
+  return tokensSaved / 1_000_000;
+}
+
+/**
+ * Tokens and dollars saved for a range: the engine's figures when it sends
+ * them, else the same per-agent-day tokens at the fallback rate. `partial`:
+ * some saved tokens had no price, so the dollars are a lower bound.
+ */
+export function savingsDollars(buckets: SavingsBucket[], engine?: SavingsTotals): { tokensSaved: number; costSaved: number; partial: boolean } {
+  if (engine) return { tokensSaved: engine.tokens, costSaved: engine.usdMicros / 1_000_000, partial: engine.unpricedTokens > 0 };
+  const tokensSaved = savedFromBuckets(buckets);
+  return { tokensSaved, costSaved: estimateCost(tokensSaved), partial: false };
+}
+
+/** Prompt-cache figures for the Performance page. */
+export interface CacheFigures {
+  /** Read savings less the write premium, never below zero (micro-dollars). */
+  savedMicros: number;
+  readSavedMicros: number;
+  writePremiumMicros: number;
+  /** Cache reads over all input (fresh + reads + writes, each once). */
+  hitRate: number;
+  readTokens: number;
+  writeTokens: number;
+  freshInputTokens: number;
+  /** Cache reads on unpriced models, left out of the dollars. */
+  unpricedReadTokens: number;
+}
+
+/**
+ * From the engine's per-model cache summary. Older engines send none: then
+ * only token counts are shown (their dollars inferred a price from total
+ * spend, output included, which was wrong), so savings are zero.
+ */
+export function cacheFigures(cache: CacheSummary | undefined, hourly: Array<{ inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>): CacheFigures {
+  const c = cache ?? {
+    freshInputTokens: hourly.reduce((s, h) => s + h.inputTokens, 0),
+    readTokens: hourly.reduce((s, h) => s + h.cacheReadTokens, 0),
+    writeTokens: hourly.reduce((s, h) => s + h.cacheWriteTokens, 0),
+    readSavedMicros: 0, writePremiumMicros: 0, unpricedReadTokens: 0,
+  };
+  const all = c.freshInputTokens + c.readTokens + c.writeTokens;
+  return {
+    savedMicros: Math.max(0, c.readSavedMicros - c.writePremiumMicros),
+    readSavedMicros: c.readSavedMicros,
+    writePremiumMicros: c.writePremiumMicros,
+    hitRate: all > 0 ? c.readTokens / all : 0,
+    readTokens: c.readTokens,
+    writeTokens: c.writeTokens,
+    freshInputTokens: c.freshInputTokens,
+    unpricedReadTokens: c.unpricedReadTokens,
+  };
 }
 
 /** YYYY-MM-DD in the browser's local timezone. */

@@ -6,7 +6,11 @@ import { performanceIndex, performanceAgent, performanceEvidence, performanceFee
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
-import { agentTotalsFromBuckets, dailySavingsFromBuckets, estimateCost, savedFromBuckets, type AgentTotals, type DaySavings } from '@/lib/analytics-metrics';
+import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
+import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings } from '@/lib/analytics-metrics';
+
+/** Handover and offload savings for the range; partial when some saved tokens had no price. */
+type GovSavings = { tokensSaved: number; costSaved: number; partial: boolean };
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -266,7 +270,7 @@ function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, tr
   );
 }
 
-function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blockedCount }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: { tokensSaved: number; costSaved: number } | null; govCounts?: GovernanceCounts | null; blockedCount?: number }) {
+function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blockedCount, cache }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: GovSavings | null; govCounts?: GovernanceCounts | null; blockedCount?: number; cache?: CacheFigures }) {
   const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' };
   const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 12, fontFamily: FONT_MONO, color: 'var(--tx)' };
   const TDR: React.CSSProperties = { ...TD, textAlign: 'right' };
@@ -416,25 +420,26 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
   }
 
   if (metric === 'savings') {
-    const totalInput = hourly.reduce((s, h) => s + h.inputTokens, 0);
-    const totalCacheRead = hourly.reduce((s, h) => s + h.cacheReadTokens, 0);
-    const totalCacheWrite = hourly.reduce((s, h) => s + h.cacheWriteTokens, 0);
-    const totalCost = hourly.reduce((s, h) => s + h.costMicros, 0);
-    const cacheHitRate = (totalInput + totalCacheRead) > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0;
-    const avgInputPrice = totalInput > 0 ? (totalCost / (totalInput + totalCacheRead * 0.1)) : 0;
-    const cacheMicros = totalCacheRead * avgInputPrice * 0.9;
+    // Priced per model by the engine (audit M08): reads at the input rate less
+    // the cache-read rate, less what cache writes cost over the input rate.
+    const c = cache ?? cacheFigures(undefined, hourly);
+    const totalInput = c.freshInputTokens;
+    const totalCacheRead = c.readTokens;
+    const totalCacheWrite = c.writeTokens;
+    const cacheHitRate = c.hitRate;
+    const cacheMicros = c.savedMicros;
     const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
     const govTokens = govSavings?.tokensSaved ?? 0;
     const totalSavingsMicros = cacheMicros + govCostMicros;
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Savings breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and handover compression (handovers and context offloads).</div>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and handover compression (handovers and context offloads), each at the input prices your agents actually pay.</div>
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total saved</div>
-            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}</div>
+            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{fmtCost(totalSavingsMicros)}{govSavings?.partial || c.unpricedReadTokens ? '+' : ''}</div>
           </div>
           <div style={{ minWidth: 120 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Cache</div>
@@ -470,7 +475,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
               </div>
               <span style={{ fontFamily: FONT_MONO, fontSize: 11, whiteSpace: 'nowrap' }}>{(cacheHitRate * 100).toFixed(1)}%</span>
             </div>
-            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed.</span>
+            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed.{c.writePremiumMicros > 0 && <> Est. saved is net of the <strong>{fmtCost(c.writePremiumMicros)}</strong> extra that cache writes cost.</>}</span>
           </div>
         )}
         {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
@@ -493,7 +498,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         )}
         {govTokens > 0 && (
           <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
-            These savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model.
+            These savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model. Each agent&apos;s tokens are valued at the input price it pays, cache discounts included.
           </div>
         )}
       </div>
@@ -665,14 +670,14 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
           <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
             ${forecast.burnRateUsdPerHour.toFixed(2)} / h
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>spending per hour</div>
+          <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
         </div>
         <div>
           {forecast.remainingTasks == null ? (
             <>
               <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
               <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>
-                {forecast.costUnavailable ? 'set a token budget to see tasks remaining' : 'set a budget to see tasks remaining'}
+                {remainingTasksNote(forecast)}
               </div>
             </>
           ) : (
@@ -680,7 +685,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
               <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: forecast.remainingTasks <= 0 ? 'var(--bad)' : forecast.remainingTasks < 5 ? 'var(--warn)' : 'var(--ok)' }}>
                 {forecast.remainingTasks}
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>tasks remaining at this budget</div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>tasks left in today&apos;s budget</div>
             </>
           )}
         </div>
@@ -690,7 +695,7 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
 }
 
 function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAgent, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
-  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: { tokensSaved: number; costSaved: number } | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
+  data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null; govSavings: GovSavings | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
   byAgent: AgentTotals[] | null;
@@ -802,16 +807,18 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
   const displayHourly = mid > 0 ? hourly.slice(mid) : hourly;
   const trends = useMemo(() => hourly.length > 1 ? computeTrends(hourly) : { calls: null, cost: null, latency: null, errorRate: null }, [hourly]);
 
+  const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
   const savings = useMemo(() => {
-    const totalInput = displayHourly.reduce((a, h) => a + h.inputTokens, 0);
-    const totalCacheRead = displayHourly.reduce((a, h) => a + h.cacheReadTokens, 0);
-    const totalCost = displayHourly.reduce((a, h) => a + h.costMicros, 0);
-    const avgInputPrice = totalInput > 0 ? (totalCost / (totalInput + totalCacheRead * 0.1)) : 0;
-    const cacheMicros = totalCacheRead * avgInputPrice * 0.9;
     const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
-    const totalMicros = cacheMicros + govCostMicros;
-    return { totalMicros, cacheMicros, cacheReadTokens: totalCacheRead, govTokensSaved: govSavings?.tokensSaved ?? 0, govCostMicros };
-  }, [displayHourly, govSavings]);
+    return {
+      totalMicros: cache.savedMicros + govCostMicros,
+      cacheMicros: cache.savedMicros,
+      govTokensSaved: govSavings?.tokensSaved ?? 0,
+      govCostMicros,
+      // Some saved tokens or cache reads had no price: the dollars are a lower bound.
+      partial: !!govSavings?.partial || cache.unpricedReadTokens > 0,
+    };
+  }, [cache, govSavings]);
 
   const hoursInRange = Math.max(1, (Date.parse(data.period.end) - Date.parse(data.period.start)) / 3_600_000 || 1);
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
@@ -835,7 +842,7 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           variant="card"
           label="Savings"
           hint={HELP.savings}
-          value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>up to </span>{fmtCost(savings.totalMicros)}</>}
+          value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{savings.partial ? '+' : ''}</>}
           sub={savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
@@ -852,13 +859,13 @@ function IndexView({ data, hourlyData, govSavings, govCounts, savingsDays, byAge
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
             <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${s.unpricedAttempts ? '+' : ''}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-            <MetricCard label="Savings, up to" value={fmtCost(savings.totalMicros)} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="Savings, est." value={`${fmtCost(savings.totalMicros)}${savings.partial ? '+' : ''}`} sub={savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
             <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
           </div>
 
-          {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} /></div>}
+          {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} cache={cache} /></div>}
 
           {displayHourly.length > 0 && <FleetActivityChart hourly={displayHourly} />}
 
@@ -1205,7 +1212,7 @@ export default function PerformancePage() {
   const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
-  const [govSavings, setGovSavings] = useState<{ tokensSaved: number; costSaved: number } | null>(null);
+  const [govSavings, setGovSavings] = useState<GovSavings | null>(null);
   const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(null);
   const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(null);
   const [byAgent, setByAgent] = useState<AgentTotals[] | null>(null);
@@ -1244,9 +1251,8 @@ export default function PerformancePage() {
 
       setSavingsDays(week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, Date.now()) : null);
       if (audit?.savingsBuckets) {
-        // Same per-agent-day math as before (audit F15), over engine buckets.
-        const tokensSaved = savedFromBuckets(audit.savingsBuckets);
-        setGovSavings({ tokensSaved, costSaved: estimateCost(tokensSaved) });
+        // The engine's savings (audit M07): per agent-day, each agent at its own input price.
+        setGovSavings(savingsDollars(audit.savingsBuckets, audit.savings));
         const fromAudit = governanceFromSummary(audit.governance);
         setGovCounts(fromAudit);
         setByAgent(agentTotalsFromBuckets(audit.savingsBuckets));

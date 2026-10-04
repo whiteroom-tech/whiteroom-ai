@@ -53,7 +53,12 @@ export interface FleetReport {
   govV1?: boolean;
   totals: { workMinutes: number; tokens: number; tasks: number; handovers: number };
   currentWatch?: { tasks: number; tokens: number; workMinutes: number };
-  energySavings: { compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string };
+  energySavings: {
+    compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string;
+    /** Saved tokens with no price to value them: estimatedCostSaved leaves them out (absent on older engines). */
+    unpricedTokensSaved?: number;
+    pricing?: 'cache_aware_input';
+  };
   compliance: { allAgentsWithinLimits: boolean; restingAgentsCount: number; laborScore: string };
   agentDetails?: Array<AgentInfo & { handoverDoc?: HandoverDoc }>;
 }
@@ -214,6 +219,8 @@ export interface PerformanceIndexResult {
     /** Calls stopped by a governance rule in Enforce (absent on older engines). */
     blockedCount?: number;
     models: PerformanceModelSummary[];
+    /** Prompt caching over the window, priced per model (absent on older engines). */
+    cache?: CacheSummary;
   };
   recommendations: PerformanceRecommendation[];
   priceInfo: { version: string; ageDays: number; stale: boolean; expired: boolean };
@@ -393,7 +400,32 @@ export interface PerformanceCostForecastResult {
   costUnavailable: boolean;
   tokensPerHour: number | null;
   tokenBudget: number | null;
+  /** Why remainingTasks is null, so the card asks for the right thing (absent on older engines). */
+  remainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
+  /** The budget is daily: spend counts from local midnight in budgetTimeZone. */
+  budgetPeriod?: 'day';
+  budgetTimeZone?: string;
+  spentTodayUsd?: number;
+  /** burnRateUsdPerHour averages the hours with calls in this lookback. */
+  burnLookbackHours?: number;
+  burnActiveHours?: number;
   error?: string;
+}
+
+/** engine savings totals (savings.ts). */
+export interface SavingsTotals { tokens: number; usdMicros: number; unpricedTokens: number; basis: 'cache_aware_input' }
+
+/** engine performance_index summary.cache. */
+export interface CacheSummary {
+  /** Uncached input, cache reads and cache writes, each counted once. */
+  freshInputTokens: number;
+  readTokens: number;
+  writeTokens: number;
+  /** reads × (input rate − cache-read rate), per model. */
+  readSavedMicros: number;
+  /** writes × (cache-write rate − input rate), per model. */
+  writePremiumMicros: number;
+  unpricedReadTokens: number;
 }
 
 export interface SetBudgetResult {
@@ -638,6 +670,8 @@ export interface RunEventsResult {
 export interface AuditSummaryResult {
   fleetId: string;
   savingsBuckets: Array<{ day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }>;
+  /** The buckets' modelled savings, each agent's at its cache-aware input price (absent on older engines). */
+  savings?: SavingsTotals;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 
