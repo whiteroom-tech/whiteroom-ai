@@ -673,7 +673,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
             onAdd={(t) => { if (!p.blockedTools.includes(t)) updateParams(rule.id, { blockedTools: [...p.blockedTools, t] }); }}
             onRemove={(t) => updateParams(rule.id, { blockedTools: p.blockedTools.filter((x) => x !== t) })}
           />
-          <span style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--tx2)" }}>Checks replies that aren’t streamed. Streamed replies pass unchecked for now.</span>
+          <span style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--tx2)" }}>In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.</span>
         </span>
       );
     }
@@ -886,7 +886,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                   {selectedRule.ruleType === "spend_cap" && "Stops before the next call. Non-retryable, so SDKs should not retry."}
                   {selectedRule.ruleType === "loop_breaker" && "Stops after the repeated call. Non-retryable within the same run."}
                   {selectedRule.ruleType === "model_allowlist" && "Stops before the call. The agent must switch to an allowed model."}
-                  {selectedRule.ruleType === "tool_list" && "Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent. Streamed replies aren’t checked yet."}
+                  {selectedRule.ruleType === "tool_list" && "Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent."}
                 </p>
                 {selectedRule.ruleType === "spend_cap" && (selectedRule.params as SpendCapParams).unit === "dollars" && (
                   <p style={{ fontSize: 10, color: "var(--tx3)", marginTop: 8 }}>
