@@ -57,7 +57,7 @@ describe('savings from engine buckets', () => {
 describe('governance totals from the engine', () => {
   it('fills every rule type', () => {
     const g = governanceFromSummary({ blocks: 3, wouldBlocks: 7, byAgent: { a: { blocks: 3, wouldBlocks: 7 } }, byRule: { loop_breaker: { blocks: 0, wouldBlocks: 7 } } });
-    expect(g.byRule).toEqual({ spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 7 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 } });
+    expect(g.byRule).toEqual({ spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 7 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 } });
     expect(g).toMatchObject({ blocks: 3, wouldBlocks: 7 });
   });
 });
