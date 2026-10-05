@@ -35,6 +35,12 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     labels: ["dependencies"]
+    ignore:
+      # stripe@23 moves the pinned API version (2026-08-26.dahlia → 2026-09-30.endive,
+      # see lib/stripe.ts). Take that bump on purpose, after reading Stripe's API
+      # changelog and running a test checkout on staging — not inside a grouped PR.
+      - dependency-name: "stripe"
+        update-types: ["version-update:semver-major"]
     groups:
       production:
         dependency-type: production
