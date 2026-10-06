@@ -92,7 +92,10 @@ const EVENT_COPY: Record<string, EventCopy> = {
   },
   handover_deferred: {
     icon: '⏸', tone: 'handover', code: 'H/D',
-    say: () => 'had a reply cut off at its output limit, so its handover waited one call to let it finish that step',
+    // Each event is one wait of one call, so the count never changes the text.
+    say: (e) => String(e.reason ?? '') === 'reply_cut_off'
+      ? 'had a reply cut off at its output limit, so its handover waited one call to let it finish that step'
+      : 'had its handover wait one call to let it finish a step',
   },
   handover_limit_lowered: {
     icon: '↘', tone: 'idle', code: 'H/R',

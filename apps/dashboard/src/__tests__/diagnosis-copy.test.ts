@@ -47,6 +47,18 @@ describe('finding sentences', () => {
     expect(sentenceText(findingSentence('review_handover_churn', { ...m, longestStreak: 3 }))).toContain('Handed over after');
   });
 
+  it('churn thresholds: repeat leads from 2 in a row, short shifts from 3', () => {
+    const lead = (x: Record<string, number>) => sentenceText(findingSentence('review_handover_churn', { ...MEASURES.review_handover_churn, ...x }));
+    expect(lead({ longestRepeatStreak: 1, repeatedSharePct: 60, longestStreak: 0 })).toContain('Handed over after');
+    expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 2 })).toContain('Redid 60%');
+    expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 3 })).toContain('Handed over after');
+  });
+
+  it('older churn findings without repeat measures read as before', () => {
+    expect(MEASURES.review_handover_churn).not.toHaveProperty('longestRepeatStreak');
+    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Handed over after 1\.5 calls on average, 20 shifts in a row\./);
+  });
+
   it('tool silence mentions several quiet tools only when there are several', () => {
     expect(sentenceText(findingSentence('review_tool_silence', MEASURES.review_tool_silence))).toContain('2 tools went quiet');
     expect(sentenceText(findingSentence('review_tool_silence', { ...MEASURES.review_tool_silence, silentTools: 1 }))).not.toContain('went quiet at');

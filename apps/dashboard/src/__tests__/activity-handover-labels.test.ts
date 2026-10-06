@@ -53,6 +53,8 @@ describe('handover health labels', () => {
     const d = at({ type: 'handover_deferred', reason: 'reply_cut_off', deferrals: 1, watchNumber: 43 });
     expect(d.said).toBe('had a reply cut off at its output limit, so its handover waited one call to let it finish that step');
     expect(d.code).toBe('H/D');
+    expect(at({ type: 'handover_deferred', reason: 'something_new', deferrals: 2 }).said).toBe('had its handover wait one call to let it finish a step');
+    expect(at({ type: 'handover_deferred' }).said).toBe('had its handover wait one call to let it finish a step');
     expect(at({ type: 'handover_limit_lowered', newLimit: 25000 }).said).toBe('stopped redoing earlier work, so WhiteRoom lowered its context limit to 25,000 tokens');
     expect(at({ type: 'handover_limit_lowered' }).said).toBe('stopped redoing earlier work, so WhiteRoom lowered its context limit');
   });
