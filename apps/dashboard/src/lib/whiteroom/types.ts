@@ -686,7 +686,7 @@ export interface RunEventsResult {
 /** engine audit_summary (Phase 1 spec H1). */
 export interface AuditSummaryResult {
   fleetId: string;
-  savingsBuckets: Array<{ day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }>;
+  savingsBuckets: Array<{ day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number; redoTokens?: number }>;
   /** The buckets' modelled savings, each agent's at its cache-aware input price (absent on older engines). */
   savings?: SavingsTotals;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };

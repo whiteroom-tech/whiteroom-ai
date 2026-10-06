@@ -52,6 +52,16 @@ describe('savings from engine buckets', () => {
   it('builds the same By agent rows', () => {
     expect(agentTotalsFromBuckets(buckets)).toEqual(agentTotals(events, 0));
   });
+
+  it('takes redone work off, per agent-day and never below zero, as the engine does', () => {
+    const one: SavingsBucket = { day: '2026-10-04', agent: 'lead-agent', used: 0, tasks: 9, handovers: 2, handoverSaved: 100, offloadSaved: 5 };
+    expect(savedFromBuckets([one])).toBe(305);
+    expect(savedFromBuckets([{ ...one, redoTokens: 105 }])).toBe(200);
+    // A day that redid more than it saved counts 0, and can't eat another day's savings.
+    expect(savedFromBuckets([{ ...one, redoTokens: 1_000 }, { ...one, day: '2026-10-05' }])).toBe(305);
+    expect(agentTotalsFromBuckets([{ ...one, redoTokens: 105 }])[0].saved).toBe(200);
+    expect(dailySavingsFromBuckets([{ ...one, day: localDayFromTs(new Date(now).toISOString()), redoTokens: 105 }], 1, now)[0].saved).toBe(200);
+  });
 });
 
 describe('governance totals from the engine', () => {
