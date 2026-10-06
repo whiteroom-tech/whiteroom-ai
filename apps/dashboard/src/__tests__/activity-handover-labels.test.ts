@@ -43,7 +43,23 @@ describe('handover health labels', () => {
     }
   });
 
+  it('a repeat-work raise says why', () => {
+    expect(at({ type: 'handover_loop_detected', reason: 'repeated_work', newLimit: 37500 }).said).toBe(
+      'kept redoing work it had already done after each handover, so WhiteRoom raised its context limit to 37,500 tokens to give it room to finish',
+    );
+  });
+
+  it('a deferred handover and a lowered limit', () => {
+    const d = at({ type: 'handover_deferred', reason: 'reply_cut_off', deferrals: 1, watchNumber: 43 });
+    expect(d.said).toBe('had a reply cut off at its output limit, so its handover waited one call to let it finish that step');
+    expect(d.code).toBe('H/D');
+    expect(at({ type: 'handover_limit_lowered', newLimit: 25000 }).said).toBe('stopped redoing earlier work, so WhiteRoom lowered its context limit to 25,000 tokens');
+    expect(at({ type: 'handover_limit_lowered' }).said).toBe('stopped redoing earlier work, so WhiteRoom lowered its context limit');
+  });
+
   it('each type has its own label and code, not the generic fallback', () => {
+    expect(at({ type: 'handover_deferred' }).code).toBe('H/D');
+    expect(at({ type: 'handover_limit_lowered' }).code).toBe('H/R');
     expect(at({ type: 'handover_loop_detected' }).code).toBe('H/L');
     expect(at({ type: 'handover_summary_failed' }).code).toBe('SUM');
     expect(at({ type: 'handover_results_truncated' }).code).toBe('CUT');
@@ -51,8 +67,8 @@ describe('handover health labels', () => {
   });
 
   it('no label uses internal words', () => {
-    for (const type of ['handover_loop_detected', 'handover_summary_failed', 'handover_results_truncated']) {
-      expect(at({ type, results: 2, newLimit: 1 }).said).not.toMatch(/watch|shift|session|compression|truncat/i);
+    for (const type of ['handover_loop_detected', 'handover_summary_failed', 'handover_results_truncated', 'handover_deferred', 'handover_limit_lowered']) {
+      expect(at({ type, results: 2, newLimit: 1, reason: 'repeated_work' }).said).not.toMatch(/watch|shift|session|compression|truncat/i);
     }
   });
 });

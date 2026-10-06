@@ -37,6 +37,16 @@ describe('finding sentences', () => {
     expect(sentenceText(findingSentence('review_handover_churn', { ...MEASURES.review_handover_churn, limitMultiplier: 1 }))).not.toContain('raised');
   });
 
+  it('churn from repeated work says so, printing only measured values', () => {
+    const m = { ...MEASURES.review_handover_churn, shortWatches: 0, longestStreak: 0, medianCallsPerWatch: 7, repeatWatches: 3, longestRepeatStreak: 2, repeatedSharePct: 81, limitMultiplier: 1.5 };
+    const t = sentenceText(findingSentence('review_handover_churn', m));
+    expect(t).toContain('Redid 81% of its earlier tool calls, 2 shifts in a row.');
+    expect(t).toContain('1.5×');
+    for (const n of numbersIn(t)) expect(measureValues(m)).toContain(n);
+    // A short-shift streak still leads when both fired.
+    expect(sentenceText(findingSentence('review_handover_churn', { ...m, longestStreak: 3 }))).toContain('Handed over after');
+  });
+
   it('tool silence mentions several quiet tools only when there are several', () => {
     expect(sentenceText(findingSentence('review_tool_silence', MEASURES.review_tool_silence))).toContain('2 tools went quiet');
     expect(sentenceText(findingSentence('review_tool_silence', { ...MEASURES.review_tool_silence, silentTools: 1 }))).not.toContain('went quiet at');

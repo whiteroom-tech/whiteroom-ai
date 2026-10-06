@@ -84,8 +84,21 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '🔁', tone: 'wouldBlock', code: 'H/L',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      return `kept handing over after a call or two, so WhiteRoom raised its context limit${
-        limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : ''} to keep it working`;
+      const to = limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : '';
+      return String(e.reason ?? '') === 'repeated_work'
+        ? `kept redoing work it had already done after each handover, so WhiteRoom raised its context limit${to} to give it room to finish`
+        : `kept handing over after a call or two, so WhiteRoom raised its context limit${to} to keep it working`;
+    },
+  },
+  handover_deferred: {
+    icon: '⏸', tone: 'handover', code: 'H/D',
+    say: () => 'had a reply cut off at its output limit, so its handover waited one call to let it finish that step',
+  },
+  handover_limit_lowered: {
+    icon: '↘', tone: 'idle', code: 'H/R',
+    say: (e) => {
+      const limit = positiveCount(e.newLimit);
+      return `stopped redoing earlier work, so WhiteRoom lowered its context limit${limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : ''}`;
     },
   },
   handover_summary_failed: {
