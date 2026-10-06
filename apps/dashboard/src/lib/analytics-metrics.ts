@@ -182,11 +182,13 @@ export function agentDaySavings(events: SavingsEvent[]): { byDay: Map<string, nu
 
 /**
  * One agent-day's estimated saving: each handover's saving times the tasks it
- * carried the context across (tasks per handover, at least 1), plus offloads.
+ * carried the context across (tasks per handover, at least 1), plus offloads,
+ * minus the input spent redoing work after handovers (the engine's
+ * redoTokens), never below zero. Mirrors the engine's savings.ts bucketSaved.
  */
-function bucketSaved(b: { tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }): number {
+function bucketSaved(b: { tasks: number; handovers: number; handoverSaved: number; offloadSaved: number; redoTokens?: number }): number {
   const perHandover = b.handovers > 0 ? Math.ceil(b.tasks / (b.handovers + 1)) : 0;
-  return b.handoverSaved * Math.max(perHandover, 1) + b.offloadSaved;
+  return Math.max(0, b.handoverSaved * Math.max(perHandover, 1) + b.offloadSaved - (b.redoTokens ?? 0));
 }
 
 /**
@@ -194,7 +196,11 @@ function bucketSaved(b: { tasks: number; handovers: number; handoverSaved: numbe
  * in SQL over the whole stored trail (Phase 1 spec H1), not over the newest
  * events the browser happened to fetch.
  */
-export interface SavingsBucket { day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number }
+export interface SavingsBucket {
+  day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number;
+  /** Input spent redoing work after handovers; absent from engines before it was added. */
+  redoTokens?: number;
+}
 
 /** Total tokens saved across buckets: the same per-agent-day math as agentDaySavings. */
 export function savedFromBuckets(buckets: SavingsBucket[]): number {

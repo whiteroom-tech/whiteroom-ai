@@ -17,7 +17,7 @@ export function liveFeedHelp(ttlHours: number): string {
  */
 export const HELP = {
   smallerHandovers: "When an agent's shift ends, WhiteRoom passes its work to a fresh session as short notes instead of the full history. This is how much smaller those notes are, on average.",
-  savings: `An estimate of money not spent. Handovers keep each agent's notes short, so later calls send fewer tokens; each agent's saved tokens are valued at the input price it actually pays, cache discounts included. Prompt caching adds what cache reads saved, less what cache writes cost. A "+" means some tokens had no price on file. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, also an estimate.`,
+  savings: `An estimate of money not spent. Handovers keep each agent's notes short, so later calls send fewer tokens. When an agent has to redo work after handovers, the tokens it spent redoing it are taken off. Each agent's saved tokens are valued at the input price it actually pays, cache discounts included. Prompt caching adds what cache reads saved, less what cache writes cost. A "+" means some tokens had no price on file. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, also an estimate.`,
   agentsWorking: 'Agents doing a task right now, out of all the agents connected to this fleet.',
   modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight UTC.',
   spendToday: "What today's model calls cost, at your AI provider's prices.",
