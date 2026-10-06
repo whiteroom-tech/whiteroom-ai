@@ -56,10 +56,18 @@ const count = (x: unknown, one: string, many: string): SentencePart[] => [v(x), 
 export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasures): SentencePart[] {
   switch (detector) {
     case 'review_handover_churn': {
-      const parts = [
-        t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
-        ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. This often means tool results are too large for one shift. If so, return smaller results (page them, drop raw HTML, summarise first).'),
-      ];
+      // Two engine rules feed this finding: short shifts, or shifts that redid
+      // earlier work. Older findings carry no repeat measures.
+      const repeatLed = Number(m.longestRepeatStreak) >= 2 && !(Number(m.longestStreak) >= 3);
+      const parts = repeatLed
+        ? [
+            t('Redid '), v(m.repeatedSharePct), t('% of its earlier tool calls, '),
+            ...count(m.longestRepeatStreak, 'shift', 'shifts'), t(' in a row. This often means each handover dropped what it had fetched, so it fetched it again. If so, return smaller results (page them, drop raw HTML, summarise first) or save progress as it goes.'),
+          ]
+        : [
+            t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
+            ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. This often means tool results are too large for one shift. If so, return smaller results (page them, drop raw HTML, summarise first).'),
+          ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;
     }
