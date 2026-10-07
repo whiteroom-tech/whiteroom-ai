@@ -7,7 +7,6 @@ import { handoverReviewStatus, type HandoverReviewStatus } from '@/lib/whiteroom
 import { HELP } from '@/lib/metric-definitions';
 import { reviewSpendLine, usd } from '@/lib/handover-review';
 
-
 /**
  * Performance › Handover reviews (compression spec §14.1): this month's review
  * spend against its own limit, apart from agent spend. Shown only once
