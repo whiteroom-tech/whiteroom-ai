@@ -12,6 +12,7 @@ export function ConfirmDialog({
   title,
   body,
   confirmLabel,
+  cancelLabel = 'Cancel',
   confirmPhrase,
   busy,
   tone = 'danger',
@@ -22,6 +23,8 @@ export function ConfirmDialog({
   title: string;
   body: React.ReactNode;
   confirmLabel: string;
+  /** Names what staying put keeps, e.g. "Keep live feed". */
+  cancelLabel?: string;
   confirmPhrase?: string;
   busy?: boolean;
   /** `danger` (default) for destructive actions; `neutral` for routine ones. */
@@ -71,7 +74,7 @@ export function ConfirmDialog({
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onCancel} disabled={busy} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }}>
-            Cancel
+            {cancelLabel}
           </button>
           <button type="submit" disabled={!ready} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'transparent', color: ready ? 'var(--on-brand)' : 'var(--tx2)', border: `1px solid ${ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'var(--line2)'}`, cursor: ready ? 'pointer' : 'not-allowed' }}>
             {busy ? 'Working…' : confirmLabel}

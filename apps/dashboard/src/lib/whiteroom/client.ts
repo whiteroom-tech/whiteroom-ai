@@ -713,3 +713,14 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
 export const alertsTest = (fleetId: string) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId });
+
+/** What WhiteRoom keeps for a fleet (Settings › Data and privacy). */
+export interface DataSettings {
+  handover_persistence: boolean;
+  content_capture: boolean;
+  personal_data: 'keep' | 'exclude';
+}
+// Same refusal handling as alerts; an engine without the action hides the section.
+export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
+export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>
+  alertsAction<DataSettings & { success: boolean }>({ action: 'fleet_data_settings_set', fleet_id: fleetId, ...patch });

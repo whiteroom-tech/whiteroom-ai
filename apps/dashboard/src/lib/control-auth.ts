@@ -16,6 +16,7 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'pause_agent', 'resume_agent', 'stop_agent',
   'alerts_get', 'alerts_set_slack', 'alerts_test',
+  'fleet_data_settings_set',
 ]);
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
