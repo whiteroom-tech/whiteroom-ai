@@ -50,7 +50,7 @@ export function SmallerHandoversSection() {
       setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
       setConfirmOn(false);
     } finally {
-      if (current.current === fleet) setBusy(false);
+      setBusy(false); // always: the section stays mounted across a fleet switch
     }
   }
 
