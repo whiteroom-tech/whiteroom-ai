@@ -391,8 +391,13 @@ export interface FleetHourlyDataPoint {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
-  /** Attempts with no catalogue price in this hour (absent on older engines). */
+  /** Attempts with no catalogue price, or no usage, in this hour (absent on older engines). */
   unpricedAttempts?: number;
+  /** Of those, the ones with no usage, and an upper bound on what they could have cost (engine PR 168). */
+  missingUsageAttempts?: number;
+  missingSpendBoundMicros?: number;
+  /** Unpriced attempts that can't be bounded. */
+  unboundedAttempts?: number;
 }
 
 export interface FleetHourlyResult {
