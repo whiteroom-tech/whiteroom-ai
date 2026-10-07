@@ -68,7 +68,6 @@ export function HandoverReviewSection() {
     handoverReviewStatus(fleet).then((s) => { if (current.current === fleet) setStatus(s); }, () => {});
   }
 
-
   const askTurnOn = () => {
     if (draftLimit === null) { setNote('Set a monthly limit first, from $1 to $100,000.'); return; }
     setPending({
