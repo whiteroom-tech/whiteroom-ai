@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { compressionModeSet, compressionPreview, type CompressionMode, type CompressionPreview } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { ITEM_COPY, itemLine, modeText } from '@/lib/smaller-handovers';
+import { applyChange } from '@/lib/settings-flow';
 
 const OPTIONS: Array<{ value: CompressionMode; label: string }> = [
   { value: 'off', label: 'Off' }, { value: 'dry_run', label: 'Preview' }, { value: 'on', label: 'On' },
@@ -40,19 +41,15 @@ export function SmallerHandoversSection() {
     const fleet = fleetId!;
     setBusy(true);
     setNote(null);
-    try {
-      const r = await compressionModeSet(fleet, mode);
-      if (current.current !== fleet) return;
-      if (r) setP((prev) => (prev ? { ...prev, compression_mode: r.compression_mode, cleared: r.cleared } : prev));
-      setConfirmOn(false);
-    } catch (e) {
-      if (current.current !== fleet) return;
-      setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
-      setConfirmOn(false);
-    } finally {
-      setBusy(false); // always: the section stays mounted across a fleet switch
-    }
+    // An answer without success: true wasn't applied, and says so.
+    const out = await applyChange(() => compressionModeSet(fleet, mode), () => current.current === fleet, (r) => r.success);
+    setBusy(false); // always: the section stays mounted across a fleet switch
+    if (out.kind === 'stale') return;
+    setConfirmOn(false);
+    if (out.kind === 'failed') { setNote(out.message); return; }
+    setP((prev) => (prev ? { ...prev, compression_mode: out.value.compression_mode, cleared: out.value.cleared } : prev));
   }
+
 
   return (
     <Panel title="Smaller handovers">
