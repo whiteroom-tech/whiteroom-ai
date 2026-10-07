@@ -16,7 +16,8 @@ describe('smaller handovers copy', () => {
 
   it('says how often a change would have applied, or that it does', () => {
     expect(itemLine(p(), 'C1')).toBe('Would have applied 12 of 340 times in the last 14 days');
-    expect(itemLine(p({ compression_mode: 'on', cleared: ['C1'] }), 'C1')).toBe('Applied 12 of 340 times in the last 14 days');
+    expect(itemLine(p({ compression_mode: 'on', cleared: ['C1'] }), 'C1')).toBe('Applies now. Counts are kept only while a change is previewed.');
+    expect(itemLine(p({ compression_mode: 'on', cleared: ['C2'] }), 'C1')).toBe('Would have applied 12 of 340 times in the last 14 days');
     expect(itemLine(p(), 'C2')).toBe('Not measured yet.');
     expect(itemLine(p({ compression_mode: 'off' }), 'C2')).toMatch(/Turn on Preview/);
   });

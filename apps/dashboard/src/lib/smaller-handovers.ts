@@ -12,14 +12,18 @@ export const ITEM_COPY: Array<{ id: CompressionItem; title: string; text: string
   { id: 'G4', title: 'Keep the goal in force', text: 'The goal you or the agent set, never an old one.' },
 ];
 
-/** One line per change: how often it would have applied, or that it does. */
+/**
+ * One line per change: how often it would have applied while previewed.
+ * A change that's live isn't counted, so it says so instead of showing a
+ * number from before it went live.
+ */
 export function itemLine(p: CompressionPreview, id: CompressionItem): string {
+  if (p.compression_mode === 'on' && p.cleared.includes(id)) return 'Applies now. Counts are kept only while a change is previewed.';
   const c = p.items[id] ?? { observed: 0, wouldChange: 0 };
-  const applies = p.compression_mode === 'on' && p.cleared.includes(id);
   if (p.compression_mode === 'off' && !c.observed) return 'Not measured. Turn on Preview to see how often this would apply.';
   if (!c.observed) return 'Not measured yet.';
   const n = (x: number) => x.toLocaleString('en-US');
-  return `${applies ? 'Applied' : 'Would have applied'} ${n(c.wouldChange)} of ${n(c.observed)} times in the last ${p.days} days`;
+  return `Would have applied ${n(c.wouldChange)} of ${n(c.observed)} times in the last ${p.days} days`;
 }
 
 /** The mode's one-line description. */
