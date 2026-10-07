@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { spendGap, spendGapText } from '@/lib/spend-completeness';
+import { gapText, spendGap } from '@/lib/spend-completeness';
+
+const spendGapText = (hours: Parameters<typeof spendGap>[0]) => gapText(spendGap(hours));
 
 describe('spend gap', () => {
   it('is complete when every call was priced', () => {

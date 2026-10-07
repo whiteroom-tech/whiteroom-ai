@@ -812,7 +812,10 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const hourly = hourlyData?.hourly ?? [];
   const mid = Math.floor(hourly.length / 2);
   const displayHourly = mid > 0 ? hourly.slice(mid) : hourly;
-  // Worked out once for both Spend cards.
+  // Hourly data is fetched for twice the range (the first half feeds trends),
+  // so displayHourly is exactly the selected range the summary totals cover:
+  // the gap is measured over the same calls as the Spend figure. Worked out
+  // once for both Spend cards.
   const gap = spendGap(displayHourly);
   const gapLine = gapText(gap) || (s.unpricedAttempts ? 'Incomplete: some calls couldn’t be priced' : '');
   const trends = useMemo(() => hourly.length > 1 ? computeTrends(hourly) : { calls: null, cost: null, latency: null, errorRate: null }, [hourly]);
@@ -844,9 +847,12 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           hint={HELP.spend}
           // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
           value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts || gap.kind !== 'complete')}`}
-          sub={gapLine ? <span style={{ color: 'var(--warn-tx)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · {gapLine}{data.priceInfo.stale ? ` · prices ${data.priceInfo.ageDays} days old` : ''}</span> : data.priceInfo.stale
-            ? <span style={{ color: 'var(--warn)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · prices {data.priceInfo.ageDays} days old</span>
-            : `${fmtCost(s.totalCost / hoursInRange)} / h`}
+          sub={(() => {
+            // One line: the rate, then whatever makes the figure less than exact, in one warning colour.
+            const notes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
+            const rate = `${fmtCost(s.totalCost / hoursInRange)} / h`;
+            return notes.length ? <span style={{ color: 'var(--warn-tx)' }}>{[rate, ...notes].join(' · ')}</span> : rate;
+          })()}
         />
         <StatCard
           variant="card"

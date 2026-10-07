@@ -27,5 +27,3 @@ export function gapText(gap: ReturnType<typeof spendGap>): string {
     ? `Incomplete: may be up to ${fmtCost(gap.micros)} more`
     : 'Incomplete: some calls couldn’t be priced';
 }
-
-export const spendGapText = (hours: Hour[]): string => gapText(spendGap(hours));
