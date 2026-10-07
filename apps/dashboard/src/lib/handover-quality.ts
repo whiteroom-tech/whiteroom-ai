@@ -53,7 +53,7 @@ export function reviewRow(r: HandoverReviewCounts): QualityRow {
       detail: r.mode === 'realtime' ? 'Not measured yet. Shows after the first sampled handover is reviewed.' : 'Not measured yet. Turn on handover review in Settings to see it.',
     };
   }
-  if (confirmed < r.minVerified) {
+  if (!confirmed || confirmed < r.minVerified) { // none confirmed is never a rate, whatever the minimum
     return { label: 'Review result', value: '—', state: 'none', detail: `Not enough data yet: ${n(confirmed)} of ${n(r.minVerified)} items confirmed so far.` };
   }
   // A sample that lost too many reviews (or most of one shift size) may be lopsided: no result (§8.4).

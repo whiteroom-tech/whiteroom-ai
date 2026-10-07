@@ -54,6 +54,7 @@ describe('review result', () => {
   });
 
   it('says not enough data, or not measured, instead of a number', () => {
+    expect(reviewRow(r({ minVerified: 0 }, { retained: 0, dropped: 0, contradicted: 0 })).value).toBe('—'); // never NaN%
     expect(reviewRow(r({}, { retained: 10, dropped: 0, contradicted: 0 }))).toMatchObject({ value: '—', detail: 'Not enough data yet: 10 of 20 items confirmed so far.' });
     expect(reviewRow(r({ mode: 'off' }, { reviewed: 0 })).detail).toMatch(/Turn on handover review in Settings/);
     // Too few of the sampled handovers reviewed, overall or for one shift size.
