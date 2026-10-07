@@ -41,11 +41,11 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   if (owner === undefined) return null;
 
   /** One goal action: dropped if the user moved to another agent, never shown as done unless the engine applied it. */
-  async function run<T>(kind: 'save' | 'clear' | 'run', send: () => Promise<T | null>, onApplied: (v: T) => void, done: string) {
+  async function run<T>(kind: 'save' | 'clear' | 'run', send: () => Promise<T | null>, onApplied: (v: T) => void, done: string, applied: (v: T) => boolean) {
     const target = current.current;
     setBusy(kind);
     setNote(null);
-    const out = await applyChange(send, () => current.current === target);
+    const out = await applyChange(send, () => current.current === target, applied);
     if (out.kind === 'stale') return;
     if (out.kind === 'applied') onApplied(out.value);
     setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: out.message });
@@ -54,7 +54,9 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   }
 
   const save = () => run('save', () => goalSetOwner(fleetId, agentId, (draft ?? '').trim()),
-    (r) => { setOwner(r.owner); setDraft(null); }, 'Saved. The agent works toward it from its next handover.');
+    (r) => { setOwner(r.owner); setDraft(null); }, 'Saved. The agent works toward it from its next handover.',
+    // A reply without the saved goal wasn't applied.
+    (r) => !!r?.owner);
 
   return (
     <Panel
@@ -104,7 +106,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         cancelLabel="Keep goal"
         tone="neutral"
         busy={busy === 'clear'}
-        onConfirm={() => void run('clear', () => goalSetOwner(fleetId, agentId, null), (r) => { setOwner(r.owner); setDraft(null); }, 'Goal cleared.')}
+        onConfirm={() => void run('clear', () => goalSetOwner(fleetId, agentId, null), (r) => { setOwner(r.owner); setDraft(null); }, 'Goal cleared.', (r) => !!r && 'owner' in r)}
         onCancel={() => setConfirm(null)}
       />
       <ConfirmDialog
@@ -114,7 +116,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         confirmLabel="Start a new task"
         tone="neutral"
         busy={busy === 'run'}
-        onConfirm={() => void run('run', () => agentNewRun(fleetId, agentId), () => {}, 'New task started.')}
+        onConfirm={() => void run('run', () => agentNewRun(fleetId, agentId), () => {}, 'New task started.', (r) => r?.success === true)}
         onCancel={() => setConfirm(null)}
       />
     </Panel>
