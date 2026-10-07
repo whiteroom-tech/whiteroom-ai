@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gapText, spendGap } from '@/lib/spend-completeness';
+import { UNPRICED_TEXT, gapText, spendGap, spendSummary } from '@/lib/spend-completeness';
 
 const spendGapText = (hours: Parameters<typeof spendGap>[0]) => gapText(spendGap(hours));
 
@@ -19,5 +19,21 @@ describe('spend gap', () => {
 
   it("never shows a bound of $0 as an upper bound", () => {
     expect(spendGapText([{ unpricedAttempts: 1, missingSpendBoundMicros: 0, unboundedAttempts: 0 }])).toBe('Incomplete: some calls couldn’t be priced');
+  });
+});
+
+describe('spend summary for the Spend cards', () => {
+  const h = (unpriced: number) => ({ unpricedAttempts: unpriced, missingSpendBoundMicros: 0, unboundedAttempts: 0 });
+  it('measures the gap over the selected half only', () => {
+    const r = spendSummary([h(3), h(3), h(0), h(0)], 0);
+    expect(r.shown).toHaveLength(2);
+    expect(r).toMatchObject({ gapLine: '', partial: false });
+  });
+  it('marks the figure partial from the selected half', () => {
+    expect(spendSummary([h(0), h(0), h(0), h(2)], 0)).toMatchObject({ partial: true, gapLine: UNPRICED_TEXT });
+  });
+  it('falls back to the summary count when there are no hourly rows', () => {
+    expect(spendSummary([], 4)).toMatchObject({ shown: [], gapLine: UNPRICED_TEXT, partial: true });
+    expect(spendSummary([], 0)).toMatchObject({ gapLine: '', partial: false });
   });
 });

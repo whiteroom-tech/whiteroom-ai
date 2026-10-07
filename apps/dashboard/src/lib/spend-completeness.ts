@@ -30,3 +30,17 @@ export function gapText(gap: ReturnType<typeof spendGap>): string {
     ? `Incomplete: may be up to ${fmtCost(gap.micros)} more`
     : UNPRICED_TEXT;
 }
+
+/**
+ * What both Spend cards show about completeness. Hourly data is fetched for
+ * twice the range (the first half feeds trends), so `shown` is the selected
+ * range the summary totals cover: the gap is measured over the same calls as
+ * the Spend figure. Without hourly rows, the summary's unpriced count still
+ * marks the figure.
+ */
+export function spendSummary<T extends Hour>(hourly: T[], unpricedAttempts: number | undefined): { shown: T[]; gapLine: string; partial: boolean } {
+  const mid = Math.floor(hourly.length / 2);
+  const shown = mid > 0 ? hourly.slice(mid) : hourly;
+  const gap = spendGap(shown);
+  return { shown, gapLine: gapText(gap) || (unpricedAttempts ? UNPRICED_TEXT : ''), partial: !!unpricedAttempts || gap.kind !== 'complete' };
+}

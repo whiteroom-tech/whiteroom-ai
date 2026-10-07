@@ -15,7 +15,7 @@ import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
-import { UNPRICED_TEXT, gapText, spendGap } from '@/lib/spend-completeness';
+import { spendSummary } from '@/lib/spend-completeness';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
@@ -810,16 +810,9 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const toggleMetric = (m: string) => setExpandedMetric(prev => prev === m ? null : m);
 
   const hourly = hourlyData?.hourly ?? [];
-  const mid = Math.floor(hourly.length / 2);
-  const displayHourly = mid > 0 ? hourly.slice(mid) : hourly;
-  // Hourly data is fetched for twice the range (the first half feeds trends),
-  // so displayHourly is exactly the selected range the summary totals cover:
-  // the gap is measured over the same calls as the Spend figure. Worked out
-  // once for both Spend cards.
-  const gap = spendGap(displayHourly);
-  const gapLine = gapText(gap) || (s.unpricedAttempts ? UNPRICED_TEXT : '');
-  // Both Spend cards mark the figure partial on the same terms.
-  const spendPartial = !!s.unpricedAttempts || gap.kind !== 'complete';
+  // The selected range (the first half of the hourly rows feeds trends), and
+  // what both Spend cards say about completeness, worked out once.
+  const { shown: displayHourly, gapLine, partial: spendPartial } = spendSummary(hourly, s.unpricedAttempts);
   const trends = useMemo(() => hourly.length > 1 ? computeTrends(hourly) : { calls: null, cost: null, latency: null, errorRate: null }, [hourly]);
 
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
