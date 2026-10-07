@@ -115,6 +115,24 @@ const EVENT_COPY: Record<string, EventCopy> = {
       return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to carry through its handover, so some were cut`;
     },
   },
+  // Handover delivery and goals (compression spec §6.3, §6.5, §14.4).
+  handover_delivery_abandoned: {
+    icon: '⚠', tone: 'wouldBlock', code: 'NTS',
+    say: () => 'had handover notes too large to deliver, so WhiteRoom sent a short version',
+  },
+  handover_chain_abandoned: {
+    icon: '⚠', tone: 'wouldBlock', code: 'NTS',
+    say: () => "couldn't receive its handover notes, so it carried on without them",
+  },
+  goal_set: {
+    icon: '◎', tone: 'idle', code: 'GOL',
+    say: (e) => (e.cleared ? 'had its goal cleared' : 'got a new goal from its owner'),
+  },
+  run_started: { icon: '▶', tone: 'start', code: 'RUN', say: () => 'was started on a new task' },
+  data_settings_changed: {
+    icon: '◎', tone: 'idle', code: 'SET', who: 'WhiteRoom',
+    say: () => 'data and privacy settings were changed for this fleet',
+  },
   // Audit integrity (Phase 1 spec H6). Fleet-level: the subject is WhiteRoom.
   unclean_stop: {
     icon: '⚠', tone: 'wouldBlock', code: 'GAP', who: 'WhiteRoom',

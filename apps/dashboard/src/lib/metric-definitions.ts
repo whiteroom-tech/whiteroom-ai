@@ -32,6 +32,7 @@ export const HELP = {
   ruleActions: 'Times one of your rules stepped in: it told you, blocked a call, or paused or stopped an agent.',
   currentShift: 'Agents work in short shifts. At the end of each one they pass their notes to a fresh session, which keeps them fast and cheap.',
   handoverNotes: 'What the agent passed to its next shift: where it is, what is left to do, and anything to watch out for.',
+  goal: 'What this agent is working toward. A goal you set comes first, across every task. Without one, WhiteRoom uses the goal the agent gives, or its first message in the task.',
   taskType: 'A short name for what this agent does. It is used to compare costs between agents doing the same kind of work.',
   recentRuns: "This agent's latest stretches of work, newest first.",
   rulesThatApply: 'The rules from Controls that cover this agent, and what each one has done to it lately.',

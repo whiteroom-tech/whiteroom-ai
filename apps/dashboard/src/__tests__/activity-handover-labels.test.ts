@@ -73,4 +73,15 @@ describe('handover health labels', () => {
       expect(at({ type, results: 2, newLimit: 1, reason: 'repeated_work' }).said).not.toMatch(/watch|shift|session|compression|truncat/i);
     }
   });
+
+  it('handover delivery and goal events read as sentences, never raw codes', () => {
+    expect(at({ type: 'handover_delivery_abandoned' }).said).toBe('had handover notes too large to deliver, so WhiteRoom sent a short version');
+    expect(at({ type: 'handover_chain_abandoned' }).said).toBe("couldn't receive its handover notes, so it carried on without them");
+    expect(at({ type: 'goal_set', cleared: false }).said).toBe('got a new goal from its owner');
+    expect(at({ type: 'goal_set', cleared: true }).said).toBe('had its goal cleared');
+    expect(at({ type: 'run_started' }).said).toBe('was started on a new task');
+    const settings = at({ type: 'data_settings_changed', agentId: undefined });
+    expect(settings.who).toBe('WhiteRoom');
+    expect(settings.said).toBe('data and privacy settings were changed for this fleet');
+  });
 });

@@ -722,6 +722,15 @@ export interface DataSettings {
   /** Saved notes are deleted this long after each is written (engines from PR 6 on). */
   handover_max_age_hours?: number;
 }
+/** The owner's goal for an agent (Agent detail › Goal). */
+export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string }
+export const goalGet = (fleetId: string, agentId: string) =>
+  alertsAction<{ owner: OwnerGoal | null }>({ action: 'goal_get', fleet_id: fleetId, agent_id: agentId });
+export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null) =>
+  alertsAction<{ owner: OwnerGoal }>({ action: 'goal_set_owner', fleet_id: fleetId, agent_id: agentId, goal });
+export const agentNewRun = (fleetId: string, agentId: string) =>
+  alertsAction<{ success: boolean }>({ action: 'agent_new_run', fleet_id: fleetId, agent_id: agentId });
+
 // Same refusal handling as alerts; an engine without the action hides the section.
 export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
 export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>

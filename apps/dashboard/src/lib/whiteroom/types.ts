@@ -53,6 +53,8 @@ export interface HandoverDoc {
   pending?: Array<{ task: string }>;
   warnings?: string[];
   session_stats?: { tasks_completed: number; total_tokens: number };
+  /** A short stand-in, sent when the full notes were rejected as too large (engine PR 165). */
+  fallback?: boolean;
 }
 
 export interface FleetReport {
