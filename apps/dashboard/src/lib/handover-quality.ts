@@ -57,7 +57,7 @@ export function reviewRow(r: HandoverReviewCounts): QualityRow {
     return { label: 'Review result', value: '—', state: 'none', detail: `Not enough data yet: ${n(confirmed)} of ${n(r.minVerified)} items confirmed so far.` };
   }
   // A sample that lost too many reviews (or most of one shift size) may be lopsided: no result (§8.4).
-  const { selected, bySize } = r.representative;
+  const { selected, bySize = {} } = r.representative; // absent on engines before the coverage counts
   const thin = (selected > 0 && reviewed / selected < r.coverageMin)
     || Object.values(bySize).some((b) => b.selected > 0 && b.reviewed / b.selected < r.sizeCoverageMin);
   if (thin) {
