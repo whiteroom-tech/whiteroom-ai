@@ -5,6 +5,7 @@ import { Button, Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/u
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { applyChange, confirmKind } from '@/lib/settings-flow';
 
 type Pending = { patch: Partial<DataSettings>; title: string; body: string; confirm: string; cancel: string; tone: 'danger' | 'neutral' };
 
@@ -22,7 +23,7 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
   removePersonal: {
     title: 'Remove personal details from notes?',
     body: 'Email addresses and phone numbers are removed from handover notes, including notes already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
-    confirm: 'Remove from notes', cancel: 'Keep them', tone: 'neutral',
+    confirm: 'Remove them', cancel: 'Keep them', tone: 'neutral',
   },
 };
 
@@ -46,7 +47,11 @@ export function DataPrivacySection() {
   current.current = fleetId;
 
   useEffect(() => {
+    // Another fleet starts clean: no dialog, note or retry for the last one carries over.
     setSettings(null);
+    setPending(null);
+    setNote(null);
+    setRetry(null);
     if (authStatus !== 'authenticated' || !fleetId) return;
     let live = true;
     dataSettingsGet(fleetId).then((s) => { if (live) setSettings(s); }, () => {});
@@ -61,17 +66,16 @@ export function DataPrivacySection() {
     setNote(null);
     setRetry(null);
     try {
-      const next = await dataSettingsSet(fleet, patch);
-      if (current.current !== fleet) return;
-      // No answer means the engine didn't apply it: never shown as saved.
-      if (!next) throw new Error('This WhiteRoom engine didn’t apply the change. Try again later.');
-      if (next) setSettings({ handover_persistence: next.handover_persistence, content_capture: next.content_capture, personal_data: next.personal_data });
+      const out = await applyChange(() => dataSettingsSet(fleet, patch), () => current.current === fleet);
+      if (out.kind === 'stale') return;
       setPending(null);
-    } catch (e) {
-      if (current.current !== fleet) return;
-      setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
+      if (out.kind === 'applied') {
+        const next = out.value;
+        setSettings({ handover_persistence: next.handover_persistence, content_capture: next.content_capture, personal_data: next.personal_data });
+        return;
+      }
+      setNote(out.message);
       setRetry(patch);
-      setPending(null);
       // The change may have been saved even though a later step failed: show what the engine has.
       dataSettingsGet(fleet).then((s) => { if (s && current.current === fleet) setSettings(s); }, () => {});
     } finally {
@@ -79,7 +83,12 @@ export function DataPrivacySection() {
     }
   }
 
-  const ask = (kind: keyof typeof CONFIRM, patch: Partial<DataSettings>) => setPending({ patch, ...CONFIRM[kind] });
+  /** Saves, or asks first when the change deletes something or changes what agents keep. */
+  const change = (patch: Partial<DataSettings>) => {
+    const kind = confirmKind(patch);
+    if (kind) setPending({ patch, ...CONFIRM[kind] });
+    else void save(patch);
+  };
 
   return (
     <Panel title="Data and privacy">
@@ -93,7 +102,7 @@ export function DataPrivacySection() {
           ? 'Lets your agents pick up where they left off after a WhiteRoom update. Notes are encrypted.'
           : 'Notes stay in memory only. After a WhiteRoom update, agents start their next shift without them.'}
         control={<Toggle label="Save handover notes" checked={settings.handover_persistence} disabled={busy}
-          onChange={(on) => (on ? void save({ handover_persistence: true }) : ask('notesOff', { handover_persistence: false }))} />}
+          onChange={(on) => change({ handover_persistence: on })} />}
       />
       <Row
         title="Live feed"
@@ -101,7 +110,7 @@ export function DataPrivacySection() {
           ? 'What your agents said and did. Kept 72 hours, then deleted. Never part of the audit record.'
           : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
         control={<Toggle label="Live feed" checked={settings.content_capture} disabled={busy}
-          onChange={(on) => (on ? void save({ content_capture: true }) : ask('feedOff', { content_capture: false }))} />}
+          onChange={(on) => change({ content_capture: on })} />}
       />
       <Row
         last
@@ -111,8 +120,7 @@ export function DataPrivacySection() {
           options={[{ value: 'keep', label: 'Keep' }, { value: 'exclude', label: 'Remove' }]}
           onChange={(v) => {
             if (busy || v === settings.personal_data) return;
-            if (v === 'exclude') ask('removePersonal', { personal_data: 'exclude' });
-            else void save({ personal_data: 'keep' });
+            change({ personal_data: v as 'keep' | 'exclude' });
           }} />}
       />
 
