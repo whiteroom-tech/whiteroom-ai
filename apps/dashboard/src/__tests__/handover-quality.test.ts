@@ -4,6 +4,10 @@ import { qualityRows } from '@/lib/handover-quality';
 const base = { handovers: 3, scored: 3, valuesChecked: 200, valuesKept: 196, valuesKeptShare: 0.98, shareChecked: 0.96, coverageMin: 0.9, keptWithLabel: null, goalCarriedOver: null };
 
 describe('handover quality rows', () => {
+  it('rounds down without float error', () => {
+    expect(qualityRows({ ...base, valuesKept: 29, valuesChecked: 200, valuesKeptShare: 0.145 })[0].value).toBe('14.5%');
+  });
+
   it('shows values kept with its denominator', () => {
     expect(qualityRows(base)[0]).toEqual({ label: 'Values kept', detail: '196 of 200 values WhiteRoom checked', value: '98.0%', state: 'measured' });
   });
