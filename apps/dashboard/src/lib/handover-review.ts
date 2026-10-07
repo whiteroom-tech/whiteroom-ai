@@ -1,6 +1,7 @@
 import type { HandoverReviewStatus } from '@/lib/whiteroom/client';
 
-const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Dollars with cents, as review spend and limits are shown everywhere. */
+export const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
  * The month's review spend in one line, for Settings and the Performance card.

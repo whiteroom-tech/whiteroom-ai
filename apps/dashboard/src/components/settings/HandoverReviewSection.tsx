@@ -5,10 +5,9 @@ import { Button, Panel, Toggle, FONT_MONO } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, handoverReviewStatus, type DataSettings, type HandoverReviewStatus } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { reviewSpendLine } from '@/lib/handover-review';
+import { reviewSpendLine, usd } from '@/lib/handover-review';
 
 const MAX_LIMIT = 100_000;
-const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 type Pending = { patch: Partial<DataSettings>; title: string; body: string; confirm: string; cancel: string };
 
