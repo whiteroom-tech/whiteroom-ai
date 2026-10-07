@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { AlertsSection } from '@/components/settings/AlertsSection';
 import { DataPrivacySection } from '@/components/settings/DataPrivacySection';
 import { HandoverReviewSection } from '@/components/settings/HandoverReviewSection';
+import { SmallerHandoversSection } from '@/components/settings/SmallerHandoversSection';
 import { AuditIntegritySection } from '@/components/settings/AuditIntegritySection';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/citadel/PageChrome';
@@ -120,6 +121,7 @@ export function SettingsView({
           <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
           <DataPrivacySection />
           <HandoverReviewSection />
+          <SmallerHandoversSection />
           <AlertsSection />
           <div id="audit-integrity"><AuditIntegritySection /></div>
           <EmailSection account={account} pending={pending} run={run} />

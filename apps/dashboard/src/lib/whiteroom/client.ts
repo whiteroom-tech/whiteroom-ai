@@ -735,6 +735,20 @@ export interface HandoverReviewStatus {
   /** Reviews started under a higher limit are finishing; none start until spend is back under it. */
   over_limit_from_earlier: boolean;
 }
+/** Settings › Smaller handovers (engines from compression PR 17 on). */
+export type CompressionMode = 'off' | 'dry_run' | 'on';
+export type CompressionItem = 'C1' | 'C2' | 'C3' | 'Q1' | 'Q2' | 'Q3' | 'Q4' | 'G4';
+export interface CompressionPreview {
+  compression_mode: CompressionMode; days: number;
+  /** Changes that passed testing and apply in On; the rest are only counted. */
+  cleared: CompressionItem[];
+  items: Record<CompressionItem, { observed: number; wouldChange: number }>;
+}
+export const compressionPreview = (fleetId: string, days = 14) =>
+  alertsAction<CompressionPreview>({ action: 'compression_preview', fleet_id: fleetId, days });
+export const compressionModeSet = (fleetId: string, mode: CompressionMode) =>
+  alertsAction<{ success: boolean; compression_mode: CompressionMode; cleared: CompressionItem[] }>({ action: 'compression_mode_set', fleet_id: fleetId, compression_mode: mode });
+
 export const handoverReviewStatus = (fleetId: string) =>
   alertsAction<HandoverReviewStatus>({ action: 'handover_review_status', fleet_id: fleetId });
 /** The owner's goal for an agent (Agent detail › Goal). */
