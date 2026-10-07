@@ -10,6 +10,10 @@ import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
  * secret (Governance Loop spec Rev 9, R1), so a fleet key on its own — which
  * every agent holds — can't remove an agent's controls or wake it up.
  *
+ * Read-only figures (handover_quality, handover_frequency,
+ * handover_review_status) aren't listed: like the other performance reads
+ * they're counts and spend, no content, and stay open to the fleet's key.
+ *
  * Keep in step with DASHBOARD_ONLY_ACTIONS in the engine's routes/white-room.ts.
  */
 export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
