@@ -25,6 +25,6 @@ export function spendGapText(hours: Hour[]): string {
   const gap = spendGap(hours);
   if (gap.kind === 'complete') return '';
   return gap.kind === 'bounded'
-    ? `Incomplete: up to ${fmtCost(gap.micros)} more not priced yet`
+    ? `Incomplete: up to ${fmtCost(gap.micros)} more not priced`
     : 'Incomplete: some calls couldn’t be priced';
 }

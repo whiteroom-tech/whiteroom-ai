@@ -841,7 +841,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           hint={HELP.spend}
           // "+", as on Runs: some calls have no price on file, so this is a lower bound.
           value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts)}`}
-          sub={s.unpricedAttempts ? <span style={{ color: 'var(--warn-tx)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · {spendGapText(hourly) || 'Incomplete: some calls couldn’t be priced'}</span> : data.priceInfo.stale
+          sub={s.unpricedAttempts || spendGapText(displayHourly) ? <span style={{ color: 'var(--warn-tx)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · {spendGapText(displayHourly) || 'Incomplete: some calls couldn’t be priced'}</span> : data.priceInfo.stale
             ? <span style={{ color: 'var(--warn)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · prices {data.priceInfo.ageDays} days old</span>
             : `${fmtCost(s.totalCost / hoursInRange)} / h`}
         />
