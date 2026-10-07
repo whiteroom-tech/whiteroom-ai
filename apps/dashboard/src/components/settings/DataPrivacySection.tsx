@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/ui';
+import { Button, Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -38,6 +38,9 @@ export function DataPrivacySection() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // The change that failed, so Try again resends exactly it (a purge that
+  // didn't finish is retried by saving the same setting again).
+  const [retry, setRetry] = useState<Partial<DataSettings> | null>(null);
 
   useEffect(() => {
     setSettings(null);
@@ -52,12 +55,14 @@ export function DataPrivacySection() {
   async function save(patch: Partial<DataSettings>) {
     setBusy(true);
     setNote(null);
+    setRetry(null);
     try {
       const next = await dataSettingsSet(fleetId!, patch);
       if (next) setSettings({ handover_persistence: next.handover_persistence, content_capture: next.content_capture, personal_data: next.personal_data });
       setPending(null);
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
+      setRetry(patch);
       setPending(null);
       // The change may have been saved even though a later step failed: show what the engine has.
       dataSettingsGet(fleetId!).then((s) => { if (s) setSettings(s); }, () => {});
@@ -107,7 +112,12 @@ export function DataPrivacySection() {
         Deleted data can stay in encrypted database backups until those backups expire.
       </p>
       {busy && !pending && <p role="status" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>Saving…</p>}
-      {note && <p role="alert" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--bad)' }}>{note}</p>}
+      {note && (
+        <div style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)', flex: '1 1 260px' }}>{note}</p>
+          {retry && <Button size={28} busy={busy} busyLabel="Saving…" onClick={() => void save(retry)}>Try again</Button>}
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!pending}
