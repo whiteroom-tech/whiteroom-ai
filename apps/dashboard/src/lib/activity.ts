@@ -120,6 +120,10 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
     say: () => 'had handover notes too large to deliver, so WhiteRoom sent a short version',
   },
+  handover_notes_resealed: {
+    icon: '•', tone: 'idle', code: 'NTS',
+    say: () => 'had its saved handover notes cleaned and re-secured by WhiteRoom',
+  },
   handover_chain_abandoned: {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
     say: () => "couldn't receive its handover notes, so it carried on without them",

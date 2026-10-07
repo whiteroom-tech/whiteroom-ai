@@ -77,6 +77,7 @@ describe('handover health labels', () => {
   it('handover delivery and goal events read as sentences, never raw codes', () => {
     expect(at({ type: 'handover_delivery_abandoned' }).said).toBe('had handover notes too large to deliver, so WhiteRoom sent a short version');
     expect(at({ type: 'handover_chain_abandoned' }).said).toBe("couldn't receive its handover notes, so it carried on without them");
+    expect(at({ type: 'handover_notes_resealed' }).said).toBe('had its saved handover notes cleaned and re-secured by WhiteRoom');
     expect(at({ type: 'goal_set', cleared: false }).said).toBe('got a new goal from its owner');
     expect(at({ type: 'goal_set', cleared: true }).said).toBe('had its goal cleared');
     expect(at({ type: 'run_started' }).said).toBe('was started on a new task');
