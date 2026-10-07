@@ -15,7 +15,7 @@ import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
-import { spendGap, spendGapText } from '@/lib/spend-completeness';
+import { gapText, spendGap } from '@/lib/spend-completeness';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
@@ -812,6 +812,9 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const hourly = hourlyData?.hourly ?? [];
   const mid = Math.floor(hourly.length / 2);
   const displayHourly = mid > 0 ? hourly.slice(mid) : hourly;
+  // Worked out once for both Spend cards.
+  const gap = spendGap(displayHourly);
+  const gapLine = gapText(gap) || (s.unpricedAttempts ? 'Incomplete: some calls couldn’t be priced' : '');
   const trends = useMemo(() => hourly.length > 1 ? computeTrends(hourly) : { calls: null, cost: null, latency: null, errorRate: null }, [hourly]);
 
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
@@ -840,8 +843,8 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           label="Spend"
           hint={HELP.spend}
           // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
-          value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts || spendGap(displayHourly).kind !== 'complete')}`}
-          sub={s.unpricedAttempts || spendGapText(displayHourly) ? <span style={{ color: 'var(--warn-tx)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · {spendGapText(displayHourly) || 'Incomplete: some calls couldn’t be priced'}</span> : data.priceInfo.stale
+          value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts || gap.kind !== 'complete')}`}
+          sub={gapLine ? <span style={{ color: 'var(--warn-tx)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · {gapLine}{data.priceInfo.stale ? ` · prices ${data.priceInfo.ageDays} days old` : ''}</span> : data.priceInfo.stale
             ? <span style={{ color: 'var(--warn)' }}>{fmtCost(s.totalCost / hoursInRange)} / h · prices {data.priceInfo.ageDays} days old</span>
             : `${fmtCost(s.totalCost / hoursInRange)} / h`}
         />
@@ -866,7 +869,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         <section aria-label="More detail">
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
-            <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts || spendGap(displayHourly).kind !== 'complete')}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
+            <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${partialMark(!!s.unpricedAttempts || gap.kind !== 'complete')}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
             <MetricCard label="Savings, est." value={savingsFigure(auditFailed, savings.totalMicros, savings.partial)} sub={auditFailed ? UNAVAILABLE : savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />

@@ -14,4 +14,8 @@ describe('spend gap', () => {
     expect(spendGap([{ unpricedAttempts: 1, missingSpendBoundMicros: 500, unboundedAttempts: 1 }]).kind).toBe('unknown');
     expect(spendGap([{ unpricedAttempts: 1 }]).kind).toBe('unknown');
   });
+
+  it("never shows a bound of $0 as an upper bound", () => {
+    expect(spendGapText([{ unpricedAttempts: 1, missingSpendBoundMicros: 0, unboundedAttempts: 0 }])).toBe('Incomplete: some calls couldn’t be priced');
+  });
 });

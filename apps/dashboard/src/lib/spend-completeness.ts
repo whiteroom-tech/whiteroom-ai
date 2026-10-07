@@ -20,11 +20,12 @@ export function spendGap(hours: Hour[]): { kind: 'complete' } | { kind: 'bounded
   return { kind: 'bounded', micros: bound };
 }
 
-/** The Spend card's line about it: "" when nothing is missing. */
-export function spendGapText(hours: Hour[]): string {
-  const gap = spendGap(hours);
+/** The Spend card's line about a gap: "" when nothing is missing. A bound of $0 says nothing, so it isn't shown as one. */
+export function gapText(gap: ReturnType<typeof spendGap>): string {
   if (gap.kind === 'complete') return '';
-  return gap.kind === 'bounded'
+  return gap.kind === 'bounded' && gap.micros > 0
     ? `Incomplete: may be up to ${fmtCost(gap.micros)} more`
     : 'Incomplete: some calls couldn’t be priced';
 }
+
+export const spendGapText = (hours: Hour[]): string => gapText(spendGap(hours));
