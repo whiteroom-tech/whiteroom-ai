@@ -751,6 +751,21 @@ export interface HandoverQuality {
   handovers: number; scored: number; valuesChecked: number; valuesKept: number;
   valuesKeptShare: number | null; shareChecked: number | null; coverageMin: number;
   keptWithLabel: number | null; goalCarriedOver: number | null;
+  /** Handover review results (engines from compression PR 16b on). Counts only. */
+  review?: HandoverReviewCounts;
+}
+export interface HandoverReviewCounts {
+  mode: 'off' | 'realtime';
+  /** The representative sample: the review result is computed from these only. */
+  representative: { reviewed: number; retained: number; dropped: number; contradicted: number; unverified: number };
+  /** Reviewed because something looked off; reported apart from the result. */
+  riskTriggered: number;
+  /** Picked but not reviewed, by reason (engine codes; never shown raw). */
+  skipped: Record<string, number>;
+  /** Verdict categories calibrated against people for the prompt and model in use. */
+  calibrated: Array<'retained' | 'dropped' | 'contradicted'>;
+  /** Confirmed items needed before a result is shown. */
+  minVerified: number;
 }
 export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
   alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });
