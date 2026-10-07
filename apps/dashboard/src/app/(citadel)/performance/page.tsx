@@ -6,6 +6,7 @@ import { performanceIndex, performanceAgent, performanceEvidence, performanceFee
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
+import { HandoverReviewsCard } from '@/components/performance/HandoverReviewsCard';
 import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -859,6 +860,8 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
         <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
       </div>
+
+      <HandoverReviewsCard fleetId={fleetId} />
 
       <div style={{ margin: '10px 0 24px' }}>
         <button type="button" className="wr-link" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-expanded={moreDetail} onClick={() => setMoreDetail((v) => !v)}>

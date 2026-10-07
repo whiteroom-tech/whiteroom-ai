@@ -721,7 +721,22 @@ export interface DataSettings {
   personal_data: 'keep' | 'exclude';
   /** Saved notes are deleted this long after each is written (engines from PR 6 on). */
   handover_max_age_hours?: number;
+  /** Handover review (engines from compression PR 14 on): off unless the owner turns it on. */
+  review_mode?: 'off' | 'realtime';
+  /** Its monthly limit in dollars, on the fleet's own provider bill. Required to turn it on. */
+  review_monthly_cap_usd?: number | null;
 }
+
+/** This month's handover review spend and results (Settings › Handover review, Performance). Counts only. */
+export interface HandoverReviewStatus {
+  review_mode: 'off' | 'realtime'; month: string; cap_usd: number | null;
+  spent_usd: number; reserved_usd: number; reviews: number;
+  verdicts: { retained: number; dropped: number; contradicted: number; unverified: number };
+  /** Reviews started under a higher limit are finishing; none start until spend is back under it. */
+  over_limit_from_earlier: boolean;
+}
+export const handoverReviewStatus = (fleetId: string) =>
+  alertsAction<HandoverReviewStatus>({ action: 'handover_review_status', fleet_id: fleetId });
 /** The owner's goal for an agent (Agent detail › Goal). */
 export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
 export const goalGet = (fleetId: string, agentId: string) =>
