@@ -111,8 +111,8 @@ export interface AuditLogResponse {
 }
 
 /**
- * The Performance tab's live feed (performance_live_feed action): full,
- * un-redacted detail (real reply text, real tool-call argument values), kept
+ * The Performance tab's live feed (performance_live_feed action): full
+ * detail with credentials removed (real reply text, tool-call arguments), kept
  * only for `ttlHours` and then deleted. A different store from audit_log
  * (which is the permanent, content-free record) — reuses AuditEntry's shape
  * since the fields line up, but the content inside taskName/details here is
@@ -123,6 +123,8 @@ export interface PerformanceLiveFeedResult {
   ttlHours: number;
   total: number;
   entries: AuditEntry[];
+  /** off: the fleet's owner turned the live feed off (engines from PR 6 on). */
+  capture?: 'on' | 'off';
   error?: string;
 }
 

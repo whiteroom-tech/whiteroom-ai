@@ -7,6 +7,9 @@ import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/white
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { applyChange, confirmKind, mergeSettingsReply } from '@/lib/settings-flow';
 
+const MAX_AGE_OPTIONS = [{ hours: 24, label: '24 hours' }, { hours: 72, label: '72 hours' }, { hours: 168, label: '7 days' }, { hours: 720, label: '30 days' }];
+const ageLabel = (h: number) => MAX_AGE_OPTIONS.find((o) => o.hours === h)?.label ?? `${h} hours`;
+
 type Pending = { patch: Partial<DataSettings>; title: string; body: string; confirm: string; cancel: string; tone: 'danger' | 'neutral' };
 
 const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, 'patch'>> = {
@@ -103,11 +106,33 @@ export function DataPrivacySection() {
           : 'Notes stay in memory only. After a WhiteRoom update, agents start their next shift without them.'}
         control={<Toggle label="Save handover notes" checked={settings.handover_persistence} disabled={busy}
           onChange={(on) => change({ handover_persistence: on })} />}
-      />
+      >
+        {settings.handover_persistence && settings.handover_max_age_hours != null && (
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <label htmlFor="notes-max-age" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</label>
+            <select id="notes-max-age" className="wr-input" style={{ width: 'auto' }} disabled={busy}
+              value={settings.handover_max_age_hours}
+              onChange={(e) => {
+                const hours = Number(e.target.value);
+                if (hours >= settings.handover_max_age_hours!) { void save({ handover_max_age_hours: hours }); return; }
+                setPending({
+                  patch: { handover_max_age_hours: hours },
+                  title: `Keep notes for ${ageLabel(hours)}?`,
+                  body: `Notes older than ${ageLabel(hours)} are deleted now. Agents idle longer than that resume without them.`,
+                  confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
+                });
+              }}>
+              {MAX_AGE_OPTIONS.map((o) => <option key={o.hours} value={o.hours}>{o.label}</option>)}
+              {!MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) && <option value={settings.handover_max_age_hours}>{ageLabel(settings.handover_max_age_hours)}</option>}
+            </select>
+            <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
+          </div>
+        )}
+      </Row>
       <Row
         title="Live feed"
         text={settings.content_capture
-          ? 'What your agents said and did. Kept 72 hours, then deleted. Never part of the audit record.'
+          ? 'What your agents said and did, with credentials removed. Kept 72 hours, then deleted. Never part of the audit record.'
           : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
         control={<Toggle label="Live feed" checked={settings.content_capture} disabled={busy}
           onChange={(on) => change({ content_capture: on })} />}
@@ -150,12 +175,13 @@ export function DataPrivacySection() {
   );
 }
 
-function Row({ title, text, control, last }: { title: string; text: string; control: React.ReactNode; last?: boolean }) {
+function Row({ title, text, control, last, children }: { title: string; text: string; control: React.ReactNode; last?: boolean; children?: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '14px 0', borderBottom: last ? 'none' : '1px solid var(--line)' }}>
       <div style={{ flex: '1 1 320px', minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--tx2)', maxWidth: '58ch' }}>{text}</p>
+        {children}
       </div>
       <div style={{ flex: 'none' }}>{control}</div>
     </div>

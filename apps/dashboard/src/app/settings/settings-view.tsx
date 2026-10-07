@@ -314,7 +314,7 @@ function PlanSection({
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '-8px 0 20px' }}>
-        History kept covers call records and run history too. There is no second retention setting.
+        History kept covers call records and run history. Handover notes have their own limit under Data and privacy.
       </p>
 
       {offers.length > 0 && (

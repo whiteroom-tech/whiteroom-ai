@@ -21,7 +21,7 @@ const KIND: Record<LiveKind, { word: string; icon: IconName }> = {
 const FILTERS: LiveFilter[] = ['all', 'web', 'tools', 'replies'];
 
 /**
- * The live feed (README › Home › Live feed): full, un-redacted detail of what
+ * The live feed (README › Home › Live feed): full detail, credentials removed, of what
  * agents said and did, from a separate store kept ttlHours and then deleted.
  * Never fetched until revealed, because it holds customer content; hidden
  * again on every visit. The kind filter is remembered per browser.
@@ -38,6 +38,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const [entries, setEntries] = useState<AuditEntry[]>(preview ?? []);
   const [total, setTotal] = useState(preview?.length ?? 0);
   const [ttlHours, setTtlHours] = useState(72);
+  const [captureOff, setCaptureOff] = useState(false);
   const [error, setError] = useState(false);
   const [agent, setAgent] = useState('all');
   const [filter, setFilter] = useState<LiveFilter>(() => {
@@ -63,6 +64,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       setEntries(res.entries ?? []);
       setTotal(res.total ?? res.entries?.length ?? 0);
       setTtlHours(res.ttlHours ?? 72);
+      setCaptureOff(res.capture === 'off');
       setError(false);
     } catch {
       if (id === request.current) setError(true);
@@ -101,10 +103,10 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       <Panel
         title={title}
         bodyPadding="14px 18px"
-        actions={<Button size={28} className="wr-btn--reveal" onClick={reveal} title="Opens the private, un-redacted detail. Nothing is loaded until you click.">Show live feed</Button>}
+        actions={<Button size={28} className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>}
       >
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
-          Full, un-redacted detail of what agents actually said and did: their replies, the tools they called with real values, the pages they visited. Kept {ttlHours} hours, then deleted; never part of the audit record.
+          What agents actually said and did: their replies, the tools they called and the pages they visited, with credentials removed. Kept {ttlHours} hours, then deleted; never part of the audit record.
         </p>
       </Panel>
     );
@@ -125,7 +127,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 12.5, color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
       {loading && rows.length === 0 && <LoadingLine />}
       {!loading && !error && shown.length === 0 && (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
       )}
       {pageRows.map((r) => {
         const canOpen = liveExpandable(r);

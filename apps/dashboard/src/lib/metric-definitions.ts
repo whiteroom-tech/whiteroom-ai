@@ -8,7 +8,7 @@ const KWH_PER_MILLION = +(KWH_PER_TOKEN * 1_000_000).toFixed(3);
 
 /** Live feed help; the retention comes from the engine (ttlHours). */
 export function liveFeedHelp(ttlHours: number): string {
-  return `Everything the agents actually said and did, including the web pages they opened and the exact inputs they gave their tools. It is private content, so it stays hidden until you open it and is deleted after ${ttlHours} hours.`;
+  return `Everything the agents actually said and did, including the web pages they opened and the exact inputs they gave their tools, with API keys, passwords and other credentials removed. It is private content, so it stays hidden until you open it and is deleted after ${ttlHours} hours.`;
 }
 
 /**
