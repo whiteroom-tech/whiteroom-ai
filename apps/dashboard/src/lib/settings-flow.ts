@@ -41,3 +41,14 @@ export function confirmKind(patch: Partial<DataSettings>): ConfirmKind | null {
   if (patch.personal_data === 'exclude') return 'removePersonal';
   return null;
 }
+
+/**
+ * The settings shown after a save: the engine's reply over what was on
+ * screen, without its `success` flag. A field the reply leaves out keeps its
+ * last known value, so its control doesn't disappear.
+ */
+export function mergeSettingsReply<T extends object>(prev: T | null, reply: Partial<T> & { success?: boolean }): T {
+  const fresh: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(reply)) if (k !== 'success' && v !== undefined) fresh[k] = v;
+  return { ...(prev ?? {}), ...fresh } as T;
+}

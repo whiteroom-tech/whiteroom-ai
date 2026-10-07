@@ -5,7 +5,7 @@ import { Button, Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/u
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { applyChange, confirmKind } from '@/lib/settings-flow';
+import { applyChange, confirmKind, mergeSettingsReply } from '@/lib/settings-flow';
 
 type Pending = { patch: Partial<DataSettings>; title: string; body: string; confirm: string; cancel: string; tone: 'danger' | 'neutral' };
 
@@ -70,8 +70,8 @@ export function DataPrivacySection() {
       if (out.kind === 'stale') return;
       setPending(null);
       if (out.kind === 'applied') {
-        const next = out.value;
-        setSettings({ handover_persistence: next.handover_persistence, content_capture: next.content_capture, personal_data: next.personal_data });
+        const reply = out.value;
+        setSettings((prev) => mergeSettingsReply(prev, reply));
         return;
       }
       setNote(out.message);

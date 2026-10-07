@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, confirmKind, NOT_APPLIED } from '@/lib/settings-flow';
+import { applyChange, confirmKind, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
 
 describe('applying a settings change', () => {
   it('returns what the engine applied', async () => {
@@ -33,5 +33,13 @@ describe('which data setting changes ask first', () => {
     expect(confirmKind({ handover_persistence: true })).toBeNull();
     expect(confirmKind({ content_capture: true })).toBeNull();
     expect(confirmKind({ personal_data: 'keep' })).toBeNull();
+  });
+});
+
+describe('mergeSettingsReply', () => {
+  it('lays the reply over what was shown, without its success flag', () => {
+    const prev = { handover_persistence: true, content_capture: true, personal_data: 'keep' as const };
+    expect(mergeSettingsReply(prev, { content_capture: false, success: true })).toEqual({ ...prev, content_capture: false });
+    expect(mergeSettingsReply<{ content_capture: boolean }>(null, { content_capture: false, success: true })).toEqual({ content_capture: false });
   });
 });
