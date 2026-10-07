@@ -30,7 +30,7 @@ export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; ag
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.label}</div>
               <div style={{ fontSize: 12.5, color: r.state === 'partly' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{r.detail}</div>
             </div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: r.state === 'measured' ? 'var(--tx)' : 'var(--tx2)' }}>{r.value}</div>
+            <div aria-label={r.state === 'none' ? 'Not measured' : undefined} style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: r.state === 'measured' ? 'var(--tx)' : 'var(--tx2)' }}>{r.value}</div>
           </div>
         ))}
       </div>

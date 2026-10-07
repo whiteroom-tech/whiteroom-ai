@@ -15,4 +15,8 @@ describe('handover quality rows', () => {
     expect(rows.map((r) => r.value)).toEqual(['—', '—', '—']);
     expect(rows.every((r) => r.state === 'none')).toBe(true);
   });
+  it('never rounds a lossy share up to 100%, or a small one down to 0%', () => {
+    expect(qualityRows({ ...base, valuesKeptShare: 0.9996 })[0].value).toBe('99.9%');
+    expect(qualityRows({ ...base, valuesKeptShare: 0.004 })[0].value).toBe('<1%');
+  });
 });
