@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/whiteroom/client';
@@ -21,7 +21,7 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
   },
   removePersonal: {
     title: 'Remove personal details from notes?',
-    body: 'Names, emails and phone numbers are removed from handover notes before they’re saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
+    body: 'Email addresses and phone numbers are removed from handover notes, including notes already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
     confirm: 'Remove from notes', cancel: 'Keep them', tone: 'neutral',
   },
 };
@@ -41,6 +41,9 @@ export function DataPrivacySection() {
   // The change that failed, so Try again resends exactly it (a purge that
   // didn't finish is retried by saving the same setting again).
   const [retry, setRetry] = useState<Partial<DataSettings> | null>(null);
+  // The fleet on screen now: a save that finishes after a fleet switch is dropped.
+  const current = useRef(fleetId);
+  current.current = fleetId;
 
   useEffect(() => {
     setSettings(null);
@@ -53,19 +56,24 @@ export function DataPrivacySection() {
   if (!fleetId || !settings) return null;
 
   async function save(patch: Partial<DataSettings>) {
+    const fleet = fleetId!;
     setBusy(true);
     setNote(null);
     setRetry(null);
     try {
-      const next = await dataSettingsSet(fleetId!, patch);
+      const next = await dataSettingsSet(fleet, patch);
+      if (current.current !== fleet) return;
+      // No answer means the engine didn't apply it: never shown as saved.
+      if (!next) throw new Error('This WhiteRoom engine didn’t apply the change. Try again later.');
       if (next) setSettings({ handover_persistence: next.handover_persistence, content_capture: next.content_capture, personal_data: next.personal_data });
       setPending(null);
     } catch (e) {
+      if (current.current !== fleet) return;
       setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
       setRetry(patch);
       setPending(null);
       // The change may have been saved even though a later step failed: show what the engine has.
-      dataSettingsGet(fleetId!).then((s) => { if (s) setSettings(s); }, () => {});
+      dataSettingsGet(fleet).then((s) => { if (s && current.current === fleet) setSettings(s); }, () => {});
     } finally {
       setBusy(false);
     }
@@ -98,7 +106,7 @@ export function DataPrivacySection() {
       <Row
         last
         title="Personal details in handover notes"
-        text="Names, email addresses and phone numbers your agents work with. Keep them if your agents need them to finish the job, like lead or support agents."
+        text="Email addresses and phone numbers your agents work with (names aren’t detected). Keep them if your agents need them to finish the job, like lead or support agents."
         control={<SegmentedControl label="Personal details in handover notes" value={settings.personal_data}
           options={[{ value: 'keep', label: 'Keep' }, { value: 'exclude', label: 'Remove' }]}
           onChange={(v) => {
