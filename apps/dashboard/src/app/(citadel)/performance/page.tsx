@@ -15,7 +15,7 @@ import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
-import { gapText, spendGap } from '@/lib/spend-completeness';
+import { UNPRICED_TEXT, gapText, spendGap } from '@/lib/spend-completeness';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
@@ -817,7 +817,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   // the gap is measured over the same calls as the Spend figure. Worked out
   // once for both Spend cards.
   const gap = spendGap(displayHourly);
-  const gapLine = gapText(gap) || (s.unpricedAttempts ? 'Incomplete: some calls couldn’t be priced' : '');
+  const gapLine = gapText(gap) || (s.unpricedAttempts ? UNPRICED_TEXT : '');
   // Both Spend cards mark the figure partial on the same terms.
   const spendPartial = !!s.unpricedAttempts || gap.kind !== 'complete';
   const trends = useMemo(() => hourly.length > 1 ? computeTrends(hourly) : { calls: null, cost: null, latency: null, errorRate: null }, [hourly]);

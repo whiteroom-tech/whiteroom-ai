@@ -20,10 +20,13 @@ export function spendGap(hours: Hour[]): { kind: 'complete' } | { kind: 'bounded
   return { kind: 'bounded', micros: bound };
 }
 
+/** Said when some calls couldn't be priced and the gap can't be bounded. */
+export const UNPRICED_TEXT = 'Incomplete: some calls couldn’t be priced';
+
 /** The Spend card's line about a gap: "" when nothing is missing. A bound of $0 says nothing, so it isn't shown as one. */
 export function gapText(gap: ReturnType<typeof spendGap>): string {
   if (gap.kind === 'complete') return '';
   return gap.kind === 'bounded' && gap.micros > 0
     ? `Incomplete: may be up to ${fmtCost(gap.micros)} more`
-    : 'Incomplete: some calls couldn’t be priced';
+    : UNPRICED_TEXT;
 }
