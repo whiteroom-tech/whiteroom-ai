@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Hint, Panel, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiteroom/client';
@@ -21,8 +21,17 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   const [confirm, setConfirm] = useState<'clear' | 'run' | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // The agent on screen now: results for one the user moved away from are dropped.
+  const current = useRef(`${fleetId}:${agentId}`);
+  current.current = `${fleetId}:${agentId}`;
+
   useEffect(() => {
+    // A different agent starts clean: no draft, note or dialog carries over.
     setOwner(undefined);
+    setDraft(null);
+    setNote(null);
+    setBusy(null);
+    setConfirm(null);
     let live = true;
     goalGet(fleetId, agentId).then((r) => { if (live) setOwner(r ? r.owner : undefined); }, () => {});
     return () => { live = false; };
@@ -30,24 +39,30 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
 
   if (owner === undefined) return null;
 
-  async function run(kind: 'save' | 'clear' | 'run', fn: () => Promise<void>, done: string) {
+  async function run(kind: 'save' | 'clear' | 'run', fn: () => Promise<boolean>, done: string) {
+    const target = current.current;
     setBusy(kind);
     setNote(null);
     try {
-      await fn();
-      setNote({ ok: true, text: done });
+      // false: the engine didn't apply it, so it's never shown as done.
+      const applied = await fn();
+      if (current.current !== target) return;
+      setNote(applied ? { ok: true, text: done } : { ok: false, text: 'This WhiteRoom engine didn’t apply the change. Try again later.' });
     } catch (e) {
+      if (current.current !== target) return;
       setNote({ ok: false, text: e instanceof Error ? e.message : 'That didn’t save. Try again.' });
     } finally {
-      setBusy(null);
-      setConfirm(null);
+      if (current.current === target) { setBusy(null); setConfirm(null); }
     }
   }
 
   const save = () => run('save', async () => {
+    const target = current.current;
     const r = await goalSetOwner(fleetId, agentId, (draft ?? '').trim());
-    if (r) setOwner(r.owner);
+    if (!r || current.current !== target) return !!r;
+    setOwner(r.owner);
     setDraft(null);
+    return true;
   }, 'Saved. The agent works toward it from its next handover.');
 
   return (
@@ -98,7 +113,12 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         cancelLabel="Keep goal"
         tone="neutral"
         busy={busy === 'clear'}
-        onConfirm={() => void run('clear', async () => { const r = await goalSetOwner(fleetId, agentId, null); if (r) setOwner(r.owner); setDraft(null); }, 'Goal cleared.')}
+        onConfirm={() => void run('clear', async () => {
+          const target = current.current;
+          const r = await goalSetOwner(fleetId, agentId, null);
+          if (r && current.current === target) { setOwner(r.owner); setDraft(null); }
+          return !!r;
+        }, 'Goal cleared.')}
         onCancel={() => setConfirm(null)}
       />
       <ConfirmDialog
@@ -108,7 +128,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         confirmLabel="Start a new task"
         tone="neutral"
         busy={busy === 'run'}
-        onConfirm={() => void run('run', async () => { await agentNewRun(fleetId, agentId); }, 'New task started.')}
+        onConfirm={() => void run('run', async () => !!(await agentNewRun(fleetId, agentId)), 'New task started.')}
         onCancel={() => setConfirm(null)}
       />
     </Panel>
