@@ -6,7 +6,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, handoverReviewStatus, type DataSettings, type HandoverReviewStatus } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { reviewSpendLine, usd } from '@/lib/handover-review';
-import { applyChange } from '@/lib/settings-flow';
+import { applyChange, mergeSettingsReply } from '@/lib/settings-flow';
 
 const MAX_LIMIT = 100_000;
 
@@ -31,8 +31,13 @@ export function HandoverReviewSection() {
   current.current = fleetId;
 
   useEffect(() => {
+    // A new fleet starts clean: an open confirm or a note from the last one never carries over.
     setSettings(null);
     setStatus(null);
+    setPending(null);
+    setNote(null);
+    setBusy(false);
+    setDraft('');
     if (authStatus !== 'authenticated' || !fleetId) return;
     let live = true;
     dataSettingsGet(fleetId).then((s) => {
@@ -60,9 +65,15 @@ export function HandoverReviewSection() {
     setBusy(false);
     if (out.kind === 'stale') return;
     setPending(null);
-    if (out.kind === 'failed') { setNote(out.message); return; }
-    const next = out.value;
-    setSettings((s) => (s ? { ...s, review_mode: next.review_mode, review_monthly_cap_usd: next.review_monthly_cap_usd } : s));
+    if (out.kind === 'failed') {
+      setNote(out.message);
+      // Part of the change may have been saved: show what the engine has.
+      dataSettingsGet(fleet).then((s) => { if (s && current.current === fleet) setSettings(s); }, () => {});
+      return;
+    }
+    // A field the reply leaves out keeps its last known value.
+    const next = mergeSettingsReply(settings, out.value);
+    setSettings(next);
     // Only a saved limit replaces the field: a limit still being typed survives a toggle.
     if (patch.review_monthly_cap_usd !== undefined) setDraft(next.review_monthly_cap_usd != null ? String(next.review_monthly_cap_usd) : '');
     handoverReviewStatus(fleet).then((s) => { if (current.current === fleet) setStatus(s); }, () => {});
