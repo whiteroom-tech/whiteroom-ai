@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Panel, Toggle, FONT_MONO } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, handoverReviewStatus, type DataSettings, type HandoverReviewStatus } from '@/lib/whiteroom/client';
@@ -8,7 +8,7 @@ import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { reviewSpendLine } from '@/lib/handover-review';
 
 const MAX_LIMIT = 100_000;
-const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 type Pending = { patch: Partial<DataSettings>; title: string; body: string; confirm: string; cancel: string };
 
@@ -26,6 +26,9 @@ export function HandoverReviewSection() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // The fleet on screen now: a save or fetch that finishes after a fleet switch is dropped.
+  const current = useRef(fleetId);
+  current.current = fleetId;
 
   useEffect(() => {
     setSettings(null);
@@ -50,17 +53,20 @@ export function HandoverReviewSection() {
   const draftLimit = draftValid ? Math.round(parsed * 100) / 100 : null;
 
   async function save(patch: Partial<DataSettings>) {
+    const fleet = fleetId!;
     setBusy(true);
     setNote(null);
     try {
-      const next = await dataSettingsSet(fleetId!, patch);
+      const next = await dataSettingsSet(fleet, patch);
+      if (current.current !== fleet) return;
       if (next) {
         setSettings((s) => (s ? { ...s, review_mode: next.review_mode, review_monthly_cap_usd: next.review_monthly_cap_usd } : s));
         setDraft(next.review_monthly_cap_usd != null ? String(next.review_monthly_cap_usd) : '');
       }
       setPending(null);
-      handoverReviewStatus(fleetId!).then(setStatus, () => {});
+      handoverReviewStatus(fleet).then((s) => { if (current.current === fleet) setStatus(s); }, () => {});
     } catch (e) {
+      if (current.current !== fleet) return;
       setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
       setPending(null);
     } finally {
@@ -73,7 +79,7 @@ export function HandoverReviewSection() {
     setPending({
       patch: { review_mode: 'realtime', review_monthly_cap_usd: draftLimit },
       title: 'Turn on handover review?',
-      body: `WhiteRoom reviews a sample of handovers, plus any that look off, to check nothing important was lost. Reviews use your own model key, so your provider bills them, up to ${usd(draftLimit)} a month. Only the results are kept, never the text. Reviews never stop or slow your agents.`,
+      body: `WhiteRoom reviews a sample of handovers, plus any that look off, to check nothing important was lost. Reviews use your own model key, so your provider bills them, up to ${usd(draftLimit)} a month. Only the results are kept, never the text. Reviews never stop your agents, though they share your key’s rate limits with them.`,
       confirm: 'Turn on reviews', cancel: 'Not now',
     });
   };
@@ -132,6 +138,7 @@ export function HandoverReviewSection() {
         </p>
       </form>
 
+      {busy && !pending && <p role="status" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>Saving…</p>}
       {spend && (
         <p role="status" style={{ margin: '12px 0 0', fontSize: 13, color: spend.warn ? 'var(--warn-tx)' : 'var(--tx2)' }}>{spend.text}</p>
       )}

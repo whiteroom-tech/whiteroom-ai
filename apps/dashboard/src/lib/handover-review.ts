@@ -13,7 +13,6 @@ export function reviewSpendLine(s: HandoverReviewStatus): { text: string; warn: 
   if (s.over_limit_from_earlier) {
     return { text: `Reviews started under your earlier limit are finishing (${usd(used)} of ${usd(s.cap_usd)}). New ones start once this month’s spend is under the limit.`, warn: true };
   }
-  // Close enough that another review won't fit.
-  if (used >= s.cap_usd * 0.98) return { text: `Monthly limit reached: ${usd(used)} of ${usd(s.cap_usd)}. Reviews start again next month, or when you raise the limit.`, warn: true };
+  if (used >= s.cap_usd) return { text: `Monthly limit reached: ${usd(used)} of ${usd(s.cap_usd)}. Reviews start again next month, or when you raise the limit.`, warn: true };
   return { text: `${usd(used)} of ${usd(s.cap_usd)} this month · ${reviewed}`, warn: false };
 }

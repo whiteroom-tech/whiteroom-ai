@@ -14,14 +14,22 @@ const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits
  * reviews are on or have run; hidden on engines without them.
  */
 export function HandoverReviewsCard({ fleetId }: { fleetId: string }) {
-  const [s, setS] = useState<HandoverReviewStatus | null>(null);
+  const [s, setS] = useState<HandoverReviewStatus | null | 'failed'>(null);
   useEffect(() => {
     setS(null);
     let live = true;
-    handoverReviewStatus(fleetId).then((r) => { if (live) setS(r); }, () => {});
+    // null from an engine without reviews hides the card; a failed fetch says so.
+    handoverReviewStatus(fleetId).then((r) => { if (live) setS(r); }, () => { if (live) setS('failed'); });
     return () => { live = false; };
   }, [fleetId]);
 
+  if (s === 'failed') {
+    return (
+      <div style={{ maxWidth: 320, margin: '0 0 16px' }}>
+        <StatCard variant="card" label="Handover reviews" hint={HELP.handoverReviews} value="—" sub="Unavailable" />
+      </div>
+    );
+  }
   if (!s || (s.review_mode !== 'realtime' && s.reviews === 0)) return null;
   const used = s.spent_usd + s.reserved_usd;
   return (
