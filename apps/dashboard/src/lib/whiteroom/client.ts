@@ -723,7 +723,7 @@ export interface DataSettings {
   handover_max_age_hours?: number;
 }
 /** The owner's goal for an agent (Agent detail › Goal). */
-export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string }
+export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
 export const goalGet = (fleetId: string, agentId: string) =>
   alertsAction<{ owner: OwnerGoal | null }>({ action: 'goal_get', fleet_id: fleetId, agent_id: agentId });
 export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null) =>

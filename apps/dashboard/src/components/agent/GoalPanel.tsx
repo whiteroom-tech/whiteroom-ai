@@ -55,7 +55,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
       title={<>Goal<Hint text={HELP.goal} /></>}
       actions={draft === null && (
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button size={28} variant="ghost" title="Clears goals the agent set for itself. Your goal stays." onClick={() => setConfirm('run')}>Start a new task</Button>
+          <Button size={28} variant="ghost" title="Clears goals the agent set for itself; per-task limits start over. Your goal stays." onClick={() => setConfirm('run')}>Start a new task</Button>
           <Button size={28} onClick={() => setDraft(owner?.goal ?? '')}>{owner?.goal ? 'Edit goal' : 'Set a goal'}</Button>
         </div>
       )}
@@ -73,6 +73,10 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
             <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim()}>Save goal</Button>
           </div>
         </form>
+      ) : owner?.unreadable ? (
+        <p role="note" style={{ margin: 0, fontSize: 13, color: 'var(--warn-tx)' }}>
+          A goal is saved but can’t be opened on this engine. Setting one replaces it.
+        </p>
       ) : owner?.goal ? (
         <div style={{ display: 'grid', gap: 6 }}>
           <span><Tag tone="brand">Set by you</Tag></span>
@@ -100,7 +104,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
       <ConfirmDialog
         open={confirm === 'run'}
         title="Start a new task?"
-        body="Clears goals the agent set for itself. Your goal stays, and its notes and history aren’t affected."
+        body="Clears goals the agent set for itself, and per-task limits in Controls start over. Your goal stays, and its notes and history aren’t affected."
         confirmLabel="Start a new task"
         tone="neutral"
         busy={busy === 'run'}

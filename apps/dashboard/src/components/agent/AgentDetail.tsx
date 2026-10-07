@@ -353,7 +353,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     <div style={{ display: 'grid', gap: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
                       {handover?.fallback && (
                         <p role="note" style={{ margin: 0, padding: '8px 10px', borderRadius: 10, background: 'var(--info-bg)', color: 'var(--tx)' }}>
-                          The full notes were too large to deliver, so the agent got this short version.
+                          The full notes couldn’t be delivered, so the agent gets this short version instead.
                         </p>
                       )}
                       {/* Long notes start as two lines each; the toggle shows them in full. */}
