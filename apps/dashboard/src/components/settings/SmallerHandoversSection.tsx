@@ -28,7 +28,11 @@ export function SmallerHandoversSection() {
   current.current = fleetId;
 
   useEffect(() => {
+    // A new fleet starts clean: an open confirm or a note from the last one never carries over.
     setP(null);
+    setConfirmOn(false);
+    setNote(null);
+    setBusy(false);
     if (authStatus !== 'authenticated' || !fleetId) return;
     let live = true;
     compressionPreview(fleetId).then((r) => { if (live) setP(r); }, () => {});
@@ -49,7 +53,6 @@ export function SmallerHandoversSection() {
     if (out.kind === 'failed') { setNote(out.message); return; }
     setP((prev) => (prev ? { ...prev, compression_mode: out.value.compression_mode, cleared: out.value.cleared } : prev));
   }
-
 
   return (
     <Panel title="Smaller handovers">
