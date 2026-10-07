@@ -130,7 +130,7 @@ export function DataPrivacySection() {
       <Row
         title="Live feed"
         text={settings.content_capture
-          ? 'What your agents said and did, with credentials removed. Kept 72 hours, then deleted. Never part of the audit record.'
+          ? 'What your agents said and did, with credentials removed. Deleted automatically after a short time (the live feed shows how long), never part of the audit record.'
           : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
         control={<Toggle label="Live feed" checked={settings.content_capture} disabled={busy}
           onChange={(on) => change({ content_capture: on })} />}
