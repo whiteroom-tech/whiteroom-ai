@@ -40,8 +40,7 @@ function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: 
 describe('controlActionOf', () => {
   it('picks out exactly the dashboard-only actions', () => {
     expect([...DASHBOARD_ONLY_ACTIONS].sort()).toEqual(
-      ['alerts_get', 'alerts_set_slack', 'alerts_test', 'fleet_data_settings_get', 'fleet_data_settings_set', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'resume_agent', 'stop_agent'],
-      ['agent_new_run', 'alerts_get', 'alerts_set_slack', 'alerts_test', 'fleet_data_settings_set', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'resume_agent', 'stop_agent'],
+      ['agent_new_run', 'alerts_get', 'alerts_set_slack', 'alerts_test', 'fleet_data_settings_get', 'fleet_data_settings_set', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'resume_agent', 'stop_agent'],
     );
     expect(controlActionOf(body({ action: 'pause_agent', fleet_id: 'f1' }))).toEqual({ action: 'pause_agent', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'fleet_report', fleet_id: 'f1' }))).toBeNull();
