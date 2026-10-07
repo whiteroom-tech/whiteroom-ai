@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { dataSettingsGet, dataSettingsSet, handoverReviewStatus, type DataSettings, type HandoverReviewStatus } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { reviewSpendLine, usd } from '@/lib/handover-review';
+import { applyChange } from '@/lib/settings-flow';
 
 const MAX_LIMIT = 100_000;
 
@@ -55,23 +56,18 @@ export function HandoverReviewSection() {
     const fleet = fleetId!;
     setBusy(true);
     setNote(null);
-    try {
-      const next = await dataSettingsSet(fleet, patch);
-      if (current.current !== fleet) return;
-      if (next) {
-        setSettings((s) => (s ? { ...s, review_mode: next.review_mode, review_monthly_cap_usd: next.review_monthly_cap_usd } : s));
-        setDraft(next.review_monthly_cap_usd != null ? String(next.review_monthly_cap_usd) : '');
-      }
-      setPending(null);
-      handoverReviewStatus(fleet).then((s) => { if (current.current === fleet) setStatus(s); }, () => {});
-    } catch (e) {
-      if (current.current !== fleet) return;
-      setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
-      setPending(null);
-    } finally {
-      setBusy(false);
-    }
+    const out = await applyChange(() => dataSettingsSet(fleet, patch), () => current.current === fleet);
+    setBusy(false);
+    if (out.kind === 'stale') return;
+    setPending(null);
+    if (out.kind === 'failed') { setNote(out.message); return; }
+    const next = out.value;
+    setSettings((s) => (s ? { ...s, review_mode: next.review_mode, review_monthly_cap_usd: next.review_monthly_cap_usd } : s));
+    // Only a saved limit replaces the field: a limit still being typed survives a toggle.
+    if (patch.review_monthly_cap_usd !== undefined) setDraft(next.review_monthly_cap_usd != null ? String(next.review_monthly_cap_usd) : '');
+    handoverReviewStatus(fleet).then((s) => { if (current.current === fleet) setStatus(s); }, () => {});
   }
+
 
   const askTurnOn = () => {
     if (draftLimit === null) { setNote('Set a monthly limit first, from $1 to $100,000.'); return; }
