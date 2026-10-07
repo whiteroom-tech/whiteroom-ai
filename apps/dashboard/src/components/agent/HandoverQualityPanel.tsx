@@ -7,6 +7,9 @@ import { qualityRows } from '@/lib/handover-quality';
 import { HELP } from '@/lib/metric-definitions';
 
 /** Agent detail › Handover quality (compression spec §14): last 7 days. Hidden on engines without it. */
+/** Read by screen readers, not shown: the dash on its own says nothing. */
+const VISUALLY_HIDDEN: React.CSSProperties = { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 };
+
 export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; agentId: string }) {
   const [q, setQ] = useState<HandoverQuality | null>(null);
 
@@ -30,7 +33,9 @@ export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; ag
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.label}</div>
               <div style={{ fontSize: 12.5, color: r.state === 'partly' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{r.detail}</div>
             </div>
-            <div aria-label={r.state === 'none' ? 'Not measured' : undefined} style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: r.state === 'measured' ? 'var(--tx)' : 'var(--tx2)' }}>{r.value}</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: r.state === 'measured' ? 'var(--tx)' : 'var(--tx2)' }}>
+              {r.state === 'none' ? <><span aria-hidden="true">{r.value}</span><span style={VISUALLY_HIDDEN}>Not measured</span></> : r.value}
+            </div>
           </div>
         ))}
       </div>
