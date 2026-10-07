@@ -21,7 +21,7 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
   },
   removePersonal: {
     title: 'Remove personal details from notes?',
-    body: 'From the next handover, agents won’t see names, emails or phone numbers from earlier shifts. Lead, sales and support agents may not finish their tasks.',
+    body: 'Names, emails and phone numbers are removed from handover notes before they’re saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
     confirm: 'Remove from notes', cancel: 'Keep them', tone: 'neutral',
   },
 };
@@ -59,6 +59,8 @@ export function DataPrivacySection() {
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'That didn’t save. Try again.');
       setPending(null);
+      // The change may have been saved even though a later step failed: show what the engine has.
+      dataSettingsGet(fleetId!).then((s) => { if (s) setSettings(s); }, () => {});
     } finally {
       setBusy(false);
     }
@@ -69,7 +71,7 @@ export function DataPrivacySection() {
   return (
     <Panel title="Data and privacy">
       <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 6px', maxWidth: '62ch' }}>
-        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed before anything is kept.
+        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from handover notes before they’re saved.
       </p>
 
       <Row
@@ -105,7 +107,7 @@ export function DataPrivacySection() {
         Deleted data can stay in encrypted database backups until those backups expire.
       </p>
       {busy && !pending && <p role="status" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>Saving…</p>}
-      {note && <p role="status" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--bad)' }}>{note}</p>}
+      {note && <p role="alert" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--bad)' }}>{note}</p>}
 
       <ConfirmDialog
         open={!!pending}
