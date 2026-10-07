@@ -56,8 +56,15 @@ export function reviewRow(r: HandoverReviewCounts): QualityRow {
   if (confirmed < r.minVerified) {
     return { label: 'Review result', value: '—', state: 'none', detail: `Not enough data yet: ${n(confirmed)} of ${n(r.minVerified)} items confirmed so far.` };
   }
-  const used = (['retained', 'dropped', 'contradicted'] as const).filter((c) => r.representative[c] > 0);
-  const early = used.some((c) => !r.calibrated.includes(c));
+  // A sample that lost too many reviews (or most of one shift size) may be lopsided: no result (§8.4).
+  const { selected, bySize } = r.representative;
+  const thin = (selected > 0 && reviewed / selected < r.coverageMin)
+    || Object.values(bySize).some((b) => b.selected > 0 && b.reviewed / b.selected < r.sizeCoverageMin);
+  if (thin) {
+    return { label: 'Review result', value: '—', state: 'none', detail: `Not enough data yet: ${n(reviewed)} of ${n(selected)} sampled handovers were reviewed.` };
+  }
+  // The rate rests on every category: a missed drop makes it look better, so all three must be calibrated.
+  const early = (['retained', 'dropped', 'contradicted'] as const).some((c) => !r.calibrated.includes(c));
   const parts = [`${n(retained)} of ${n(confirmed)} confirmed items kept, in ${n(reviewed)} sampled handover${reviewed === 1 ? '' : 's'}`];
   if (dropped) parts.push(`${n(dropped)} look missing (reviewer’s judgment)`);
   if (contradicted) parts.push(`${n(contradicted)} changed in meaning`);
@@ -70,6 +77,10 @@ const SKIP_COPY: Record<string, string> = {
   auth_identity: 'this provider route has no key of yours',
   budget: 'monthly limit reached',
   capacity: 'WhiteRoom was busy',
+  provider: 'this provider isn’t supported for reviews yet',
+  no_source: 'nothing in the shift to compare against',
+  no_prompt: 'reviews aren’t available on this WhiteRoom yet',
+  failed: 'the review call didn’t complete',
 };
 
 /** The lines under the scores, never next to a rate: reviews outside the sample, and why some weren't reviewed. */
@@ -78,7 +89,7 @@ export function reviewFooter(r: HandoverReviewCounts | undefined): string[] {
   const lines: string[] = [];
   if (r.riskTriggered) lines.push(`${n(r.riskTriggered)} reviewed because something looked off`);
   for (const [why, count] of Object.entries(r.skipped).sort((a, b) => b[1] - a[1])) {
-    if (SKIP_COPY[why] && count) lines.push(`Not reviewed: ${SKIP_COPY[why]} (${n(count)})`);
+    if (count) lines.push(`Not reviewed: ${SKIP_COPY[why] ?? 'another reason'} (${n(count)})`);
   }
   return lines;
 }

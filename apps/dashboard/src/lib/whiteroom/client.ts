@@ -757,7 +757,13 @@ export interface HandoverQuality {
 export interface HandoverReviewCounts {
   mode: 'off' | 'realtime';
   /** The representative sample: the review result is computed from these only. */
-  representative: { reviewed: number; retained: number; dropped: number; contradicted: number; unverified: number };
+  representative: {
+    /** Picked for review; reviewed ÷ selected is coverage. */
+    selected: number;
+    reviewed: number; retained: number; dropped: number; contradicted: number; unverified: number;
+    /** Coverage per shift size. */
+    bySize: Record<string, { selected: number; reviewed: number }>;
+  };
   /** Reviewed because something looked off; reported apart from the result. */
   riskTriggered: number;
   /** Picked but not reviewed, by reason (engine codes; never shown raw). */
@@ -766,6 +772,9 @@ export interface HandoverReviewCounts {
   calibrated: Array<'retained' | 'dropped' | 'contradicted'>;
   /** Confirmed items needed before a result is shown. */
   minVerified: number;
+  /** Share of picked handovers that must be reviewed, overall and for every shift size. */
+  coverageMin: number;
+  sizeCoverageMin: number;
 }
 export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
   alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });

@@ -29,7 +29,12 @@ export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; ag
             <div style={{ flex: '1 1 220px', minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>
                 {r.label}
-                {r.status && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--tx2)', background: 'var(--sunk)', borderRadius: 4, padding: '1px 6px' }}>{r.status}</span>}
+                {r.status && (
+                  <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 500, color: 'var(--tx2)', background: 'var(--sunk)', borderRadius: 4, padding: '1px 6px' }}>
+                    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
+                    {r.status}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12.5, color: r.state === 'partly' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{r.detail}</div>
             </div>
