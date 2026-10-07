@@ -18,7 +18,7 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'alerts_get', 'alerts_set_slack', 'alerts_test',
   'fleet_data_settings_get', 'fleet_data_settings_set',
   'goal_get', 'goal_set_owner', 'agent_new_run',
-  'compression_mode_set',
+  'compression_mode_set', 'compression_preview',
 ]);
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
