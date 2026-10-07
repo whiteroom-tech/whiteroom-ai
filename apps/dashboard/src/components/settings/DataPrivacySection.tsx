@@ -24,8 +24,8 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
     confirm: 'Turn off live feed', cancel: 'Keep live feed', tone: 'danger',
   },
   removePersonal: {
-    title: 'Remove personal details from notes?',
-    body: 'Email addresses and phone numbers are removed from handover notes, including notes already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
+    title: 'Remove personal details from notes and the live feed?',
+    body: 'Email addresses and phone numbers are removed from handover notes and the live feed, including what’s already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
     confirm: 'Remove them', cancel: 'Keep them', tone: 'neutral',
   },
 };
@@ -109,22 +109,20 @@ export function DataPrivacySection() {
       >
         {settings.handover_persistence && settings.handover_max_age_hours != null && (
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <label htmlFor="notes-max-age" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</label>
-            <select id="notes-max-age" className="wr-input" style={{ width: 'auto' }} disabled={busy}
-              value={settings.handover_max_age_hours}
-              onChange={(e) => {
-                const hours = Number(e.target.value);
-                if (hours >= settings.handover_max_age_hours!) { void save({ handover_max_age_hours: hours }); return; }
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</span>
+            <SegmentedControl label="Keep notes for" value={MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) ? String(settings.handover_max_age_hours) : null}
+              options={MAX_AGE_OPTIONS.map((o) => ({ value: String(o.hours), label: o.label }))}
+              onChange={(v) => {
+                const hours = Number(v);
+                if (busy || hours === settings.handover_max_age_hours) return;
+                if (hours > settings.handover_max_age_hours!) { void save({ handover_max_age_hours: hours }); return; }
                 setPending({
                   patch: { handover_max_age_hours: hours },
                   title: `Keep notes for ${ageLabel(hours)}?`,
-                  body: `Notes older than ${ageLabel(hours)} are deleted now. Agents idle longer than that resume without them.`,
+                  body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a WhiteRoom update, agents idle longer than that resume without them.`,
                   confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
                 });
-              }}>
-              {MAX_AGE_OPTIONS.map((o) => <option key={o.hours} value={o.hours}>{o.label}</option>)}
-              {!MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) && <option value={settings.handover_max_age_hours}>{ageLabel(settings.handover_max_age_hours)}</option>}
-            </select>
+              }} />
             <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
           </div>
         )}
@@ -139,9 +137,9 @@ export function DataPrivacySection() {
       />
       <Row
         last
-        title="Personal details in handover notes"
+        title="Personal details in notes and the live feed"
         text="Email addresses and phone numbers your agents work with (names aren’t detected). Keep them if your agents need them to finish the job, like lead or support agents."
-        control={<SegmentedControl label="Personal details in handover notes" value={settings.personal_data}
+        control={<SegmentedControl label="Personal details in notes and the live feed" value={settings.personal_data}
           options={[{ value: 'keep', label: 'Keep' }, { value: 'exclude', label: 'Remove' }]}
           onChange={(v) => {
             if (busy || v === settings.personal_data) return;
