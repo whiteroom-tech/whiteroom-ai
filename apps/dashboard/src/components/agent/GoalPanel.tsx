@@ -82,12 +82,12 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     if (out.kind === 'stale') return;
     if (out.kind === 'applied') onApplied(out.value);
     const conflict = out.kind === 'failed' && changedElsewhere(out.message);
-    // Someone else's change won: show theirs (the draft closes), so the next try starts from it.
+    // Someone else's change won: load theirs, so a second try applies over it. What the user typed stays.
     let reread = false;
     if (conflict) {
       const latest = await goalGet(fleetId, agentId).catch(() => null);
       if (current.current !== target) return;
-      if (latest) { setOwner(latest.owner); setDraft(null); reread = true; }
+      if (latest) { setOwner(latest.owner); reread = true; }
     }
     setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? (reread ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_RELOAD) : out.message });
     setBusy(null);
