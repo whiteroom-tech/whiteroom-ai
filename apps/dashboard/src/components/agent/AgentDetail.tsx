@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns } from '@/components/agent/RecentRuns';
+import { GoalPanel } from '@/components/agent/GoalPanel';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
@@ -332,6 +333,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                   )}
                 </Panel>
 
+                {!preview && <GoalPanel fleetId={fleetId} agentId={agentId} />}
+
                 <Panel
                   title={<>Handover notes<Hint text={HELP.handoverNotes} /></>}
                   actions={notesState === 'current' && handover?.session_stats ? <Tag tone="ho">{handover.session_stats.tasks_completed} tasks → notes</Tag> : undefined}
@@ -348,6 +351,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     </p>
                   ) : (
                     <div style={{ display: 'grid', gap: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
+                      {handover?.fallback && (
+                        <p role="note" style={{ margin: 0, padding: '8px 10px', borderRadius: 10, background: 'var(--info-bg)', color: 'var(--tx)' }}>
+                          The full notes couldn’t be delivered, so the agent gets this short version instead.
+                        </p>
+                      )}
                       {/* Long notes start as two lines each; the toggle shows them in full. */}
                       {notes.map((n) => (
                         <div key={n.label} className={notesLong && !notesOpen ? 'wr-clamp-2' : undefined}>
