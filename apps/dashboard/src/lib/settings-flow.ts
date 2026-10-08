@@ -1,4 +1,4 @@
-import type { DataSettings } from '@/lib/whiteroom/client';
+import { controlFailure, type DataSettings } from '@/lib/whiteroom/client';
 
 /** Shown when the engine answered but didn't apply a change. */
 export const NOT_APPLIED = 'This WhiteRoom engine didn’t apply the change. Try again later.';
@@ -8,6 +8,23 @@ export const changedElsewhere = (message: string) => /changed elsewhere/i.test(m
 
 /** Shown after such a refusal, once the latest version is on screen. */
 export const CHANGED_ELSEWHERE = 'This was changed elsewhere. The latest is shown now; try again if you still want your change.';
+
+export type LoadOutcome<T> = { kind: 'loaded'; value: T } | { kind: 'hidden' } | { kind: 'failed' };
+
+/**
+ * Loads what an optional panel shows. `hidden` when the engine doesn't have
+ * the action (null) or refuses this viewer: the panel stays out of the way.
+ * `failed` for anything else (network, server error), so the panel says it
+ * couldn't load instead of silently vanishing.
+ */
+export async function loadOptional<T>(get: () => Promise<T | null>): Promise<LoadOutcome<T>> {
+  try {
+    const v = await get();
+    return v == null ? { kind: 'hidden' } : { kind: 'loaded', value: v };
+  } catch (e) {
+    return controlFailure(e) === 'refused' ? { kind: 'hidden' } : { kind: 'failed' };
+  }
+}
 
 export type ChangeOutcome<T> = { kind: 'applied'; value: T } | { kind: 'stale' } | { kind: 'failed'; message: string };
 

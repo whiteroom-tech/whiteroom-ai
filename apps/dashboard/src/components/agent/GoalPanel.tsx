@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Hint, Panel, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
+import { LoadFailed } from '@/components/citadel/States';
 import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiteroom/client';
 import { HELP } from '@/lib/metric-definitions';
-import { applyChange, changedElsewhere, CHANGED_ELSEWHERE } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, loadOptional } from '@/lib/settings-flow';
 import { fmtTime } from '@/lib/format';
 import { fetchControlActors, goalWho, type ControlActor } from '@/lib/control-actors';
 
@@ -14,7 +15,8 @@ const MAX = 2000;
 /**
  * Agent detail › Goal (compression spec §14): the owner's goal for this agent,
  * which comes first across every task, plus Start a new task. Nothing changes
- * on screen until the engine confirms. Hidden on engines without goals.
+ * on screen until the engine confirms. Hidden on engines without goals; a
+ * failed load says so, with Try again.
  */
 export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: string }) {
   const [owner, setOwner] = useState<OwnerGoal | null | undefined>(undefined);
@@ -23,22 +25,31 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   const [confirm, setConfirm] = useState<'clear' | 'run' | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [actors, setActors] = useState<ControlActor[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   // The agent on screen now: results for one the user moved away from are dropped.
   const current = useRef(`${fleetId}:${agentId}`);
   current.current = `${fleetId}:${agentId}`;
 
+  const load = useCallback(async () => {
+    const target = `${fleetId}:${agentId}`;
+    const out = await loadOptional(() => goalGet(fleetId, agentId));
+    if (current.current !== target) return;
+    setLoadFailed(out.kind === 'failed');
+    if (out.kind !== 'failed') setOwner(out.kind === 'loaded' ? out.value.owner : undefined);
+  }, [fleetId, agentId]);
+
   useEffect(() => {
     // A different agent starts clean: no draft, note or dialog carries over.
     setOwner(undefined);
+    setLoadFailed(false);
     setDraft(null);
     setNote(null);
     setBusy(null);
     setConfirm(null);
-    let live = true;
-    goalGet(fleetId, agentId).then((r) => { if (live) setOwner(r ? r.owner : undefined); }, () => {});
-    return () => { live = false; };
-  }, [fleetId, agentId]);
+    void load();
+  }, [load]);
 
   // Who set the goal: looked up once per change, by name, never shown as the engine's account id.
   const setBy = owner?.goal ? owner.set_by : null;
@@ -51,7 +62,14 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     return () => { live = false; };
   }, [fleetId, setBy, setAt]);
 
-  if (owner === undefined) return null;
+  if (owner === undefined) {
+    if (!loadFailed) return null;
+    return (
+      <Panel title={<>Goal<Hint text={HELP.goal} /></>}>
+        <LoadFailed what="this agent’s goal" busy={retrying} onRetry={() => { setRetrying(true); void load().finally(() => setRetrying(false)); }} />
+      </Panel>
+    );
+  }
   // Nothing until the names arrive, so "a teammate" doesn't flash before the real name.
   const who = owner?.goal && actors ? goalWho(owner.set_by, owner.updated_at, agentId, actors) : '';
 

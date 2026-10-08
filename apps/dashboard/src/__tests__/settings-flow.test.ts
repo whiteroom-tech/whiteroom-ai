@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, changedElsewhere, confirmKind, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { ControlDeniedError } from '@/lib/whiteroom/client';
 
 describe('applying a settings change', () => {
   it('returns what the engine applied', async () => {
@@ -22,6 +23,22 @@ describe('applying a settings change', () => {
     expect(await out).toEqual({ kind: 'stale' });
     current = 'a';
     expect(await applyChange(async () => { current = 'b'; throw new Error('x'); }, () => current === 'a')).toEqual({ kind: 'stale' });
+  });
+});
+
+describe('loading an optional panel', () => {
+  it('shows what the engine returned', async () => {
+    expect(await loadOptional(async () => ({ ok: 1 }))).toEqual({ kind: 'loaded', value: { ok: 1 } });
+  });
+
+  it('stays hidden on an engine without the action, or for a viewer it refuses', async () => {
+    expect(await loadOptional(async () => null)).toEqual({ kind: 'hidden' });
+    expect(await loadOptional(async () => { throw new ControlDeniedError('Only the fleet owner can see this.'); })).toEqual({ kind: 'hidden' });
+  });
+
+  it('reports a network or server failure instead of hiding', async () => {
+    expect(await loadOptional(async () => { throw new TypeError('Failed to fetch'); })).toEqual({ kind: 'failed' });
+    expect(await loadOptional(async () => { throw new Error('HTTP 502'); })).toEqual({ kind: 'failed' });
   });
 });
 

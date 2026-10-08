@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
+import { LoadFailed } from '@/components/citadel/States';
 import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { applyChange, confirmKind, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, confirmKind, loadOptional, mergeSettingsReply } from '@/lib/settings-flow';
 
 const MAX_AGE_OPTIONS = [{ hours: 24, label: '24 hours' }, { hours: 72, label: '72 hours' }, { hours: 168, label: '7 days' }, { hours: 720, label: '30 days' }];
 const ageLabel = (h: number) => MAX_AGE_OPTIONS.find((o) => o.hours === h)?.label ?? `${h} hours`;
@@ -34,7 +35,8 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
  * Settings › Data and privacy (compression spec §14): what WhiteRoom keeps
  * for the signed-in fleet. Turning something off, or removing personal
  * details, asks first. Nothing changes on screen until the engine confirms.
- * Hidden when no fleet is signed in or the engine doesn't have the setting.
+ * Hidden when no fleet is signed in or the engine doesn't have the setting;
+ * a failed load says so, with Try again.
  */
 export function DataPrivacySection() {
   const { fleetId, status: authStatus } = useFleetAuth();
@@ -45,23 +47,40 @@ export function DataPrivacySection() {
   // The change that failed, so Try again resends exactly it (a purge that
   // didn't finish is retried by saving the same setting again).
   const [retry, setRetry] = useState<Partial<DataSettings> | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloading, setReloading] = useState(false);
   // The fleet on screen now: a save that finishes after a fleet switch is dropped.
   const current = useRef(fleetId);
   current.current = fleetId;
 
+  const load = useCallback(async (fleet: string) => {
+    const out = await loadOptional(() => dataSettingsGet(fleet));
+    if (current.current !== fleet) return;
+    setLoadFailed(out.kind === 'failed');
+    if (out.kind !== 'failed') setSettings(out.kind === 'loaded' ? out.value : null);
+  }, []);
+
   useEffect(() => {
     // Another fleet starts clean: no dialog, note or retry for the last one carries over.
     setSettings(null);
+    setLoadFailed(false);
     setPending(null);
     setNote(null);
     setRetry(null);
     if (authStatus !== 'authenticated' || !fleetId) return;
-    let live = true;
-    dataSettingsGet(fleetId).then((s) => { if (live) setSettings(s); }, () => {});
-    return () => { live = false; };
-  }, [fleetId, authStatus]);
+    void load(fleetId);
+  }, [fleetId, authStatus, load]);
 
-  if (!fleetId || !settings) return null;
+  if (!fleetId) return null;
+  if (!settings) {
+    if (!loadFailed) return null;
+    const fleet = fleetId;
+    return (
+      <Panel title="Data and privacy">
+        <LoadFailed what="data and privacy settings" busy={reloading} onRetry={() => { setReloading(true); void load(fleet).finally(() => setReloading(false)); }} />
+      </Panel>
+    );
+  }
 
   async function save(patch: Partial<DataSettings>) {
     const fleet = fleetId!;

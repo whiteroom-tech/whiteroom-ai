@@ -21,4 +21,9 @@ describe('handover quality client', () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: 'Unknown action: handover_quality' }, 400));
     await expect(handoverQuality('f', 'a')).resolves.toBeNull();
   });
+
+  it('rejects a server failure, so the panel can say it didn’t load instead of hiding', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'engine_unreachable', retryable: true }, 502));
+    await expect(handoverQuality('f', 'a')).rejects.toThrow('engine_unreachable');
+  });
 });

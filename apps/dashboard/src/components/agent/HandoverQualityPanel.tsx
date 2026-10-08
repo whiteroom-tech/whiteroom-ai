@@ -1,23 +1,44 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Hint, Panel, FONT_MONO } from '@whiteroom/ui';
+import { LoadFailed } from '@/components/citadel/States';
 import { handoverQuality, type HandoverQuality } from '@/lib/whiteroom/client';
 import { qualityRows } from '@/lib/handover-quality';
 import { HELP } from '@/lib/metric-definitions';
+import { loadOptional } from '@/lib/settings-flow';
 
-/** Agent detail › Handover quality (compression spec §14): last 7 days. Hidden on engines without it. */
+/** Agent detail › Handover quality (compression spec §14): last 7 days. Hidden on engines without it; a failed load says so, with Try again. */
 export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; agentId: string }) {
   const [q, setQ] = useState<HandoverQuality | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  // The agent on screen now: a result for one the user moved away from is dropped.
+  const current = useRef(`${fleetId}:${agentId}`);
+  current.current = `${fleetId}:${agentId}`;
+
+  const load = useCallback(async () => {
+    const target = `${fleetId}:${agentId}`;
+    const out = await loadOptional(() => handoverQuality(fleetId, agentId));
+    if (current.current !== target) return;
+    setFailed(out.kind === 'failed');
+    if (out.kind !== 'failed') setQ(out.kind === 'loaded' ? out.value : null);
+  }, [fleetId, agentId]);
 
   useEffect(() => {
     setQ(null);
-    let live = true;
-    handoverQuality(fleetId, agentId).then((r) => { if (live) setQ(r); }, () => {});
-    return () => { live = false; };
-  }, [fleetId, agentId]);
+    setFailed(false);
+    void load();
+  }, [load]);
 
-  if (!q) return null;
+  if (!q) {
+    if (!failed) return null;
+    return (
+      <Panel title={<>Handover quality<Hint text={HELP.handoverQuality} /></>}>
+        <LoadFailed what="handover quality" busy={retrying} onRetry={() => { setRetrying(true); void load().finally(() => setRetrying(false)); }} />
+      </Panel>
+    );
+  }
   return (
     <Panel
       title={<>Handover quality<Hint text={HELP.handoverQuality} /></>}
