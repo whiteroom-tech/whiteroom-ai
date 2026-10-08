@@ -382,7 +382,7 @@ a.wr-btn { text-decoration: none; }
    invisible box centred on the control, so nothing moves or grows. */
 @media (pointer: coarse), (max-width: 720px) {
   .wr-btn, .wr-seg__item, .wr-hint, .wr-link, .wr-crumb, .wr-stat-link, .wr-copy-chip > button { position: relative; }
-  .wr-btn::after, .wr-seg__item::after, .wr-hint::after, .wr-link::after, .wr-crumb::after, .wr-stat-link::after, .wr-copy-chip > button::after {
+  .wr-btn::after, .wr-seg__item::after, .wr-hint::after, .wr-link::after, .wr-crumb::after, .wr-stat-link::after, .wr-copy-chip > button::after, .wr-toggle::after {
     content: ''; position: absolute; left: 50%; top: 50%;
     width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);
   }
