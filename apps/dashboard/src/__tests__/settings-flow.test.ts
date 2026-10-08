@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, changedElsewhere, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_CHECK, CHANGED_ELSEWHERE_RELOAD, conflictMessage, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
 import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 
 describe('applying a settings change', () => {
@@ -54,6 +54,16 @@ describe('a change someone else beat', () => {
     expect(changedElsewhere('Rule was changed elsewhere. Reload and try again.')).toBe(true);
     expect(changedElsewhere(NOT_APPLIED)).toBe(false);
     expect(changedElsewhere('HTTP 503')).toBe(false);
+  });
+});
+
+describe('the note after a goal change someone else beat', () => {
+  it('keeps the user’s text for a save, asks to check for a clear, and asks for a reload if the re-read failed', () => {
+    expect(conflictMessage(true, 'save')).toBe(CHANGED_ELSEWHERE);
+    expect(conflictMessage(true, 'clear')).toBe(CHANGED_ELSEWHERE_CHECK);
+    expect(conflictMessage(false, 'save')).toBe(CHANGED_ELSEWHERE_RELOAD);
+    expect(conflictMessage(false, 'clear')).toBe(CHANGED_ELSEWHERE_RELOAD);
+    expect(CHANGED_ELSEWHERE_CHECK).not.toMatch(/your text/i);
   });
 });
 
