@@ -7,6 +7,9 @@ import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/white
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { applyChange, confirmKind, mergeSettingsReply } from '@/lib/settings-flow';
 
+const MAX_AGE_OPTIONS = [{ hours: 24, label: '24 hours' }, { hours: 72, label: '72 hours' }, { hours: 168, label: '7 days' }, { hours: 720, label: '30 days' }];
+const ageLabel = (h: number) => MAX_AGE_OPTIONS.find((o) => o.hours === h)?.label ?? `${h} hours`;
+
 type Pending = { patch: Partial<DataSettings>; title: string; body: string; confirm: string; cancel: string; tone: 'danger' | 'neutral' };
 
 const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, 'patch'>> = {
@@ -21,8 +24,8 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
     confirm: 'Turn off live feed', cancel: 'Keep live feed', tone: 'danger',
   },
   removePersonal: {
-    title: 'Remove personal details from notes?',
-    body: 'Email addresses and phone numbers are removed from handover notes, including notes already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
+    title: 'Remove personal details from notes and the live feed?',
+    body: 'Email addresses and phone numbers are removed from handover notes and the live feed, including what’s already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
     confirm: 'Remove them', cancel: 'Keep them', tone: 'neutral',
   },
 };
@@ -85,15 +88,23 @@ export function DataPrivacySection() {
 
   /** Saves, or asks first when the change deletes something or changes what agents keep. */
   const change = (patch: Partial<DataSettings>) => {
-    const kind = confirmKind(patch);
-    if (kind) setPending({ patch, ...CONFIRM[kind] });
+    const kind = confirmKind(patch, settings);
+    if (kind === 'shorterRetention') {
+      const hours = patch.handover_max_age_hours!;
+      setPending({
+        patch,
+        title: `Keep notes for ${ageLabel(hours)}?`,
+        body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a WhiteRoom update, agents idle longer than that resume without them.`,
+        confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
+      });
+    } else if (kind) setPending({ patch, ...CONFIRM[kind] });
     else void save(patch);
   };
 
   return (
     <Panel title="Data and privacy">
       <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 6px', maxWidth: '62ch' }}>
-        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from handover notes before they’re saved.
+        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from handover notes and the live feed before they’re saved.
       </p>
 
       <Row
@@ -103,20 +114,34 @@ export function DataPrivacySection() {
           : 'Notes stay in memory only. After a WhiteRoom update, agents start their next shift without them.'}
         control={<Toggle label="Save handover notes" checked={settings.handover_persistence} disabled={busy}
           onChange={(on) => change({ handover_persistence: on })} />}
-      />
+      >
+        {settings.handover_persistence && settings.handover_max_age_hours != null && (
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</span>
+            <SegmentedControl label="Keep notes for" value={MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) ? String(settings.handover_max_age_hours) : null}
+              options={MAX_AGE_OPTIONS.map((o) => ({ value: String(o.hours), label: o.label }))}
+              onChange={(v) => {
+                const hours = Number(v);
+                if (busy || hours === settings.handover_max_age_hours) return;
+                change({ handover_max_age_hours: hours });
+              }} />
+            <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
+          </div>
+        )}
+      </Row>
       <Row
         title="Live feed"
         text={settings.content_capture
-          ? 'What your agents said and did. Kept 72 hours, then deleted. Never part of the audit record.'
+          ? 'What your agents said and did, with credentials removed. Deleted automatically after a short time (the live feed shows how long), never part of the audit record.'
           : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
         control={<Toggle label="Live feed" checked={settings.content_capture} disabled={busy}
           onChange={(on) => change({ content_capture: on })} />}
       />
       <Row
         last
-        title="Personal details in handover notes"
+        title="Personal details in notes and the live feed"
         text="Email addresses and phone numbers your agents work with (names aren’t detected). Keep them if your agents need them to finish the job, like lead or support agents."
-        control={<SegmentedControl label="Personal details in handover notes" value={settings.personal_data}
+        control={<SegmentedControl label="Personal details in notes and the live feed" value={settings.personal_data}
           options={[{ value: 'keep', label: 'Keep' }, { value: 'exclude', label: 'Remove' }]}
           onChange={(v) => {
             if (busy || v === settings.personal_data) return;
@@ -150,12 +175,13 @@ export function DataPrivacySection() {
   );
 }
 
-function Row({ title, text, control, last }: { title: string; text: string; control: React.ReactNode; last?: boolean }) {
+function Row({ title, text, control, last, children }: { title: string; text: string; control: React.ReactNode; last?: boolean; children?: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '14px 0', borderBottom: last ? 'none' : '1px solid var(--line)' }}>
       <div style={{ flex: '1 1 320px', minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--tx2)', maxWidth: '58ch' }}>{text}</p>
+        {children}
       </div>
       <div style={{ flex: 'none' }}>{control}</div>
     </div>

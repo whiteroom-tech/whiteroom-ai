@@ -490,7 +490,7 @@ export function performanceRecommendationGet(
 }
 
 /**
- * Full-detail, un-redacted live feed — kept only for a short TTL (see
+ * Full-detail live feed, credentials removed — kept only for a short TTL (see
  * PerformanceLiveFeedResult), unlike auditLog which returns the permanent,
  * content-free record. Not fetched by default anywhere; callers should treat
  * this as an explicit reveal, not part of the page's normal load.
@@ -719,6 +719,8 @@ export interface DataSettings {
   handover_persistence: boolean;
   content_capture: boolean;
   personal_data: 'keep' | 'exclude';
+  /** Saved notes are deleted this long after each is written (engines from PR 6 on). */
+  handover_max_age_hours?: number;
 }
 // Same refusal handling as alerts; an engine without the action hides the section.
 export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
