@@ -9,20 +9,24 @@ export const changedElsewhere = (message: string) => /changed elsewhere/i.test(m
 /** Shown after such a refusal, once the latest version is on screen. */
 export const CHANGED_ELSEWHERE = 'This was changed elsewhere. The latest is shown now; try again if you still want your change.';
 
+/** Shown after such a refusal when the latest couldn't be read. */
+export const CHANGED_ELSEWHERE_RELOAD = 'This was changed elsewhere. Reload the page to see the latest, then try again.';
+
 export type LoadOutcome<T> = { kind: 'loaded'; value: T } | { kind: 'hidden' } | { kind: 'failed' };
 
 /**
  * Loads what an optional panel shows. `hidden` when the engine doesn't have
- * the action (null) or refuses this viewer: the panel stays out of the way.
- * `failed` for anything else (network, server error), so the panel says it
- * couldn't load instead of silently vanishing.
+ * the action (null), refuses this viewer, or the session was rejected: trying
+ * again can't help, so the panel stays out of the way. `failed` for anything
+ * else (network, server error), so the panel says it couldn't load instead of
+ * silently vanishing.
  */
 export async function loadOptional<T>(get: () => Promise<T | null>): Promise<LoadOutcome<T>> {
   try {
     const v = await get();
     return v == null ? { kind: 'hidden' } : { kind: 'loaded', value: v };
   } catch (e) {
-    return controlFailure(e) === 'refused' ? { kind: 'hidden' } : { kind: 'failed' };
+    return controlFailure(e) === 'failed' ? { kind: 'failed' } : { kind: 'hidden' };
   }
 }
 

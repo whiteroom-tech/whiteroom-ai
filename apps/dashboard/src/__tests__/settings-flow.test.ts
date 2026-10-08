@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyChange, changedElsewhere, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
-import { ControlDeniedError } from '@/lib/whiteroom/client';
+import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 
 describe('applying a settings change', () => {
   it('returns what the engine applied', async () => {
@@ -34,6 +34,12 @@ describe('loading an optional panel', () => {
   it('stays hidden on an engine without the action, or for a viewer it refuses', async () => {
     expect(await loadOptional(async () => null)).toEqual({ kind: 'hidden' });
     expect(await loadOptional(async () => { throw new ControlDeniedError('Only the fleet owner can see this.'); })).toEqual({ kind: 'hidden' });
+  });
+
+  it('stays hidden when the session was rejected, since trying again can’t help', async () => {
+    expect(await loadOptional(async () => { throw new WhiteRoomApiError('No fleet session', 401); })).toEqual({ kind: 'hidden' });
+    expect(await loadOptional(async () => { throw new WhiteRoomApiError('Forbidden', 403); })).toEqual({ kind: 'hidden' });
+    expect(await loadOptional(async () => { throw new WhiteRoomApiError('Bad gateway', 502); })).toEqual({ kind: 'failed' });
   });
 
   it('reports a network or server failure instead of hiding', async () => {

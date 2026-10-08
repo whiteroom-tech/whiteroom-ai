@@ -31,7 +31,7 @@ export function LoadFailed({ what, onRetry, busy }: { what: string; onRetry: () 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
       <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)', flex: '1 1 220px' }}>Couldn&rsquo;t load {what}.</p>
-      <Button size={28} busy={busy} busyLabel="Loading…" onClick={onRetry}>Try again</Button>
+      <Button size={28} busy={busy} busyLabel="Loading…" aria-label={`Try loading ${what} again`} onClick={onRetry}>Try again</Button>
     </div>
   );
 }

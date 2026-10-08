@@ -705,7 +705,10 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
   const data = await res.json().catch(() => null);
   if (res.status === 400 && /^unknown action/i.test(String(data?.error ?? ''))) return null;
   if (res.status === 403 && data?.code === CONTROL_DENIED && typeof data.error === 'string') throw new ControlDeniedError(data.error);
-  if (!res.ok || data?.success === false) throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`);
+  const message = typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`;
+  // With its status, so a rejected session (401/403) reads as one, not as a fault to retry.
+  if (!res.ok) throw new WhiteRoomApiError(message, res.status);
+  if (data?.success === false) throw new Error(message);
   return data as T;
 }
 

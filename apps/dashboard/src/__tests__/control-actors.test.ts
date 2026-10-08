@@ -67,8 +67,9 @@ describe('who set an agent\'s goal', () => {
   });
 
   it('never shows a raw account id or an unrecognised "by"', () => {
-    for (const by of ['user:clx9k2abc', 'clx9k2abc', 'owner']) expect(goalWho(by, at, 'lead-agent', [])).not.toMatch(/clx9k2abc|user:|owner/);
-    expect(goalWho('user:clx9k2abc', at, 'lead-agent', [])).toBe('by a teammate');
+    for (const by of ['user:clx9k2abc', 'clx9k2abc']) expect(goalWho(by, at, 'lead-agent', [])).not.toMatch(/clx9k2abc|user:|owner/);
+    // No recorded name (a goal set before names were kept): nothing, not "a teammate" under "Set by you".
+    expect(goalWho('user:clx9k2abc', at, 'lead-agent', [])).toBe('');
     expect(goalWho(null, at, 'lead-agent', [goalRow()])).toBe('');
   });
 });

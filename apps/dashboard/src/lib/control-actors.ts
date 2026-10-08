@@ -52,13 +52,17 @@ export function holdWho(hold: AgentHold, agentId: string, actions: ControlActor[
 }
 
 /**
- * "by R Haque" for whoever set an agent's goal, "from the dashboard" when the
- * person isn't known, "" when the engine didn't say. Never the engine's raw "by".
+ * "by R Haque" for whoever set an agent's goal, "from the dashboard" for an
+ * older record nobody's matched to, "" otherwise. Never the engine's raw "by".
  */
 export function goalWho(setBy: string | null, at: string, agentId: string, actions: ControlActor[]): string {
   if (!setBy) return '';
-  const named = userName(setBy, actions);
-  if (named) return `by ${named}`;
+  // Only a recorded name: goals set before names were recorded say nothing,
+  // rather than "a teammate" under a "Set by you" tag.
+  if (setBy.startsWith(USER)) {
+    const row = actions.find((a) => a.userId === setBy.slice(USER.length));
+    return row ? `by ${row.by}` : '';
+  }
   if (setBy !== 'dashboard') return '';
   const row = closest(actions.filter((a) => a.agentId === agentId && a.action === 'goal_set_owner'), at);
   return row ? `by ${row.by}` : 'from the dashboard';
