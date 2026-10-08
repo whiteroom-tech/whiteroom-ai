@@ -731,6 +731,15 @@ export const goalSetOwner = (fleetId: string, agentId: string, goal: string | nu
 export const agentNewRun = (fleetId: string, agentId: string) =>
   alertsAction<{ success: boolean }>({ action: 'agent_new_run', fleet_id: fleetId, agent_id: agentId });
 
+/** Handover quality over a window (Agent detail › Handover quality). Shares are null until there's data. */
+export interface HandoverQuality {
+  handovers: number; scored: number; valuesChecked: number; valuesKept: number;
+  valuesKeptShare: number | null; shareChecked: number | null; coverageMin: number;
+  keptWithLabel: number | null; goalCarriedOver: number | null;
+}
+export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
+  alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });
+
 // Same refusal handling as alerts; an engine without the action hides the section.
 export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
 export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>

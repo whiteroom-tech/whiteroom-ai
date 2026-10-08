@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns } from '@/components/agent/RecentRuns';
 import { GoalPanel } from '@/components/agent/GoalPanel';
+import { HandoverQualityPanel } from '@/components/agent/HandoverQualityPanel';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
@@ -370,6 +371,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     </div>
                   )}
                 </Panel>
+
+                {!preview && <HandoverQualityPanel fleetId={fleetId} agentId={agentId} />}
 
                 <Panel title={<>Task type<Hint text={HELP.taskType} /></>}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
