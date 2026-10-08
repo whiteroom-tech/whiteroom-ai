@@ -1,6 +1,7 @@
 // Agent detail › Goal talks to the engine through these three calls.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ControlDeniedError, agentNewRun, goalGet, goalSetOwner } from '@/lib/whiteroom/client';
+import { changedElsewhere } from '@/lib/settings-flow';
 
 const fetchMock = vi.fn();
 const jsonResponse = (body: unknown, status = 200) =>
@@ -12,7 +13,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('goal client', () => {
   it('reads the owner goal, including an unreadable one and none', async () => {
-    const owner = { goal: 'Qualify 50 clinics', revision: 3, set_by: 'owner', updated_at: '2026-10-07T00:00:00Z' };
+    const owner = { goal: 'Qualify 50 clinics', revision: 3, set_by: 'user:clx9k2abc', updated_at: '2026-10-07T00:00:00Z' };
     fetchMock.mockResolvedValue(jsonResponse({ owner }));
     await expect(goalGet('f', 'a')).resolves.toEqual({ owner });
     expect(sentBody()).toMatchObject({ action: 'goal_get', fleet_id: 'f', agent_id: 'a' });
@@ -28,13 +29,21 @@ describe('goal client', () => {
   });
 
   it('sets or clears the goal, and rejects a refused change', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ owner: { goal: 'x', revision: 1, set_by: 'owner', updated_at: '' } }));
+    fetchMock.mockResolvedValue(jsonResponse({ owner: { goal: 'x', revision: 1, set_by: 'dashboard', updated_at: '' } }));
     await goalSetOwner('f', 'a', 'x');
     expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: 'x' });
     await goalSetOwner('f', 'a', null);
     expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: null });
     fetchMock.mockResolvedValue(jsonResponse({ error: 'Only the fleet owner can change this.', code: 'control_denied' }, 403));
     await expect(goalSetOwner('f', 'a', 'y')).rejects.toBeInstanceOf(ControlDeniedError);
+  });
+
+  it('rejects a change that lost a race with the engine’s words, so the panel re-reads the goal', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'This goal was changed elsewhere. Reload and try again.' }, 409));
+    const err = await goalSetOwner('f', 'a', 'y').catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(changedElsewhere((err as Error).message)).toBe(true);
+    expect(changedElsewhere('Only the fleet owner can change this.')).toBe(false);
   });
 
   it('starts a new task, and rejects one the engine refused', async () => {

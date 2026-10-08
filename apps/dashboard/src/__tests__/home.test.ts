@@ -180,6 +180,9 @@ describe('today (UTC)', () => {
       .toEqual({ calls: 15, costUsd: 2.37, partial: false });
     // Some calls with no price on file: the total is a lower bound.
     expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), unpricedAttempts: 2 }], now).partial).toBe(true);
+    // Dropped calls aren't in the spend at all.
+    expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(true);
+    expect(todayTotals([{ ...h('2026-09-29T23:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(false);
   });
 });
 

@@ -1,19 +1,22 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Hint, Panel, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
+import { LoadFailed } from '@/components/citadel/States';
 import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiteroom/client';
 import { HELP } from '@/lib/metric-definitions';
-import { applyChange } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_RELOAD, loadOptional } from '@/lib/settings-flow';
 import { fmtTime } from '@/lib/format';
+import { fetchControlActors, goalWho, type ControlActor } from '@/lib/control-actors';
 
 const MAX = 2000;
 
 /**
  * Agent detail › Goal (compression spec §14): the owner's goal for this agent,
  * which comes first across every task, plus Start a new task. Nothing changes
- * on screen until the engine confirms. Hidden on engines without goals.
+ * on screen until the engine confirms. Hidden on engines without goals; a
+ * failed load says so, with Try again.
  */
 export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: string }) {
   const [owner, setOwner] = useState<OwnerGoal | null | undefined>(undefined);
@@ -21,24 +24,54 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   const [busy, setBusy] = useState<'save' | 'clear' | 'run' | null>(null);
   const [confirm, setConfirm] = useState<'clear' | 'run' | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [actors, setActors] = useState<ControlActor[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   // The agent on screen now: results for one the user moved away from are dropped.
   const current = useRef(`${fleetId}:${agentId}`);
   current.current = `${fleetId}:${agentId}`;
 
+  const load = useCallback(async () => {
+    const target = `${fleetId}:${agentId}`;
+    const out = await loadOptional(() => goalGet(fleetId, agentId));
+    if (current.current !== target) return;
+    setLoadFailed(out.kind === 'failed');
+    if (out.kind !== 'failed') setOwner(out.kind === 'loaded' ? out.value.owner : undefined);
+  }, [fleetId, agentId]);
+
   useEffect(() => {
     // A different agent starts clean: no draft, note or dialog carries over.
     setOwner(undefined);
+    setLoadFailed(false);
     setDraft(null);
     setNote(null);
     setBusy(null);
     setConfirm(null);
-    let live = true;
-    goalGet(fleetId, agentId).then((r) => { if (live) setOwner(r ? r.owner : undefined); }, () => {});
-    return () => { live = false; };
-  }, [fleetId, agentId]);
+    void load();
+  }, [load]);
 
-  if (owner === undefined) return null;
+  // Who set the goal: looked up once per change, by name, never shown as the engine's account id.
+  const setBy = owner?.goal ? owner.set_by : null;
+  const setAt = owner?.updated_at;
+  useEffect(() => {
+    setActors(null);
+    if (!setBy || !setAt) return;
+    let live = true;
+    fetchControlActors(fleetId, setAt).then((a) => { if (live) setActors(a); });
+    return () => { live = false; };
+  }, [fleetId, setBy, setAt]);
+
+  if (owner === undefined) {
+    if (!loadFailed) return null;
+    return (
+      <Panel title={<>Goal<Hint text={HELP.goal} /></>}>
+        <LoadFailed what="this agent’s goal" busy={retrying} onRetry={() => { setRetrying(true); void load().finally(() => setRetrying(false)); }} />
+      </Panel>
+    );
+  }
+  // Nothing until the names arrive, so "a teammate" doesn't flash before the real name.
+  const who = owner?.goal && actors ? goalWho(owner.set_by, owner.updated_at, agentId, actors) : '';
 
   /** One goal action: dropped if the user moved to another agent, never shown as done unless the engine applied it. */
   async function run<T>(kind: 'save' | 'clear' | 'run', send: () => Promise<T | null>, onApplied: (v: T) => void, done: string, applied: (v: T) => boolean) {
@@ -48,7 +81,15 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     const out = await applyChange(send, () => current.current === target, applied);
     if (out.kind === 'stale') return;
     if (out.kind === 'applied') onApplied(out.value);
-    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: out.message });
+    const conflict = out.kind === 'failed' && changedElsewhere(out.message);
+    // Someone else's change won: show theirs (the draft closes), so the next try starts from it.
+    let reread = false;
+    if (conflict) {
+      const latest = await goalGet(fleetId, agentId).catch(() => null);
+      if (current.current !== target) return;
+      if (latest) { setOwner(latest.owner); setDraft(null); reread = true; }
+    }
+    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? (reread ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_RELOAD) : out.message });
     setBusy(null);
     setConfirm(null);
   }
@@ -63,22 +104,22 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
       title={<>Goal<Hint text={HELP.goal} /></>}
       actions={draft === null && (
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button size={28} variant="ghost" title="Clears goals the agent set for itself; per-task limits start over. Your goal stays." onClick={() => setConfirm('run')}>Start a new task</Button>
-          <Button size={28} onClick={() => setDraft(owner?.goal ?? '')}>{owner?.goal ? 'Edit goal' : 'Set a goal'}</Button>
+          <Button size={28} variant="ghost" title="Clears goals the agent set for itself; per-task limits start over. Your goal stays." disabled={!!busy} onClick={() => setConfirm('run')}>Start a new task</Button>
+          <Button size={28} disabled={!!busy} onClick={() => setDraft(owner?.goal ?? '')}>{owner?.goal ? 'Edit goal' : 'Set a goal'}</Button>
         </div>
       )}
     >
       {draft !== null ? (
-        <form onSubmit={(e) => { e.preventDefault(); void save(); }} style={{ display: 'grid', gap: 8 }}>
+        <form onSubmit={(e) => { e.preventDefault(); if (!busy) void save(); }} style={{ display: 'grid', gap: 8 }}>
           <textarea
-            className="wr-input" rows={3} maxLength={MAX} required aria-label="Goal for this agent"
+            className="wr-input" rows={3} maxLength={MAX} required readOnly={!!busy} aria-label="Goal for this agent"
             value={draft} onChange={(e) => setDraft(e.target.value)} style={{ resize: 'vertical', fontSize: 13.5 }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: 'var(--tx2)', flex: 1 }}>{draft.length} / {MAX}</span>
-            {owner?.goal && <Button type="button" size={28} variant="ghost" onClick={() => setConfirm('clear')}>Clear goal</Button>}
-            <Button type="button" size={28} variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
-            <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim()}>Save goal</Button>
+            {owner?.goal && <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setConfirm('clear')}>Clear goal</Button>}
+            <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setDraft(null)}>Cancel</Button>
+            <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim() || !!busy}>Save goal</Button>
           </div>
         </form>
       ) : owner?.unreadable ? (
@@ -89,7 +130,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         <div style={{ display: 'grid', gap: 6 }}>
           <span><Tag tone="brand">Set by you</Tag></span>
           <p style={{ margin: 0, fontSize: 14, color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>{owner.goal}</p>
-          <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Updated {fmtTime(owner.updated_at)}{owner.set_by ? ` by ${owner.set_by}` : ''} · applies to every task</span>
+          <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Updated {fmtTime(owner.updated_at)}{who ? ` ${who}` : ''} · applies to every task</span>
         </div>
       ) : (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>

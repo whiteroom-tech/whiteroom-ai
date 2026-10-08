@@ -397,6 +397,8 @@ export interface FleetHourlyDataPoint {
   missingSpendBoundMicros?: number;
   /** Unpriced attempts that can't be bounded. */
   unboundedAttempts?: number;
+  /** Attempts dropped before they were recorded: their spend isn't in costMicros (absent on older engines). */
+  droppedAttempts?: number;
 }
 
 export interface FleetHourlyResult {

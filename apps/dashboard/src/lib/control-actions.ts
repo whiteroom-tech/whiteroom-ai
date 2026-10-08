@@ -3,10 +3,11 @@ import 'server-only';
 import { db } from '@/lib/db';
 import type { ControlActor } from '@/lib/control-actors';
 
-/** The control actions a page names a person for: holds and rule changes. */
+/** The control actions a page names a person for: holds, rule changes and owner goals. */
 const RECORDED = new Set([
   'pause_agent', 'stop_agent',
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
+  'goal_set_owner',
 ]);
 
 /** Pages read 30 days back; keep a little longer, then prune. */

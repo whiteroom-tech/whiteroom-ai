@@ -24,7 +24,7 @@ export function fmtKwh(kwh: number): string | null {
   return kwh < 1 ? `≈${Math.max(1, Math.round(kwh * 1000))} Wh` : `≈${kwh.toFixed(1)} kWh`;
 }
 
-/** "+" after a dollar figure that leaves out unpriced usage, so it reads as a lower bound. */
+/** "+" after a dollar figure that leaves out unpriced usage or dropped calls, so it reads as a lower bound. */
 export function partialMark(partial: boolean): string {
   return partial ? '+' : '';
 }

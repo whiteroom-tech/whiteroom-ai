@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { UNPRICED_TEXT, gapText, spendGap, spendSummary } from '@/lib/spend-completeness';
+import { DROPPED_TEXT, UNPRICED_TEXT, gapText, spendGap, spendSummary } from '@/lib/spend-completeness';
 
 const spendGapText = (hours: Parameters<typeof spendGap>[0]) => gapText(spendGap(hours));
 
@@ -20,6 +20,17 @@ describe('spend gap', () => {
   it("never shows a bound of $0 as an upper bound", () => {
     expect(spendGapText([{ unpricedAttempts: 1, missingSpendBoundMicros: 0, unboundedAttempts: 0 }])).toBe('Incomplete: some calls couldn’t be priced');
   });
+
+  it('says calls were dropped when any hour dropped some, whatever else is missing', () => {
+    expect(spendGap([{ unpricedAttempts: 0, missingSpendBoundMicros: 0, unboundedAttempts: 0, droppedAttempts: 3 }]).kind).toBe('dropped');
+    expect(spendGap([{ unpricedAttempts: 2, missingSpendBoundMicros: 900, unboundedAttempts: 0 }, { droppedAttempts: 1 }]).kind).toBe('dropped');
+    expect(spendGapText([{ droppedAttempts: 1 }])).toBe(DROPPED_TEXT);
+  });
+
+  it('treats no dropped calls, or an engine that doesn’t report them, as before', () => {
+    expect(spendGapText([{ unpricedAttempts: 0, missingSpendBoundMicros: 0, unboundedAttempts: 0, droppedAttempts: 0 }])).toBe('');
+    expect(spendGapText([{ unpricedAttempts: 0, missingSpendBoundMicros: 0, unboundedAttempts: 0 }])).toBe('');
+  });
 });
 
 describe('spend summary for the Spend cards', () => {
@@ -31,6 +42,10 @@ describe('spend summary for the Spend cards', () => {
   });
   it('marks the figure partial from the selected half', () => {
     expect(spendSummary([h(0), h(0), h(0), h(2)], 0)).toMatchObject({ partial: true, gapLine: UNPRICED_TEXT });
+  });
+  it('marks the figure partial when the selected half dropped calls', () => {
+    expect(spendSummary([h(0), { ...h(0), droppedAttempts: 2 }], 0)).toMatchObject({ partial: true, gapLine: DROPPED_TEXT });
+    expect(spendSummary([{ ...h(0), droppedAttempts: 2 }, h(0)], 0)).toMatchObject({ partial: false, gapLine: '' });
   });
   it('falls back to the summary count when there are no hourly rows', () => {
     expect(spendSummary([], 4)).toMatchObject({ shown: [], gapLine: UNPRICED_TEXT, partial: true });

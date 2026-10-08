@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, confirmKind, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 
 describe('applying a settings change', () => {
   it('returns what the engine applied', async () => {
@@ -22,6 +23,37 @@ describe('applying a settings change', () => {
     expect(await out).toEqual({ kind: 'stale' });
     current = 'a';
     expect(await applyChange(async () => { current = 'b'; throw new Error('x'); }, () => current === 'a')).toEqual({ kind: 'stale' });
+  });
+});
+
+describe('loading an optional panel', () => {
+  it('shows what the engine returned', async () => {
+    expect(await loadOptional(async () => ({ ok: 1 }))).toEqual({ kind: 'loaded', value: { ok: 1 } });
+  });
+
+  it('stays hidden on an engine without the action, or for a viewer it refuses', async () => {
+    expect(await loadOptional(async () => null)).toEqual({ kind: 'hidden' });
+    expect(await loadOptional(async () => { throw new ControlDeniedError('Only the fleet owner can see this.'); })).toEqual({ kind: 'hidden' });
+  });
+
+  it('stays hidden when the session was rejected, since trying again can’t help', async () => {
+    expect(await loadOptional(async () => { throw new WhiteRoomApiError('No fleet session', 401); })).toEqual({ kind: 'hidden' });
+    expect(await loadOptional(async () => { throw new WhiteRoomApiError('Forbidden', 403); })).toEqual({ kind: 'hidden' });
+    expect(await loadOptional(async () => { throw new WhiteRoomApiError('Bad gateway', 502); })).toEqual({ kind: 'failed' });
+  });
+
+  it('reports a network or server failure instead of hiding', async () => {
+    expect(await loadOptional(async () => { throw new TypeError('Failed to fetch'); })).toEqual({ kind: 'failed' });
+    expect(await loadOptional(async () => { throw new Error('HTTP 502'); })).toEqual({ kind: 'failed' });
+  });
+});
+
+describe('a change someone else beat', () => {
+  it('is recognised from the engine’s 409 wording, goal or rule', () => {
+    expect(changedElsewhere('This goal was changed elsewhere. Reload and try again.')).toBe(true);
+    expect(changedElsewhere('Rule was changed elsewhere. Reload and try again.')).toBe(true);
+    expect(changedElsewhere(NOT_APPLIED)).toBe(false);
+    expect(changedElsewhere('HTTP 503')).toBe(false);
   });
 });
 
