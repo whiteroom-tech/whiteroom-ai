@@ -88,8 +88,16 @@ export function DataPrivacySection() {
 
   /** Saves, or asks first when the change deletes something or changes what agents keep. */
   const change = (patch: Partial<DataSettings>) => {
-    const kind = confirmKind(patch);
-    if (kind) setPending({ patch, ...CONFIRM[kind] });
+    const kind = confirmKind(patch, settings);
+    if (kind === 'shorterRetention') {
+      const hours = patch.handover_max_age_hours!;
+      setPending({
+        patch,
+        title: `Keep notes for ${ageLabel(hours)}?`,
+        body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a WhiteRoom update, agents idle longer than that resume without them.`,
+        confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
+      });
+    } else if (kind) setPending({ patch, ...CONFIRM[kind] });
     else void save(patch);
   };
 
@@ -115,13 +123,7 @@ export function DataPrivacySection() {
               onChange={(v) => {
                 const hours = Number(v);
                 if (busy || hours === settings.handover_max_age_hours) return;
-                if (hours > settings.handover_max_age_hours!) { void save({ handover_max_age_hours: hours }); return; }
-                setPending({
-                  patch: { handover_max_age_hours: hours },
-                  title: `Keep notes for ${ageLabel(hours)}?`,
-                  body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a WhiteRoom update, agents idle longer than that resume without them.`,
-                  confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
-                });
+                change({ handover_max_age_hours: hours });
               }} />
             <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
           </div>

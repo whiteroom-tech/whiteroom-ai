@@ -28,17 +28,20 @@ export async function applyChange<T>(
   }
 }
 
-export type ConfirmKind = 'notesOff' | 'feedOff' | 'removePersonal';
+export type ConfirmKind = 'notesOff' | 'feedOff' | 'removePersonal' | 'shorterRetention';
 
 /**
  * Whether a data setting change asks first (compression spec §14.2):
  * anything that deletes what's stored or changes what agents keep. Turning
  * something back on, or keeping personal details, saves straight away.
  */
-export function confirmKind(patch: Partial<DataSettings>): ConfirmKind | null {
+export function confirmKind(patch: Partial<DataSettings>, current?: Partial<DataSettings> | null): ConfirmKind | null {
   if (patch.handover_persistence === false) return 'notesOff';
   if (patch.content_capture === false) return 'feedOff';
   if (patch.personal_data === 'exclude') return 'removePersonal';
+  // A shorter retention deletes older saved notes; a longer one deletes nothing.
+  const was = current?.handover_max_age_hours;
+  if (patch.handover_max_age_hours !== undefined && was != null && patch.handover_max_age_hours < was) return 'shorterRetention';
   return null;
 }
 

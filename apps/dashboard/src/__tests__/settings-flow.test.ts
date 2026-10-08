@@ -43,3 +43,12 @@ describe('mergeSettingsReply', () => {
     expect(mergeSettingsReply<{ content_capture: boolean }>(null, { content_capture: false, success: true })).toEqual({ content_capture: false });
   });
 });
+
+describe('confirming a shorter retention', () => {
+  it('asks before shortening how long notes are kept, never before lengthening it', () => {
+    const now = { handover_persistence: true, content_capture: true, personal_data: 'keep' as const, handover_max_age_hours: 72 };
+    expect(confirmKind({ handover_max_age_hours: 24 }, now)).toBe('shorterRetention');
+    expect(confirmKind({ handover_max_age_hours: 168 }, now)).toBeNull();
+    expect(confirmKind({ handover_max_age_hours: 24 }, null)).toBeNull(); // nothing known to delete
+  });
+});
