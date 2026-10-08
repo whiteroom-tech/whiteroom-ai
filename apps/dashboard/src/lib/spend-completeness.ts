@@ -5,8 +5,9 @@ type Hour = { unpricedAttempts?: number; missingSpendBoundMicros?: number; unbou
 /**
  * What a spend total leaves out (compression spec §7.3, §14.3): nothing; at
  * most a known amount; an unknown amount; or calls that were dropped before
- * they were recorded, whose spend is missing entirely. Older engines don't
- * send the bound, so any unpriced attempt there reads as unknown, nor drops.
+ * they were recorded, whose spend is missing entirely. Older engines send
+ * neither the bound nor drops: an unpriced attempt there reads as unknown, and
+ * no gap is shown for drops.
  */
 export function spendGap(hours: Hour[]): { kind: 'complete' } | { kind: 'bounded'; micros: number } | { kind: 'unknown' } | { kind: 'dropped' } {
   let unpriced = 0, bound = 0, unbounded = 0, dropped = 0, reported = false;
