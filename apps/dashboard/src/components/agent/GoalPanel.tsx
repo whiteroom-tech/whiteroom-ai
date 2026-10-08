@@ -6,7 +6,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { LoadFailed } from '@/components/citadel/States';
 import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiteroom/client';
 import { HELP } from '@/lib/metric-definitions';
-import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_RELOAD, loadOptional } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_CHECK, CHANGED_ELSEWHERE_RELOAD, loadOptional } from '@/lib/settings-flow';
 import { fmtTime } from '@/lib/format';
 import { fetchControlActors, goalWho, type ControlActor } from '@/lib/control-actors';
 
@@ -89,7 +89,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
       if (current.current !== target) return;
       if (latest) { setOwner(latest.owner); reread = true; }
     }
-    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? (reread ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_RELOAD) : out.message });
+    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? (!reread ? CHANGED_ELSEWHERE_RELOAD : kind === 'save' ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_CHECK) : out.message });
     setBusy(null);
     setConfirm(null);
   }

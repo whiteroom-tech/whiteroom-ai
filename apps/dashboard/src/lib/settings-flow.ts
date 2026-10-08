@@ -6,8 +6,11 @@ export const NOT_APPLIED = 'This WhiteRoom engine didn’t apply the change. Try
 /** The engine refused a change because someone else changed the same thing first: re-read it before trying again. */
 export const changedElsewhere = (message: string) => /changed elsewhere/i.test(message);
 
-/** Shown after such a refusal, once the latest version is loaded; what the user typed is kept. */
+/** Shown after such a refusal to a save, once the latest version is loaded; what the user typed is kept. */
 export const CHANGED_ELSEWHERE = 'This was changed elsewhere, and the latest is loaded. Your text is still here: try again to apply it.';
+
+/** The same, for anything other than a save (a clear): nothing the user typed is involved. */
+export const CHANGED_ELSEWHERE_CHECK = 'This was changed elsewhere, and the latest is loaded. Check it, then try again if you still want to.';
 
 /** Shown after such a refusal when the latest couldn't be read. */
 export const CHANGED_ELSEWHERE_RELOAD = 'This was changed elsewhere. Reload the page to see the latest, then try again.';
