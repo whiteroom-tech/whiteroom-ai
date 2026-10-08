@@ -53,6 +53,8 @@ export interface HandoverDoc {
   pending?: Array<{ task: string }>;
   warnings?: string[];
   session_stats?: { tasks_completed: number; total_tokens: number };
+  /** A short stand-in, sent when the full notes were rejected as too large (engine PR 165). */
+  fallback?: boolean;
 }
 
 export interface FleetReport {
@@ -111,8 +113,8 @@ export interface AuditLogResponse {
 }
 
 /**
- * The Performance tab's live feed (performance_live_feed action): full,
- * un-redacted detail (real reply text, real tool-call argument values), kept
+ * The Performance tab's live feed (performance_live_feed action): full
+ * detail with credentials removed (real reply text, tool-call arguments), kept
  * only for `ttlHours` and then deleted. A different store from audit_log
  * (which is the permanent, content-free record) — reuses AuditEntry's shape
  * since the fields line up, but the content inside taskName/details here is
@@ -123,6 +125,8 @@ export interface PerformanceLiveFeedResult {
   ttlHours: number;
   total: number;
   entries: AuditEntry[];
+  /** off: the fleet's owner turned the live feed off (engines from PR 6 on). */
+  capture?: 'on' | 'off';
   error?: string;
 }
 
@@ -387,8 +391,12 @@ export interface FleetHourlyDataPoint {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
-  /** Attempts with no catalogue price in this hour (absent on older engines). */
+  /** Attempts with no catalogue price, or no usage, in this hour (absent on older engines). */
   unpricedAttempts?: number;
+  /** An upper bound on what the unpriced calls with no usage could have cost (engine PR 168). */
+  missingSpendBoundMicros?: number;
+  /** Unpriced attempts that can't be bounded. */
+  unboundedAttempts?: number;
 }
 
 export interface FleetHourlyResult {

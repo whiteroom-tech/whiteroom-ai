@@ -16,6 +16,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'pause_agent', 'resume_agent', 'stop_agent',
   'alerts_get', 'alerts_set_slack', 'alerts_test',
+  'fleet_data_settings_get', 'fleet_data_settings_set',
+  'goal_get', 'goal_set_owner', 'agent_new_run',
 ]);
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
@@ -108,10 +110,10 @@ export async function fleetOwners(fleetIds: string[]): Promise<Map<string, strin
 
 const NOT_OWNER: ControlDenial = {
   status: 403,
-  error: 'Only this fleet’s owner can change its rules or pause its agents. Another WhiteRoom account added it first; you can still view it.',
+  error: 'Only this fleet’s owner can change its controls and settings. Another WhiteRoom account added it first; you can still view it.',
 };
 
-const NOT_LINKED: ControlDenial = { status: 403, error: 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its rules or pause its agents.' };
+const NOT_LINKED: ControlDenial = { status: 403, error: 'Your WhiteRoom account isn’t linked to this fleet, so it can’t change its controls or settings.' };
 const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check your access to this fleet. Try again.' };
 
 /**
@@ -139,7 +141,7 @@ const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check you
 export async function controlAccessError(fleetId: string | null, token: string): Promise<ControlDenial | null> {
   const session = await auth();
   const userId = session?.user?.id;
-  if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change rules or pause agents.' };
+  if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change this fleet’s controls or settings.' };
   if (!fleetId) return { status: 400, error: 'fleet_id is required.' };
   let held: HeldCredential[];
   try {

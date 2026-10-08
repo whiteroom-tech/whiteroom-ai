@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { AlertsSection } from '@/components/settings/AlertsSection';
+import { DataPrivacySection } from '@/components/settings/DataPrivacySection';
+import { HandoverReviewSection } from '@/components/settings/HandoverReviewSection';
 import { AuditIntegritySection } from '@/components/settings/AuditIntegritySection';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/citadel/PageChrome';
@@ -116,6 +118,8 @@ export function SettingsView({
 
           <ProfileSection account={account} pending={pending} run={run} />
           <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
+          <DataPrivacySection />
+          <HandoverReviewSection />
           <AlertsSection />
           <div id="audit-integrity"><AuditIntegritySection /></div>
           <EmailSection account={account} pending={pending} run={run} />
@@ -312,7 +316,7 @@ function PlanSection({
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '-8px 0 20px' }}>
-        History kept covers call records and run history too. There is no second retention setting.
+        History kept covers call records and run history. Handover notes have their own limit under Data and privacy.
       </p>
 
       {offers.length > 0 && (
