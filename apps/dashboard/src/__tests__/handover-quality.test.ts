@@ -24,3 +24,13 @@ describe('handover quality rows', () => {
     expect(qualityRows({ ...base, valuesKeptShare: 0.004 })[0].value).toBe('<1%');
   });
 });
+
+describe('label and goal rows', () => {
+  it('show the engine\'s share once it sends one, and stay not measured until then', async () => {
+    const { qualityRows } = await import('@/lib/handover-quality');
+    expect(qualityRows(base).slice(1).map((r) => r.state)).toEqual(['none', 'none']);
+    const rows = qualityRows({ ...base, keptWithLabel: 0.9, goalCarriedOver: 1 });
+    expect(rows[1]).toMatchObject({ value: '90.0%', state: 'measured' });
+    expect(rows[2]).toMatchObject({ value: '100.0%', state: 'measured' });
+  });
+});

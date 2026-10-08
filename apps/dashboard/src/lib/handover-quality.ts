@@ -23,9 +23,9 @@ export function qualityRows(q: HandoverQuality): QualityRow[] {
       value: pct(q.valuesKeptShare),
       state: partly ? 'partly' : 'measured',
     };
-  return [
-    kept,
-    { label: 'Kept with the right label', detail: 'Not measured yet.', value: '—', state: 'none' },
-    { label: 'Goal carried over', detail: 'Not measured yet.', value: '—', state: 'none' },
-  ];
+  // Shares the engine doesn't measure yet stay "not measured"; once it sends them, they show, with the same coverage rule.
+  const share = (label: string, v: number | null): QualityRow => v === null
+    ? { label, detail: 'Not measured yet.', value: '—', state: 'none' }
+    : { label, detail: partly ? `Partly checked: ${pct(q.shareChecked!)} of the shifts’ text.` : 'Of the handovers WhiteRoom checked', value: pct(v), state: partly ? 'partly' : 'measured' };
+  return [kept, share('Kept with the right label', q.keptWithLabel), share('Goal carried over', q.goalCarriedOver)];
 }
