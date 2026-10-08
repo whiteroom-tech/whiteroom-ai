@@ -1,6 +1,7 @@
 // Agent detail › Goal talks to the engine through these three calls.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ControlDeniedError, agentNewRun, goalGet, goalSetOwner } from '@/lib/whiteroom/client';
+import { changedElsewhere } from '@/lib/settings-flow';
 
 const fetchMock = vi.fn();
 const jsonResponse = (body: unknown, status = 200) =>
@@ -35,6 +36,14 @@ describe('goal client', () => {
     expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: null });
     fetchMock.mockResolvedValue(jsonResponse({ error: 'Only the fleet owner can change this.', code: 'control_denied' }, 403));
     await expect(goalSetOwner('f', 'a', 'y')).rejects.toBeInstanceOf(ControlDeniedError);
+  });
+
+  it('rejects a change that lost a race with the engine’s words, so the panel re-reads the goal', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'This goal was changed elsewhere. Reload and try again.' }, 409));
+    const err = await goalSetOwner('f', 'a', 'y').catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(changedElsewhere((err as Error).message)).toBe(true);
+    expect(changedElsewhere('Only the fleet owner can change this.')).toBe(false);
   });
 
   it('starts a new task, and rejects one the engine refused', async () => {

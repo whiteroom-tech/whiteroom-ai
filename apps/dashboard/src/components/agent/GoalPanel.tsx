@@ -5,7 +5,7 @@ import { Button, Hint, Panel, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiteroom/client';
 import { HELP } from '@/lib/metric-definitions';
-import { applyChange } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, CHANGED_ELSEWHERE } from '@/lib/settings-flow';
 import { fmtTime } from '@/lib/format';
 import { fetchControlActors, goalWho, type ControlActor } from '@/lib/control-actors';
 
@@ -63,7 +63,10 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     const out = await applyChange(send, () => current.current === target, applied);
     if (out.kind === 'stale') return;
     if (out.kind === 'applied') onApplied(out.value);
-    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: out.message });
+    const conflict = out.kind === 'failed' && changedElsewhere(out.message);
+    // Someone else's change won: show theirs, so the next try starts from it.
+    if (conflict) await goalGet(fleetId, agentId).then((r) => { if (r && current.current === target) setOwner(r.owner); }, () => {});
+    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? CHANGED_ELSEWHERE : out.message });
     setBusy(null);
     setConfirm(null);
   }
@@ -78,22 +81,22 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
       title={<>Goal<Hint text={HELP.goal} /></>}
       actions={draft === null && (
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button size={28} variant="ghost" title="Clears goals the agent set for itself; per-task limits start over. Your goal stays." onClick={() => setConfirm('run')}>Start a new task</Button>
-          <Button size={28} onClick={() => setDraft(owner?.goal ?? '')}>{owner?.goal ? 'Edit goal' : 'Set a goal'}</Button>
+          <Button size={28} variant="ghost" title="Clears goals the agent set for itself; per-task limits start over. Your goal stays." disabled={!!busy} onClick={() => setConfirm('run')}>Start a new task</Button>
+          <Button size={28} disabled={!!busy} onClick={() => setDraft(owner?.goal ?? '')}>{owner?.goal ? 'Edit goal' : 'Set a goal'}</Button>
         </div>
       )}
     >
       {draft !== null ? (
-        <form onSubmit={(e) => { e.preventDefault(); void save(); }} style={{ display: 'grid', gap: 8 }}>
+        <form onSubmit={(e) => { e.preventDefault(); if (!busy) void save(); }} style={{ display: 'grid', gap: 8 }}>
           <textarea
-            className="wr-input" rows={3} maxLength={MAX} required aria-label="Goal for this agent"
+            className="wr-input" rows={3} maxLength={MAX} required readOnly={!!busy} aria-label="Goal for this agent"
             value={draft} onChange={(e) => setDraft(e.target.value)} style={{ resize: 'vertical', fontSize: 13.5 }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: 'var(--tx2)', flex: 1 }}>{draft.length} / {MAX}</span>
-            {owner?.goal && <Button type="button" size={28} variant="ghost" onClick={() => setConfirm('clear')}>Clear goal</Button>}
-            <Button type="button" size={28} variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
-            <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim()}>Save goal</Button>
+            {owner?.goal && <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setConfirm('clear')}>Clear goal</Button>}
+            <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setDraft(null)}>Cancel</Button>
+            <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim() || !!busy}>Save goal</Button>
           </div>
         </form>
       ) : owner?.unreadable ? (

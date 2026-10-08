@@ -3,6 +3,12 @@ import type { DataSettings } from '@/lib/whiteroom/client';
 /** Shown when the engine answered but didn't apply a change. */
 export const NOT_APPLIED = 'This WhiteRoom engine didn’t apply the change. Try again later.';
 
+/** The engine refused a change because someone else changed the same thing first: re-read it before trying again. */
+export const changedElsewhere = (message: string) => /changed elsewhere/i.test(message);
+
+/** Shown after such a refusal, once the latest version is on screen. */
+export const CHANGED_ELSEWHERE = 'This was changed elsewhere. The latest is shown now; try again if you still want your change.';
+
 export type ChangeOutcome<T> = { kind: 'applied'; value: T } | { kind: 'stale' } | { kind: 'failed'; message: string };
 
 /**

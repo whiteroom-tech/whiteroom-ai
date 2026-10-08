@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, confirmKind, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, confirmKind, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
 
 describe('applying a settings change', () => {
   it('returns what the engine applied', async () => {
@@ -22,6 +22,15 @@ describe('applying a settings change', () => {
     expect(await out).toEqual({ kind: 'stale' });
     current = 'a';
     expect(await applyChange(async () => { current = 'b'; throw new Error('x'); }, () => current === 'a')).toEqual({ kind: 'stale' });
+  });
+});
+
+describe('a change someone else beat', () => {
+  it('is recognised from the engine’s 409 wording, goal or rule', () => {
+    expect(changedElsewhere('This goal was changed elsewhere. Reload and try again.')).toBe(true);
+    expect(changedElsewhere('Rule was changed elsewhere. Reload and try again.')).toBe(true);
+    expect(changedElsewhere(NOT_APPLIED)).toBe(false);
+    expect(changedElsewhere('HTTP 503')).toBe(false);
   });
 });
 
