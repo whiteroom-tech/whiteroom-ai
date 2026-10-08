@@ -51,6 +51,19 @@ export function holdWho(hold: AgentHold, agentId: string, actions: ControlActor[
   return row ? `by ${row.by}` : 'from the dashboard';
 }
 
+/**
+ * "by R Haque" for whoever set an agent's goal, "from the dashboard" when the
+ * person isn't known, "" when the engine didn't say. Never the engine's raw "by".
+ */
+export function goalWho(setBy: string | null, at: string, agentId: string, actions: ControlActor[]): string {
+  if (!setBy) return '';
+  const named = userName(setBy, actions);
+  if (named) return `by ${named}`;
+  if (setBy !== 'dashboard') return '';
+  const row = closest(actions.filter((a) => a.agentId === agentId && a.action === 'goal_set_owner'), at);
+  return row ? `by ${row.by}` : 'from the dashboard';
+}
+
 /** The person behind a rule-history entry, else the engine's own "by". */
 export function historyWho(entry: { ruleId: string; time: string; by: string }, actions: ControlActor[]): string {
   const named = userName(entry.by, actions);

@@ -7,6 +7,7 @@ import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiter
 import { HELP } from '@/lib/metric-definitions';
 import { applyChange } from '@/lib/settings-flow';
 import { fmtTime } from '@/lib/format';
+import { fetchControlActors, goalWho, type ControlActor } from '@/lib/control-actors';
 
 const MAX = 2000;
 
@@ -21,6 +22,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   const [busy, setBusy] = useState<'save' | 'clear' | 'run' | null>(null);
   const [confirm, setConfirm] = useState<'clear' | 'run' | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [actors, setActors] = useState<ControlActor[] | null>(null);
 
   // The agent on screen now: results for one the user moved away from are dropped.
   const current = useRef(`${fleetId}:${agentId}`);
@@ -38,7 +40,20 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     return () => { live = false; };
   }, [fleetId, agentId]);
 
+  // Who set the goal: looked up once per change, by name, never shown as the engine's account id.
+  const setBy = owner?.goal ? owner.set_by : null;
+  const setAt = owner?.updated_at;
+  useEffect(() => {
+    setActors(null);
+    if (!setBy || !setAt) return;
+    let live = true;
+    fetchControlActors(fleetId, setAt).then((a) => { if (live) setActors(a); });
+    return () => { live = false; };
+  }, [fleetId, setBy, setAt]);
+
   if (owner === undefined) return null;
+  // Nothing until the names arrive, so "a teammate" doesn't flash before the real name.
+  const who = owner?.goal && actors ? goalWho(owner.set_by, owner.updated_at, agentId, actors) : '';
 
   /** One goal action: dropped if the user moved to another agent, never shown as done unless the engine applied it. */
   async function run<T>(kind: 'save' | 'clear' | 'run', send: () => Promise<T | null>, onApplied: (v: T) => void, done: string, applied: (v: T) => boolean) {
@@ -89,7 +104,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         <div style={{ display: 'grid', gap: 6 }}>
           <span><Tag tone="brand">Set by you</Tag></span>
           <p style={{ margin: 0, fontSize: 14, color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>{owner.goal}</p>
-          <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Updated {fmtTime(owner.updated_at)}{owner.set_by ? ` by ${owner.set_by}` : ''} · applies to every task</span>
+          <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Updated {fmtTime(owner.updated_at)}{who ? ` ${who}` : ''} · applies to every task</span>
         </div>
       ) : (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>

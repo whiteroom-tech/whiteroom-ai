@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/db', () => ({ db: () => ({ query: vi.fn() }) }));
 
-import { historyWho, holdWho, type ControlActor } from '@/lib/control-actors';
+import { goalWho, historyWho, holdWho, type ControlActor } from '@/lib/control-actors';
 import { controlTarget } from '@/lib/control-actions';
 
 const at = '2026-10-02T20:00:00.000Z';
@@ -51,6 +51,25 @@ describe('who changed a rule', () => {
   it('keeps the engine\'s own "by" when it already names someone, or no row matches', () => {
     expect(historyWho({ ...entry, by: 'agent' }, [row({ ruleId: 'r1' })])).toBe('agent');
     expect(historyWho(entry, [row({ ruleId: 'r2' })])).toBe('from the dashboard');
+  });
+});
+
+describe('who set an agent\'s goal', () => {
+  const goalRow = (o: Partial<ControlActor> = {}) => row({ action: 'goal_set_owner', ...o });
+
+  it('names the account the engine recorded', () => {
+    expect(goalWho('user:u1', at, 'lead-agent', [goalRow({ at: '2026-09-01T00:00:00.000Z' })])).toBe('by R Haque');
+  });
+
+  it('matches an older "dashboard" record to the same agent\'s goal change', () => {
+    expect(goalWho('dashboard', at, 'lead-agent', [goalRow()])).toBe('by R Haque');
+    expect(goalWho('dashboard', at, 'lead-agent', [goalRow({ agentId: 'other' }), row({})])).toBe('from the dashboard');
+  });
+
+  it('never shows a raw account id or an unrecognised "by"', () => {
+    for (const by of ['user:clx9k2abc', 'clx9k2abc', 'owner']) expect(goalWho(by, at, 'lead-agent', [])).not.toMatch(/clx9k2abc|user:|owner/);
+    expect(goalWho('user:clx9k2abc', at, 'lead-agent', [])).toBe('by a teammate');
+    expect(goalWho(null, at, 'lead-agent', [goalRow()])).toBe('');
   });
 });
 

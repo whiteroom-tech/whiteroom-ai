@@ -12,7 +12,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('goal client', () => {
   it('reads the owner goal, including an unreadable one and none', async () => {
-    const owner = { goal: 'Qualify 50 clinics', revision: 3, set_by: 'owner', updated_at: '2026-10-07T00:00:00Z' };
+    const owner = { goal: 'Qualify 50 clinics', revision: 3, set_by: 'user:clx9k2abc', updated_at: '2026-10-07T00:00:00Z' };
     fetchMock.mockResolvedValue(jsonResponse({ owner }));
     await expect(goalGet('f', 'a')).resolves.toEqual({ owner });
     expect(sentBody()).toMatchObject({ action: 'goal_get', fleet_id: 'f', agent_id: 'a' });
@@ -28,7 +28,7 @@ describe('goal client', () => {
   });
 
   it('sets or clears the goal, and rejects a refused change', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ owner: { goal: 'x', revision: 1, set_by: 'owner', updated_at: '' } }));
+    fetchMock.mockResolvedValue(jsonResponse({ owner: { goal: 'x', revision: 1, set_by: 'dashboard', updated_at: '' } }));
     await goalSetOwner('f', 'a', 'x');
     expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: 'x' });
     await goalSetOwner('f', 'a', null);
