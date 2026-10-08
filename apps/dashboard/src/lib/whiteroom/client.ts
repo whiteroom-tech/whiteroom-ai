@@ -721,7 +721,22 @@ export interface DataSettings {
   personal_data: 'keep' | 'exclude';
   /** Saved notes are deleted this long after each is written (engines from PR 6 on). */
   handover_max_age_hours?: number;
+  /** Handover review (engines from compression PR 14 on): off unless the owner turns it on. */
+  review_mode?: 'off' | 'realtime';
+  /** Its monthly limit in dollars, on the fleet's own provider bill. Required to turn it on. */
+  review_monthly_cap_usd?: number | null;
 }
+
+/** This month's handover review spend and results (Settings › Handover review, Performance). Counts only. */
+export interface HandoverReviewStatus {
+  review_mode: 'off' | 'realtime'; month: string; cap_usd: number | null;
+  spent_usd: number; reserved_usd: number; reviews: number;
+  verdicts: { retained: number; dropped: number; contradicted: number; unverified: number };
+  /** Reviews started under a higher limit are finishing; none start until spend is back under it. */
+  over_limit_from_earlier: boolean;
+}
+export const handoverReviewStatus = (fleetId: string) =>
+  alertsAction<HandoverReviewStatus>({ action: 'handover_review_status', fleet_id: fleetId });
 /** The owner's goal for an agent (Agent detail › Goal). */
 export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
 export const goalGet = (fleetId: string, agentId: string) =>
@@ -736,6 +751,30 @@ export interface HandoverQuality {
   handovers: number; scored: number; valuesChecked: number; valuesKept: number;
   valuesKeptShare: number | null; shareChecked: number | null; coverageMin: number;
   keptWithLabel: number | null; goalCarriedOver: number | null;
+  /** Handover review results (engines from compression PR 16b on). Counts only. */
+  review?: HandoverReviewCounts;
+}
+export interface HandoverReviewCounts {
+  mode: 'off' | 'realtime';
+  /** The representative sample: the review result is computed from these only. */
+  representative: {
+    /** Picked for review; reviewed ÷ selected is coverage. */
+    selected: number;
+    reviewed: number; retained: number; dropped: number; contradicted: number; unverified: number;
+    /** Coverage per shift size. */
+    bySize: Record<string, { selected: number; reviewed: number }>;
+  };
+  /** Reviewed because something looked off; reported apart from the result. */
+  riskTriggered: number;
+  /** Picked but not reviewed, by reason (engine codes; never shown raw). */
+  skipped: Record<string, number>;
+  /** Verdict categories calibrated against people for the prompt and model in use. */
+  calibrated: Array<'retained' | 'dropped' | 'contradicted'>;
+  /** Confirmed items needed before a result is shown. */
+  minVerified: number;
+  /** Share of picked handovers that must be reviewed, overall and for every shift size. */
+  coverageMin: number;
+  sizeCoverageMin: number;
 }
 export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
   alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });
