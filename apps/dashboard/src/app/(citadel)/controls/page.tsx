@@ -904,6 +904,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                   {selectedRule.ruleType === "call_rate" && "Stops the call that goes over the limit. Refused calls count too, so an agent that keeps retrying stays over until it slows down."}
                   {selectedRule.ruleType === "tool_list" && "Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent."}
                 </p>
+                {selectedRule.ruleType === "spend_cap" && (
+                  <p style={{ fontSize: 11, color: "var(--tx3)", marginTop: 8 }}>Handover reviews are counted separately and never stop your agents.</p>
+                )}
                 {selectedRule.ruleType === "spend_cap" && (selectedRule.params as SpendCapParams).unit === "dollars" && (
                   <p style={{ fontSize: 10, color: "var(--tx3)", marginTop: 8 }}>
                     Dollar estimates use a blended rate of $0.003/1K tokens. Actual cost varies by model — see the Performance tab for per-model pricing.

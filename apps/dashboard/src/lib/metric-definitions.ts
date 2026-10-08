@@ -8,7 +8,7 @@ const KWH_PER_MILLION = +(KWH_PER_TOKEN * 1_000_000).toFixed(3);
 
 /** Live feed help; the retention comes from the engine (ttlHours). */
 export function liveFeedHelp(ttlHours: number): string {
-  return `Everything the agents actually said and did, including the web pages they opened and the exact inputs they gave their tools. It is private content, so it stays hidden until you open it and is deleted after ${ttlHours} hours.`;
+  return `Everything the agents actually said and did, including the web pages they opened and the exact inputs they gave their tools, with API keys, passwords and other credentials removed. It is private content, so it stays hidden until you open it and is deleted after ${ttlHours} hours.`;
 }
 
 /**
@@ -32,6 +32,9 @@ export const HELP = {
   ruleActions: 'Times one of your rules stepped in: it told you, blocked a call, or paused or stopped an agent.',
   currentShift: 'Agents work in short shifts. At the end of each one they pass their notes to a fresh session, which keeps them fast and cheap.',
   handoverNotes: 'What the agent passed to its next shift: where it is, what is left to do, and anything to watch out for.',
+  handoverReviews: 'What handover reviews cost this month on your own provider key, including reviews still running. Counted against the monthly limit in Settings, never against your agents’ spend caps.',
+  handoverQuality: 'How much of what mattered made it into this agent’s handover notes, from the exact values (links, emails, IDs, amounts) WhiteRoom could check in each shift.',
+  goal: 'What this agent is working toward. A goal you set comes first, across every task. Without one, WhiteRoom uses the goal the agent gives, or its first message in the task.',
   taskType: 'A short name for what this agent does. It is used to compare costs between agents doing the same kind of work.',
   recentRuns: "This agent's latest stretches of work, newest first.",
   rulesThatApply: 'The rules from Controls that cover this agent, and what each one has done to it lately.',

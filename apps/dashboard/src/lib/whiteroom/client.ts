@@ -490,7 +490,7 @@ export function performanceRecommendationGet(
 }
 
 /**
- * Full-detail, un-redacted live feed — kept only for a short TTL (see
+ * Full-detail live feed, credentials removed — kept only for a short TTL (see
  * PerformanceLiveFeedResult), unlike auditLog which returns the permanent,
  * content-free record. Not fetched by default anywhere; callers should treat
  * this as an explicit reveal, not part of the page's normal load.
@@ -713,3 +713,87 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
 export const alertsTest = (fleetId: string) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId });
+
+/** What WhiteRoom keeps for a fleet (Settings › Data and privacy). */
+export interface DataSettings {
+  handover_persistence: boolean;
+  content_capture: boolean;
+  personal_data: 'keep' | 'exclude';
+  /** Saved notes are deleted this long after each is written (engines from PR 6 on). */
+  handover_max_age_hours?: number;
+  /** Handover review (engines from compression PR 14 on): off unless the owner turns it on. */
+  review_mode?: 'off' | 'realtime';
+  /** Its monthly limit in dollars, on the fleet's own provider bill. Required to turn it on. */
+  review_monthly_cap_usd?: number | null;
+}
+
+/** This month's handover review spend and results (Settings › Handover review, Performance). Counts only. */
+export interface HandoverReviewStatus {
+  review_mode: 'off' | 'realtime'; month: string; cap_usd: number | null;
+  spent_usd: number; reserved_usd: number; reviews: number;
+  verdicts: { retained: number; dropped: number; contradicted: number; unverified: number };
+  /** Reviews started under a higher limit are finishing; none start until spend is back under it. */
+  over_limit_from_earlier: boolean;
+}
+/** Settings › Smaller handovers (engines from compression PR 17 on). */
+export type CompressionMode = 'off' | 'dry_run' | 'on';
+export type CompressionItem = 'C1' | 'C2' | 'C3' | 'Q1' | 'Q2' | 'Q3' | 'Q4' | 'G4';
+export interface CompressionPreview {
+  compression_mode: CompressionMode; days: number;
+  /** Changes that passed testing and apply in On; the rest are only counted. */
+  cleared: CompressionItem[];
+  items: Record<CompressionItem, { observed: number; wouldChange: number }>;
+}
+export const compressionPreview = (fleetId: string, days = 14) =>
+  alertsAction<CompressionPreview>({ action: 'compression_preview', fleet_id: fleetId, days });
+export const compressionModeSet = (fleetId: string, mode: CompressionMode) =>
+  alertsAction<{ success: boolean; compression_mode: CompressionMode; cleared: CompressionItem[] }>({ action: 'compression_mode_set', fleet_id: fleetId, compression_mode: mode });
+
+export const handoverReviewStatus = (fleetId: string) =>
+  alertsAction<HandoverReviewStatus>({ action: 'handover_review_status', fleet_id: fleetId });
+/** The owner's goal for an agent (Agent detail › Goal). */
+export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
+export const goalGet = (fleetId: string, agentId: string) =>
+  alertsAction<{ owner: OwnerGoal | null }>({ action: 'goal_get', fleet_id: fleetId, agent_id: agentId });
+export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null) =>
+  alertsAction<{ owner: OwnerGoal }>({ action: 'goal_set_owner', fleet_id: fleetId, agent_id: agentId, goal });
+export const agentNewRun = (fleetId: string, agentId: string) =>
+  alertsAction<{ success: boolean }>({ action: 'agent_new_run', fleet_id: fleetId, agent_id: agentId });
+
+/** Handover quality over a window (Agent detail › Handover quality). Shares are null until there's data. */
+export interface HandoverQuality {
+  handovers: number; scored: number; valuesChecked: number; valuesKept: number;
+  valuesKeptShare: number | null; shareChecked: number | null; coverageMin: number;
+  keptWithLabel: number | null; goalCarriedOver: number | null;
+  /** Handover review results (engines from compression PR 16b on). Counts only. */
+  review?: HandoverReviewCounts;
+}
+export interface HandoverReviewCounts {
+  mode: 'off' | 'realtime';
+  /** The representative sample: the review result is computed from these only. */
+  representative: {
+    /** Picked for review; reviewed ÷ selected is coverage. */
+    selected: number;
+    reviewed: number; retained: number; dropped: number; contradicted: number; unverified: number;
+    /** Coverage per shift size. */
+    bySize: Record<string, { selected: number; reviewed: number }>;
+  };
+  /** Reviewed because something looked off; reported apart from the result. */
+  riskTriggered: number;
+  /** Picked but not reviewed, by reason (engine codes; never shown raw). */
+  skipped: Record<string, number>;
+  /** Verdict categories calibrated against people for the prompt and model in use. */
+  calibrated: Array<'retained' | 'dropped' | 'contradicted'>;
+  /** Confirmed items needed before a result is shown. */
+  minVerified: number;
+  /** Share of picked handovers that must be reviewed, overall and for every shift size. */
+  coverageMin: number;
+  sizeCoverageMin: number;
+}
+export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
+  alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });
+
+// Same refusal handling as alerts; an engine without the action hides the section.
+export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
+export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>
+  alertsAction<DataSettings & { success: boolean }>({ action: 'fleet_data_settings_set', fleet_id: fleetId, ...patch });
