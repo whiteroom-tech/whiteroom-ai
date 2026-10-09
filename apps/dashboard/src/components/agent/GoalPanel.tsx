@@ -92,7 +92,8 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
       if (current.current !== target) return;
       if (latest) { setOwner(latest.owner); reread = true; }
     }
-    setShowLatest(reread);
+    // Only an open editor shows the latest goal; Start a new task has none.
+    setShowLatest(reread && kind !== 'run');
     setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? conflictMessage(reread, kind) : out.message });
     setBusy(null);
     setConfirm(null);

@@ -18,8 +18,12 @@ export const CHANGED_ELSEWHERE_CHECK = 'This was changed elsewhere; the latest i
  */
 export function conflictMessage(reread: boolean, kind: 'save' | 'clear' | 'run'): string {
   if (!reread) return CHANGED_ELSEWHERE_RELOAD;
+  if (kind === 'run') return CHANGED_ELSEWHERE_RETRY;
   return kind === 'save' ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_CHECK;
 }
+
+/** The same, with no editor open to show the latest in. */
+export const CHANGED_ELSEWHERE_RETRY = 'This was changed elsewhere. Try again.';
 
 /** Shown after such a refusal when the latest couldn't be read. */
 export const CHANGED_ELSEWHERE_RELOAD = 'This was changed elsewhere. Reload the page to see the latest, then try again.';

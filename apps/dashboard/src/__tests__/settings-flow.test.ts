@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_CHECK, CHANGED_ELSEWHERE_RELOAD, conflictMessage, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_CHECK, CHANGED_ELSEWHERE_RELOAD, CHANGED_ELSEWHERE_RETRY, conflictMessage, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
 import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 
 describe('applying a settings change', () => {
@@ -64,6 +64,8 @@ describe('the note after a goal change someone else beat', () => {
     expect(conflictMessage(false, 'save')).toBe(CHANGED_ELSEWHERE_RELOAD);
     expect(conflictMessage(false, 'clear')).toBe(CHANGED_ELSEWHERE_RELOAD);
     expect(CHANGED_ELSEWHERE_CHECK).not.toMatch(/your text/i);
+    expect(conflictMessage(true, 'run')).toBe(CHANGED_ELSEWHERE_RETRY); // no editor open: nothing "shown above"
+    expect(CHANGED_ELSEWHERE_RETRY).not.toMatch(/above/i);
   });
 });
 
