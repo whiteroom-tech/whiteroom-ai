@@ -99,7 +99,9 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     setConfirm(null);
   }
 
-  const save = () => run('save', () => goalSetOwner(fleetId, agentId, (draft ?? '').trim()),
+  // The goal on screen is what the user is changing: after a conflict it's the re-read latest, so a second try applies over it.
+  const seen = owner?.revision ?? 0;
+  const save = () => run('save', () => goalSetOwner(fleetId, agentId, (draft ?? '').trim(), seen),
     (r) => { setOwner(r.owner); setDraft(null); }, 'Saved. The agent works toward it from its next handover.',
     // A reply without the saved goal wasn't applied.
     (r) => !!r?.owner);
@@ -160,7 +162,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         cancelLabel="Keep goal"
         tone="neutral"
         busy={busy === 'clear'}
-        onConfirm={() => void run('clear', () => goalSetOwner(fleetId, agentId, null), (r) => { setOwner(r.owner); setDraft(null); }, 'Goal cleared.', (r) => !!r && 'owner' in r)}
+        onConfirm={() => void run('clear', () => goalSetOwner(fleetId, agentId, null, seen), (r) => { setOwner(r.owner); setDraft(null); }, 'Goal cleared.', (r) => !!r && 'owner' in r)}
         onCancel={() => setConfirm(null)}
       />
       <ConfirmDialog
