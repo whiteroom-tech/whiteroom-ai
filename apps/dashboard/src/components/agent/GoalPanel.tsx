@@ -6,7 +6,7 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { LoadFailed } from '@/components/citadel/States';
 import { agentNewRun, goalGet, goalSetOwner, type OwnerGoal } from '@/lib/whiteroom/client';
 import { HELP } from '@/lib/metric-definitions';
-import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_RELOAD, loadOptional } from '@/lib/settings-flow';
+import { applyChange, changedElsewhere, conflictMessage, loadOptional } from '@/lib/settings-flow';
 import { fmtTime } from '@/lib/format';
 import { fetchControlActors, goalWho, type ControlActor } from '@/lib/control-actors';
 
@@ -27,6 +27,8 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
   const [actors, setActors] = useState<ControlActor[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // After a change someone else beat: the latest goal, shown above the open editor.
+  const [showLatest, setShowLatest] = useState(false);
 
   // The agent on screen now: results for one the user moved away from are dropped.
   const current = useRef(`${fleetId}:${agentId}`);
@@ -45,6 +47,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     setOwner(undefined);
     setLoadFailed(false);
     setDraft(null);
+    setShowLatest(false);
     setNote(null);
     setBusy(null);
     setConfirm(null);
@@ -82,14 +85,16 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     if (out.kind === 'stale') return;
     if (out.kind === 'applied') onApplied(out.value);
     const conflict = out.kind === 'failed' && changedElsewhere(out.message);
-    // Someone else's change won: show theirs (the draft closes), so the next try starts from it.
+    // Someone else's change won: load theirs, so a second try applies over it. What the user typed stays.
     let reread = false;
     if (conflict) {
       const latest = await goalGet(fleetId, agentId).catch(() => null);
       if (current.current !== target) return;
-      if (latest) { setOwner(latest.owner); setDraft(null); reread = true; }
+      if (latest) { setOwner(latest.owner); reread = true; }
     }
-    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? (reread ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_RELOAD) : out.message });
+    // Only an open editor shows the latest goal; Start a new task has none.
+    setShowLatest(reread && kind !== 'run');
+    setNote(out.kind === 'applied' ? { ok: true, text: done } : { ok: false, text: conflict ? conflictMessage(reread, kind) : out.message });
     setBusy(null);
     setConfirm(null);
   }
@@ -111,6 +116,14 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
     >
       {draft !== null ? (
         <form onSubmit={(e) => { e.preventDefault(); if (!busy) void save(); }} style={{ display: 'grid', gap: 8 }}>
+          {showLatest && (
+            <div style={{ display: 'grid', gap: 4, padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Latest goal, from the other change</span>
+              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>
+                {owner?.unreadable ? 'It can’t be read on this WhiteRoom engine.' : owner?.goal || 'No goal set.'}
+              </p>
+            </div>
+          )}
           <textarea
             className="wr-input" rows={3} maxLength={MAX} required readOnly={!!busy} aria-label="Goal for this agent"
             value={draft} onChange={(e) => setDraft(e.target.value)} style={{ resize: 'vertical', fontSize: 13.5 }}
@@ -118,7 +131,7 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: 'var(--tx2)', flex: 1 }}>{draft.length} / {MAX}</span>
             {owner?.goal && <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setConfirm('clear')}>Clear goal</Button>}
-            <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setDraft(null)}>Cancel</Button>
+            <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => { setDraft(null); setShowLatest(false); }}>Cancel</Button>
             <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim() || !!busy}>Save goal</Button>
           </div>
         </form>

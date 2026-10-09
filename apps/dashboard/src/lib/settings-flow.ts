@@ -6,8 +6,24 @@ export const NOT_APPLIED = 'This WhiteRoom engine didn’t apply the change. Try
 /** The engine refused a change because someone else changed the same thing first: re-read it before trying again. */
 export const changedElsewhere = (message: string) => /changed elsewhere/i.test(message);
 
-/** Shown after such a refusal, once the latest version is on screen. */
-export const CHANGED_ELSEWHERE = 'This was changed elsewhere. The latest is shown now; try again if you still want your change.';
+/** Shown after such a refusal to a save, once the latest version is loaded; what the user typed is kept. */
+export const CHANGED_ELSEWHERE = 'This was changed elsewhere; the latest is shown above. Your text is still here: save again to replace it.';
+
+/** The same, for anything other than a save (a clear): nothing the user typed is involved. */
+export const CHANGED_ELSEWHERE_CHECK = 'This was changed elsewhere; the latest is shown above. Check it, then try again if you still want to.';
+
+/**
+ * The note after a goal change someone else beat: re-read or not, and for a
+ * save (what the user typed is still in the editor) or anything else.
+ */
+export function conflictMessage(reread: boolean, kind: 'save' | 'clear' | 'run'): string {
+  if (!reread) return CHANGED_ELSEWHERE_RELOAD;
+  if (kind === 'run') return CHANGED_ELSEWHERE_RETRY;
+  return kind === 'save' ? CHANGED_ELSEWHERE : CHANGED_ELSEWHERE_CHECK;
+}
+
+/** The same, with no editor open to show the latest in. */
+export const CHANGED_ELSEWHERE_RETRY = 'This was changed elsewhere. Try again.';
 
 /** Shown after such a refusal when the latest couldn't be read. */
 export const CHANGED_ELSEWHERE_RELOAD = 'This was changed elsewhere. Reload the page to see the latest, then try again.';
