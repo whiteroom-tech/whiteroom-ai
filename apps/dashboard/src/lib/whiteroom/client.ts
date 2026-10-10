@@ -729,8 +729,12 @@ export interface DataSettings {
 export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
 export const goalGet = (fleetId: string, agentId: string) =>
   alertsAction<{ owner: OwnerGoal | null }>({ action: 'goal_get', fleet_id: fleetId, agent_id: agentId });
-export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null) =>
-  alertsAction<{ owner: OwnerGoal }>({ action: 'goal_set_owner', fleet_id: fleetId, agent_id: agentId, goal });
+/**
+ * `baseRevision` is the revision on screen when the edit began (0 for no goal): if the goal
+ * changed since, the engine refuses the save as changed elsewhere. Older engines ignore it.
+ */
+export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null, baseRevision: number) =>
+  alertsAction<{ owner: OwnerGoal }>({ action: 'goal_set_owner', fleet_id: fleetId, agent_id: agentId, goal, base_revision: baseRevision });
 export const agentNewRun = (fleetId: string, agentId: string) =>
   alertsAction<{ success: boolean }>({ action: 'agent_new_run', fleet_id: fleetId, agent_id: agentId });
 

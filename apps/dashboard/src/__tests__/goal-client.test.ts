@@ -28,19 +28,19 @@ describe('goal client', () => {
     await expect(goalGet('f', 'a')).resolves.toBeNull();
   });
 
-  it('sets or clears the goal, and rejects a refused change', async () => {
+  it('sets or clears the goal over the revision on screen, and rejects a refused change', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ owner: { goal: 'x', revision: 1, set_by: 'dashboard', updated_at: '' } }));
-    await goalSetOwner('f', 'a', 'x');
-    expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: 'x' });
-    await goalSetOwner('f', 'a', null);
-    expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: null });
+    await goalSetOwner('f', 'a', 'x', 0);
+    expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: 'x', base_revision: 0 });
+    await goalSetOwner('f', 'a', null, 1);
+    expect(sentBody()).toMatchObject({ action: 'goal_set_owner', goal: null, base_revision: 1 });
     fetchMock.mockResolvedValue(jsonResponse({ error: 'Only the fleet owner can change this.', code: 'control_denied' }, 403));
-    await expect(goalSetOwner('f', 'a', 'y')).rejects.toBeInstanceOf(ControlDeniedError);
+    await expect(goalSetOwner('f', 'a', 'y', 1)).rejects.toBeInstanceOf(ControlDeniedError);
   });
 
-  it('rejects a change that lost a race with the engine’s words, so the panel re-reads the goal', async () => {
+  it('rejects a change made over an outdated goal with the engine’s words, so the panel re-reads it', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: 'This goal was changed elsewhere. Reload and try again.' }, 409));
-    const err = await goalSetOwner('f', 'a', 'y').catch((e: Error) => e);
+    const err = await goalSetOwner('f', 'a', 'y', 0).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     expect(changedElsewhere((err as Error).message)).toBe(true);
     expect(changedElsewhere('Only the fleet owner can change this.')).toBe(false);
