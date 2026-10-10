@@ -276,9 +276,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         title={title}
         fleetId={fleetId}
         badge={state && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <StatusPill state={state} />
-            {model && <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{model}</span>}
+            {model && <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{model}</span>}
           </span>
         )}
       >
