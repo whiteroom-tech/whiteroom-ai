@@ -37,8 +37,8 @@ export function PageHeader({
         </span>
       )}
       {badge}
-      <span style={{ marginLeft: 'auto' }} />
-      {children}
+      {/* One group, so on a narrow screen the actions wrap together rather than one by one. */}
+      <div className="citadel-page-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>{children}</div>
     </header>
   );
 }
