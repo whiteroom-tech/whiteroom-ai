@@ -131,8 +131,12 @@
   .citadel-mobile-menu { display: flex; align-items: center; gap: 8px; min-height: 44px; text-align: left; background: var(--card); color: var(--brand); border-bottom: 1px solid var(--line); padding: 10px 16px; font-size: 12px; flex-shrink: 0; }
   .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: 44px; bottom: 0; left: 0; width: 220px; height: auto; z-index: 30; }
 
-  /* Header: keep the page name and actions on one line; the fleet ID yields. */
-  .citadel-page-header { padding: 0 16px !important; gap: 8px !important; }
+  /* Header: the fleet ID yields first; when the name, status and actions still don't
+     fit (Agent detail, Runs), they wrap below; long names wrap rather than clip. */
+  .citadel-page-header { height: auto !important; min-height: 56px; flex-wrap: wrap; row-gap: 8px; padding: 8px 16px !important; gap: 8px !important; }
+  .citadel-page-header > * { flex-shrink: 0; max-width: 100%; }
+  .citadel-page-header > h1 { max-width: 100%; flex-wrap: wrap; white-space: normal !important; overflow-wrap: anywhere; }
+  .citadel-page-actions { gap: 8px !important; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
   .citadel-page-fleet { display: none; }
   .citadel-hide-mobile { display: none !important; }
 
