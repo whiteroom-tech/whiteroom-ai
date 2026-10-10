@@ -25,6 +25,7 @@ import { clearFleetCredentials, getFleetCredentials } from '@/lib/fleet-credenti
 import { claimFleet, isAuthError, listFleets } from '@/lib/whiteroom/client';
 import { isApiKey, preferProductionFleet, resolveAuthKey } from '@/lib/fleet-helpers';
 import { safeSet } from '@/lib/safe-storage';
+import { clearSnapshots } from '@/lib/performance-snapshot';
 
 export type FleetAuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
@@ -134,6 +135,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     // DELETE is fire-and-forget: the UI signs out immediately either way,
     // and the cookie clear is idempotent.
     clearFleetCredentials();
+    clearSnapshots(); // figures from this session don't outlive it
     fetch(SESSION_URL, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
     setFleetId(null);
     setFleetToken(null);

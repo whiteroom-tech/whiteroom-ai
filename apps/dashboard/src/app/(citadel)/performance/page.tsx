@@ -12,6 +12,7 @@ import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsD
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { readSnapshot, saveSnapshot, updateSnapshot } from '@/lib/performance-snapshot';
 import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
@@ -1213,23 +1214,26 @@ export default function PerformancePage() {
       agent: view === 'index' ? null : selectedAgent,
     });
   }, [router, hoursBack, view, selectedAgent]);
+  // The overview as last shown for this fleet and range: on a return visit it's
+  // on screen at once, and the refresh below replaces it.
+  const [shown] = useState(() => readSnapshot(fleetId, hoursBack));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // When the shown index data arrived, for the refresh-failed line.
-  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(shown?.loadedAt ?? null);
   // audit_summary failed: savings and rule counts are unknown, not zero (M13).
-  const [auditFailed, setAuditFailed] = useState(false);
+  const [auditFailed, setAuditFailed] = useState(shown?.auditFailed ?? false);
 
-  const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(null);
-  const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(null);
+  const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(shown?.indexData ?? null);
+  const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(shown?.hourlyData ?? null);
   const [agentData, setAgentData] = useState<AgentPerformanceResult | null>(null);
   const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
-  const [govSavings, setGovSavings] = useState<GovSavings | null>(null);
-  const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(null);
-  const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(null);
-  const [byAgent, setByAgent] = useState<AgentTotals[] | null>(null);
+  const [govSavings, setGovSavings] = useState<GovSavings | null>(shown?.govSavings ?? null);
+  const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(shown?.govCounts ?? null);
+  const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(shown?.savingsDays ?? null);
+  const [byAgent, setByAgent] = useState<AgentTotals[] | null>(shown?.byAgent ?? null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
@@ -1259,32 +1263,61 @@ export default function PerformancePage() {
       ]);
       if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
-      setIndexData(idx);
-      setLoadedAt(Date.now());
+      const loadedNow = Date.now();
       // A failed hourly read clears the chart rather than leave the last range's under the new label (M13).
-      setHourlyData(hourly.error ? null : hourly);
-
-      setSavingsDays(week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, Date.now()) : null);
-      if (audit?.savingsBuckets) {
-        // The engine's savings (audit M07): per agent-day, each agent at its own input price.
-        setGovSavings(savingsDollars(audit.savingsBuckets, audit.savings));
-        const fromAudit = governanceFromSummary(audit.governance);
-        setGovCounts(fromAudit);
-        setByAgent(agentTotalsFromBuckets(audit.savingsBuckets));
+      const hourlyShown = hourly.error ? null : hourly;
+      const daysShown = week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, loadedNow) : null;
+      // The engine's savings (audit M07): per agent-day, each agent at its own input price.
+      const fromAudit = audit?.savingsBuckets ? governanceFromSummary(audit.governance) : null;
+      const snapshot = {
+        indexData: idx,
+        hourlyData: hourlyShown,
+        savingsDays: daysShown,
+        govSavings: audit?.savingsBuckets ? savingsDollars(audit.savingsBuckets, audit.savings) : null,
+        govCounts: fromAudit,
+        byAgent: audit?.savingsBuckets ? agentTotalsFromBuckets(audit.savingsBuckets) : null,
+        auditFailed: !audit?.savingsBuckets,
+        loadedAt: loadedNow,
+      };
+      setIndexData(snapshot.indexData);
+      setLoadedAt(snapshot.loadedAt);
+      setHourlyData(snapshot.hourlyData);
+      setSavingsDays(snapshot.savingsDays);
+      setGovSavings(snapshot.govSavings);
+      setGovCounts(snapshot.govCounts);
+      setByAgent(snapshot.byAgent);
+      setAuditFailed(snapshot.auditFailed);
+      saveSnapshot(fleetId, hoursBack, snapshot);
+      if (fromAudit) {
         // Durable counts (engine rule_actions) replace the audit log's when they arrive.
         void fetchRuleActions(fleetId, { fromDay: localDay(cutoff), toDay: localDay() }, authKey, hoursBack).then(
-          (d) => { if (!stale() && !('unsupported' in d)) setGovCounts(countsFromRuleActions(d, fromAudit.byRule)); },
+          (d) => {
+            if (stale() || 'unsupported' in d) return;
+            const counts = countsFromRuleActions(d, fromAudit.byRule);
+            setGovCounts(counts);
+            updateSnapshot(fleetId, hoursBack, { govCounts: counts });
+          },
           () => {},
         );
-      } else {
-        setGovSavings(null);
-        setGovCounts(null);
-        setByAgent(null);
       }
-      setAuditFailed(!audit?.savingsBuckets);
     } catch { if (!stale()) setError('Failed to load performance data.'); }
     finally { if (!stale()) setLoading(false); }
   }, [fleetId, hoursBack, authKey]);
+
+  // A range already seen shows its last overview at once; the refresh replaces it.
+  const showRange = (hours: number) => {
+    setHoursBack(hours);
+    const snap = readSnapshot(fleetId, hours);
+    if (!snap) return;
+    setIndexData(snap.indexData);
+    setHourlyData(snap.hourlyData);
+    setSavingsDays(snap.savingsDays);
+    setGovSavings(snap.govSavings);
+    setGovCounts(snap.govCounts);
+    setByAgent(snap.byAgent);
+    setAuditFailed(snap.auditFailed);
+    setLoadedAt(snap.loadedAt);
+  };
 
   const fetchAgent = useCallback(async (agentId: string) => {
     if (!fleetId) return;
@@ -1392,7 +1425,7 @@ export default function PerformancePage() {
         <SegmentedControl<'24' | '72' | '168'>
           label="Time range, counted back from now"
           value={String(hoursBack) as '24' | '72' | '168'}
-          onChange={(v) => setHoursBack(Number(v))}
+          onChange={(v) => showRange(Number(v))}
           size={26}
           options={[{ value: '24', label: '24h' }, { value: '72', label: '3d' }, { value: '168', label: '7d' }]}
         />
