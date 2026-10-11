@@ -751,3 +751,19 @@ export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
 export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
 export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>
   alertsAction<DataSettings & { success: boolean }>({ action: 'fleet_data_settings_set', fleet_id: fleetId, ...patch });
+
+/** Settings › Smaller handovers. */
+export type CompressionMode = 'off' | 'dry_run' | 'on';
+export type CompressionItem = 'C1' | 'C2';
+export interface CompressionPreview {
+  compression_mode: CompressionMode;
+  days: number;
+  /** Changes that passed testing and apply in On; the rest are only counted. */
+  cleared: string[];
+  /** Only the changes this engine has. */
+  items: Partial<Record<CompressionItem, { observed: number; wouldChange: number }>>;
+}
+export const compressionPreview = (fleetId: string) =>
+  alertsAction<CompressionPreview>({ action: 'compression_preview', fleet_id: fleetId });
+export const compressionModeSet = (fleetId: string, mode: CompressionMode) =>
+  alertsAction<Pick<CompressionPreview, 'compression_mode' | 'cleared'> & { success: boolean }>({ action: 'compression_mode_set', fleet_id: fleetId, compression_mode: mode });
