@@ -189,6 +189,13 @@ describe('Nothing happening? per test', () => {
     // A late timer for a test that's gone does nothing.
     expect(helpReducer(helpReducer(closed, { type: 'test', id: 'b' }), { type: 'autoOpen', id: 'a' }).open).toBe(false);
   });
+
+  it('never reopens itself after the user opened and closed it first', () => {
+    let st = helpReducer(closed, { type: 'test', id: 'a' });
+    st = helpReducer(helpReducer(st, { type: 'toggle', open: true }), { type: 'toggle', open: false });
+    expect(helpReducer(st, { type: 'autoOpen', id: 'a' }).open).toBe(false);
+    expect(idleHelpDelay({ run: { sandboxId: 'a', mode: 'connected', expiresInSeconds: 600 } as never, firstSeenAt: 0, now: 0, autoOpenedFor: st.autoOpenedFor })).toBeNull();
+  });
 });
 
 /** Every rule in a stylesheet, nested @media included, with its selectors split. */

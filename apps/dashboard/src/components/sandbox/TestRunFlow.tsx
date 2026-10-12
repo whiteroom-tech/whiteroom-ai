@@ -425,7 +425,8 @@ export type HelpAction = { type: 'test'; id: string | null } | { type: 'toggle';
 export function helpReducer(state: HelpState, action: HelpAction): HelpState {
   switch (action.type) {
     case 'test': return action.id === state.testId ? state : { testId: action.id, open: false, autoOpenedFor: null };
-    case 'toggle': return state.open === action.open ? state : { ...state, open: action.open };
+    // Opening or closing it by hand counts as the user's choice: no auto-open after that.
+    case 'toggle': return state.open === action.open ? state : { ...state, open: action.open, autoOpenedFor: state.testId };
     case 'autoOpen': return action.id === state.testId && state.autoOpenedFor !== action.id ? { ...state, open: true, autoOpenedFor: action.id } : state;
   }
 }
