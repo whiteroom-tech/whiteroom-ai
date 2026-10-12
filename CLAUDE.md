@@ -52,21 +52,19 @@ to it over HTTP only:
 
 ## Deploying
 
-Merging to `main` does **not** deploy the dashboard; there is no Cloud Build
-trigger. Deploy from a clean checkout of `origin/main`, never a working tree
-with local changes:
+Staging, then Promote, is the only way the dashboard reaches production:
 
-```bash
-git worktree add --detach ../dashboard-deploy origin/main && cd ../dashboard-deploy
-gcloud builds submit --project whiteroom-prod --config cloudbuild.yaml \
-  --substitutions=COMMIT_SHA=$(git rev-parse HEAD) .
-```
+1. Merging to `main` deploys to **staging** (`deploy-staging.yml`, project
+   `whiteroom-staging`) when it touches `apps/dashboard/**`, `packages/**`,
+   `.dockerignore` or that workflow.
+2. Check the change on staging.
+3. Production is reached only by running **Promote to prod**
+   (`promote-prod.yml`) by hand. It ships the image staging verified and
+   rolls back on its own if the traffic move or `/sign-in` fails.
 
-Before deploying, compare the live revision's image tag with `origin/main` so
-you don't roll back something that was deployed from another branch. After,
-check the service's `status.traffic`: if traffic is pinned to a revision, the
-new one gets 0% until you run
-`gcloud run services update-traffic whiteroom-dashboard --to-latest`.
+Never deploy to production any other way: no `gcloud builds submit` with
+`cloudbuild.yaml`, no `gcloud run deploy` against `whiteroom-prod`, and no
+manual traffic changes. Promote only when asked. See `ops/staging/README.md`.
 
 ## Pull requests
 

@@ -18,9 +18,9 @@ Nothing is shared between the two except the image registry (prod's `cloud-run-s
 2. Test on the staging URL.
 3. Run **Promote to prod** (`promote-prod.yml`, Actions → Run workflow). It refuses any commit staging isn't running or whose latest staging run didn't pass its smoke test (staging's run must have tagged the prod image `<sha>-verified-<run>`), deploys the prebuilt `<sha>` image by digest with no traffic, then moves traffic to it, and rolls back automatically if the traffic move or `/sign-in` fails. Staging deploys and promotions share one concurrency group, so they never overlap.
 
-The engine repo (`whiteroom-ai-whiteroom`) has the same two workflows. Engine images are environment-agnostic, so prod gets the exact digest staging ran.
+The engine repo (`whiteroom-ai-whiteroom`) has no deploy workflows: merging there deploys nothing, and its `cloudbuild-engine.yaml` is a manual production deploy.
 
-`cloudbuild.yaml` still works as a manual escape hatch, but it skips staging. No Cloud Build trigger deploys the dashboard on push: the only push trigger in `whiteroom-prod` (checked Oct 1, 2026) builds the `whiteroom-tech/website` repo into the `whiteroom-tech` service.
+Staging, then Promote, is the only supported path to production for the dashboard. Don't use `cloudbuild.yaml` to deploy: it skips staging and its checks. No Cloud Build trigger deploys the dashboard on push: the only push trigger in `whiteroom-prod` (checked Oct 1, 2026) builds the `whiteroom-tech/website` repo into the `whiteroom-tech` service.
 
 ## Auth
 
