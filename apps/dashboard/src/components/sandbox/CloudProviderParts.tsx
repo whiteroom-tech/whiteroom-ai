@@ -85,10 +85,10 @@ export function ProxyKeyNotice({ disabled, onRecover }: { disabled?: boolean; on
 export function CloudTroubleshooting({ provider, endpointHost }: { provider: CloudProvider; endpointHost?: string | null }) {
   const host = endpointHost ? <> (<code>{endpointHost}</code>)</> : null;
   return <>
-    <li>Use the address exactly as shown above. It includes this test’s proxy key.</li>
+    <li>Use the URL exactly as shown above. It includes this test’s proxy key.</li>
     <li>Every call needs the <code>x-whiteroom-agent</code> header from the code above.</li>
     {provider === 'azure-openai'
-      ? <li>With the OpenAI client, the address ends in <code>/openai/v1</code>. With the AzureOpenAI client, use the address without it.</li>
+      ? <li>With the OpenAI client, the URL ends in <code>/openai/v1</code>. With the AzureOpenAI client, use the URL without it.</li>
       : provider === 'foundry'
         ? <li>Your agent’s key must be for the Foundry resource this test started with{host}.</li>
         : <li>Your agent needs a Bedrock API key with access to Claude in the region this test started with{host}.</li>}

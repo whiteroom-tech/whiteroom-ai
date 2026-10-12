@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
@@ -10,7 +10,7 @@ import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, 
 import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
-import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
+import { buildTestReport, checkLabel, memoryCheckDetail, reportFileName, reportHtml, reportSource, SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
@@ -21,30 +21,49 @@ type WorkspaceTab = 'setup' | 'results' | 'activity';
 type Provider = SandboxProvider;
 type Language = 'Python' | 'JavaScript';
 
-const PREVIEW_DETAILS = [
-  "Your agent’s calls go through WhiteRoom. Nothing about the calls changes.",
-  "When its shift ends, WhiteRoom packs up the agent’s context into a short handover.",
-  "The agent picks up where it left off, using the handover instead of the full history.",
-  "Each step is recorded. Three checks tell you the agent works through WhiteRoom.",
-];
-
-/** Plain-language names for the events in the Activity tab. */
-const EVENT_LABELS: Record<string, string> = {
+/**
+ * Plain-language names for the events in the Sandbox's Activity tab (the
+ * main dashboard names them on its own). Keys are engine event types.
+ */
+export const EVENT_LABELS: Record<string, string> = {
   // Logged when a call first names the agent, before the call has come back,
   // so it doesn't mean the call worked.
   register: 'Agent recognized',
-  watch_start: 'Shift started',
+  fleet_created: 'Test started',
+  watch_start: 'Started work',
   task_complete: 'Call completed',
-  handover_begin: 'Shift ended, preparing handover',
-  self_handover: 'Handed over its context',
-  handover: 'Handed over to a partner agent',
-  paired_handover: 'Handed over to a partner agent',
-  alarm: 'Rest period ended',
+  handover_begin: 'Memory full, saving a summary',
+  self_handover: 'Saved a summary and kept going',
+  handover: 'Passed work to another agent',
+  paired_handover: 'Passed work to another agent',
+  handover_out: 'Passed work to another agent',
+  handover_in: 'Took over work from another agent',
+  handover_deferred: 'Summary waiting for the next call',
+  handover_summary_failed: 'Couldn’t write a summary',
+  handover_delivery_abandoned: 'Summary not delivered',
+  handover_chain_abandoned: 'Stopped passing work on',
+  handover_unrecorded: 'Summary not recorded',
+  handover_loop_detected: 'Repeating loop spotted',
+  handover_limit_lowered: 'Memory limit lowered',
+  handover_results_truncated: 'Long results shortened in the summary',
+  handover_notes_resealed: 'Summary notes resealed',
+  pair: 'Teamed up with another agent',
+  alarm: 'Short break ended',
   agent_paused: 'Agent paused',
   agent_resumed: 'Agent resumed',
   deregister: 'Agent disconnected',
-  context_offload: 'Large context stored outside the conversation',
-  policy_decision: 'Policy check',
+  context_offload: 'Stored a large input separately',
+  policy_decision: 'Control check',
+  policy_created: 'Control added',
+  policy_chain_verified: 'Controls checked',
+  policy_chain_failed: 'Controls check failed',
+  policy_enforcement_verified: 'Control applied',
+  policy_enforcement_failed: 'Control not applied',
+  demo_activity: 'Demo step',
+  unnamed_call_refused: 'Call refused: no agent name',
+  quota_exceeded: 'Plan limit reached',
+  state_recovered: 'Picked up again after a restart',
+  unclean_stop: 'Stopped unexpectedly',
 };
 
 /**
@@ -53,12 +72,18 @@ const EVENT_LABELS: Record<string, string> = {
  */
 const DEMO_STORY = [
   { title: 'Your agent connects', text: 'A demo agent sends its calls through WhiteRoom and finishes a task. Nothing about its calls changes.' },
-  { title: 'It hands over when the shift ends', text: 'Its shift ends. WhiteRoom packs its context into a short handover.' },
-  { title: 'It picks up where it left off', text: 'The work carries on from the handover instead of the full history, and the next task completes.' },
+  { title: 'It keeps working when its memory fills up', text: 'Its memory fills up. WhiteRoom saves a short summary so it can keep going.' },
+  { title: 'It picks up where it left off', text: 'The work carries on from the summary instead of the full history, and the next task completes.' },
 ];
 
-function eventLabel(type: string): string {
-  return EVENT_LABELS[type] ?? type.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
+/** The Activity tab's name for an event. Unlisted engine types still read as plain words. */
+export function eventLabel(type: string): string {
+  const known = EVENT_LABELS[type];
+  if (known) return known;
+  if (/handover|handoff/.test(type)) return /fail|abandon|unrecorded|error/.test(type) ? 'Memory summary problem' : 'Memory summary step';
+  if (/policy/.test(type)) return 'Control step';
+  if (/watch/.test(type)) return 'Work step';
+  return type.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
 /** "1:40" for 100 seconds. */
@@ -143,10 +168,9 @@ export function checkGuidance(controlId: string, status: string | undefined, run
       return { detail: `${callCount(calls)} went through WhiteRoom and got a normal reply.${failed ? ` ${callCount(failed.count)} failed.` : ''}` };
     }
     if (controlId === 'core.handoff') {
-      const count = (run?.auditLog ?? []).filter(e => HANDOVER_TYPES.has(e.type)).length || 1;
-      return { detail: `Handed over ${count} time${count === 1 ? '' : 's'}, with its context kept.` };
+      return { detail: memoryCheckDetail(run?.auditLog ?? []) };
     }
-    return { detail: 'Its next call after the handover worked.' };
+    return { detail: 'Its next call after the summary worked.' };
   }
   if (run?.mode === 'demo') return { detail: 'The demo fills this in a moment.' };
   if (controlId === 'core.connect') {
@@ -160,15 +184,15 @@ export function checkGuidance(controlId: string, status: string | undefined, run
     const worked = agent.currentWatch?.minutesWorked ?? 0;
     const left = Math.max(0, (total - worked) * 60);
     return {
-      detail: left > 0 ? `About ${formatCountdown(left)} left in this shift.` : 'The shift is over. The handover happens on your agent’s next call.',
-      action: 'Keep your agent making calls. The handover starts on its own.',
+      detail: left > 0 ? `About ${formatCountdown(left)} until WhiteRoom saves a summary.` : 'Ready to save a summary. It happens on your agent’s next call.',
+      action: 'Keep your agent making calls. The summary is saved on its own.',
       progress: { current: Math.min(worked, total), total, label: `${formatCountdown(Math.min(worked, total) * 60)} of ${total}:00` },
     };
   }
   const handoff = run?.controls?.find(c => c.controlId === 'core.handoff');
   // Demos returned above, so only live evidence matters here.
   const handoffDone = handoff?.result?.liveEvidence?.status === 'observed';
-  if (!handoffDone) return { detail: 'Happens after the handover.' };
+  if (!handoffDone) return { detail: 'Happens after the summary is saved.' };
   return { detail: 'Waiting for your agent’s next call.', action: 'Keep your agent running for one more call.' };
 }
 
@@ -184,12 +208,12 @@ export function activitySummary(run: RunStatusResult | null): string | null {
 const CHECK_ICON_PASS = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5"/></svg>;
 const CHECK_ICON_WAIT = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3v3.5l2 1.5"/></svg>;
 const CHECK_ICON_FAIL = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 2.5v4M6 9.2v.1"/></svg>;
-const TIMER_ICON = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>;
+const TIMER_ICON = <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>;
 
 /** The steps rail (README › Sandbox), mapped onto this flow's real stages. */
 export const SANDBOX_STEPS = [
   { title: 'Start a test', sub: 'Paste the key your agent uses, or see the demo' },
-  { title: 'Point your agent', sub: 'Swap in the test address' },
+  { title: 'Point your agent', sub: 'Use the test URL' },
   { title: 'Run one task', sub: 'Calls show up as they arrive' },
   { title: 'Results', sub: 'Three checks, and a report to keep' },
 ] as const;
@@ -199,6 +223,46 @@ export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stag
   if (phase !== 'workspace') return 0;
   if (opts.allPassed || opts.expired || opts.demo) return 3;
   return opts.stage >= 3 ? 2 : 1;
+}
+
+/** Start screen: the three checks the results will show, by the same names. */
+export function CheckPreview() {
+  return (
+    <section className={s.preview} aria-labelledby="sandbox-checks-preview">
+      <h3 id="sandbox-checks-preview" className={s.previewHeader}>WHAT THE TEST CHECKS</h3>
+      <ol className={s.previewList}>
+        {SANDBOX_CHECKS.map((c, i) => (
+          <li key={c.id} className={s.previewItem}>
+            <span className={s.previewNum} aria-hidden="true">{i + 1}</span>
+            <span>
+              <span className={s.previewName}>{c.label}</span>
+              <span className={s.previewText}>{c.meaning}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className={s.previewDetail}>You’ll get three pass/fail checks and a report you can download.</p>
+    </section>
+  );
+}
+
+/** "Test ends in about 30 minutes": what a screen reader hears, changing once a minute. */
+export function timerSpoken(seconds: number | null | undefined, expired: boolean): string {
+  if (expired || seconds === 0) return 'Test ended';
+  const m = Math.max(1, Math.ceil((seconds ?? 1800) / 60));
+  return `Test ends in about ${m} minute${m === 1 ? '' : 's'}`;
+}
+
+/** The workspace header's countdown, labelled. The visible text ticks each second; the spoken one each minute. */
+function TestTimer({ seconds, expired }: { seconds: number | null; expired: boolean }) {
+  const ended = expired || seconds === 0;
+  return (
+    <span className={`${s.timer} ${timerColor(seconds)}`} title="The test ends automatically. Results stay in Past tests.">
+      {TIMER_ICON}
+      <span aria-hidden="true">{ended ? 'Test ended' : <>Test ends in <span className={s.timerValue}>{formatTimer(seconds)}</span></>}</span>
+      <span className={s.srOnly}>{timerSpoken(seconds, expired)}</span>
+    </span>
+  );
 }
 
 function StepsRail({ current }: { current: number }) {
@@ -252,7 +316,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const [scene, setScene] = useState(0);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [pollTick, setPollTick] = useState(0);
-  const [previewStep, setPreviewStep] = useState(0);
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [prodFleetId, setProdFleetId] = useState<string | null>(null);
@@ -440,15 +503,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     return () => window.removeEventListener('beforeunload', handler);
   }, [phase, run?.sandboxId, isDemo]);
 
-  // The preview plays once on arrival; each step can also be clicked.
-  useEffect(() => {
-    if (phase !== 'start') return;
-    setPreviewStep(0);
-    const t = setInterval(() => setPreviewStep(prev => (prev >= 3 ? 3 : prev + 1)), 2500);
-    const stop = setTimeout(() => clearInterval(t), 2500 * 4);
-    return () => { clearInterval(t); clearTimeout(stop); };
-  }, [phase]);
-
   // Modal focus trap
   useEffect(() => {
     if (!confirmEnd) return;
@@ -584,15 +638,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     </>
   );
 
-  // ── Preview icons ──
-  const previewIcons = [
-    <svg key="r" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 12h14M12 5l7 7-7 7"/></svg>,
-    <svg key="h" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>,
-    <svg key="c" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 1l4 4-4 4M7 23l-4-4 4-4M14 4H9a5 5 0 000 10h1M10 20h5a5 5 0 000-10h-1"/></svg>,
-    <svg key="e" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h11"/></svg>,
-  ];
-  const previewLabels = ['Route', 'Handover', 'Resume', 'Evidence'];
-
   // ── Diagnostic check icon ──
   const diagCheck = <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5"/></svg>;
   const diagAlert = <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 2.5v4M6 9.2v.1"/></svg>;
@@ -656,7 +701,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     {/* ── Topbar (workspace only) ── */}
     {phase === 'workspace' && run && (
       <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'DEMO' : 'LIVE TEST'}</span>}>
-        <span className={`${s.timer} ${timerColor(displaySeconds)}`} aria-label={`${expired ? 'Expired' : formatTimer(displaySeconds)} remaining`}>{TIMER_ICON} {expired ? 'Expired' : formatTimer(displaySeconds)}</span>
+        <TestTimer seconds={displaySeconds} expired={!!expired} />
       </PageHeader>
     )}
 
@@ -678,21 +723,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
         <p className={s.pageSub}>Check that your agent works through WhiteRoom before you use it for real. It takes about 3 minutes and doesn’t touch your live fleet.</p>
 
-        <div className={s.preview}>
-          <div className={s.previewHeader}>WHAT THE TEST CHECKS</div>
-          <div className={s.previewScenes}>
-            {previewIcons.map((icon, i) => (
-              <React.Fragment key={i}>
-                {i > 0 && <div className={s.previewConnector} />}
-                <button className={s.previewScene} onClick={() => setPreviewStep(i)} aria-label={`Step ${i + 1}: ${previewLabels[i]}`} aria-pressed={i === previewStep} type="button">
-                  <div className={`${s.previewIcon} ${i === previewStep ? s.previewIconActive : i < previewStep ? s.previewIconDone : ''}`}>{icon}</div>
-                  <div className={`${s.previewLabel} ${i === previewStep ? s.previewLabelActive : ''}`}>{previewLabels[i]}</div>
-                </button>
-              </React.Fragment>
-            ))}
-          </div>
-          <div className={s.previewDetail} aria-live="polite">{PREVIEW_DETAILS[previewStep]}</div>
-        </div>
+        <CheckPreview />
 
         <div className={s.btnRow}>
           <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => setPhase('setup')}>Test my agent →</button>
@@ -704,7 +735,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
         <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Start your test</h2>
         <p className={s.pageSub}>{cloud
-          ? 'Tell us where your agent’s model runs. Your agent keeps its own key; this test gives it an address to call through.'
+          ? 'Tell us where your agent’s model runs. Your agent keeps its own key; this test gives it a URL to call through.'
           : 'Paste the API key your agent uses. We only use it to link this test to your agent’s calls; the key itself is never stored.'}</p>
         <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 480 }}>
           <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} onPick={pickProvider} />
@@ -718,7 +749,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
           <div className={s.formGroup}>
-            <label className={s.formLabel} htmlFor="sandbox-key">API key or WhiteRoom fleet token</label>
+            <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s API key <span className={s.formLabelHint}>or a WhiteRoom fleet token</span></label>
             <div className={s.keyWrap}>
               <input id="sandbox-key" className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={credential} onChange={e => setCredential(e.target.value)} placeholder="sk-ant-…, sk-…, or wr_…" aria-describedby="sandbox-key-hint" />
               <button type="button" className={s.keyShow} onClick={() => setShowKey(v => !v)}>{showKey ? 'Hide' : 'Show'}</button>
@@ -766,7 +797,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         {/* ── Setup tab ── */}
         <div className={`${s.panel} ${wsTab === 'setup' ? s.panelActive : ''}`}>
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
-          <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 10px' }}>Swap your agent’s client setup for this. Your API key stays where it is.</p>
+          <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your API key stays where it is.</p>
           <div className={s.selectRow}>
             {isDemo ? <>
               <button className={`${s.selectPill} ${directProvider === 'anthropic' ? s.selectPillOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
@@ -814,7 +845,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
                 {liveCloud ? <CloudTroubleshooting provider={liveCloud} endpointHost={run?.endpointHost} /> : <>
                 <li>Make sure your agent uses the same API key you pasted to start this test.</li>
                 <li>Every call needs both headers from the code above: <code>x-whiteroom-fleet</code> and <code>x-whiteroom-agent</code>.</li>
-                <li>OpenAI agents must use the <code>/v1</code> address shown above.</li>
+                <li>OpenAI agents must use the <code>/v1</code> URL shown above.</li>
                 </>}
                 <li>If your provider returns an error or a rate limit, the call doesn’t count. Check your key has credit.</li>
               </ul>
