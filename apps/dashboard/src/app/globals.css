@@ -260,6 +260,8 @@
 .wr-table__empty { padding: 18px; color: var(--tx2); font-size: 13px; }
 .wr-table__group { display: flex; align-items: center; height: 32px; padding: 0 18px; background: var(--sunk); border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: 11.5px; color: var(--tx2); }
 .wr-table__group strong { color: var(--tx); font-weight: 600; }
+/* A row's detail, open directly beneath it (DataTable renderExpanded). */
+.wr-table__expanded { border-bottom: 1px solid var(--line); }
 .wr-clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .wr-daystrip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; height: 52px; }
 .wr-daystrip__day { position: relative; display: flex; align-items: flex-end; padding: 0; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
@@ -282,6 +284,9 @@
   .wr-table__head { position: static; }
   /* A day label stays in view while the rows scroll sideways. */
   .wr-table__group > * { position: sticky; left: 18px; }
+  /* An open row's detail stays the panel's width while the rows scroll sideways. */
+  .wr-table--expandable { container-type: inline-size; }
+  .wr-table--expandable .wr-table__expanded > * { position: sticky; left: 0; width: 100cqi; }
 }
 
 .wr-btn:focus-visible, .wr-seg__item:focus-visible, .wr-select select:focus-visible, .wr-toggle:focus-visible,

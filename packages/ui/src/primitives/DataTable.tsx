@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment } from 'react';
+import { Fragment, useId } from 'react';
 
 export type Column<R> = {
   key: string;
@@ -25,8 +25,11 @@ export function startsNewGroup<R>(rows: R[], i: number, group: (row: R) => { key
  * focusable rows and aria-selected are valid). Without it, a plain table.
  * `selectedKey` tints a row with brand-dim. `group` puts a header row (a
  * day, say) above the first row of each run of rows sharing its key.
+ * `renderExpanded` with `expandedKey` shows that row's detail in a full-width
+ * row directly beneath it; the opening row gets aria-expanded and
+ * aria-controls pointing at the detail.
  */
-export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHeight = 42, caption, empty, footer, group }: {
+export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHeight = 42, caption, empty, footer, group, expandedKey, renderExpanded }: {
   columns: Column<R>[];
   rows: R[];
   rowKey: (row: R) => string;
@@ -38,12 +41,17 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
   empty?: React.ReactNode;
   footer?: React.ReactNode;
   group?: (row: R) => { key: string; label: React.ReactNode };
+  /** The row whose detail is open beneath it (needs `renderExpanded`). */
+  expandedKey?: string;
+  /** A row's detail, shown in a full-width row directly beneath it while it's `expandedKey`. */
+  renderExpanded?: (row: R) => React.ReactNode;
 }) {
   const grid = columns.map((c) => c.width).join(' ');
   const interactive = !!onOpen;
   const cellRole = interactive ? 'gridcell' : 'cell';
+  const detailId = `${useId()}-expanded`;
   return (
-    <div role={interactive ? 'grid' : 'table'} aria-label={caption} className="wr-table">
+    <div role={interactive ? 'grid' : 'table'} aria-label={caption} className={`wr-table${renderExpanded ? ' wr-table--expandable' : ''}`}>
       {/* Holds the rows so a phone can scroll them sideways while the footer stays put. */}
       <div className="wr-table__scroll">
         <div role="rowgroup" className="wr-table__head">
@@ -63,6 +71,7 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
             const k = rowKey(r);
             const g = group?.(r);
             const startsGroup = g && startsNewGroup(rows, i, group!);
+            const expanded = !!renderExpanded && expandedKey === k;
             return (
               <Fragment key={k}>
               {startsGroup && (
@@ -74,6 +83,8 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
                 role="row"
                 tabIndex={onOpen ? 0 : undefined}
                 aria-selected={interactive && selectedKey !== undefined ? selectedKey === k : undefined}
+                aria-expanded={renderExpanded && interactive ? expanded : undefined}
+                aria-controls={expanded ? detailId : undefined}
                 className={`wr-table__row${onOpen ? ' is-link' : ''}${selectedKey === k ? ' is-selected' : ''}`}
                 style={{ gridTemplateColumns: grid, height: rowHeight }}
                 onClick={onOpen ? () => onOpen(r) : undefined}
@@ -88,6 +99,11 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
                   </span>
                 ))}
               </div>
+              {expanded && (
+                <div role="row" className="wr-table__expanded">
+                  <div role={cellRole} aria-colspan={columns.length} id={detailId}>{renderExpanded(r)}</div>
+                </div>
+              )}
               </Fragment>
             );
           })}
