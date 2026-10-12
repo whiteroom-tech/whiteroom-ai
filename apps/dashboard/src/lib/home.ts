@@ -424,7 +424,8 @@ export function parseUsd(s: unknown): number | null {
  * handover figure. partial: some saved tokens or cache reads had no price.
  */
 export function savedOverall(e: { estimatedCostSaved: string; totalCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): { usd: number; partial: boolean } | null {
-  const n = parseUsd(e.totalCostSaved ?? e.estimatedCostSaved);
+  // A missing or non-positive total falls back to handover savings alone.
+  const n = parseUsd(e.totalCostSaved) ?? parseUsd(e.estimatedCostSaved);
   return n == null ? null : { usd: n, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens };
 }
 

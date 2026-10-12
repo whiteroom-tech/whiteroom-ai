@@ -207,6 +207,10 @@ describe('formatting', () => {
     expect(savedOverall({ estimatedCostSaved: '$4.2200', totalCostSaved: '$6.1400' })).toEqual({ usd: 6.14, partial: false });
     expect(savedOverall({ estimatedCostSaved: '$4.2200' })).toEqual({ usd: 4.22, partial: false });
     expect(savedOverall({ estimatedCostSaved: '$1.0000', totalCostSaved: '$2.0000', unpricedCacheReadTokens: 5 })?.partial).toBe(true);
+    expect(savedOverall({ estimatedCostSaved: '$1.0000', unpricedTokensSaved: 40 })).toEqual({ usd: 1, partial: true });
+    // A zero or malformed total never hides a positive handover saving.
+    expect(savedOverall({ estimatedCostSaved: '$1.5000', totalCostSaved: '$0.0000' })).toEqual({ usd: 1.5, partial: false });
+    expect(savedOverall({ estimatedCostSaved: '$1.5000', totalCostSaved: 'n/a' })).toEqual({ usd: 1.5, partial: false });
     expect(savedOverall({ estimatedCostSaved: '$0.0000', totalCostSaved: '$0.0000' })).toBeNull();
   });
 });
