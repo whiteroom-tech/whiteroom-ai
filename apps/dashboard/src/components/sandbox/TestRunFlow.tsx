@@ -469,7 +469,9 @@ export function callArrived(run: RunStatusResult | null): boolean {
 export function recognizedStep(run: RunStatusResult | null, agentId: string): { label: string; sub: string } {
   if (!callArrived(run)) return { label: 'Waiting for your agent', sub: 'Run one normal task with the code above' };
   if (!run?.agents?.length && !failedCallsOf(run)) return { label: 'Your agent called without a name', sub: 'Add the x-whiteroom-agent header from the code above' };
-  return { label: 'Your agent is recognized', sub: `Seen as ${agentId}` };
+  // A failed first call registers no agent; the engine still reports the name it sent.
+  const seenAs = run?.agents?.[0]?.agentId ?? failedCallsOf(run)?.last.agentId ?? agentId;
+  return { label: 'Your agent is recognized', sub: `Seen as ${seenAs}` };
 }
 
 /**

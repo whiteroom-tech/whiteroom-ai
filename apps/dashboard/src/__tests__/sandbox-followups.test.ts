@@ -135,7 +135,8 @@ describe('Run your agent: recognized only once it calls', () => {
     const failed = { ...fresh, failedCalls: { count: 1, last: { at: '2026-10-12T10:01:00Z', agentId: 'support-bot', status: 401, reason: 'upstream_error', message: 'bad key' } } } as unknown as RunStatusResult;
     expect(callArrived(failed)).toBe(true);
     expect(hasNoCalls(failed)).toBe(false);
-    expect(recognizedStep(failed, 'support-bot').label).toBe('Your agent is recognized');
+    // Named from the failed call, not the page's placeholder.
+    expect(recognizedStep(failed, 'test-agent')).toEqual({ label: 'Your agent is recognized', sub: 'Seen as support-bot' });
   });
 
   it('says when the call had no agent name', () => {
