@@ -158,7 +158,7 @@ describe('the page, with a test whose calls fail', () => {
 
   it('shows the failure in the banner, the checklist and Checks', () => {
     const html = page(run({ provider: 'azure-openai', endpointHost: 'acme.openai.azure.com', auditLog: registered, failedCalls: failed(401, 'upstream_error', 2) }));
-    expect(html).toContain('<strong>2 calls failed.</strong> Azure OpenAI refused the key (HTTP 401). See Connect for what to check.');
+    expect(html).toMatch(/<h2 tabindex="-1" class="[^"]*">2 calls failed\.<\/h2> Azure OpenAI refused the key \(HTTP 401\)\. See Connect for what to check\./);
     expect(html).toContain('aria-label="Failed"');
     expect(html).toContain('Your agent’s call reached WhiteRoom, but Azure OpenAI refused it (HTTP 401): Invalid API key.');
     expect(html).toContain('aria-label="Calls failed"');

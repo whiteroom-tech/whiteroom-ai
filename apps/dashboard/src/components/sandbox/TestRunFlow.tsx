@@ -7,7 +7,8 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, noCodeSetup, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, memoryCheckDetail, reportFileName, reportHtml, reportSource, SANDBOX_CHECKS } from '@/lib/sandbox/report';
@@ -20,6 +21,19 @@ type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
 type Provider = SandboxProvider;
 type Language = 'Python' | 'JavaScript';
+/** Connect's setup choice: client code in a language, or environment variables only. */
+type Setup = Language | 'env';
+
+/** Tests last 30 minutes (the engine's default; the dashboard doesn't ask for another). */
+const TEST_SECONDS = 30 * 60;
+/** "Nothing happening?" opens on its own after this long with no calls. */
+const IDLE_HELP_AFTER_SECONDS = 60;
+
+const WORKSPACE_TABS: { id: WorkspaceTab; label: string }[] = [
+  { id: 'setup', label: 'Connect' },
+  { id: 'results', label: 'Checks' },
+  { id: 'activity', label: 'Activity' },
+];
 
 /**
  * Plain-language names for the events in the Sandbox's Activity tab (the
@@ -160,6 +174,9 @@ function formatTimer(seconds: number | null | undefined): string {
 }
 
 export function checkGuidance(controlId: string, status: string | undefined, run: RunStatusResult | null, provider: SandboxProvider): { detail: string; action?: string; failed?: boolean; progress?: { current: number; total: number; label: string } } {
+  // The demo walkthrough reveals one check per step.
+  const demoStep = SANDBOX_CHECKS.findIndex(c => c.id === controlId) + 1;
+  if (status === 'unrevealed') return { detail: `Shown in step ${demoStep} of the walkthrough.` };
   const agent = run?.agents?.[0];
   const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
   if (status === 'observed') {
@@ -219,8 +236,10 @@ export const SANDBOX_STEPS = [
 ] as const;
 
 /** Which rail step is current: 0 before a test exists, then by what the test has seen. */
-export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stage: number; allPassed: boolean; expired: boolean; demo: boolean }): number {
+export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stage: number; allPassed: boolean; expired: boolean; demo: boolean; demoScene?: number }): number {
   if (phase !== 'workspace') return 0;
+  // The demo walkthrough moves the rail one step per scene, ending on Results.
+  if (opts.demo && opts.demoScene !== undefined && !opts.expired) return Math.min(3, 1 + opts.demoScene);
   if (opts.allPassed || opts.expired || opts.demo) return 3;
   return opts.stage >= 3 ? 2 : 1;
 }
@@ -265,6 +284,35 @@ function TestTimer({ seconds, expired }: { seconds: number | null; expired: bool
   );
 }
 
+/**
+ * Connect / Checks / Activity as an ARIA tablist: the selected tab is the
+ * only tab stop, arrow keys (and Home/End) move and select.
+ */
+export function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (t: WorkspaceTab) => void }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const go = (i: number) => {
+    const n = WORKSPACE_TABS.length;
+    const next = WORKSPACE_TABS[(i + n) % n];
+    onChange(next.id);
+    refs.current[(i + n) % n]?.focus();
+  };
+  return (
+    <div className={s.tabs} role="tablist" aria-label="Test workspace">
+      {WORKSPACE_TABS.map((t, i) => {
+        const on = t.id === value;
+        return (
+          <button key={t.id} ref={el => { refs.current[i] = el; }} type="button" role="tab" id={`sandbox-tab-${t.id}`} aria-selected={on} aria-controls={`sandbox-panel-${t.id}`} tabIndex={on ? 0 : -1}
+            className={`${s.tab} ${on ? s.tabActive : ''}`} onClick={() => onChange(t.id)}
+            onKeyDown={e => {
+              const keys: Record<string, number> = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: WORKSPACE_TABS.length - 1 };
+              if (e.key in keys) { e.preventDefault(); go(keys[e.key]); }
+            }}>{t.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
 function StepsRail({ current }: { current: number }) {
   return (
     <ol className={s.rail} aria-label="Test steps">
@@ -299,7 +347,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const [wsTab, setWsTab] = useState<WorkspaceTab>('setup');
   const [run, setRun] = useState<RunStatusResult | null>(() => (previewRun ? withRunMode(previewRun) : null));
   const [provider, setProvider] = useState<Provider>(() => (previewRun && isCloudProvider(previewRun.provider) ? previewRun.provider : 'anthropic'));
-  const [language, setLanguage] = useState<Language>('Python');
+  const [language, setLanguage] = useState<Setup>('Python');
+  // "Nothing happening?": opened by the user, or once on its own after a minute with no calls.
+  const [troubleOpen, setTroubleOpen] = useState(false);
+  const troubleAutoOpened = useRef<string | null>(null);
   const [credential, setCredential] = useState('');
   // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
   const [endpoints, setEndpoints] = useState<CloudEndpoints>({});
@@ -320,6 +371,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [prodFleetId, setProdFleetId] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  // The workspace's results heading (the summary line), focused when a live test finishes.
+  const summaryHeading = useRef<HTMLHeadingElement>(null);
   const ownerRef = useRef<string | undefined>(undefined);
   const modalRef = useRef<HTMLDivElement>(null);
   const verified = connectionVerified(run);
@@ -342,15 +395,24 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     : run.provider === undefined ? cloud : null;
   // The provider this test's calls go to, for naming it when they fail.
   const testProvider: SandboxProvider = liveCloud ?? directProvider;
+  // The code shown when "No code change" is picked but code is still needed (the live card).
+  const codeLanguage: Language = language === 'env' ? 'Python' : language;
   const recipe = liveCloud
-    ? cloudRecipe(liveCloud, proxyKeyBase(PROXY_URL, proxyKey), agentId, language)
-    : connectionRecipe(directProvider, fleetId, agentId, language);
+    ? cloudRecipe(liveCloud, proxyKeyBase(PROXY_URL, proxyKey), agentId, codeLanguage)
+    : connectionRecipe(directProvider, fleetId, agentId, codeLanguage);
+  const noCode = language === 'env' ? noCodeSetup(testProvider, { proxyUrl: PROXY_URL, base: proxyKeyBase(PROXY_URL, proxyKey), fleetId }) : null;
   const { stage, failed, failing, failNotice, diagShown } = connectProgress(run, testProvider);
   const activityHeader = activitySummary(run);
   const allPassed = (run?.controls ?? []).every(c => {
     const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
     return ev?.status === 'observed';
   }) && (run?.controls?.length ?? 0) > 0;
+  const checksPassed = (run?.controls ?? []).filter(c => (isDemo ? c.result?.demoEvidence : c.result?.liveEvidence)?.status === 'observed').length;
+  // Analytics never carry keys, endpoints, fleet or test ids, or agent names. The /dev preview sends none.
+  const track = useCallback((event: string, props?: Record<string, unknown>) => { if (!previewUserId) analytics.capture(event, props); }, [previewUserId]);
+  // A live test that has seen nothing at all: no call reached WhiteRoom, failed or not.
+  const noCalls = !!run?.sandboxId && !isDemo && !expired && stage < 2 && !failed;
+  const idleLongEnough = displaySeconds != null && TEST_SECONDS - displaySeconds >= IDLE_HELP_AFTER_SECONDS;
 
   // The provider follows the pasted key; a fleet token doesn't say, so the
   // user picks it.
@@ -397,6 +459,39 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
       .then((d: { fleetId?: string } | null) => { if (d?.fleetId) setProdFleetId(d.fleetId); })
       .catch(() => {});
   }, [allPassed, isDemo, prodFleetId]);
+
+  // Once per page: someone opened the Sandbox.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || authStatus !== 'authenticated') return;
+    opened.current = true;
+    track('sandbox_opened');
+  }, [authStatus, track]);
+
+  // Rising edges seen in this page, per test, so a reload of a finished test
+  // doesn't count its first call or its pass again.
+  const seen = useRef<{ id?: string; called: boolean; passed: boolean; ended: boolean }>({ called: false, passed: false, ended: false });
+  useEffect(() => {
+    const id = run?.sandboxId;
+    if (!id || isDemo) return;
+    const called = stage >= 3;
+    const ended = allPassed || !!expired;
+    const prev = seen.current;
+    seen.current = { id, called, passed: allPassed, ended };
+    if (prev.id !== id) return;
+    if (called && !prev.called) track('sandbox_first_call', { provider: testProvider });
+    if (allPassed && !prev.passed) track('sandbox_checks_passed', { provider: testProvider });
+    // The test just finished: show its results and move focus to their heading.
+    if (ended && !prev.ended) { setWsTab('results'); requestAnimationFrame(() => summaryHeading.current?.focus()); }
+  }, [run?.sandboxId, isDemo, stage, allPassed, expired, testProvider, track]);
+
+  // A live test with no calls after a minute: open "Nothing happening?", once per test.
+  useEffect(() => {
+    const id = run?.sandboxId;
+    if (!id || !noCalls || !idleLongEnough || troubleAutoOpened.current === id) return;
+    troubleAutoOpened.current = id;
+    setTroubleOpen(true);
+  }, [run?.sandboxId, noCalls, idleLongEnough]);
 
   // Focus heading on phase change
   useEffect(() => { heading.current?.focus(); }, [phase]);
@@ -564,6 +659,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         window.dispatchEvent(new Event('storage'));
       }
       analytics.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
+      track('sandbox_test_started', { mode, provider: mode === 'demo' ? undefined : provider });
       setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : {}) });
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
       if (mode === 'demo') {
@@ -617,6 +713,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     if (!run?.sandboxId) return;
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
+    track('sandbox_test_ended', { mode: run.mode, checks_passed: checksPassed });
     clearSandboxToken();
     setRun(null); setConfirmEnd(false); setPhase('start');
   });
@@ -646,7 +743,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   // ── Render checks list ──
   const renderChecks = (controls: NonNullable<RunStatusResult['controls']>) => controls.map(c => {
     const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
-    const status = ev?.status;
+    // The demo walkthrough reveals one check per step.
+    const status = isDemo && SANDBOX_CHECKS.findIndex(x => x.id === c.controlId) > scene ? 'unrevealed' : ev?.status;
     const passed = status === 'observed';
     const guide = checkGuidance(c.controlId, status, run, testProvider);
     return (
@@ -712,7 +810,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
 
     <main className={s.content}>
       <div className={s.layout}>
-      <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo })} />
+      <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
       <div className={s.body}>
       {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Retry</button></div>}
       {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Check now</button></div>}
@@ -778,24 +876,23 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
           const controls = run.controls ?? [];
           const passed = controls.filter(c => { const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence; return ev?.status === 'observed'; }).length;
           const total = controls.length;
-          if (isDemo) return <div className={s.summary}><strong>This is a demo.</strong> It uses made-up data to show the flow. It doesn’t test your agent.</div>;
-          if (allPassed) return <div className={`${s.summary} ${s.summaryPass}`}><strong>All {total} checks passed.</strong> Your agent works through WhiteRoom.</div>;
+          const banner = (tone: string, head: string, rest: string) => (
+            <div className={`${s.summary} ${tone}`}><h2 ref={summaryHeading} tabIndex={-1} className={s.summaryHead}>{head}</h2>{rest && ` ${rest}`}</div>
+          );
+          if (isDemo) return banner('', 'This is a demo.', 'It uses made-up data to show the flow. It doesn’t test your agent.');
+          if (allPassed) return banner(s.summaryPass, `All ${total} checks passed.`, 'Your agent works through WhiteRoom.');
           const nextCheck = controls.find(c => { const ev = c.result?.liveEvidence; return ev?.status !== 'observed'; });
           const nextLabel = nextCheck ? checkLabel(nextCheck.controlId, nextCheck.name).toLowerCase() : '';
-          if (failing) return <div className={`${s.summary} ${s.summaryFail}`}><strong>{callCount(failing.count)} failed.</strong> {failedCallReason(failing, testProvider)}. See Connect for what to check.</div>;
-          if (passed === 0) return <div className={s.summary}><strong>Waiting for your agent.</strong> Add the code from Connect, then run your agent.</div>;
-          return <div className={s.summary}><strong>{passed} of {total} checks passed.</strong>{nextLabel ? ` Next: ${nextLabel}.` : ''}</div>;
+          if (failing) return banner(s.summaryFail, `${callCount(failing.count)} failed.`, `${failedCallReason(failing, testProvider)}. See Connect for what to check.`);
+          if (passed === 0) return banner('', 'Waiting for your agent.', 'Add the code from Connect, then run your agent.');
+          return banner('', `${passed} of ${total} checks passed.`, nextLabel ? `Next: ${nextLabel}.` : '');
         })()}
 
         {/* Workspace tabs */}
-        <div className={s.tabs}>
-          <button className={`${s.tab} ${wsTab === 'setup' ? s.tabActive : ''}`} onClick={() => setWsTab('setup')}>Connect</button>
-          <button className={`${s.tab} ${wsTab === 'results' ? s.tabActive : ''}`} onClick={() => setWsTab('results')}>Checks</button>
-          <button className={`${s.tab} ${wsTab === 'activity' ? s.tabActive : ''}`} onClick={() => setWsTab('activity')}>Activity</button>
-        </div>
+        <WorkspaceTabs value={wsTab} onChange={setWsTab} />
 
         {/* ── Setup tab ── */}
-        <div className={`${s.panel} ${wsTab === 'setup' ? s.panelActive : ''}`}>
+        <div className={`${s.panel} ${wsTab === 'setup' ? s.panelActive : ''}`} role="tabpanel" id="sandbox-panel-setup" aria-labelledby="sandbox-tab-setup" tabIndex={0}>
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
           <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your API key stays where it is.</p>
           <div className={s.selectRow}>
@@ -807,11 +904,21 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
               <span className={s.small} style={{ alignSelf: 'center' }}>{liveCloud ? providerSummary(liveCloud, run?.endpointHost) : provider === 'openai' ? 'OpenAI' : 'Anthropic'}</span>
             )}
             <span style={{ width: 12 }} />
-            <button className={`${s.selectPill} ${language === 'Python' ? s.selectPillOn : ''}`} onClick={() => setLanguage('Python')}>Python</button>
-            <button className={`${s.selectPill} ${language === 'JavaScript' ? s.selectPillOn : ''}`} onClick={() => setLanguage('JavaScript')}>JavaScript</button>
+            {(['Python', 'JavaScript', 'env'] as const).map(l => (
+              <button key={l} type="button" className={`${s.selectPill} ${language === l ? s.selectPillOn : ''}`} aria-pressed={language === l} onClick={() => setLanguage(l)}>{l === 'env' ? 'No code change' : l}</button>
+            ))}
           </div>
-          <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{recipe}</pre>
-          <CopyButton text={recipe} disabled={!!liveCloud && !proxyKey} />
+          {noCode ? <>
+            <p className={s.noCodeLead}>{noCode.lead}</p>
+            {noCode.code && <>
+              <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{noCode.code}</pre>
+              <CopyButton text={noCode.code} disabled={!!liveCloud && !proxyKey} />
+            </>}
+            {noCode.note && <p className={s.small} style={{ marginTop: 8 }}>{noCode.note}</p>}
+          </> : <>
+            <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{recipe}</pre>
+            <CopyButton text={recipe} disabled={!!liveCloud && !proxyKey} />
+          </>}
           {liveCloud && !proxyKey && <ProxyKeyNotice disabled={busy || !!expired} onRecover={() => { void recoverProxyKey(); }} />}
 
           {!isDemo && <>
@@ -839,7 +946,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
               ))}
             </div>
 
-            <details style={{ marginTop: 12, fontSize: 12.5, color: 'var(--tx2)' }}>
+            <details open={troubleOpen} onToggle={e => setTroubleOpen(e.currentTarget.open)} style={{ marginTop: 12, fontSize: 12.5, color: 'var(--tx2)' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Nothing happening?</summary>
               <ul style={{ paddingLeft: 18, marginTop: 8, fontSize: 12, color: 'var(--tx3)', lineHeight: 1.7 }}>
                 {liveCloud ? <CloudTroubleshooting provider={liveCloud} endpointHost={run?.endpointHost} /> : <>
@@ -854,7 +961,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         </div>
 
         {/* ── Results tab ── */}
-        <div className={`${s.panel} ${wsTab === 'results' ? s.panelActive : ''}`}>
+        <div className={`${s.panel} ${wsTab === 'results' ? s.panelActive : ''}`} role="tabpanel" id="sandbox-panel-results" aria-labelledby="sandbox-tab-results" tabIndex={0}>
           {isDemo && (
             <div className={s.card} style={{ marginBottom: 16 }}>
               <div className={s.eyebrow}>DEMO WALKTHROUGH</div>
@@ -874,47 +981,54 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
           {allPassed && !isDemo && (
             <div className={s.prod}>
               <div className={s.prodTitle} style={{ fontFamily: FONT_DISPLAY }}>Ready to go live</div>
-              {liveCloud ? <CloudGoLive provider={liveCloud} /> : <>
+              {liveCloud ? <CloudGoLive provider={liveCloud} /> : language === 'env' ? <>
+              <p>On your live fleet, agents with a system prompt need no code change. Set this and run your agent as before.</p>
+              <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{SETUP_LINES[directProvider]}</pre>
+              </> : <>
               <p>{prodFleetId
                 ? <>To run this agent on your live fleet, use this instead. Your fleet (<code>{prodFleetId}</code>) and agent name are already filled in.</>
                 : <>To run this agent for real, use this and put in your live fleet ID.</>}</p>
-              <pre className={s.recipe} style={{ fontFamily: FONT_MONO, fontSize: 10.5 }}>{connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, language)}</pre>
+              <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)}</pre>
               </>}
               <div className={s.btnRow} style={{ marginTop: 8 }}>
-                {!liveCloud && <CopyButton text={connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, language)} />}
+                {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)} />}
                 <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
               </div>
             </div>
           )}
 
-          {/* Actions */}
-          <div className={s.btnRow}>
-            {!allPassed && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>}
-            {isDemo && <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => act(async () => {
+          {isDemo && <div className={s.btnRow}>
+            <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => act(async () => {
               if (!run?.sandboxId) return;
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
+              track('sandbox_test_ended', { mode: 'demo', checks_passed: checksPassed });
               clearSandboxToken();
               setRun(null); setConfirmEnd(false);
               setPhase('setup');
-            })} disabled={busy} style={{ fontSize: 12 }}>Now test my agent →</button>}
-            <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
-          </div>
+            })} disabled={busy} style={{ fontSize: 12 }}>Now test my agent →</button>
+          </div>}
 
           <p className={s.small} style={{ marginTop: 12 }}>These checks show your agent works through WhiteRoom. They don’t check that its answers are correct. Use them to help decide, not as a certificate.</p>
         </div>
 
         {/* ── Activity tab ── */}
-        <div className={`${s.panel} ${wsTab === 'activity' ? s.panelActive : ''}`}>
+        <div className={`${s.panel} ${wsTab === 'activity' ? s.panelActive : ''}`} role="tabpanel" id="sandbox-panel-activity" aria-labelledby="sandbox-tab-activity" tabIndex={0}>
           {activityHeader && <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{activityHeader}</p>}
           {renderActivity()}
         </div>
+
+        {/* Test actions, on every tab. On Checks, a passed live test's card already offers the report. */}
+        {run && <div className={s.btnRow}>
+          {!(allPassed && !isDemo && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>}
+          <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
+        </div>}
 
         {/* Footer */}
         {run && <div className={s.footer}>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()} · ` : ''}Test {run.sandboxId}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
       </>}
 
-      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} />}
+      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} onDemo={busy ? undefined : () => void begin('demo')} />}
       </div>
       </div>
 

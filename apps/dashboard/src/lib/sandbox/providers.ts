@@ -260,3 +260,52 @@ export function restorableProvider(saved: string | null, unsupported: readonly C
 export function withUnsupported(list: readonly CloudProvider[], provider: CloudProvider): { unsupported: CloudProvider[]; provider: SandboxProvider } {
   return { unsupported: list.includes(provider) ? [...list] : [...list, provider], provider: 'anthropic' };
 }
+
+/**
+ * Connect › No code change: environment variables in place of the client
+ * setup, where they can carry everything this test needs.
+ *
+ * - A cloud test is named by the proxy key in its URL, so the base-URL
+ *   variable is enough for an agent with a system prompt (WhiteRoom names it
+ *   from that). One without needs x-whiteroom-agent, which these SDKs can't
+ *   take from the environment.
+ * - An Anthropic or OpenAI test is named by the x-whiteroom-fleet header:
+ *   without it, calls go to the key's own fleet, not this test. Neither SDK
+ *   reads headers from the environment. Claude Code does
+ *   (ANTHROPIC_CUSTOM_HEADERS), so it is the one direct case shown.
+ *
+ * `code` is null when there is nothing that works to copy.
+ */
+export function noCodeSetup(provider: SandboxProvider, opts: { proxyUrl: string; base: string; fleetId: string }): { lead: string; code: string | null; note?: string } {
+  const unnamed = 'Agents without a system prompt also need the x-whiteroom-agent header, so use the Python or JavaScript setup for them.';
+  switch (provider) {
+    case 'anthropic':
+      return {
+        lead: 'This test needs the x-whiteroom-fleet header, and the Anthropic SDK can’t read headers from environment variables, so most agents need the Python or JavaScript setup. Claude Code can: it reads extra headers from ANTHROPIC_CUSTOM_HEADERS.',
+        code: `# Claude Code\nexport ANTHROPIC_BASE_URL=${opts.proxyUrl.replace(/\/+$/, '')}\nexport ANTHROPIC_CUSTOM_HEADERS="x-whiteroom-fleet: ${opts.fleetId}"\n# Uses the Anthropic API key you started this test with.`,
+      };
+    case 'openai':
+      return {
+        lead: 'This test needs the x-whiteroom-fleet header, and the OpenAI SDK can’t read headers from environment variables. Use the Python or JavaScript setup for this test.',
+        code: null,
+      };
+    case 'azure-openai':
+      return {
+        lead: 'No code change if your agent uses the AzureOpenAI client and reads its endpoint from the environment.',
+        code: `export AZURE_OPENAI_ENDPOINT=${opts.base}\n# AZURE_OPENAI_API_KEY and your api-version stay as they are.`,
+        note: unnamed,
+      };
+    case 'foundry':
+      return {
+        lead: 'No code change if your agent uses the Anthropic client and reads its settings from the environment. With AnthropicFoundry, use the Python or JavaScript setup.',
+        code: `export ANTHROPIC_BASE_URL=${opts.base}\nexport ANTHROPIC_API_KEY="$ANTHROPIC_FOUNDRY_API_KEY"\n# Use your Foundry deployment name as the model.`,
+        note: unnamed,
+      };
+    case 'bedrock-mantle':
+      return {
+        lead: 'No code change if your agent uses the Anthropic client and reads its settings from the environment.',
+        code: `export ANTHROPIC_BASE_URL=${opts.base}\nexport ANTHROPIC_API_KEY="$${BEDROCK_KEY_ENV}"\n# Use a Bedrock model id as the model, like anthropic.claude-haiku-4-5.`,
+        note: unnamed,
+      };
+  }
+}
