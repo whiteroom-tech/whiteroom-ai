@@ -44,51 +44,54 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
   const cellRole = interactive ? 'gridcell' : 'cell';
   return (
     <div role={interactive ? 'grid' : 'table'} aria-label={caption} className="wr-table">
-      <div role="rowgroup" className="wr-table__head">
-        <div role="row" className="wr-table__row wr-table__row--head" style={{ gridTemplateColumns: grid }}>
-          {columns.map((c) => (
-            <span key={c.key} role="columnheader" className={c.align === 'right' ? 'is-right' : undefined}>{c.header}</span>
-          ))}
-        </div>
-      </div>
-      <div role="rowgroup">
-        {rows.length === 0 && empty && (
-          <div role="row" className="wr-table__empty">
-            <span role={cellRole} aria-colspan={columns.length}>{empty}</span>
+      {/* Holds the rows so a phone can scroll them sideways while the footer stays put. */}
+      <div className="wr-table__scroll">
+        <div role="rowgroup" className="wr-table__head">
+          <div role="row" className="wr-table__row wr-table__row--head" style={{ gridTemplateColumns: grid }}>
+            {columns.map((c) => (
+              <span key={c.key} role="columnheader" className={c.align === 'right' ? 'is-right' : undefined}>{c.header}</span>
+            ))}
           </div>
-        )}
-        {rows.map((r, i) => {
-          const k = rowKey(r);
-          const g = group?.(r);
-          const startsGroup = g && startsNewGroup(rows, i, group!);
-          return (
-            <Fragment key={k}>
-            {startsGroup && (
-              <div role="row" className="wr-table__group">
-                <span role={cellRole} aria-colspan={columns.length}>{g.label}</span>
-              </div>
-            )}
-            <div
-              role="row"
-              tabIndex={onOpen ? 0 : undefined}
-              aria-selected={interactive && selectedKey !== undefined ? selectedKey === k : undefined}
-              className={`wr-table__row${onOpen ? ' is-link' : ''}${selectedKey === k ? ' is-selected' : ''}`}
-              style={{ gridTemplateColumns: grid, height: rowHeight }}
-              onClick={onOpen ? () => onOpen(r) : undefined}
-              onKeyDown={onOpen ? (e) => {
-                if (e.target !== e.currentTarget) return;
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r); }
-              } : undefined}
-            >
-              {columns.map((c) => (
-                <span key={c.key} role={cellRole} className={`${c.align === 'right' ? 'is-right' : ''}${c.numeric ? ' is-num' : ''}`.trim() || undefined}>
-                  {c.render(r)}
-                </span>
-              ))}
+        </div>
+        <div role="rowgroup">
+          {rows.length === 0 && empty && (
+            <div role="row" className="wr-table__empty">
+              <span role={cellRole} aria-colspan={columns.length}>{empty}</span>
             </div>
-            </Fragment>
-          );
-        })}
+          )}
+          {rows.map((r, i) => {
+            const k = rowKey(r);
+            const g = group?.(r);
+            const startsGroup = g && startsNewGroup(rows, i, group!);
+            return (
+              <Fragment key={k}>
+              {startsGroup && (
+                <div role="row" className="wr-table__group">
+                  <span role={cellRole} aria-colspan={columns.length}>{g.label}</span>
+                </div>
+              )}
+              <div
+                role="row"
+                tabIndex={onOpen ? 0 : undefined}
+                aria-selected={interactive && selectedKey !== undefined ? selectedKey === k : undefined}
+                className={`wr-table__row${onOpen ? ' is-link' : ''}${selectedKey === k ? ' is-selected' : ''}`}
+                style={{ gridTemplateColumns: grid, height: rowHeight }}
+                onClick={onOpen ? () => onOpen(r) : undefined}
+                onKeyDown={onOpen ? (e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(r); }
+                } : undefined}
+              >
+                {columns.map((c) => (
+                  <span key={c.key} role={cellRole} className={`${c.align === 'right' ? 'is-right' : ''}${c.numeric ? ' is-num' : ''}`.trim() || undefined}>
+                    {c.render(r)}
+                  </span>
+                ))}
+              </div>
+              </Fragment>
+            );
+          })}
+        </div>
       </div>
       {footer && <div className="wr-table__foot">{footer}</div>}
     </div>
