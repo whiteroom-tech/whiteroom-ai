@@ -34,12 +34,13 @@ import type {
 import { computeSuggestions, convertSpendCap, RESPONSE_EFFECT, RESPONSE_LABEL, responseOptions, RULE_LABELS, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { PageHeader } from "@/components/citadel/PageChrome";
-import { FONT_MONO, SelectChip } from "@whiteroom/ui";
+import { FONT_MONO, Hint, SelectChip } from "@whiteroom/ui";
 import { timeAgo } from "@/lib/format";
 import { fetchControlActors, historyWho, oldestTime, type ControlActor } from "@/lib/control-actors";
 import { stopCheck, stopPhrase, watchSummary } from "@/lib/controls-guard";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
+import { UNNAMED_CALLS_REFUSED, unnamedCallsRefused } from "@/lib/setup";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -799,7 +800,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                           <ModeToggle mode={rule.mode} onChange={(m) => changeMode(rule.id, rt, m)} />
-                          <span style={{ fontSize: 11, color: "var(--tx3)" }}>{MODE_DESCRIPTION[rt][rule.mode]}</span>
+                          <span style={{ fontSize: 11, color: "var(--tx3)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            {MODE_DESCRIPTION[rt][rule.mode]}
+                            <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}><Hint text={unnamedCallsRefused("Enforce")} size={12} /></span>
+                          </span>
                         </div>
                         {sectionRules.length > 1 && (
                           <button
@@ -940,7 +944,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: {
       <ConfirmDialog
         open={confirmStopRule !== null}
         title="Let this rule stop agents?"
-        body={<>{RESPONSE_EFFECT.stop} It applies to {stopRule?.appliesTo === "all" || !stopRule ? "every agent in this fleet" : stopRule.appliesTo.join(", ")}, and takes effect now.</>}
+        body={<>{RESPONSE_EFFECT.stop} It applies to {stopRule?.appliesTo === "all" || !stopRule ? "every agent in this fleet" : stopRule.appliesTo.join(", ")}, and takes effect now.<span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></>}
         confirmLabel={RESPONSE_LABEL.stop}
         confirmPhrase={stopRule ? stopPhrase(stopRule.appliesTo) : "stop"}
         onConfirm={() => {

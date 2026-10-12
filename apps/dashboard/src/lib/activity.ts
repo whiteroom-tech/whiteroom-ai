@@ -78,6 +78,12 @@ const EVENT_COPY: Record<string, EventCopy> = {
   governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by the ${governancePhrase(e)}` },
   governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by the ${governancePhrase(e)} (Watch only)` },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
+  // A call with no agent name while the fleet has Pause/Stop or an Enforce rule
+  // on. Fleet-level: there's no agent to name, so the subject is WhiteRoom.
+  unnamed_call_refused: {
+    icon: '⛔', tone: 'block', code: 'UNN', who: 'WhiteRoom',
+    say: () => "refused a call that didn't name its agent (controls are active on this fleet)",
+  },
   // Handover health (engine events from Agent Diagnosis Phase 0). Worded so
   // they need neither "watch" nor "shift"; every value comes from the payload.
   handover_loop_detected: {

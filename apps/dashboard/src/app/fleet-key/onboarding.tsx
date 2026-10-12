@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
-import { PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { AGENT_HEADER, AGENT_NAME_LINES, AGENT_NAME_WHY, AGENT_PLACEHOLDER, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES, agentNameLine } from '@/lib/setup';
 import { fmtDay } from '@/lib/format';
 
 interface Props {
@@ -157,6 +157,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
+              <span>{AGENT_NAME_WHY}</span>
+              <CopyChip text={agentNameLine(issued.provider)} label="Copy the agent name line" />
             </div>
           </Banner>
         )}
@@ -279,9 +281,13 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
               <SegmentedControl<ProviderTab> label="Provider" value={tab} onChange={setTab} options={PROVIDER_TABS} />
               {tab === 'direct' ? (
                 <>
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. No code changes; run your agent exactly as before.</p>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom, then run your agent as before.</p>
                   <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>{AGENT_NAME_WHY}</p>
+                  <CopyChip text={AGENT_NAME_LINES.anthropic} label="Copy the Anthropic agent name line" />
+                  <CopyChip text={AGENT_NAME_LINES.openai} label="Copy the OpenAI agent name line" />
+                  <CopyChip text={AGENT_NAME_LINES.claudeCode} label="Copy the Claude Code agent name line" />
                 </>
               ) : (
                 <>
@@ -290,8 +296,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                   </p>
                   <AzureStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_ORIGIN}/<your-proxy-key>`} />
                   <AzureStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
-                  <AzureStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(api_version="2024-10-21")  # your usual api-version\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
-                  <AzureStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_ORIGIN}/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n)`} />
+                  <AzureStep label="The AzureOpenAI client picks both up; name each agent so WhiteRoom can apply its controls" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    default_headers={"${AGENT_HEADER}": "${AGENT_PLACEHOLDER}"},  # name each agent\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
+                  <AzureStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_ORIGIN}/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n    default_headers={"${AGENT_HEADER}": "${AGENT_PLACEHOLDER}"},\n)`} />
                 </>
               )}
             </div>

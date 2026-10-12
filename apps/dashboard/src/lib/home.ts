@@ -173,6 +173,7 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   agent_paused: { label: 'Paused', tone: 'warn' },
   governance_block: { label: 'Blocked', tone: 'muted' },
   governance_would_block: { label: 'Watch only', tone: 'muted' },
+  unnamed_call_refused: { label: 'Refused', tone: 'muted' },
   unclean_stop: { label: 'Gap', tone: 'warn' },
   possible_gap: { label: 'Gap', tone: 'warn' },
 };

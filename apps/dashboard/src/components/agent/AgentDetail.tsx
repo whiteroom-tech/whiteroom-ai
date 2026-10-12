@@ -11,6 +11,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
+import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns } from '@/components/agent/RecentRuns';
 import { GoalPanel } from '@/components/agent/GoalPanel';
@@ -409,7 +410,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         tone="neutral"
         title={v1 ? `Pause ${agentId}?` : `Give ${agentId} a break now?`}
         body={v1
-          ? <>Its current run ends. It can&rsquo;t make calls until someone resumes it, even after a restart.</>
+          ? <>Its current run ends. It can&rsquo;t make calls until someone resumes it, even after a restart.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></>
           : <>It stops making calls and takes its scheduled break now, instead of at the end of this shift. It starts again on its own when the break ends.</>}
         confirmLabel={v1 ? 'Pause' : 'Start the break'}
         onConfirm={startBreak}
@@ -418,7 +419,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       <ConfirmDialog
         open={confirmStop}
         title={`Stop ${agentId}?`}
-        body={<>The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.</>}
+        body={<>The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></>}
         confirmLabel="Stop agent"
         confirmPhrase={agentId}
         onConfirm={stop}
