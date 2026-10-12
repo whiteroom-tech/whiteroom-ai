@@ -1,0 +1,196 @@
+// Where a Sandbox test's agent sends its calls. Anthropic and OpenAI keys are
+// recognised from their sk- prefix, as before. Azure OpenAI, Claude on Azure
+// (Foundry) and AWS Bedrock need only the customer's own endpoint: the agent
+// keeps sending its own key, and the engine answers with a sandbox proxy key
+// (sk-wr-…) that the agent puts in its base URL. Pure, so the rules, the request and the
+// recipes are testable without rendering the page.
+
+import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
+import { bedrockMantleEndpoint } from '@/lib/bedrock-endpoint';
+
+export type DirectProvider = 'anthropic' | 'openai';
+export type CloudProvider = 'azure-openai' | 'foundry' | 'bedrock-mantle';
+export type SandboxProvider = DirectProvider | CloudProvider;
+export type RecipeLanguage = 'Python' | 'JavaScript';
+
+export const CLOUD_PROVIDERS: readonly CloudProvider[] = ['azure-openai', 'foundry', 'bedrock-mantle'];
+export const SANDBOX_PROVIDERS: readonly SandboxProvider[] = ['anthropic', 'openai', ...CLOUD_PROVIDERS];
+
+export function isCloudProvider(v: unknown): v is CloudProvider {
+  return typeof v === 'string' && (CLOUD_PROVIDERS as readonly string[]).includes(v);
+}
+
+export function isSandboxProvider(v: unknown): v is SandboxProvider {
+  return typeof v === 'string' && (SANDBOX_PROVIDERS as readonly string[]).includes(v);
+}
+
+export const SANDBOX_PROVIDER_LABELS: Record<SandboxProvider, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  'azure-openai': 'Azure OpenAI',
+  foundry: 'Claude on Azure (Foundry)',
+  'bedrock-mantle': 'AWS Bedrock',
+};
+
+/** "Azure OpenAI · acme.openai.azure.com" in the workspace; just the name when the host isn't known. */
+export function providerSummary(provider: SandboxProvider, endpointHost?: string | null): string {
+  const label = SANDBOX_PROVIDER_LABELS[provider];
+  return isCloudProvider(provider) && endpointHost ? `${label} · ${endpointHost}` : label;
+}
+
+/**
+ * What each cloud choice asks for, and where to find it. Only the endpoint:
+ * the agent keeps sending its own key, and the test is tied to it by the
+ * proxy key in the agent's base URL.
+ */
+export const CLOUD_FIELDS: Record<CloudProvider, {
+  endpointLabel: string;
+  endpointPlaceholder: string;
+  endpointHelp: string;
+  keyNote: string;
+}> = {
+  'azure-openai': {
+    endpointLabel: 'Endpoint',
+    endpointPlaceholder: 'https://my-resource.openai.azure.com',
+    endpointHelp: 'Azure portal → your Azure OpenAI resource → Keys and Endpoint.',
+    keyNote: 'Your agent keeps using its Azure OpenAI key. You don’t paste it here.',
+  },
+  foundry: {
+    endpointLabel: 'Endpoint',
+    endpointPlaceholder: 'https://my-resource.services.ai.azure.com/anthropic',
+    endpointHelp: 'Foundry portal → your Claude deployment → Target URI. The resource URL works too.',
+    keyNote: 'Your agent keeps using its Foundry key. You don’t paste it here.',
+  },
+  'bedrock-mantle': {
+    endpointLabel: 'AWS region',
+    endpointPlaceholder: 'us-east-1',
+    endpointHelp: 'The region your Claude models run in, as shown in the Bedrock console.',
+    keyNote: 'This test needs a Bedrock API key (Bedrock console → API keys). IAM credentials aren’t supported here. Your agent keeps its key; you don’t paste it here.',
+  },
+};
+
+/**
+ * Claude on Foundry is served at https://{resource}.services.ai.azure.com/anthropic,
+ * the only host the engine admits for Foundry. The Target URI often carries a
+ * path (/anthropic/v1/messages), so any path is dropped.
+ */
+export function foundryEndpoint(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) return null;
+  const m = /^([a-z0-9][a-z0-9-]*)\.services\.ai\.azure\.com$/i.exec(url.hostname);
+  return m ? `https://${m[1].toLowerCase()}.services.ai.azure.com/anthropic` : null;
+}
+
+export type CloudStartCheck =
+  | { ok: true; provider: CloudProvider; endpoint: string }
+  | { ok: false; error: string };
+
+/** Checks a cloud choice's endpoint before it is sent, and builds the endpoint the engine admits. */
+export function cloudStart(provider: CloudProvider, rawEndpoint: string): CloudStartCheck {
+  const raw = rawEndpoint.trim();
+  const fields = CLOUD_FIELDS[provider];
+  if (provider === 'bedrock-mantle') {
+    if (!raw) return { ok: false, error: 'Enter the AWS region your Bedrock models run in, like us-east-1.' };
+    const endpoint = bedrockMantleEndpoint(raw);
+    return endpoint ? { ok: true, provider, endpoint } : { ok: false, error: 'Use an AWS region code like us-east-1 or eu-west-1.' };
+  }
+  if (!raw) return { ok: false, error: `Enter your endpoint, like ${fields.endpointPlaceholder}.` };
+  if (provider === 'foundry') {
+    const endpoint = foundryEndpoint(raw);
+    if (endpoint) return { ok: true, provider, endpoint };
+    return { ok: false, error: isAzureOpenAIHost(raw)
+      ? 'Claude on Foundry uses your resource’s services.ai.azure.com address. Copy the Target URI from your Claude deployment.'
+      : `Use your resource’s https address, like ${fields.endpointPlaceholder}.` };
+  }
+  const endpoint = azureOpenAIEndpoint(raw);
+  return endpoint ? { ok: true, provider, endpoint } : { ok: false, error: `Use your resource’s https address, like ${fields.endpointPlaceholder}.` };
+}
+
+/** True when the URL's host is an Azure OpenAI or AI Services resource (not the Foundry host). */
+function isAzureOpenAIHost(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  return /^[a-z0-9][a-z0-9-]*\.(openai|cognitiveservices)\.azure\.com$/i.test(url.hostname);
+}
+
+/** Shown in the recipe when this tab has no proxy key for the test. */
+export const PROXY_KEY_PLACEHOLDER = '<your-test-proxy-key>';
+
+/** Where the agent's calls go: the dashboard's proxy URL with the test's proxy key as the first path segment. */
+export function proxyKeyBase(proxyUrl: string, proxyKey: string | null | undefined): string {
+  return `${proxyUrl.replace(/\/+$/, '')}/${proxyKey || PROXY_KEY_PLACEHOLDER}`;
+}
+
+/** Azure OpenAI's GA data-plane version, for the AzureOpenAI client variant. */
+export const AZURE_API_VERSION = '2024-10-21';
+
+/**
+ * The client setup for a cloud test. Every call is named with
+ * x-whiteroom-agent; the test itself is named by the proxy key in the URL, so
+ * no fleet header is needed. Keys come from the environment, as in the
+ * Anthropic and OpenAI recipes.
+ */
+export function cloudRecipe(provider: CloudProvider, base: string, agentId: string, language: RecipeLanguage): string {
+  const headers = { 'x-whiteroom-agent': agentId };
+  const py = JSON.stringify(headers, null, 4);
+  const js = JSON.stringify(headers, null, 2);
+  const q = JSON.stringify;
+
+  if (provider === 'azure-openai') {
+    const v1 = `${base}/openai/v1`;
+    return language === 'Python'
+      ? `# Option A: the OpenAI client\nimport os\nfrom openai import OpenAI\n\nclient = OpenAI(\n    base_url=${q(v1)},\n    api_key=os.environ["AZURE_OPENAI_API_KEY"],\n    default_headers=${py}\n)\n# Use this client for your agent's chat.completions calls,\n# with your Azure deployment name as the model.\n# Responses API calls aren't tested yet.\n\n# Option B: if your agent uses the AzureOpenAI client\nfrom openai import AzureOpenAI\n\nazure_client = AzureOpenAI(\n    azure_endpoint=${q(base)},\n    api_version=${q(AZURE_API_VERSION)},\n    default_headers=${py}\n)\n# Uses AZURE_OPENAI_API_KEY from your environment.`
+      : `// Option A: the OpenAI client\nimport OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${q(v1)},\n  apiKey: process.env.AZURE_OPENAI_API_KEY,\n  defaultHeaders: ${js}\n});\n// Use this client for your agent's chat.completions calls,\n// with your Azure deployment name as the model.\n// Responses API calls aren't tested yet.\n\n// Option B: if your agent uses the AzureOpenAI client\nimport { AzureOpenAI } from 'openai';\n\nconst azureClient = new AzureOpenAI({\n  endpoint: ${q(base)},\n  apiVersion: ${q(AZURE_API_VERSION)},\n  defaultHeaders: ${js}\n});\n// Uses AZURE_OPENAI_API_KEY from your environment.`;
+  }
+
+  const env = provider === 'foundry' ? 'ANTHROPIC_FOUNDRY_API_KEY' : 'AWS_BEARER_TOKEN_BEDROCK';
+  const model = provider === 'foundry'
+    ? { py: '# with your Foundry deployment name as the model.\n# Using AnthropicFoundry? Pass base_url= (above) instead of resource=.', js: '// with your Foundry deployment name as the model.\n// Using AnthropicFoundry? Pass baseURL (above) instead of resource.' }
+    : { py: '# with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.', js: '// with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.' };
+  return language === 'Python'
+    ? `import os\nimport anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${q(base)},\n    api_key=os.environ["${env}"],\n    default_headers=${py}\n)\n# Use this client for your agent's messages calls,\n${model.py}`
+    : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${q(base)},\n  apiKey: process.env.${env},\n  defaultHeaders: ${js}\n});\n// Use this client for your agent's messages calls,\n${model.js}`;
+}
+
+/** The engine names an unsupported provider this way (an engine without cloud Sandbox support). */
+export function isUnsupportedProviderError(message: unknown): boolean {
+  return typeof message === 'string' && /^(Unknown provider\b|provider must be one of\b)/.test(message);
+}
+
+export const PROVIDER_UNSUPPORTED = 'provider_unsupported';
+
+export function unsupportedProviderMessage(provider: CloudProvider): string {
+  return `Tests with ${SANDBOX_PROVIDER_LABELS[provider]} aren’t available yet. Use an Anthropic or OpenAI key for now.`;
+}
+
+/** The engine's refusals of an endpoint for its provider (wrong host shape, not allowed). */
+export function isEndpointError(message: unknown): boolean {
+  return typeof message === 'string' && /^(Provider "|Invalid endpoint)/.test(message);
+}
+
+export function endpointMismatchMessage(provider: CloudProvider): string {
+  return `That endpoint doesn’t match ${SANDBOX_PROVIDER_LABELS[provider]}. Check it and try again.`;
+}
+
+/**
+ * The provider to restore from storage on load: a known one that this page
+ * hasn't seen the engine refuse. Anything else starts from the default.
+ */
+export function restorableProvider(saved: string | null, unsupported: readonly CloudProvider[]): SandboxProvider | null {
+  if (!isSandboxProvider(saved)) return null;
+  return isCloudProvider(saved) && unsupported.includes(saved) ? null : saved;
+}
+
+/** After the engine refuses a provider: that choice is disabled, and the form falls back to Anthropic. */
+export function withUnsupported(list: readonly CloudProvider[], provider: CloudProvider): { unsupported: CloudProvider[]; provider: SandboxProvider } {
+  return { unsupported: list.includes(provider) ? [...list] : [...list, provider], provider: 'anthropic' };
+}

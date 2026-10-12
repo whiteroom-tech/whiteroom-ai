@@ -77,3 +77,34 @@ describe("connectionRecipe", () => {
     }
   });
 });
+
+// Pinned byte for byte: cloud providers must not change the Anthropic/OpenAI recipes.
+describe("connectionRecipe is unchanged for Anthropic and OpenAI", () => {
+  it("Anthropic Python", () => {
+    expect(connectionRecipe("anthropic", FLEET, AGENT, "Python")).toBe(`import anthropic
+
+client = anthropic.Anthropic(
+    base_url="https://proxy.whiteroom.ai",
+    default_headers={
+    "x-whiteroom-fleet": "sandbox-abc123",
+    "x-whiteroom-agent": "test-agent"
+}
+)
+# Uses ANTHROPIC_API_KEY from your environment.
+# Use this client for your agent's messages calls.`);
+  });
+
+  it("OpenAI JavaScript", () => {
+    expect(connectionRecipe("openai", FLEET, AGENT, "JavaScript")).toBe(`import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: "https://proxy.whiteroom.ai/v1",
+  defaultHeaders: {
+  "x-whiteroom-fleet": "sandbox-abc123",
+  "x-whiteroom-agent": "test-agent"
+}
+});
+// Uses OPENAI_API_KEY from your environment.
+// Use this client for your agent's chat.completions calls.`);
+  });
+});

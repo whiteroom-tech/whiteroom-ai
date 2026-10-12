@@ -1,10 +1,21 @@
-import { requireSandboxUser, requireSandboxMutation } from "@/lib/sandbox/auth";
-import { createRun, getStatus, toResponse, extractFleetToken } from "@/lib/sandbox/client";
+import { requireSandboxUser, requireSandboxMutation, SANDBOX_ID_RE } from "@/lib/sandbox/auth";
+import { createRun, destroyRun, getStatus, toResponse, extractFleetToken } from "@/lib/sandbox/client";
+import {
+  type CloudProvider,
+  endpointMismatchMessage,
+  isCloudProvider,
+  isEndpointError,
+  isSandboxProvider,
+  isUnsupportedProviderError,
+  PROVIDER_UNSUPPORTED,
+  unsupportedProviderMessage,
+} from "@/lib/sandbox/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_BODY_BYTES = 65_536;
+const MAX_ENDPOINT = 512;
 
 export async function POST(req: Request) {
   const user = await requireSandboxMutation();
@@ -26,9 +37,29 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  if (body.apiKey !== undefined) {
-    if (typeof body.apiKey !== "string" || body.apiKey.length > 256 || !body.apiKey.startsWith("sk-")) {
+  // Anthropic and OpenAI (named or not): an sk- key and no endpoint, as
+  // before. Azure OpenAI, Foundry and Bedrock: the https endpoint only. The
+  // agent keeps its own key, so none is sent for them; the engine checks the
+  // endpoint against its per-provider host rules, and this only bounds what
+  // is forwarded.
+  if (body.provider !== undefined && !isSandboxProvider(body.provider)) {
+    return Response.json({ error: "Invalid request." }, { status: 400 });
+  }
+  const cloud = isCloudProvider(body.provider);
+
+  if (cloud) {
+    if (body.mode !== "connected" || body.apiKey !== undefined ||
+        typeof body.endpoint !== "string" || body.endpoint.length > MAX_ENDPOINT || !isHttpsUrl(body.endpoint)) {
       return Response.json({ error: "Invalid request." }, { status: 400 });
+    }
+  } else {
+    if (body.endpoint !== undefined) {
+      return Response.json({ error: "Invalid request." }, { status: 400 });
+    }
+    if (body.apiKey !== undefined) {
+      if (typeof body.apiKey !== "string" || body.apiKey.length > 256 || !body.apiKey.startsWith("sk-")) {
+        return Response.json({ error: "Invalid request." }, { status: 400 });
+      }
     }
   }
 
@@ -71,8 +102,46 @@ export async function POST(req: Request) {
     customControls: body.customControls as unknown[] | undefined,
     policyMode: body.policyMode as "observe" | "enforce" | undefined,
     mode: body.mode as "demo" | "connected" | undefined,
+    // Only a cloud provider is forwarded, so an Anthropic or OpenAI request
+    // reaches the engine exactly as it did before providers existed.
+    provider: cloud ? (body.provider as CloudProvider) : undefined,
+    endpoint: cloud ? (body.endpoint as string) : undefined,
   }, token);
+
+  if (cloud) {
+    const provider = body.provider as CloudProvider;
+    const data = result.data as { success?: unknown; error?: unknown; sandboxId?: unknown; fleetToken?: unknown; proxyKey?: unknown };
+    if (result.status === 400 && isUnsupportedProviderError(data.error)) {
+      return unsupported(provider);
+    }
+    if (result.status === 400 && isEndpointError(data.error)) {
+      return Response.json({ error: endpointMismatchMessage(provider) }, { status: 400 });
+    }
+    // An engine that predates cloud Sandbox tests ignores provider and makes a
+    // plain test, with no proxy key for the agent to call through. Take it
+    // down again rather than hand back a test that can't pass. Anything else
+    // (including a 200 that carries an error, like "already have an active
+    // sandbox") passes through as the engine sent it.
+    if (data.success === true && typeof data.sandboxId === "string" && typeof data.proxyKey !== "string") {
+      if (SANDBOX_ID_RE.test(data.sandboxId)) {
+        await destroyRun(user.ownerSubject, data.sandboxId, typeof data.fleetToken === "string" ? data.fleetToken : token).catch(() => null);
+      }
+      return unsupported(provider);
+    }
+  }
   return toResponse(result);
+}
+
+function unsupported(provider: CloudProvider) {
+  return Response.json({ error: unsupportedProviderMessage(provider), code: PROVIDER_UNSUPPORTED }, { status: 400 });
+}
+
+function isHttpsUrl(v: string): boolean {
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(req: Request) {

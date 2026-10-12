@@ -104,6 +104,19 @@
 .keyWrap { display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden; }
 .keyWrap .formInput { border:none; border-radius:0; }
 .keyShow { background:var(--sunk); border:none; border-left:1px solid var(--line2); padding:0 12px; font-size:10.5px; font-weight:600; color:var(--tx3); cursor:pointer; white-space:nowrap; font-family:inherit; }
+.choiceGroup { border:none; margin:0 0 14px; padding:0; min-width:0; }
+.choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.choice { position:relative; display:flex; align-items:flex-start; gap:8px; padding:9px 10px; border:1px solid var(--line2); border-radius:6px; background:var(--sunk); cursor:pointer; min-width:0; }
+.choiceOn { border-color:var(--brand); background:var(--brand-dim); }
+.choiceOff { cursor:not-allowed; opacity:.6; }
+.choiceInput { margin:2px 0 0; accent-color:var(--brand); flex:none; }
+.choiceInput:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.choice:has(.choiceInput:focus-visible) { border-color:var(--brand); }
+.choiceText { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.choiceName { font-size:12.5px; font-weight:600; color:var(--tx); }
+.choiceOn .choiceName { color:var(--brand); }
+.choiceSub { font-size:11px; color:var(--tx3); }
+@media(max-width:480px) { .choices { grid-template-columns:minmax(0,1fr); } }
 
 /* ── Code recipe ── */
 .recipe { background:var(--sunk); border:1px solid var(--line); border-radius:6px; padding:14px 16px; font-family:var(--font-mono); font-size:11px; line-height:1.7; color:var(--brand); overflow-x:auto; white-space:pre; margin:10px 0; }
