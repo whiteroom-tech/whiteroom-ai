@@ -42,12 +42,19 @@ export const AGENT_PY_HEADERS = PY_HEADERS;
  * Claude on AWS Bedrock with a Bedrock API key. The Anthropic SDK talks to the
  * proxy URL exactly as it would to Anthropic (it adds /v1/messages and sends
  * the key as x-api-key); WhiteRoom forwards to Bedrock's Messages endpoint in
- * the region the key was connected with. Bedrock model ids carry an
- * anthropic. prefix.
+ * the region the key was connected with. Mantle model ids are anthropic. plus
+ * the model name, with no region prefix or version suffix.
  */
 const BEDROCK_PROXY = `${PROXY_ORIGIN}/<your-proxy-key>`;
-export const BEDROCK_KEY_PLACEHOLDER = '<your-bedrock-api-key>';
-export const BEDROCK_MODEL = 'anthropic.<model-id>';
+const BEDROCK_KEY_PLACEHOLDER = '<your-bedrock-api-key>';
+const BEDROCK_MODEL = 'anthropic.claude-haiku-4-5';
+
+/** The notes under the Bedrock recipe: where the key comes from, region, model ids. */
+export const BEDROCK_NOTES = {
+  key: 'Bedrock console → API keys. Long-term keys start ABSK. Short-term keys (bedrock-api-key-…) expire within 12 hours, so your agent must send a fresh one.',
+  region: 'Use a region where Claude is available on Bedrock.',
+  model: `Use Mantle model ids: anthropic. plus the model name, with no region prefix or version suffix (e.g. ${BEDROCK_MODEL}).`,
+} as const;
 
 export const BEDROCK_LINES = {
   baseUrl: `export ANTHROPIC_BASE_URL=${BEDROCK_PROXY}`,
@@ -60,7 +67,7 @@ client = anthropic.Anthropic(
     ${PY_HEADERS},  # optional if your agent has a system prompt
 )
 client.messages.create(
-    model="${BEDROCK_MODEL}",  # the Bedrock model id
+    model="${BEDROCK_MODEL}",  # Mantle model id
     max_tokens=1024,
     messages=[{"role": "user", "content": "Hello"}],
 )`,
@@ -72,7 +79,7 @@ const client = new Anthropic({
   ${TS_HEADERS}, // optional if your agent has a system prompt
 });
 await client.messages.create({
-  model: "${BEDROCK_MODEL}", // the Bedrock model id
+  model: "${BEDROCK_MODEL}", // Mantle model id
   max_tokens: 1024,
   messages: [{ role: "user", content: "Hello" }],
 });`,

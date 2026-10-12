@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
-import { AGENT_PY_HEADERS, BEDROCK_LINES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { AGENT_PY_HEADERS, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
 
@@ -61,8 +61,9 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   const isAzure = tab === 'azure';
   const isAws = tab === 'aws';
 
-  // The second field means a different thing per tab (Azure URL, AWS region).
-  useEffect(() => { setEndpoint(''); setStatus('idle'); }, [tab]);
+  // Each tab takes a different kind of key and second field (Azure URL, AWS
+  // region), so nothing typed on one carries over to another.
+  useEffect(() => { setValue(''); setEndpoint(''); setMsg(''); setStatus('idle'); }, [tab]);
 
   async function connect(): Promise<boolean> {
     if (previewKeys) return false;
@@ -127,7 +128,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
-              <AgentNaming provider={isAnthropicWire(issued.provider) ? 'anthropic' : 'openai'} />
+              <AgentNaming provider={isAnthropicWire(issued.provider) ? 'anthropic' : 'openai'} claudeCode={issued.provider !== 'bedrock-mantle'} />
             </div>
           </Banner>
         )}
@@ -165,6 +166,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="password"
+                autoComplete="off"
                 aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
                 value={value}
                 onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
@@ -264,10 +266,10 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
                     Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under Provider keys below. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
                   </p>
-                  <AzureStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_ORIGIN}/<your-proxy-key>`} />
-                  <AzureStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
-                  <AzureStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
-                  <AzureStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_ORIGIN}/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`} />
+                  <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_ORIGIN}/<your-proxy-key>`} />
+                  <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                  <RecipeStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
+                  <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_ORIGIN}/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`} />
                 </>
               )}
             </div>
@@ -286,7 +288,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
   );
 }
 
-function AzureStep({ label, code }: { label: string; code: string }) {
+function RecipeStep({ label, code }: { label: string; code: string }) {
   return (
     <div style={{ display: 'grid', gap: 6 }}>
       <span style={{ fontSize: 12, color: 'var(--tx2)' }}>{label}</span>
@@ -308,10 +310,15 @@ function BedrockRecipe() {
   return (
     <>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
-        Add your Bedrock API key (Bedrock console → API keys) and the region your Claude models run in under Provider keys below. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock, keep your Bedrock API key, and use your Bedrock model ids as they are (they start with anthropic.).
+        Add your Bedrock API key and the region your Claude models run in under Provider keys below. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock and keep your Bedrock API key.
       </p>
-      <AzureStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
-      <AzureStep label="Your Bedrock API key is the API key" code={BEDROCK_LINES.apiKey} />
+      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <li>{BEDROCK_NOTES.key}</li>
+        <li>{BEDROCK_NOTES.region}</li>
+        <li>{BEDROCK_NOTES.model}</li>
+      </ul>
+      <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
+      <RecipeStep label="Your Bedrock API key is the API key" code={BEDROCK_LINES.apiKey} />
       <div style={{ display: 'grid', gap: 6 }}>
         <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Or set both on the client</span>
         <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />

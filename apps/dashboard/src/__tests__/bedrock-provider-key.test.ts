@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { bedrockMantleEndpoint, bedrockRegion } from '@/lib/bedrock-endpoint';
 import { PROVIDER_LABELS, isAnthropicWire, issuedEnvHint, providerKeyRequest } from '@/lib/provider-key-form';
-import { AGENT_HEADER, AGENT_PLACEHOLDER, BEDROCK_LINES, PROXY_ORIGIN } from '@/lib/setup';
+import { AGENT_HEADER, AGENT_PLACEHOLDER, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN } from '@/lib/setup';
 import { storeProviderKey } from '@/lib/whiteroom/client';
 
 const BEDROCK_KEY = 'ABSKexampleexampleexampleexample0000';
@@ -43,6 +43,13 @@ describe('providerKeyRequest, AWS Bedrock tab', () => {
       ok: true,
       request: { key: BEDROCK_KEY, endpoint: 'https://bedrock-mantle.us-east-1.api.aws/anthropic', provider: 'bedrock-mantle' },
     });
+  });
+
+  it('accepts a short-term bedrock-api-key- key', () => {
+    const shortTerm = 'bedrock-api-key-exampleexampleexample0000';
+    const check = providerKeyRequest('aws', shortTerm, 'us-west-2');
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.request).toMatchObject({ key: shortTerm, provider: 'bedrock-mantle' });
   });
 
   it('asks for the key, then the region', () => {
@@ -133,13 +140,32 @@ describe('Bedrock recipe', () => {
   });
 
   it('uses Bedrock model ids and the optional agent header', () => {
-    expect(BEDROCK_LINES.python).toContain('model="anthropic.');
-    expect(BEDROCK_LINES.typescript).toContain('model: "anthropic.');
+    expect(BEDROCK_LINES.python).toContain('model="anthropic.claude-haiku-4-5"');
+    expect(BEDROCK_LINES.typescript).toContain('model: "anthropic.claude-haiku-4-5"');
     for (const code of [BEDROCK_LINES.python, BEDROCK_LINES.typescript]) {
       expect(code).toContain(`"${AGENT_HEADER}": "${AGENT_PLACEHOLDER}"`);
       expect(code).toMatch(/optional if your agent has a system prompt/);
     }
     expect(BEDROCK_LINES.python).toContain('default_headers=');
     expect(BEDROCK_LINES.typescript).toContain('defaultHeaders:');
+  });
+
+  it('uses Mantle model ids: no region prefix, no version suffix', () => {
+    for (const code of [BEDROCK_LINES.python, BEDROCK_LINES.typescript, BEDROCK_NOTES.model]) {
+      const ids = code.match(/[\w.-]*anthropic\.claude[\w.:-]*/g) ?? [];
+      expect(ids.length, code).toBeGreaterThan(0);
+      for (const id of ids) {
+        expect(id).toMatch(/^anthropic\./);
+        expect(id).not.toMatch(/-v\d+:\d+$/);
+        expect(id).not.toMatch(/^(us|eu|apac|global|us-gov)\./);
+      }
+    }
+  });
+
+  it('explains Bedrock keys and regions', () => {
+    expect(BEDROCK_NOTES.key).toMatch(/ABSK/);
+    expect(BEDROCK_NOTES.key).toMatch(/bedrock-api-key-/);
+    expect(BEDROCK_NOTES.key).toMatch(/12 hours/);
+    expect(BEDROCK_NOTES.region).toMatch(/region where Claude is available/);
   });
 });
