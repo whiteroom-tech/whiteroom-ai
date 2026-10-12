@@ -14,6 +14,7 @@
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { REASON_LABELS, occurrences, ruleLabel } from '@/lib/governance';
 import { timeAgo } from '@/lib/format';
+import { ROUTES } from '@/lib/routes';
 
 export type { AuditEntry, ToolDetail };
 
@@ -48,6 +49,8 @@ interface EventCopy {
   say: (e: AuditEntry) => string;
   /** Headline subject when the event isn't about one agent. */
   who?: string;
+  /** Where to fix it, shown after the headline. */
+  link?: { href: string; label: string };
 }
 
 /** A payload count worth printing: a whole number above zero, else null. */
@@ -78,6 +81,13 @@ const EVENT_COPY: Record<string, EventCopy> = {
   governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by the ${governancePhrase(e)}` },
   governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by the ${governancePhrase(e)} (Watch only)` },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
+  // Calls WhiteRoom couldn't tie to an agent while the fleet has Pause/Stop or
+  // an Enforce rule on. Fleet-level: there's no agent to name.
+  unnamed_call_refused: {
+    icon: '⚠', tone: 'wouldBlock', code: 'UNN', who: 'WhiteRoom',
+    say: () => 'refused calls from an agent it couldn’t identify (controls are on in this fleet)',
+    link: { href: ROUTES.fleetKey, label: 'How to name an agent' },
+  },
   // Handover health (engine events from Agent Diagnosis Phase 0). Worded so
   // they need neither "watch" nor "shift"; every value comes from the payload.
   handover_loop_detected: {
@@ -300,6 +310,7 @@ export interface EventModel {
   rel: string;
   clock: string;
   watch: string;
+  link?: { href: string; label: string };
 }
 
 /** Stable per-entry key. Falls back when taskId is absent (most non-task events). */
@@ -329,6 +340,7 @@ export function eventModel(e: AuditEntry, now: number = Date.now()): EventModel 
     clock: clockTime(e.timestamp),
     // The shift number, as Runs shows it ("#12"); the UI says shift, not watch.
     watch: e.watchNumber != null ? `#${e.watchNumber}` : '',
+    link: copy?.link,
   };
 }
 
