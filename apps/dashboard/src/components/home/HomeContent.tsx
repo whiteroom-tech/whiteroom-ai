@@ -12,7 +12,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedOverall, sortAgents, stateSummary, todayTotals, usd,
+  afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedOverall, savedOverallHint, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
@@ -197,7 +197,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           <StatCard
             variant="card"
             label="Spend today"
-            hint={HELP.spendToday}
+            hint={saved ? `${HELP.spendToday} ${savedOverallHint(saved)}` : HELP.spendToday}
             value={today ? `${usd(today.costUsd)}${partialMark(!!today.partial)}` : '—'}
             sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved overall →` : todaySub}
             subHref={saved && !todayFailing ? ROUTES.performance : undefined}

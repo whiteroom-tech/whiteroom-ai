@@ -421,12 +421,25 @@ export function parseUsd(s: unknown): number | null {
 /**
  * Home's "saved overall": handover plus prompt-cache savings, the same sum
  * Performance's Savings card shows for its range. Older engines send only the
- * handover figure. partial: some saved tokens or cache reads had no price.
+ * handover figure (cache null). partial: some saved tokens or cache reads had no price.
  */
-export function savedOverall(e: { estimatedCostSaved: string; totalCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): { usd: number; partial: boolean } | null {
+export interface SavedOverall { usd: number; handover: number; cache: number | null; partial: boolean }
+export function savedOverall(e: { estimatedCostSaved: string; cacheCostSaved?: string; totalCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): SavedOverall | null {
+  const handover = parseUsd(e.estimatedCostSaved) ?? 0;
+  const total = parseUsd(e.totalCostSaved);
   // A missing or non-positive total falls back to handover savings alone.
-  const n = parseUsd(e.totalCostSaved) ?? parseUsd(e.estimatedCostSaved);
-  return n == null ? null : { usd: n, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens };
+  const usd = total ?? (handover > 0 ? handover : null);
+  if (usd == null) return null;
+  return { usd, handover, cache: total == null ? null : parseUsd(e.cacheCostSaved) ?? 0, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens };
+}
+
+/** The Spend card's ⓘ line: where "saved overall" comes from, and how it relates to Performance. */
+export function savedOverallHint(s: SavedOverall): string {
+  const plus = s.partial ? '+' : '';
+  const parts = s.cache == null
+    ? `${usd(s.handover)} from smaller handovers`
+    : `${usd(s.handover)} from smaller handovers + ${usd(s.cache)} from prompt caching`;
+  return `Saved overall: est. ${usd(s.usd)}${plus} = ${parts}, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.${s.partial ? ' "+" means some tokens had no price on file.' : ''}`;
 }
 
 /** Holds whose agent is no longer registered (removed while held), oldest first. */
