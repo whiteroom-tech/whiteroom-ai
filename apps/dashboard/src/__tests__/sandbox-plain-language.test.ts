@@ -34,6 +34,21 @@ describe('Sandbox plain language', () => {
     expect(html).not.toMatch(/Route|Evidence|aria-live/);
   });
 
+  it('words the waiting memory and resume checks plainly', () => {
+    const live = (minutesWorked: number) => ({
+      mode: 'connected' as const,
+      agents: [{ agentId: 'a', totalTasks: 1, watchMinutes: 2, currentWatch: { minutesWorked } }],
+    }) as unknown as Parameters<typeof checkGuidance>[2];
+    const waiting = checkGuidance('core.handoff', 'waiting', live(0.5), 'anthropic');
+    expect(waiting.detail).toBe('About 1:30 until WhiteRoom saves a summary.');
+    expect(waiting.action).toBe('Keep your agent making calls. The summary is saved on its own.');
+    expect(checkGuidance('core.handoff', 'waiting', live(2), 'anthropic').detail).toBe('Ready to save a summary. It happens on your agent’s next call.');
+    expect(checkGuidance('core.resume', 'waiting', live(2), 'anthropic').detail).toBe('Happens after the summary is saved.');
+    for (const g of [waiting, checkGuidance('core.resume', 'waiting', live(2), 'anthropic')]) {
+      expect(`${g.detail} ${g.action ?? ''}`).not.toMatch(JARGON);
+    }
+  });
+
   it('names hand-offs and summary problems for what they are', () => {
     expect(eventLabel('handover_out')).toBe('Passed work to another agent');
     expect(eventLabel('handover_in')).toBe('Took over work from another agent');
