@@ -9,35 +9,39 @@ export const SETUP_LINES = {
 
 /** The header that names an agent, and the placeholder the recipes use. */
 export const AGENT_HEADER = 'x-whiteroom-agent';
-export const AGENT_PLACEHOLDER = 'my-agent';
+export const AGENT_PLACEHOLDER = '<agent-name>';
 
-/** The one line that goes with the naming recipes. */
-export const AGENT_NAME_WHY = 'Name each agent so WhiteRoom can apply its controls.';
+/** Title of the collapsed naming recipes: most agents need none of it. */
+export const AGENT_NAME_TITLE = 'Agents without a system prompt';
+export const AGENT_NAME_WHY = 'Agents with a system prompt are named automatically. For one without, send its name in a header:';
 
-/**
- * Shown wherever someone turns on a control (Enforce, Pause, Stop): with one
- * on, the proxy refuses calls it can't tie to an agent.
- */
-export const UNNAMED_CALLS_REFUSED = unnamedCallsRefused('this');
+/** The header itself, language-neutral, shown before the client examples. */
+export const AGENT_HEADER_LINE = `${AGENT_HEADER}: ${AGENT_PLACEHOLDER}`;
 
-/** The same line, naming the control ("While Enforce is on, …"). */
-export function unnamedCallsRefused(control: string): string {
-  return `While ${control} is on, calls that don’t name their agent are refused across this fleet.`;
-}
+const PY_HEADERS = `default_headers={"${AGENT_HEADER}": "${AGENT_PLACEHOLDER}"}`;
+const TS_HEADERS = `defaultHeaders: { "${AGENT_HEADER}": "${AGENT_PLACEHOLDER}" }`;
 
-/**
- * Naming the agent, per client. The SDKs take it as a default header on the
- * client; Claude Code reads extra headers from ANTHROPIC_CUSTOM_HEADERS.
- */
+/** Naming the agent per client: SDKs take a default header on the client. */
 export const AGENT_NAME_LINES = {
-  anthropic: `anthropic.Anthropic(default_headers={"${AGENT_HEADER}": "${AGENT_PLACEHOLDER}"})`,
-  openai: `OpenAI(default_headers={"${AGENT_HEADER}": "${AGENT_PLACEHOLDER}"})`,
-  claudeCode: `export ANTHROPIC_CUSTOM_HEADERS="${AGENT_HEADER}: ${AGENT_PLACEHOLDER}"  # Claude Code`,
+  python: {
+    anthropic: `client = anthropic.Anthropic(${PY_HEADERS})`,
+    openai: `client = openai.OpenAI(${PY_HEADERS})`,
+  },
+  typescript: {
+    anthropic: `const client = new Anthropic({ ${TS_HEADERS} });`,
+    openai: `const client = new OpenAI({ ${TS_HEADERS} });`,
+  },
+  /** Claude Code reads extra headers from ANTHROPIC_CUSTOM_HEADERS. */
+  claudeCode: `export ANTHROPIC_CUSTOM_HEADERS="${AGENT_HEADER_LINE}"`,
 } as const;
 
-/** The naming line for one provider (Azure uses the OpenAI SDK). */
-export function agentNameLine(provider: string): string {
-  return provider === 'anthropic' ? AGENT_NAME_LINES.anthropic : AGENT_NAME_LINES.openai;
-}
+/** The Python header argument, for snippets that build their own client (Azure). */
+export const AGENT_PY_HEADERS = PY_HEADERS;
+
+/** Shown when someone turns on Pause, Stop or a Stop rule in Enforce. */
+export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
+
+/** The ⓘ beside a rule in Enforce. */
+export const UNNAMED_CALLS_ENFORCE = 'Calls from agents WhiteRoom can’t identify are refused fleet-wide while a rule is in Enforce.';
 
 export const SETUP_GUIDE_URL = 'https://whiteroom.tech/docs.html';

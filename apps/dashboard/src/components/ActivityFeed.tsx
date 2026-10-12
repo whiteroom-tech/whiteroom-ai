@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import Link from 'next/link';
 import {
   eventModel,
   eventSubtitle,
@@ -29,6 +30,7 @@ function Headline({ m, open }: { m: EventModel; open: boolean }) {
     <>
       {m.canExpand && <span style={{ color: 'var(--info)' }}>{open ? '▾' : '▸'} </span>}
       <span style={{ fontWeight: 700, color: 'var(--tx)' }}>{m.who}</span> {m.said}
+      {m.link && <> · <Link href={m.link.href} className="wr-link" onClick={(e) => e.stopPropagation()}>{m.link.label}</Link></>}
     </>
   );
 }

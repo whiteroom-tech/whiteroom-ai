@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { Icon, Panel, FONT_MONO } from '@whiteroom/ui';
 import { CopyChip } from '@/components/citadel/CopyChip';
-import { AGENT_NAME_LINES, AGENT_NAME_WHY, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { ROUTES } from '@/lib/routes';
 
 /**
@@ -21,7 +22,7 @@ export function EmptyHome() {
             <div>
               <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600 }}>No agents connected yet</h2>
               <p style={{ margin: '6px 0 0', fontSize: 13.5, lineHeight: 1.55, color: 'var(--tx2)' }}>
-                Point an agent at the WhiteRoom proxy and it appears here on its first call.
+                Point an agent at the WhiteRoom proxy and it appears here on its first call. Nothing else changes in your code.
               </p>
             </div>
             <ol className="wr-steps">
@@ -31,14 +32,9 @@ export function EmptyHome() {
                   {Object.values(SETUP_LINES).map((l) => <CopyChip key={l} text={l} />)}
                 </div>
               </li>
-              <li>
-                <span>{AGENT_NAME_WHY}</span>
-                <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                  {Object.values(AGENT_NAME_LINES).map((l) => <CopyChip key={l} text={l} />)}
-                </div>
-              </li>
               <li><span>Run your agent exactly as before. No CLI commands needed.</span></li>
             </ol>
+            <AgentNaming />
             <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
               Using Azure OpenAI or your own provider key? <Link href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
             </p>
