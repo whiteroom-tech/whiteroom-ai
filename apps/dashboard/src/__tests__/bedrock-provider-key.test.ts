@@ -5,7 +5,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { bedrockMantleEndpoint, bedrockRegion } from '@/lib/bedrock-endpoint';
 import { PROVIDER_LABELS, isAnthropicWire, issuedEnvHint, providerKeyRequest } from '@/lib/provider-key-form';
-import { AGENT_HEADER, AGENT_PLACEHOLDER, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN } from '@/lib/setup';
+import { AGENT_HEADER, AGENT_PLACEHOLDER, BEDROCK_KEY_ENV, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN } from '@/lib/setup';
+import { cloudRecipe } from '@/lib/sandbox/providers';
 import { storeProviderKey } from '@/lib/whiteroom/client';
 
 const BEDROCK_KEY = 'ABSKexampleexampleexampleexample0000';
@@ -127,13 +128,24 @@ describe('Bedrock recipe', () => {
 
   it('points the Anthropic SDK at the proxy URL with the Bedrock API key', () => {
     expect(BEDROCK_LINES.baseUrl).toBe(`export ANTHROPIC_BASE_URL=${proxy}`);
-    expect(BEDROCK_LINES.apiKey).toBe('export ANTHROPIC_API_KEY=<your-bedrock-api-key>');
+    expect(BEDROCK_LINES.apiKey).toBe('export ANTHROPIC_API_KEY="$AWS_BEARER_TOKEN_BEDROCK"');
     expect(BEDROCK_LINES.python).toContain('anthropic.Anthropic(');
     expect(BEDROCK_LINES.python).toContain(`base_url="${proxy}"`);
-    expect(BEDROCK_LINES.python).toContain('api_key="<your-bedrock-api-key>"');
+    expect(BEDROCK_LINES.python).toContain('import os\n');
+    expect(BEDROCK_LINES.python).toContain('api_key=os.environ["AWS_BEARER_TOKEN_BEDROCK"]');
     expect(BEDROCK_LINES.typescript).toContain('new Anthropic({');
     expect(BEDROCK_LINES.typescript).toContain(`baseURL: "${proxy}"`);
-    expect(BEDROCK_LINES.typescript).toContain('apiKey: "<your-bedrock-api-key>"');
+    expect(BEDROCK_LINES.typescript).toContain('apiKey: process.env.AWS_BEARER_TOKEN_BEDROCK');
+  });
+
+  it('reads the Bedrock key from the same variable as the Sandbox recipe', () => {
+    const sandbox = { python: cloudRecipe('bedrock-mantle', proxy, 'a', 'Python'), typescript: cloudRecipe('bedrock-mantle', proxy, 'a', 'JavaScript') };
+    expect(BEDROCK_KEY_ENV).toBe('AWS_BEARER_TOKEN_BEDROCK');
+    expect(sandbox.python).toContain(`api_key=os.environ["${BEDROCK_KEY_ENV}"]`);
+    expect(BEDROCK_LINES.python).toContain(`api_key=os.environ["${BEDROCK_KEY_ENV}"]`);
+    expect(sandbox.typescript).toContain(`apiKey: process.env.${BEDROCK_KEY_ENV}`);
+    expect(BEDROCK_LINES.typescript).toContain(`apiKey: process.env.${BEDROCK_KEY_ENV}`);
+    for (const code of Object.values(BEDROCK_LINES)) expect(code).not.toContain('<your-bedrock-api-key>');
   });
 
   it('leaves /v1 off the base URL, since the SDK adds /v1/messages', () => {

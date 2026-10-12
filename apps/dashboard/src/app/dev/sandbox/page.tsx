@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation';
 import { SandboxPreview } from './preview';
 
-// Sandbox's start step in the shell, with a stand-in session. Local development only: 404 in production.
+// Sandbox in the shell, with a stand-in session. Local development only: 404 in production.
+// ?state=failed shows a live test whose agent's calls the provider refused.
 export const metadata = { title: 'Sandbox preview' };
 
-export default function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
   if (process.env.NODE_ENV === 'production') notFound();
-  return <SandboxPreview />;
+  const { state } = await searchParams;
+  return <SandboxPreview state={state === 'failed' ? 'failed' : undefined} />;
 }

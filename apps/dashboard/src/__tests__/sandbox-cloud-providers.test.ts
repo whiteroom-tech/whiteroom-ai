@@ -17,7 +17,7 @@ const mockHeaders = vi.fn();
 vi.mock('next/headers', () => ({ headers: () => mockHeaders() }));
 
 import {
-  cloudRecipe, cloudStart, restorableProvider, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
+  cloudRecipe, cloudStart, endpointsToStore, endpointToRemember, restorableEndpoints, restorableProvider, saveEndpoints, savedEndpoints, ENDPOINTS_STORAGE, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
   PROXY_KEY_PLACEHOLDER, PROVIDER_UNSUPPORTED, withUnsupported,
 } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from '@/components/sandbox/CloudProviderParts';
@@ -386,5 +386,46 @@ describe('cloud UI parts', () => {
     expect(html(h(CloudTroubleshooting, { provider: 'foundry', endpointHost: 'acme.services.ai.azure.com' }))).toContain('acme.services.ai.azure.com');
     expect(html(h(CloudGoLive, { provider: 'foundry' }))).toContain('can’t be added on Fleet key yet');
     expect(html(h(CloudGoLive, { provider: 'bedrock-mantle' }))).toContain('href="/fleet-key"');
+  });
+});
+
+describe('start form endpoints across a reload', () => {
+  it('keeps the region for Bedrock and the checked address for Azure and Foundry', () => {
+    expect(endpointToRemember('bedrock-mantle', ' EU-West-1 ')).toBe('eu-west-1');
+    expect(endpointToRemember('azure-openai', 'https://acme.cognitiveservices.azure.com/openai/deployments/x')).toBe('https://acme.openai.azure.com');
+    expect(endpointToRemember('foundry', 'https://acme.services.ai.azure.com/anthropic/v1/messages')).toBe('https://acme.services.ai.azure.com/anthropic');
+  });
+
+  it('never keeps anything else that was pasted: query strings, keys, half-typed values', () => {
+    const stored = endpointsToStore({
+      'azure-openai': 'https://acme.openai.azure.com/?api-key=placeholder-secret',
+      foundry: 'sk-ant-placeholder',
+      'bedrock-mantle': 'ABSKplaceholderplaceholder',
+    });
+    expect(stored).not.toContain('placeholder');
+    expect(JSON.parse(stored)).toEqual({ 'azure-openai': 'https://acme.openai.azure.com' });
+    expect(endpointsToStore({ 'bedrock-mantle': 'us-ea' })).toBe('{}');
+  });
+
+  it('round-trips, and drops unreadable or unknown saved values', () => {
+    const saved = endpointsToStore({ 'azure-openai': 'https://acme.openai.azure.com', 'bedrock-mantle': 'us-east-1' });
+    expect(restorableEndpoints(saved)).toEqual({ 'azure-openai': 'https://acme.openai.azure.com', 'bedrock-mantle': 'us-east-1' });
+    expect(restorableEndpoints(null)).toEqual({});
+    expect(restorableEndpoints('not json')).toEqual({});
+    expect(restorableEndpoints('[1,2]')).toEqual({});
+    expect(restorableEndpoints(JSON.stringify({ anthropic: 'x', foundry: 'https://evil.test', 'bedrock-mantle': 7 }))).toEqual({});
+  });
+
+  it('the start form saves to and restores from this browser', () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('window', { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) } });
+    try {
+      expect(savedEndpoints()).toEqual({});
+      saveEndpoints({ 'azure-openai': 'https://acme.openai.azure.com/?api-key=placeholder-secret', 'bedrock-mantle': 'https://bedrock-mantle.us-west-2.api.aws' });
+      expect(store.get(ENDPOINTS_STORAGE)).not.toContain('placeholder');
+      expect(savedEndpoints()).toEqual({ 'azure-openai': 'https://acme.openai.azure.com', 'bedrock-mantle': 'us-west-2' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
