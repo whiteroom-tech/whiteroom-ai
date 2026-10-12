@@ -18,6 +18,12 @@ describe('sandbox steps rail', () => {
     expect(sandboxStep('workspace', { ...base, expired: true })).toBe(3);
     expect(sandboxStep('workspace', { ...base, demo: true })).toBe(3);
   });
+  it('follows the demo walkthrough, one step per scene', () => {
+    expect(sandboxStep('workspace', { ...base, demo: true, allPassed: true, demoScene: 0 })).toBe(1);
+    expect(sandboxStep('workspace', { ...base, demo: true, allPassed: true, demoScene: 1 })).toBe(2);
+    expect(sandboxStep('workspace', { ...base, demo: true, allPassed: true, demoScene: 2 })).toBe(3);
+    expect(sandboxStep('workspace', { ...base, demo: true, expired: true, demoScene: 0 })).toBe(3);
+  });
   it('has the four steps', () => {
     expect(SANDBOX_STEPS.map((x) => x.title)).toEqual(['Start a test', 'Point your agent', 'Run one task', 'Results']);
   });

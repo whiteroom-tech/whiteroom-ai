@@ -69,18 +69,34 @@ const PASSED_RUN: RunStatusResult = {
   ],
 };
 
-/** A live Anthropic test that has seen no calls yet. */
+/** A live Anthropic test that has seen no calls yet. The page has had it open for 10 seconds (SEEN_FOR). */
 const WAITING_RUN: RunStatusResult = {
   sandboxId: 'preview-waiting',
   mode: 'connected',
-  expiresInSeconds: 1740,
+  expiresInSeconds: 1790,
   controls: controls('liveEvidence', 0),
   agents: [],
   auditLog: [],
 };
 
-const PREVIEW_STATES = { failed: FAILED_RUN, demo: DEMO_RUN, passed: PASSED_RUN, waiting: WAITING_RUN } as const;
-export type PreviewState = keyof typeof PREVIEW_STATES;
+/** The same, open for two minutes with no calls: "Nothing happening?" has opened on its own. */
+const IDLE_RUN: RunStatusResult = { ...WAITING_RUN, sandboxId: 'preview-idle', expiresInSeconds: 1680 };
+
+/** How long the page has "seen" each sample test: idle help counts from then, not from a test length. */
+const SEEN_FOR: Partial<Record<PreviewState, number>> = { waiting: 10, idle: 120 };
+
+const PREVIEW_STATES = { failed: FAILED_RUN, demo: DEMO_RUN, passed: PASSED_RUN, waiting: WAITING_RUN, idle: IDLE_RUN } as const;
+/** "empty": the start screen with no past tests. */
+export type PreviewState = keyof typeof PREVIEW_STATES | 'empty';
+
+const PAST_TESTS = [
+  { sandboxId: 's3', destroyedAt: new Date(Date.now() - 3_600_000).toISOString(), overall: 'pass', totalTasks: 4, isTrial: false },
+  { sandboxId: 's2', destroyedAt: new Date(Date.now() - 86_400_000).toISOString(), overall: 'partial', totalTasks: 2, isTrial: false },
+  { sandboxId: 's4', destroyedAt: new Date(Date.now() - 1.5 * 86_400_000).toISOString(), overall: 'empty', totalTasks: 0, isTrial: false },
+  // Recorded before Oct 12: nothing checked was stored as partial. Shown as Not tested.
+  { sandboxId: 's5', destroyedAt: '2026-10-12T10:50:00.000Z', overall: 'partial', totalTasks: 0, isTrial: false },
+  { sandboxId: 's1', destroyedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), overall: 'pass', totalTasks: 6, isTrial: true },
+] as const;
 
 // Renders as a signed-in user without a real session. The local sandbox route
 // has no session behind it, so status checks come back empty and the page
@@ -90,13 +106,9 @@ export function SandboxPreview({ state }: { state?: PreviewState }) {
     <AppShell>
       <TestRunFlow
         previewUserId="preview"
-        previewRun={state ? PREVIEW_STATES[state] : undefined}
-        previewPastTests={[
-          { sandboxId: 's3', destroyedAt: new Date(Date.now() - 3_600_000).toISOString(), overall: 'pass', totalTasks: 4, isTrial: false },
-          { sandboxId: 's2', destroyedAt: new Date(Date.now() - 86_400_000).toISOString(), overall: 'partial', totalTasks: 2, isTrial: false },
-          { sandboxId: 's4', destroyedAt: new Date(Date.now() - 1.5 * 86_400_000).toISOString(), overall: 'empty', totalTasks: 0, isTrial: false },
-          { sandboxId: 's1', destroyedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), overall: 'pass', totalTasks: 6, isTrial: true },
-        ]}
+        previewRun={state && state !== 'empty' ? PREVIEW_STATES[state] : undefined}
+        previewSeenSecondsAgo={state ? SEEN_FOR[state] : undefined}
+        previewPastTests={state === 'empty' ? [] : [...PAST_TESTS]}
       />
     </AppShell>
   );
