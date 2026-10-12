@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
@@ -129,7 +129,7 @@ export function connectionRecipe(provider: DirectProvider, fleetId: string, agen
 }
 
 function connectionVerified(status: RunStatusResult | null) {
-  return status?.mode !== 'demo' && status?.controls?.some(c => c.controlId === 'core.connect' && c.result?.liveEvidence?.status === 'observed');
+  return status?.mode !== 'demo' && status?.controls?.some(c => c.controlId === 'core.connect' && isObserved(status, c));
 }
 
 function diagStage(run: RunStatusResult | null): number {
@@ -206,7 +206,7 @@ export function checkGuidance(controlId: string, status: string | undefined, run
   }
   const handoff = run?.controls?.find(c => c.controlId === 'core.handoff');
   // Demos returned above, so only live evidence matters here.
-  const handoffDone = handoff?.result?.liveEvidence?.status === 'observed';
+  const handoffDone = !!handoff && isObserved(run, handoff);
   if (!handoffDone) return { detail: 'Happens after the summary is saved.' };
   return { detail: 'Waiting for your agent’s next call.', action: 'Keep your agent running for one more call.' };
 }
@@ -331,44 +331,85 @@ function StepsRail({ current }: { current: number }) {
 
 // ── Decisions, kept pure so they can be tested without rendering ──
 
-/** What the page tracks about a live test between status reads. */
-export interface RunSnapshot {
-  id: string;
-  provider: SandboxProvider;
-  /** A call went through WhiteRoom (Connect stage 3 or later). */
-  called: boolean;
-  passed: boolean;
-  /** Every check passed, or the test expired. */
-  ended: boolean;
+type Control = NonNullable<RunStatusResult['controls']>[number];
+
+/** A check's evidence on the track the user watches: demo evidence in a demo, live evidence otherwise. */
+export function evidenceOf(run: RunStatusResult | null, control: Control) {
+  return run?.mode === 'demo' ? control.result?.demoEvidence : control.result?.liveEvidence;
 }
 
-export type SandboxEvent = { name: string; props?: Record<string, string | number | undefined> };
+/** The check passed, on the track the user watches. */
+export function isObserved(run: RunStatusResult | null, control: Control): boolean {
+  return evidenceOf(run, control)?.status === 'observed';
+}
 
 /** Every check observed on the track the user watches (demo or live). */
 export function allChecksPassed(run: RunStatusResult | null): boolean {
   const controls = run?.controls ?? [];
-  return controls.length > 0 && controls.every(c => (run?.mode === 'demo' ? c.result?.demoEvidence : c.result?.liveEvidence)?.status === 'observed');
+  return controls.length > 0 && controls.every(c => isObserved(run, c));
 }
 
-/** A live test's state as the transitions below read it; null for no test or a demo. */
+/** How many checks passed. */
+export function checksPassedCount(run: RunStatusResult | null): number {
+  return (run?.controls ?? []).filter(c => isObserved(run, c)).length;
+}
+
+/** What the page tracks about a test between status reads. Its id never leaves the page. */
+export interface RunSnapshot {
+  id: string;
+  demo: boolean;
+  provider: SandboxProvider;
+  /** A call went through WhiteRoom (Connect stage 3 or later). */
+  called: boolean;
+  passed: boolean;
+  checksPassed: number;
+  expired: boolean;
+  /** sandbox_test_ended went out for this test. */
+  endSent: boolean;
+}
+
+export type SandboxEvent = { name: string; props?: Record<string, string | number | undefined> };
+/** Why the page saw a test end: the user ended it, it ran out of time, or it was gone on the next read. */
+export type EndedBy = 'user' | 'expired' | 'other';
+
+/** A test's state as runTransition reads it; null for no test. */
 export function runSnapshot(run: RunStatusResult | null, provider: SandboxProvider): RunSnapshot | null {
-  if (!run?.sandboxId || run.mode === 'demo') return null;
-  const passed = allChecksPassed(run);
-  return { id: run.sandboxId, provider, called: diagStage(run) >= 3, passed, ended: passed || run.expiresInSeconds === 0 };
+  if (!run?.sandboxId) return null;
+  return {
+    id: run.sandboxId, demo: run.mode === 'demo', provider,
+    called: diagStage(run) >= 3, passed: allChecksPassed(run), checksPassed: checksPassedCount(run),
+    expired: run.expiresInSeconds === 0, endSent: false,
+  };
+}
+
+/** sandbox_test_ended: the mode, how many checks had passed and why it ended. Never an id. */
+export function testEndedEvent(t: Pick<RunSnapshot, 'demo' | 'checksPassed'>, endedBy: EndedBy): SandboxEvent {
+  return { name: 'sandbox_test_ended', props: { mode: t.demo ? 'demo' : 'connected', checks_passed: t.checksPassed, ended_by: endedBy } };
 }
 
 /**
- * From one status read to the next: the analytics events to send and whether
- * to open Checks and focus the results heading. Only rising edges within the
- * same test count, so reopening a finished test sends nothing. Event
- * properties are the provider's name only: never keys, endpoints, ids or agent names.
+ * From one status read to the next: the analytics events to send, whether to
+ * open Checks and focus the results heading, and the snapshot to keep.
+ *
+ * - First call and checks passed: live tests, rising edges within the same
+ *   test only, so reopening a finished test sends nothing.
+ * - Test ended, once per test: when it expires, or when it goes away
+ *   (`next` null or another test) for a known reason (`ending`). A test that
+ *   goes away with no reason (another account signed in) sends nothing.
+ *
+ * Event properties are the mode, the provider's name, a check count and why a
+ * test ended: never keys, endpoints, ids or agent names.
  */
-export function runTransition(prev: RunSnapshot | null, next: RunSnapshot | null): { events: SandboxEvent[]; showResults: boolean } {
-  if (!prev || !next || prev.id !== next.id) return { events: [], showResults: false };
+export function runTransition(prev: RunSnapshot | null, next: RunSnapshot | null, ending?: Exclude<EndedBy, 'expired'>): { events: SandboxEvent[]; showResults: boolean; keep: RunSnapshot | null } {
   const events: SandboxEvent[] = [];
-  if (next.called && !prev.called) events.push({ name: 'sandbox_first_call', props: { provider: next.provider } });
-  if (next.passed && !prev.passed) events.push({ name: 'sandbox_checks_passed', props: { provider: next.provider } });
-  return { events, showResults: next.ended && !prev.ended };
+  if (prev && !prev.endSent && ending && (!next || next.id !== prev.id)) events.push(testEndedEvent(prev, ending));
+  if (!prev || !next || prev.id !== next.id) return { events, showResults: false, keep: next };
+  const keep = { ...next, endSent: prev.endSent };
+  if (!next.demo && next.called && !prev.called) events.push({ name: 'sandbox_first_call', props: { provider: next.provider } });
+  if (!next.demo && next.passed && !prev.passed) events.push({ name: 'sandbox_checks_passed', props: { provider: next.provider } });
+  if (next.expired && !prev.expired && !prev.endSent) { events.push(testEndedEvent(next, 'expired')); keep.endSent = true; }
+  const finished = (x: RunSnapshot) => x.passed || x.expired;
+  return { events, showResults: !next.demo && finished(next) && !finished(prev), keep };
 }
 
 /** sandbox_test_started: the mode, and the provider picked for a live test. */
@@ -376,11 +417,17 @@ export function testStartedEvent(mode: 'demo' | 'connected', provider: SandboxPr
   return { name: 'sandbox_test_started', props: { mode, provider: mode === 'demo' ? undefined : provider } };
 }
 
-/** sandbox_test_ended: the mode and how many checks had passed. */
-export function testEndedEvent(run: RunStatusResult): SandboxEvent {
-  const demo = run.mode === 'demo';
-  const passed = (run.controls ?? []).filter(c => (demo ? c.result?.demoEvidence : c.result?.liveEvidence)?.status === 'observed').length;
-  return { name: 'sandbox_test_ended', props: { mode: demo ? 'demo' : 'connected', checks_passed: passed } };
+/** "Nothing happening?": which test it belongs to, whether it's open, and which test it already opened itself for. */
+export interface HelpState { testId: string | null; open: boolean; autoOpenedFor: string | null }
+export type HelpAction = { type: 'test'; id: string | null } | { type: 'toggle'; open: boolean } | { type: 'autoOpen'; id: string };
+
+/** A new test starts with the help closed and free to open itself once; the same test keeps its state. */
+export function helpReducer(state: HelpState, action: HelpAction): HelpState {
+  switch (action.type) {
+    case 'test': return action.id === state.testId ? state : { testId: action.id, open: false, autoOpenedFor: null };
+    case 'toggle': return state.open === action.open ? state : { ...state, open: action.open };
+    case 'autoOpen': return action.id === state.testId && state.autoOpenedFor !== action.id ? { ...state, open: true, autoOpenedFor: action.id } : state;
+  }
 }
 
 /** A live test that has seen nothing at all: no call reached WhiteRoom, failed or not. */
@@ -427,8 +474,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [provider, setProvider] = useState<Provider>(() => (previewRun && isCloudProvider(previewRun.provider) ? previewRun.provider : 'anthropic'));
   const [language, setLanguage] = useState<Setup>('Python');
   // "Nothing happening?": opened by the user, or once on its own after a minute with no calls.
-  const [troubleOpen, setTroubleOpen] = useState(false);
-  const troubleAutoOpened = useRef<string | null>(null);
+  const [help, helpDispatch] = useReducer(helpReducer, { testId: null, open: false, autoOpenedFor: null });
   const [credential, setCredential] = useState('');
   // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
   const [endpoints, setEndpoints] = useState<CloudEndpoints>({});
@@ -543,10 +589,13 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   // Rising edges seen in this page, per test, so a reload of a finished test
   // doesn't count its first call or its pass again.
   const seen = useRef<RunSnapshot | null>(null);
+  // Why the current test is about to go away, set just before setRun(null).
+  const ending = useRef<Exclude<EndedBy, 'expired'> | undefined>(undefined);
   useEffect(() => {
     const next = runSnapshot(run, testProvider);
-    const { events, showResults } = runTransition(seen.current, next);
-    seen.current = next;
+    const { events, showResults, keep } = runTransition(seen.current, next, ending.current);
+    seen.current = keep;
+    ending.current = undefined;
     events.forEach(track);
     // The test just finished: show its results and move focus to their heading.
     if (showResults) { setWsTab('results'); requestAnimationFrame(() => summaryHeading.current?.focus()); }
@@ -560,11 +609,15 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
   // A live test with no calls for a minute: open "Nothing happening?", once per test.
   useEffect(() => {
-    const delay = idleHelpDelay({ run, firstSeenAt: firstSeen.current?.at ?? null, now: Date.now(), autoOpenedFor: troubleAutoOpened.current });
-    if (delay == null) return;
-    const t = setTimeout(() => { troubleAutoOpened.current = run?.sandboxId ?? null; setTroubleOpen(true); }, delay);
+    const id = run?.sandboxId;
+    const delay = idleHelpDelay({ run, firstSeenAt: firstSeen.current?.at ?? null, now: Date.now(), autoOpenedFor: help.autoOpenedFor });
+    if (!id || delay == null) return;
+    const t = setTimeout(() => helpDispatch({ type: 'autoOpen', id }), delay);
     return () => clearTimeout(t);
-  }, [run, noCalls]);
+  }, [run, noCalls, help.autoOpenedFor]);
+
+  // Each test starts with "Nothing happening?" closed.
+  useEffect(() => { helpDispatch({ type: 'test', id: run?.sandboxId ?? null }); }, [run?.sandboxId]);
 
   // Focus heading on phase change
   useEffect(() => { heading.current?.focus(); }, [phase]);
@@ -629,6 +682,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         if (!st.sandboxId) {
           clearSandboxToken();
           setError('This test session is no longer available. You can start another test; previously exported results remain on your device.');
+          ending.current = 'other';
           setRun(null); setPhase('start'); return;
         }
         setRun(prev => withRunMode(st, prev?.mode)); setLastUpdated(new Date()); setReconnecting(false); failures = 0;
@@ -731,7 +785,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         safeSet('wr_sandbox_token', result.fleetToken);
         window.dispatchEvent(new Event('storage'));
       }
-      analytics.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
       track(testStartedEvent(mode, provider));
       setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : {}) });
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
@@ -776,7 +829,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     // page's last copy: losing the report is worse than one slightly old.
     const latest = await getStatus().catch(() => ({}) as RunStatusResult);
     const report = buildTestReport(reportSource(latest.error ? {} : latest, run));
-    analytics.capture('sandbox_report_exported', { mode: run.mode });
+    track({ name: 'sandbox_report_exported', props: { mode: run.mode } });
     const url = URL.createObjectURL(new Blob([reportHtml(report)], { type: 'text/html' }));
     const a = document.createElement('a'); a.href = url; a.download = reportFileName(report); a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -786,7 +839,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     if (!run?.sandboxId) return;
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
-    track(testEndedEvent(run));
+    ending.current = 'user';
     clearSandboxToken();
     setRun(null); setConfirmEnd(false); setPhase('start');
   });
@@ -815,7 +868,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
   // ── Render checks list ──
   const renderChecks = (controls: NonNullable<RunStatusResult['controls']>) => controls.map(c => {
-    const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
+    const ev = evidenceOf(run, c);
     // The demo walkthrough reveals one check per step.
     const status = isDemo && SANDBOX_CHECKS.findIndex(x => x.id === c.controlId) > scene ? 'unrevealed' : ev?.status;
     const passed = status === 'observed';
@@ -947,14 +1000,14 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {/* Summary banner */}
         {run && (() => {
           const controls = run.controls ?? [];
-          const passed = controls.filter(c => { const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence; return ev?.status === 'observed'; }).length;
+          const passed = checksPassedCount(run);
           const total = controls.length;
           const banner = (tone: string, head: string, rest: string) => (
             <div className={`${s.summary} ${tone}`}><h2 ref={summaryHeading} tabIndex={-1} className={s.summaryHead}>{head}</h2>{rest && ` ${rest}`}</div>
           );
           if (isDemo) return banner('', 'This is a demo.', 'It uses made-up data to show the flow. It doesn’t test your agent.');
           if (allPassed) return banner(s.summaryPass, `All ${total} checks passed.`, 'Your agent works through WhiteRoom.');
-          const nextCheck = controls.find(c => { const ev = c.result?.liveEvidence; return ev?.status !== 'observed'; });
+          const nextCheck = controls.find(c => !isObserved(run, c));
           const nextLabel = nextCheck ? checkLabel(nextCheck.controlId, nextCheck.name).toLowerCase() : '';
           if (failing) return banner(s.summaryFail, `${callCount(failing.count)} failed.`, `${failedCallReason(failing, testProvider)}. See Connect for what to check.`);
           if (passed === 0) return banner('', 'Waiting for your agent.', 'Add the code from Connect, then run your agent.');
@@ -1019,7 +1072,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               ))}
             </div>
 
-            <details open={troubleOpen} onToggle={e => setTroubleOpen(e.currentTarget.open)} style={{ marginTop: 12, fontSize: 12.5, color: 'var(--tx2)' }}>
+            <details open={help.open} onToggle={e => helpDispatch({ type: 'toggle', open: e.currentTarget.open })} style={{ marginTop: 12, fontSize: 12.5, color: 'var(--tx2)' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Nothing happening?</summary>
               <ul style={{ paddingLeft: 18, marginTop: 8, fontSize: 12, color: 'var(--tx3)', lineHeight: 1.7 }}>
                 {liveCloud ? <CloudTroubleshooting provider={liveCloud} endpointHost={run?.endpointHost} /> : <>
@@ -1075,7 +1128,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               if (!run?.sandboxId) return;
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
-              track(testEndedEvent(run));
+              ending.current = 'user';
               clearSandboxToken();
               setRun(null); setConfirmEnd(false);
               setPhase('setup');
