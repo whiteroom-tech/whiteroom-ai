@@ -457,6 +457,13 @@ export function hasNoCalls(run: RunStatusResult | null): boolean {
 }
 
 /** A call reached WhiteRoom, failed or not: a named call registers its agent, an unnamed one is logged as refused. */
+/** A checklist step's state: a failure leads; a step can be done early (step 2, once any call arrives). */
+export function diagStepState(diagShown: number, d: { at: number; fail?: unknown; done?: boolean }): 'fail' | 'done' | 'active' | 'pending' {
+  if (d.fail) return 'fail';
+  if (d.done || diagShown > d.at) return 'done';
+  return diagShown === d.at ? 'active' : 'pending';
+}
+
 export function callArrived(run: RunStatusResult | null): boolean {
   return !!run?.agents?.length || !!run?.auditLog?.some(e => e.type === 'unnamed_call_refused') || !!failedCallsOf(run);
 }
@@ -1092,13 +1099,14 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
             <div className={s.diag}>
               {[
                 { label: 'WhiteRoom is ready', sub: stage >= 1 ? 'Ready for your agent' : 'Checking…', at: 1 },
-                { ...recognizedStep(run, agentId), at: 2 },
+                // Done as soon as any call arrives (even before one succeeds); in progress while waiting.
+                { ...recognizedStep(run, agentId), at: 2, done: callArrived(run) },
                 { label: 'Its first call went through', sub: stage >= 3 ? `Passed through WhiteRoom${failed ? ` · ${callCount(failed.count)} failed` : ''}` : 'Waiting — run one normal task', at: 3, fail: failNotice },
                 { label: 'It got a normal reply', sub: stage >= 4 ? 'Your provider answered as usual' : 'Checks your provider answered', at: 4 },
               ].map((d, i) => (
                 <div className={s.diagStep} key={i}>
-                  <span className={`${s.diagDot} ${d.fail ? s.diagFail : diagShown > d.at ? s.diagDone : diagShown === d.at ? s.diagActive : s.diagPending}`} aria-label={d.fail ? 'Failed' : undefined}>
-                    {d.fail ? diagAlert : diagShown > d.at ? diagCheck : diagShown === d.at ? diagSpinner : null}
+                  <span className={`${s.diagDot} ${{ fail: s.diagFail, done: s.diagDone, active: s.diagActive, pending: s.diagPending }[diagStepState(diagShown, d)]}`} aria-label={d.fail ? 'Failed' : undefined}>
+                    {{ fail: diagAlert, done: diagCheck, active: diagSpinner, pending: null }[diagStepState(diagShown, d)]}
                   </span>
                   <div>
                     <div className={diagShown >= d.at ? s.diagLabel : s.diagLabelPending}>{d.label}</div>

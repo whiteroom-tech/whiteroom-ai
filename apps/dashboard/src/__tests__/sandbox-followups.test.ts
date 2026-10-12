@@ -11,7 +11,7 @@ import type { RunStatusResult } from '@/lib/sandbox/api';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { DEMO_STORY, checkGuidance, callArrived, hasNoCalls, recognizedStep } = await import('@/components/sandbox/TestRunFlow');
+const { DEMO_STORY, checkGuidance, callArrived, connectProgress, diagStepState, hasNoCalls, recognizedStep } = await import('@/components/sandbox/TestRunFlow');
 const { PastTests } = await import('@/components/sandbox/PastTests');
 const { SANDBOX_CHECKS } = await import('@/lib/sandbox/report');
 
@@ -137,6 +137,15 @@ describe('Run your agent: recognized only once it calls', () => {
     expect(hasNoCalls(failed)).toBe(false);
     // Named from the failed call, not the page's placeholder.
     expect(recognizedStep(failed, 'test-agent')).toEqual({ label: 'Your agent is recognized', sub: 'Seen as support-bot' });
+  });
+
+  it('shows step 2 in progress only while waiting, and done once a call arrives', () => {
+    const shown = connectProgress(fresh, 'anthropic').diagShown;
+    expect(diagStepState(shown, { at: 2, done: callArrived(fresh) })).toBe('active');
+    const called = { ...fresh, agents: [{ agentId: 'support-bot', role: 'worker', status: 'active', watchMinutes: 2, watchCount: 0, totalTasks: 0, totalTokens: 0, pairedWith: null, currentWatch: null }] } as unknown as RunStatusResult;
+    expect(diagStepState(connectProgress(called, 'anthropic').diagShown, { at: 2, done: callArrived(called) })).toBe('done');
+    expect(diagStepState(2, { at: 3 })).toBe('pending');
+    expect(diagStepState(3, { at: 3, fail: {} })).toBe('fail');
   });
 
   it('says when the call had no agent name', () => {
