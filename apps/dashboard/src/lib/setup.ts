@@ -38,6 +38,46 @@ export const AGENT_NAME_LINES = {
 /** The Python header argument, for snippets that build their own client (Azure). */
 export const AGENT_PY_HEADERS = PY_HEADERS;
 
+/**
+ * Claude on AWS Bedrock with a Bedrock API key. The Anthropic SDK talks to the
+ * proxy URL exactly as it would to Anthropic (it adds /v1/messages and sends
+ * the key as x-api-key); WhiteRoom forwards to Bedrock's Messages endpoint in
+ * the region the key was connected with. Bedrock model ids carry an
+ * anthropic. prefix.
+ */
+const BEDROCK_PROXY = `${PROXY_ORIGIN}/<your-proxy-key>`;
+export const BEDROCK_KEY_PLACEHOLDER = '<your-bedrock-api-key>';
+export const BEDROCK_MODEL = 'anthropic.<model-id>';
+
+export const BEDROCK_LINES = {
+  baseUrl: `export ANTHROPIC_BASE_URL=${BEDROCK_PROXY}`,
+  apiKey: `export ANTHROPIC_API_KEY=${BEDROCK_KEY_PLACEHOLDER}`,
+  python: `import anthropic
+
+client = anthropic.Anthropic(
+    base_url="${BEDROCK_PROXY}",
+    api_key="${BEDROCK_KEY_PLACEHOLDER}",
+    ${PY_HEADERS},  # optional if your agent has a system prompt
+)
+client.messages.create(
+    model="${BEDROCK_MODEL}",  # the Bedrock model id
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+)`,
+  typescript: `import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: "${BEDROCK_PROXY}",
+  apiKey: "${BEDROCK_KEY_PLACEHOLDER}",
+  ${TS_HEADERS}, // optional if your agent has a system prompt
+});
+await client.messages.create({
+  model: "${BEDROCK_MODEL}", // the Bedrock model id
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello" }],
+});`,
+} as const;
+
 /** Shown when someone turns on Pause, Stop or a Stop rule in Enforce. */
 export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
 

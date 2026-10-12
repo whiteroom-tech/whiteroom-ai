@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
+import { PROVIDER_LABELS, isAnthropicWire, issuedEnvHint, providerKeyRequest } from '@/lib/provider-key-form';
+import type { ProviderTab } from '@/lib/provider-key-form';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { ProviderKey } from '@/lib/whiteroom/types';
@@ -11,7 +12,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
-import { AGENT_PY_HEADERS, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { AGENT_PY_HEADERS, BEDROCK_LINES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
 
@@ -23,15 +24,6 @@ interface Props {
   fleetToken: string | null;
   isNew: boolean;
 }
-
-const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  azure: 'Azure OpenAI',
-  'azure-openai': 'Azure OpenAI',
-};
-
-type ProviderTab = 'direct' | 'azure' | 'aws';
 
 // BYOK: one account can connect several provider keys at once. The engine
 // keeps them per fleet as a list and issues each key its own proxy URL, so an
@@ -67,44 +59,27 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   }, [refresh, previewKeys]);
 
   const isAzure = tab === 'azure';
+  const isAws = tab === 'aws';
+
+  // The second field means a different thing per tab (Azure URL, AWS region).
+  useEffect(() => { setEndpoint(''); setStatus('idle'); }, [tab]);
 
   async function connect(): Promise<boolean> {
     if (previewKeys) return false;
-    const key = value.trim();
-    if (isAzure) {
-      if (key.length < 12) {
-        setStatus('error');
-        setMsg('Enter your Azure API key (from the Azure portal → Keys and Endpoint).');
-        return false;
-      }
-      const ep = endpoint.trim();
-      if (!ep) {
-        setStatus('error');
-        setMsg('Enter your Azure endpoint URL (e.g. https://myresource.openai.azure.com).');
-        return false;
-      }
-      if (!azureOpenAIEndpoint(ep)) {
-        setStatus('error');
-        setMsg('Endpoint must be your Azure resource URL (e.g. https://myresource.openai.azure.com).');
-        return false;
-      }
-    } else {
-      if (!/^sk-/.test(key) || key.length < 12) {
-        setStatus('error');
-        setMsg('That does not look like a provider API key (sk-ant-… for Anthropic, sk-… for OpenAI).');
-        return false;
-      }
+    const check = providerKeyRequest(tab, value, endpoint);
+    if (!check.ok) {
+      setStatus('error'); setMsg(check.error);
+      return false;
     }
+    const req = check.request;
     setStatus('saving'); setMsg('');
     try {
-      const result = isAzure
-        ? await storeProviderKey(auth, key, azureOpenAIEndpoint(endpoint) ?? undefined, 'azure-openai')
-        : await storeProviderKey(auth, key);
+      const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider);
       if (!result.success || !result.proxyUrl) {
         setStatus('error'); setMsg(result.error || 'Could not connect that key.'); return false;
       }
-      const provider = result.provider ?? (isAzure ? 'azure-openai' : key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
-      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? key.slice(-4), provider });
+      const provider = result.provider ?? req.provider ?? (req.key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
+      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider });
       setValue(''); setEndpoint(''); setStatus('idle');
       await refresh();
       await setByok(true);
@@ -133,12 +108,6 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     }
   }
 
-  function issuedEnvHint(p: string, url: string) {
-    if (p === 'azure' || p === 'azure-openai') return `export AZURE_OPENAI_ENDPOINT=${url}`;
-    if (p === 'openai') return `export OPENAI_BASE_URL=${url}/v1`;
-    return `export ANTHROPIC_BASE_URL=${url}`;
-  }
-
   const showForm = adding || keys?.length === 0;
 
   return (
@@ -158,7 +127,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
-              <AgentNaming provider={issued.provider === 'anthropic' ? 'anthropic' : 'openai'} />
+              <AgentNaming provider={isAnthropicWire(issued.provider) ? 'anthropic' : 'openai'} />
             </div>
           </Banner>
         )}
@@ -181,23 +150,25 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
 
         {showForm && (
           <div style={{ display: 'grid', gap: 8 }}>
-            {isAzure && (
+            {(isAzure || isAws) && (
               <input
                 type="text"
-                aria-label="Azure endpoint"
+                aria-label={isAws ? 'Region' : 'Azure endpoint'}
                 value={endpoint}
                 onChange={(e) => { setEndpoint(e.target.value); setStatus('idle'); }}
-                placeholder="Azure endpoint, e.g. https://myresource.openai.azure.com"
+                placeholder={isAws ? 'Region, e.g. us-east-1' : 'Azure endpoint, e.g. https://myresource.openai.azure.com'}
+                autoCapitalize="none"
+                spellCheck={false}
                 className="wr-input"
               />
             )}
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="password"
-                aria-label={isAzure ? 'Azure API key' : 'Provider API key'}
+                aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
                 value={value}
                 onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
-                placeholder={isAzure ? 'Azure API key' : 'sk-ant-… or sk-…'}
+                placeholder={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'sk-ant-… or sk-…'}
                 className="wr-input"
                 style={{ flex: 1, minWidth: 0 }}
               />
@@ -225,7 +196,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
 const PROVIDER_TABS: { value: ProviderTab; label: string; disabled?: boolean }[] = [
   { value: 'direct', label: 'Anthropic or OpenAI' },
   { value: 'azure', label: 'Azure OpenAI' },
-  { value: 'aws', label: 'AWS Bedrock · soon', disabled: true },
+  { value: 'aws', label: 'AWS Bedrock' },
 ];
 
 /** "sk-wr-…7f3a": enough to recognise the key without showing it. */
@@ -286,6 +257,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                   <AgentNaming />
                 </>
+              ) : tab === 'aws' ? (
+                <BedrockRecipe />
               ) : (
                 <>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
@@ -319,5 +292,31 @@ function AzureStep({ label, code }: { label: string; code: string }) {
       <span style={{ fontSize: 12, color: 'var(--tx2)' }}>{label}</span>
       <CopyChip text={code} label={`Copy: ${label}`} />
     </div>
+  );
+}
+
+type Lang = 'python' | 'typescript';
+
+const LANGS: { value: Lang; label: string }[] = [
+  { value: 'python', label: 'Python' },
+  { value: 'typescript', label: 'TypeScript' },
+];
+
+/** Claude on AWS Bedrock: the Anthropic SDK, pointed at the proxy URL with the Bedrock API key. */
+function BedrockRecipe() {
+  const [lang, setLang] = useState<Lang>('python');
+  return (
+    <>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+        Add your Bedrock API key (Bedrock console → API keys) and the region your Claude models run in under Provider keys below. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock, keep your Bedrock API key, and use your Bedrock model ids as they are (they start with anthropic.).
+      </p>
+      <AzureStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
+      <AzureStep label="Your Bedrock API key is the API key" code={BEDROCK_LINES.apiKey} />
+      <div style={{ display: 'grid', gap: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Or set both on the client</span>
+        <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />
+        <CopyChip text={BEDROCK_LINES[lang]} label={`Copy the Bedrock ${lang === 'python' ? 'Python' : 'TypeScript'} client`} />
+      </div>
+    </>
   );
 }
