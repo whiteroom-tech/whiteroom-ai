@@ -103,7 +103,7 @@ export function cloudStart(provider: CloudProvider, rawEndpoint: string): CloudS
   if (provider === 'foundry') {
     const endpoint = foundryEndpoint(raw);
     if (endpoint) return { ok: true, provider, endpoint };
-    return { ok: false, error: /\.(openai|cognitiveservices)\.azure\.com/i.test(raw)
+    return { ok: false, error: isAzureOpenAIHost(raw)
       ? 'Claude on Foundry uses your resource’s services.ai.azure.com address. Copy the Target URI from your Claude deployment.'
       : `Use your resource’s https address, like ${fields.endpointPlaceholder}.` };
   }
@@ -111,9 +111,21 @@ export function cloudStart(provider: CloudProvider, rawEndpoint: string): CloudS
   return endpoint ? { ok: true, provider, endpoint } : { ok: false, error: `Use your resource’s https address, like ${fields.endpointPlaceholder}.` };
 }
 
-/** Where the agent's calls go: the dashboard's proxy URL with the test's proxy key as the first path segment. */
+/** True when the URL's host is an Azure OpenAI or AI Services resource (not the Foundry host). */
+function isAzureOpenAIHost(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  return /^[a-z0-9][a-z0-9-]*\.(openai|cognitiveservices)\.azure\.com$/i.test(url.hostname);
+}
+
+/** Shown in the recipe when this tab has no proxy key for the test. */
 export const PROXY_KEY_PLACEHOLDER = '<your-test-proxy-key>';
 
+/** Where the agent's calls go: the dashboard's proxy URL with the test's proxy key as the first path segment. */
 export function proxyKeyBase(proxyUrl: string, proxyKey: string | null | undefined): string {
   return `${proxyUrl.replace(/\/+$/, '')}/${proxyKey || PROXY_KEY_PLACEHOLDER}`;
 }
@@ -167,6 +179,15 @@ export function isEndpointError(message: unknown): boolean {
 
 export function endpointMismatchMessage(provider: CloudProvider): string {
   return `That endpoint doesn’t match ${SANDBOX_PROVIDER_LABELS[provider]}. Check it and try again.`;
+}
+
+/**
+ * The provider to restore from storage on load: a known one that this page
+ * hasn't seen the engine refuse. Anything else starts from the default.
+ */
+export function restorableProvider(saved: string | null, unsupported: readonly CloudProvider[]): SandboxProvider | null {
+  if (!isSandboxProvider(saved)) return null;
+  return isCloudProvider(saved) && unsupported.includes(saved) ? null : saved;
 }
 
 /** After the engine refuses a provider: that choice is disabled, and the form falls back to Anthropic. */

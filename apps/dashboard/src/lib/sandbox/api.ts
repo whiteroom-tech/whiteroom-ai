@@ -113,6 +113,17 @@ export function forgetProxyKey(): void {
   safeSessionRemove(PROXY_KEY_STORAGE);
 }
 
+export type ShownProxyKey = { sandboxId: string; proxyKey: string } | null;
+
+/**
+ * The proxy key a tab shows after a storage event: dropped (a new null value,
+ * so the page re-renders) when another tab rotated this test's key, otherwise
+ * unchanged.
+ */
+export function proxyKeyAfterStorageEvent(current: ShownProxyKey, key: string | null, newValue: string | null): ShownProxyKey {
+  return key === PROXY_KEY_ROTATED && current && rotatedFor(newValue, current.sandboxId) ? null : current;
+}
+
 /** True when a PROXY_KEY_ROTATED value is about this test. */
 export function rotatedFor(value: string | null, sandboxId: string | undefined): boolean {
   return !!sandboxId && !!value && value.startsWith(`${sandboxId}:`);

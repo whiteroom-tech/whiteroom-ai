@@ -6,14 +6,14 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, PROXY_KEY_ROTATED, rotatedFor, saveProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type DirectProvider, isCloudProvider, isSandboxProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, type SandboxProvider, withUnsupported } from '@/lib/sandbox/providers';
+import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { type CloudProvider, cloudRecipe, cloudStart, type DirectProvider, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withUnsupported } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
-import { safeGet, safeSet } from '@/lib/safe-storage';
+import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
@@ -204,7 +204,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const [endpointError, setEndpointError] = useState('');
   const [unsupported, setUnsupported] = useState<CloudProvider[]>([]);
   // The proxy key issued for one test, so it can't show against another.
-  const [issued, setIssued] = useState<{ sandboxId: string; proxyKey: string } | null>(null);
+  const [shownKey, setShownKey] = useState<ShownProxyKey>(null);
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [booting, setBooting] = useState(true);
@@ -229,7 +229,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const keyKind = detectKey(credential);
   // A cloud test's agent calls through its proxy key: the one this tab keeps
   // for the test, else the one issued in this page (storage may be blocked).
-  const proxyKey = loadProxyKey(run?.sandboxId) ?? (run?.sandboxId && issued?.sandboxId === run.sandboxId ? issued.proxyKey : null);
+  const proxyKey = run?.sandboxId && shownKey?.sandboxId === run.sandboxId ? shownKey.proxyKey : null;
   const cloud = isCloudProvider(provider) ? provider : null;
   // Demos and Anthropic/OpenAI tests use the fleet-header recipe, as before.
   const directProvider: DirectProvider = provider === 'openai' ? 'openai' : 'anthropic';
@@ -256,15 +256,26 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   // Remember the provider for this test so a reload shows the right code.
   useEffect(() => {
     const saved = safeGet('wr_sandbox_provider');
-    if (isSandboxProvider(saved)) setProvider(saved);
+    const restored = restorableProvider(saved, []);
+    if (restored) setProvider(restored);
   }, []);
+
+  // Load this tab's proxy key for the test; keep one issued in this page if
+  // storage is unavailable.
+  useEffect(() => {
+    const id = run?.sandboxId;
+    const stored = loadProxyKey(id);
+    setShownKey(prev => (id && stored ? { sandboxId: id, proxyKey: stored } : prev?.sandboxId === id ? prev : null));
+  }, [run?.sandboxId]);
 
   // Another tab replaced this test's proxy key: the one shown here is dead.
   useEffect(() => {
+    const id = run?.sandboxId;
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== PROXY_KEY_ROTATED || !rotatedFor(e.newValue, run?.sandboxId)) return;
+      if (!id || proxyKeyAfterStorageEvent({ sandboxId: id, proxyKey: '' }, e.key, e.newValue) !== null) return;
       forgetProxyKey();
-      setIssued(null);
+      // A new null value when a key was shown, so the recovery notice appears.
+      setShownKey(prev => proxyKeyAfterStorageEvent(prev, e.key, e.newValue));
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -419,9 +430,6 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
       // A cloud test sends only its endpoint: the agent keeps its own key.
       const pastedToken = mode === 'connected' && !target && keyKind === 'fleet' ? pasted : undefined;
       const apiKey = mode === 'connected' && !target && (keyKind === 'anthropic' || keyKind === 'openai') ? pasted : undefined;
-      if (mode === 'connected') {
-        safeSet('wr_sandbox_provider', provider);
-      }
       const opts = { mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' as const };
       let created;
       try {
@@ -432,6 +440,8 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
           const next = withUnsupported(unsupported, target.provider);
           setUnsupported(next.unsupported);
           setProvider(next.provider);
+          // Never come back to a refused provider on reload.
+          if (safeGet('wr_sandbox_provider') === target.provider) safeRemove('wr_sandbox_provider');
         }
         throw e;
       }
@@ -439,9 +449,11 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
       // this test only, and never put in the run data or analytics.
       const { proxyKey: issuedProxyKey, ...result } = created;
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
+      // Remembered only once the engine accepted it, so a reload shows the right code.
+      if (mode === 'connected') safeSet('wr_sandbox_provider', provider);
       if (issuedProxyKey) {
         saveProxyKey(result.sandboxId, issuedProxyKey);
-        setIssued({ sandboxId: result.sandboxId, proxyKey: issuedProxyKey });
+        setShownKey({ sandboxId: result.sandboxId, proxyKey: issuedProxyKey });
       }
       if (result.fleetToken) {
         // Guarded: storage that throws (privacy modes) mustn't fail a run that was created.
@@ -480,7 +492,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     const r = await newProxyKey(run.sandboxId);
     if (!r.proxyKey) throw new Error(r.error ?? 'Could not get a new proxy URL. Retry.');
     saveProxyKey(run.sandboxId, r.proxyKey);
-    setIssued({ sandboxId: run.sandboxId, proxyKey: r.proxyKey });
+    setShownKey({ sandboxId: run.sandboxId, proxyKey: r.proxyKey });
     announceProxyKeyRotation(run.sandboxId);
   });
 

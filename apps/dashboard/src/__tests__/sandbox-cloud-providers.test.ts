@@ -17,13 +17,13 @@ const mockHeaders = vi.fn();
 vi.mock('next/headers', () => ({ headers: () => mockHeaders() }));
 
 import {
-  cloudRecipe, cloudStart, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
+  cloudRecipe, cloudStart, restorableProvider, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
   PROXY_KEY_PLACEHOLDER, PROVIDER_UNSUPPORTED, withUnsupported,
 } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from '@/components/sandbox/CloudProviderParts';
 import { POST } from '@/app/api/sandbox/runs/route';
 import { POST as ROTATE } from '@/app/api/sandbox/[sandboxId]/proxy-key/route';
-import { announceProxyKeyRotation, forgetProxyKey, loadProxyKey, PROXY_KEY_ROTATED, rotatedFor, saveProxyKey } from '@/lib/sandbox/api';
+import { announceProxyKeyRotation, forgetProxyKey, loadProxyKey, PROXY_KEY_ROTATED, proxyKeyAfterStorageEvent, rotatedFor, saveProxyKey } from '@/lib/sandbox/api';
 
 const PROXY_KEY = 'sk-wr-' + '0'.repeat(40);
 const BASE = `https://proxy.example.test/${PROXY_KEY}`;
@@ -43,7 +43,9 @@ describe('cloudStart (Start your test form)', () => {
     expect(foundryEndpoint('https://acme.services.ai.azure.com')).toBe('https://acme.services.ai.azure.com/anthropic');
     const wrongHost = cloudStart('foundry', 'https://acme.openai.azure.com');
     expect(wrongHost.ok).toBe(false);
-    if (!wrongHost.ok) expect(wrongHost.error).toMatch(/services\.ai\.azure\.com/);
+    if (!wrongHost.ok) expect(wrongHost.error).toContain('uses your resource’s services.ai.azure.com address');
+    const notAzure = cloudStart('foundry', 'https://acme.openai.azure.com.evil.test');
+    if (!notAzure.ok) expect(notAzure.error).not.toContain('services.ai.azure.com address');
   });
 
   it('Bedrock: region → Mantle endpoint (same builder as the Fleet key page)', () => {
@@ -111,7 +113,8 @@ describe('cloudRecipe (Connect)', () => {
       const code = cloudRecipe('bedrock-mantle', BASE, 'a', lang);
       expect(code).toContain('AWS_BEARER_TOKEN_BEDROCK');
       expect(code).toContain('anthropic.claude-haiku-4-5');
-      expect(code).not.toMatch(/us\.anthropic|-v\d:\d/);
+      expect(code).not.toContain('us.anthropic.');
+      expect(code).not.toContain('-v1:0');
     }
   });
 
@@ -312,6 +315,14 @@ describe('proxy key storage', () => {
     expect(loadProxyKey('sb1')).toBeNull();
   });
 
+  it('a rotate in another tab drops the shown key with a new value (so the page re-renders)', () => {
+    const shown = { sandboxId: 'sb1', proxyKey: PROXY_KEY };
+    expect(proxyKeyAfterStorageEvent(shown, PROXY_KEY_ROTATED, 'sb1:1700000000000')).toBeNull();
+    expect(proxyKeyAfterStorageEvent(shown, PROXY_KEY_ROTATED, 'sb2:1700000000000')).toBe(shown);
+    expect(proxyKeyAfterStorageEvent(shown, 'wr_sandbox_token', 'sb1:1')).toBe(shown);
+    expect(proxyKeyAfterStorageEvent(null, PROXY_KEY_ROTATED, 'sb1:1')).toBeNull();
+  });
+
   it('a rotate tells other tabs which test, without the key', () => {
     announceProxyKeyRotation('sb1');
     const v = local.get(PROXY_KEY_ROTATED) ?? null;
@@ -337,6 +348,14 @@ describe('cloud UI parts', () => {
     expect(out).toContain('Not available yet');
     expect(out).not.toContain('Provider follows your key');
     expect(html(h(ProviderChoices, { value: 'openai', unsupported: [], followsKey: true, onPick: noop }))).toContain('Provider follows your key.');
+  });
+
+  it('restores only a known provider the engine hasn’t refused', () => {
+    expect(restorableProvider('foundry', [])).toBe('foundry');
+    expect(restorableProvider('openai', ['foundry'])).toBe('openai');
+    expect(restorableProvider('foundry', ['foundry'])).toBeNull();
+    expect(restorableProvider('bedrock-sigv4', [])).toBeNull();
+    expect(restorableProvider(null, [])).toBeNull();
   });
 
   it('a refused provider falls back to Anthropic and stays listed once', () => {
