@@ -69,7 +69,7 @@ const PASSED_RUN: RunStatusResult = {
   ],
 };
 
-/** A live Anthropic test that has seen no calls yet, 10 seconds in. */
+/** A live Anthropic test that has seen no calls yet. The page has had it open for 10 seconds (SEEN_FOR). */
 const WAITING_RUN: RunStatusResult = {
   sandboxId: 'preview-waiting',
   mode: 'connected',
@@ -79,8 +79,11 @@ const WAITING_RUN: RunStatusResult = {
   auditLog: [],
 };
 
-/** The same, two minutes in: "Nothing happening?" has opened on its own. */
+/** The same, open for two minutes with no calls: "Nothing happening?" has opened on its own. */
 const IDLE_RUN: RunStatusResult = { ...WAITING_RUN, sandboxId: 'preview-idle', expiresInSeconds: 1680 };
+
+/** How long the page has "seen" each sample test: idle help counts from then, not from a test length. */
+const SEEN_FOR: Partial<Record<PreviewState, number>> = { waiting: 10, idle: 120 };
 
 const PREVIEW_STATES = { failed: FAILED_RUN, demo: DEMO_RUN, passed: PASSED_RUN, waiting: WAITING_RUN, idle: IDLE_RUN } as const;
 /** "empty": the start screen with no past tests. */
@@ -104,6 +107,7 @@ export function SandboxPreview({ state }: { state?: PreviewState }) {
       <TestRunFlow
         previewUserId="preview"
         previewRun={state && state !== 'empty' ? PREVIEW_STATES[state] : undefined}
+        previewSeenSecondsAgo={state ? SEEN_FOR[state] : undefined}
         previewPastTests={state === 'empty' ? [] : [...PAST_TESTS]}
       />
     </AppShell>

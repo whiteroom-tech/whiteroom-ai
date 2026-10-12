@@ -24,10 +24,8 @@ type Language = 'Python' | 'JavaScript';
 /** Connect's setup choice: client code in a language, or environment variables only. */
 type Setup = Language | 'env';
 
-/** Tests last 30 minutes (the engine's default; the dashboard doesn't ask for another). */
-const TEST_SECONDS = 30 * 60;
-/** "Nothing happening?" opens on its own after this long with no calls. */
-const IDLE_HELP_AFTER_SECONDS = 60;
+/** "Nothing happening?" opens on its own after a live test has gone this long with no calls. */
+export const IDLE_HELP_AFTER_MS = 60_000;
 
 const WORKSPACE_TABS: { id: WorkspaceTab; label: string }[] = [
   { id: 'setup', label: 'Connect' },
@@ -331,13 +329,93 @@ function StepsRail({ current }: { current: number }) {
   );
 }
 
-export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
+// ── Decisions, kept pure so they can be tested without rendering ──
+
+/** What the page tracks about a live test between status reads. */
+export interface RunSnapshot {
+  id: string;
+  provider: SandboxProvider;
+  /** A call went through WhiteRoom (Connect stage 3 or later). */
+  called: boolean;
+  passed: boolean;
+  /** Every check passed, or the test expired. */
+  ended: boolean;
+}
+
+export type SandboxEvent = { name: string; props?: Record<string, string | number | undefined> };
+
+/** Every check observed on the track the user watches (demo or live). */
+export function allChecksPassed(run: RunStatusResult | null): boolean {
+  const controls = run?.controls ?? [];
+  return controls.length > 0 && controls.every(c => (run?.mode === 'demo' ? c.result?.demoEvidence : c.result?.liveEvidence)?.status === 'observed');
+}
+
+/** A live test's state as the transitions below read it; null for no test or a demo. */
+export function runSnapshot(run: RunStatusResult | null, provider: SandboxProvider): RunSnapshot | null {
+  if (!run?.sandboxId || run.mode === 'demo') return null;
+  const passed = allChecksPassed(run);
+  return { id: run.sandboxId, provider, called: diagStage(run) >= 3, passed, ended: passed || run.expiresInSeconds === 0 };
+}
+
+/**
+ * From one status read to the next: the analytics events to send and whether
+ * to open Checks and focus the results heading. Only rising edges within the
+ * same test count, so reopening a finished test sends nothing. Event
+ * properties are the provider's name only: never keys, endpoints, ids or agent names.
+ */
+export function runTransition(prev: RunSnapshot | null, next: RunSnapshot | null): { events: SandboxEvent[]; showResults: boolean } {
+  if (!prev || !next || prev.id !== next.id) return { events: [], showResults: false };
+  const events: SandboxEvent[] = [];
+  if (next.called && !prev.called) events.push({ name: 'sandbox_first_call', props: { provider: next.provider } });
+  if (next.passed && !prev.passed) events.push({ name: 'sandbox_checks_passed', props: { provider: next.provider } });
+  return { events, showResults: next.ended && !prev.ended };
+}
+
+/** sandbox_test_started: the mode, and the provider picked for a live test. */
+export function testStartedEvent(mode: 'demo' | 'connected', provider: SandboxProvider): SandboxEvent {
+  return { name: 'sandbox_test_started', props: { mode, provider: mode === 'demo' ? undefined : provider } };
+}
+
+/** sandbox_test_ended: the mode and how many checks had passed. */
+export function testEndedEvent(run: RunStatusResult): SandboxEvent {
+  const demo = run.mode === 'demo';
+  const passed = (run.controls ?? []).filter(c => (demo ? c.result?.demoEvidence : c.result?.liveEvidence)?.status === 'observed').length;
+  return { name: 'sandbox_test_ended', props: { mode: demo ? 'demo' : 'connected', checks_passed: passed } };
+}
+
+/** A live test that has seen nothing at all: no call reached WhiteRoom, failed or not. */
+export function hasNoCalls(run: RunStatusResult | null): boolean {
+  return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0 && diagStage(run) < 2 && !failedCallsOf(run);
+}
+
+/**
+ * When "Nothing happening?" should open on its own: milliseconds from now
+ * (0 = now), or null for not at all. Idle time runs from when this page first
+ * saw the test (the status carries no start time), and it opens once per test.
+ */
+export function idleHelpDelay(o: { run: RunStatusResult | null; firstSeenAt: number | null; now: number; autoOpenedFor: string | null }): number | null {
+  if (!hasNoCalls(o.run) || o.firstSeenAt == null || o.autoOpenedFor === o.run?.sandboxId) return null;
+  return Math.max(0, o.firstSeenAt + IDLE_HELP_AFTER_MS - o.now);
+}
+
+/** One workspace tab's panel, linked to its tab in WorkspaceTabs. */
+export function WorkspacePanel({ tab, active, children }: { tab: WorkspaceTab; active: boolean; children: React.ReactNode }) {
+  return (
+    <div className={`${s.panel} ${active ? s.panelActive : ''}`} role="tabpanel" id={`sandbox-panel-${tab}`} aria-labelledby={`sandbox-tab-${tab}`} tabIndex={0} hidden={!active}>
+      {children}
+    </div>
+  );
+}
+
+export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previewSeenSecondsAgo }: {
   /** /dev/sandbox only: render as this signed-in user without a real session. */
   previewUserId?: string;
   /** /dev/sandbox only: sample Past tests. */
   previewPastTests?: PastTest[];
   /** /dev/sandbox only: show this test in the workspace instead of asking the engine. */
   previewRun?: RunStatusResult;
+  /** /dev/sandbox only: how long ago this page "first saw" the sample test, in seconds. */
+  previewSeenSecondsAgo?: number;
 } = {}) {
   const live = useSession();
   const session = previewUserId ? { user: { id: previewUserId } } : live.data;
@@ -403,16 +481,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const noCode = language === 'env' ? noCodeSetup(testProvider, { proxyUrl: PROXY_URL, base: proxyKeyBase(PROXY_URL, proxyKey), fleetId }) : null;
   const { stage, failed, failing, failNotice, diagShown } = connectProgress(run, testProvider);
   const activityHeader = activitySummary(run);
-  const allPassed = (run?.controls ?? []).every(c => {
-    const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
-    return ev?.status === 'observed';
-  }) && (run?.controls?.length ?? 0) > 0;
-  const checksPassed = (run?.controls ?? []).filter(c => (isDemo ? c.result?.demoEvidence : c.result?.liveEvidence)?.status === 'observed').length;
+  const allPassed = allChecksPassed(run);
   // Analytics never carry keys, endpoints, fleet or test ids, or agent names. The /dev preview sends none.
-  const track = useCallback((event: string, props?: Record<string, unknown>) => { if (!previewUserId) analytics.capture(event, props); }, [previewUserId]);
-  // A live test that has seen nothing at all: no call reached WhiteRoom, failed or not.
-  const noCalls = !!run?.sandboxId && !isDemo && !expired && stage < 2 && !failed;
-  const idleLongEnough = displaySeconds != null && TEST_SECONDS - displaySeconds >= IDLE_HELP_AFTER_SECONDS;
+  const track = useCallback((e: SandboxEvent) => { if (!previewUserId) analytics.capture(e.name, e.props); }, [previewUserId]);
+  const noCalls = hasNoCalls(run);
 
   // The provider follows the pasted key; a fleet token doesn't say, so the
   // user picks it.
@@ -465,33 +537,34 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   useEffect(() => {
     if (opened.current || authStatus !== 'authenticated') return;
     opened.current = true;
-    track('sandbox_opened');
+    track({ name: 'sandbox_opened' });
   }, [authStatus, track]);
 
   // Rising edges seen in this page, per test, so a reload of a finished test
   // doesn't count its first call or its pass again.
-  const seen = useRef<{ id?: string; called: boolean; passed: boolean; ended: boolean }>({ called: false, passed: false, ended: false });
+  const seen = useRef<RunSnapshot | null>(null);
   useEffect(() => {
-    const id = run?.sandboxId;
-    if (!id || isDemo) return;
-    const called = stage >= 3;
-    const ended = allPassed || !!expired;
-    const prev = seen.current;
-    seen.current = { id, called, passed: allPassed, ended };
-    if (prev.id !== id) return;
-    if (called && !prev.called) track('sandbox_first_call', { provider: testProvider });
-    if (allPassed && !prev.passed) track('sandbox_checks_passed', { provider: testProvider });
+    const next = runSnapshot(run, testProvider);
+    const { events, showResults } = runTransition(seen.current, next);
+    seen.current = next;
+    events.forEach(track);
     // The test just finished: show its results and move focus to their heading.
-    if (ended && !prev.ended) { setWsTab('results'); requestAnimationFrame(() => summaryHeading.current?.focus()); }
-  }, [run?.sandboxId, isDemo, stage, allPassed, expired, testProvider, track]);
+    if (showResults) { setWsTab('results'); requestAnimationFrame(() => summaryHeading.current?.focus()); }
+  }, [run, testProvider, track]);
 
-  // A live test with no calls after a minute: open "Nothing happening?", once per test.
+  // When this page first saw the current live test (client clock): the status carries no start time.
+  const firstSeen = useRef<{ id: string; at: number } | null>(null);
+  if (run?.sandboxId && firstSeen.current?.id !== run.sandboxId) {
+    firstSeen.current = { id: run.sandboxId, at: Date.now() - (previewSeenSecondsAgo ?? 0) * 1000 };
+  }
+
+  // A live test with no calls for a minute: open "Nothing happening?", once per test.
   useEffect(() => {
-    const id = run?.sandboxId;
-    if (!id || !noCalls || !idleLongEnough || troubleAutoOpened.current === id) return;
-    troubleAutoOpened.current = id;
-    setTroubleOpen(true);
-  }, [run?.sandboxId, noCalls, idleLongEnough]);
+    const delay = idleHelpDelay({ run, firstSeenAt: firstSeen.current?.at ?? null, now: Date.now(), autoOpenedFor: troubleAutoOpened.current });
+    if (delay == null) return;
+    const t = setTimeout(() => { troubleAutoOpened.current = run?.sandboxId ?? null; setTroubleOpen(true); }, delay);
+    return () => clearTimeout(t);
+  }, [run, noCalls]);
 
   // Focus heading on phase change
   useEffect(() => { heading.current?.focus(); }, [phase]);
@@ -659,7 +732,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         window.dispatchEvent(new Event('storage'));
       }
       analytics.capture('sandbox_created', { mode, provider: mode === 'demo' ? undefined : provider });
-      track('sandbox_test_started', { mode, provider: mode === 'demo' ? undefined : provider });
+      track(testStartedEvent(mode, provider));
       setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : {}) });
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
       if (mode === 'demo') {
@@ -713,7 +786,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     if (!run?.sandboxId) return;
     const result = await destroyRun(run.sandboxId);
     if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
-    track('sandbox_test_ended', { mode: run.mode, checks_passed: checksPassed });
+    track(testEndedEvent(run));
     clearSandboxToken();
     setRun(null); setConfirmEnd(false); setPhase('start');
   });
@@ -892,7 +965,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
         <WorkspaceTabs value={wsTab} onChange={setWsTab} />
 
         {/* ── Setup tab ── */}
-        <div className={`${s.panel} ${wsTab === 'setup' ? s.panelActive : ''}`} role="tabpanel" id="sandbox-panel-setup" aria-labelledby="sandbox-tab-setup" tabIndex={0}>
+        <WorkspacePanel tab="setup" active={wsTab === 'setup'}>
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
           <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your API key stays where it is.</p>
           <div className={s.selectRow}>
@@ -958,10 +1031,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
               </ul>
             </details>
           </>}
-        </div>
+        </WorkspacePanel>
 
         {/* ── Results tab ── */}
-        <div className={`${s.panel} ${wsTab === 'results' ? s.panelActive : ''}`} role="tabpanel" id="sandbox-panel-results" aria-labelledby="sandbox-tab-results" tabIndex={0}>
+        <WorkspacePanel tab="results" active={wsTab === 'results'}>
           {isDemo && (
             <div className={s.card} style={{ marginBottom: 16 }}>
               <div className={s.eyebrow}>DEMO WALKTHROUGH</div>
@@ -1002,7 +1075,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
               if (!run?.sandboxId) return;
               const result = await destroyRun(run.sandboxId);
               if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
-              track('sandbox_test_ended', { mode: 'demo', checks_passed: checksPassed });
+              track(testEndedEvent(run));
               clearSandboxToken();
               setRun(null); setConfirmEnd(false);
               setPhase('setup');
@@ -1010,13 +1083,13 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
           </div>}
 
           <p className={s.small} style={{ marginTop: 12 }}>These checks show your agent works through WhiteRoom. They don’t check that its answers are correct. Use them to help decide, not as a certificate.</p>
-        </div>
+        </WorkspacePanel>
 
         {/* ── Activity tab ── */}
-        <div className={`${s.panel} ${wsTab === 'activity' ? s.panelActive : ''}`} role="tabpanel" id="sandbox-panel-activity" aria-labelledby="sandbox-tab-activity" tabIndex={0}>
+        <WorkspacePanel tab="activity" active={wsTab === 'activity'}>
           {activityHeader && <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{activityHeader}</p>}
           {renderActivity()}
-        </div>
+        </WorkspacePanel>
 
         {/* Test actions, on every tab. On Checks, a passed live test's card already offers the report. */}
         {run && <div className={s.btnRow}>
