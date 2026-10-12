@@ -148,24 +148,29 @@ describe('Sandbox analytics and status changes', () => {
 
 describe('Nothing happening?', () => {
   const t0 = 1_000_000;
+  // A fresh live test as the engine reports it: no agent yet, "Test started" already logged.
+  const fresh = (o: Partial<RunStatusResult> = {}) => live({ agents: [], auditLog: [{ id: 'f', timestamp: '2026-10-12T10:00:00Z', type: 'fleet_created', agentId: 'system' }], ...o });
   it('opens a minute after the page first saw a live test with no calls', () => {
-    expect(idleHelpDelay({ run: live(), firstSeenAt: t0, now: t0 + 10_000, autoOpenedFor: null })).toBe(IDLE_HELP_AFTER_MS - 10_000);
-    expect(idleHelpDelay({ run: live(), firstSeenAt: t0, now: t0 + 120_000, autoOpenedFor: null })).toBe(0);
+    expect(idleHelpDelay({ run: fresh(), firstSeenAt: t0, now: t0 + 10_000, autoOpenedFor: null })).toBe(IDLE_HELP_AFTER_MS - 10_000);
+    expect(idleHelpDelay({ run: fresh(), firstSeenAt: t0, now: t0 + 120_000, autoOpenedFor: null })).toBe(0);
   });
 
   it('does not depend on how long the test lasts', () => {
     // A 10-minute test, just started: still a minute to go.
-    expect(idleHelpDelay({ run: live({ expiresInSeconds: 600 }), firstSeenAt: t0, now: t0, autoOpenedFor: null })).toBe(IDLE_HELP_AFTER_MS);
+    expect(idleHelpDelay({ run: fresh({ expiresInSeconds: 600 }), firstSeenAt: t0, now: t0, autoOpenedFor: null })).toBe(IDLE_HELP_AFTER_MS);
   });
 
   it('stays shut once opened, after any call, in a demo, or once the test ended', () => {
     const base = { firstSeenAt: t0, now: t0 + 120_000, autoOpenedFor: null };
-    expect(idleHelpDelay({ ...base, run: live(), autoOpenedFor: 'live-1' })).toBeNull();
+    expect(idleHelpDelay({ ...base, run: fresh(), autoOpenedFor: 'live-1' })).toBeNull();
     expect(idleHelpDelay({ ...base, run: live(called) })).toBeNull();
-    expect(idleHelpDelay({ ...base, run: live({ failedCalls: { count: 1, last: { at: '', agentId: 'a', status: 401, reason: 'upstream_error', message: '' } } }) })).toBeNull();
-    expect(idleHelpDelay({ ...base, run: live({ mode: 'demo' }) })).toBeNull();
-    expect(idleHelpDelay({ ...base, run: live({ expiresInSeconds: 0 }) })).toBeNull();
-    expect(hasNoCalls(live())).toBe(true);
+    // An agent that has called, even with no reply yet, or an unnamed call that was refused.
+    expect(idleHelpDelay({ ...base, run: live() })).toBeNull();
+    expect(idleHelpDelay({ ...base, run: fresh({ auditLog: [{ id: 'u', timestamp: '2026-10-12T10:00:00Z', type: 'unnamed_call_refused', agentId: 'system' }] }) })).toBeNull();
+    expect(idleHelpDelay({ ...base, run: fresh({ failedCalls: { count: 1, last: { at: '', agentId: 'a', status: 401, reason: 'upstream_error', message: '' } } }) })).toBeNull();
+    expect(idleHelpDelay({ ...base, run: fresh({ mode: 'demo' }) })).toBeNull();
+    expect(idleHelpDelay({ ...base, run: fresh({ expiresInSeconds: 0 }) })).toBeNull();
+    expect(hasNoCalls(fresh())).toBe(true);
   });
 });
 

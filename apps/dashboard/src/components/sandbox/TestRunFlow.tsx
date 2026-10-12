@@ -431,9 +431,16 @@ export function helpReducer(state: HelpState, action: HelpAction): HelpState {
   }
 }
 
-/** A live test that has seen nothing at all: no call reached WhiteRoom, failed or not. */
+/**
+ * A live test that has seen nothing at all: no call reached WhiteRoom, failed
+ * or not. Every test logs "Test started" when it's created, so the activity
+ * log alone can't say whether a call arrived: a named call registers its
+ * agent, and an unnamed one is logged as refused.
+ */
 export function hasNoCalls(run: RunStatusResult | null): boolean {
-  return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0 && diagStage(run) < 2 && !failedCallsOf(run);
+  return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0
+    && !(run.agents?.length) && !run.auditLog?.some(e => e.type === 'unnamed_call_refused')
+    && !failedCallsOf(run);
 }
 
 /**
