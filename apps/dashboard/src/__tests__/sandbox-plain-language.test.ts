@@ -36,7 +36,9 @@ describe('Sandbox plain language', () => {
 
   it('says what the memory check found in plain words', () => {
     const run = { mode: 'connected' as const, auditLog: [{ id: 'h', timestamp: '2026-10-12T10:00:00Z', type: 'self_handover', agentId: 'a' }] };
-    expect(checkGuidance('core.handoff', 'observed', run, 'anthropic').detail).toBe('Saved a summary 1 time and kept its context.');
+    expect(checkGuidance('core.handoff', 'observed', run, 'anthropic').detail).toBe('Saved a summary once and kept its context.');
+    // Passed with no matching log entry (e.g. a truncated log): no invented count.
+    expect(checkGuidance('core.handoff', 'observed', { mode: 'connected' as const, auditLog: [] }, 'anthropic').detail).toBe('Kept its context.');
     expect(checkGuidance('core.resume', 'observed', run, 'anthropic').detail).toBe('Its next call after the summary worked.');
   });
 

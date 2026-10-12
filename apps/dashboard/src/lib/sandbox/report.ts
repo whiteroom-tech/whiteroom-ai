@@ -17,7 +17,8 @@ const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
 export function memoryCheckDetail(log: readonly { type: string }[]): string {
   const summaries = log.filter((e) => SUMMARY_TYPES.has(e.type)).length;
   const handoffs = log.filter((e) => PARTNER_TYPES.has(e.type)).length;
-  const saved = summaries || !handoffs ? `Saved a summary ${summaries || 1} time${summaries > 1 ? 's' : ''} and kept its context.` : 'Kept its context.';
+  // With no matching log entry (e.g. a truncated log), don't claim a count.
+  const saved = summaries ? `Saved a summary ${times(summaries)} and kept its context.` : 'Kept its context.';
   return handoffs ? `${saved} Passed work to another agent ${times(handoffs)}.` : saved;
 }
 
@@ -117,7 +118,8 @@ export function summaryText(r: TestReport): string {
   const parts = [`${names} made ${r.calls} call${r.calls === 1 ? '' : 's'} through WhiteRoom${r.calls > 1 ? ` over ${spanText(r.firstCallAt, r.lastCallAt)}` : ''}, and they came back normally.`];
   if (handoff.result === 'failed') return [...parts, `When its memory filled up, saving a summary didn’t complete${why(handoff)}.`].join(' ');
   if (handoff.result !== 'passed') return [...parts, 'Its memory hadn’t filled up by the time of this report, so saving a summary wasn’t checked.'].join(' ');
-  if (r.handovers || !r.partnerHandoffs) parts.push(`When its memory filled up, WhiteRoom saved a summary ${times(r.handovers || 1)}, keeping its context compact.`);
+  if (r.handovers) parts.push(`When its memory filled up, WhiteRoom saved a summary ${times(r.handovers)}, keeping its context compact.`);
+  else if (!r.partnerHandoffs) parts.push('When its memory filled up, it kept its context.');
   if (r.partnerHandoffs) parts.push(`It passed work to another agent ${times(r.partnerHandoffs)}${r.handovers ? '' : ', keeping its context compact'}.`);
   parts.push(resume.result === 'passed' ? 'The agent carried on from where it left off.'
     : resume.result === 'failed' ? `Its next call after the summary didn’t work${why(resume)}.`
