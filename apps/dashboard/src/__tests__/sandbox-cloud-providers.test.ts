@@ -5,6 +5,8 @@
 // the test's proxy key. All placeholders; no real keys.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createElement as h } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/whiteroom/client', () => ({ PROXY_URL: 'https://proxy.example.test' }));
@@ -15,12 +17,13 @@ const mockHeaders = vi.fn();
 vi.mock('next/headers', () => ({ headers: () => mockHeaders() }));
 
 import {
-  cloudRecipe, cloudStart, foundryEndpoint, isUnsupportedProviderError, providerSummary, proxyKeyBase,
-  PROXY_KEY_PLACEHOLDER, PROVIDER_UNSUPPORTED,
+  cloudRecipe, cloudStart, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
+  PROXY_KEY_PLACEHOLDER, PROVIDER_UNSUPPORTED, withUnsupported,
 } from '@/lib/sandbox/providers';
+import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from '@/components/sandbox/CloudProviderParts';
 import { POST } from '@/app/api/sandbox/runs/route';
 import { POST as ROTATE } from '@/app/api/sandbox/[sandboxId]/proxy-key/route';
-import { loadProxyKey, saveProxyKey } from '@/lib/sandbox/api';
+import { announceProxyKeyRotation, forgetProxyKey, loadProxyKey, PROXY_KEY_ROTATED, rotatedFor, saveProxyKey } from '@/lib/sandbox/api';
 
 const PROXY_KEY = 'sk-wr-' + '0'.repeat(40);
 const BASE = `https://proxy.example.test/${PROXY_KEY}`;
@@ -81,7 +84,11 @@ describe('cloudRecipe (Connect)', () => {
     const py = cloudRecipe('azure-openai', BASE, 'a', 'Python');
     expect(py).toContain(`base_url="${BASE}/openai/v1"`);
     expect(py).toContain('api_key=os.environ["AZURE_OPENAI_API_KEY"]');
-    expect(py).toContain(`AzureOpenAI(\n    azure_endpoint="${BASE}"`);
+    expect(py).toContain(`azure_client = AzureOpenAI(\n    azure_endpoint="${BASE}"`);
+    expect(py.match(/^client = /gm)).toHaveLength(1);
+    expect(py).toContain('# Option A');
+    expect(py).toContain('# Option B');
+    expect(py).toContain("Responses API calls aren't tested yet.");
     expect(py).toContain('api_version="2024-10-21"');
     const js = cloudRecipe('azure-openai', BASE, 'a', 'JavaScript');
     expect(js).toContain(`baseURL: "${BASE}/openai/v1"`);
@@ -96,6 +103,7 @@ describe('cloudRecipe (Connect)', () => {
     expect(py).toContain('ANTHROPIC_FOUNDRY_API_KEY');
     const js = cloudRecipe('foundry', BASE, 'a', 'JavaScript');
     expect(js).toContain(`new Anthropic({\n  baseURL: "${BASE}",`);
+    expect(py).toContain('Using AnthropicFoundry? Pass base_url= (above) instead of resource=.');
   });
 
   it('Bedrock: Anthropic SDK, Bedrock API key, anthropic.<model> ids', () => {
@@ -118,6 +126,14 @@ describe('providerSummary', () => {
     expect(providerSummary('azure-openai', 'acme.openai.azure.com')).toBe('Azure OpenAI · acme.openai.azure.com');
     expect(providerSummary('foundry', null)).toBe('Claude on Azure (Foundry)');
     expect(providerSummary('anthropic', 'ignored.example')).toBe('Anthropic');
+  });
+});
+
+describe('isEndpointError', () => {
+  it('matches provider/endpoint refusals only', () => {
+    expect(isEndpointError('Provider "azure-openai" requires an endpoint')).toBe(true);
+    expect(isEndpointError('Invalid endpoint: must use https')).toBe(true);
+    expect(isEndpointError('Unknown provider "x"')).toBe(false);
   });
 });
 
@@ -147,10 +163,11 @@ describe('POST /api/sandbox/runs', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('WR_SANDBOX_SERVICE_SECRET', 'placeholder-service-secret');
     mockAuth.mockResolvedValue({ user: { id: 'u1' } });
     mockHeaders.mockResolvedValue(new Map([['origin', 'https://app.example.test'], ['host', 'app.example.test']]));
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   it('Anthropic/OpenAI: the engine request is exactly as before (no provider, no endpoint)', async () => {
     for (const apiKey of ['sk-ant-placeholder', 'sk-proj-placeholder']) {
@@ -228,13 +245,32 @@ describe('POST /api/sandbox/runs', () => {
     expect((await res.json()).code).toBe(PROVIDER_UNSUPPORTED);
     expect(engineBodies()[1]).toMatchObject({ action: 'destroy_sandbox', sandbox_id: 'sb9', user_id: 'dashboard:u1' });
     expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer wr_placeholder');
+    expect(fetchMock.mock.calls[1][1].headers['x-wr-sandbox-secret']).toBe('placeholder-service-secret');
+  });
+
+  it('a 200 that carries an engine error passes through, with no cleanup', async () => {
+    engineReplies({ body: { error: 'You already have an active sandbox. End it first.' } });
+    const res = await post({ mode: 'connected', provider: 'foundry', endpoint: 'https://acme.services.ai.azure.com/anthropic' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ error: 'You already have an active sandbox. End it first.' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    'Provider "foundry" requires an endpoint — its hostname carries your own resource or region.',
+    'Invalid endpoint: host not allowed for foundry',
+  ])('an endpoint refusal (%s) becomes a plain message', async (engineError) => {
+    engineReplies({ status: 400, body: { error: engineError } });
+    const res = await post({ mode: 'connected', provider: 'foundry', endpoint: 'https://acme.services.ai.azure.com/anthropic' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'That endpoint doesn’t match Claude on Azure (Foundry). Check it and try again.' });
   });
 
   it('other engine refusals pass through unchanged', async () => {
-    engineReplies({ status: 400, body: { error: 'Invalid endpoint: host not allowed' } });
+    engineReplies({ status: 429, body: { error: 'Too many tests. Try again in a minute.' } });
     const res = await post({ mode: 'connected', provider: 'azure-openai', endpoint: 'https://acme.openai.azure.com' });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'Invalid endpoint: host not allowed' });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'Too many tests. Try again in a minute.' });
   });
 
   it('POST /api/sandbox/[id]/proxy-key asks the engine for a fresh key for this owner', async () => {
@@ -248,27 +284,87 @@ describe('POST /api/sandbox/runs', () => {
 });
 
 describe('proxy key storage', () => {
+  const local = new Map<string, string>();
+  const session = new Map<string, string>();
+  const area = (m: Map<string, string>) => ({
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => { m.set(k, v); },
+    removeItem: (k: string) => { m.delete(k); },
+  });
   beforeEach(() => {
-    const store = new Map<string, string>();
-    vi.stubGlobal('window', {
-      localStorage: {
-        getItem: (k: string) => store.get(k) ?? null,
-        setItem: (k: string, v: string) => { store.set(k, v); },
-        removeItem: (k: string) => { store.delete(k); },
-      },
-    });
+    local.clear(); session.clear();
+    vi.stubGlobal('window', { localStorage: area(local), sessionStorage: area(session) });
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('is kept for its own test only', () => {
+  it('lives in sessionStorage, for its own test only', () => {
     saveProxyKey('sb1', PROXY_KEY);
+    expect([...local.keys()]).toEqual([]);
     expect(loadProxyKey('sb1')).toBe(PROXY_KEY);
     expect(loadProxyKey('sb2')).toBeNull();
     expect(loadProxyKey(undefined)).toBeNull();
+    forgetProxyKey();
+    expect(loadProxyKey('sb1')).toBeNull();
   });
 
   it('ignores anything that is not a WhiteRoom proxy key', () => {
     saveProxyKey('sb1', 'not-a-proxy-key');
     expect(loadProxyKey('sb1')).toBeNull();
+  });
+
+  it('a rotate tells other tabs which test, without the key', () => {
+    announceProxyKeyRotation('sb1');
+    const v = local.get(PROXY_KEY_ROTATED) ?? null;
+    expect(v).not.toContain('sk-wr-');
+    expect(rotatedFor(v, 'sb1')).toBe(true);
+    expect(rotatedFor(v, 'sb10')).toBe(false);
+    expect(rotatedFor(v, undefined)).toBe(false);
+  });
+});
+
+describe('cloud UI parts', () => {
+  const html = (el: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(el);
+  const noop = () => {};
+
+  it('provider choices are named radios; a refused provider is disabled and says so', () => {
+    const out = html(h(ProviderChoices, { value: 'anthropic', unsupported: ['foundry'], onPick: noop }));
+    expect(out).toContain('<fieldset');
+    expect(out).toContain('Where your agent’s model runs');
+    expect(out.match(/type="radio"/g)).toHaveLength(5);
+    expect(out.match(/disabled=""/g)).toHaveLength(1);
+    const foundry = out.match(/<input[^>]*value="foundry"[^>]*>/)?.[0] ?? '';
+    expect(foundry).toContain('disabled');
+    expect(out).toContain('Not available yet');
+    expect(out).not.toContain('Provider follows your key');
+    expect(html(h(ProviderChoices, { value: 'openai', unsupported: [], followsKey: true, onPick: noop }))).toContain('Provider follows your key.');
+  });
+
+  it('a refused provider falls back to Anthropic and stays listed once', () => {
+    expect(withUnsupported([], 'bedrock-mantle')).toEqual({ unsupported: ['bedrock-mantle'], provider: 'anthropic' });
+    expect(withUnsupported(['bedrock-mantle'], 'bedrock-mantle').unsupported).toEqual(['bedrock-mantle']);
+  });
+
+  it('endpoint field: help by default, the error (aria-invalid) when there is one', () => {
+    const help = html(h(CloudEndpointField, { provider: 'bedrock-mantle', value: '', error: '', onChange: noop, onSubmit: noop }));
+    expect(help).toContain('AWS region');
+    expect(help).toContain('IAM credentials aren’t supported here.');
+    expect(help).not.toContain('aria-invalid');
+    const bad = html(h(CloudEndpointField, { provider: 'azure-openai', value: 'x', error: 'Use your resource’s https address.', onChange: noop, onSubmit: noop }));
+    expect(bad).toContain('aria-invalid="true"');
+    expect(bad).toContain('Use your resource’s https address.');
+  });
+
+  it('the recovery notice offers a new proxy URL and warns the old one stops', () => {
+    const out = html(h(ProxyKeyNotice, { onRecover: noop }));
+    expect(out).toContain('Get a new proxy URL');
+    expect(out).toContain('Your agent’s current URL stops working as soon as you do.');
+    expect(html(h(ProxyKeyNotice, { onRecover: noop, disabled: true }))).toContain('disabled=""');
+  });
+
+  it('troubleshooting and go-live copy per provider', () => {
+    expect(html(h(CloudTroubleshooting, { provider: 'azure-openai' }))).toContain('/openai/v1');
+    expect(html(h(CloudTroubleshooting, { provider: 'foundry', endpointHost: 'acme.services.ai.azure.com' }))).toContain('acme.services.ai.azure.com');
+    expect(html(h(CloudGoLive, { provider: 'foundry' }))).toContain('can’t be added on Fleet key yet');
+    expect(html(h(CloudGoLive, { provider: 'bedrock-mantle' }))).toContain('href="/fleet-key"');
   });
 });

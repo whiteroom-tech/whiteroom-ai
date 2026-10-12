@@ -2,7 +2,9 @@ import { requireSandboxUser, requireSandboxMutation, SANDBOX_ID_RE } from "@/lib
 import { createRun, destroyRun, getStatus, toResponse, extractFleetToken } from "@/lib/sandbox/client";
 import {
   type CloudProvider,
+  endpointMismatchMessage,
   isCloudProvider,
+  isEndpointError,
   isSandboxProvider,
   isUnsupportedProviderError,
   PROVIDER_UNSUPPORTED,
@@ -108,15 +110,20 @@ export async function POST(req: Request) {
 
   if (cloud) {
     const provider = body.provider as CloudProvider;
-    const data = result.data as { error?: unknown; sandboxId?: unknown; fleetToken?: unknown; proxyKey?: unknown };
+    const data = result.data as { success?: unknown; error?: unknown; sandboxId?: unknown; fleetToken?: unknown; proxyKey?: unknown };
     if (result.status === 400 && isUnsupportedProviderError(data.error)) {
       return unsupported(provider);
     }
+    if (result.status === 400 && isEndpointError(data.error)) {
+      return Response.json({ error: endpointMismatchMessage(provider) }, { status: 400 });
+    }
     // An engine that predates cloud Sandbox tests ignores provider and makes a
-    // plain test bound to this key, with no proxy key for the agent to call
-    // through. Take it down again rather than hand back a test that can't pass.
-    if (result.status < 300 && typeof data.proxyKey !== "string") {
-      if (typeof data.sandboxId === "string" && SANDBOX_ID_RE.test(data.sandboxId)) {
+    // plain test, with no proxy key for the agent to call through. Take it
+    // down again rather than hand back a test that can't pass. Anything else
+    // (including a 200 that carries an error, like "already have an active
+    // sandbox") passes through as the engine sent it.
+    if (data.success === true && typeof data.sandboxId === "string" && typeof data.proxyKey !== "string") {
+      if (SANDBOX_ID_RE.test(data.sandboxId)) {
         await destroyRun(user.ownerSubject, data.sandboxId, typeof data.fleetToken === "string" ? data.fleetToken : token).catch(() => null);
       }
       return unsupported(provider);

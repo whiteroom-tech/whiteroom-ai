@@ -64,8 +64,8 @@ export const CLOUD_FIELDS: Record<CloudProvider, {
   'bedrock-mantle': {
     endpointLabel: 'AWS region',
     endpointPlaceholder: 'us-east-1',
-    endpointHelp: 'The region your Claude models run in, as shown in the Bedrock console. Your agent calls with a Bedrock API key (Bedrock console → API keys).',
-    keyNote: 'Your agent keeps using its Bedrock API key. You don’t paste it here.',
+    endpointHelp: 'The region your Claude models run in, as shown in the Bedrock console.',
+    keyNote: 'This test needs a Bedrock API key (Bedrock console → API keys). IAM credentials aren’t supported here. Your agent keeps its key; you don’t paste it here.',
   },
 };
 
@@ -136,13 +136,13 @@ export function cloudRecipe(provider: CloudProvider, base: string, agentId: stri
   if (provider === 'azure-openai') {
     const v1 = `${base}/openai/v1`;
     return language === 'Python'
-      ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(\n    base_url=${q(v1)},\n    api_key=os.environ["AZURE_OPENAI_API_KEY"],\n    default_headers=${py}\n)\n# Use this client for your agent's chat.completions calls,\n# with your Azure deployment name as the model.\n\n# Or, if your agent uses the AzureOpenAI client:\nfrom openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    azure_endpoint=${q(base)},\n    api_version=${q(AZURE_API_VERSION)},\n    default_headers=${py}\n)\n# Uses AZURE_OPENAI_API_KEY from your environment.`
-      : `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${q(v1)},\n  apiKey: process.env.AZURE_OPENAI_API_KEY,\n  defaultHeaders: ${js}\n});\n// Use this client for your agent's chat.completions calls,\n// with your Azure deployment name as the model.\n\n// Or, if your agent uses the AzureOpenAI client:\nimport { AzureOpenAI } from 'openai';\n\nconst azureClient = new AzureOpenAI({\n  endpoint: ${q(base)},\n  apiVersion: ${q(AZURE_API_VERSION)},\n  defaultHeaders: ${js}\n});\n// Uses AZURE_OPENAI_API_KEY from your environment.`;
+      ? `# Option A: the OpenAI client\nimport os\nfrom openai import OpenAI\n\nclient = OpenAI(\n    base_url=${q(v1)},\n    api_key=os.environ["AZURE_OPENAI_API_KEY"],\n    default_headers=${py}\n)\n# Use this client for your agent's chat.completions calls,\n# with your Azure deployment name as the model.\n# Responses API calls aren't tested yet.\n\n# Option B: if your agent uses the AzureOpenAI client\nfrom openai import AzureOpenAI\n\nazure_client = AzureOpenAI(\n    azure_endpoint=${q(base)},\n    api_version=${q(AZURE_API_VERSION)},\n    default_headers=${py}\n)\n# Uses AZURE_OPENAI_API_KEY from your environment.`
+      : `// Option A: the OpenAI client\nimport OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${q(v1)},\n  apiKey: process.env.AZURE_OPENAI_API_KEY,\n  defaultHeaders: ${js}\n});\n// Use this client for your agent's chat.completions calls,\n// with your Azure deployment name as the model.\n// Responses API calls aren't tested yet.\n\n// Option B: if your agent uses the AzureOpenAI client\nimport { AzureOpenAI } from 'openai';\n\nconst azureClient = new AzureOpenAI({\n  endpoint: ${q(base)},\n  apiVersion: ${q(AZURE_API_VERSION)},\n  defaultHeaders: ${js}\n});\n// Uses AZURE_OPENAI_API_KEY from your environment.`;
   }
 
   const env = provider === 'foundry' ? 'ANTHROPIC_FOUNDRY_API_KEY' : 'AWS_BEARER_TOKEN_BEDROCK';
   const model = provider === 'foundry'
-    ? { py: '# with your Foundry deployment name as the model.', js: '// with your Foundry deployment name as the model.' }
+    ? { py: '# with your Foundry deployment name as the model.\n# Using AnthropicFoundry? Pass base_url= (above) instead of resource=.', js: '// with your Foundry deployment name as the model.\n// Using AnthropicFoundry? Pass baseURL (above) instead of resource.' }
     : { py: '# with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.', js: '// with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.' };
   return language === 'Python'
     ? `import os\nimport anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${q(base)},\n    api_key=os.environ["${env}"],\n    default_headers=${py}\n)\n# Use this client for your agent's messages calls,\n${model.py}`
@@ -158,4 +158,18 @@ export const PROVIDER_UNSUPPORTED = 'provider_unsupported';
 
 export function unsupportedProviderMessage(provider: CloudProvider): string {
   return `Tests with ${SANDBOX_PROVIDER_LABELS[provider]} aren’t available yet. Use an Anthropic or OpenAI key for now.`;
+}
+
+/** The engine's refusals of an endpoint for its provider (wrong host shape, not allowed). */
+export function isEndpointError(message: unknown): boolean {
+  return typeof message === 'string' && /^(Provider "|Invalid endpoint)/.test(message);
+}
+
+export function endpointMismatchMessage(provider: CloudProvider): string {
+  return `That endpoint doesn’t match ${SANDBOX_PROVIDER_LABELS[provider]}. Check it and try again.`;
+}
+
+/** After the engine refuses a provider: that choice is disabled, and the form falls back to Anthropic. */
+export function withUnsupported(list: readonly CloudProvider[], provider: CloudProvider): { unsupported: CloudProvider[]; provider: SandboxProvider } {
+  return { unsupported: list.includes(provider) ? [...list] : [...list, provider], provider: 'anthropic' };
 }

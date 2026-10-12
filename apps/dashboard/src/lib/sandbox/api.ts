@@ -1,4 +1,4 @@
-import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
+import { safeGet, safeRemove, safeSessionGet, safeSessionRemove, safeSessionSet, safeSet } from '@/lib/safe-storage';
 import type { CloudProvider } from '@/lib/sandbox/providers';
 import type {
   ControlDefinition,
@@ -85,24 +85,44 @@ function sandboxToken(): string | null {
  */
 export function clearSandboxToken(): void {
   safeRemove('wr_sandbox_token');
-  safeRemove(PROXY_KEY_STORAGE);
+  safeSessionRemove(PROXY_KEY_STORAGE);
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
 }
 
 // A cloud test's proxy key is returned once, when the test starts. It is kept
-// beside the sandbox token, for the same test only, so a reload still shows
-// the agent's address; it goes when the token does.
+// in this tab's sessionStorage, for the same test only, so a reload still
+// shows the agent's address; it goes when the sandbox token does. Another tab
+// gets its own with "Get a new proxy URL".
 const PROXY_KEY_STORAGE = 'wr_sandbox_proxy_key';
 
+// Not a secret: which test's proxy key was last replaced, and when. Written to
+// localStorage so other tabs hear it (a storage event) and drop their old key.
+export const PROXY_KEY_ROTATED = 'wr_sandbox_proxy_key_rotated';
+
 export function saveProxyKey(sandboxId: string, proxyKey: string): void {
-  safeSet(PROXY_KEY_STORAGE, JSON.stringify({ sandboxId, proxyKey }));
+  safeSessionSet(PROXY_KEY_STORAGE, JSON.stringify({ sandboxId, proxyKey }));
+}
+
+/** After a rotate: tell other tabs their copy of this test's key is dead. */
+export function announceProxyKeyRotation(sandboxId: string): void {
+  safeSet(PROXY_KEY_ROTATED, `${sandboxId}:${Date.now()}`);
+}
+
+/** Drops this tab's key, e.g. because another tab replaced it. */
+export function forgetProxyKey(): void {
+  safeSessionRemove(PROXY_KEY_STORAGE);
+}
+
+/** True when a PROXY_KEY_ROTATED value is about this test. */
+export function rotatedFor(value: string | null, sandboxId: string | undefined): boolean {
+  return !!sandboxId && !!value && value.startsWith(`${sandboxId}:`);
 }
 
 /** The stored proxy key, only if it belongs to this test. */
 export function loadProxyKey(sandboxId: string | undefined): string | null {
   if (!sandboxId) return null;
   try {
-    const v = JSON.parse(safeGet(PROXY_KEY_STORAGE) ?? 'null') as { sandboxId?: unknown; proxyKey?: unknown } | null;
+    const v = JSON.parse(safeSessionGet(PROXY_KEY_STORAGE) ?? 'null') as { sandboxId?: unknown; proxyKey?: unknown } | null;
     return v && v.sandboxId === sandboxId && typeof v.proxyKey === 'string' && v.proxyKey.startsWith('sk-wr-') ? v.proxyKey : null;
   } catch {
     return null;

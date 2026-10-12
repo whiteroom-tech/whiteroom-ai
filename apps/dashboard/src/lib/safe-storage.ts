@@ -48,3 +48,12 @@ export function safeSessionSet(key: string, value: string): void {
     /* as above */
   }
 }
+
+export function safeSessionRemove(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    /* as above */
+  }
+}
