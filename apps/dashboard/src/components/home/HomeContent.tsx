@@ -12,7 +12,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedOverall, savedOverallHint, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
@@ -177,7 +177,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   const sorted = sortAgents(agents);
   const working = agents.filter((a) => agentState(a) === 'working').length;
   const compression = report.energySavings.compressionRatio ?? 0;
-  const savedOverall = parseUsd(report.energySavings.estimatedCostSaved);
+  const saved = savedOverall(report.energySavings);
   const blocks = recentBlocksByAgent(entries);
   const lastEvents = lastEventByAgent(entries);
   const activity = latestActivity(entries, 4);
@@ -197,10 +197,10 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           <StatCard
             variant="card"
             label="Spend today"
-            hint={HELP.spendToday}
+            hint={saved ? `${HELP.spendToday} ${savedOverallHint(saved)}` : HELP.spendToday}
             value={today ? `${usd(today.costUsd)}${partialMark(!!today.partial)}` : '—'}
-            sub={savedOverall && !todayFailing ? `est. ${usd(savedOverall)}${partialMark(!!report.energySavings.unpricedTokensSaved)} saved overall →` : todaySub}
-            subHref={savedOverall && !todayFailing ? ROUTES.performance : undefined}
+            sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved overall →` : todaySub}
+            subHref={saved && !todayFailing ? ROUTES.performance : undefined}
           />
           <StatCard variant="card" label="Smaller handovers" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? (energyOverall ? `${energyOverall} saved overall` : undefined) : 'no handovers yet'} />
         </div>
