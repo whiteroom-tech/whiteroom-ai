@@ -277,6 +277,9 @@
    full-width; on wider screens nothing changes. */
 @media (max-width: 720px) {
   .wr-table__scroll { display: grid; grid-template-columns: minmax(min-content, 1fr); overflow-x: auto; overscroll-behavior-x: contain; }
+  /* The head scrolls with the rows here, not pinned: it can't pin to the page on
+     phones anyway, because the panel around a table clips overflow. */
+  .wr-table__head { position: static; }
   /* A day label stays in view while the rows scroll sideways. */
   .wr-table__group > * { position: sticky; left: 18px; }
 }
