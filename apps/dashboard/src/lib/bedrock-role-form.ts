@@ -4,11 +4,11 @@
 // of round-tripping to the engine first — the engine still re-validates, this
 // is just a faster no.
 
-const AWS_ACCOUNT_ID_RE = /^\d{12}$/;
 const REGION_RE = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
 // Matches the engine's floor: AWS allows ExternalId as short as 2 characters,
 // but a short one weakens the registration's ownership-proof check (see
 // concepts/bedrock.ts's EXTERNAL_ID_RE comment) — same 20-character minimum.
+const EXTERNAL_ID_CHARSET_RE = /^[\w+=,.@:/-]*$/;
 const EXTERNAL_ID_RE = /^[\w+=,.@:/-]{20,1224}$/;
 const ROLE_ARN_RE = /^arn:aws:iam::(\d{12}):role\/[\w+=,.@/-]+$/;
 
@@ -33,10 +33,14 @@ export function bedrockRoleRequest(roleArn: string, externalId: string, region: 
 
   const m = ROLE_ARN_RE.exec(arn);
   if (!m) return { ok: false, error: 'role_arn must look like arn:aws:iam::<12-digit-account>:role/<name>.' };
+  // ROLE_ARN_RE's capture group already enforces exactly 12 digits — no separate check needed.
   const awsAccountId = m[1];
-  if (!AWS_ACCOUNT_ID_RE.test(awsAccountId)) return { ok: false, error: 'Could not read a 12-digit account ID from that role_arn.' };
   if (!REGION_RE.test(reg)) return { ok: false, error: 'Region must look like a real AWS region, e.g. us-east-1.' };
-  if (!EXTERNAL_ID_RE.test(ext)) return { ok: false, error: 'External ID must be at least 20 characters — use the generated one, or your own random value.' };
+  if (!EXTERNAL_ID_RE.test(ext)) {
+    if (!EXTERNAL_ID_CHARSET_RE.test(ext)) return { ok: false, error: 'External ID can only contain letters, digits, and + = , . @ : / -.' };
+    if (ext.length < 20) return { ok: false, error: 'External ID must be at least 20 characters — use the generated one, or your own random value.' };
+    return { ok: false, error: 'External ID must be 1224 characters or fewer.' };
+  }
 
   return { ok: true, request: { awsAccountId, roleArn: arn, externalId: ext, region: reg } };
 }

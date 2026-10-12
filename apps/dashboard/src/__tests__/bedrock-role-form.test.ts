@@ -48,6 +48,24 @@ describe('bedrockRoleRequest', () => {
     expect(check.ok).toBe(false);
     if (!check.ok) expect(check.error).toMatch(/20 characters/);
   });
+
+  it('refuses an external ID over 1224 characters with a length error, not the "too short" message', () => {
+    const check = bedrockRoleRequest(ROLE_ARN, 'a'.repeat(1225), 'us-east-1');
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.error).toMatch(/1224 characters/);
+      expect(check.error).not.toMatch(/at least 20/);
+    }
+  });
+
+  it('refuses an external ID with an invalid character, naming the charset, not "too short"', () => {
+    const check = bedrockRoleRequest(ROLE_ARN, 'a valid-looking but spaced out id!!', 'us-east-1');
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.error).toMatch(/can only contain/);
+      expect(check.error).not.toMatch(/at least 20/);
+    }
+  });
 });
 
 describe('generateExternalId', () => {

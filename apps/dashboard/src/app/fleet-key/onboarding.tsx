@@ -243,6 +243,10 @@ const BEDROCK_MODE_TABS: { value: BedrockMode; label: string }[] = [
 function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: string; fleetToken: string | null }) {
   const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
   const [role, setRole] = useState<BedrockRoleStatus | null>(null);
+  // Separate from `role`: a failed status fetch must never look like "no role
+  // configured yet" — that would invite connecting a fresh role over a
+  // working one with no warning.
+  const [statusError, setStatusError] = useState('');
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeBusy, setRemoveBusy] = useState(false);
@@ -251,21 +255,28 @@ function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; flee
   const refresh = useCallback(async () => {
     const res = await getBedrockRoleStatus(auth);
     setRole(res);
+    setStatusError('');
     return res;
   }, [auth]);
 
-  useEffect(() => { refresh().catch(() => setRole({ configured: false })); }, [refresh]);
+  // Never throws: a refresh failure after a successful connect/disconnect
+  // must not be reported as if that mutation itself failed.
+  const safeRefresh = useCallback(async () => {
+    await refresh().catch((e) => setStatusError(e instanceof Error ? e.message : 'Network error.'));
+  }, [refresh]);
+
+  useEffect(() => { void safeRefresh(); }, [safeRefresh]);
 
   async function connect(req: BedrockRoleRequest): Promise<string | null> {
     try {
       const result = await storeBedrockRole(auth, req);
       if (!result.success) return result.error || 'Could not connect that role.';
-      setAdding(false);
-      await refresh();
-      return null;
     } catch (e) {
       return e instanceof Error ? e.message : 'Network error.';
     }
+    setAdding(false);
+    await safeRefresh();
+    return null;
   }
 
   async function disconnect() {
@@ -273,12 +284,12 @@ function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; flee
     try {
       const result = await deleteBedrockRole(auth);
       if (!result.success) { setRemoveError(result.error || 'Could not remove that role.'); return; }
-      await refresh();
     } catch (e) {
-      setRemoveError(e instanceof Error ? e.message : 'Network error.');
+      setRemoveError(e instanceof Error ? e.message : 'Network error.'); return;
     } finally {
       setRemoveBusy(false);
     }
+    await safeRefresh();
   }
 
   const showForm = adding || (role !== null && !role.configured);
@@ -290,7 +301,12 @@ function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; flee
       actions={role?.configured && !adding ? <Button size={28} onClick={() => setAdding(true)}>Replace role&hellip;</Button> : undefined}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
-        {role === null ? (
+        {role === null && statusError ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>Couldn&rsquo;t load role status: {statusError}</p>
+            <Button size={28} onClick={() => void safeRefresh()} style={{ justifySelf: 'start' }}>Retry</Button>
+          </div>
+        ) : role === null ? (
           <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading role status&hellip;</p>
         ) : role.configured && !adding && (
           <div style={{ display: 'grid', gap: 6, fontSize: 12.5, color: 'var(--tx2)' }}>

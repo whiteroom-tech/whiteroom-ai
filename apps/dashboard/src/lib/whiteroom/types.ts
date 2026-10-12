@@ -220,7 +220,6 @@ export interface BedrockRoleStatus {
   roleArn?: string;
   region?: string;
   createdAt?: string;
-  error?: string;
 }
 
 export interface StoreBedrockRoleResult {
