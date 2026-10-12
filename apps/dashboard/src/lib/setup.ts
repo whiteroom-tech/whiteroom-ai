@@ -38,6 +38,54 @@ export const AGENT_NAME_LINES = {
 /** The Python header argument, for snippets that build their own client (Azure). */
 export const AGENT_PY_HEADERS = PY_HEADERS;
 
+/**
+ * Claude on AWS Bedrock with a Bedrock API key. The Anthropic SDK talks to the
+ * proxy URL exactly as it would to Anthropic (it adds /v1/messages and sends
+ * the key as x-api-key); WhiteRoom forwards to Bedrock's Messages endpoint in
+ * the region the key was connected with. Mantle model ids are anthropic. plus
+ * the model name, with no region prefix or version suffix.
+ */
+const BEDROCK_PROXY = `${PROXY_ORIGIN}/<your-proxy-key>`;
+const BEDROCK_KEY_PLACEHOLDER = '<your-bedrock-api-key>';
+const BEDROCK_MODEL = 'anthropic.claude-haiku-4-5';
+
+/** The notes under the Bedrock recipe: where the key comes from, region, model ids. */
+export const BEDROCK_NOTES = {
+  key: 'Bedrock console → API keys. Long-term keys start ABSK. Short-term keys (bedrock-api-key-…) expire within 12 hours, so your agent must send a fresh one.',
+  region: 'Use a region where Claude is available on Bedrock.',
+  custody: 'Your agent sends its own key on each call; WhiteRoom only keeps a fingerprint of it.',
+  model: `Use Mantle model ids: anthropic. plus the model name, with no region prefix or version suffix (e.g. ${BEDROCK_MODEL}).`,
+} as const;
+
+export const BEDROCK_LINES = {
+  baseUrl: `export ANTHROPIC_BASE_URL=${BEDROCK_PROXY}`,
+  apiKey: `export ANTHROPIC_API_KEY=${BEDROCK_KEY_PLACEHOLDER}`,
+  python: `import anthropic
+
+client = anthropic.Anthropic(
+    base_url="${BEDROCK_PROXY}",
+    api_key="${BEDROCK_KEY_PLACEHOLDER}",
+    ${PY_HEADERS},  # optional if your agent has a system prompt
+)
+client.messages.create(
+    model="${BEDROCK_MODEL}",  # Mantle model id
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+)`,
+  typescript: `import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: "${BEDROCK_PROXY}",
+  apiKey: "${BEDROCK_KEY_PLACEHOLDER}",
+  ${TS_HEADERS}, // optional if your agent has a system prompt
+});
+await client.messages.create({
+  model: "${BEDROCK_MODEL}", // Mantle model id
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello" }],
+});`,
+} as const;
+
 /** Shown when someone turns on Pause, Stop or a Stop rule in Enforce. */
 export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
 

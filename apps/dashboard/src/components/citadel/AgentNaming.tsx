@@ -17,9 +17,11 @@ const SDK_LABEL = { anthropic: 'Anthropic', openai: 'OpenAI' } as const;
 /**
  * How to name an agent that has no system prompt, collapsed by default since
  * most agents are named automatically. `provider` narrows the examples to one
- * SDK (Azure uses the OpenAI one); without it, both are shown.
+ * SDK (Azure uses the OpenAI one); without it, both are shown. `claudeCode`
+ * false drops the Claude Code line (Bedrock keys, whose model ids Claude Code
+ * would also need configuring for).
  */
-export function AgentNaming({ provider }: { provider?: 'anthropic' | 'openai' }) {
+export function AgentNaming({ provider, claudeCode = true }: { provider?: 'anthropic' | 'openai'; claudeCode?: boolean }) {
   const [lang, setLang] = useState<Lang>('python');
   const sdks = provider ? [provider] : (['anthropic', 'openai'] as const);
   return (
@@ -32,7 +34,7 @@ export function AgentNaming({ provider }: { provider?: 'anthropic' | 'openai' })
         {sdks.map((sdk) => (
           <CopyChip key={sdk} text={AGENT_NAME_LINES[lang][sdk]} label={`Copy the ${SDK_LABEL[sdk]} agent name line`} />
         ))}
-        {provider !== 'openai' && (
+        {provider !== 'openai' && claudeCode && (
           <>
             <span>Claude Code</span>
             <CopyChip text={AGENT_NAME_LINES.claudeCode} label="Copy the Claude Code agent name line" />

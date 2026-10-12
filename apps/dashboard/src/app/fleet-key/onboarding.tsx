@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
+import type { ProviderKeyRequest, ProviderTab } from '@/lib/provider-key-form';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { ProviderKey } from '@/lib/whiteroom/types';
@@ -11,7 +12,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
-import { AGENT_PY_HEADERS, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { AGENT_PY_HEADERS, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
 
@@ -23,15 +24,6 @@ interface Props {
   fleetToken: string | null;
   isNew: boolean;
 }
-
-const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  azure: 'Azure OpenAI',
-  'azure-openai': 'Azure OpenAI',
-};
-
-type ProviderTab = 'direct' | 'azure' | 'aws';
 
 // BYOK: one account can connect several provider keys at once. The engine
 // keeps them per fleet as a list and issues each key its own proxy URL, so an
@@ -46,13 +38,11 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
 }) {
   const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
   const [keys, setKeys] = useState<ProviderKey[] | null>(previewKeys ?? null);
-  const [value, setValue] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
-  const [msg, setMsg] = useState('');
   const [issued, setIssued] = useState<{ proxyUrl: string; keyHint: string; provider: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProviderKey | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
 
   const refresh = useCallback(async (): Promise<ProviderKey[]> => {
     const res = await listProviderKeys(auth);
@@ -66,77 +56,40 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     refresh().catch(() => setKeys([]));
   }, [refresh, previewKeys]);
 
-  const isAzure = tab === 'azure';
-
-  async function connect(): Promise<boolean> {
-    if (previewKeys) return false;
-    const key = value.trim();
-    if (isAzure) {
-      if (key.length < 12) {
-        setStatus('error');
-        setMsg('Enter your Azure API key (from the Azure portal → Keys and Endpoint).');
-        return false;
-      }
-      const ep = endpoint.trim();
-      if (!ep) {
-        setStatus('error');
-        setMsg('Enter your Azure endpoint URL (e.g. https://myresource.openai.azure.com).');
-        return false;
-      }
-      if (!azureOpenAIEndpoint(ep)) {
-        setStatus('error');
-        setMsg('Endpoint must be your Azure resource URL (e.g. https://myresource.openai.azure.com).');
-        return false;
-      }
-    } else {
-      if (!/^sk-/.test(key) || key.length < 12) {
-        setStatus('error');
-        setMsg('That does not look like a provider API key (sk-ant-… for Anthropic, sk-… for OpenAI).');
-        return false;
-      }
-    }
-    setStatus('saving'); setMsg('');
+  /** Stores the key; null when it connected, otherwise the reason it didn't. */
+  async function connect(req: ProviderKeyRequest): Promise<string | null> {
+    if (previewKeys) return 'Keys can’t be connected in the preview.';
     try {
-      const result = isAzure
-        ? await storeProviderKey(auth, key, azureOpenAIEndpoint(endpoint) ?? undefined, 'azure-openai')
-        : await storeProviderKey(auth, key);
-      if (!result.success || !result.proxyUrl) {
-        setStatus('error'); setMsg(result.error || 'Could not connect that key.'); return false;
-      }
-      const provider = result.provider ?? (isAzure ? 'azure-openai' : key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
-      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? key.slice(-4), provider });
-      setValue(''); setEndpoint(''); setStatus('idle');
+      const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider);
+      if (!result.success || !result.proxyUrl) return result.error || 'Could not connect that key.';
+      const provider = result.provider ?? req.provider ?? (req.key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
+      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider });
+      setAdding(false);
       await refresh();
       await setByok(true);
-      return true;
+      return null;
     } catch (e) {
-      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
-      return false;
+      return e instanceof Error ? e.message : 'Network error.';
     }
   }
 
   async function disconnect(k: ProviderKey) {
     if (previewKeys) return;
     const prefix = k.wrKey.replace(/\.+$/, '');
-    setStatus('saving'); setMsg('');
+    setRemoveBusy(true); setRemoveError('');
     try {
       const result = await deleteProviderKey(auth, prefix);
       if (!result.success) {
-        setStatus('error'); setMsg(result.error || 'Could not remove that key.'); return;
+        setRemoveError(result.error || 'Could not remove that key.'); return;
       }
       if (issued?.proxyUrl.includes(prefix)) setIssued(null);
       const remaining = await refresh();
-      setStatus('idle');
       await setByok(remaining.length > 0);
     } catch (e) {
-      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
+      setRemoveError(e instanceof Error ? e.message : 'Network error.');
+    } finally {
+      setRemoveBusy(false);
     }
-  }
-
-  function issuedEnvHint(p: string, url: string) {
-    if (p === 'azure' || p === 'azure-openai') return `export AZURE_OPENAI_ENDPOINT=${url}`;
-    if (p === 'openai') return `export OPENAI_BASE_URL=${url}/v1`;
-    return `export ANTHROPIC_BASE_URL=${url}`;
   }
 
   const showForm = adding || keys?.length === 0;
@@ -158,7 +111,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
-              <AgentNaming provider={issued.provider === 'anthropic' ? 'anthropic' : 'openai'} />
+              <AgentNaming {...agentNamingFor(issued.provider)} />
             </div>
           </Banner>
         )}
@@ -173,40 +126,16 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
                 <span style={{ fontSize: 12, color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
                 <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
-                <Button variant="danger" size={28} disabled={status === 'saving'} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
+                <Button variant="danger" size={28} disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>
             ))}
           </ul>
         )}
 
-        {showForm && (
-          <div style={{ display: 'grid', gap: 8 }}>
-            {isAzure && (
-              <input
-                type="text"
-                aria-label="Azure endpoint"
-                value={endpoint}
-                onChange={(e) => { setEndpoint(e.target.value); setStatus('idle'); }}
-                placeholder="Azure endpoint, e.g. https://myresource.openai.azure.com"
-                className="wr-input"
-              />
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="password"
-                aria-label={isAzure ? 'Azure API key' : 'Provider API key'}
-                value={value}
-                onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
-                placeholder={isAzure ? 'Azure API key' : 'sk-ant-… or sk-…'}
-                className="wr-input"
-                style={{ flex: 1, minWidth: 0 }}
-              />
-              <Button variant="primary" onClick={() => void connect().then((ok) => { if (ok) setAdding(false); })} busy={status === 'saving'} busyLabel="Connecting…">Connect</Button>
-              {adding && <Button variant="ghost" onClick={() => { setAdding(false); setValue(''); setEndpoint(''); setStatus('idle'); }}>Cancel</Button>}
-            </div>
-          </div>
-        )}
-        {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+        {/* key={tab}: each tab takes a different kind of key and second field
+            (Azure URL, AWS region), so switching remounts the form empty. */}
+        {showForm && <KeyForm key={tab} tab={tab} onConnect={connect} onCancel={adding ? () => setAdding(false) : undefined} />}
+        {removeError && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{removeError}</p>}
       </div>
 
       <ConfirmDialog
@@ -214,7 +143,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
         title={removing ? `Remove the ${PROVIDER_LABELS[removing.provider] ?? removing.provider} key ending ${removing.keyHint}?` : ''}
         body={<>Its proxy URL stops working at once. Agents still pointed at it will fail until you point them elsewhere.</>}
         confirmLabel="Remove key"
-        busy={status === 'saving'}
+        busy={removeBusy}
         onConfirm={() => { const k = removing; setRemoving(null); if (k) void disconnect(k); }}
         onCancel={() => setRemoving(null)}
       />
@@ -222,10 +151,74 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   );
 }
 
+/** The add-key fields for one provider tab. Mounted per tab, so it starts empty. */
+function KeyForm({ tab, onConnect, onCancel }: {
+  tab: ProviderTab;
+  onConnect: (req: ProviderKeyRequest) => Promise<string | null>;
+  onCancel?: () => void;
+}) {
+  const [form, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
+  const { value, endpoint, status, msg } = form;
+  // Set synchronously, so a double click can't start two store_key calls
+  // before the 'saving' render lands.
+  const inFlight = useRef(false);
+  const saving = status === 'saving';
+  const isAzure = tab === 'azure';
+  const isAws = tab === 'aws';
+
+  async function submit() {
+    if (inFlight.current || !canSubmitKey(form)) return;
+    const check = providerKeyRequest(tab, value, endpoint);
+    if (!check.ok) { dispatch({ type: 'error', msg: check.error }); return; }
+    inFlight.current = true;
+    dispatch({ type: 'saving' });
+    try {
+      const error = await onConnect(check.request);
+      dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
+    } finally {
+      inFlight.current = false;
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {(isAzure || isAws) && (
+        <input
+          type="text"
+          aria-label={isAws ? 'Region' : 'Azure endpoint'}
+          value={endpoint}
+          onChange={(e) => dispatch({ type: 'edit', field: 'endpoint', text: e.target.value })}
+          placeholder={isAws ? 'Region, e.g. us-east-1' : 'Azure endpoint, e.g. https://myresource.openai.azure.com'}
+          autoCapitalize="none"
+          spellCheck={false}
+          readOnly={saving}
+          className="wr-input"
+        />
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="password"
+          autoComplete="off"
+          readOnly={saving}
+          aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
+          value={value}
+          onChange={(e) => dispatch({ type: 'edit', field: 'value', text: e.target.value })}
+          placeholder={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'sk-ant-… or sk-…'}
+          className="wr-input"
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
+        {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
+      </div>
+      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+    </div>
+  );
+}
+
 const PROVIDER_TABS: { value: ProviderTab; label: string; disabled?: boolean }[] = [
   { value: 'direct', label: 'Anthropic or OpenAI' },
   { value: 'azure', label: 'Azure OpenAI' },
-  { value: 'aws', label: 'AWS Bedrock · soon', disabled: true },
+  { value: 'aws', label: 'AWS Bedrock' },
 ];
 
 /** "sk-wr-…7f3a": enough to recognise the key without showing it. */
@@ -286,15 +279,17 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                   <AgentNaming />
                 </>
+              ) : tab === 'aws' ? (
+                <BedrockRecipe />
               ) : (
                 <>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
                     Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under Provider keys below. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
                   </p>
-                  <AzureStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_ORIGIN}/<your-proxy-key>`} />
-                  <AzureStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
-                  <AzureStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
-                  <AzureStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_ORIGIN}/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`} />
+                  <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_ORIGIN}/<your-proxy-key>`} />
+                  <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                  <RecipeStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
+                  <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_ORIGIN}/<your-proxy-key>/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`} />
                 </>
               )}
             </div>
@@ -313,11 +308,43 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
   );
 }
 
-function AzureStep({ label, code }: { label: string; code: string }) {
+function RecipeStep({ label, code }: { label: string; code: string }) {
   return (
     <div style={{ display: 'grid', gap: 6 }}>
       <span style={{ fontSize: 12, color: 'var(--tx2)' }}>{label}</span>
       <CopyChip text={code} label={`Copy: ${label}`} />
     </div>
+  );
+}
+
+type Lang = 'python' | 'typescript';
+
+const LANGS: { value: Lang; label: string }[] = [
+  { value: 'python', label: 'Python' },
+  { value: 'typescript', label: 'TypeScript' },
+];
+
+/** Claude on AWS Bedrock: the Anthropic SDK, pointed at the proxy URL with the Bedrock API key. */
+function BedrockRecipe() {
+  const [lang, setLang] = useState<Lang>('python');
+  return (
+    <>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+        Add your Bedrock API key and the region your Claude models run in under Provider keys below. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock and keep your Bedrock API key.
+      </p>
+      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <li>{BEDROCK_NOTES.key}</li>
+        <li>{BEDROCK_NOTES.region}</li>
+        <li>{BEDROCK_NOTES.custody}</li>
+        <li>{BEDROCK_NOTES.model}</li>
+      </ul>
+      <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
+      <RecipeStep label="Your Bedrock API key is the API key" code={BEDROCK_LINES.apiKey} />
+      <div style={{ display: 'grid', gap: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Or set both on the client</span>
+        <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />
+        <CopyChip text={BEDROCK_LINES[lang]} label={`Copy the Bedrock ${lang === 'python' ? 'Python' : 'TypeScript'} client`} />
+      </div>
+    </>
   );
 }

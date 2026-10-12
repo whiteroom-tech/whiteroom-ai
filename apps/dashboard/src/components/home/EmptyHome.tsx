@@ -36,7 +36,7 @@ export function EmptyHome() {
             </ol>
             <AgentNaming />
             <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
-              Using Azure OpenAI or your own provider key? <Link href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
+              Using Azure OpenAI, AWS Bedrock or your own provider key? <Link href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 4 }}>
               <Link href={ROUTES.sandbox} className="wr-btn wr-btn--primary wr-btn--h32">Test in Sandbox &rarr;</Link>
