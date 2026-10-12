@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
-  overlayStatuses, pageWindow, parseUsd, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  overlayStatuses, pageWindow, parseUsd, savedOverall, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
 
@@ -202,6 +202,12 @@ describe('formatting', () => {
     expect(parseUsd('$1.7805')).toBeCloseTo(1.7805);
     expect(parseUsd('$0.0000')).toBeNull();
     expect(parseUsd(undefined)).toBeNull();
+  });
+  it('saved overall adds prompt caching, like Performance, and falls back on older engines', () => {
+    expect(savedOverall({ estimatedCostSaved: '$4.2200', totalCostSaved: '$6.1400' })).toEqual({ usd: 6.14, partial: false });
+    expect(savedOverall({ estimatedCostSaved: '$4.2200' })).toEqual({ usd: 4.22, partial: false });
+    expect(savedOverall({ estimatedCostSaved: '$1.0000', totalCostSaved: '$2.0000', unpricedCacheReadTokens: 5 })?.partial).toBe(true);
+    expect(savedOverall({ estimatedCostSaved: '$0.0000', totalCostSaved: '$0.0000' })).toBeNull();
   });
 });
 

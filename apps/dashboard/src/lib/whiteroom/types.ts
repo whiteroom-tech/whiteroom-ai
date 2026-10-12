@@ -70,6 +70,12 @@ export interface FleetReport {
     compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string;
     /** Saved tokens with no price to value them: estimatedCostSaved leaves them out (absent on older engines). */
     unpricedTokensSaved?: number;
+    /** Prompt-cache savings over everything stored, net of write premiums (absent on older engines). */
+    cacheCostSaved?: string;
+    /** Cache reads with no price: cacheCostSaved leaves them out. */
+    unpricedCacheReadTokens?: number;
+    /** estimatedCostSaved + cacheCostSaved: Home's "saved overall" (absent on older engines). */
+    totalCostSaved?: string;
     /** in_memory_estimate: the engine couldn't read its stored trail; newest events only, at the fallback rate. */
     pricing?: 'cache_aware_input' | 'in_memory_estimate';
   };

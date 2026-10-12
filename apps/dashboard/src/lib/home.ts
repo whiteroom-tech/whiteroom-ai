@@ -418,6 +418,16 @@ export function parseUsd(s: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * Home's "saved overall": handover plus prompt-cache savings, the same sum
+ * Performance's Savings card shows for its range. Older engines send only the
+ * handover figure. partial: some saved tokens or cache reads had no price.
+ */
+export function savedOverall(e: { estimatedCostSaved: string; totalCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): { usd: number; partial: boolean } | null {
+  const n = parseUsd(e.totalCostSaved ?? e.estimatedCostSaved);
+  return n == null ? null : { usd: n, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens };
+}
+
 /** Holds whose agent is no longer registered (removed while held), oldest first. */
 export function removedHeld(holds: Record<string, AgentHold> | undefined, agents: { agentId: string }[]): [string, AgentHold][] {
   if (!holds) return [];
