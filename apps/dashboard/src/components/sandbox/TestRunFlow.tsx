@@ -7,7 +7,7 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
@@ -201,7 +201,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const [language, setLanguage] = useState<Language>('Python');
   const [credential, setCredential] = useState('');
   // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
-  const [endpoints, setEndpoints] = useState<Partial<Record<CloudProvider, string>>>({});
+  const [endpoints, setEndpoints] = useState<CloudEndpoints>({});
   const [endpointError, setEndpointError] = useState('');
   const [unsupported, setUnsupported] = useState<CloudProvider[]>([]);
   // The proxy key issued for one test, so it can't show against another.
@@ -662,7 +662,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
           <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} onPick={pickProvider} />
           {cloud ? (
             <CloudEndpointField provider={cloud} value={endpointInput} error={endpointError}
-              onChange={v => { setEndpoints(e => ({ ...e, [cloud]: v })); setEndpointError(''); }}
+              onChange={v => { setEndpoints(e => withEndpoint(e, cloud, v)); setEndpointError(''); }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
           <div className={s.formGroup}>

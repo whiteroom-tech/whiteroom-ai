@@ -7,7 +7,7 @@ vi.mock("@/lib/whiteroom/client", () => ({ PROXY_URL: "https://proxy.whiteroom.a
 vi.mock("@/lib/sandbox/api", () => ({}));
 
 import { connectionRecipe } from "@/components/sandbox/TestRunFlow";
-import { cloudRecipe } from "@/lib/sandbox/providers";
+import { cloudRecipe, headersLiteral, withEndpoint } from "@/lib/sandbox/providers";
 
 const FLEET = "sandbox-abc123";
 const AGENT = "test-agent";
@@ -124,5 +124,31 @@ client = anthropic.Anthropic(
 )
 # Use this client for your agent's messages calls,
 # with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.`);
+  });
+});
+
+describe("headersLiteral and the cloud recipes", () => {
+  const H = { "x-whiteroom-agent": "a" };
+
+  it("nests the object one level for Python and JavaScript", () => {
+    expect(headersLiteral(H, 4)).toBe('{\n        "x-whiteroom-agent": "a"\n    }');
+    expect(headersLiteral(H, 2)).toBe('{\n    "x-whiteroom-agent": "a"\n  }');
+  });
+
+  it("every cloud recipe closes its headers under the argument", () => {
+    for (const p of ["azure-openai", "foundry", "bedrock-mantle"] as const) {
+      expect(cloudRecipe(p, "https://x.test/sk-wr-1", "a", "Python")).toContain('        "x-whiteroom-agent": "a"\n    }\n)');
+      expect(cloudRecipe(p, "https://x.test/sk-wr-1", "a", "JavaScript")).toContain('    "x-whiteroom-agent": "a"\n  }\n});');
+    }
+  });
+});
+
+describe("start form endpoints", () => {
+  it("keeps one value per cloud provider", () => {
+    let e = withEndpoint({}, "azure-openai", "https://r.openai.azure.com");
+    e = withEndpoint(e, "bedrock-mantle", "us-east-1");
+    expect(e["azure-openai"]).toBe("https://r.openai.azure.com");
+    expect(e["bedrock-mantle"]).toBe("us-east-1");
+    expect(e.foundry).toBeUndefined();
   });
 });

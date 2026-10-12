@@ -133,6 +133,13 @@ export function proxyKeyBase(proxyUrl: string, proxyKey: string | null | undefin
 /** Azure OpenAI's GA data-plane version, for the AzureOpenAI client variant. */
 export const AZURE_API_VERSION = '2024-10-21';
 
+/** What the start form's endpoint field holds: one value per cloud provider. */
+export type CloudEndpoints = Partial<Record<CloudProvider, string>>;
+
+export function withEndpoint(endpoints: CloudEndpoints, provider: CloudProvider, value: string): CloudEndpoints {
+  return { ...endpoints, [provider]: value };
+}
+
 /** Headers as a literal nested one level inside a client constructor call. */
 export function headersLiteral(headers: Record<string, string>, indent: 2 | 4): string {
   return JSON.stringify(headers, null, indent).replace(/\n/g, `\n${' '.repeat(indent)}`);
