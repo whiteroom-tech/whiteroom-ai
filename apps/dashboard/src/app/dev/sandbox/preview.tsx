@@ -76,7 +76,8 @@ const WAITING_RUN: RunStatusResult = {
   expiresInSeconds: 1790,
   controls: controls('liveEvidence', 0),
   agents: [],
-  auditLog: [],
+  // As the engine reports a fresh test: "Test started" is logged before any call.
+  auditLog: [{ id: 'w0', timestamp: new Date(0).toISOString(), type: 'fleet_created', agentId: 'system' }],
 };
 
 /** The same, open for two minutes with no calls: "Nothing happening?" has opened on its own. */
