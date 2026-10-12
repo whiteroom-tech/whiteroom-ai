@@ -34,23 +34,25 @@ const controls = (track: 'liveEvidence' | 'demoEvidence', observed: number) =>
   })) as unknown as RunStatusResult['controls'];
 const agent = (totalTasks: number) => ({ agentId: 'support-bot', role: 'worker', status: 'active', watchMinutes: 2, watchCount: 1, totalTasks, totalTokens: totalTasks * 1200, pairedWith: null, currentWatch: { watchNumber: 1, minutesWorked: 0.7, tokensUsed: 2400, tasksCompleted: totalTasks } });
 
-/** The demo, as it looks once the engine's script has run. */
+/** The demo, as it looks once the engine's script has run: demo-agent passes its work to demo-agent-b. */
 const DEMO_RUN: RunStatusResult = {
   sandboxId: 'preview-demo',
   mode: 'demo',
   expiresInSeconds: 1787,
   controls: controls('demoEvidence', 3),
-  agents: [{ ...agent(3), agentId: 'demo-agent' }],
+  agents: [{ ...agent(1), agentId: 'demo-agent' }, { ...agent(1), agentId: 'demo-agent-b' }],
   auditLog: [
     { id: 'd1', timestamp: ago(80), type: 'register', agentId: 'demo-agent' },
     { id: 'd2', timestamp: ago(78), type: 'watch_start', agentId: 'demo-agent' },
     { id: 'd3', timestamp: ago(75), type: 'task_complete', agentId: 'demo-agent' },
-    { id: 'd4', timestamp: ago(70), type: 'self_handover', agentId: 'demo-agent' },
-    { id: 'd5', timestamp: ago(65), type: 'task_complete', agentId: 'demo-agent' },
-    { id: 'd6', timestamp: ago(60), type: 'demo_activity', agentId: null },
-    { id: 'd7', timestamp: ago(55), type: 'policy_decision', agentId: 'demo-agent' },
-    { id: 'd8', timestamp: ago(50), type: 'policy_enforcement_verified', agentId: null },
-    { id: 'd9', timestamp: ago(45), type: 'policy_chain_verified', agentId: null },
+    { id: 'd4', timestamp: ago(72), type: 'register', agentId: 'demo-agent-b' },
+    { id: 'd5', timestamp: ago(70), type: 'handover', agentId: 'demo-agent' },
+    { id: 'd6', timestamp: ago(68), type: 'watch_start', agentId: 'demo-agent-b' },
+    { id: 'd7', timestamp: ago(65), type: 'task_complete', agentId: 'demo-agent-b' },
+    { id: 'd8', timestamp: ago(60), type: 'demo_activity', agentId: null },
+    { id: 'd9', timestamp: ago(55), type: 'policy_decision', agentId: 'demo-agent' },
+    { id: 'd10', timestamp: ago(50), type: 'policy_enforcement_verified', agentId: null },
+    { id: 'd11', timestamp: ago(45), type: 'policy_chain_verified', agentId: null },
   ],
 };
 

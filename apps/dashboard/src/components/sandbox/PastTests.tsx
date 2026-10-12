@@ -63,13 +63,18 @@ export function PastTestDetail({ test, onClose }: { test: PastTest; onClose: () 
 /**
  * Sandbox › Past tests (README › Screens › 7b): the owner's finished tests,
  * newest first. The engine keeps them across restarts. A row opens what's kept
- * about that test. Quiet if the list can't be loaded; says so when there are
- * none yet. It mounts on the start step, so returning there after a test
- * reloads the list.
+ * about that test directly beneath it. Quiet if the list can't be loaded; says
+ * so when there are none yet. It mounts on the start step, so returning there
+ * after a test reloads the list.
  */
-export function PastTests({ preview, onDemo }: { preview?: PastTest[]; onDemo?: () => void }) {
+export function PastTests({ preview, onDemo, previewOpen }: {
+  preview?: PastTest[];
+  onDemo?: () => void;
+  /** /dev/sandbox and tests: the test whose row starts open. */
+  previewOpen?: string;
+}) {
   const [tests, setTests] = useState<PastTest[] | null>(preview ?? null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(previewOpen ?? null);
   const table = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -91,7 +96,6 @@ export function PastTests({ preview, onDemo }: { preview?: PastTest[]; onDemo?: 
       </div>
     );
   }
-  const selected = tests.find((t) => t.sandboxId === open) ?? null;
   const close = () => {
     const i = tests.findIndex((t) => t.sandboxId === open);
     setOpen(null);
@@ -109,6 +113,8 @@ export function PastTests({ preview, onDemo }: { preview?: PastTest[]; onDemo?: 
             rowHeight={40}
             onOpen={(t) => setOpen((cur) => (cur === t.sandboxId ? null : t.sandboxId))}
             selectedKey={open ?? undefined}
+            expandedKey={open ?? undefined}
+            renderExpanded={(t) => <PastTestDetail test={t} onClose={close} />}
             columns={[
               { key: 'when', header: 'Ended', width: '150px', render: (t) => <span style={{ fontFamily: FONT_MONO, color: 'var(--tx2)' }}>{ended(t.destroyedAt)}</span> },
               { key: 'result', header: 'Result', width: 'minmax(160px, 1fr)', render: (t) => { const r = RESULT[pastResult(t)]; return <Tag tone={r?.tone ?? 'muted'}>{r?.label ?? t.overall}</Tag>; } },
@@ -117,7 +123,6 @@ export function PastTests({ preview, onDemo }: { preview?: PastTest[]; onDemo?: 
             ]}
           />
         </div>
-        {selected && <PastTestDetail test={selected} onClose={close} />}
       </Panel>
     </div>
   );

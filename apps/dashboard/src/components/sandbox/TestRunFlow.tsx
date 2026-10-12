@@ -79,13 +79,25 @@ export const EVENT_LABELS: Record<string, string> = {
 };
 
 /**
- * The demo walkthrough: one step per check. The engine's script also runs a
- * safety-rule test, which isn't one of these checks, so it isn't shown.
+ * The demo walkthrough: one step per check, and what each check says once the
+ * demo has passed it (`detail`; the first check counts calls like a live test).
+ * The engine's demo runs two agents: demo-agent finishes a task, then passes
+ * its work with a short summary to demo-agent-b, which finishes the next one.
+ * Its script also runs a safety-rule test, which isn't one of these checks, so
+ * it isn't shown.
  */
-const DEMO_STORY = [
+export const DEMO_STORY: { title: string; text: string; detail?: string }[] = [
   { title: 'Your agent connects', text: 'A demo agent sends its calls through WhiteRoom and finishes a task. Nothing about its calls changes.' },
-  { title: 'It keeps working when its memory fills up', text: 'Its memory fills up. WhiteRoom saves a short summary so it can keep going.' },
-  { title: 'It picks up where it left off', text: 'The work carries on from the summary instead of the full history, and the next task completes.' },
+  {
+    title: 'It keeps working when its memory fills up',
+    text: 'Its memory fills up. WhiteRoom saves a short summary and passes the work to a second demo agent, which keeps going.',
+    detail: 'WhiteRoom saved a short summary and passed the work to a second demo agent.',
+  },
+  {
+    title: 'It picks up where it left off',
+    text: 'The second demo agent starts from the summary instead of the full history, and finishes the next task.',
+    detail: 'The second demo agent picked up from the summary and finished the next task.',
+  },
 ];
 
 /** The Activity tab's name for an event. Unlisted engine types still read as plain words. */
@@ -178,6 +190,9 @@ export function checkGuidance(controlId: string, status: string | undefined, run
   const agent = run?.agents?.[0];
   const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
   if (status === 'observed') {
+    // The demo's checks say what its walkthrough showed.
+    const demoDetail = run?.mode === 'demo' ? DEMO_STORY[demoStep - 1]?.detail : undefined;
+    if (demoDetail) return { detail: demoDetail };
     if (controlId === 'core.connect') {
       const failed = failedCallsOf(run);
       return { detail: `${callCount(calls)} went through WhiteRoom and got a normal reply.${failed ? ` ${callCount(failed.count)} failed.` : ''}` };
@@ -438,9 +453,23 @@ export function helpReducer(state: HelpState, action: HelpAction): HelpState {
  * agent, and an unnamed one is logged as refused.
  */
 export function hasNoCalls(run: RunStatusResult | null): boolean {
-  return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0
-    && !(run.agents?.length) && !run.auditLog?.some(e => e.type === 'unnamed_call_refused')
-    && !failedCallsOf(run);
+  return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0 && !callArrived(run);
+}
+
+/** A call reached WhiteRoom, failed or not: a named call registers its agent, an unnamed one is logged as refused. */
+export function callArrived(run: RunStatusResult | null): boolean {
+  return !!run?.agents?.length || !!run?.auditLog?.some(e => e.type === 'unnamed_call_refused') || !!failedCallsOf(run);
+}
+
+/**
+ * The Run your agent checklist's second step. Until a call arrives it waits
+ * (a new test already logs "Test started", so the activity log can't say);
+ * then it names the agent, or says the call had no agent name.
+ */
+export function recognizedStep(run: RunStatusResult | null, agentId: string): { label: string; sub: string } {
+  if (!callArrived(run)) return { label: 'Waiting for your agent', sub: 'Run one normal task with the code above' };
+  if (!run?.agents?.length && !failedCallsOf(run)) return { label: 'Your agent called without a name', sub: 'Add the x-whiteroom-agent header from the code above' };
+  return { label: 'Your agent is recognized', sub: `Seen as ${agentId}` };
 }
 
 /**
@@ -1061,7 +1090,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
             <div className={s.diag}>
               {[
                 { label: 'WhiteRoom is ready', sub: stage >= 1 ? 'Ready for your agent' : 'Checking…', at: 1 },
-                { label: 'Your agent is recognized', sub: diagShown >= 2 ? `Seen as ${agentId}` : 'Waiting for its first call', at: 2 },
+                { ...recognizedStep(run, agentId), at: 2 },
                 { label: 'Its first call went through', sub: stage >= 3 ? `Passed through WhiteRoom${failed ? ` · ${callCount(failed.count)} failed` : ''}` : 'Waiting — run one normal task', at: 3, fail: failNotice },
                 { label: 'It got a normal reply', sub: stage >= 4 ? 'Your provider answered as usual' : 'Checks your provider answered', at: 4 },
               ].map((d, i) => (
