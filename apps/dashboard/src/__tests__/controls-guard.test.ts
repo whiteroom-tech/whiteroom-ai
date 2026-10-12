@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { longestWatchHours, stopBlockedReason, stopCheck, stopPhrase, watchSummary } from '@/lib/controls-guard';
+import { canAct, longestWatchHours, stopBlockedReason, stopCheck, stopPhrase, watchSummary } from '@/lib/controls-guard';
 import { agentMenu } from '@/components/home/AgentActions';
 import type { GovernanceHistoryEntry } from '@/lib/whiteroom/types';
 
@@ -86,5 +86,28 @@ describe('Home agent menu', () => {
   it('offers Resume for a held agent, else Pause and Stop', () => {
     expect(agentMenu({ hold: { state: 'paused', by: 'dashboard', reason: null, at: '' } }).map((i) => i.act)).toEqual(['resume']);
     expect(agentMenu({ hold: null }).map((i) => i.act)).toEqual(['pause', 'stop']);
+  });
+});
+
+describe('which rules turn on refusals for unnamed calls (engine fleetHasEnforcingRule)', () => {
+  type R = Parameters<typeof canAct>[0];
+  const r = (ruleType: string, mode: string, params: Record<string, unknown> = {}) => ({ ruleType, mode, params }) as unknown as R;
+
+  it('a model allowlist or tool list in Enforce counts only with entries', () => {
+    expect(canAct(r('model_allowlist', 'enforce', { allowedModels: ['claude-sonnet-4-20250514'] }))).toBe(true);
+    expect(canAct(r('model_allowlist', 'enforce', { allowedModels: [] }))).toBe(false);
+    expect(canAct(r('tool_list', 'enforce', { blockedTools: ['send_email'] }))).toBe(true);
+    expect(canAct(r('tool_list', 'enforce', { blockedTools: [] }))).toBe(false);
+  });
+
+  it('Watch and Off never count', () => {
+    for (const mode of ['watch', 'off']) {
+      expect(canAct(r('spend_cap', mode, { limit: 1000 }))).toBe(false);
+      expect(canAct(r('model_allowlist', mode, { allowedModels: ['m'] }))).toBe(false);
+    }
+  });
+
+  it('other rule types count whenever they are in Enforce', () => {
+    for (const t of ['spend_cap', 'loop_breaker', 'call_rate']) expect(canAct(r(t, 'enforce'))).toBe(true);
   });
 });

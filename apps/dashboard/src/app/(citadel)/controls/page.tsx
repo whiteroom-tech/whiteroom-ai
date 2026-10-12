@@ -37,7 +37,7 @@ import { PageHeader } from "@/components/citadel/PageChrome";
 import { FONT_MONO, Hint, SelectChip } from "@whiteroom/ui";
 import { timeAgo } from "@/lib/format";
 import { fetchControlActors, historyWho, oldestTime, type ControlActor } from "@/lib/control-actors";
-import { stopCheck, stopPhrase, watchSummary } from "@/lib/controls-guard";
+import { canAct, stopCheck, stopPhrase, watchSummary } from "@/lib/controls-guard";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_ENFORCE, UNNAMED_CALLS_REFUSED } from "@/lib/setup";
@@ -96,17 +96,6 @@ const MODE_DESCRIPTION: Record<RuleType, Record<RuleMode, string>> = {
   tool_list: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts before the agent gets the tool call" },
   call_rate: { off: "Off. Not counting.", watch: "Watch only. Counting, never acting.", enforce: "Acts on the call over the limit" },
 };
-
-/**
- * A rule in Enforce that can act. An empty model allowlist or tool list acts on
- * nothing, so it doesn't turn on refusals for unnamed calls (same test as the engine).
- */
-function canAct(rule: FleetRule): boolean {
-  if (rule.mode !== "enforce") return false;
-  if (rule.ruleType === "model_allowlist") return (rule.params as ModelAllowlistParams).allowedModels.length > 0;
-  if (rule.ruleType === "tool_list") return (rule.params as ToolListParams).blockedTools.length > 0;
-  return true;
-}
 
 // ── Three-way toggle ───────────────────────────────────────────────
 

@@ -22,7 +22,7 @@ export function EmptyHome() {
             <div>
               <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600 }}>No agents connected yet</h2>
               <p style={{ margin: '6px 0 0', fontSize: 13.5, lineHeight: 1.55, color: 'var(--tx2)' }}>
-                Point an agent at the WhiteRoom proxy and it appears here on its first call. Nothing else changes in your code.
+                Point an agent at the WhiteRoom proxy and it appears here on its first call. Nothing else changes in your code for agents with a system prompt.
               </p>
             </div>
             <ol className="wr-steps">

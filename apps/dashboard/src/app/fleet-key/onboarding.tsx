@@ -281,7 +281,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
               <SegmentedControl<ProviderTab> label="Provider" value={tab} onChange={setTab} options={PROVIDER_TABS} />
               {tab === 'direct' ? (
                 <>
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. No code changes; run your agent exactly as before.</p>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. No code changes for agents with a system prompt; run your agent exactly as before.</p>
                   <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                   <AgentNaming />

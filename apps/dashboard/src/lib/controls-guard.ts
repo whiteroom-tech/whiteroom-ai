@@ -3,7 +3,19 @@
 // for a day, and turning that on means typing who it applies to. Plus the
 // per-rule "Watching: would have…" line from the engine's Watch events.
 
-import type { GovernanceHistoryEntry, GovernanceResponse, GovernanceScope } from '@/lib/whiteroom/types';
+import type { GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceScope, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
+
+/**
+ * A rule in Enforce that can act, so the proxy refuses calls it can't tie to
+ * an agent. An empty model allowlist or tool list acts on nothing. Mirrors the
+ * engine's fleetHasEnforcingRule (concepts/governance.ts).
+ */
+export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'>): boolean {
+  if (rule.mode !== 'enforce') return false;
+  if (rule.ruleType === 'model_allowlist' && (rule.params as ModelAllowlistParams).allowedModels.length === 0) return false;
+  if (rule.ruleType === 'tool_list' && (rule.params as ToolListParams).blockedTools.length === 0) return false;
+  return true;
+}
 
 export const STOP_WATCH_HOURS = 24;
 
