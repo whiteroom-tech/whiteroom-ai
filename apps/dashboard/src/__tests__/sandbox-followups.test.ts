@@ -84,7 +84,7 @@ describe('Past tests open under the clicked row', () => {
     expect(rows[3]).toContain('aria-expanded="false"');
     const controls = rows[1].match(/aria-controls="([^"]+)"/)![1];
     const detail = html.slice(html.indexOf(rows[2]));
-    expect(detail).toMatch(new RegExp(`^<div role="row" class="wr-table__expanded"><div role="gridcell" aria-colspan="4" id="${controls.replace(/[:]/g, '\\$&')}">`));
+    expect(detail.startsWith(`<div role="row" class="wr-table__expanded"><div role="gridcell" aria-colspan="4" id="${controls}">`)).toBe(true);
     // Today's content, and nothing below the table.
     expect(detail).toContain('Test ID');
     const beforeNextRow = detail.slice(0, detail.indexOf(rows[3]));
