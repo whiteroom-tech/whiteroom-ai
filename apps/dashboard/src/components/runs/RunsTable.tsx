@@ -241,7 +241,7 @@ export function RunsTable({ preview, retentionDays }: {
         <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Audit integrity</Link>
       </PageHeader>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {(flagsKnown || flaggedOnly) && (
             <SegmentedControl<'all' | 'flagged'> label="Show" value={flaggedOnly ? 'flagged' : 'all'} onChange={(v) => changeFilter({ flagged: v === 'flagged' })} size={26} options={[{ value: 'all', label: 'All' }, { value: 'flagged', label: 'Flagged', dot: 'warn' }]} />

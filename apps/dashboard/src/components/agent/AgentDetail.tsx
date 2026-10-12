@@ -287,7 +287,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         {v1 && <Button disabled={!stopGate || !!pending} onClick={() => setConfirmStop(true)} busy={pending === 'stopping'} busyLabel="Stopping…">Stop&hellip;</Button>}
       </PageHeader>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {actionError && (
             <Banner variant="error" actions={<>{actionError.retry && <Button size={28} onClick={() => { const r = actionError.retry; setActionError(null); r?.(); }}>Try again</Button>}<Button variant="ghost" size={28} onClick={() => setActionError(null)}>Dismiss</Button></>}>

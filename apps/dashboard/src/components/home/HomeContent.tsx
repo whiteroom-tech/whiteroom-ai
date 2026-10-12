@@ -186,7 +186,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   const energyOverall = fmtKwh(parseFloat(report.energySavings.estimatedEnergySaved));
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+    <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <div className="wr-home" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
         {failing && <RefreshFailed />}
         <NeedsYou agents={agents} holds={report.holds} holdsKnown={report.holds !== undefined} fleet={fleet} onResumed={() => onActed?.()} />

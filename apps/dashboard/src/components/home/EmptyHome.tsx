@@ -13,7 +13,7 @@ import { ROUTES } from '@/lib/routes';
  */
 export function EmptyHome() {
   return (
-    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
+    <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
       <div style={{ maxWidth: 560, margin: '24px auto 0' }}>
         <Panel bodyPadding="28px 30px">
           <div style={{ display: 'grid', gap: 16 }}>
