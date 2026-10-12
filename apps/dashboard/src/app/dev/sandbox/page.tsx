@@ -1,12 +1,17 @@
 import { notFound } from 'next/navigation';
-import { SandboxPreview } from './preview';
+import { type PreviewState, SandboxPreview } from './preview';
 
 // Sandbox in the shell, with a stand-in session. Local development only: 404 in production.
-// ?state=failed shows a live test whose agent's calls the provider refused.
+// ?state= shows a sample test: failed (the provider refused the agent's calls),
+// demo, passed (a live test with every check passed) or waiting (no calls yet).
 export const metadata = { title: 'Sandbox preview' };
+
+// Listed here, not read from preview.tsx: a client module's values aren't readable on the server.
+const STATES: readonly PreviewState[] = ['failed', 'demo', 'passed', 'waiting'];
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
   if (process.env.NODE_ENV === 'production') notFound();
   const { state } = await searchParams;
-  return <SandboxPreview state={state === 'failed' ? 'failed' : undefined} />;
+  const known = STATES.find((s) => s === state);
+  return <SandboxPreview state={known} />;
 }

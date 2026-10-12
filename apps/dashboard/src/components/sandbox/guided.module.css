@@ -11,6 +11,8 @@
 .timerGreen { color:var(--ok); }
 .timerAmber { color:var(--warn); }
 .timerRed { color:var(--bad); }
+.timerValue { font-variant-numeric:tabular-nums; }
+.srOnly { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 
 /* ── Content area ── */
 /* The full-width area scrolls (scrollbar at the page edge). README › Sandbox:
@@ -98,6 +100,7 @@
 /* ── Forms ── */
 .formGroup { margin-bottom:14px; }
 .formLabel { display:block; font-size:11.5px; font-weight:600; color:var(--tx2); margin-bottom:5px; letter-spacing:.02em; }
+.formLabelHint { font-weight:400; color:var(--tx3); }
 .formInput { display:block; width:100%; background:var(--sunk); color:var(--tx); border:1px solid var(--line2); border-radius:6px; padding:10px 12px; box-sizing:border-box; font:inherit; font-size:13px; }
 .formInput:focus { outline:2px solid var(--brand); outline-offset:1px; border-color:var(--brand); }
 .formToggle { display:flex; gap:0; border:1px solid var(--line2); border-radius:6px; overflow:hidden; }
@@ -135,23 +138,15 @@
 .btnGhost { background:none; color:var(--tx2); border:1px solid transparent; font-size:12px; }
 .btnRow { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
 
-/* ── Preview player ── */
-.preview { background:var(--sunk); border:1px solid var(--line); border-radius:8px; padding:20px; margin:16px 0; }
-.previewHeader { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:.1em; color:var(--tx3); margin-bottom:14px; text-align:center; }
-.previewScenes { display:flex; gap:16px; justify-content:center; padding:10px 0; align-items:flex-start; }
-.previewScene { text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; background:none; border:none; padding:4px; font:inherit; }
-.previewScene:focus-visible { outline:2px solid var(--brand); outline-offset:2px; border-radius:6px; }
-.previewIcon { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--brand-dim); color:var(--brand); transition:all .25s; }
-.previewIcon svg { width:20px; height:20px; }
-.previewIconActive { background:var(--brand); color:var(--on-brand); transform:scale(1.08); }
-.previewIconDone { background:var(--ok-bg); color:var(--ok); }
-.previewLabel { font-size:10.5px; color:var(--tx3); font-weight:500; transition:color .15s; }
-.previewLabelActive { color:var(--brand); font-weight:600; }
-.previewConnector { width:32px; height:1px; background:var(--line); margin-top:22px; flex-shrink:0; }
-.previewDetail { text-align:center; font-size:12.5px; color:var(--tx2); margin-top:14px; min-height:36px; line-height:1.5; }
-.previewDots { display:flex; gap:5px; justify-content:center; margin-top:14px; }
-.previewDot { width:6px; height:6px; border-radius:50%; background:var(--line2); transition:background .2s; }
-.previewDotOn { background:var(--brand); }
+/* ── What the test checks (start screen) ── */
+.preview { background:var(--sunk); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:16px 0; max-width:640px; }
+.previewHeader { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:.1em; color:var(--tx3); margin:0 0 12px; }
+.previewList { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
+.previewItem { display:grid; grid-template-columns:24px minmax(0,1fr); gap:12px; align-items:start; }
+.previewNum { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:600; background:var(--brand-dim); color:var(--brand); }
+.previewName { display:block; font-size:13.5px; font-weight:600; color:var(--tx); line-height:1.4; }
+.previewText { display:block; font-size:12.5px; color:var(--tx2); line-height:1.5; margin-top:1px; }
+.previewDetail { font-size:12.5px; color:var(--tx2); margin:14px 0 0; padding-top:12px; border-top:1px solid var(--line); line-height:1.5; }
 
 /* ── Production card ── */
 .prod { background:var(--ok-bg); border:1px solid var(--ok); border-radius:8px; padding:18px 22px; margin-top:18px; }
@@ -207,8 +202,4 @@
   .content { padding:20px 16px; }
   .btn { min-height:44px !important; } /* overrides the compact inline 28px on Retry / Check now */
   .card { padding:16px 18px; }
-  .previewScenes { gap:8px; }
-  .previewConnector { width:16px; }
-  .previewIcon { width:36px; height:36px; }
-  .previewIcon svg { width:16px; height:16px; }
 }

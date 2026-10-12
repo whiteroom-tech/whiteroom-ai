@@ -31,10 +31,10 @@ describe('sandbox test report', () => {
 
   it('says only what the passed checks support, in plain words', () => {
     expect(summaryText(buildTestReport(run()))).toBe(
-      'demo-agent made 20 calls through WhiteRoom over 5 min 4 s, and they came back normally. When its 2-minute shift ended, WhiteRoom handed its work over once, keeping its context compact. The agent carried on from where it left off.');
+      'demo-agent made 20 calls through WhiteRoom over 5 min 4 s, and they came back normally. When its memory filled up, WhiteRoom saved a summary once, keeping its context compact. The agent carried on from where it left off.');
     const early = buildTestReport(run({ controls: [control('core.connect', 25), control('core.handoff', null), control('core.resume', null)] as unknown as RunStatusResult['controls'] }));
     expect(early.passed).toBe(1);
-    expect(summaryText(early)).toContain('the handover wasn’t checked');
+    expect(summaryText(early)).toContain('saving a summary wasn’t checked');
     expect(summaryText(buildTestReport(run({ controls: [], agents: [], auditLog: [] })))).toContain('hasn’t completed a call');
   });
 
@@ -67,8 +67,8 @@ describe('sandbox test report', () => {
     const noConnect = withControls([failed('core.connect', 'upstream 401')]);
     expect(noConnect.checks[0]).toMatchObject({ result: 'failed', detail: 'upstream 401' });
     expect(summaryText(noConnect)).toBe('demo-agent reached WhiteRoom, but its calls didn’t come back normally (upstream 401).');
-    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('the handover didn’t complete (no handover doc)');
-    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call after the handover didn’t work (next call failed)');
+    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('saving a summary didn’t complete (no handover doc)');
+    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call after the summary didn’t work (next call failed)');
     const html = reportHtml(noConnect);
     expect(html).toContain('<td class="bad">Failed');
     expect(html).toMatch(/<h1 class="bad">0 of 3 checks passed/);
