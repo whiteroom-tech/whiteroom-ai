@@ -167,5 +167,6 @@ describe('Bedrock recipe', () => {
     expect(BEDROCK_NOTES.key).toMatch(/bedrock-api-key-/);
     expect(BEDROCK_NOTES.key).toMatch(/12 hours/);
     expect(BEDROCK_NOTES.region).toMatch(/region where Claude is available/);
+    expect(BEDROCK_NOTES.custody).toMatch(/sends its own key on each call/);
   });
 });

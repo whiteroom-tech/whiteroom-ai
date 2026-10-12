@@ -53,6 +53,7 @@ const BEDROCK_MODEL = 'anthropic.claude-haiku-4-5';
 export const BEDROCK_NOTES = {
   key: 'Bedrock console → API keys. Long-term keys start ABSK. Short-term keys (bedrock-api-key-…) expire within 12 hours, so your agent must send a fresh one.',
   region: 'Use a region where Claude is available on Bedrock.',
+  custody: 'Your agent sends its own key on each call; WhiteRoom only keeps a fingerprint of it.',
   model: `Use Mantle model ids: anthropic. plus the model name, with no region prefix or version suffix (e.g. ${BEDROCK_MODEL}).`,
 } as const;
 

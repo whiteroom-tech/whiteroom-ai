@@ -63,3 +63,45 @@ export function issuedEnvHint(provider: string, url: string): string {
   if (provider === 'openai') return `export OPENAI_BASE_URL=${url}/v1`;
   return `export ANTHROPIC_BASE_URL=${url}`;
 }
+
+/** What the add-key form holds while someone types. */
+export interface KeyFormState {
+  value: string;
+  endpoint: string;
+  status: 'idle' | 'saving' | 'error';
+  msg: string;
+}
+
+export type KeyFormAction =
+  | { type: 'edit'; field: 'value' | 'endpoint'; text: string }
+  /** Another provider tab: its key and second field mean something else, so start over. */
+  | { type: 'tab' }
+  | { type: 'cancel' }
+  | { type: 'saving' }
+  /** A key was connected: clear what was typed. */
+  | { type: 'connected' }
+  | { type: 'idle' }
+  | { type: 'error'; msg: string };
+
+export const EMPTY_KEY_FORM: KeyFormState = { value: '', endpoint: '', status: 'idle', msg: '' };
+
+export function keyFormReducer(state: KeyFormState, action: KeyFormAction): KeyFormState {
+  switch (action.type) {
+    case 'edit': return { ...state, [action.field]: action.text, status: 'idle' };
+    case 'tab': return EMPTY_KEY_FORM;
+    case 'cancel':
+    case 'connected': return { ...state, value: '', endpoint: '', status: 'idle' };
+    case 'saving': return { ...state, status: 'saving', msg: '' };
+    case 'idle': return { ...state, status: 'idle' };
+    case 'error': return { ...state, status: 'error', msg: action.msg };
+  }
+}
+
+/**
+ * The naming help shown with a freshly issued key: the SDK its calls use, and
+ * whether the Claude Code line applies. Claude Code on a Bedrock key would
+ * also need Bedrock model ids configured, so that line is left out there.
+ */
+export function agentNamingFor(provider: string): { provider: 'anthropic' | 'openai'; claudeCode: boolean } {
+  return { provider: isAnthropicWire(provider) ? 'anthropic' : 'openai', claudeCode: provider !== 'bedrock-mantle' };
+}

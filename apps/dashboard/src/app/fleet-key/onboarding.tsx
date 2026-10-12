@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { PROVIDER_LABELS, isAnthropicWire, issuedEnvHint, providerKeyRequest } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
 import type { ProviderTab } from '@/lib/provider-key-form';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
@@ -38,10 +38,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
 }) {
   const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
   const [keys, setKeys] = useState<ProviderKey[] | null>(previewKeys ?? null);
-  const [value, setValue] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
-  const [msg, setMsg] = useState('');
+  const [form, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
+  const { value, endpoint, status, msg } = form;
   const [issued, setIssued] = useState<{ proxyUrl: string; keyHint: string; provider: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProviderKey | null>(null);
@@ -63,30 +61,30 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
 
   // Each tab takes a different kind of key and second field (Azure URL, AWS
   // region), so nothing typed on one carries over to another.
-  useEffect(() => { setValue(''); setEndpoint(''); setMsg(''); setStatus('idle'); }, [tab]);
+  useEffect(() => { dispatch({ type: 'tab' }); }, [tab]);
 
   async function connect(): Promise<boolean> {
     if (previewKeys) return false;
     const check = providerKeyRequest(tab, value, endpoint);
     if (!check.ok) {
-      setStatus('error'); setMsg(check.error);
+      dispatch({ type: 'error', msg: check.error });
       return false;
     }
     const req = check.request;
-    setStatus('saving'); setMsg('');
+    dispatch({ type: 'saving' });
     try {
       const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider);
       if (!result.success || !result.proxyUrl) {
-        setStatus('error'); setMsg(result.error || 'Could not connect that key.'); return false;
+        dispatch({ type: 'error', msg: result.error || 'Could not connect that key.' }); return false;
       }
       const provider = result.provider ?? req.provider ?? (req.key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
       setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider });
-      setValue(''); setEndpoint(''); setStatus('idle');
+      dispatch({ type: 'connected' });
       await refresh();
       await setByok(true);
       return true;
     } catch (e) {
-      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
+      dispatch({ type: 'error', msg: e instanceof Error ? e.message : 'Network error.' });
       return false;
     }
   }
@@ -94,18 +92,18 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   async function disconnect(k: ProviderKey) {
     if (previewKeys) return;
     const prefix = k.wrKey.replace(/\.+$/, '');
-    setStatus('saving'); setMsg('');
+    dispatch({ type: 'saving' });
     try {
       const result = await deleteProviderKey(auth, prefix);
       if (!result.success) {
-        setStatus('error'); setMsg(result.error || 'Could not remove that key.'); return;
+        dispatch({ type: 'error', msg: result.error || 'Could not remove that key.' }); return;
       }
       if (issued?.proxyUrl.includes(prefix)) setIssued(null);
       const remaining = await refresh();
-      setStatus('idle');
+      dispatch({ type: 'idle' });
       await setByok(remaining.length > 0);
     } catch (e) {
-      setStatus('error'); setMsg(e instanceof Error ? e.message : 'Network error.');
+      dispatch({ type: 'error', msg: e instanceof Error ? e.message : 'Network error.' });
     }
   }
 
@@ -128,7 +126,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
-              <AgentNaming provider={isAnthropicWire(issued.provider) ? 'anthropic' : 'openai'} claudeCode={issued.provider !== 'bedrock-mantle'} />
+              <AgentNaming {...agentNamingFor(issued.provider)} />
             </div>
           </Banner>
         )}
@@ -156,7 +154,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 type="text"
                 aria-label={isAws ? 'Region' : 'Azure endpoint'}
                 value={endpoint}
-                onChange={(e) => { setEndpoint(e.target.value); setStatus('idle'); }}
+                onChange={(e) => dispatch({ type: 'edit', field: 'endpoint', text: e.target.value })}
                 placeholder={isAws ? 'Region, e.g. us-east-1' : 'Azure endpoint, e.g. https://myresource.openai.azure.com'}
                 autoCapitalize="none"
                 spellCheck={false}
@@ -169,13 +167,13 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 autoComplete="off"
                 aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
                 value={value}
-                onChange={(e) => { setValue(e.target.value); setStatus('idle'); }}
+                onChange={(e) => dispatch({ type: 'edit', field: 'value', text: e.target.value })}
                 placeholder={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'sk-ant-… or sk-…'}
                 className="wr-input"
                 style={{ flex: 1, minWidth: 0 }}
               />
               <Button variant="primary" onClick={() => void connect().then((ok) => { if (ok) setAdding(false); })} busy={status === 'saving'} busyLabel="Connecting…">Connect</Button>
-              {adding && <Button variant="ghost" onClick={() => { setAdding(false); setValue(''); setEndpoint(''); setStatus('idle'); }}>Cancel</Button>}
+              {adding && <Button variant="ghost" onClick={() => { setAdding(false); dispatch({ type: 'cancel' }); }}>Cancel</Button>}
             </div>
           </div>
         )}
@@ -315,6 +313,7 @@ function BedrockRecipe() {
       <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--tx2)' }}>
         <li>{BEDROCK_NOTES.key}</li>
         <li>{BEDROCK_NOTES.region}</li>
+        <li>{BEDROCK_NOTES.custody}</li>
         <li>{BEDROCK_NOTES.model}</li>
       </ul>
       <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
