@@ -95,15 +95,15 @@ await client.messages.create({
  * token), then re-signs onto its own assumed-role credentials for the real
  * Bedrock call. Any model, not just Claude — see sdks/bedrock-python.
  *
- * WHITEROOM_BEDROCK_ROLE_PRINCIPAL_ARN must be set once the production
- * engine's own ambient AWS identity is established (whichever AWS
- * account/role it authenticates as — see bedrock/credentials.ts's
- * assumeRole()). Until then this shows a placeholder: every trust policy
- * built from it would need re-pasting once the real value lands.
+ * BEDROCK_ROLE_PRINCIPAL_ARN is the IAM user the production engine
+ * authenticates as to call sts:AssumeRole (see bedrock/credentials.ts's
+ * assumeRole()) — the identity every customer's trust policy names. Not a
+ * secret: an ARN is a public identifier, meant to be pasted into customer
+ * IAM policies, same as a username. The access key behind it is the secret,
+ * held only in the engine's own deployment config.
  */
 export const BEDROCK_ROLE_SERVER_ID = new URL(PROXY_ORIGIN).hostname;
-export const BEDROCK_ROLE_PRINCIPAL_ARN =
-  process.env.NEXT_PUBLIC_BEDROCK_ROLE_PRINCIPAL_ARN || '<ask WhiteRoom for the principal ARN>';
+export const BEDROCK_ROLE_PRINCIPAL_ARN = 'arn:aws:iam::867709894307:user/whiteroom-engine-test';
 
 /** The IAM trust policy the customer attaches to the role they create, naming WhiteRoom's principal and their chosen external ID. */
 export function bedrockRoleTrustPolicy(externalId: string): string {

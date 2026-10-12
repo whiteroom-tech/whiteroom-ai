@@ -20,7 +20,6 @@ import {
   BEDROCK_LINES,
   BEDROCK_NOTES,
   BEDROCK_ROLE_LINES,
-  BEDROCK_ROLE_PRINCIPAL_ARN,
   PROXY_ORIGIN,
   SETUP_GUIDE_URL,
   SETUP_LINES,
@@ -554,11 +553,6 @@ function BedrockRoleRecipe() {
         label="1. Create the role's trust policy, with the external ID you'll use below"
         code={bedrockRoleTrustPolicy('<your-external-id>')}
       />
-      {BEDROCK_ROLE_PRINCIPAL_ARN.startsWith('<') && (
-        <p role="alert" style={{ margin: 0, fontSize: 12, color: 'var(--bad)' }}>
-          WhiteRoom's principal ARN isn't configured yet — contact WhiteRoom before relying on this in production.
-        </p>
-      )}
       <RecipeStep label="2. Grant the role Bedrock access, e.g." code={'bedrock:InvokeModel\nbedrock:InvokeModelWithResponseStream\nbedrock:Converse\nbedrock:ConverseStream'} />
       <RecipeStep label="3. Install the client shim" code={BEDROCK_ROLE_LINES.pythonInstall} />
       <RecipeStep label="4. Point boto3 at WhiteRoom (JS/TS coming soon)" code={BEDROCK_ROLE_LINES.python('<your-region>')} />
