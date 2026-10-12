@@ -40,6 +40,15 @@ describe('Sandbox plain language', () => {
     expect(checkGuidance('core.resume', 'observed', run, 'anthropic').detail).toBe('Its next call after the summary worked.');
   });
 
+  it('words passing work to another agent apart from saving a summary', () => {
+    const at = '2026-10-12T10:00:00Z';
+    const log = (...types: string[]) => ({ mode: 'connected' as const, auditLog: types.map((type, i) => ({ id: String(i), timestamp: at, type, agentId: 'a' })) });
+    expect(checkGuidance('core.handoff', 'observed', log('self_handover', 'self_handover', 'paired_handover'), 'anthropic').detail)
+      .toBe('Saved a summary 2 times and kept its context. Passed work to another agent once.');
+    expect(checkGuidance('core.handoff', 'observed', log('handover', 'paired_handover'), 'anthropic').detail)
+      .toBe('Kept its context. Passed work to another agent 2 times.');
+  });
+
   it('labels Activity events without engine jargon', () => {
     expect(eventLabel('policy_chain_verified')).toBe('Controls checked');
     expect(eventLabel('policy_enforcement_verified')).toBe('Control applied');
@@ -53,7 +62,7 @@ describe('Sandbox plain language', () => {
   });
 
   it('points the agent at the test URL', () => {
-    expect(SANDBOX_STEPS[1].sub).toBe('Point your agent at the test URL');
+    expect(SANDBOX_STEPS[1]).toEqual({ title: 'Point your agent', sub: 'Use the test URL' });
   });
 
   it('speaks the countdown in whole minutes', () => {

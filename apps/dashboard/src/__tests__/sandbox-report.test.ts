@@ -97,6 +97,20 @@ describe('sandbox test report', () => {
     expect(reportHtml(r)).toContain('first to last call');
   });
 
+  it('counts summaries and hand-offs to another agent apart, and words them apart', () => {
+    const extra = (type: string, i: number) => ({ id: `x${i}`, timestamp: t(200 + i), type, agentId: 'demo-agent' });
+    const both = buildTestReport(run({ auditLog: [...run().auditLog!, extra('paired_handover', 1), extra('handover', 2)] }));
+    expect(both).toMatchObject({ handovers: 1, partnerHandoffs: 2 });
+    expect(summaryText(both)).toContain('WhiteRoom saved a summary once, keeping its context compact. It passed work to another agent 2 times.');
+    expect(both.events.filter((e) => e.text === 'passed its work to another agent')).toHaveLength(2);
+    expect(reportHtml(both)).toContain('passed to another agent');
+    const partnerOnly = buildTestReport(run({ auditLog: run().auditLog!.filter((e) => e.type !== 'self_handover').concat(extra('paired_handover', 1)) }));
+    expect(partnerOnly).toMatchObject({ handovers: 0, partnerHandoffs: 1 });
+    expect(summaryText(partnerOnly)).toContain('It passed work to another agent once, keeping its context compact.');
+    expect(summaryText(partnerOnly)).not.toContain('saved a summary');
+    expect(reportHtml(buildTestReport(run()))).not.toContain('passed to another agent');
+  });
+
   it('keeps engine notes out of passed checks, and in the technical details', () => {
     const noted = run({ controls: [{ controlId: 'core.connect', name: 'x', result: { liveEvidence: { status: 'observed', timestamp: t(25), diagnostic: 'proxied request abc', requestId: 'r', testedRevision: 1, testedPolicyVersion: 1 } } }] as unknown as RunStatusResult['controls'] });
     const html = reportHtml(buildTestReport(noted));

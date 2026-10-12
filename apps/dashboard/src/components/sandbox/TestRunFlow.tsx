@@ -10,7 +10,7 @@ import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, 
 import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
-import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource, SANDBOX_CHECKS } from '@/lib/sandbox/report';
+import { buildTestReport, checkLabel, memoryCheckDetail, reportFileName, reportHtml, reportSource, SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
@@ -157,8 +157,7 @@ export function checkGuidance(controlId: string, status: string | undefined, run
       return { detail: `${callCount(calls)} went through WhiteRoom and got a normal reply.${failed ? ` ${callCount(failed.count)} failed.` : ''}` };
     }
     if (controlId === 'core.handoff') {
-      const count = (run?.auditLog ?? []).filter(e => HANDOVER_TYPES.has(e.type)).length || 1;
-      return { detail: `Saved a summary ${count} time${count === 1 ? '' : 's'} and kept its context.` };
+      return { detail: memoryCheckDetail(run?.auditLog ?? []) };
     }
     return { detail: 'Its next call after the summary worked.' };
   }
@@ -203,7 +202,7 @@ const TIMER_ICON = <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" strok
 /** The steps rail (README › Sandbox), mapped onto this flow's real stages. */
 export const SANDBOX_STEPS = [
   { title: 'Start a test', sub: 'Paste the key your agent uses, or see the demo' },
-  { title: 'Point your agent', sub: 'Point your agent at the test URL' },
+  { title: 'Point your agent', sub: 'Use the test URL' },
   { title: 'Run one task', sub: 'Calls show up as they arrive' },
   { title: 'Results', sub: 'Three checks, and a report to keep' },
 ] as const;
