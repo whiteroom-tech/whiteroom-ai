@@ -1434,7 +1434,7 @@ export default function PerformancePage() {
 
       {/* Content — dimmed while a range/agent fetch is in flight over data
           already on screen, so stale charts read as "refreshing", not current. */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, ...(refreshing ? { opacity: 0.55, pointerEvents: 'none' as const, transition: 'opacity 0.15s' } : { transition: 'opacity 0.15s' }) }}>
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, ...(refreshing ? { opacity: 0.55, pointerEvents: 'none' as const, transition: 'opacity 0.15s' } : { transition: 'opacity 0.15s' }) }}>
         {/* With data on screen, a failed refresh keeps it and says so; with
             nothing yet, the error stands alone. */}
         {error && (view === 'index' ? indexData : view === 'agent' ? agentData : evidenceData)

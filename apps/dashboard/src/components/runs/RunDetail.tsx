@@ -114,7 +114,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       <PageHeader title={title} fleetId={fleetId}>
         <Link href={`/agents/${encodeURIComponent(agentId)}?from=runs`} className="wr-btn wr-btn--secondary wr-btn--h32">Open agent</Link>
       </PageHeader>
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
         {data && <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 12.5, color: 'var(--tx2)' }}>{runMeta(data.run)}</p>}
         {failing && data && <RefreshFailed />}
         {!!data?.run.flags?.length && (
