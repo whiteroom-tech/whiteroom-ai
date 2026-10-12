@@ -9,7 +9,7 @@ const RESULT: Record<PastTest['overall'], { label: string; tone: 'brand' | 'warn
   pass: { label: 'All checks passed', tone: 'brand' },
   partial: { label: 'Some checks passed', tone: 'warn' },
   fail: { label: 'Checks didn’t pass', tone: 'muted' },
-  empty: { label: 'No checks ran', tone: 'muted' },
+  empty: { label: 'Not tested', tone: 'muted' },
 };
 
 /** "Sep 30, 1:52 pm" in the viewer's time zone. */

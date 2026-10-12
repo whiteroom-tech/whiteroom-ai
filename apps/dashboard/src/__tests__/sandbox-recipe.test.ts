@@ -7,6 +7,7 @@ vi.mock("@/lib/whiteroom/client", () => ({ PROXY_URL: "https://proxy.whiteroom.a
 vi.mock("@/lib/sandbox/api", () => ({}));
 
 import { connectionRecipe } from "@/components/sandbox/TestRunFlow";
+import { cloudRecipe } from "@/lib/sandbox/providers";
 
 const FLEET = "sandbox-abc123";
 const AGENT = "test-agent";
@@ -106,5 +107,22 @@ const client = new OpenAI({
 });
 // Uses OPENAI_API_KEY from your environment.
 // Use this client for your agent's chat.completions calls.`);
+  });
+});
+
+describe("cloudRecipe nests the headers inside the client call", () => {
+  it("Bedrock Python", () => {
+    expect(cloudRecipe("bedrock-mantle", "https://proxy.whiteroom.ai/sk-wr-abc", "test-agent", "Python")).toBe(`import os
+import anthropic
+
+client = anthropic.Anthropic(
+    base_url="https://proxy.whiteroom.ai/sk-wr-abc",
+    api_key=os.environ["AWS_BEARER_TOKEN_BEDROCK"],
+    default_headers={
+        "x-whiteroom-agent": "test-agent"
+    }
+)
+# Use this client for your agent's messages calls,
+# with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.`);
   });
 });

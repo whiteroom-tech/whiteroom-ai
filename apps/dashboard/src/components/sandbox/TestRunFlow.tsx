@@ -200,7 +200,8 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const [provider, setProvider] = useState<Provider>('anthropic');
   const [language, setLanguage] = useState<Language>('Python');
   const [credential, setCredential] = useState('');
-  const [endpointInput, setEndpointInput] = useState('');
+  // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
+  const [endpoints, setEndpoints] = useState<Partial<Record<CloudProvider, string>>>({});
   const [endpointError, setEndpointError] = useState('');
   const [unsupported, setUnsupported] = useState<CloudProvider[]>([]);
   // The proxy key issued for one test, so it can't show against another.
@@ -231,6 +232,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   // for the test, else the one issued in this page (storage may be blocked).
   const proxyKey = run?.sandboxId && shownKey?.sandboxId === run.sandboxId ? shownKey.proxyKey : null;
   const cloud = isCloudProvider(provider) ? provider : null;
+  const endpointInput = cloud ? endpoints[cloud] ?? '' : '';
   // Demos and Anthropic/OpenAI tests use the fleet-header recipe, as before.
   const directProvider: DirectProvider = provider === 'openai' ? 'openai' : 'anthropic';
   // A live cloud test, by what the engine reports (an engine that reports no
@@ -482,8 +484,6 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   // Anthropic vs OpenAI follows a pasted sk- key; the choice decides only for a fleet token.
   const pickProvider = (p: SandboxProvider) => {
     setProvider(!isCloudProvider(p) && (keyKind === 'anthropic' || keyKind === 'openai') ? keyKind : p);
-    // Each cloud provider asks for a different value (an endpoint or a region).
-    if (p !== provider) setEndpointInput('');
     setEndpointError('');
   };
 
@@ -662,7 +662,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
           <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} onPick={pickProvider} />
           {cloud ? (
             <CloudEndpointField provider={cloud} value={endpointInput} error={endpointError}
-              onChange={v => { setEndpointInput(v); setEndpointError(''); }}
+              onChange={v => { setEndpoints(e => ({ ...e, [cloud]: v })); setEndpointError(''); }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
           <div className={s.formGroup}>
