@@ -456,7 +456,6 @@ export function hasNoCalls(run: RunStatusResult | null): boolean {
   return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0 && !callArrived(run);
 }
 
-/** A call reached WhiteRoom, failed or not: a named call registers its agent, an unnamed one is logged as refused. */
 /** A checklist step's state: a failure leads; a step can be done early (step 2, once any call arrives). */
 export function diagStepState(diagShown: number, d: { at: number; fail?: unknown; done?: boolean }): 'fail' | 'done' | 'active' | 'pending' {
   if (d.fail) return 'fail';
@@ -464,6 +463,7 @@ export function diagStepState(diagShown: number, d: { at: number; fail?: unknown
   return diagShown === d.at ? 'active' : 'pending';
 }
 
+/** A call reached WhiteRoom, failed or not: a named call registers its agent, an unnamed one is logged as refused. */
 export function callArrived(run: RunStatusResult | null): boolean {
   return !!run?.agents?.length || !!run?.auditLog?.some(e => e.type === 'unnamed_call_refused') || !!failedCallsOf(run);
 }
