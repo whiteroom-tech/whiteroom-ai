@@ -36,6 +36,17 @@ export const EVENT_LABELS: Record<string, string> = {
   self_handover: 'Saved a summary and kept going',
   handover: 'Passed work to another agent',
   paired_handover: 'Passed work to another agent',
+  handover_out: 'Passed work to another agent',
+  handover_in: 'Took over work from another agent',
+  handover_deferred: 'Summary waiting for the next call',
+  handover_summary_failed: 'Couldn’t write a summary',
+  handover_delivery_abandoned: 'Summary not delivered',
+  handover_chain_abandoned: 'Stopped passing work on',
+  handover_unrecorded: 'Summary not recorded',
+  handover_loop_detected: 'Repeating loop spotted',
+  handover_limit_lowered: 'Memory limit lowered',
+  handover_results_truncated: 'Long results shortened in the summary',
+  handover_notes_resealed: 'Summary notes resealed',
   pair: 'Teamed up with another agent',
   alarm: 'Short break ended',
   agent_paused: 'Agent paused',
@@ -69,7 +80,7 @@ const DEMO_STORY = [
 export function eventLabel(type: string): string {
   const known = EVENT_LABELS[type];
   if (known) return known;
-  if (/handover|handoff/.test(type)) return 'Memory summary step';
+  if (/handover|handoff/.test(type)) return /fail|abandon|unrecorded|error/.test(type) ? 'Memory summary problem' : 'Memory summary step';
   if (/policy/.test(type)) return 'Control step';
   if (/watch/.test(type)) return 'Work step';
   return type.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());

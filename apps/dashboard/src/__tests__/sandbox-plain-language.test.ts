@@ -34,6 +34,14 @@ describe('Sandbox plain language', () => {
     expect(html).not.toMatch(/Route|Evidence|aria-live/);
   });
 
+  it('names hand-offs and summary problems for what they are', () => {
+    expect(eventLabel('handover_out')).toBe('Passed work to another agent');
+    expect(eventLabel('handover_in')).toBe('Took over work from another agent');
+    expect(eventLabel('handover_summary_failed')).toBe('Couldn’t write a summary');
+    expect(eventLabel('handover_something_failed')).toBe('Memory summary problem');
+    expect(eventLabel('handover_something_new')).toBe('Memory summary step');
+  });
+
   it('says what the memory check found in plain words', () => {
     const run = { mode: 'connected' as const, auditLog: [{ id: 'h', timestamp: '2026-10-12T10:00:00Z', type: 'self_handover', agentId: 'a' }] };
     expect(checkGuidance('core.handoff', 'observed', run, 'anthropic').detail).toBe('Saved a summary once and kept its context.');
