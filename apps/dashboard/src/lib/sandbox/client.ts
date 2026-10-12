@@ -69,6 +69,9 @@ export function createRun(
     customControls?: unknown[];
     policyMode?: "observe" | "enforce";
     mode?: "demo" | "connected";
+    /** Cloud providers only; left out, the request is exactly as before. */
+    provider?: string;
+    endpoint?: string;
   },
   key?: string,
 ) {
@@ -81,6 +84,8 @@ export function createRun(
     selected_catalog_ids: opts.selectedCatalogIds,
     custom_controls: opts.customControls,
     policy_mode: opts.policyMode,
+    provider: opts.provider,
+    endpoint: opts.endpoint,
   }, key);
 }
 
@@ -94,6 +99,14 @@ export function startDemo(ownerSubject: string, sandboxId: string, key?: string)
 
 export function destroyRun(ownerSubject: string, sandboxId: string, key?: string) {
   return proxyCall({ action: "destroy_sandbox", user_id: ownerSubject, sandbox_id: sandboxId }, key);
+}
+
+/**
+ * A fresh proxy key for a cloud test whose key this browser no longer has.
+ * The old one stops working; the new one is returned once.
+ */
+export function rotateProxyKey(ownerSubject: string, sandboxId: string, key?: string) {
+  return proxyCall({ action: "rotate_sandbox_proxy_key", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }
 
 /** The owner's finished tests (Sandbox › Past tests), oldest first. */
