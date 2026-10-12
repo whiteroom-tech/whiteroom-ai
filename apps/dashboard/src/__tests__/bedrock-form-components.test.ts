@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
-import { EMPTY_KEY_FORM, agentNamingFor, keyFormReducer } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, agentNamingFor, canSubmitKey, keyFormReducer } from '@/lib/provider-key-form';
 import type { KeyFormAction, KeyFormState } from '@/lib/provider-key-form';
 
 const run = (actions: KeyFormAction[], from: KeyFormState = EMPTY_KEY_FORM) => actions.reduce(keyFormReducer, from);
@@ -30,6 +30,27 @@ describe('add-key form state', () => {
     const errored = run([{ type: 'edit', field: 'value', text: 'k' }, { type: 'saving' }, { type: 'error', msg: 'nope' }]);
     expect(errored).toMatchObject({ value: 'k', status: 'error', msg: 'nope' });
     expect(keyFormReducer(errored, { type: 'edit', field: 'value', text: 'k2' }).status).toBe('idle');
+  });
+});
+
+describe('while a key is saving', () => {
+  const saving = run([{ type: 'edit', field: 'value', text: 'ABSKexample' }, { type: 'saving' }]);
+
+  it('typing keeps the form saving, so Connect stays busy', () => {
+    const edited = run([
+      { type: 'edit', field: 'value', text: 'ABSKexample2' },
+      { type: 'edit', field: 'endpoint', text: 'us-east-1' },
+    ], saving);
+    expect(edited.status).toBe('saving');
+    expect(canSubmitKey(edited)).toBe(false);
+  });
+
+  it('refuses a second submit until the call settles', () => {
+    expect(canSubmitKey(EMPTY_KEY_FORM)).toBe(true);
+    expect(canSubmitKey(saving)).toBe(false);
+    expect(keyFormReducer(saving, { type: 'saving' })).toBe(saving);
+    expect(canSubmitKey(keyFormReducer(saving, { type: 'error', msg: 'nope' }))).toBe(true);
+    expect(canSubmitKey(keyFormReducer(saving, { type: 'connected' }))).toBe(true);
   });
 });
 

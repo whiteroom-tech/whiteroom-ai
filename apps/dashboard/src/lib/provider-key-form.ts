@@ -89,9 +89,11 @@ export const EMPTY_KEY_FORM: KeyFormState = { value: '', endpoint: '', status: '
 
 export function keyFormReducer(state: KeyFormState, action: KeyFormAction): KeyFormState {
   switch (action.type) {
-    case 'edit': return { ...state, [action.field]: action.text, status: 'idle' };
+    // Typing while a key is saving must not re-enable Connect: a second click
+    // would send a duplicate store_key and issue a second proxy URL.
+    case 'edit': return { ...state, [action.field]: action.text, status: state.status === 'saving' ? 'saving' : 'idle' };
+    case 'saving': return state.status === 'saving' ? state : { ...state, status: 'saving', msg: '' };
     case 'connected': return { ...state, value: '', endpoint: '', status: 'idle' };
-    case 'saving': return { ...state, status: 'saving', msg: '' };
     case 'error': return { ...state, status: 'error', msg: action.msg };
   }
 }
@@ -103,4 +105,9 @@ export function keyFormReducer(state: KeyFormState, action: KeyFormAction): KeyF
  */
 export function agentNamingFor(provider: string): { provider: 'anthropic' | 'openai'; claudeCode: boolean } {
   return { provider: isAnthropicWire(provider) ? 'anthropic' : 'openai', claudeCode: provider !== 'bedrock-mantle' };
+}
+
+/** Whether Connect may send: never while a store_key is already in flight. */
+export function canSubmitKey(state: KeyFormState): boolean {
+  return state.status !== 'saving';
 }

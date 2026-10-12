@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
 import type { ProviderKeyRequest, ProviderTab } from '@/lib/provider-key-form';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
@@ -157,16 +157,27 @@ function KeyForm({ tab, onConnect, onCancel }: {
   onConnect: (req: ProviderKeyRequest) => Promise<string | null>;
   onCancel?: () => void;
 }) {
-  const [{ value, endpoint, status, msg }, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
+  const [form, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
+  const { value, endpoint, status, msg } = form;
+  // Set synchronously, so a double click can't start two store_key calls
+  // before the 'saving' render lands.
+  const inFlight = useRef(false);
+  const saving = status === 'saving';
   const isAzure = tab === 'azure';
   const isAws = tab === 'aws';
 
   async function submit() {
+    if (inFlight.current || !canSubmitKey(form)) return;
     const check = providerKeyRequest(tab, value, endpoint);
     if (!check.ok) { dispatch({ type: 'error', msg: check.error }); return; }
+    inFlight.current = true;
     dispatch({ type: 'saving' });
-    const error = await onConnect(check.request);
-    dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
+    try {
+      const error = await onConnect(check.request);
+      dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
+    } finally {
+      inFlight.current = false;
+    }
   }
 
   return (
@@ -180,6 +191,7 @@ function KeyForm({ tab, onConnect, onCancel }: {
           placeholder={isAws ? 'Region, e.g. us-east-1' : 'Azure endpoint, e.g. https://myresource.openai.azure.com'}
           autoCapitalize="none"
           spellCheck={false}
+          readOnly={saving}
           className="wr-input"
         />
       )}
@@ -187,6 +199,7 @@ function KeyForm({ tab, onConnect, onCancel }: {
         <input
           type="password"
           autoComplete="off"
+          readOnly={saving}
           aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
           value={value}
           onChange={(e) => dispatch({ type: 'edit', field: 'value', text: e.target.value })}
@@ -194,7 +207,7 @@ function KeyForm({ tab, onConnect, onCancel }: {
           className="wr-input"
           style={{ flex: 1, minWidth: 0 }}
         />
-        <Button variant="primary" onClick={() => void submit()} busy={status === 'saving'} busyLabel="Connecting…">Connect</Button>
+        <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
         {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
       {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
