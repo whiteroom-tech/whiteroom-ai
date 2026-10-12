@@ -19,7 +19,9 @@ import type {
   AgentInfo,
   AgentPerformanceResult,
   AuditLogResponse,
+  BedrockRoleStatus,
   ClaimFleetResult,
+  DeleteBedrockRoleResult,
   DeleteKeyResult,
   FleetReport,
   GetHandoverResult,
@@ -44,6 +46,7 @@ import type {
   SetBudgetResult,
   SetTokenBudgetResult,
   RegisterResult,
+  StoreBedrockRoleResult,
   StoreKeyResult,
   TokenLoginResult,
 } from './types';
@@ -399,6 +402,32 @@ export function deleteProviderKey(auth: FleetAuth, keyPrefix: string): Promise<D
     action: 'delete_key',
     key_prefix: keyPrefix.replace(/\.+$/, ''),
   });
+}
+
+// -- Bedrock cross-account role --
+//
+// A fleet holds at most one of these (register_bedrock_role is an upsert on
+// the engine side), unlike provider keys which are a list.
+
+export function getBedrockRoleStatus(auth: FleetAuth): Promise<BedrockRoleStatus> {
+  return keyCall<BedrockRoleStatus>(auth, { action: 'bedrock_role_status' });
+}
+
+export function storeBedrockRole(
+  auth: FleetAuth,
+  role: { awsAccountId: string; roleArn: string; externalId: string; region: string },
+): Promise<StoreBedrockRoleResult> {
+  return keyCall<StoreBedrockRoleResult>(auth, {
+    action: 'store_bedrock_role',
+    aws_account_id: role.awsAccountId,
+    role_arn: role.roleArn,
+    external_id: role.externalId,
+    region: role.region,
+  });
+}
+
+export function deleteBedrockRole(auth: FleetAuth): Promise<DeleteBedrockRoleResult> {
+  return keyCall<DeleteBedrockRoleResult>(auth, { action: 'delete_bedrock_role' });
 }
 
 // -- Agent control --

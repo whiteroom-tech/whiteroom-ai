@@ -88,6 +88,66 @@ await client.messages.create({
 });`,
 } as const;
 
+/**
+ * Native Bedrock Runtime adapter: no API key at all. The customer's agent
+ * keeps its own AWS credentials and signs calls as itself; WhiteRoom proves
+ * who's calling via a signed sts:GetCallerIdentity replay (not a bearer
+ * token), then re-signs onto its own assumed-role credentials for the real
+ * Bedrock call. Any model, not just Claude — see sdks/bedrock-python.
+ *
+ * WHITEROOM_BEDROCK_ROLE_PRINCIPAL_ARN must be set once the production
+ * engine's own ambient AWS identity is established (whichever AWS
+ * account/role it authenticates as — see bedrock/credentials.ts's
+ * assumeRole()). Until then this shows a placeholder: every trust policy
+ * built from it would need re-pasting once the real value lands.
+ */
+export const BEDROCK_ROLE_SERVER_ID = new URL(PROXY_ORIGIN).hostname;
+export const BEDROCK_ROLE_PRINCIPAL_ARN =
+  process.env.NEXT_PUBLIC_BEDROCK_ROLE_PRINCIPAL_ARN || '<ask WhiteRoom for the principal ARN>';
+
+/** The IAM trust policy the customer attaches to the role they create, naming WhiteRoom's principal and their chosen external ID. */
+export function bedrockRoleTrustPolicy(externalId: string): string {
+  return JSON.stringify(
+    {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { AWS: BEDROCK_ROLE_PRINCIPAL_ARN },
+          Action: 'sts:AssumeRole',
+          Condition: { StringEquals: { 'sts:ExternalId': externalId } },
+        },
+      ],
+    },
+    null,
+    2,
+  );
+}
+
+export const BEDROCK_ROLE_LINES = {
+  pythonInstall: 'pip install whiteroom-bedrock',
+  python: (region: string) => `import boto3
+import whiteroom_bedrock
+
+client = boto3.client(
+    "bedrock-runtime",
+    region_name="${region}",
+    endpoint_url="${PROXY_ORIGIN}",
+)
+whiteroom_bedrock.install(
+    client,
+    proxy_base_url="${PROXY_ORIGIN}",
+    server_id="${BEDROCK_ROLE_SERVER_ID}",
+    region="${region}",
+)
+
+# From here down it's a normal bedrock-runtime client.
+response = client.converse(
+    modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+    messages=[{"role": "user", "content": [{"text": "hi"}]}],
+)`,
+} as const;
+
 /** Shown when someone turns on Pause, Stop or a Stop rule in Enforce. */
 export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
 
