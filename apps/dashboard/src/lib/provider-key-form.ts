@@ -37,6 +37,9 @@ export function providerKeyRequest(tab: ProviderTab, rawKey: string, rawEndpoint
     if (/^(AKIA|ASIA)[A-Z0-9]{12,}$/.test(key)) {
       return { ok: false, error: 'That’s an AWS access key ID. Create a Bedrock API key instead (Bedrock console → API keys).' };
     }
+    if (/^[A-Za-z0-9/+]{40}$/.test(key)) {
+      return { ok: false, error: 'That looks like an AWS secret access key. Create a Bedrock API key instead (Bedrock console → API keys).' };
+    }
     if (/^sk-/.test(key)) {
       return { ok: false, error: 'That looks like an Anthropic or OpenAI key. Add it under the Anthropic or OpenAI tab.' };
     }
@@ -64,7 +67,10 @@ export function issuedEnvHint(provider: string, url: string): string {
   return `export ANTHROPIC_BASE_URL=${url}`;
 }
 
-/** What the add-key form holds while someone types. */
+/**
+ * What the add-key form holds while someone types. The form is mounted per
+ * provider tab (key={tab}), so switching tabs starts from EMPTY_KEY_FORM.
+ */
 export interface KeyFormState {
   value: string;
   endpoint: string;
@@ -74,13 +80,9 @@ export interface KeyFormState {
 
 export type KeyFormAction =
   | { type: 'edit'; field: 'value' | 'endpoint'; text: string }
-  /** Another provider tab: its key and second field mean something else, so start over. */
-  | { type: 'tab' }
-  | { type: 'cancel' }
   | { type: 'saving' }
   /** A key was connected: clear what was typed. */
   | { type: 'connected' }
-  | { type: 'idle' }
   | { type: 'error'; msg: string };
 
 export const EMPTY_KEY_FORM: KeyFormState = { value: '', endpoint: '', status: 'idle', msg: '' };
@@ -88,11 +90,8 @@ export const EMPTY_KEY_FORM: KeyFormState = { value: '', endpoint: '', status: '
 export function keyFormReducer(state: KeyFormState, action: KeyFormAction): KeyFormState {
   switch (action.type) {
     case 'edit': return { ...state, [action.field]: action.text, status: 'idle' };
-    case 'tab': return EMPTY_KEY_FORM;
-    case 'cancel':
     case 'connected': return { ...state, value: '', endpoint: '', status: 'idle' };
     case 'saving': return { ...state, status: 'saving', msg: '' };
-    case 'idle': return { ...state, status: 'idle' };
     case 'error': return { ...state, status: 'error', msg: action.msg };
   }
 }

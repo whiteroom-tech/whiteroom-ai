@@ -68,6 +68,9 @@ describe('providerKeyRequest, AWS Bedrock tab', () => {
     const iam = providerKeyRequest('aws', 'AKIAEXAMPLEEXAMPLE00', 'us-east-1');
     expect(iam.ok).toBe(false);
     if (!iam.ok) expect(iam.error).toMatch(/access key ID/);
+    const secret = providerKeyRequest('aws', 'Ab1/Cd2+Ef'.repeat(4), 'us-east-1');
+    expect(secret.ok).toBe(false);
+    if (!secret.ok) expect(secret.error).toMatch(/AWS secret access key.*Bedrock API key/);
     const ant = providerKeyRequest('aws', 'sk-ant-exampleexampleexample', 'us-east-1');
     expect(ant.ok).toBe(false);
     if (!ant.ok) expect(ant.error).toMatch(/Anthropic or OpenAI tab/);

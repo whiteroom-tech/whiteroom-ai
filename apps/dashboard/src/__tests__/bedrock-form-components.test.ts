@@ -1,5 +1,5 @@
-// Fleet key page, Bedrock follow-ups: switching provider tab starts the
-// add-key form over, and the Claude Code naming line is left out for Bedrock
+// Fleet key page, Bedrock follow-ups: the add-key form's state (remounted per
+// provider tab), and the Claude Code naming line is left out for Bedrock
 // keys. Rendered statically, like the other component tests here.
 
 import { describe, it, expect } from 'vitest';
@@ -11,30 +11,25 @@ import type { KeyFormAction, KeyFormState } from '@/lib/provider-key-form';
 
 const run = (actions: KeyFormAction[], from: KeyFormState = EMPTY_KEY_FORM) => actions.reduce(keyFormReducer, from);
 
-describe('add-key form across provider tabs', () => {
-  it('clears the key, second field and message when the tab changes', () => {
-    const typed = run([
-      { type: 'edit', field: 'value', text: 'azurekeyexample0000' },
-      { type: 'edit', field: 'endpoint', text: 'https://acme.openai.azure.com' },
-      { type: 'error', msg: 'Endpoint must be your Azure resource URL.' },
-    ]);
-    expect(typed).toMatchObject({ value: 'azurekeyexample0000', endpoint: 'https://acme.openai.azure.com', status: 'error' });
-    expect(keyFormReducer(typed, { type: 'tab' })).toEqual({ value: '', endpoint: '', status: 'idle', msg: '' });
+describe('add-key form state', () => {
+  // Switching provider tab remounts the form (key={tab}), so it starts here.
+  it('starts empty', () => {
+    expect(EMPTY_KEY_FORM).toEqual({ value: '', endpoint: '', status: 'idle', msg: '' });
   });
 
-  it('keeps what was typed while editing, and clears it once connected or cancelled', () => {
+  it('keeps what was typed while editing, and clears it once connected', () => {
     const typed = run([
       { type: 'edit', field: 'value', text: 'ABSKexample' },
       { type: 'edit', field: 'endpoint', text: 'us-east-1' },
     ]);
     expect(typed).toMatchObject({ value: 'ABSKexample', endpoint: 'us-east-1', status: 'idle' });
     expect(run([{ type: 'saving' }, { type: 'connected' }], typed)).toMatchObject({ value: '', endpoint: '', status: 'idle' });
-    expect(keyFormReducer(typed, { type: 'cancel' })).toMatchObject({ value: '', endpoint: '' });
   });
 
-  it('typing after an error clears the error state', () => {
-    const errored = run([{ type: 'error', msg: 'nope' }]);
-    expect(keyFormReducer(errored, { type: 'edit', field: 'value', text: 'x' }).status).toBe('idle');
+  it('keeps the typed key after a refused connect, and typing clears the error state', () => {
+    const errored = run([{ type: 'edit', field: 'value', text: 'k' }, { type: 'saving' }, { type: 'error', msg: 'nope' }]);
+    expect(errored).toMatchObject({ value: 'k', status: 'error', msg: 'nope' });
+    expect(keyFormReducer(errored, { type: 'edit', field: 'value', text: 'k2' }).status).toBe('idle');
   });
 });
 

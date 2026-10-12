@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { setByok } from '@/lib/users';
 import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
-import type { ProviderTab } from '@/lib/provider-key-form';
+import type { ProviderKeyRequest, ProviderTab } from '@/lib/provider-key-form';
 import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
 import type { ProviderKey } from '@/lib/whiteroom/types';
@@ -38,11 +38,11 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
 }) {
   const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
   const [keys, setKeys] = useState<ProviderKey[] | null>(previewKeys ?? null);
-  const [form, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
-  const { value, endpoint, status, msg } = form;
   const [issued, setIssued] = useState<{ proxyUrl: string; keyHint: string; provider: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProviderKey | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
 
   const refresh = useCallback(async (): Promise<ProviderKey[]> => {
     const res = await listProviderKeys(auth);
@@ -56,54 +56,39 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     refresh().catch(() => setKeys([]));
   }, [refresh, previewKeys]);
 
-  const isAzure = tab === 'azure';
-  const isAws = tab === 'aws';
-
-  // Each tab takes a different kind of key and second field (Azure URL, AWS
-  // region), so nothing typed on one carries over to another.
-  useEffect(() => { dispatch({ type: 'tab' }); }, [tab]);
-
-  async function connect(): Promise<boolean> {
-    if (previewKeys) return false;
-    const check = providerKeyRequest(tab, value, endpoint);
-    if (!check.ok) {
-      dispatch({ type: 'error', msg: check.error });
-      return false;
-    }
-    const req = check.request;
-    dispatch({ type: 'saving' });
+  /** Stores the key; null when it connected, otherwise the reason it didn't. */
+  async function connect(req: ProviderKeyRequest): Promise<string | null> {
+    if (previewKeys) return 'Keys can’t be connected in the preview.';
     try {
       const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider);
-      if (!result.success || !result.proxyUrl) {
-        dispatch({ type: 'error', msg: result.error || 'Could not connect that key.' }); return false;
-      }
+      if (!result.success || !result.proxyUrl) return result.error || 'Could not connect that key.';
       const provider = result.provider ?? req.provider ?? (req.key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
       setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider });
-      dispatch({ type: 'connected' });
+      setAdding(false);
       await refresh();
       await setByok(true);
-      return true;
+      return null;
     } catch (e) {
-      dispatch({ type: 'error', msg: e instanceof Error ? e.message : 'Network error.' });
-      return false;
+      return e instanceof Error ? e.message : 'Network error.';
     }
   }
 
   async function disconnect(k: ProviderKey) {
     if (previewKeys) return;
     const prefix = k.wrKey.replace(/\.+$/, '');
-    dispatch({ type: 'saving' });
+    setRemoveBusy(true); setRemoveError('');
     try {
       const result = await deleteProviderKey(auth, prefix);
       if (!result.success) {
-        dispatch({ type: 'error', msg: result.error || 'Could not remove that key.' }); return;
+        setRemoveError(result.error || 'Could not remove that key.'); return;
       }
       if (issued?.proxyUrl.includes(prefix)) setIssued(null);
       const remaining = await refresh();
-      dispatch({ type: 'idle' });
       await setByok(remaining.length > 0);
     } catch (e) {
-      dispatch({ type: 'error', msg: e instanceof Error ? e.message : 'Network error.' });
+      setRemoveError(e instanceof Error ? e.message : 'Network error.');
+    } finally {
+      setRemoveBusy(false);
     }
   }
 
@@ -141,43 +126,16 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
                 <span style={{ fontSize: 12, color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
                 <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
-                <Button variant="danger" size={28} disabled={status === 'saving'} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
+                <Button variant="danger" size={28} disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>
             ))}
           </ul>
         )}
 
-        {showForm && (
-          <div style={{ display: 'grid', gap: 8 }}>
-            {(isAzure || isAws) && (
-              <input
-                type="text"
-                aria-label={isAws ? 'Region' : 'Azure endpoint'}
-                value={endpoint}
-                onChange={(e) => dispatch({ type: 'edit', field: 'endpoint', text: e.target.value })}
-                placeholder={isAws ? 'Region, e.g. us-east-1' : 'Azure endpoint, e.g. https://myresource.openai.azure.com'}
-                autoCapitalize="none"
-                spellCheck={false}
-                className="wr-input"
-              />
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="password"
-                autoComplete="off"
-                aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
-                value={value}
-                onChange={(e) => dispatch({ type: 'edit', field: 'value', text: e.target.value })}
-                placeholder={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'sk-ant-… or sk-…'}
-                className="wr-input"
-                style={{ flex: 1, minWidth: 0 }}
-              />
-              <Button variant="primary" onClick={() => void connect().then((ok) => { if (ok) setAdding(false); })} busy={status === 'saving'} busyLabel="Connecting…">Connect</Button>
-              {adding && <Button variant="ghost" onClick={() => { setAdding(false); dispatch({ type: 'cancel' }); }}>Cancel</Button>}
-            </div>
-          </div>
-        )}
-        {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+        {/* key={tab}: each tab takes a different kind of key and second field
+            (Azure URL, AWS region), so switching remounts the form empty. */}
+        {showForm && <KeyForm key={tab} tab={tab} onConnect={connect} onCancel={adding ? () => setAdding(false) : undefined} />}
+        {removeError && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{removeError}</p>}
       </div>
 
       <ConfirmDialog
@@ -185,11 +143,62 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
         title={removing ? `Remove the ${PROVIDER_LABELS[removing.provider] ?? removing.provider} key ending ${removing.keyHint}?` : ''}
         body={<>Its proxy URL stops working at once. Agents still pointed at it will fail until you point them elsewhere.</>}
         confirmLabel="Remove key"
-        busy={status === 'saving'}
+        busy={removeBusy}
         onConfirm={() => { const k = removing; setRemoving(null); if (k) void disconnect(k); }}
         onCancel={() => setRemoving(null)}
       />
     </Panel>
+  );
+}
+
+/** The add-key fields for one provider tab. Mounted per tab, so it starts empty. */
+function KeyForm({ tab, onConnect, onCancel }: {
+  tab: ProviderTab;
+  onConnect: (req: ProviderKeyRequest) => Promise<string | null>;
+  onCancel?: () => void;
+}) {
+  const [{ value, endpoint, status, msg }, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
+  const isAzure = tab === 'azure';
+  const isAws = tab === 'aws';
+
+  async function submit() {
+    const check = providerKeyRequest(tab, value, endpoint);
+    if (!check.ok) { dispatch({ type: 'error', msg: check.error }); return; }
+    dispatch({ type: 'saving' });
+    const error = await onConnect(check.request);
+    dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {(isAzure || isAws) && (
+        <input
+          type="text"
+          aria-label={isAws ? 'Region' : 'Azure endpoint'}
+          value={endpoint}
+          onChange={(e) => dispatch({ type: 'edit', field: 'endpoint', text: e.target.value })}
+          placeholder={isAws ? 'Region, e.g. us-east-1' : 'Azure endpoint, e.g. https://myresource.openai.azure.com'}
+          autoCapitalize="none"
+          spellCheck={false}
+          className="wr-input"
+        />
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="password"
+          autoComplete="off"
+          aria-label={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'Provider API key'}
+          value={value}
+          onChange={(e) => dispatch({ type: 'edit', field: 'value', text: e.target.value })}
+          placeholder={isAzure ? 'Azure API key' : isAws ? 'Bedrock API key' : 'sk-ant-… or sk-…'}
+          className="wr-input"
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Button variant="primary" onClick={() => void submit()} busy={status === 'saving'} busyLabel="Connecting…">Connect</Button>
+        {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
+      </div>
+      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+    </div>
   );
 }
 
