@@ -17,7 +17,7 @@ const mockHeaders = vi.fn();
 vi.mock('next/headers', () => ({ headers: () => mockHeaders() }));
 
 import {
-  cloudRecipe, cloudStart, endpointsToStore, endpointToRemember, restorableEndpoints, restorableProvider, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
+  cloudRecipe, cloudStart, endpointsToStore, endpointToRemember, restorableEndpoints, restorableProvider, saveEndpoints, savedEndpoints, ENDPOINTS_STORAGE, foundryEndpoint, isEndpointError, isUnsupportedProviderError, providerSummary, proxyKeyBase,
   PROXY_KEY_PLACEHOLDER, PROVIDER_UNSUPPORTED, withUnsupported,
 } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from '@/components/sandbox/CloudProviderParts';
@@ -414,5 +414,18 @@ describe('start form endpoints across a reload', () => {
     expect(restorableEndpoints('not json')).toEqual({});
     expect(restorableEndpoints('[1,2]')).toEqual({});
     expect(restorableEndpoints(JSON.stringify({ anthropic: 'x', foundry: 'https://evil.test', 'bedrock-mantle': 7 }))).toEqual({});
+  });
+
+  it('the start form saves to and restores from this browser', () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('window', { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) } });
+    try {
+      expect(savedEndpoints()).toEqual({});
+      saveEndpoints({ 'azure-openai': 'https://acme.openai.azure.com/?api-key=placeholder-secret', 'bedrock-mantle': 'https://bedrock-mantle.us-west-2.api.aws' });
+      expect(store.get(ENDPOINTS_STORAGE)).not.toContain('placeholder');
+      expect(savedEndpoints()).toEqual({ 'azure-openai': 'https://acme.openai.azure.com', 'bedrock-mantle': 'us-west-2' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

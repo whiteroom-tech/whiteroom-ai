@@ -8,6 +8,7 @@
 import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
 import { bedrockMantleEndpoint, bedrockRegion } from '@/lib/bedrock-endpoint';
 import { BEDROCK_KEY_ENV } from '@/lib/setup';
+import { safeGet, safeSet } from '@/lib/safe-storage';
 
 export type DirectProvider = 'anthropic' | 'openai';
 export type CloudProvider = 'azure-openai' | 'foundry' | 'bedrock-mantle';
@@ -181,6 +182,16 @@ export function restorableEndpoints(saved: string | null): CloudEndpoints {
     if (kept) out[p] = kept;
   }
   return out;
+}
+
+/** The start form's endpoints saved on this browser, checked again. */
+export function savedEndpoints(): CloudEndpoints {
+  return restorableEndpoints(safeGet(ENDPOINTS_STORAGE));
+}
+
+/** Saves the start form's endpoints. Not secrets: only checked addresses and regions are kept. */
+export function saveEndpoints(endpoints: CloudEndpoints): void {
+  safeSet(ENDPOINTS_STORAGE, endpointsToStore(endpoints));
 }
 
 /** Headers as a literal nested one level inside a client constructor call. */

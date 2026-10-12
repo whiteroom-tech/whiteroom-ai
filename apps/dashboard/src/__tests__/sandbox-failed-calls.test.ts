@@ -5,6 +5,8 @@
 // exactly as before. All placeholders; no real keys.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/whiteroom/client', () => ({ PROXY_URL: 'https://proxy.example.test' }));
@@ -16,7 +18,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 import type { RunStatusResult } from '@/lib/sandbox/api';
 import { failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf, type FailedCalls } from '@/lib/sandbox/failed-calls';
 import type { SandboxProvider } from '@/lib/sandbox/providers';
-import { activitySummary, checkGuidance, connectProgress } from '@/components/sandbox/TestRunFlow';
+import { activitySummary, checkGuidance, connectProgress, TestRunFlow } from '@/components/sandbox/TestRunFlow';
 import { GET } from '@/app/api/sandbox/status/route';
 
 const failed = (status: number, reason: FailedCalls['last']['reason'] = 'upstream_error', count = 1, message = 'Invalid API key.'): FailedCalls => ({
@@ -137,7 +139,7 @@ describe('Connect checklist', () => {
     expect(p.stage).toBe(2);
     expect(p.diagShown).toBe(3);
     expect(p.failing?.count).toBe(2);
-    expect(p.failNotice?.next).toMatch(/acme\.openai\.azure\.com/);
+    expect(p.failNotice?.next).toContain('(acme.openai.azure.com)');
   });
 
   it('once a call came back: success leads, the failures are only a note', () => {
@@ -147,6 +149,35 @@ describe('Connect checklist', () => {
     expect(p.failing).toBeNull();
     expect(p.failNotice).toBeNull();
     expect(p.failed?.count).toBe(1);
+  });
+});
+
+describe('the page, with a test whose calls fail', () => {
+  const registered = [{ id: 'e1', timestamp: '2026-10-12T10:00:00.000Z', type: 'register', agentId: 'test-agent' }];
+  const page = (r: RunStatusResult) => renderToStaticMarkup(createElement(() => TestRunFlow({ previewUserId: 'u1', previewRun: r })));
+
+  it('shows the failure in the banner, the checklist and Checks', () => {
+    const html = page(run({ provider: 'azure-openai', endpointHost: 'acme.openai.azure.com', auditLog: registered, failedCalls: failed(401, 'upstream_error', 2) }));
+    expect(html).toContain('<strong>2 calls failed.</strong> Azure OpenAI refused the key (HTTP 401). See Connect for what to check.');
+    expect(html).toContain('aria-label="Failed"');
+    expect(html).toContain('Your agent’s call reached WhiteRoom, but Azure OpenAI refused it (HTTP 401): Invalid API key.');
+    expect(html).toContain('aria-label="Calls failed"');
+    expect(html).toContain('2 calls failed — Azure OpenAI refused the key (HTTP 401).');
+    expect(html).toContain('1 agent · 0 calls · 2 failed · newest first');
+    expect(html).not.toContain('No calls yet.');
+  });
+
+  it('once a call came back, no failure banner or failed step', () => {
+    const html = page(run({ agents: [agent(1)], auditLog: registered, controls: connect('observed'), failedCalls: failed(401) }));
+    expect(html).not.toContain('calls failed.</strong>');
+    expect(html).not.toContain('aria-label="Failed"');
+    expect(html).toContain('Passed through WhiteRoom · 1 call failed');
+  });
+
+  it('without the field, reads as before', () => {
+    const html = page(run({ auditLog: registered }));
+    expect(html).not.toMatch(/calls? failed/);
+    expect(html).toContain('No calls yet.');
   });
 });
 

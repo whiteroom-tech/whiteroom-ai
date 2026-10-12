@@ -7,7 +7,7 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, ENDPOINTS_STORAGE, endpointsToStore, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableEndpoints, restorableProvider, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
@@ -230,10 +230,11 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const live = useSession();
   const session = previewUserId ? { user: { id: previewUserId } } : live.data;
   const authStatus = previewUserId ? 'authenticated' : live.status;
-  const [phase, setPhase] = useState<Phase>('start');
+  // /dev/sandbox's sample test is shown from the first render.
+  const [phase, setPhase] = useState<Phase>(previewRun ? 'workspace' : 'start');
   const [wsTab, setWsTab] = useState<WorkspaceTab>('setup');
-  const [run, setRun] = useState<RunStatusResult | null>(null);
-  const [provider, setProvider] = useState<Provider>('anthropic');
+  const [run, setRun] = useState<RunStatusResult | null>(() => (previewRun ? withRunMode(previewRun) : null));
+  const [provider, setProvider] = useState<Provider>(() => (previewRun && isCloudProvider(previewRun.provider) ? previewRun.provider : 'anthropic'));
   const [language, setLanguage] = useState<Language>('Python');
   const [credential, setCredential] = useState('');
   // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
@@ -244,7 +245,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const [shownKey, setShownKey] = useState<ShownProxyKey>(null);
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting] = useState(!previewRun);
   const [error, setError] = useState('');
   const [reconnecting, setReconnecting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -300,7 +301,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
     const saved = safeGet('wr_sandbox_provider');
     const restored = restorableProvider(saved, []);
     if (restored) setProvider(restored);
-    setEndpoints(restorableEndpoints(safeGet(ENDPOINTS_STORAGE)));
+    setEndpoints(savedEndpoints());
   }, []);
 
   // Load this tab's proxy key for the test; keep one issued in this page if
@@ -712,8 +713,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
               onChange={v => {
                 const next = withEndpoint(endpoints, cloud, v);
                 setEndpoints(next); setEndpointError('');
-                // Not secrets; only checked addresses and regions are kept.
-                safeSet(ENDPOINTS_STORAGE, endpointsToStore(next));
+                saveEndpoints(next);
               }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (

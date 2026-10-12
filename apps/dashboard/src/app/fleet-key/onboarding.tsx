@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
-import { AGENT_PY_HEADERS, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import { AGENT_PY_HEADERS, BEDROCK_KEY_ENV, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
 
@@ -339,7 +339,7 @@ function BedrockRecipe() {
         <li>{BEDROCK_NOTES.model}</li>
       </ul>
       <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
-      <RecipeStep label="Use your Bedrock API key (AWS_BEARER_TOKEN_BEDROCK) as the API key" code={BEDROCK_LINES.apiKey} />
+      <RecipeStep label={`Use your Bedrock API key (${BEDROCK_KEY_ENV}) as the API key`} code={BEDROCK_LINES.apiKey} />
       <div style={{ display: 'grid', gap: 6 }}>
         <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Or set both on the client</span>
         <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />
