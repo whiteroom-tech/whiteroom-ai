@@ -6,7 +6,8 @@
 // recipes are testable without rendering the page.
 
 import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
-import { bedrockMantleEndpoint } from '@/lib/bedrock-endpoint';
+import { bedrockMantleEndpoint, bedrockRegion } from '@/lib/bedrock-endpoint';
+import { BEDROCK_KEY_ENV } from '@/lib/setup';
 
 export type DirectProvider = 'anthropic' | 'openai';
 export type CloudProvider = 'azure-openai' | 'foundry' | 'bedrock-mantle';
@@ -140,6 +141,48 @@ export function withEndpoint(endpoints: CloudEndpoints, provider: CloudProvider,
   return { ...endpoints, [provider]: value };
 }
 
+/** Where the start form keeps its endpoints between reloads (localStorage). */
+export const ENDPOINTS_STORAGE = 'wr_sandbox_endpoints';
+
+/**
+ * What is kept of a typed endpoint: the region for Bedrock, else the checked
+ * address the test would use. Nothing else that was pasted (a query string,
+ * a key by mistake) is ever kept; a value that doesn't check out isn't either.
+ */
+export function endpointToRemember(provider: CloudProvider, raw: string): string | null {
+  if (provider === 'bedrock-mantle') return bedrockRegion(raw);
+  const check = cloudStart(provider, raw);
+  return check.ok ? check.endpoint : null;
+}
+
+/** The endpoints to save, as stored text: only the ones worth restoring. */
+export function endpointsToStore(endpoints: CloudEndpoints): string {
+  const kept: CloudEndpoints = {};
+  for (const p of CLOUD_PROVIDERS) {
+    const v = endpoints[p] && endpointToRemember(p, endpoints[p]);
+    if (v) kept[p] = v;
+  }
+  return JSON.stringify(kept);
+}
+
+/** The endpoints saved by endpointsToStore, checked again; anything unreadable is dropped. */
+export function restorableEndpoints(saved: string | null): CloudEndpoints {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(saved ?? 'null');
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== 'object') return {};
+  const out: CloudEndpoints = {};
+  for (const p of CLOUD_PROVIDERS) {
+    const v = (parsed as Record<string, unknown>)[p];
+    const kept = typeof v === 'string' ? endpointToRemember(p, v) : null;
+    if (kept) out[p] = kept;
+  }
+  return out;
+}
+
 /** Headers as a literal nested one level inside a client constructor call. */
 export function headersLiteral(headers: Record<string, string>, indent: 2 | 4): string {
   return JSON.stringify(headers, null, indent).replace(/\n/g, `\n${' '.repeat(indent)}`);
@@ -164,7 +207,7 @@ export function cloudRecipe(provider: CloudProvider, base: string, agentId: stri
       : `// Option A: the OpenAI client\nimport OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${q(v1)},\n  apiKey: process.env.AZURE_OPENAI_API_KEY,\n  defaultHeaders: ${js}\n});\n// Use this client for your agent's chat.completions calls,\n// with your Azure deployment name as the model.\n// Responses API calls aren't tested yet.\n\n// Option B: if your agent uses the AzureOpenAI client\nimport { AzureOpenAI } from 'openai';\n\nconst azureClient = new AzureOpenAI({\n  endpoint: ${q(base)},\n  apiVersion: ${q(AZURE_API_VERSION)},\n  defaultHeaders: ${js}\n});\n// Uses AZURE_OPENAI_API_KEY from your environment.`;
   }
 
-  const env = provider === 'foundry' ? 'ANTHROPIC_FOUNDRY_API_KEY' : 'AWS_BEARER_TOKEN_BEDROCK';
+  const env = provider === 'foundry' ? 'ANTHROPIC_FOUNDRY_API_KEY' : BEDROCK_KEY_ENV;
   const model = provider === 'foundry'
     ? { py: '# with your Foundry deployment name as the model.\n# Using AnthropicFoundry? Pass base_url= (above) instead of resource=.', js: '// with your Foundry deployment name as the model.\n// Using AnthropicFoundry? Pass baseURL (above) instead of resource.' }
     : { py: '# with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.', js: '// with a Bedrock model id as the model, like anthropic.claude-haiku-4-5.' };

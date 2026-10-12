@@ -6,6 +6,22 @@ import type {
   ReadinessResult,
 } from "@/lib/whiteroom/types";
 
+/**
+ * Calls that reached WhiteRoom but failed at the provider. Left out when there
+ * are none (and by engines that don't report it); a later success doesn't clear it.
+ */
+export interface FailedCalls {
+  count: number;
+  last: {
+    at: string;
+    agentId: string;
+    status: number;
+    reason: 'upstream_error' | 'upstream_unreachable';
+    /** The provider's error text (already scrubbed, at most 200 chars) or a generic line. */
+    message: string;
+  };
+}
+
 export interface RunStatusResult {
   success?: boolean;
   sandboxId?: string;
@@ -60,6 +76,7 @@ export interface RunStatusResult {
     agentId: string | null;
     [key: string]: unknown;
   }[];
+  failedCalls?: FailedCalls;
   error?: string;
 }
 

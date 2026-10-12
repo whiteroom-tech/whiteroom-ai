@@ -7,7 +7,8 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, ENDPOINTS_STORAGE, endpointsToStore, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableEndpoints, restorableProvider, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
@@ -29,7 +30,9 @@ const PREVIEW_DETAILS = [
 
 /** Plain-language names for the events in the Activity tab. */
 const EVENT_LABELS: Record<string, string> = {
-  register: 'Agent connected',
+  // Logged when a call first names the agent, before the call has come back,
+  // so it doesn't mean the call worked.
+  register: 'Agent recognized',
   watch_start: 'Shift started',
   task_complete: 'Call completed',
   handover_begin: 'Shift ended, preparing handover',
@@ -117,11 +120,14 @@ function formatTimer(seconds: number | null | undefined): string {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-function checkGuidance(controlId: string, status: string | undefined, run: RunStatusResult | null): { detail: string; action?: string; progress?: { current: number; total: number; label: string } } {
+export function checkGuidance(controlId: string, status: string | undefined, run: RunStatusResult | null, provider: SandboxProvider): { detail: string; action?: string; failed?: boolean; progress?: { current: number; total: number; label: string } } {
   const agent = run?.agents?.[0];
   const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
   if (status === 'observed') {
-    if (controlId === 'core.connect') return { detail: `${calls} call${calls === 1 ? '' : 's'} went through WhiteRoom and got a normal reply.` };
+    if (controlId === 'core.connect') {
+      const failed = failedCallsOf(run);
+      return { detail: `${callCount(calls)} went through WhiteRoom and got a normal reply.${failed ? ` ${callCount(failed.count)} failed.` : ''}` };
+    }
     if (controlId === 'core.handoff') {
       const count = (run?.auditLog ?? []).filter(e => HANDOVER_TYPES.has(e.type)).length || 1;
       return { detail: `Handed over ${count} time${count === 1 ? '' : 's'}, with its context kept.` };
@@ -129,7 +135,11 @@ function checkGuidance(controlId: string, status: string | undefined, run: RunSt
     return { detail: 'Its next call after the handover worked.' };
   }
   if (run?.mode === 'demo') return { detail: 'The demo fills this in a moment.' };
-  if (controlId === 'core.connect') return { detail: 'No calls yet.', action: 'Copy the code from Connect into your agent and run one normal task.' };
+  if (controlId === 'core.connect') {
+    const failed = failedCallsOf(run);
+    if (failed) return { detail: failedCallsCheckDetail(failed, provider), action: failedCallNotice(failed, provider, run?.endpointHost).next, failed: true };
+    return { detail: 'No calls yet.', action: 'Copy the code from Connect into your agent and run one normal task.' };
+  }
   if (controlId === 'core.handoff') {
     if (!agent) return { detail: 'Starts once your agent connects.' };
     const total = agent.watchMinutes || 2;
@@ -148,8 +158,18 @@ function checkGuidance(controlId: string, status: string | undefined, run: RunSt
   return { detail: 'Waiting for your agent’s next call.', action: 'Keep your agent running for one more call.' };
 }
 
+/** The Activity tab's header: "1 agent · 0 calls · 1 failed · newest first", or null before anything is seen. */
+export function activitySummary(run: RunStatusResult | null): string | null {
+  const agents = run?.agents?.length ?? 0;
+  const failed = failedCallsOf(run);
+  if (!agents && !failed) return null;
+  const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
+  return `${agents} agent${agents === 1 ? '' : 's'} · ${callCount(calls)}${failed ? ` · ${failed.count} failed` : ''} · newest first`;
+}
+
 const CHECK_ICON_PASS = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5"/></svg>;
 const CHECK_ICON_WAIT = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3v3.5l2 1.5"/></svg>;
+const CHECK_ICON_FAIL = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 2.5v4M6 9.2v.1"/></svg>;
 const TIMER_ICON = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>;
 
 /** The steps rail (README › Sandbox), mapped onto this flow's real stages. */
@@ -185,11 +205,13 @@ function StepsRail({ current }: { current: number }) {
   );
 }
 
-export function TestRunFlow({ previewUserId, previewPastTests }: {
+export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   /** /dev/sandbox only: render as this signed-in user without a real session. */
   previewUserId?: string;
   /** /dev/sandbox only: sample Past tests. */
   previewPastTests?: PastTest[];
+  /** /dev/sandbox only: show this test in the workspace instead of asking the engine. */
+  previewRun?: RunStatusResult;
 } = {}) {
   const live = useSession();
   const session = previewUserId ? { user: { id: previewUserId } } : live.data;
@@ -240,10 +262,18 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const liveCloud = !run || isDemo ? null
     : isCloudProvider(run.provider) ? run.provider
     : run.provider === undefined ? cloud : null;
+  // The provider this test's calls go to, for naming it when they fail.
+  const testProvider: SandboxProvider = liveCloud ?? directProvider;
   const recipe = liveCloud
     ? cloudRecipe(liveCloud, proxyKeyBase(PROXY_URL, proxyKey), agentId, language)
     : connectionRecipe(directProvider, fleetId, agentId, language);
   const stage = diagStage(run);
+  // Failures lead only until a call comes back; after that, success wins.
+  const failed = failedCallsOf(run);
+  const failing = failed && stage < 3 ? failed : null;
+  const failNotice = failing ? failedCallNotice(failing, testProvider, run?.endpointHost) : null;
+  // A failed call still reached WhiteRoom, so the checklist stops on that step.
+  const diagShown = failing ? 3 : stage;
   const allPassed = (run?.controls ?? []).every(c => {
     const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
     return ev?.status === 'observed';
@@ -255,11 +285,13 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     if (keyKind === 'anthropic' || keyKind === 'openai') setProvider(p => (isCloudProvider(p) ? p : keyKind));
   }, [keyKind]);
 
-  // Remember the provider for this test so a reload shows the right code.
+  // Remember the provider for this test so a reload shows the right code,
+  // and the endpoint or region typed for each cloud provider.
   useEffect(() => {
     const saved = safeGet('wr_sandbox_provider');
     const restored = restorableProvider(saved, []);
     if (restored) setProvider(restored);
+    setEndpoints(restorableEndpoints(safeGet(ENDPOINTS_STORAGE)));
   }, []);
 
   // Load this tab's proxy key for the test; keep one issued in this page if
@@ -315,6 +347,11 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
       setRun(null); setCredential(''); setPhase('start'); setBooting(true);
     }
     if (!owner) return;
+    if (previewRun) {
+      if (isCloudProvider(previewRun.provider)) setProvider(previewRun.provider);
+      setRun(withRunMode(previewRun)); setPhase('workspace'); setBooting(false);
+      return;
+    }
     let disposed = false;
     getStatus().then(st => {
       if (disposed) return;
@@ -329,11 +366,11 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     }).catch(() => { if (!disposed) setError('Could not load your test. Check your connection and retry.'); })
       .finally(() => { if (!disposed) setBooting(false); });
     return () => { disposed = true; };
-  }, [session?.user?.id, pollTick]);
+  }, [session?.user?.id, pollTick, previewRun]);
 
   // Poller for workspace
   useEffect(() => {
-    if (!run?.sandboxId || phase !== 'workspace' || expired) return;
+    if (!run?.sandboxId || phase !== 'workspace' || expired || previewRun) return;
     let disposed = false;
     let pending = false;
     let failures = 0;
@@ -372,7 +409,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     window.addEventListener('online', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { disposed = true; clearTimeout(timer); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [run?.sandboxId, phase, expired, pollTick, verified]);
+  }, [run?.sandboxId, phase, expired, pollTick, verified, previewRun]);
 
   // Local timer countdown — ticks every second between polls
   useEffect(() => {
@@ -548,6 +585,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
 
   // ── Diagnostic check icon ──
   const diagCheck = <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5"/></svg>;
+  const diagAlert = <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 2.5v4M6 9.2v.1"/></svg>;
   const diagSpinner = <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="14 8"><animateTransform attributeName="transform" type="rotate" from="0 6 6" to="360 6 6" dur="1s" repeatCount="indefinite"/></circle></svg>;
 
   // ── Render checks list ──
@@ -555,10 +593,10 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
     const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
     const status = ev?.status;
     const passed = status === 'observed';
-    const guide = checkGuidance(c.controlId, status, run);
+    const guide = checkGuidance(c.controlId, status, run, testProvider);
     return (
       <div className={s.check} key={c.controlId}>
-        <div className={`${s.checkIcon} ${passed ? s.checkPass : s.checkWait}`} aria-label={passed ? 'Passed' : 'Waiting'}>{passed ? CHECK_ICON_PASS : CHECK_ICON_WAIT}</div>
+        <div className={`${s.checkIcon} ${passed ? s.checkPass : guide.failed ? s.checkFail : s.checkWait}`} aria-label={passed ? 'Passed' : guide.failed ? 'Calls failed' : 'Waiting'}>{passed ? CHECK_ICON_PASS : guide.failed ? CHECK_ICON_FAIL : CHECK_ICON_WAIT}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className={s.checkName}>{checkLabel(c.controlId, c.name)}</div>
           {passed && <div className={`${s.checkDetail} ${s.checkDetailPass}`}>Passed · {guide.detail}</div>}
@@ -662,7 +700,12 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
           <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} onPick={pickProvider} />
           {cloud ? (
             <CloudEndpointField provider={cloud} value={endpointInput} error={endpointError}
-              onChange={v => { setEndpoints(e => withEndpoint(e, cloud, v)); setEndpointError(''); }}
+              onChange={v => {
+                const next = withEndpoint(endpoints, cloud, v);
+                setEndpoints(next); setEndpointError('');
+                // Not secrets; only checked addresses and regions are kept.
+                safeSet(ENDPOINTS_STORAGE, endpointsToStore(next));
+              }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
           <div className={s.formGroup}>
@@ -699,6 +742,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
           if (allPassed) return <div className={`${s.summary} ${s.summaryPass}`}><strong>All {total} checks passed.</strong> Your agent works through WhiteRoom.</div>;
           const nextCheck = controls.find(c => { const ev = c.result?.liveEvidence; return ev?.status !== 'observed'; });
           const nextLabel = nextCheck ? checkLabel(nextCheck.controlId, nextCheck.name).toLowerCase() : '';
+          if (failing) return <div className={`${s.summary} ${s.summaryFail}`}><strong>{callCount(failing.count)} failed.</strong> {failedCallReason(failing, testProvider)}. See Connect for what to check.</div>;
           if (passed === 0) return <div className={s.summary}><strong>Waiting for your agent.</strong> Add the code from Connect, then run your agent.</div>;
           return <div className={s.summary}><strong>{passed} of {total} checks passed.</strong>{nextLabel ? ` Next: ${nextLabel}.` : ''}</div>;
         })()}
@@ -736,17 +780,20 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
             <div className={s.diag}>
               {[
                 { label: 'WhiteRoom is ready', sub: stage >= 1 ? 'Ready for your agent' : 'Checking…', at: 1 },
-                { label: 'Your agent is recognized', sub: stage >= 2 ? `Seen as ${agentId}` : 'Waiting for its first call', at: 2 },
-                { label: 'Its first call went through', sub: stage >= 3 ? 'Passed through WhiteRoom' : 'Waiting — run one normal task', at: 3 },
+                { label: 'Your agent is recognized', sub: diagShown >= 2 ? `Seen as ${agentId}` : 'Waiting for its first call', at: 2 },
+                { label: 'Its first call went through', sub: stage >= 3 ? `Passed through WhiteRoom${failed ? ` · ${callCount(failed.count)} failed` : ''}` : 'Waiting — run one normal task', at: 3, fail: failNotice },
                 { label: 'It got a normal reply', sub: stage >= 4 ? 'Your provider answered as usual' : 'Checks your provider answered', at: 4 },
               ].map((d, i) => (
                 <div className={s.diagStep} key={i}>
-                  <span className={`${s.diagDot} ${stage > d.at ? s.diagDone : stage === d.at ? s.diagActive : s.diagPending}`}>
-                    {stage > d.at ? diagCheck : stage === d.at ? diagSpinner : null}
+                  <span className={`${s.diagDot} ${d.fail ? s.diagFail : diagShown > d.at ? s.diagDone : diagShown === d.at ? s.diagActive : s.diagPending}`} aria-label={d.fail ? 'Failed' : undefined}>
+                    {d.fail ? diagAlert : diagShown > d.at ? diagCheck : diagShown === d.at ? diagSpinner : null}
                   </span>
                   <div>
-                    <div className={stage >= d.at ? s.diagLabel : s.diagLabelPending}>{d.label}</div>
-                    <div className={s.diagSub}>{d.sub}</div>
+                    <div className={diagShown >= d.at ? s.diagLabel : s.diagLabelPending}>{d.label}</div>
+                    {d.fail ? <>
+                      <div className={`${s.diagSub} ${s.diagSubFail}`}>{d.fail.what}</div>
+                      <div className={s.checkAction}>→ {d.fail.next}</div>
+                    </> : <div className={s.diagSub}>{d.sub}</div>}
                   </div>
                 </div>
               ))}
@@ -819,7 +866,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
 
         {/* ── Activity tab ── */}
         <div className={`${s.panel} ${wsTab === 'activity' ? s.panelActive : ''}`}>
-          {run?.agents?.length ? <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{run.agents.length} agent{run.agents.length === 1 ? '' : 's'} · {run.agents.reduce((sum, a) => sum + a.totalTasks, 0)} calls · newest first</p> : null}
+          {activitySummary(run) && <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{activitySummary(run)}</p>}
           {renderActivity()}
         </div>
 
@@ -836,7 +883,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
         <div className={s.overlay} onClick={e => { if (e.target === e.currentTarget) setConfirmEnd(false); }}>
           <div className={s.modal} ref={modalRef} role="alertdialog" aria-labelledby="end-title">
             <h2 id="end-title" style={{ fontFamily: FONT_DISPLAY }}>End this test?</h2>
-            <p>Your results disappear when the test ends, so download the report first if you want to keep it. Ending doesn’t stop your agent; its calls just stop being part of this test.</p>
+            <p>The result stays in Past tests. The full report, with each check and the activity, can only be downloaded while the test is open. Ending doesn’t stop your agent; its calls just stop being part of this test.</p>
             <div className={s.btnRow}>
               <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => void end()} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}>End test</button>
               <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy}>Download report</button>

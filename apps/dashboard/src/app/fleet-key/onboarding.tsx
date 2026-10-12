@@ -339,7 +339,7 @@ function BedrockRecipe() {
         <li>{BEDROCK_NOTES.model}</li>
       </ul>
       <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
-      <RecipeStep label="Your Bedrock API key is the API key" code={BEDROCK_LINES.apiKey} />
+      <RecipeStep label="Use your Bedrock API key (AWS_BEARER_TOKEN_BEDROCK) as the API key" code={BEDROCK_LINES.apiKey} />
       <div style={{ display: 'grid', gap: 6 }}>
         <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Or set both on the client</span>
         <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />

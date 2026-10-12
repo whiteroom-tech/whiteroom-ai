@@ -46,7 +46,8 @@ export const AGENT_PY_HEADERS = PY_HEADERS;
  * the model name, with no region prefix or version suffix.
  */
 const BEDROCK_PROXY = `${PROXY_ORIGIN}/<your-proxy-key>`;
-const BEDROCK_KEY_PLACEHOLDER = '<your-bedrock-api-key>';
+/** AWS's standard variable for a Bedrock API key; Sandbox's Bedrock recipe reads the same one. */
+export const BEDROCK_KEY_ENV = 'AWS_BEARER_TOKEN_BEDROCK';
 const BEDROCK_MODEL = 'anthropic.claude-haiku-4-5';
 
 /** The notes under the Bedrock recipe: where the key comes from, region, model ids. */
@@ -59,12 +60,13 @@ export const BEDROCK_NOTES = {
 
 export const BEDROCK_LINES = {
   baseUrl: `export ANTHROPIC_BASE_URL=${BEDROCK_PROXY}`,
-  apiKey: `export ANTHROPIC_API_KEY=${BEDROCK_KEY_PLACEHOLDER}`,
-  python: `import anthropic
+  apiKey: `export ANTHROPIC_API_KEY="$${BEDROCK_KEY_ENV}"`,
+  python: `import os
+import anthropic
 
 client = anthropic.Anthropic(
     base_url="${BEDROCK_PROXY}",
-    api_key="${BEDROCK_KEY_PLACEHOLDER}",
+    api_key=os.environ["${BEDROCK_KEY_ENV}"],
     ${PY_HEADERS},  # optional if your agent has a system prompt
 )
 client.messages.create(
@@ -76,7 +78,7 @@ client.messages.create(
 
 const client = new Anthropic({
   baseURL: "${BEDROCK_PROXY}",
-  apiKey: "${BEDROCK_KEY_PLACEHOLDER}",
+  apiKey: process.env.${BEDROCK_KEY_ENV},
   ${TS_HEADERS}, // optional if your agent has a system prompt
 });
 await client.messages.create({
