@@ -45,6 +45,7 @@ describe('cloudStart (Start your test form)', () => {
     expect(wrongHost.ok).toBe(false);
     if (!wrongHost.ok) expect(wrongHost.error).toContain('uses your resource’s services.ai.azure.com address');
     const notAzure = cloudStart('foundry', 'https://acme.openai.azure.com.evil.test');
+    expect(notAzure.ok).toBe(false);
     if (!notAzure.ok) expect(notAzure.error).not.toContain('services.ai.azure.com address');
   });
 
