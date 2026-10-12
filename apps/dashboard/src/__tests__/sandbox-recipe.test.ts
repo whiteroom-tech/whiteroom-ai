@@ -78,7 +78,7 @@ describe("connectionRecipe", () => {
   });
 });
 
-// Pinned byte for byte: cloud providers must not change the Anthropic/OpenAI recipes.
+// Pinned byte for byte, so recipe changes are deliberate.
 describe("connectionRecipe is unchanged for Anthropic and OpenAI", () => {
   it("Anthropic Python", () => {
     expect(connectionRecipe("anthropic", FLEET, AGENT, "Python")).toBe(`import anthropic
@@ -86,9 +86,9 @@ describe("connectionRecipe is unchanged for Anthropic and OpenAI", () => {
 client = anthropic.Anthropic(
     base_url="https://proxy.whiteroom.ai",
     default_headers={
-    "x-whiteroom-fleet": "sandbox-abc123",
-    "x-whiteroom-agent": "test-agent"
-}
+        "x-whiteroom-fleet": "sandbox-abc123",
+        "x-whiteroom-agent": "test-agent"
+    }
 )
 # Uses ANTHROPIC_API_KEY from your environment.
 # Use this client for your agent's messages calls.`);
@@ -100,9 +100,9 @@ client = anthropic.Anthropic(
 const client = new OpenAI({
   baseURL: "https://proxy.whiteroom.ai/v1",
   defaultHeaders: {
-  "x-whiteroom-fleet": "sandbox-abc123",
-  "x-whiteroom-agent": "test-agent"
-}
+    "x-whiteroom-fleet": "sandbox-abc123",
+    "x-whiteroom-agent": "test-agent"
+  }
 });
 // Uses OPENAI_API_KEY from your environment.
 // Use this client for your agent's chat.completions calls.`);

@@ -225,7 +225,8 @@ export function newProxyKey(sandboxId: string): Promise<{ success?: boolean; pro
 export interface PastTest {
   sandboxId: string;
   destroyedAt: string;
-  overall: "pass" | "fail" | "partial";
+  /** "empty": no check got any evidence (no call reached the provider and came back OK). */
+  overall: "pass" | "fail" | "partial" | "empty";
   totalTasks: number;
   isTrial: boolean;
 }

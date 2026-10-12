@@ -7,7 +7,7 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type DirectProvider, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, cloudStart, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withUnsupported } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
@@ -81,11 +81,11 @@ export function connectionRecipe(provider: DirectProvider, fleetId: string, agen
   const base = PROXY_URL.replace(/\/$/, '') + (provider === 'openai' ? '/v1' : '');
   const headers = { 'x-whiteroom-fleet': fleetId, 'x-whiteroom-agent': agentId };
   if (language === 'Python') return provider === 'openai'
-    ? `from openai import OpenAI\n\nclient = OpenAI(\n    base_url=${JSON.stringify(base)},\n    default_headers=${JSON.stringify(headers, null, 4)}\n)\n# Uses OPENAI_API_KEY from your environment.\n# Use this client for your agent's chat.completions calls.`
-    : `import anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${JSON.stringify(base)},\n    default_headers=${JSON.stringify(headers, null, 4)}\n)\n# Uses ANTHROPIC_API_KEY from your environment.\n# Use this client for your agent's messages calls.`;
+    ? `from openai import OpenAI\n\nclient = OpenAI(\n    base_url=${JSON.stringify(base)},\n    default_headers=${headersLiteral(headers, 4)}\n)\n# Uses OPENAI_API_KEY from your environment.\n# Use this client for your agent's chat.completions calls.`
+    : `import anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${JSON.stringify(base)},\n    default_headers=${headersLiteral(headers, 4)}\n)\n# Uses ANTHROPIC_API_KEY from your environment.\n# Use this client for your agent's messages calls.`;
   return provider === 'openai'
-    ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
-    : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
+    ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
+    : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
 }
 
 function connectionVerified(status: RunStatusResult | null) {
@@ -482,6 +482,8 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   // Anthropic vs OpenAI follows a pasted sk- key; the choice decides only for a fleet token.
   const pickProvider = (p: SandboxProvider) => {
     setProvider(!isCloudProvider(p) && (keyKind === 'anthropic' || keyKind === 'openai') ? keyKind : p);
+    // Each cloud provider asks for a different value (an endpoint or a region).
+    if (p !== provider) setEndpointInput('');
     setEndpointError('');
   };
 
