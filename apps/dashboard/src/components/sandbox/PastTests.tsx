@@ -13,13 +13,18 @@ const RESULT: Record<PastTest['overall'], { label: string; tone: 'brand' | 'warn
   empty: { label: 'Not tested', tone: 'muted' },
 };
 
+/** When the engine started recording "empty" (engine #207, live 2026-10-12 15:42 UTC). */
+export const EMPTY_RECORDED_SINCE = Date.parse('2026-10-12T15:42:00Z');
+
 /**
- * The result to show. Before Oct 12 the engine recorded a test that ended
- * with nothing checked as "partial". Its task count only counts calls that
- * came back OK, so "partial" with 0 tasks means no call ever worked: Not tested.
+ * The result to show. Before engine #207 a test that ended with nothing
+ * checked was recorded as "partial". Its task count only counts calls that
+ * came back OK, so an older "partial" with 0 tasks means no call ever worked:
+ * Not tested. Newer records are shown as stored.
  */
-export function pastResult(t: Pick<PastTest, 'overall' | 'totalTasks'>): PastTest['overall'] {
-  return t.overall === 'partial' && t.totalTasks === 0 ? 'empty' : t.overall;
+export function pastResult(t: Pick<PastTest, 'overall' | 'totalTasks' | 'destroyedAt'>): PastTest['overall'] {
+  const legacy = Date.parse(t.destroyedAt) < EMPTY_RECORDED_SINCE;
+  return legacy && t.overall === 'partial' && t.totalTasks === 0 ? 'empty' : t.overall;
 }
 
 /** "Sep 30, 1:52 pm" in the viewer's time zone. */

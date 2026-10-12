@@ -94,7 +94,7 @@ const PAST_TESTS = [
   { sandboxId: 's2', destroyedAt: new Date(Date.now() - 86_400_000).toISOString(), overall: 'partial', totalTasks: 2, isTrial: false },
   { sandboxId: 's4', destroyedAt: new Date(Date.now() - 1.5 * 86_400_000).toISOString(), overall: 'empty', totalTasks: 0, isTrial: false },
   // Recorded before Oct 12: nothing checked was stored as partial. Shown as Not tested.
-  { sandboxId: 's5', destroyedAt: new Date(Date.now() - 1.8 * 86_400_000).toISOString(), overall: 'partial', totalTasks: 0, isTrial: false },
+  { sandboxId: 's5', destroyedAt: '2026-10-12T10:50:00.000Z', overall: 'partial', totalTasks: 0, isTrial: false },
   { sandboxId: 's1', destroyedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), overall: 'pass', totalTasks: 6, isTrial: true },
 ] as const;
 

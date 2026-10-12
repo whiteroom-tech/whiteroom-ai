@@ -14,9 +14,13 @@ describe("Past tests", () => {
 
   it("shows a legacy test with nothing checked as 'Not tested'", () => {
     // Before Oct 12 the engine stored it as partial; its task count is calls that came back OK.
-    expect(pastResult({ overall: "partial", totalTasks: 0 })).toBe("empty");
-    expect(pastResult({ overall: "partial", totalTasks: 2 })).toBe("partial");
-    expect(pastResult({ overall: "pass", totalTasks: 0 })).toBe("pass");
+    const before = "2026-10-12T10:50:00Z";
+    const after = "2026-10-13T09:00:00Z";
+    expect(pastResult({ overall: "partial", totalTasks: 0, destroyedAt: before })).toBe("empty");
+    expect(pastResult({ overall: "partial", totalTasks: 2, destroyedAt: before })).toBe("partial");
+    expect(pastResult({ overall: "pass", totalTasks: 0, destroyedAt: before })).toBe("pass");
+    // Records made after the engine began storing "empty" are shown as stored.
+    expect(pastResult({ overall: "partial", totalTasks: 0, destroyedAt: after })).toBe("partial");
     const html = renderToStaticMarkup(createElement(PastTests, { preview: [
       { sandboxId: "s1", destroyedAt: "2026-10-01T10:00:00Z", overall: "partial", totalTasks: 0, isTrial: false },
     ] }));
