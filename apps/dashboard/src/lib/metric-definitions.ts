@@ -46,7 +46,7 @@ export const HELP = {
   historyKept: 'How long WhiteRoom keeps the record of what your agents did. Older records are deleted automatically.',
   alerts: 'Where WhiteRoom sends a message when a rule says Just tell me, when a run is flagged, or when a claim does not match the record.',
   slackWebhook: 'A private link from Slack that lets WhiteRoom post into one channel.',
-  pastTests: 'Your earlier Sandbox tests: when each one ended, whether its checks passed, and how many tasks it ran.',
+  pastTests: 'Your earlier Sandbox tests: when each one ended, whether its checks passed (Not tested means no call came back OK), and how many tasks it ran.',
   shift: 'One stretch of an agent’s working time.',
   watchOnlyEnforce: 'Watch only: a rule notes what it would have done but changes nothing. Enforce: it really steps in.',
   tryLast7Days: 'Replays last week’s real activity against a rule and shows what it would have done. Nothing changes.',

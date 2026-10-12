@@ -14,6 +14,7 @@ export function SandboxPreview() {
         previewPastTests={[
           { sandboxId: 's3', destroyedAt: new Date(Date.now() - 3_600_000).toISOString(), overall: 'pass', totalTasks: 4, isTrial: false },
           { sandboxId: 's2', destroyedAt: new Date(Date.now() - 86_400_000).toISOString(), overall: 'partial', totalTasks: 2, isTrial: false },
+          { sandboxId: 's4', destroyedAt: new Date(Date.now() - 1.5 * 86_400_000).toISOString(), overall: 'empty', totalTasks: 0, isTrial: false },
           { sandboxId: 's1', destroyedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), overall: 'pass', totalTasks: 6, isTrial: true },
         ]}
       />

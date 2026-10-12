@@ -7,7 +7,7 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type DirectProvider, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, HANDOVER_TYPES, reportFileName, reportHtml, reportSource } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
@@ -81,11 +81,11 @@ export function connectionRecipe(provider: DirectProvider, fleetId: string, agen
   const base = PROXY_URL.replace(/\/$/, '') + (provider === 'openai' ? '/v1' : '');
   const headers = { 'x-whiteroom-fleet': fleetId, 'x-whiteroom-agent': agentId };
   if (language === 'Python') return provider === 'openai'
-    ? `from openai import OpenAI\n\nclient = OpenAI(\n    base_url=${JSON.stringify(base)},\n    default_headers=${JSON.stringify(headers, null, 4)}\n)\n# Uses OPENAI_API_KEY from your environment.\n# Use this client for your agent's chat.completions calls.`
-    : `import anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${JSON.stringify(base)},\n    default_headers=${JSON.stringify(headers, null, 4)}\n)\n# Uses ANTHROPIC_API_KEY from your environment.\n# Use this client for your agent's messages calls.`;
+    ? `from openai import OpenAI\n\nclient = OpenAI(\n    base_url=${JSON.stringify(base)},\n    default_headers=${headersLiteral(headers, 4)}\n)\n# Uses OPENAI_API_KEY from your environment.\n# Use this client for your agent's chat.completions calls.`
+    : `import anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${JSON.stringify(base)},\n    default_headers=${headersLiteral(headers, 4)}\n)\n# Uses ANTHROPIC_API_KEY from your environment.\n# Use this client for your agent's messages calls.`;
   return provider === 'openai'
-    ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
-    : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${JSON.stringify(headers, null, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
+    ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
+    : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
 }
 
 function connectionVerified(status: RunStatusResult | null) {
@@ -200,7 +200,8 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   const [provider, setProvider] = useState<Provider>('anthropic');
   const [language, setLanguage] = useState<Language>('Python');
   const [credential, setCredential] = useState('');
-  const [endpointInput, setEndpointInput] = useState('');
+  // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
+  const [endpoints, setEndpoints] = useState<CloudEndpoints>({});
   const [endpointError, setEndpointError] = useState('');
   const [unsupported, setUnsupported] = useState<CloudProvider[]>([]);
   // The proxy key issued for one test, so it can't show against another.
@@ -231,6 +232,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
   // for the test, else the one issued in this page (storage may be blocked).
   const proxyKey = run?.sandboxId && shownKey?.sandboxId === run.sandboxId ? shownKey.proxyKey : null;
   const cloud = isCloudProvider(provider) ? provider : null;
+  const endpointInput = cloud ? endpoints[cloud] ?? '' : '';
   // Demos and Anthropic/OpenAI tests use the fleet-header recipe, as before.
   const directProvider: DirectProvider = provider === 'openai' ? 'openai' : 'anthropic';
   // A live cloud test, by what the engine reports (an engine that reports no
@@ -660,7 +662,7 @@ export function TestRunFlow({ previewUserId, previewPastTests }: {
           <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} onPick={pickProvider} />
           {cloud ? (
             <CloudEndpointField provider={cloud} value={endpointInput} error={endpointError}
-              onChange={v => { setEndpointInput(v); setEndpointError(''); }}
+              onChange={v => { setEndpoints(e => withEndpoint(e, cloud, v)); setEndpointError(''); }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
           <div className={s.formGroup}>

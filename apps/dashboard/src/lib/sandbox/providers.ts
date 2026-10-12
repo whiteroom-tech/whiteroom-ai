@@ -133,6 +133,18 @@ export function proxyKeyBase(proxyUrl: string, proxyKey: string | null | undefin
 /** Azure OpenAI's GA data-plane version, for the AzureOpenAI client variant. */
 export const AZURE_API_VERSION = '2024-10-21';
 
+/** What the start form's endpoint field holds: one value per cloud provider. */
+export type CloudEndpoints = Partial<Record<CloudProvider, string>>;
+
+export function withEndpoint(endpoints: CloudEndpoints, provider: CloudProvider, value: string): CloudEndpoints {
+  return { ...endpoints, [provider]: value };
+}
+
+/** Headers as a literal nested one level inside a client constructor call. */
+export function headersLiteral(headers: Record<string, string>, indent: 2 | 4): string {
+  return JSON.stringify(headers, null, indent).replace(/\n/g, `\n${' '.repeat(indent)}`);
+}
+
 /**
  * The client setup for a cloud test. Every call is named with
  * x-whiteroom-agent; the test itself is named by the proxy key in the URL, so
@@ -141,8 +153,8 @@ export const AZURE_API_VERSION = '2024-10-21';
  */
 export function cloudRecipe(provider: CloudProvider, base: string, agentId: string, language: RecipeLanguage): string {
   const headers = { 'x-whiteroom-agent': agentId };
-  const py = JSON.stringify(headers, null, 4);
-  const js = JSON.stringify(headers, null, 2);
+  const py = headersLiteral(headers, 4);
+  const js = headersLiteral(headers, 2);
   const q = JSON.stringify;
 
   if (provider === 'azure-openai') {
