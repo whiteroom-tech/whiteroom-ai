@@ -213,6 +213,11 @@ describe('formatting', () => {
     expect(savedOverall({ estimatedCostSaved: '$1.5000', totalCostSaved: 'n/a' })?.usd).toBe(1.5);
     expect(savedOverall({ estimatedCostSaved: '$0.0000', totalCostSaved: '$0.0000' })).toBeNull();
   });
+  it('the ⓘ parts add up to the shown total, whatever the rounding', () => {
+    // Live Oct 12: $8.984 + $2.094 = $11.078 read "$11.08 = $8.98 + $2.09".
+    expect(savedOverallHint({ usd: 11.078, handover: 8.984, cache: 2.094, partial: false }))
+      .toContain('est. $11.08 = $8.98 from smaller handovers + $2.10 from prompt caching');
+  });
   it('explains saved overall in the Spend card ⓘ', () => {
     expect(savedOverallHint({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false }))
       .toBe('Saved overall: est. $6.14 = $4.22 from smaller handovers + $1.92 from prompt caching, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');

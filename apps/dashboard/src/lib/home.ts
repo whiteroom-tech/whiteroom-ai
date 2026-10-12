@@ -436,9 +436,12 @@ export function savedOverall(e: { estimatedCostSaved: string; cacheCostSaved?: s
 /** The Spend card's ⓘ line: where "saved overall" comes from, and how it relates to Performance. */
 export function savedOverallHint(s: SavedOverall): string {
   const plus = s.partial ? '+' : '';
+  // The cache part is the total less handovers, in shown cents, so the line
+  // always adds up ($8.984 + $2.094 would otherwise read $8.98 + $2.09 = $11.08).
+  const cents = (n: number) => Math.round(n * 100);
   const parts = s.cache == null
     ? `${usd(s.handover)} from smaller handovers`
-    : `${usd(s.handover)} from smaller handovers + ${usd(s.cache)} from prompt caching`;
+    : `${usd(s.handover)} from smaller handovers + ${usd(Math.max(0, cents(s.usd) - cents(s.handover)) / 100)} from prompt caching`;
   return `Saved overall: est. ${usd(s.usd)}${plus} = ${parts}, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.${s.partial ? ' "+" means some tokens had no price on file.' : ''}`;
 }
 
