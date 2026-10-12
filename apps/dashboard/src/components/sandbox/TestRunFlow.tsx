@@ -105,6 +105,20 @@ function diagStage(run: RunStatusResult | null): number {
   return 1;
 }
 
+/**
+ * How far the Connect checklist has got. Failed calls lead only until a call
+ * comes back (stage 3); after that, success wins and they're a note. A failed
+ * call still reached WhiteRoom, so while failing the checklist stops on
+ * "Its first call went through" (diagShown 3).
+ */
+export function connectProgress(run: RunStatusResult | null, provider: SandboxProvider) {
+  const stage = diagStage(run);
+  const failed = failedCallsOf(run);
+  const failing = failed && stage < 3 ? failed : null;
+  const failNotice = failing ? failedCallNotice(failing, provider, run?.endpointHost) : null;
+  return { stage, failed, failing, failNotice, diagShown: failing ? 3 : stage };
+}
+
 function timerColor(seconds: number | null | undefined): string {
   if (seconds == null) return s.timerGreen;
   if (seconds > 600) return s.timerGreen;
@@ -267,13 +281,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
   const recipe = liveCloud
     ? cloudRecipe(liveCloud, proxyKeyBase(PROXY_URL, proxyKey), agentId, language)
     : connectionRecipe(directProvider, fleetId, agentId, language);
-  const stage = diagStage(run);
-  // Failures lead only until a call comes back; after that, success wins.
-  const failed = failedCallsOf(run);
-  const failing = failed && stage < 3 ? failed : null;
-  const failNotice = failing ? failedCallNotice(failing, testProvider, run?.endpointHost) : null;
-  // A failed call still reached WhiteRoom, so the checklist stops on that step.
-  const diagShown = failing ? 3 : stage;
+  const { stage, failed, failing, failNotice, diagShown } = connectProgress(run, testProvider);
+  const activityHeader = activitySummary(run);
   const allPassed = (run?.controls ?? []).every(c => {
     const ev = isDemo ? c.result?.demoEvidence : c.result?.liveEvidence;
     return ev?.status === 'observed';
@@ -866,7 +875,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun }: {
 
         {/* ── Activity tab ── */}
         <div className={`${s.panel} ${wsTab === 'activity' ? s.panelActive : ''}`}>
-          {activitySummary(run) && <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{activitySummary(run)}</p>}
+          {activityHeader && <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{activityHeader}</p>}
           {renderActivity()}
         </div>
 

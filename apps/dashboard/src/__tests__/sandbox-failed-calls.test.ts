@@ -16,7 +16,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 import type { RunStatusResult } from '@/lib/sandbox/api';
 import { failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf, type FailedCalls } from '@/lib/sandbox/failed-calls';
 import type { SandboxProvider } from '@/lib/sandbox/providers';
-import { activitySummary, checkGuidance } from '@/components/sandbox/TestRunFlow';
+import { activitySummary, checkGuidance, connectProgress } from '@/components/sandbox/TestRunFlow';
 import { GET } from '@/app/api/sandbox/status/route';
 
 const failed = (status: number, reason: FailedCalls['last']['reason'] = 'upstream_error', count = 1, message = 'Invalid API key.'): FailedCalls => ({
@@ -43,6 +43,9 @@ describe('failedCallsOf', () => {
     expect(failedCallsOf(run({ mode: 'demo', failedCalls: failed(401) }))).toBeNull();
     expect(failedCallsOf(run({ failedCalls: { count: 2 } as unknown as FailedCalls }))).toBeNull();
     expect(failedCallsOf(run({ failedCalls: { count: '2', last: failed(401).last } as unknown as FailedCalls }))).toBeNull();
+    expect(failedCallsOf(run({ failedCalls: { count: 1, last: { ...failed(401).last, status: '401' } } as unknown as FailedCalls }))).toBeNull();
+    expect(failedCallsOf(run({ failedCalls: { ...failed(401), count: 0.5 } }))).toBeNull();
+    expect(failedCallsOf(run({ failedCalls: failed(0) }))).toBeNull();
   });
 
   it('reads a reported failure, capping the message at 200 characters', () => {
@@ -68,7 +71,16 @@ describe('failed call copy, per provider and status', () => {
     expect(failedCallNotice(failed(401), 'azure-openai', 'acme.openai.azure.com').what)
       .toBe('Your agent’s call reached WhiteRoom, but Azure OpenAI refused it (HTTP 401): Invalid API key.');
     expect(failedCallNotice(failed(502, 'upstream_unreachable', 1, ''), 'foundry').what)
-      .toBe('Your agent’s call reached WhiteRoom, but Claude on Azure (Foundry) couldn’t be reached.');
+      .toBe('Your agent’s call reached WhiteRoom. Claude on Azure (Foundry) couldn’t be reached.');
+    expect(failedCallNotice(failed(504, 'upstream_unreachable', 1, 'WhiteRoom couldn\'t reach acme.openai.azure.com (the request timed out).'), 'azure-openai').what)
+      .toBe('Your agent’s call reached WhiteRoom. WhiteRoom couldn\'t reach acme.openai.azure.com (the request timed out).');
+  });
+
+  it('a provider error without a message of its own shows the provider\'s status, not the 502 the agent got', () => {
+    const f = failedCallsOf(run({ failedCalls: failed(502, 'upstream_error', 1, 'The provider returned HTTP 401.') }))!;
+    expect(f.last).toMatchObject({ status: 401, message: '' });
+    expect(failedCallReason(f, 'azure-openai')).toBe('Azure OpenAI refused the key (HTTP 401)');
+    expect(failedCallNotice(f, 'azure-openai').what).toBe('Your agent’s call reached WhiteRoom, but Azure OpenAI refused it (HTTP 401).');
   });
 
   it.each<[SandboxProvider, number, FailedCalls['last']['reason'], string | null, RegExp]>([
@@ -109,6 +121,32 @@ describe('Checks › Your agent connects', () => {
     expect(checkGuidance('core.connect', 'observed', r, 'anthropic').detail).toBe('3 calls went through WhiteRoom and got a normal reply. 2 calls failed.');
     expect(checkGuidance('core.connect', 'observed', run({ agents: [agent(1)], controls: connect('observed') }), 'anthropic').detail)
       .toBe('1 call went through WhiteRoom and got a normal reply.');
+  });
+});
+
+describe('Connect checklist', () => {
+  const registered = { auditLog: [{ id: 'e1', timestamp: '2026-10-12T10:00:00.000Z', type: 'register', agentId: 'test-agent' }] } as Partial<RunStatusResult>;
+
+  it('without failures: follows the run as before', () => {
+    const p = connectProgress(run(registered), 'anthropic');
+    expect(p).toMatchObject({ stage: 2, diagShown: 2, failing: null, failNotice: null });
+  });
+
+  it('while calls fail and none came back: stops on "Its first call went through" with the failure', () => {
+    const p = connectProgress(run({ ...registered, provider: 'azure-openai', endpointHost: 'acme.openai.azure.com', failedCalls: failed(401, 'upstream_error', 2) }), 'azure-openai');
+    expect(p.stage).toBe(2);
+    expect(p.diagShown).toBe(3);
+    expect(p.failing?.count).toBe(2);
+    expect(p.failNotice?.next).toMatch(/acme\.openai\.azure\.com/);
+  });
+
+  it('once a call came back: success leads, the failures are only a note', () => {
+    const p = connectProgress(run({ ...registered, controls: connect('observed'), failedCalls: failed(401) }), 'anthropic');
+    expect(p.stage).toBeGreaterThanOrEqual(3);
+    expect(p.diagShown).toBe(p.stage);
+    expect(p.failing).toBeNull();
+    expect(p.failNotice).toBeNull();
+    expect(p.failed?.count).toBe(1);
   });
 });
 

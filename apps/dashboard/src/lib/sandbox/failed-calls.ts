@@ -8,19 +8,27 @@ import type { FailedCalls, RunStatusResult } from './api';
 
 export type { FailedCalls };
 
+// The engine's line when the provider's error carried no message of its own.
+// Its status is the provider's, which can differ from the one the agent got
+// (a non-JSON error reaches the agent as 502), so it is the one shown.
+const GENERIC_MESSAGE = /^The provider returned HTTP (\d{3})\.$/;
+
 /** The run's failed calls, or null when there are none, the run is a demo, or the field is missing or malformed. */
 export function failedCallsOf(run: RunStatusResult | null | undefined): FailedCalls | null {
   const f = run?.mode === 'demo' ? undefined : run?.failedCalls;
-  if (!f || typeof f.count !== 'number' || !(f.count > 0) || !f.last || typeof f.last !== 'object') return null;
-  const { status, reason, message } = f.last;
+  const count = typeof f?.count === 'number' ? Math.floor(f.count) : 0;
+  if (!f || !(count >= 1) || !f.last || typeof f.last !== 'object' || typeof f.last.status !== 'number' || !(f.last.status > 0)) return null;
+  const { reason } = f.last;
+  const message = typeof f.last.message === 'string' ? f.last.message.trim().slice(0, 200) : '';
+  const generic = reason === 'upstream_unreachable' ? null : GENERIC_MESSAGE.exec(message);
   return {
-    count: Math.floor(f.count),
+    count,
     last: {
       at: typeof f.last.at === 'string' ? f.last.at : '',
       agentId: typeof f.last.agentId === 'string' ? f.last.agentId : '',
-      status: typeof status === 'number' ? status : 0,
+      status: generic ? Number(generic[1]) : f.last.status,
       reason: reason === 'upstream_unreachable' ? 'upstream_unreachable' : 'upstream_error',
-      message: typeof message === 'string' ? message.trim().slice(0, 200) : '',
+      message: generic ? '' : message,
     },
   };
 }
@@ -69,14 +77,15 @@ export function failedCallsCheckDetail(f: FailedCalls, provider: SandboxProvider
 
 /**
  * What went wrong with the last failed call, and what to check next, for the
- * "Its first call went through" step and the summary banner.
+ * "Its first call went through" step (and the next step on Checks).
  */
 export function failedCallNotice(f: FailedCalls, provider: SandboxProvider, endpointHost?: string | null): { what: string; next: string } {
   const label = SANDBOX_PROVIDER_LABELS[provider];
   const kind = kindOf(f);
   const said = f.last.message ? `: ${f.last.message}` : '.';
+  // An unreachable call's message already names the host that couldn't be reached.
   const what = kind === 'unreachable'
-    ? `Your agent’s call reached WhiteRoom, but ${label} couldn’t be reached${said}`
+    ? `Your agent’s call reached WhiteRoom. ${f.last.message || `${label} couldn’t be reached.`}`
     : kind === 'server'
       ? `Your agent’s call reached WhiteRoom, but ${label} returned an error (HTTP ${f.last.status})${said}`
       : `Your agent’s call reached WhiteRoom, but ${label} refused it (HTTP ${f.last.status})${said}`;
@@ -95,7 +104,7 @@ function nextStep(kind: Kind, provider: SandboxProvider, endpointHost?: string |
       if (provider === 'bedrock-mantle') return `Check your agent sends a Bedrock API key with access to Claude in the region this test started with${inRegion}. Short-term keys expire within 12 hours.`;
       return `Check your agent uses the same ${label} key you started this test with, and that the key is still active.`;
     case 'not_found':
-      if (provider === 'azure-openai') return 'Check the model your agent asks for is your Azure deployment name, and the address matches the code above.';
+      if (provider === 'azure-openai') return 'Check the model your agent asks for is your Azure deployment name.';
       if (provider === 'foundry') return 'Check the model your agent asks for is your Foundry deployment name.';
       if (provider === 'bedrock-mantle') return `Check the model is a Bedrock model id available in${region ? ` ${region}` : ' your region'}, like anthropic.claude-haiku-4-5.`;
       return `Check the model name your agent asks for is one your ${label} key can use.`;
