@@ -77,10 +77,10 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
   </>;
 }
 
-/** A practice test between Start and its result: waiting for the CLI, running, lost contact, finishing. */
 /** Every practice task ran (not a run ended early, like a crashed adapter's, whose result covers the tasks done). */
 const allDone = (run: PracticeRun) => !run.endReason && !!run.progress && run.progress.done >= run.progress.total;
 
+/** A practice test between Start and its result: waiting for the CLI, running, lost contact, finishing. */
 export function PracticeRunView({ run, code, keyChoice = null, now, busy, heading, onNewCode, onEnd }: {
   run: PracticeRun;
   heading?: RefObject<HTMLHeadingElement | null>;
