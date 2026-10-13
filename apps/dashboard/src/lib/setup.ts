@@ -103,7 +103,7 @@ await client.messages.create({
  * held only in the engine's own deployment config.
  */
 export const BEDROCK_ROLE_SERVER_ID = new URL(PROXY_ORIGIN).hostname;
-export const BEDROCK_ROLE_PRINCIPAL_ARN = 'arn:aws:iam::867709894307:user/whiteroom-engine-test';
+export const BEDROCK_ROLE_PRINCIPAL_ARN = 'arn:aws:iam::867709894307:user/whiteroom-engine-prod';
 
 /** The IAM trust policy the customer attaches to the role they create, naming WhiteRoom's principal and their chosen external ID. */
 export function bedrockRoleTrustPolicy(externalId: string): string {
