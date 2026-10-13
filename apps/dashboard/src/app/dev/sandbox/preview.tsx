@@ -3,6 +3,7 @@
 import { AppShell } from '@/components/AppShell';
 import { TestRunFlow } from '@/components/sandbox/TestRunFlow';
 import type { RunStatusResult } from '@/lib/sandbox/api';
+import { PRACTICE_ROWS } from '../practice/states';
 
 /** A live Azure OpenAI test whose agent's calls were refused for a wrong key. */
 const FAILED_RUN: RunStatusResult = {
@@ -112,6 +113,7 @@ export function SandboxPreview({ state }: { state?: PreviewState }) {
         previewRun={state && state !== 'empty' ? PREVIEW_STATES[state] : undefined}
         previewSeenSecondsAgo={state ? SEEN_FOR[state] : undefined}
         previewPastTests={state === 'empty' ? [] : [...PAST_TESTS]}
+        previewPractice={{ fleet: 'prod-eu', rows: state === 'empty' ? [] : PRACTICE_ROWS, open: null }}
       />
     </AppShell>
   );

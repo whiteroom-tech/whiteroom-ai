@@ -22,13 +22,14 @@ const EXTENSIONS = /\.(ts|tsx|css|mjs|js)$/;
 const BASELINE = join(here, 'color-baseline.json');
 
 // Never checked: the token file itself, and places where a CSS variable can't
-// work. Email HTML is rendered by mail clients, the Sandbox report is a
-// standalone downloaded page with no access to the app's tokens, and the logo
+// work. Email HTML is rendered by mail clients, the Sandbox and practice test
+// reports are standalone downloaded pages with no access to the app's tokens, and the logo
 // is a fixed brand mark that looks the same in both themes.
 const EXEMPT = new Set([
   'apps/dashboard/src/app/globals.css',
   'apps/dashboard/src/lib/magic-link-email.ts',
   'apps/dashboard/src/lib/sandbox/report.ts',
+  'apps/dashboard/src/lib/sandbox/practice/report.ts',
   'packages/ui/src/Logo.tsx',
 ]);
 

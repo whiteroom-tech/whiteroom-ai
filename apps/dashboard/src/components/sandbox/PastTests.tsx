@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { DataTable, Hint, Panel, Tag, FONT_MONO } from '@whiteroom/ui';
 import { getHistory, type PastTest } from '@/lib/sandbox/api';
 import { HELP } from '@/lib/metric-definitions';
+import { isOpen, pastKind, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
+import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
+import { PracticePastDetail } from './practice/PracticePastDetail';
 import s from './guided.module.css';
 
 const RESULT: Record<PastTest['overall'], { label: string; tone: 'brand' | 'warn' | 'muted' }> = {
@@ -60,18 +63,32 @@ export function PastTestDetail({ test, onClose }: { test: PastTest; onClose: () 
   );
 }
 
+/** A Past tests row: a Sandbox test, or a finished practice test (spec rev 5.6 §10). */
+type Row = { key: string; at: string; test: PastTest; practice?: undefined } | { key: string; at: string; test?: undefined; practice: PracticeRunRow };
+
+/** Sandbox tests and finished practice tests together, newest first. */
+export function pastRows(tests: PastTest[], practice: PracticeRunRow[] = []): Row[] {
+  const rows: Row[] = [
+    ...tests.map((t) => ({ key: t.sandboxId, at: t.destroyedAt, test: t })),
+    ...practice.filter((r) => !isOpen(r.lifecycle)).map((r) => ({ key: r.id, at: r.endedAt ?? r.createdAt, practice: r })),
+  ];
+  return rows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
 /**
  * Sandbox › Past tests (README › Screens › 7b): the owner's finished tests,
  * newest first. The engine keeps them across restarts. A row opens what's kept
  * about that test directly beneath it. Quiet if the list can't be loaded; says
  * so when there are none yet. It mounts on the start step, so returning there
- * after a test reloads the list.
+ * after a test reloads the list. Practice tests, when given, are rows too.
  */
-export function PastTests({ preview, onDemo, previewOpen }: {
+export function PastTests({ preview, onDemo, previewOpen, practice }: {
   preview?: PastTest[];
   onDemo?: () => void;
   /** /dev/sandbox and tests: the test whose row starts open. */
   previewOpen?: string;
+  /** The owner's practice tests; open ones aren't listed. */
+  practice?: PracticeRunRow[];
 }) {
   const [tests, setTests] = useState<PastTest[] | null>(preview ?? null);
   const [open, setOpen] = useState<string | null>(previewOpen ?? null);
@@ -85,7 +102,8 @@ export function PastTests({ preview, onDemo, previewOpen }: {
   }, [preview]);
 
   if (!tests) return null;
-  if (!tests.length) {
+  const rows = pastRows(tests, practice);
+  if (!rows.length) {
     return (
       <div style={{ marginTop: 24 }}>
         <Panel title={<>Past tests<Hint text={HELP.pastTests} /></>}>
@@ -97,29 +115,33 @@ export function PastTests({ preview, onDemo, previewOpen }: {
     );
   }
   const close = () => {
-    const i = tests.findIndex((t) => t.sandboxId === open);
+    const i = rows.findIndex((r) => r.key === open);
     setOpen(null);
     // Back to the row that opened it.
     requestAnimationFrame(() => table.current?.querySelectorAll<HTMLElement>('[role="row"][tabindex]')[i]?.focus());
   };
   return (
     <div style={{ marginTop: 24 }}>
-      <Panel title={<>Past tests<Hint text={HELP.pastTests} /></>} count={String(tests.length)} bodyPadding={0}>
+      <Panel title={<>Past tests<Hint text={HELP.pastTests} /></>} count={String(rows.length)} bodyPadding={0}>
         <div ref={table}>
-          <DataTable<PastTest>
+          <DataTable<Row>
             caption="Past tests, newest first. Open a row for what’s kept about that test."
-            rows={tests}
-            rowKey={(t) => t.sandboxId}
+            rows={rows}
+            rowKey={(r) => r.key}
             rowHeight={40}
-            onOpen={(t) => setOpen((cur) => (cur === t.sandboxId ? null : t.sandboxId))}
+            onOpen={(r) => setOpen((cur) => (cur === r.key ? null : r.key))}
             selectedKey={open ?? undefined}
             expandedKey={open ?? undefined}
-            renderExpanded={(t) => <PastTestDetail test={t} onClose={close} />}
+            renderExpanded={(r) => (r.test ? <PastTestDetail test={r.test} onClose={close} /> : <PracticePastDetail row={r.practice} onClose={close} />)}
             columns={[
-              { key: 'when', header: 'Ended', width: '150px', render: (t) => <span style={{ fontFamily: FONT_MONO, color: 'var(--tx2)' }}>{ended(t.destroyedAt)}</span> },
-              { key: 'result', header: 'Result', width: 'minmax(160px, 1fr)', render: (t) => { const r = RESULT[pastResult(t)]; return <Tag tone={r?.tone ?? 'muted'}>{r?.label ?? t.overall}</Tag>; } },
-              { key: 'calls', header: 'Tasks', width: '72px', numeric: true, render: (t) => String(t.totalTasks) },
-              { key: 'kind', header: 'Kind', width: '90px', render: (t) => <span style={{ color: 'var(--tx2)' }}>{t.isTrial ? 'Demo' : 'Your agent'}</span> },
+              { key: 'when', header: 'Ended', width: '150px', render: (r) => <span style={{ fontFamily: FONT_MONO, color: 'var(--tx2)' }}>{ended(r.at)}</span> },
+              { key: 'result', header: 'Result', width: 'minmax(160px, 1fr)', render: (r) => {
+                const shown = r.test ? RESULT[pastResult(r.test)] : practiceResult(r.practice);
+                return <Tag tone={shown?.tone ?? 'muted'}>{shown?.label ?? r.test?.overall}</Tag>;
+              } },
+              { key: 'calls', header: 'Tasks', width: '72px', numeric: true, render: (r) => (r.test ? String(r.test.totalTasks) : pastTasks(r.practice)) },
+              // Wider only when "Practice (sample)" can appear, so Sandbox-only lists look as before.
+              { key: 'kind', header: 'Kind', width: rows.some((r) => r.practice) ? '130px' : '90px', render: (r) => <span style={{ color: 'var(--tx2)' }}>{r.test ? (r.test.isTrial ? 'Demo' : 'Your agent') : pastKind(r.practice)}</span> },
             ]}
           />
         </div>

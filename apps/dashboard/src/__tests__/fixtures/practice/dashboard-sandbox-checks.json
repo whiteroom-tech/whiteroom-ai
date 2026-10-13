@@ -1,0 +1,8 @@
+{
+  "source": "whiteroom-ai apps/dashboard/src/lib/sandbox/report.ts SANDBOX_CHECKS at main 10e50af",
+  "labels": [
+    "Your agent connects",
+    "It keeps working when its memory fills up",
+    "It picks up where it left off"
+  ]
+}
