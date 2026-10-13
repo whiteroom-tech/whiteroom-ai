@@ -213,7 +213,7 @@ describe('the engine BFF', () => {
     vi.stubGlobal('fetch', fetchMock);
     mocks.origin.mockResolvedValue(null);
     mocks.cookie.mockResolvedValue('wr_fleet_token');
-    mocks.auth.mockReset();
+    mocks.auth.mockReset().mockResolvedValue(null);
     mocks.query.mockReset();
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'dash-secret');
   });
@@ -245,10 +245,25 @@ describe('the engine BFF', () => {
     expect(sentHeaders()['x-wr-dashboard-user']).toBe('u1');
   });
 
-  it('never sends a user on ordinary actions', async () => {
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+  it('names the user on ordinary actions by signature only, so the engine rate-limits per user', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'user-1' } });
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'test-dashboard-secret');
+    await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
+    expect(sentHeaders()['x-wr-dashboard-user']).toBe('user-1');
+    // The engine's rateLimitUserSig for the same secret and id (engine rate-limit test pins it too).
+    expect(sentHeaders()['x-wr-dashboard-user-sig']).toBe('2eef0c6bfb7d73a0bf271c9c3aff4e2deceeb376a5b6bc8daff90c07f5975dbf');
+  });
+
+  it('sends no user on ordinary actions without a signed-in account or a secret', async () => {
+    mocks.auth.mockResolvedValue(null);
     await call({ action: 'fleet_report', fleet_id: 'f1' });
     expect(sentHeaders()['x-wr-dashboard-user']).toBeUndefined();
+    fetchMock.mockClear();
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
+    await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(sentHeaders()['x-wr-dashboard-user-sig']).toBeUndefined();
   });
 
   it('refuses a token the account doesn’t hold for that fleet, before reaching the engine', async () => {

@@ -8,7 +8,7 @@ const access = vi.fn();
 const cookie = vi.fn();
 const sameOrigin = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => auth() }));
-vi.mock('@/lib/control-auth', () => ({ CONTROL_SECRET_HEADER: 'x-wr-dashboard-secret', controlAccessError: (...a: unknown[]) => access(...a) }));
+vi.mock('@/lib/control-auth', () => ({ CONTROL_SECRET_HEADER: 'x-wr-dashboard-secret', CONTROL_USER_HEADER: 'x-wr-dashboard-user', controlAccessError: (...a: unknown[]) => access(...a) }));
 vi.mock('@/lib/fleet-session', () => ({ getFleetAuthCookie: () => cookie(), tokenFromUserFleets: async () => null }));
 vi.mock('@/lib/origin-check', () => ({ checkSameOrigin: () => sameOrigin() }));
 
@@ -42,6 +42,8 @@ describe('practice BFF', () => {
     const { url, init } = sent();
     expect(url).toMatch(/\/api\/readiness\/start$/);
     expect((init.headers as Record<string, string>)['x-wr-dashboard-secret']).toBe('dash-secret');
+    // So the engine's rate limit counts the page's polling per user, not per dashboard IP.
+    expect((init.headers as Record<string, string>)['x-wr-dashboard-user']).toBe('u1');
     expect(JSON.parse(String(init.body))).toEqual({ fleet: 'prod-eu', sample: false, runs: 3, agent: 'support-bot', model: 'claude-haiku-4-5', startedBy: 'u1' });
   });
 

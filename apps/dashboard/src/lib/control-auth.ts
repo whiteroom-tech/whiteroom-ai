@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { createHmac } from 'node:crypto';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
@@ -24,6 +25,21 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
 /** The signed-in account behind a control action, sent with the secret so the engine records who acted. */
 export const CONTROL_USER_HEADER = 'x-wr-dashboard-user';
+const RATE_LIMIT_SIG_HEADER = 'x-wr-dashboard-user-sig';
+
+/**
+ * Names the signed-in user on a call that doesn't carry the service secret, so
+ * the engine counts it against that user rather than the dashboard's shared
+ * egress IP. The signature picks a rate-limit bucket and nothing else.
+ * Keep in step with rateLimitUserSig in the engine's middleware/dashboard-auth.ts.
+ */
+export function rateLimitHeaders(userId: string | null | undefined, secret = process.env.WR_DASHBOARD_SERVICE_SECRET): Record<string, string> {
+  if (!userId || !secret) return {};
+  return {
+    [CONTROL_USER_HEADER]: userId,
+    [RATE_LIMIT_SIG_HEADER]: createHmac('sha256', secret).update(`rate-limit:${userId}`).digest('hex'),
+  };
+}
 
 /** The action and fleet named in a BFF body, or null when it isn't a control action. */
 export function controlActionOf(body: string): { action: string; fleetId: string | null } | null {

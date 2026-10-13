@@ -1,6 +1,6 @@
 import 'server-only';
 import { auth } from '@/auth';
-import { controlAccessError, CONTROL_SECRET_HEADER } from '@/lib/control-auth';
+import { controlAccessError, CONTROL_SECRET_HEADER, CONTROL_USER_HEADER } from '@/lib/control-auth';
 import { getFleetAuthCookie, tokenFromUserFleets } from '@/lib/fleet-session';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { PRACTICE_UNAVAILABLE } from './model';
@@ -47,14 +47,15 @@ export async function practiceOwner(fleet: unknown): Promise<{ fleet: string; us
 }
 
 /** One call to the engine's practice-test routes, its status and JSON passed back unchanged. */
-export async function practiceEngine(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<Response> {
+export async function practiceEngine(method: 'GET' | 'POST', path: string, body: Record<string, unknown> | undefined, userId: string): Promise<Response> {
   const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
   if (!secret) return unavailable(503);
   let res: Response;
   try {
     res = await fetch(`${PROXY_URL}/api/readiness/${path}`, {
       method,
-      headers: { 'Content-Type': 'application/json', [CONTROL_SECRET_HEADER]: secret },
+      // The user too, so the engine's rate limit counts the polling per user, not per dashboard IP.
+      headers: { 'Content-Type': 'application/json', [CONTROL_SECRET_HEADER]: secret, [CONTROL_USER_HEADER]: userId },
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
       redirect: 'error',
