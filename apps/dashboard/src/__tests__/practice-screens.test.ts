@@ -20,7 +20,8 @@ const { PRACTICE_ROWS, PRACTICE_STATES } = await import('@/app/dev/practice/stat
 const render = (state: keyof typeof PRACTICE_STATES) => renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES[state] }));
 /** The words a person reads: tags and attributes dropped. */
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
-const DISCLAIMER = 'Practice tasks use made-up records and WhiteRoom’s test tools, not your agent’s real job. Use the result to help decide, not as a certificate.';
+// The catalog's words (straight apostrophes), as the CLI prints them too.
+const DISCLAIMER = "Practice tasks use made-up records and WhiteRoom's test tools, not your agent's real job. Use the result to help decide, not as a certificate.";
 
 describe('practice test screens', () => {
   it.each(Object.keys(PRACTICE_STATES) as (keyof typeof PRACTICE_STATES)[])('%s: plain words only (rule 7, no "readiness")', (state) => {
@@ -34,7 +35,7 @@ describe('practice test screens', () => {
     for (const s of ['Sample agent', 'No code, 1 run. Doesn’t test your agent.', 'Your agent', 'Needs a small adapter.', '1 run', '3 runs',
       'Model: claude-haiku-4-5, the one support-bot used most recently · Change', 'Never more than 120 calls, including control checks and memory summaries.',
       'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up', 'Loop breaker · Enforce · 2 extra calls',
-      'Spend cap · Enforce: not checked (it would need real spending)', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+      'Spend cap · Enforce · Not checked: it would need real spending.', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
     // A fleet with no agents yet: the sample agent, since Your agent needs one that has called through WhiteRoom.
     const none = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, setup: { ...PRACTICE_STATES.setup.setup!, agents: [] } } }));
@@ -90,6 +91,10 @@ describe('practice test screens', () => {
     const open = text(render('refused-open'));
     expect(open).toContain('You already have a practice test open.');
     expect(open).toMatch(/View it.*End it…/);
+    // Open on another fleet of the account: said so, with nothing to open or end from here.
+    const elsewhere = text(render('refused-open-elsewhere'));
+    expect(elsewhere).toContain('You already have a practice test open on another fleet of your account. Finish or end it there, then start this one.');
+    expect(elsewhere).not.toMatch(/View it|End it|Continue it|Cancel it/);
   });
 
   it('the terminal steps: the command, then the run code, which is never part of a command', () => {
@@ -127,13 +132,14 @@ describe('practice test screens', () => {
     expect(sample).toContain('Reports come from a test of your own agent.');
     expect(sample).not.toContain('Download report');
     const failed = text(render('failed'));
-    expect(failed).toMatch(/Didn’t pass · 1 check failed.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
+    expect(failed).toMatch(/Didn't pass · 1 check failed.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
     expect(failed).toContain('Rerun failed checks');
     const incomplete = text(render('incomplete'));
     expect(incomplete).toMatch(/What stopped the test.*Test problem \(not your agent\): Anthropic hit a rate limit or quota \(HTTP 429\)\./);
     expect(incomplete).toContain('Rerun checks that didn’t run');
     const ended = text(render('ended'));
     expect(ended).toMatch(/Didn’t finish.*What stopped the test.*You ended the test from the dashboard\..*Start a new test/);
+    expect(text(render('ended-call-cap'))).toContain('What stopped the test Stopped to stay within the 120-call limit after WhiteRoom had to rerun a task (not your agent).');
   });
 
   it('confirms a rerun’s cost and ending a test before acting', () => {
@@ -218,14 +224,17 @@ describe('practice tests on cloud providers (R7)', () => {
 
   it('the terminal steps name the key variable and Fleet key key for each provider', () => {
     expect(text(render('code-azure'))).toContain('Needs Node 20 or later. Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2). Keep');
+    // From the run's own fields, so any tab names the key; the command picks its variable, so other keys set on the computer don't matter.
+    expect(text(render('code-azure'))).toContain('whiteroom practice run --adapter "node wr-adapter.mjs" --key-env AZURE_OPENAI_API_KEY');
+    expect(text(render('code'))).not.toContain('--key-env');
     expect(text(render('code-bedrock'))).toContain('AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d)');
     expect(text(render('code-foundry'))).toContain('ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f)');
     expect(text(render('code'))).toContain('Set ANTHROPIC_API_KEY or OPENAI_API_KEY to the key your agent uses with prod-eu.');
   });
 
   it('results say which provider was tested, and a provider refusal names it', () => {
-    expect(text(render('passed-azure'))).toContain('Provider Azure OpenAI (the key you picked from Fleet key)');
-    expect(text(render('passed'))).not.toContain('Provider');
+    expect(text(render('passed-azure'))).toContain('Provider Azure OpenAI (the key you picked from Fleet key, ending a1b2)');
+    expect(text(render('passed'))).toContain('Provider Anthropic Adapter');
     expect(text(render('incomplete-bedrock'))).toContain('Test problem (not your agent): AWS Bedrock hit a rate limit or quota (HTTP 429).');
   });
 });
@@ -248,7 +257,7 @@ describe('the Sandbox screens practice tests are added to', () => {
     const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows })));
     expect(t).toMatch(/Passed 18\/18 Practice/);
     expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice/);
-    expect(t).toMatch(/Didn’t finish 2\/6 Practice \(sample\)/);
+    expect(t).toMatch(/Didn't finish 2\/6 Practice \(sample\)/);
     expect(t).toMatch(/All checks passed 4 Your agent/);
     expect(t).toContain('Past tests 6');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));

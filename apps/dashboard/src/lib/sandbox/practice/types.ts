@@ -1,6 +1,6 @@
 // Practice tests (sandbox readiness spec rev 5.6, §7): what the engine's
 // /api/readiness routes return, as the dashboard reads them through its BFF.
-// Shapes follow the engine's contract fixtures (src/__tests__/fixtures/practice).
+// Shapes follow the engine's contract fixtures (packages/cli/contract/contract.json).
 
 export type PracticeLifecycle = 'draft' | 'active' | 'finalizing' | 'finished' | 'interrupted' | 'cancelled';
 export type PracticeVerdict = 'passed' | 'not_passed' | 'incomplete';
@@ -38,11 +38,14 @@ export interface PracticeReport {
   sample: boolean;
   scope: string[] | null;
   checks: PracticeCheck[];
-  how: { memoryTokens: Record<string, number>; memoryLimitAdjusted: boolean };
+  /** How it was tested stays with the engine; only whether memory was adjusted is shown. */
+  how: { memoryLimitAdjusted: boolean };
   tested: {
     fleet: string; agent: string; modelRequested: string | null; modelsUsed: string[]; adapter: string | null; cli: string | null;
-    /** R7: the provider of the Fleet key key the test used; null for the fleet's own key. Older engines leave it out. */
-    provider?: string | null;
+    /** Where the calls went. With a Fleet key key (R7), its display prefix and last four; null for the fleet's own key. */
+    provider: string | null;
+    proxyKeyDisplayPrefix: string | null;
+    keyHint: string | null;
   };
 }
 
@@ -57,6 +60,10 @@ export interface PracticeRun {
   sample: boolean;
   runs: number;
   scope: string[] | null;
+  /** The key the test runs on: its provider (for the fleet's own key, known once the CLI claims it) and, for a Fleet key key, its prefix and last four. */
+  provider: string | null;
+  proxyKeyDisplayPrefix: string | null;
+  keyHint: string | null;
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -81,8 +88,8 @@ export interface PracticeRunRow {
   createdAt: string;
   endedAt: string | null;
   checks: { passed: number; total: number } | null;
-  /** Tasks finished of those planned; the control checks count as one task a run. Older engines leave it out. */
-  tasks?: { finished: number; total: number } | null;
+  /** Tasks finished of those planned; the control checks count as one task a run. */
+  tasks: { finished: number; total: number };
 }
 
 /** Where the source agent's calls go, so setup can refuse a fleet practice tests can't run yet before Start. */
@@ -103,6 +110,17 @@ export interface PracticeProviderKey {
   reason: PracticeKeyRefusal | null;
 }
 
+/** A control check as the engine plans it (source-model, and the CLI's list): checked or why not, and its most calls on the agent's key. */
+export interface PracticeControlCheck {
+  id: string;
+  label: string;
+  mode: string | null;
+  agents: 'all' | string[];
+  checked: boolean;
+  note: string | null;
+  calls: number | null;
+}
+
 /** GET /source-model: the model the agent asked for most recently, where its calls go, and (R7) the keys setup can pick from. */
 export interface PracticeSource {
   model: string | null;
@@ -112,6 +130,8 @@ export interface PracticeSource {
   /** The whole fleet can't be tested: it reaches Bedrock through an IAM role. */
   blocked: 'bedrock_role' | null;
   providerKeys: PracticeProviderKey[];
+  /** The control checks a test of this agent makes (§6), from the engine's planner. */
+  controls: { checks: PracticeControlCheck[]; calls: number };
 }
 
 /** GET /runs/:id/report: the run's result. `report` is null for a test that was ended, or after 30 days. */

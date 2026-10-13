@@ -28,6 +28,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@practice-contract/*": [
+        "../../packages/cli/contract/*"
       ]
     }
   },

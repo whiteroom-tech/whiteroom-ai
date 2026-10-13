@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
+import { CATALOG } from "../src/practice/catalog.js";
 import { alive, ATTEMPT_PROXY_KEY, cli, CLOUD, CODE, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type CloudProvider, type Stub } from "./stub.js";
 
 const dir = mkdtempSync(join(tmpdir(), "wr-cli-test-"));
@@ -236,7 +237,9 @@ console.log(JSON.stringify({ type: "final", output: "done" }));`);
     const s = await stub({ cloud: "azure-openai" });
     const r = await run(s, [], { env: testEnv({ AZURE_OPENAI_API_KEY: "azure-placeholder-other-key-91c0" }) });
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /The key in AZURE_OPENAI_API_KEY \(ends 91c0\) isn't the Azure OpenAI key saved on Fleet key \(key ending 1e8c\)\. Nothing was charged\. If you've changed keys, add the new one on Fleet key, then start a new test in the dashboard and pick that key\./);
+    const hint = (fixture("r7.claim.key_mismatch").response as { keyHint: string }).keyHint;
+    assert.ok(r.stderr.includes(`The key in AZURE_OPENAI_API_KEY (ends 91c0) isn't the Azure OpenAI key saved on Fleet key (key ending ${hint}).`), r.stderr);
+    assert.match(r.stderr, /Nothing was charged\. If you've changed keys, add the new one on Fleet key, then start a new test in the dashboard and pick that key\./);
     assert.deepEqual(s.seen.map((x) => x.path), ["/api/readiness/claim"]);
   });
 
@@ -245,20 +248,33 @@ console.log(JSON.stringify({ type: "final", output: "done" }));`);
     const short = "bedrock-api-key-placeholder-short-term";
     let r = await run(s, [], { env: testEnv({ AWS_BEARER_TOKEN_BEDROCK: short }) });
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /Short-term Bedrock keys can expire during a test\. Add a long-term Bedrock API key on Fleet key to test with\./);
+    // The catalog's words, as the dashboard shows them.
+    assert.ok(r.stderr.includes(CATALOG.keyRefusals.short_term_key), r.stderr);
     assert.equal(s.seen.length, 0);
     const answered = await stub({ route: (p) => (p === "/api/readiness/claim" ? [fixture("r7.claim.short_term_key").status, fixture("r7.claim.short_term_key").response] : undefined) });
     r = await run(answered, [], { env: env("bedrock-mantle") });
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /Short-term Bedrock keys can expire during a test/);
+    assert.ok(r.stderr.includes(CATALOG.keyRefusals.short_term_key), r.stderr);
   });
 
-  it("several provider variables set: names them and sends nothing", async () => {
+  it("several provider variables set: names them and sends nothing; --key-env picks one, as the dashboard's command does", async () => {
     const s = await stub({ cloud: "foundry" });
-    const r = await run(s, [], { env: testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_FOUNDRY_API_KEY: CLOUD.foundry.key, AWS_BEARER_TOKEN_BEDROCK: CLOUD["bedrock-mantle"].key }) });
+    const all = testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_FOUNDRY_API_KEY: CLOUD.foundry.key, AWS_BEARER_TOKEN_BEDROCK: CLOUD["bedrock-mantle"].key });
+    let r = await run(s, [], { env: all });
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /ANTHROPIC_API_KEY, ANTHROPIC_FOUNDRY_API_KEY and AWS_BEARER_TOKEN_BEDROCK are all set\. Unset the ones your agent doesn't use/);
+    assert.match(r.stderr, /ANTHROPIC_API_KEY, ANTHROPIC_FOUNDRY_API_KEY and AWS_BEARER_TOKEN_BEDROCK are all set\. Add --key-env with the one your agent uses/);
     assert.equal(s.seen.length, 0);
+    r = await run(s, ["--key-env", "ANTHROPIC_FOUNDRY_API_KEY"], { env: all });
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(JSON.parse(s.seen[0].body).key, CLOUD.foundry.key);
+    // Only a provider key variable, and only one that is set.
+    for (const [args, message] of [[["--key-env", "PATH"], /--key-env must name a provider key variable/], [["--key-env", "OPENAI_API_KEY"], /Set the key your agent uses \(OPENAI_API_KEY\)/]] as const) {
+      const none = await stub({ cloud: "foundry" });
+      r = await run(none, [...args], { env: all });
+      assert.equal(r.code, 2);
+      assert.match(r.stderr, message);
+      assert.equal(none.seen.length, 0);
+    }
   });
 
   it("a provider this CLI doesn't know: asks to update it before any task runs", async () => {
@@ -368,6 +384,13 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     const r = await run(s);
     assert.equal(r.code, 3);
     assert.match(r.stderr, /ended from the dashboard/);
+  });
+
+  it("ended to stay within the call limit after WhiteRoom reran tasks (409 call_cap): says it wasn't the agent", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [409, { lifecycle: "interrupted", reason: "call_cap" }] : undefined) });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /Stopped to stay within the 120-call limit after WhiteRoom had to rerun a task \(not your agent\)\./);
   });
 
   it("a discarded practice task is stopped and run again, without counting", async () => {
@@ -571,10 +594,12 @@ describe("practice run: redirects and refusals", () => {
 });
 
 describe("practice run: target (§9.3)", () => {
-  it("refuses a --url that isn't https or loopback, before sending anything", async () => {
-    const r = await cli(["practice", "run", "--code-stdin", "--url", "http://example.com"]);
-    assert.equal(r.code, 2);
-    assert.match(r.stderr, /--url must be an https:\/\/ address/);
+  it("refuses a --url that isn't WhiteRoom's own or loopback, before sending anything (the key would go there)", async () => {
+    for (const url of ["http://example.com", "https://example.com", "https://whiteroom.tech.example.com"]) {
+      const r = await cli(["practice", "run", "--code-stdin", "--url", url]);
+      assert.equal(r.code, 2, url);
+      assert.match(r.stderr, /--url must be a WhiteRoom address/);
+    }
   });
 });
 

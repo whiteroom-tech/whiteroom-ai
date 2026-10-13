@@ -269,7 +269,7 @@
         "triesLeft": 4,
         "fleetName": "<fleet>",
         "provider": "azure-openai",
-        "keyHint": "1e8c"
+        "keyHint": "b736"
       }
     },
     {
@@ -279,7 +279,7 @@
       "auth": "none",
       "request": {
         "code": "<run code>",
-        "key": "bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29t",
+        "key": "bedrock-api-key-0123456789abcdef",
         "cli": {
           "version": "2.0.0",
           "adapter": "node agent.mjs"
@@ -329,7 +329,7 @@
             "provider": "openai",
             "endpointHost": "api.groq.com",
             "region": null,
-            "keyHint": "117d",
+            "keyHint": "56ef",
             "createdAt": "<time>",
             "eligible": false,
             "reason": "other_host"
@@ -339,7 +339,7 @@
             "provider": "azure-openai",
             "endpointHost": "acme-r7.openai.azure.com",
             "region": null,
-            "keyHint": "7b9b",
+            "keyHint": "e259",
             "createdAt": "<time>",
             "eligible": true,
             "reason": null
@@ -349,12 +349,16 @@
             "provider": "anthropic",
             "endpointHost": null,
             "region": null,
-            "keyHint": "b5be",
+            "keyHint": "eb8a",
             "createdAt": "<time>",
             "eligible": true,
             "reason": null
           }
-        ]
+        ],
+        "controls": {
+          "checks": [],
+          "calls": 0
+        }
       }
     },
     {
@@ -605,6 +609,9 @@
         "scope": [
           "a.result"
         ],
+        "provider": null,
+        "proxyKeyDisplayPrefix": null,
+        "keyHint": null,
         "createdAt": "<time>",
         "startedAt": null,
         "endedAt": null,
@@ -662,10 +669,6 @@
         "verdict": "passed",
         "report": {
           "how": {
-            "memoryTokens": {
-              "A": 1000000
-            },
-            "toolFailureFiredAt": [],
             "memoryLimitAdjusted": false
           },
           "runs": 1,
@@ -700,11 +703,13 @@
             "agent": "support-bot",
             "fleet": "<fleet>",
             "adapter": "node agent.mjs",
-            "provider": null,
+            "keyHint": null,
+            "provider": "anthropic",
             "modelsUsed": [
               "claude-haiku-4-5-20251001"
             ],
-            "modelRequested": "claude-haiku-4-5"
+            "modelRequested": "claude-haiku-4-5",
+            "proxyKeyDisplayPrefix": null
           },
           "verdict": "passed",
           "testVersion": 1
@@ -777,7 +782,11 @@
         "provider": "unknown",
         "directKey": true,
         "blocked": null,
-        "providerKeys": []
+        "providerKeys": [],
+        "controls": {
+          "checks": [],
+          "calls": 0
+        }
       }
     },
     {
@@ -916,7 +925,8 @@
               "mode": null,
               "agents": "all",
               "checked": true,
-              "note": null
+              "note": null,
+              "calls": 1
             },
             {
               "id": "ctl.model_allowlist.<rule id>",
@@ -924,7 +934,8 @@
               "mode": "Enforce",
               "agents": "all",
               "checked": true,
-              "note": null
+              "note": null,
+              "calls": 0
             },
             {
               "id": "ctl.loop_breaker.<rule id>",
@@ -932,7 +943,8 @@
               "mode": "Enforce",
               "agents": "all",
               "checked": true,
-              "note": null
+              "note": null,
+              "calls": 2
             },
             {
               "id": "ctl.call_rate.<rule id>",
@@ -940,7 +952,8 @@
               "mode": "Watch",
               "agents": "all",
               "checked": true,
-              "note": null
+              "note": null,
+              "calls": 6
             },
             {
               "id": "ctl.spend_cap.<rule id>",
@@ -948,7 +961,8 @@
               "mode": "Enforce",
               "agents": "all",
               "checked": false,
-              "note": "Not checked: it would need real spending."
+              "note": "Not checked: it would need real spending.",
+              "calls": null
             }
           ]
         },
@@ -1373,52 +1387,15 @@
             }
           ],
           "how": {
-            "memoryTokens": {
-              "A": 1000000,
-              "B_base": 1000000,
-              "B_long": 6000,
-              "C_timeout": 1000000,
-              "C_fail": 1000000
-            },
-            "memoryLimitAdjusted": false,
-            "toolFailureFiredAt": [
-              {
-                "scenario": "C_timeout",
-                "runIndex": 0,
-                "at": "<time>"
-              },
-              {
-                "scenario": "C_fail",
-                "runIndex": 0,
-                "at": "<time>"
-              },
-              {
-                "scenario": "C_timeout",
-                "runIndex": 1,
-                "at": "<time>"
-              },
-              {
-                "scenario": "C_fail",
-                "runIndex": 1,
-                "at": "<time>"
-              },
-              {
-                "scenario": "C_timeout",
-                "runIndex": 2,
-                "at": "<time>"
-              },
-              {
-                "scenario": "C_fail",
-                "runIndex": 2,
-                "at": "<time>"
-              }
-            ]
+            "memoryLimitAdjusted": false
           },
           "tested": {
             "fleet": "<fleet>",
             "agent": "support-bot",
             "modelRequested": "claude-haiku-4-5",
-            "provider": null,
+            "provider": "anthropic",
+            "proxyKeyDisplayPrefix": null,
+            "keyHint": null,
             "modelsUsed": [
               "claude-haiku-4-5-20251001"
             ],
@@ -1438,7 +1415,7 @@
       },
       "status": 409,
       "response": {
-        "lifecycle": "active",
+        "lifecycle": "interrupted",
         "reason": "expired"
       }
     },
@@ -1921,7 +1898,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwnl-1d9f2219",
+        "id": "call-mv67rbnr-73d0cca0",
         "name": "create_escalation",
         "input": {
           "ticketId": "<ticket>",
@@ -1931,7 +1908,7 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwnl-1d9f2219",
+        "id": "call-mv67rbnr-73d0cca0",
         "result": {
           "escalationId": "<escalation>"
         }
@@ -1944,17 +1921,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qxtm-03680279",
+        "id": "call-mv67rcw1-49e06067",
         "name": "create_refund",
         "input": {
           "orderId": "<order>",
-          "amount": 281.37,
+          "amount": 240.97,
           "operationKey": "refund-key-0001"
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qxtm-03680279",
+        "id": "call-mv67rcw1-49e06067",
         "result": {
           "error": "timeout",
           "message": "The refund service didn't answer in time. The refund may or may not have been made."
@@ -1968,17 +1945,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwzl-67f5bb1e",
+        "id": "call-mv67rc2k-df07ff20",
         "name": "get_queue",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwzl-67f5bb1e",
+        "id": "call-mv67rc2k-df07ff20",
         "result": {
           "policy": {
-            "approvalLimit": 600,
-            "regionCode": "SA-5"
+            "approvalLimit": 450,
+            "regionCode": "AP-2"
           },
           "claimIds": [
             "<claim>",
@@ -1996,13 +1973,13 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwnv-6c541081",
+        "id": "call-mv67rbo1-91d00b3e",
         "name": "list_escalations",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwnv-6c541081",
+        "id": "call-mv67rbo1-91d00b3e",
         "result": {
           "escalations": [
             {
@@ -2013,7 +1990,7 @@
             {
               "id": "<escalation>",
               "ticketId": "<ticket>",
-              "team": "billing"
+              "team": "platform"
             }
           ]
         }
@@ -2026,26 +2003,26 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwnk-78a2cb5d",
+        "id": "call-mv67rbnq-de971cdd",
         "name": "list_tickets",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwnk-78a2cb5d",
+        "id": "call-mv67rbnq-de971cdd",
         "result": {
           "tickets": [
             {
               "id": "<ticket>",
-              "subject": "Dashboards don't load for anyone"
-            },
-            {
-              "id": "<ticket>",
               "subject": "Invoice totals are wrong for every account"
             },
             {
               "id": "<ticket>",
-              "subject": "Invoice totals are wrong for every account"
+              "subject": "Sign-in is failing for all users"
+            },
+            {
+              "id": "<ticket>",
+              "subject": "Card payments are failing at checkout"
             }
           ]
         }
@@ -2075,7 +2052,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwzm-7165285c",
+        "id": "call-mv67rc2l-4c73a1c0",
         "name": "read_claim",
         "input": {
           "id": "<claim>"
@@ -2083,11 +2060,11 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwzm-7165285c",
+        "id": "call-mv67rc2l-4c73a1c0",
         "result": {
           "id": "<claim>",
-          "customer": "Dara Novak",
-          "amount": 525,
+          "customer": "Fay Morgan",
+          "amount": 384,
           "notes": "Note 1: photos, receipts and the customer's statement were checked again; nothing here changes the claimed amount.\nNote 2: photos, receipts and the customer's statement were checked again; nothing her"
         }
       }
@@ -2099,7 +2076,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qxtl-8f4f20fe",
+        "id": "call-mv67rcw1-f4bd6a1d",
         "name": "read_order",
         "input": {
           "id": "<order>"
@@ -2107,11 +2084,11 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qxtl-8f4f20fe",
+        "id": "call-mv67rcw1-f4bd6a1d",
         "result": {
           "id": "<order>",
-          "customer": "Ben Okafor",
-          "amountPaid": 281.37,
+          "customer": "Chen Li",
+          "amountPaid": 240.97,
           "reason": "Item arrived damaged."
         }
       }
@@ -2123,7 +2100,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwnk-e11078c2",
+        "id": "call-mv67rbnq-09edd9f7",
         "name": "read_ticket",
         "input": {
           "id": "<ticket>"
@@ -2131,14 +2108,14 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwnk-e11078c2",
+        "id": "call-mv67rbnq-09edd9f7",
         "result": {
           "id": "<ticket>",
-          "subject": "Dashboards don't load for anyone",
-          "customerPlan": "Team",
+          "subject": "Invoice totals are wrong for every account",
+          "customerPlan": "Enterprise",
           "severity": "outage",
-          "team": "platform",
-          "message": "Dashboards don't load for anyone. Please help."
+          "team": "billing",
+          "message": "Invoice totals are wrong for every account. Please help."
         }
       }
     },
@@ -2149,17 +2126,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv63qwzm-a0ed8302",
+        "id": "call-mv67rc2l-8a9e4852",
         "name": "save_decision",
         "input": {
           "claimId": "<claim>",
           "decision": "approve",
-          "regionCode": "SA-5"
+          "regionCode": "AP-2"
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv63qwzm-a0ed8302",
+        "id": "call-mv67rc2l-8a9e4852",
         "result": {
           "saved": true
         }

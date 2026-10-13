@@ -13,8 +13,8 @@
 // above are forwarded; the engine validates them strictly.
 
 import { checkSameOrigin } from '@/lib/origin-check';
-import { PROXY_KEY_PREFIX_RE } from '@/lib/sandbox/practice/model';
-import { practiceEngine, practiceOwner, RUN_ID_RE } from '@/lib/sandbox/practice/server';
+import { PROXY_KEY_PREFIX_RE, RUN_ID_RE } from '@/lib/sandbox/practice/model';
+import { practiceEngine, practiceOwner } from '@/lib/sandbox/practice/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

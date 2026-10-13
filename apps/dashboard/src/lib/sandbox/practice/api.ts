@@ -2,9 +2,8 @@
 // app/api/sandbox/practice. The run code is returned by start and new-code
 // only; it is held in the page and never stored.
 
-import { PRACTICE_UNAVAILABLE } from './model';
-import { KEY_REFUSALS, PROXY_KEY_PREFIX_RE } from './model';
-import type { PracticeKeyRefusal, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
+import { KEY_REFUSALS, PRACTICE_UNAVAILABLE, PROXY_KEY_PREFIX_RE } from './model';
+import type { PracticeControlCheck, PracticeKeyRefusal, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
 
 /** A refusal from the BFF or the engine, with the engine's reason when it sent one. */
 export class PracticeError extends Error {
@@ -12,6 +11,9 @@ export class PracticeError extends Error {
     super(message);
   }
 }
+
+/** Start said the picked Fleet key key is gone: setup reads the keys again. */
+export const keyGone = (e: unknown) => e instanceof PracticeError && e.reason === 'key_not_found';
 
 /** Practice tests aren't on for this engine (the BFF's practice_unavailable): nothing to retry. */
 export function unavailable(e: unknown): boolean {
@@ -74,19 +76,19 @@ function providerKey(k: unknown): PracticeProviderKey | null {
   };
 }
 
-/**
- * The agent's latest model, where its calls go, and the keys setup can pick
- * from. An engine that doesn't say where reads as not yet known; one from
- * before provider keys (R7) as a fleet with only its own key.
- */
+/** The agent's latest model, where its calls go, the keys setup can pick from, and the control checks a test would make. */
 export const sourceModel = (fleet: string, agent: string) =>
-  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => ({
-    model: str(r.model),
-    provider: PROVIDERS.includes(r.provider as PracticeSourceProvider) ? (r.provider as PracticeSourceProvider) : 'unknown',
-    directKey: r.directKey !== false,
-    blocked: r.blocked === 'bedrock_role' ? 'bedrock_role' : null,
-    providerKeys: Array.isArray(r.providerKeys) ? r.providerKeys.map(providerKey).filter((k): k is PracticeProviderKey => k !== null) : [],
-  }));
+  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => {
+    const controls = (r.controls ?? {}) as { checks?: PracticeControlCheck[]; calls?: number };
+    return {
+      model: str(r.model),
+      provider: PROVIDERS.includes(r.provider as PracticeSourceProvider) ? (r.provider as PracticeSourceProvider) : 'unknown',
+      directKey: r.directKey === true,
+      blocked: r.blocked === 'bedrock_role' ? 'bedrock_role' : null,
+      providerKeys: Array.isArray(r.providerKeys) ? r.providerKeys.map(providerKey).filter((k): k is PracticeProviderKey => k !== null) : [],
+      controls: { checks: Array.isArray(controls.checks) ? controls.checks : [], calls: Number(controls.calls) || 0 },
+    };
+  });
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });
 export const newRunCode = (fleet: string, id: string) => call<RunCode>(`/${id}/code`, { body: { fleet } });
 export const endPractice = (fleet: string, id: string) => call<{ lifecycle: string }>(`/${id}/end`, { body: { fleet } });

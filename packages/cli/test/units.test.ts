@@ -10,19 +10,24 @@ import { parseArgs } from "../src/legacy-args.js";
 import { Engine, REDIRECTED, Unreachable } from "../src/practice/engine.js";
 import { PassThrough } from "node:stream";
 import {
-  adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, KEY_VARS, keyFromEnv, keyHeader, nodeTooOld, providerByShape, targetOrigin, words,
+  adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, keyFromEnv, keyHeader, keyVarOf, nodeTooOld, providerByShape, targetOrigin, words,
 } from "../src/practice/preflight.js";
 import { finalText } from "../src/practice/run.js";
 import { clean, copy, hideSecret, results, type Report } from "../src/practice/text.js";
 import { fixture, startStub, type Stub } from "./stub.js";
 
 describe("preflight", () => {
-  it("targets production unless --url is https or loopback", () => {
-    assert.equal(targetOrigin(undefined), "https://proxy.whiteroom.tech");
-    assert.equal(targetOrigin("https://staging.example.com/x"), "https://staging.example.com");
-    assert.equal(targetOrigin("http://localhost:8080"), "http://localhost:8080");
-    assert.equal(targetOrigin("http://127.0.0.1:3000"), "http://127.0.0.1:3000");
-    for (const bad of ["http://example.com", "ftp://x", "not a url", "https://user:pass@example.com", "http://localhost.evil.com"]) assert.equal(targetOrigin(bad), null, bad);
+  it("targets production unless --url is WhiteRoom's own (https) or loopback; other https hosts only with WHITEROOM_PRACTICE_DEV=1", () => {
+    assert.equal(targetOrigin(undefined, {}), "https://proxy.whiteroom.tech");
+    assert.equal(targetOrigin("https://staging.whiteroom.tech/x", {}), "https://staging.whiteroom.tech");
+    assert.equal(targetOrigin("https://whiteroom.tech", {}), "https://whiteroom.tech");
+    assert.equal(targetOrigin("http://localhost:8080", {}), "http://localhost:8080");
+    assert.equal(targetOrigin("http://127.0.0.1:3000", {}), "http://127.0.0.1:3000");
+    assert.equal(targetOrigin("https://localhost:8443", {}), "https://localhost:8443");
+    for (const bad of ["https://staging.example.com", "https://whiteroom.tech.evil.com", "https://evilwhiteroom.tech", "http://staging.whiteroom.tech", "http://example.com",
+      "ftp://x", "not a url", "https://user:pass@staging.whiteroom.tech", "http://localhost.evil.com"]) assert.equal(targetOrigin(bad, {}), null, bad);
+    assert.equal(targetOrigin("https://engine-test.example.com", { WHITEROOM_PRACTICE_DEV: "1" }), "https://engine-test.example.com");
+    assert.equal(targetOrigin("http://engine-test.example.com", { WHITEROOM_PRACTICE_DEV: "1" }), null);
   });
 
   it("splits adapter commands like a shell for words and quotes", () => {
@@ -51,15 +56,25 @@ describe("preflight", () => {
     assert.equal(keyFromEnv({ ANTHROPIC_API_KEY: "  " }), null);
     assert.deepEqual(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", OPENAI_API_KEY: "sk-b" }), ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
     assert.deepEqual(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", AZURE_OPENAI_API_KEY: "az" }), ["ANTHROPIC_API_KEY", "AZURE_OPENAI_API_KEY"]);
-    // An older WhiteRoom names no provider: a direct key, by its shape.
+    // --key-env: only that variable, whatever else is set.
+    assert.deepEqual(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", OPENAI_API_KEY: "sk-b" }, "OPENAI_API_KEY"), { from: "OPENAI_API_KEY", key: "sk-b" });
+    assert.equal(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a" }, "OPENAI_API_KEY"), null);
+    // A wrong direct key names its variable by the key's shape (the engine names a provider only for a Fleet key key).
     assert.equal(providerByShape("sk-ant-abc"), "anthropic");
     assert.equal(providerByShape("sk-proj-abc"), "openai");
   });
 
+  it("a pasted key that doesn't match says it was the pasted one, with its last four (never the key)", () => {
+    const key = "sk-ant-placeholder-pasted-key-4f2a";
+    assert.equal(copy.providerKeyMismatch(null, key, "Azure OpenAI", "a1b2"),
+      "The key you pasted (ends 4f2a) isn't the Azure OpenAI key saved on Fleet key (key ending a1b2). Nothing was charged. If you've changed keys, add the new one on Fleet key, then start a new test in the dashboard and pick that key.");
+    assert.match(copy.keyMismatch(keyVarOf(providerByShape(key)), 3, null), /with this fleet\. .*\(3 more tries\)\. Set ANTHROPIC_API_KEY to the right key/);
+    assert.ok(!copy.providerKeyMismatch(null, key, "Azure OpenAI", null).includes(key));
+  });
+
   it("each provider's key variable, header and API (§17)", () => {
-    assert.deepEqual(KEY_VARS, {
-      anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", "azure-openai": "AZURE_OPENAI_API_KEY", foundry: "ANTHROPIC_FOUNDRY_API_KEY", "bedrock-mantle": "AWS_BEARER_TOKEN_BEDROCK",
-    });
+    assert.deepEqual(["anthropic", "openai", "azure-openai", "foundry", "bedrock-mantle"].map(keyVarOf),
+      ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"]);
     assert.deepEqual(keyHeader("azure-openai", "k"), { "api-key": "k" });
     assert.deepEqual(keyHeader("bedrock-mantle", "k"), { authorization: "Bearer k" });
     assert.deepEqual(keyHeader("openai", "k"), { authorization: "Bearer k" });

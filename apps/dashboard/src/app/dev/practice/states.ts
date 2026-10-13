@@ -1,11 +1,10 @@
 // Sample practice tests for /dev/practice and /dev/sandbox, shaped like the
-// engine's contract fixtures (src/__tests__/fixtures/practice/contract.json).
+// engine's contract fixtures (packages/cli/contract/contract.json).
 // Made-up fleet, agent and IDs only.
 
 import type { PracticePreview } from '@/components/sandbox/practice/PracticeTest';
 import type { SetupData } from '@/components/sandbox/practice/PracticeSetup';
-import type { PracticeCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
-import type { GovernanceRule } from '@/lib/whiteroom/types';
+import type { PracticeCheck, PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { callEstimate, KEY_REFUSALS, rerunConfirm } from '@/lib/sandbox/practice/model';
 
 const FLEET = 'prod-eu';
@@ -14,19 +13,17 @@ const NOW = Date.parse('2026-10-12T14:20:00Z');
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
 const later = (min: number) => new Date(NOW + min * 60_000).toISOString();
 
-const rule = (id: string, ruleType: GovernanceRule['ruleType'], mode: GovernanceRule['mode'], params: object): GovernanceRule =>
-  ({ id, fleetId: FLEET, ruleType, mode, params, appliesTo: 'all', version: 1, changedBy: 'dashboard', changedAt: ago(600) }) as GovernanceRule;
-
-const SETUP: SetupData = {
-  agents: ['support-bot', 'billing-bot'],
-  rules: [
-    rule('gr_allow', 'model_allowlist', 'enforce', { allowedModels: ['claude-haiku-4-5'] }),
-    rule('gr_loop', 'loop_breaker', 'enforce', { threshold: 3, scope: 'run', ignoreTools: [] }),
-    rule('gr_rate', 'call_rate', 'watch', { maxCalls: 5 }),
-    rule('gr_spend', 'spend_cap', 'enforce', { dailyCap: 20, scope: 'day', unit: 'dollars' }),
-  ],
-  durableHolds: true,
-};
+const SETUP: SetupData = { agents: ['support-bot', 'billing-bot'] };
+/** The control checks source-model plans for these rules: an allowlist, a loop breaker, a Watch call rate and a spend cap, with durable Pause and Stop. */
+const control = (id: string, label: string, mode: string | null, calls: number | null, note: string | null = null): PracticeControlCheck =>
+  ({ id, label, mode, agents: 'all', checked: calls !== null, note, calls });
+const CONTROLS: PracticeControlCheck[] = [
+  control('ctl.pause_stop', 'Pause and Stop', null, 1),
+  control('ctl.model_allowlist.gr_allow', 'Model allowlist', 'Enforce', 0),
+  control('ctl.loop_breaker.gr_loop', 'Loop breaker', 'Enforce', 2),
+  control('ctl.call_rate.gr_rate', 'Call rate', 'Watch', 6),
+  control('ctl.spend_cap.gr_spend', 'Spend cap', 'Enforce', null, 'Not checked: it would need real spending.'),
+];
 
 /** R7: Fleet key keys as source-model lists them (placeholder prefixes, no real keys). */
 const key = (n: number, provider: string, extra: Partial<PracticeProviderKey> = {}): PracticeProviderKey => ({
@@ -39,11 +36,11 @@ const FOUNDRY = key(3, 'foundry', { endpointHost: 'acme.services.ai.azure.com', 
 const ANTHROPIC_PROXY = key(4, 'anthropic', { keyHint: 'b5be', createdAt: '2026-09-21T09:00:00Z' });
 const ENGINE_ACCESS = key(5, 'bedrock-sigv4', { endpointHost: 'bedrock-mantle.us-west-2.api.aws', region: 'us-west-2', keyHint: 'none', eligible: false, reason: 'engine_access_key' });
 const OTHER_HOST = key(6, 'openai', { endpointHost: 'api.groq.com', keyHint: '117d', eligible: false, reason: 'other_host' });
-const cloud = (keys: PracticeProviderKey[], model: string | null) => ({ setup: SETUP, model, provider: 'cloud' as const, directKey: false, keys });
+const cloud = (keys: PracticeProviderKey[], model: string | null) => ({ setup: SETUP, model, provider: 'cloud' as const, directKey: false, keys, controls: CONTROLS });
 
 const RUN: PracticeRun = {
   id: ID, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: FLEET, agentId: 'support-bot', sample: false, runs: 1, scope: null,
-  createdAt: ago(1), startedAt: null, endedAt: null, codeExpiresAt: later(29.8), codeTriesLeft: 5, progress: null,
+  provider: null, proxyKeyDisplayPrefix: null, keyHint: null, createdAt: ago(1), startedAt: null, endedAt: null, codeExpiresAt: later(29.8), codeTriesLeft: 5, progress: null,
 };
 const CODE = { code: 'wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1', codeExpiresAt: later(29.8) };
 
@@ -68,9 +65,15 @@ const CONTROL_CHECKS = [
 ];
 const REPORT: PracticeReport = {
   testVersion: 1, verdict: 'passed', runs: 3, sample: false, scope: null, checks: [...AGENT_CHECKS, ...CONTROL_CHECKS],
-  how: { memoryTokens: { A: 1_000_000, B_long: 6000 }, memoryLimitAdjusted: false },
-  tested: { fleet: FLEET, agent: 'support-bot', modelRequested: 'claude-haiku-4-5', modelsUsed: ['claude-haiku-4-5-20251001'], adapter: 'node wr-adapter.mjs', cli: '2.0.0' },
+  how: { memoryLimitAdjusted: false },
+  tested: {
+    fleet: FLEET, agent: 'support-bot', modelRequested: 'claude-haiku-4-5', modelsUsed: ['claude-haiku-4-5-20251001'], adapter: 'node wr-adapter.mjs', cli: '2.0.0',
+    provider: 'anthropic', proxyKeyDisplayPrefix: null, keyHint: null,
+  },
 };
+/** A test on a Fleet key key: what the engine names it by on the run and in the report. */
+const onKey = (k: PracticeProviderKey) => ({ provider: k.provider, proxyKeyDisplayPrefix: k.displayPrefix, keyHint: k.keyHint });
+
 /** A report as it reads for `runs` runs: agent checks say how many runs they passed in. */
 const forRuns = (r: PracticeReport | null) => r && ({ ...r, checks: r.checks.map((c) => (c.summary.startsWith('Passed in') && c.status === 'passed' ? { ...c, summary: `Passed in ${r.runs} of ${r.runs} run${r.runs === 1 ? '' : 's'}.` } : c)) });
 const finished = (raw: PracticeReport | null, run: Partial<PracticeRun> = {}, report = forRuns(raw)): { run: PracticeRun; result: PracticeResult } => ({
@@ -94,9 +97,9 @@ const INCOMPLETE = { ...swap(swap(REPORT, 'b.result', {
 const preview = (p: Partial<PracticePreview>): PracticePreview => ({ fleet: FLEET, now: NOW, ...p });
 
 export const PRACTICE_STATES = {
-  setup: preview({ setup: SETUP, model: 'claude-haiku-4-5' }),
-  'setup-new-agent': preview({ setup: { ...SETUP, rules: [], durableHolds: false }, model: null }),
-  'setup-blocked': preview({ setup: SETUP, model: 'gpt-4o', provider: 'cloud' }),
+  setup: preview({ setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS }),
+  'setup-new-agent': preview({ setup: SETUP, model: null }),
+  'setup-blocked': preview({ setup: SETUP, model: 'gpt-4o', provider: 'cloud', controls: CONTROLS }),
   // R7: cloud providers through a Fleet key key.
   'setup-azure': preview(cloud([AZURE], 'support-gpt4o-mini')),
   'setup-azure-no-model': preview(cloud([AZURE], null)),
@@ -112,11 +115,12 @@ export const PRACTICE_STATES = {
   'refused-model': preview({ ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.model_required, reason: 'model_required' } }),
   'refused-today': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You can start more tomorrow (00:00 UTC).', reason: 'starts_today' } }),
   'refused-open': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You already have a practice test open.', reason: 'owner_busy', run: { id: ID, lifecycle: 'active' } } }),
+  'refused-open-elsewhere': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You already have a practice test open.', reason: 'owner_busy', run: { lifecycle: 'active', otherFleet: true } } }),
   code: preview({ run: RUN, code: CODE }),
   'code-sample': preview({ run: { ...RUN, sample: true }, code: CODE }),
-  'code-azure': preview({ run: RUN, code: CODE, model: 'support-gpt4o-mini', key: { provider: 'azure-openai', keyHint: 'a1b2' } }),
-  'code-bedrock': preview({ run: RUN, code: CODE, model: 'anthropic.claude-haiku-4-5', key: { provider: 'bedrock-mantle', keyHint: '7c3d' } }),
-  'code-foundry': preview({ run: RUN, code: CODE, model: 'claude-haiku-4-5', key: { provider: 'foundry', keyHint: '5e6f' } }),
+  'code-azure': preview({ run: { ...RUN, ...onKey(AZURE) }, code: CODE }),
+  'code-bedrock': preview({ run: { ...RUN, ...onKey(BEDROCK) }, code: CODE }),
+  'code-foundry': preview({ run: { ...RUN, ...onKey(FOUNDRY) }, code: CODE }),
   'code-gone': preview({ run: { ...RUN, codeTriesLeft: 2 }, code: null }),
   running: preview({ run: { ...RUN, lifecycle: 'active', runs: 3, startedAt: ago(12), codeExpiresAt: null, codeTriesLeft: null, progress: { done: 4, total: 18, lastContactAt: ago(0.2) } } }),
   lost: preview({ run: { ...RUN, lifecycle: 'active', startedAt: ago(9), codeExpiresAt: null, codeTriesLeft: null, progress: { done: 2, total: 6, lastContactAt: ago(2) } } }),
@@ -124,11 +128,12 @@ export const PRACTICE_STATES = {
   passed: preview(finished(REPORT)),
   'passed-1run': preview(finished({ ...REPORT, runs: 1 })),
   'passed-sample': preview(finished({ ...REPORT, runs: 1, sample: true })),
-  'passed-azure': preview(finished({ ...REPORT, tested: { ...REPORT.tested, provider: 'azure-openai', modelRequested: 'support-gpt4o-mini', modelsUsed: ['gpt-4o-mini-2024-07-18'] } })),
-  'incomplete-bedrock': preview(finished({ ...INCOMPLETE, tested: { ...REPORT.tested, provider: 'bedrock-mantle', modelRequested: 'anthropic.claude-haiku-4-5', modelsUsed: ['anthropic.claude-haiku-4-5'] } })),
+  'passed-azure': preview(finished({ ...REPORT, tested: { ...REPORT.tested, ...onKey(AZURE), modelRequested: 'support-gpt4o-mini', modelsUsed: ['gpt-4o-mini-2024-07-18'] } })),
+  'incomplete-bedrock': preview(finished({ ...INCOMPLETE, tested: { ...REPORT.tested, ...onKey(BEDROCK), modelRequested: 'anthropic.claude-haiku-4-5', modelsUsed: ['anthropic.claude-haiku-4-5'] } })),
   failed: preview(finished(FAILED)),
   incomplete: preview(finished(INCOMPLETE)),
   ended: preview(finished(null, { endReason: 'ended_by_owner' })),
+  'ended-call-cap': preview(finished(null, { lifecycle: 'interrupted', endReason: 'call_cap' })),
   'confirm-rerun': preview({ ...finished(FAILED), confirm: { kind: 'rerun', start: { fleet: FLEET, sample: false, runs: 3, scope: ['c.timeout'] }, text: rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'claude-haiku-4-5' })) } }),
   unavailable: preview({ unavailable: true }),
   'confirm-end': preview({ run: { ...RUN, lifecycle: 'active', startedAt: ago(5), progress: { done: 1, total: 6, lastContactAt: ago(0.2) } }, confirm: { kind: 'end', id: ID } }),

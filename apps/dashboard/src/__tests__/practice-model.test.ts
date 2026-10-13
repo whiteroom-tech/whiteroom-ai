@@ -1,21 +1,22 @@
 // Practice tests: the decisions behind the screens, replayed against the
-// engine's contract fixtures (fixtures/practice, engine d50dd97f).
+// engine's contract fixtures (packages/cli/contract, the copy the CLI ships).
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import contract from './fixtures/practice/contract.json';
-import sandboxChecks from './fixtures/practice/dashboard-sandbox-checks.json';
+import contract from '@practice-contract/contract.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
-import { PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
+import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, providerOf, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
-  CLI_ON_NPM, CLI_VERSION, draftFromStart, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
+  callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlLine, costLine, fixLine, headline,
+  CLI_ON_NPM, CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
+  rerunKey, rerunScope, runKeyChoice, taskList,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
-import type { PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource } from '@/lib/sandbox/practice/types';
-import type { GovernanceRule } from '@/lib/whiteroom/types';
+import type { PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource } from '@/lib/sandbox/practice/types';
 
-const fixture = <T>(name: string) => structuredClone(contract.entries.find((e) => e.name === name)!.response) as T;
+type Entry = { name: string; status: number; request: unknown; response: unknown };
+const entries = contract.entries as Entry[];
+const fixture = <T>(name: string) => structuredClone(entries.find((e) => e.name === name)!.response) as T;
 const fullReport = () => fixture<{ report: PracticeReport }>('tasks.next.done').report;
 const withCheck = (r: PracticeReport, id: string, patch: Partial<PracticeReport['checks'][number]>, verdict: PracticeReport['verdict']): PracticeReport =>
   ({ ...r, verdict, checks: r.checks.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
@@ -28,8 +29,7 @@ describe('practice test catalog', () => {
   });
 
   it('no check label equals a connection test check label', () => {
-    const connection = new Set([...SANDBOX_CHECKS.map((c) => c.label), ...sandboxChecks.labels]);
-    expect(sandboxChecks.labels).toEqual(SANDBOX_CHECKS.map((c) => c.label));
+    const connection = new Set<string>(SANDBOX_CHECKS.map((c) => c.label));
     for (const c of CATALOG.checks) expect(connection.has(c.label)).toBe(false);
   });
 
@@ -47,20 +47,27 @@ describe('practice test setup: the agent’s model and where its calls go', () =
   afterEach(() => { vi.unstubAllGlobals(); });
   const answer = (body: unknown) => vi.stubGlobal('fetch', vi.fn(async () => Response.json(body)));
 
-  const OWN_KEY_ONLY = { directKey: true, blocked: null, providerKeys: [] };
+  const NO_CONTROLS = { checks: [], calls: 0 };
 
   it('reads source-model as the engine sends it', async () => {
     answer(fixture('source-model'));
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', ...OWN_KEY_ONLY });
-    answer({ model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role', providerKeys: [] });
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role', providerKeys: [] });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: NO_CONTROLS });
+    answer({ ...fixture<Record<string, unknown>>('source-model'), model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toMatchObject({ model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role' });
+    // A kind this dashboard doesn't know reads as not yet known.
+    answer({ ...fixture<Record<string, unknown>>('source-model'), model: '', provider: 'somewhere-new' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toMatchObject({ model: null, provider: 'unknown' });
   });
 
-  it('an older engine that doesn’t say where calls go, or an unknown kind, reads as not yet known; one from before R7 as the fleet’s own key only', async () => {
-    answer({ model: 'claude-haiku-4-5' });
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'claude-haiku-4-5', provider: 'unknown', ...OWN_KEY_ONLY });
-    answer({ model: '', provider: 'somewhere-new' });
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', ...OWN_KEY_ONLY });
+  it('renders the control checks as the engine planned them, and counts a rerun’s', () => {
+    const checks = fixture<{ controls: { checks: PracticeControlCheck[] } }>('tasks.next.controls').controls.checks;
+    expect(checks.map(controlLine)).toEqual([
+      'Pause and Stop · 1 extra call', 'Model allowlist · Enforce · no extra calls', 'Loop breaker · Enforce · 2 extra calls', 'Call rate · Watch · 6 extra calls',
+      'Spend cap · Enforce · Not checked: it would need real spending.',
+    ]);
+    expect(controlCalls(checks)).toBe(9);
+    expect(controlCalls(checks, [checks[2].id])).toBe(2);
+    expect(controlCalls(checks, ['ctl'])).toBe(9);
   });
 
   it('R7: reads the Fleet key keys, and never lets one it can’t read be picked', async () => {
@@ -81,7 +88,7 @@ describe('practice test setup: the agent’s model and where its calls go', () =
   });
 
   it('claim and the practice task carry the model the test was started with', () => {
-    const start = contract.entries.find((e) => e.name === 'start')!.request as { model?: string };
+    const start = entries.find((e) => e.name === 'start')!.request as { model?: string };
     expect(fixture<{ run: { model: string | null } }>('claim').run.model).toBe(start.model);
     expect(fixture<{ task: { model: string | null } }>('tasks.next.task.A').task.model).toBe(start.model);
   });
@@ -94,10 +101,10 @@ describe('practice test results (§8)', () => {
     expect(passCaveat(r)).toBeNull();
     expect(passCaveat({ ...r, runs: 1 })).toMatch(/Run it 3 times/);
     expect(passCaveat({ ...r, sample: true })).toMatch(/sample agent/);
-    expect(headline(withCheck(r, 'c.timeout', { status: 'failed', reason: 'key_not_reused' }, 'not_passed'))).toBe('Didn’t pass · 1 check failed');
+    expect(headline(withCheck(r, 'c.timeout', { status: 'failed', reason: 'key_not_reused' }, 'not_passed'))).toBe("Didn't pass · 1 check failed");
     const ours = withCheck(withCheck(r, 'a.result', { status: 'error', testProblem: true }, 'incomplete'), 'b.result', { status: 'error', testProblem: true }, 'incomplete');
-    expect(headline(ours)).toBe('Didn’t finish · 2 checks couldn’t run (not your agent)');
-    expect(headline(withCheck(ours, 'b.result', { status: 'not_tested', testProblem: false }, 'incomplete'))).toBe('Didn’t finish · 2 checks couldn’t run');
+    expect(headline(ours)).toBe("Didn't finish · 2 checks couldn't run (not your agent)");
+    expect(headline(withCheck(ours, 'b.result', { status: 'not_tested', testProblem: false }, 'incomplete'))).toBe("Didn't finish · 2 checks couldn't run");
   });
 
   it('names a rerun’s scope, and the unsupported spend cap never counts', () => {
@@ -138,22 +145,6 @@ describe('practice test cost (§1, §10 fixed copy)', () => {
     expect(e.cap).toBe(3 * CATALOG.allowances.B_long);
     expect(rerunConfirm(['b.carries_on'], 3, e)).toMatch(/^Rerun 1 check × 3 runs · usually 45–75 model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\), never more than 120\.$/);
   });
-
-  it('lists the control checks and their extra calls, and what isn’t checked', () => {
-    const rule = (id: string, ruleType: string, params: object, appliesTo: GovernanceRule['appliesTo'] = 'all') => ({ id, ruleType, mode: 'enforce', params, appliesTo }) as GovernanceRule;
-    const rows = controlPreview([
-      rule('a', 'model_allowlist', { allowedModels: ['m'] }), rule('l', 'loop_breaker', { threshold: 4 }), rule('r', 'call_rate', { maxCalls: 30 }),
-      rule('s', 'spend_cap', {}), rule('t', 'tool_list', {}), rule('c', 'call_rate', { maxCalls: 5 }, ['support-bot']),
-    ], true, false);
-    expect(rows.map(controlPreviewLine)).toEqual([
-      'Pause and Stop · 2 extra calls', 'Model allowlist · Enforce · no extra calls', 'Loop breaker · Enforce · 3 extra calls',
-      'Call rate · Enforce: not checked: too many calls to test cheaply', 'Spend cap · Enforce: not checked (it would need real spending)',
-      'Tool list · Enforce: not checked yet', 'Call rate · Enforce · 10 extra calls',
-    ]);
-    expect(controlCalls(rows)).toBe(15);
-    expect(controlCalls(rows, ['ctl.loop_breaker.l'])).toBe(3);
-    expect(controlPreview([], false, false)).toEqual([]);
-  });
 });
 
 describe('practice test commands (§10 CLI)', () => {
@@ -172,6 +163,9 @@ describe('practice test commands (§10 CLI)', () => {
   it('never puts the run code in a command and names the starter for your agent', () => {
     expect(cliCommands(true, 'js')).toEqual({ starter: null, run: 'whiteroom practice run' });
     expect(cliCommands(false, 'python')).toEqual({ starter: 'whiteroom practice adapter --lang python > wr_adapter.py', run: 'whiteroom practice run --adapter "python3 wr_adapter.py"' });
+    // With the run's provider known, the command names its key's variable: a computer with several keys set isn't refused.
+    expect(cliCommands(true, 'js', 'azure-openai').run).toBe('whiteroom practice run --key-env AZURE_OPENAI_API_KEY');
+    expect(cliCommands(false, 'js', 'anthropic').run).toBe('whiteroom practice run --adapter "node wr-adapter.mjs" --key-env ANTHROPIC_API_KEY');
   });
 });
 
@@ -195,6 +189,13 @@ describe('practice test progress and Past tests', () => {
   const now = Date.parse('2026-10-12T14:20:00Z');
   const run = (p: Partial<PracticeRun>): PracticeRun => ({ ...fixture<PracticeRun>('runs.get'), scope: null, runs: 3, lifecycle: 'active', startedAt: '2026-10-12T14:08:00Z', ...p });
 
+  it('says why a test ended without a result, never blaming the agent for WhiteRoom’s reruns', () => {
+    expect(endedBecause('call_cap')).toBe('Stopped to stay within the 120-call limit after WhiteRoom had to rerun a task (not your agent).');
+    expect(endedBecause('stalled')).toMatch(/didn’t ask for the next practice task for 5 minutes/);
+    expect(endedBecause('too_many_restarts')).toMatch(/start again too many times/);
+    expect(endedBecause('something_new')).toBe('The test stopped before it finished.');
+  });
+
   it('says how far a test has got, and when contact is lost', () => {
     const r = run({ progress: { done: 7, total: 18, lastContactAt: '2026-10-12T14:19:30Z' } });
     expect(progressLine(r, now)).toBe('Practice tasks: 7 of 18 done (run 2 of 3) · 12 min so far, usually 60–105 min in total');
@@ -217,14 +218,7 @@ describe('practice test progress and Past tests', () => {
     expect(pastTasks({ ...row, scope: null, runs: 3, rerun: false, tasks: { finished: 18, total: 18 } })).toBe('18/18');
     expect(pastTasks({ ...row, lifecycle: 'cancelled', scope: null, tasks: { finished: 4, total: 6 } })).toBe('4/6');
     expect(pastTasks({ ...row, scope: null, runs: 3, verdict: 'incomplete', tasks: { finished: 0, total: 18 } })).toBe('0/18');
-    // An older engine that doesn't list them: every task when it was judged, else "—".
-    const older = { ...row, tasks: undefined };
-    expect(pastTasks(older)).toBe('1/1');
-    expect(pastTasks({ ...older, scope: null, runs: 3, rerun: false })).toBe('18/18');
-    expect(pastTasks({ ...older, lifecycle: 'cancelled' })).toBe('—');
-    expect(pastTasks({ ...older, scope: null, runs: 3, verdict: 'incomplete' })).toBe('—');
-    expect(pastTasks({ ...older, scope: null, runs: 1, verdict: 'not_passed' })).toBe('6/6');
-    expect(pastResult({ ...row, rerun: false, verdict: 'not_passed' }).label).toBe('Didn’t pass');
+    expect(pastResult({ ...row, rerun: false, verdict: 'not_passed' }).label).toBe("Didn't pass");
     expect(pastResult({ ...row, lifecycle: 'interrupted', verdict: null }).label).toBe('Rerun · didn’t finish');
     expect(pastKind({ sample: true })).toBe('Practice (sample)');
     expect(practiceAgent(true, 'readiness-sample')).toBe('WhiteRoom’s sample agent');
@@ -238,7 +232,7 @@ describe('practice test report (§9.8)', () => {
     const html = practiceReportHtml('r-7f3a2c1e', r, '2026-10-12T14:20:00Z');
     expect(html).toContain(`<meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}">`);
     expect(html).not.toMatch(/<script|<link|<img|src=/i);
-    expect(html).toContain('Didn’t pass · 1 check failed');
+    expect(html).toContain("Didn't pass · 1 check failed");
     expect(html).toContain('Saves once when a tool times out');
     expect(html).toContain('Fix: send the same key.</p>');
     expect(html).toContain('not as a certificate');
@@ -256,7 +250,7 @@ describe('practice tests on cloud providers (R7, §17)', () => {
     displayPrefix: `sk-wr-${'0'.repeat(15)}${provider.length % 10}`, provider, endpointHost: null, region: null, keyHint: 'a1b2', createdAt: '2026-10-03T09:00:00Z',
     eligible: true, reason: null, ...extra,
   });
-  const src = (o: Partial<PracticeSource>): PracticeSource => ({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], ...o });
+  const src = (o: Partial<PracticeSource>): PracticeSource => ({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: { checks: [], calls: 0 }, ...o });
   const NOW = Date.parse('2026-10-12T14:20:00Z');
 
   it('names each key in Fleet key’s words', () => {
@@ -278,12 +272,36 @@ describe('practice tests on cloud providers (R7, §17)', () => {
   });
 
   it('the key line names the provider’s variable and the Fleet key key (§10 fixed copy)', () => {
-    const line = (c: Parameters<typeof keyLine>[0], model: string | null = null) => Object.values(keyLine(c, model, 'prod-eu')).join('');
-    expect(line({ provider: 'azure-openai', keyHint: 'a1b2' })).toBe('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
-    expect(line({ provider: 'bedrock-mantle', keyHint: '7c3d' })).toBe('Run this where AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d).');
-    expect(line({ provider: 'foundry', keyHint: null })).toBe('Run this where ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key.');
-    expect(line(null, 'claude-haiku-4-5')).toBe('Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.');
+    const line = (c: Parameters<typeof keyLine>[0]) => Object.values(keyLine(c, 'prod-eu')).join('');
+    expect(line({ provider: 'azure-openai', keyHint: 'a1b2', fleetKey: true })).toBe('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
+    expect(line({ provider: 'bedrock-mantle', keyHint: '7c3d', fleetKey: true })).toBe('Run this where AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d).');
+    expect(line({ provider: 'foundry', keyHint: null, fleetKey: true })).toBe('Run this where ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key.');
+    expect(line({ provider: 'anthropic', keyHint: null, fleetKey: false })).toBe('Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.');
+    // The fleet's own key before anything has said which provider: both variables, never a guess from the model's name.
+    expect(line(null)).toBe('Set ANTHROPIC_API_KEY or OPENAI_API_KEY to the key your agent uses with prod-eu.');
     expect(choiceOf(k('bedrock-sigv4', { keyHint: 'none' }))).toBeNull();
+  });
+
+  it('names the key from the engine’s own run fields, in any tab, and the fleet’s own key from where its latest call went', () => {
+    const get = fixture<PracticeRun>('runs.get');
+    expect(runKeyChoice(get)).toBeNull(); // a draft on the fleet's own key: not known until the CLI claims it
+    expect(runKeyChoice({ ...get, provider: 'anthropic' })).toEqual({ provider: 'anthropic', keyHint: null, fleetKey: false });
+    expect(runKeyChoice({ ...get, provider: 'azure-openai', proxyKeyDisplayPrefix: `sk-wr-${'1'.repeat(16)}`, keyHint: 'a1b2' })).toEqual({ provider: 'azure-openai', keyHint: 'a1b2', fleetKey: true });
+    expect(runKeyChoice({ ...get, provider: 'gemini' })).toBeNull();
+    expect(directChoice(src({ provider: 'direct-openai' }))).toEqual({ provider: 'openai', keyHint: null, fleetKey: false });
+    expect(directChoice(src({ provider: 'cloud' }))).toBeNull();
+  });
+
+  it('a rerun uses the key the test used, else the only usable one of its provider; with several or none, setup asks', () => {
+    const used = k('azure-openai');
+    const other = { ...k('azure-openai'), displayPrefix: `sk-wr-${'2'.repeat(16)}`, keyHint: 'c3d4' };
+    const tested = { ...fullReport().tested, provider: 'azure-openai', proxyKeyDisplayPrefix: used.displayPrefix, keyHint: 'a1b2' };
+    expect(rerunKey(tested, [other, used])).toBe(used);
+    expect(rerunKey(tested, [other, { ...used, eligible: false, reason: 'other_host' }])).toBe(other);
+    expect(rerunKey(tested, [other, { ...other, displayPrefix: `sk-wr-${'3'.repeat(16)}` }])).toBe('pick');
+    expect(rerunKey(tested, [k('bedrock-mantle')])).toBe('gone');
+    // The fleet's own key: nothing to pick.
+    expect(rerunKey(fullReport().tested, [used])).toBeNull();
   });
 
   it('cost: Azure and Foundry show only the cap, Bedrock Anthropic’s list prices marked approx.', () => {
@@ -299,20 +317,26 @@ describe('practice tests on cloud providers (R7, §17)', () => {
 
   it('a provider refusal on a cloud test names that provider and its key variable', () => {
     const r = { ...fullReport(), tested: { ...fullReport().tested, provider: 'azure-openai' } };
-    const c = { ...r.checks[0], reason: 'provider_refused', failedCalls: { count: 2, last: { status: 401, reason: 'upstream_error' as const } } };
-    expect(providerOf(r)).toBe('azure-openai');
+    const c = { ...r.checks[0], reason: 'provider_refused', fix: 'engine line', failedCalls: { count: 2, last: { status: 401, reason: 'upstream_error' as const } } };
     expect(fixLine(c, r)).toBe('Test problem (not your agent): Azure OpenAI refused the key (HTTP 401). Check that AZURE_OPENAI_API_KEY is the key your agent uses and that it’s still active. Rerun this check to try again.');
-    // The fleet's own key: no provider recorded.
-    expect(fullReport().tested.provider).toBeNull();
+    // The engine names the fleet's own key's provider too; one this dashboard doesn't know keeps the catalog's line.
+    expect(fullReport().tested.provider).toBe('anthropic');
+    expect(fixLine(c, { ...r, tested: { ...r.tested, provider: 'gemini' } })).toBe('engine line');
+  });
+
+  it('Start refusing a key that left Fleet key makes setup read the keys again; nothing else does', () => {
+    expect(keyGone(new PracticeError(KEY_REFUSALS.key_not_found, 400, 'key_not_found'))).toBe(true);
+    expect(keyGone(new PracticeError(KEY_REFUSALS.other_host, 400, 'other_host'))).toBe(false);
+    expect(keyGone(new Error('key_not_found'))).toBe(false);
   });
 
   it('every key refusal the engine can send has the catalog’s words, and Start answers with them', () => {
     expect(Object.keys(KEY_REFUSALS).sort()).toEqual(['bedrock_role', 'engine_access_key', 'key_not_found', 'model_required', 'other_host', 'short_term_key', 'unsupported_provider']);
-    for (const e of contract.entries.filter((x) => /^r7\.(start|claim)\./.test(x.name) && x.status === 400)) {
+    for (const e of entries.filter((x) => /^r7\.(start|claim)\./.test(x.name) && x.status === 400)) {
       const res = e.response as { reason: keyof typeof KEY_REFUSALS; error: string };
       expect(res.error).toBe(KEY_REFUSALS[res.reason]);
     }
-    const start = contract.entries.find((e) => e.name === 'r7.start')!.request as Record<string, unknown>;
+    const start = entries.find((e) => e.name === 'r7.start')!.request as Record<string, unknown>;
     expect(Object.keys(start)).toContain('proxyKeyDisplayPrefix');
     expect(PROXY_KEY_PREFIX_RE.test(`sk-wr-${'a1'.repeat(8)}`)).toBe(true);
     expect(PROXY_KEY_PREFIX_RE.test('sk-wr-a1b2...')).toBe(false);

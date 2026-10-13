@@ -1,10 +1,12 @@
 // What the practice commands print (spec §8, §10, Appendix D). Plain words
 // only: no internal names, no engine reason codes. Every way a run ends
-// names the dashboard and the button to click there.
+// names the dashboard and the button to click there. Task, status, provider
+// and refusal words are the engine's catalog's.
+
+import { CATALOG } from "./catalog.js";
 
 export const DASHBOARD = "https://app.whiteroom.tech/sandbox";
-export const DISCLAIMER =
-  "Practice tasks use made-up records and WhiteRoom's test tools, not your agent's real job. Use the result to help decide, not as a certificate.";
+const KEY_VARS = Object.values(CATALOG.providers).map((p) => p.keyVar);
 
 /** Control, C1 and bidi characters, which could rewrite what the terminal shows. Tabs and newlines stay. */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
@@ -36,14 +38,6 @@ export interface Ending {
 }
 export const ending = (code: Ending["code"], ...lines: string[]): Ending => ({ code, lines });
 
-export const SCENARIOS: Record<string, string> = {
-  A: "Finishes a job correctly",
-  B_base: "Handles a long task (short version)",
-  B_long: "Handles a long task (long version)",
-  C_timeout: "Handles a failing tool (the tool times out)",
-  C_fail: "Handles a failing tool (the tool keeps failing)",
-};
-
 export const copy = {
   ignoringUrl: "Ignoring WHITEROOM_URL: practice tests always run on WhiteRoom.",
   keyInUse: (v: string, key: string) => `Using the key in ${v} (ends ${key.slice(-4)}).`,
@@ -59,14 +53,13 @@ export const copy = {
   badCode: "That isn't a run code. Copy it again from the dashboard (it starts with wrrt_).",
   needCode: "Paste the run code from the dashboard (it won't show): ",
   needKey: "Paste the model provider key your agent uses (it won't show): ",
-  bothKeys: (vars: string[]) => vars.length === 2
-    ? `Both ${vars[0]} and ${vars[1]} are set. Unset the one your agent doesn't use, then run the command again. Nothing was sent.`
-    : `${list(vars)} are all set. Unset the ones your agent doesn't use, then run the command again. Nothing was sent.`,
-  noKey: `Set the key your agent uses (${list(["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"], "or")}), then run the command again.`,
-  shortTermKey: "Short-term Bedrock keys can expire during a test. Add a long-term Bedrock API key on Fleet key to test with.",
+  bothKeys: (vars: string[]) => `${vars.length === 2 ? `Both ${vars[0]} and ${vars[1]} are` : `${list(vars)} are all`} set. Add --key-env with the one your agent uses (for example --key-env ${vars[0]}), then run the command again. Nothing was sent.`,
+  noKey: (keyEnv?: string) => `Set the key your agent uses (${keyEnv ?? list(KEY_VARS, "or")}), then run the command again.`,
+  badKeyEnv: (v: string) => `--key-env must name a provider key variable (${list(KEY_VARS, "or")}), not ${v}.`,
+  shortTermKey: CATALOG.keyRefusals.short_term_key,
   node: (v: string) => `Needs Node 20 or later (you have ${v}).`,
   windows: "Practice tests run on macOS and Linux in this beta. Run the command there, or in WSL.",
-  badUrl: "--url must be an https:// address (or http://localhost for local testing).",
+  badUrl: "--url must be a WhiteRoom address (https://….whiteroom.tech) or http://localhost for local testing.",
   adapterMissing: (cmd: string, why: string) =>
     `Couldn't start the adapter \`${cmd}\`: ${why}. Nothing was sent or charged, and your run code still works.`,
 
@@ -88,6 +81,7 @@ export const copy = {
   engineUpdate: (kept: number) => `WhiteRoom was updated during your practice test, so it stopped. ${kept ? `${plural(kept, "finished practice task")} kept. ` : ""}${button("Start test")} to run it again.`,
   endedByOwner: `The practice test was ended from the dashboard. Finished practice tasks were kept. ${button("Start test")} to test again.`,
   expired: `This practice test has ended: it lost contact with this computer or ran out of time. ${button("Start test")} to run it again.`,
+  callCap: `Stopped to stay within the ${CATALOG.runCallCap}-call limit after WhiteRoom had to rerun a task (not your agent). ${button("Start test")} to run it again.`,
   sessionGone: `WhiteRoom no longer knows this practice test. ${button("Start test")} to run it again.`,
   cancelled: `Practice test ended. Finished practice tasks were kept. ${button("Start test")} to run it again.`,
   adapterCrashed: (code: string, tail: string[]) => [
@@ -123,9 +117,7 @@ export interface Report {
   checks: Check[];
 }
 
-const STATUS: Record<Check["status"], string> = {
-  passed: "Passed", failed: "Failed", not_tested: "Didn't run", unsupported: "Not checked", error: "Test problem (not your agent)",
-};
+const STATUS = CATALOG.statusLabels;
 
 /** The results screen in the terminal, and its exit code: 0 Passed, 1 Didn't pass, 3 Didn't finish. */
 export function results(r: Report): Ending {
@@ -138,14 +130,14 @@ export function results(r: Report): Ending {
   let code: Ending["code"];
   if (r.verdict === "passed") {
     code = 0;
-    lines.push(`Passed · ${scope ? `${scope} only` : `all ${plural(required.length, "check")}`} · ${runs}`);
+    lines.push(`${CATALOG.verdictLabels.passed} · ${scope ? `${scope} only` : `all ${plural(required.length, "check")}`} · ${runs}`);
   } else if (r.verdict === "not_passed") {
     code = 1;
-    lines.push(`Didn't pass · ${plural(failed.length, "check")} failed`);
+    lines.push(`${CATALOG.verdictLabels.not_passed} · ${plural(failed.length, "check")} failed`);
   } else {
     code = 3;
     const ours = open.length > 0 && open.every((c) => c.testProblem);
-    lines.push(`Didn't finish · ${open.length ? `${plural(open.length, "check")} couldn't run` : "no checks could run"}${ours ? " (not your agent)" : ""}`);
+    lines.push(`${CATALOG.verdictLabels.incomplete} · ${open.length ? `${plural(open.length, "check")} couldn't run` : "no checks could run"}${ours ? " (not your agent)" : ""}`);
   }
   if (r.sample) lines.push("This was WhiteRoom's sample agent: it checks your controls and this setup, not your own agent.");
   else if (r.runs === 1 && code === 0) lines.push("One run shows your agent can pass. Run it 3 times to see that it passes every time.");
@@ -162,6 +154,6 @@ export function results(r: Report): Ending {
     for (const c of fixes) lines.push(`  ${c.label}: ${c.fix}`);
   }
   const next = code === 1 ? "Rerun failed checks" : code === 3 ? "Rerun checks that didn't run" : !r.sample && r.runs === 1 ? "Run it 3 times" : "Past tests";
-  lines.push("", DISCLAIMER, next === "Past tests" ? `See the full result in the dashboard (${DASHBOARD}), under Past tests.` : `${button(next)}.`);
+  lines.push("", CATALOG.disclaimer, next === "Past tests" ? `See the full result in the dashboard (${DASHBOARD}), under Past tests.` : `${button(next)}.`);
   return { code, lines };
 }

@@ -9,6 +9,8 @@ export default defineConfig({
       // Mirrors the "@/*" path in tsconfig.json. Without it, any test that
       // pulls in a module importing through the alias fails at import time.
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // And "@practice-contract/*": the engine's practice-test catalog and contract, the copy the CLI ships.
+      '@practice-contract': fileURLToPath(new URL('../../packages/cli/contract', import.meta.url)),
 
       // `server-only` ships a throwing index.js and an empty react-server
       // build, picked between by an export condition Next sets and vitest

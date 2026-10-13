@@ -1,5 +1,5 @@
 // A stand-in WhiteRoom for the CLI tests: the /api/readiness routes answer
-// with the engine's frozen contract fixtures (test/fixtures, R4), every
+// with the engine's frozen contract fixtures (contract/, the copy the CLI ships), every
 // request body the CLI sends is checked against the fixture's request shape,
 // Template A's test tools keep records, and a scripted fake model answers
 // /v1/messages and /v1/chat/completions the way a provider would.
@@ -26,7 +26,7 @@ export const ATTEMPT_PROXY_KEY = `sk-wr-${"0".repeat(40)}`;
 export const SESSION = `wrrs_${"B".repeat(43)}`;
 
 type Entry = { name: string; method: string; path: string; request: unknown; status: number; response: unknown };
-const contract = JSON.parse(readFileSync(new URL("fixtures/contract.json", import.meta.url), "utf8")) as { phase: string; entries: Entry[] };
+const contract = JSON.parse(readFileSync(new URL("../contract/contract.json", import.meta.url), "utf8")) as { phase: string; entries: Entry[] };
 export const fixture = (name: string): Entry => {
   const e = contract.entries.find((x) => x.name === name);
   if (!e) throw new Error(`no fixture ${name}`);

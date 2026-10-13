@@ -9,7 +9,7 @@ import { warn } from "./text.js";
 export const PRACTICE_USAGE = `whiteroom practice — run a WhiteRoom practice test on your agent
 
 Usage:
-  whiteroom practice run [--adapter "<command>"] [--code-stdin] [--url <https url>]
+  whiteroom practice run [--adapter "<command>"] [--key-env <VAR>] [--code-stdin] [--url <https url>]
   whiteroom practice adapter --lang js|python
 
   run       Starts the practice test from the run code shown in the dashboard.
@@ -19,8 +19,9 @@ Usage:
 
 Options:
   --adapter "<command>"  The command that starts your agent's adapter, e.g. "node wr-adapter.mjs"
+  --key-env <VAR>        The variable your agent's key is in, e.g. ANTHROPIC_API_KEY, when several are set
   --code-stdin           Read the run code from stdin instead of asking for it
-  --url <https url>      Only for testing WhiteRoom itself
+  --url <https url>      Only for testing WhiteRoom itself (a whiteroom.tech address or localhost)
 `;
 
 const STARTERS = { js: "wr-adapter.mjs", python: "wr_adapter.py" } as const;
@@ -34,14 +35,14 @@ function usage(problem?: string): number {
 export async function practice(argv: string[]): Promise<number> {
   const [sub, ...rest] = argv;
   if (!sub || sub === "--help" || sub === "-h" || sub === "help") return usage();
-  let values: { adapter?: string; "code-stdin"?: boolean; url?: string; lang?: string; help?: boolean };
+  let values: { adapter?: string; "key-env"?: string; "code-stdin"?: boolean; url?: string; lang?: string; help?: boolean };
   try {
     ({ values } = parseArgs({
       args: rest,
       strict: true,
       allowPositionals: false,
       options: sub === "run"
-        ? { adapter: { type: "string" }, "code-stdin": { type: "boolean" }, url: { type: "string" }, help: { type: "boolean", short: "h" } }
+        ? { adapter: { type: "string" }, "key-env": { type: "string" }, "code-stdin": { type: "boolean" }, url: { type: "string" }, help: { type: "boolean", short: "h" } }
         : { lang: { type: "string" }, help: { type: "boolean", short: "h" } },
     }));
   } catch (err) {
@@ -51,7 +52,7 @@ export async function practice(argv: string[]): Promise<number> {
   try {
     if (sub === "run") {
       if (values.adapter !== undefined && !values.adapter.trim()) return usage("--adapter needs the command that starts your adapter.");
-      return await practiceRun({ adapter: values.adapter, codeStdin: !!values["code-stdin"], url: values.url });
+      return await practiceRun({ adapter: values.adapter, codeStdin: !!values["code-stdin"], url: values.url, keyEnv: values["key-env"] });
     }
     if (sub === "adapter") {
       const file = STARTERS[values.lang as keyof typeof STARTERS];

@@ -5,14 +5,12 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList } from '@/lib/whiteroom/client';
-import { isSandboxProvider } from '@/lib/sandbox/providers';
-import { safeSessionGet, safeSessionSet } from '@/lib/safe-storage';
-import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, retryable, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
+import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, retryable, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, choiceOf, controlCalls, controlPreview, draftFromStart, headline, isOpen, KEY_REFUSALS, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT, type PracticeKeyChoice,
+  callEstimate, choiceOf, controlCalls, draftFromStart, headline, isOpen, KEY_REFUSALS, rerunConfirm, rerunKey, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
-import type { PracticeProviderKey, PracticeResult, PracticeRun, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
+import type { PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import { PracticeDialog } from './PracticeDialog';
 import { PracticeResults, type ResultAction } from './PracticeResults';
@@ -24,7 +22,8 @@ import p from './practice.module.css';
 /** §10 Polling: every 5 s while the page is visible, 30 s while hidden. */
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
 
-type Refusal = { message: string; reason?: string; run?: { id: string; lifecycle: string } };
+/** `run`: owner_busy's open test, with its ID when it's on this fleet; `otherFleet` when it's on another fleet of the account. */
+type Refusal = { message: string; reason?: string; run?: { id?: string; lifecycle: string; otherFleet?: boolean } };
 type Confirm = { kind: 'end'; id: string } | { kind: 'rerun'; start: PracticeStart; key?: PracticeKeyChoice | null; text: string };
 
 /** /dev/practice: a fixed state instead of the engine. */
@@ -34,12 +33,11 @@ export interface PracticePreview {
   model?: string | null;
   /** Where the agent's calls go (source-model); unknown when left out. */
   provider?: PracticeSourceProvider;
-  /** R7, source-model: the fleet's Fleet key keys, whether its own key can start a test, and a fleet-wide block. */
+  /** R7, source-model: the fleet's Fleet key keys, whether its own key can start a test, a fleet-wide block, and the control checks. */
   keys?: PracticeProviderKey[];
   directKey?: boolean;
   blocked?: PracticeSource['blocked'];
-  /** The Fleet key key a shown test was started with. */
-  key?: PracticeKeyChoice | null;
+  controls?: PracticeControlCheck[];
   run?: PracticeRun;
   code?: RunCode | null;
   result?: PracticeResult | null;
@@ -58,21 +56,6 @@ const fail = (e: unknown, fallback: Refusal): Refusal => e instanceof PracticeEr
 const FIX_ON_FLEET_KEY = new Set(['engine_access_key', 'short_term_key', 'key_not_found']);
 const USE_CONNECTION_TEST = new Set(['unsupported', 'bedrock_role', 'other_host', 'unsupported_provider']);
 
-/** The key a test was started with, kept for this tab so the terminal steps still name it after a reload (no secret: provider and last four). */
-const KEY_STORE = 'wr_practice_key';
-function rememberKey(runId: string, key: PracticeKeyChoice | null, model: string | null) {
-  safeSessionSet(KEY_STORE, JSON.stringify({ runId, key, model }));
-}
-function rememberedKey(runId: string): { key: PracticeKeyChoice | null; model: string | null } | null {
-  try {
-    const v = JSON.parse(safeSessionGet(KEY_STORE) ?? 'null');
-    if (v?.runId !== runId) return null;
-    const key = v.key && isSandboxProvider(v.key.provider) ? { provider: v.key.provider, keyHint: typeof v.key.keyHint === 'string' ? v.key.keyHint.slice(0, 8) : null } : null;
-    return { key, model: typeof v.model === 'string' ? v.model.slice(0, 128) : null };
-  } catch {
-    return null;
-  }
-}
 /** First load only: the fleet or its controls couldn't be read, so offer a reload. */
 const LOAD_FAILED: Refusal = { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
 const ACTION_FAILED: Refusal = { message: 'That didn’t work. Check your connection and try again.' };
@@ -91,9 +74,8 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [off, setOff] = useState(!!preview?.unavailable);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState('');
-  // The model and (R7) Fleet key key the test was started with, for the key line.
-  const [model, setModel] = useState<string | null>(preview?.model ?? null);
-  const [keyChoice, setKeyChoice] = useState<PracticeKeyChoice | null>(preview?.key ?? null);
+  // The key setup started the test with, until the engine's own fields name it (the fleet's own key's provider is known once the CLI claims it).
+  const [keyChoice, setKeyChoice] = useState<PracticeKeyChoice | null>(null);
   // Bumped when Start says the picked key is gone, so setup reads the keys again.
   const [refreshKeys, setRefreshKeys] = useState(0);
   const [now, setNow] = useState(() => preview?.now ?? Date.now());
@@ -106,8 +88,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const view = off ? 'unavailable' : loading ? 'loading' : run ? (open ? 'run' : 'results') : 'setup';
 
   const loadSetup = useCallback(async (f: string) => {
-    const gov = await governanceList(f);
-    setSetup({ agents: gov.agents ?? [], rules: gov.rules ?? [], durableHolds: !!gov.govV1 });
+    setSetup({ agents: (await governanceList(f)).agents ?? [] });
     track('practice_setup_opened');
   }, [track]);
 
@@ -115,8 +96,6 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const showRun = useCallback(async (f: string, id: string) => {
     const r = await getPracticeRun(f, id);
     setResult(isOpen(r.lifecycle) ? null : await getPracticeResult(f, id));
-    const kept = rememberedKey(id);
-    if (kept) { setKeyChoice(kept.key); setModel(kept.model); }
     setRun(r);
     if (!isOpen(r.lifecycle)) history.replaceState(null, '', `${ROUTES.practiceTest}?run=${id}`);
   }, []);
@@ -206,13 +185,11 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       made = await startPractice(st);
     } catch (e) {
       // The picked key was removed from Fleet key meanwhile: setup reads the keys again.
-      if (e instanceof PracticeError && e.reason === 'key_not_found') setRefreshKeys((n) => n + 1);
+      if (keyGone(e)) setRefreshKeys((n) => n + 1);
       throw e;
     }
     setCode({ code: made.code, codeExpiresAt: made.codeExpiresAt });
-    setModel(st.model ?? null);
     setKeyChoice(key);
-    rememberKey(made.runId, key, st.model ?? null);
     setSaid('Run code ready. It expires in 30 minutes.');
     track('practice_started', { sample: st.sample, runs: st.runs, rerun: !!st.scope });
     setResult(null);
@@ -261,19 +238,15 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     const r = result.report;
     const scope = a.kind === 'rerun' ? a.scope : null;
     const runs: 1 | 3 = a.kind === 'three' ? 3 : r.runs === 3 ? 3 : 1;
-    const gov = scope && !scope.some((id) => id.startsWith('ctl')) ? null : await governanceList(fleet);
-    const calls = gov ? controlCalls(controlPreview(gov.rules ?? [], !!gov.govV1, run.sample && run.agentId === SAMPLE_AGENT), scope) : 0;
+    // What the rerun's agent would get: its control checks (the engine's planner) and the Fleet key keys.
+    const src = await sourceModel(fleet, run.agentId);
     // The sample agent keeps its own model unless the test was started with one.
     const model = run.sample ? r.tested.modelRequested : r.tested.modelRequested ?? r.tested.modelsUsed[0] ?? null;
-    // R7: a test on a Fleet key key reruns on the same provider's key. With none, or several to choose from, setup asks.
-    let key: PracticeProviderKey | null = null;
-    if (r.tested.provider) {
-      const keys = (await sourceModel(fleet, run.agentId)).providerKeys.filter((k) => k.eligible && k.provider === r.tested.provider);
-      if (keys.length !== 1) {
-        setRefusal({ message: keys.length ? 'Pick which key to test with: start a new test.' : 'The key this test used isn’t on Fleet key any more. Start a new test and pick another key.', reason: 'pick_key' });
-        return;
-      }
-      key = keys[0];
+    // R7: a test on a Fleet key key reruns on that key, or the only usable one of its provider. With several, or none, setup asks.
+    const key = rerunKey(r.tested, src.providerKeys);
+    if (key === 'pick' || key === 'gone') {
+      setRefusal({ message: key === 'pick' ? 'Pick which key to test with: start a new test.' : 'The key this test used isn’t on Fleet key any more. Start a new test and pick another key.', reason: 'pick_key' });
+      return;
     }
     const st: PracticeStart = {
       fleet, sample: run.sample, runs,
@@ -282,7 +255,8 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       ...(scope && { scope }),
       ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
     };
-    const choice = key && choiceOf(key);
+    const choice = key ? choiceOf(key) : runKeyChoice(run);
+    const calls = controlCalls(src.controls.checks, scope);
     setConfirm({ kind: 'rerun', start: st, key: choice, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, controlCalls: calls, model: model ?? r.tested.modelsUsed[0] ?? null, provider: choice?.provider })) });
   });
 
@@ -295,37 +269,20 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     track('practice_report_downloaded');
   };
 
-  const busyRun = refusal?.reason === 'owner_busy' ? refusal.run : undefined;
   return <>
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
       {refusal && view !== 'unavailable' && (
-        <div className={s.error} role="alert" style={{ flexWrap: 'wrap', maxWidth: 720 }}>
-          <span>
-            {refusal.message}
-            {refusal.reason && USE_CONNECTION_TEST.has(refusal.reason) && <> Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}
-            {refusal.reason && FIX_ON_FLEET_KEY.has(refusal.reason) && <> <Link href={ROUTES.fleetKey}>Open Fleet key →</Link></>}
-            {refusal.reason === 'pick_key' && <> <Link href={ROUTES.practiceTest}>Set up a practice test →</Link></>}
-          </span>
-          {refusal.reason === 'retry' && <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => location.reload()}>Try again</button>}
-          {busyRun && fleet && (
-            busyRun.lifecycle === 'draft' ? <>
-              <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => act(() => showRun(fleet, busyRun.id))}>Continue it</button>
-              <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => act(async () => { if (!(await endRun(fleet, busyRun.id))) await showRun(fleet, busyRun.id); })}>Cancel it</button>
-            </> : <>
-              <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => act(() => showRun(fleet, busyRun.id))}>View it</button>
-              <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => setConfirm({ kind: 'end', id: busyRun.id })}>End it…</button>
-            </>
-          )}
-        </div>
+        <PracticeRefusal refusal={fleet ? refusal : { ...refusal, run: undefined }} busy={busy} onView={(id) => act(() => showRun(fleet!, id))}
+          onCancel={(id) => act(async () => { if (!(await endRun(fleet!, id))) await showRun(fleet!, id); })} onEnd={(id) => setConfirm({ kind: 'end', id })} />
       )}
 
       {view === 'unavailable' && <PracticeUnavailable />}
       {view === 'loading' && <p>Checking for a practice test…</p>}
       {view === 'setup' && fleet && setup && <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />}
       {view === 'run' && run && (
-        <PracticeRunView run={run} code={code} model={model} keyChoice={keyChoice} now={now} heading={heading} busy={busy} onNewCode={() => { void renewCode(); }} onEnd={() => setConfirm({ kind: 'end', id: run.id })} />
+        <PracticeRunView run={run} code={code} keyChoice={runKeyChoice(run) ?? keyChoice} now={now} heading={heading} busy={busy} onNewCode={() => { void renewCode(); }} onEnd={() => setConfirm({ kind: 'end', id: run.id })} />
       )}
       {view === 'results' && run && <PracticeResults run={run} result={result} busy={busy} heading={heading} onAction={(a) => { void askRerun(a); }} onDownload={download} />}
     </main>
@@ -346,9 +303,37 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
 /** /dev/practice: what source-model would say, from the preview's fields. */
 function previewSource(preview: PracticePreview | undefined): PracticeSource | undefined {
   if (!preview) return undefined;
+  const checks = preview.controls ?? [];
   return {
     model: preview.model ?? null, provider: preview.provider ?? 'unknown', directKey: preview.directKey ?? true, blocked: preview.blocked ?? null, providerKeys: preview.keys ?? [],
+    controls: { checks, calls: checks.reduce((n, c) => n + (c.calls ?? 0), 0) },
   };
+}
+
+/** A refusal and what to do next: fix it on Fleet key, use the connection test, or the open test (owner_busy) to continue, view or end. */
+function PracticeRefusal({ refusal, busy, onView, onCancel, onEnd }: {
+  refusal: Refusal; busy: boolean; onView: (id: string) => void; onCancel: (id: string) => void; onEnd: (id: string) => void;
+}) {
+  const open = refusal.reason === 'owner_busy' ? refusal.run : undefined;
+  const id = open?.id;
+  return (
+    <div className={s.error} role="alert" style={{ flexWrap: 'wrap', maxWidth: 720 }}>
+      <span>
+        {open?.otherFleet ? 'You already have a practice test open on another fleet of your account. Finish or end it there, then start this one.' : refusal.message}
+        {refusal.reason && USE_CONNECTION_TEST.has(refusal.reason) && <> Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}
+        {refusal.reason && FIX_ON_FLEET_KEY.has(refusal.reason) && <> <Link href={ROUTES.fleetKey}>Open Fleet key →</Link></>}
+        {refusal.reason === 'pick_key' && <> <Link href={ROUTES.practiceTest}>Set up a practice test →</Link></>}
+      </span>
+      {refusal.reason === 'retry' && <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => location.reload()}>Try again</button>}
+      {id && (open.lifecycle === 'draft' ? <>
+        <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => onView(id)}>Continue it</button>
+        <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => onCancel(id)}>Cancel it</button>
+      </> : <>
+        <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => onView(id)}>View it</button>
+        <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => onEnd(id)}>End it…</button>
+      </>)}
+    </div>
+  );
 }
 
 /** Practice tests aren't on for this WhiteRoom server: said plainly, with the way back. */

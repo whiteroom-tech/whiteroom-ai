@@ -6,7 +6,7 @@
   "bin": {
     "whiteroom": "dist/index.js"
   },
-  "files": ["dist", "starters"],
+  "files": ["dist", "starters", "contract/catalog.json"],
   "engines": {
     "node": ">=20"
   },

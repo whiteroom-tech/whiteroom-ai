@@ -1,52 +1,37 @@
 // Practice tests in the dashboard (sandbox readiness spec rev 5.6, §5, §6, §8,
 // §10): the decisions and copy the screens render, kept pure so they can be
-// tested without a browser. Check names, observers and fix lines come from
-// the engine's catalog (catalog.json, copied from its contract fixtures);
+// tested without a browser. Check, task, status and provider words come from
+// the engine's catalog (packages/cli/contract, the copy the CLI ships too);
 // nothing here invents a check.
 
-import type { GovernanceRule } from '@/lib/whiteroom/types';
+import CATALOG from '@practice-contract/catalog.json';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
-import { isSandboxProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider } from '@/lib/sandbox/providers';
 import { fmtDay } from '@/lib/format';
-import CATALOG from './catalog.json';
 import type {
-  PracticeCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource, PracticeStart,
-  PracticeVerdict, RunCode,
+  PracticeCheck, PracticeControlCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource,
+  PracticeStart, PracticeVerdict, RunCode,
 } from './types';
 
 export { CATALOG };
 /** The BFF's reason when practice tests aren't on for this engine: a calm page, not an error, and never retried. */
 export const PRACTICE_UNAVAILABLE = 'practice_unavailable';
-export const DISCLAIMER = 'Practice tasks use made-up records and WhiteRoom’s test tools, not your agent’s real job. Use the result to help decide, not as a certificate.';
+export const DISCLAIMER = CATALOG.disclaimer;
+
+/** A provider a practice test's calls can go to (the catalog's `providers`). */
+export type PracticeProvider = keyof typeof CATALOG.providers;
+export const isPracticeProvider = (v: unknown): v is PracticeProvider => typeof v === 'string' && Object.hasOwn(CATALOG.providers, v);
+const label = (p: PracticeProvider) => CATALOG.providers[p].label;
 
 // ── The plan: which practice tasks a test plays ──────────────────────────
 
-export type Scenario = 'A' | 'B_base' | 'B_long' | 'C_timeout' | 'C_fail';
-const SCENARIOS: readonly Scenario[] = ['A', 'B_base', 'B_long', 'C_timeout', 'C_fail'];
-/** The practice task each agent check is judged on (the engine's READINESS_CHECKS `task`). */
-const TASK_OF: Record<string, Scenario> = {
-  'a.result': 'A', 'b.baseline': 'B_base', 'b.result': 'B_long', 'b.carries_on': 'B_long', 'b.no_redo': 'B_long',
-  'c.timeout': 'C_timeout', 'c.keeps_failing': 'C_fail',
-};
-/** What the running screen calls each practice task. */
-export const TASK_NAMES: Record<Scenario | 'controls', string> = {
-  A: 'Finishes a job correctly',
-  B_base: 'Handles a long task (short version)',
-  B_long: 'Handles a long task (long version)',
-  C_timeout: 'Handles a failing tool (the tool times out)',
-  C_fail: 'Handles a failing tool (the tool keeps failing)',
-  controls: 'Checks your controls',
-};
+export type Scenario = Exclude<keyof typeof CATALOG.taskNames, 'controls'>;
+/** What the running screen calls each practice task, in the engine's order. */
+export const TASK_NAMES = CATALOG.taskNames;
 
-/** One run's practice tasks, in the engine's order (planScenarios): all of them, or those a rerun's checks need. */
+/** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
 export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
-  const agent = SCENARIOS.filter((s) => !scope || scope.some((id) => TASK_OF[id] === s));
-  return !scope || scope.some((id) => id.startsWith('ctl')) ? [...agent, 'controls'] : agent;
-}
-
-/** Tasks in a whole test, the control checks counted as one a run (as the engine counts them): Past tests' "18/18". */
-export function practiceTaskCount(runs: number, scope: string[] | null): number {
-  return runs * planOf(scope).length;
+  return (Object.keys(TASK_NAMES) as (Scenario | 'controls')[]).filter((s) => !scope
+    || (s === 'controls' ? scope.some((id) => id.startsWith('ctl')) : CATALOG.checks.some((c) => c.task === s && scope.includes(c.id))));
 }
 
 // ── The CLI ──────────────────────────────────────────────────────────────
@@ -67,28 +52,15 @@ export const BETA_INSTALL = CLI_ON_NPM ? [] : [`shasum -a 256 ${BETA_TGZ}`, `npm
 
 /**
  * The commands the terminal steps show. The run code is never part of one
- * (§10 CLI): the CLI asks for it.
+ * (§10 CLI): the CLI asks for it. With the run's provider known, `--key-env`
+ * names its key's variable, so a computer with several keys set isn't refused.
  */
-export function cliCommands(sample: boolean, lang: StarterLang): { starter: string | null; run: string } {
+export function cliCommands(sample: boolean, lang: StarterLang, provider: PracticeProvider | null = null): { starter: string | null; run: string } {
+  const keyEnv = provider ? ` --key-env ${CATALOG.providers[provider].keyVar}` : '';
   return {
     starter: sample ? null : `${CLI} practice adapter --lang ${lang} > ${STARTER_FILE[lang]}`,
-    run: sample ? `${CLI} practice run` : `${CLI} practice run --adapter "${STARTER_RUN[lang]}"`,
+    run: sample ? `${CLI} practice run${keyEnv}` : `${CLI} practice run --adapter "${STARTER_RUN[lang]}"${keyEnv}`,
   };
-}
-
-/** The variable the CLI reads each provider's key from (the providers' own SDKs read these). */
-export const KEY_VARS: Record<SandboxProvider, string> = {
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  'azure-openai': 'AZURE_OPENAI_API_KEY',
-  foundry: 'ANTHROPIC_FOUNDRY_API_KEY',
-  'bedrock-mantle': 'AWS_BEARER_TOKEN_BEDROCK',
-};
-
-/** The variable the CLI reads the fleet's own key from, by the model the agent uses; both when it isn't known. */
-export function keyVariable(model: string | null | undefined): string {
-  if (!model) return 'ANTHROPIC_API_KEY or OPENAI_API_KEY';
-  return /^claude/i.test(model) ? KEY_VARS.anthropic : KEY_VARS.openai;
 }
 
 /** The models the sample agent uses unless setup names one (the JS starter's own choice, by key). */
@@ -104,14 +76,26 @@ export const KEY_REFUSALS = CATALOG.keyRefusals as Record<PracticeKeyRefusal, st
 /** A Fleet key key's display prefix, as Start takes it. */
 export const PROXY_KEY_PREFIX_RE = /^sk-wr-[0-9a-f]{16}$/;
 
-/** The key a test runs on: a Fleet key provider key (R7), or the fleet's own key. What the key line and cost say. */
+/** The key a test runs on, when its provider is known: a Fleet key provider key (R7), or the fleet's own key. What the key line, command and cost say. */
 export interface PracticeKeyChoice {
-  provider: SandboxProvider;
+  provider: PracticeProvider;
   keyHint: string | null;
+  fleetKey: boolean;
+}
+
+/** The key a test runs on, from the engine's own fields (any tab): known for a Fleet key key from Start, for the fleet's own key once claimed. */
+export function runKeyChoice(run: Pick<PracticeRun, 'provider' | 'keyHint' | 'proxyKeyDisplayPrefix'>): PracticeKeyChoice | null {
+  return isPracticeProvider(run.provider) ? { provider: run.provider, keyHint: run.keyHint ?? null, fleetKey: !!run.proxyKeyDisplayPrefix } : null;
+}
+
+/** The fleet's own key's provider, as source-model saw the agent's latest call go to it. */
+export function directChoice(src: PracticeSource | undefined): PracticeKeyChoice | null {
+  const provider = src?.provider === 'direct-anthropic' ? 'anthropic' : src?.provider === 'direct-openai' ? 'openai' : null;
+  return provider && { provider, keyHint: null, fleetKey: false };
 }
 
 /** Cloud providers have no default model: setup asks for it, and Start needs it. */
-export const CLOUD_MODEL_FIELD: Partial<Record<SandboxProvider, { label: string; hint: string; placeholder: string; missing: string }>> = {
+export const CLOUD_MODEL_FIELD: Partial<Record<PracticeProvider, { label: string; hint: string; placeholder: string; missing: string }>> = {
   'azure-openai': { label: 'Azure deployment name', hint: '· the deployment your agent calls', placeholder: 'my-gpt-4o-mini', missing: 'Enter the deployment name to start.' },
   'bedrock-mantle': { label: 'Bedrock model ID', hint: '· like anthropic.claude-haiku-4-5', placeholder: 'anthropic.claude-haiku-4-5', missing: 'Enter the Bedrock model ID to start.' },
   foundry: { label: 'Foundry model', hint: '· your Claude deployment’s name, like claude-haiku-4-5', placeholder: 'claude-haiku-4-5', missing: 'Enter the Foundry model to start.' },
@@ -119,7 +103,7 @@ export const CLOUD_MODEL_FIELD: Partial<Record<SandboxProvider, { label: string;
 
 /** Fleet key's names for every provider a key can have, the ones practice tests can't use included. */
 const KEY_PROVIDER_LABELS: Record<string, string> = {
-  ...SANDBOX_PROVIDER_LABELS, azure: 'Azure OpenAI', 'bedrock-sigv4': 'AWS Bedrock', 'foundry-entra': 'Claude on Azure (Foundry)',
+  ...Object.fromEntries(Object.entries(CATALOG.providers).map(([id, p]) => [id, p.label])), azure: 'Azure OpenAI', 'bedrock-sigv4': 'AWS Bedrock', 'foundry-entra': 'Claude on Azure (Foundry)',
 };
 /** A key's last four, as Fleet key shows them; keys that use WhiteRoom's own access have none. */
 const hintOf = (k: Pick<PracticeProviderKey, 'keyHint'>) => (k.keyHint && k.keyHint !== 'none' ? k.keyHint : null);
@@ -132,7 +116,7 @@ export function providerKeyLabel(k: PracticeProviderKey, now = Date.now()): stri
 }
 
 export const choiceOf = (k: PracticeProviderKey): PracticeKeyChoice | null =>
-  isSandboxProvider(k.provider) ? { provider: k.provider, keyHint: hintOf(k) } : null;
+  isPracticeProvider(k.provider) ? { provider: k.provider, keyHint: hintOf(k), fleetKey: true } : null;
 
 /**
  * What setup can test with, from source-model: the eligible Fleet key keys,
@@ -142,17 +126,20 @@ export const choiceOf = (k: PracticeProviderKey): PracticeKeyChoice | null =>
  * first eligible key.
  */
 export function keyOptions(src: PracticeSource): { keys: PracticeProviderKey[]; direct: boolean; initial: string | null } {
-  const keys = src.providerKeys.filter((k) => k.eligible && isSandboxProvider(k.provider));
+  const keys = src.providerKeys.filter((k) => k.eligible && isPracticeProvider(k.provider));
   const agentDirect = src.provider === 'direct-anthropic' || src.provider === 'direct-openai';
   const direct = src.directKey && (keys.length === 0 || agentDirect);
   return { keys, direct, initial: direct && (agentDirect || !keys.length) ? null : keys[0]?.displayPrefix ?? null };
 }
 
-/** The key line: which variable to set, to which key (§10 fixed copy; R7 names the Fleet key key). */
-export function keyLine(choice: PracticeKeyChoice | null, model: string | null | undefined, fleet: string): { before: string; keyVar: string; after: string } {
-  if (!choice) return { before: 'Set ', keyVar: keyVariable(model), after: ` to the key your agent uses with ${fleet}.` };
+/** The key line: which variable to set, to which key (§10 fixed copy; R7 names the Fleet key key). Both direct variables while the provider isn't known. */
+export function keyLine(choice: PracticeKeyChoice | null, fleet: string): { before: string; keyVar: string; after: string } {
+  const own = ` to the key your agent uses with ${fleet}.`;
+  if (!choice) return { before: 'Set ', keyVar: `${CATALOG.providers.anthropic.keyVar} or ${CATALOG.providers.openai.keyVar}`, after: own };
+  const keyVar = CATALOG.providers[choice.provider].keyVar;
+  if (!choice.fleetKey) return { before: 'Set ', keyVar, after: own };
   const hint = choice.keyHint ? ` (key ending ${choice.keyHint})` : '';
-  return { before: 'Run this where ', keyVar: KEY_VARS[choice.provider], after: ` is set to the same ${SANDBOX_PROVIDER_LABELS[choice.provider]} key you added on Fleet key${hint}.` };
+  return { before: 'Run this where ', keyVar, after: ` is set to the same ${label(choice.provider)} key you added on Fleet key${hint}.` };
 }
 
 // ── Cost (§1: the range and the cap before anything runs) ────────────────
@@ -199,13 +186,13 @@ export interface CallEstimate {
 }
 
 /** Who bills a provider's calls, for the cost line. */
-const BILLED_BY: Partial<Record<SandboxProvider, 'Azure' | 'AWS'>> = { 'azure-openai': 'Azure', foundry: 'Azure', 'bedrock-mantle': 'AWS' };
+const BILLED_BY: Partial<Record<PracticeProvider, 'Azure' | 'AWS'>> = { 'azure-openai': 'Azure', foundry: 'Azure', 'bedrock-mantle': 'AWS' };
 
 /**
  * What a test usually costs and its hard cap, for `runs` runs of `scope`
  * (null: everything) plus `controlCalls` extra calls for the control checks.
  */
-export function callEstimate(o: { runs: number; scope: string[] | null; controlCalls: number; model: string | null | undefined; provider?: SandboxProvider | null }): CallEstimate {
+export function callEstimate(o: { runs: number; scope: string[] | null; controlCalls: number; model: string | null | undefined; provider?: PracticeProvider | null }): CallEstimate {
   const plan = planOf(o.scope);
   const tasks = plan.filter((s): s is Scenario => s !== 'controls');
   const controls = plan.includes('controls') ? o.controlCalls : 0;
@@ -236,70 +223,24 @@ export function costLine(e: CallEstimate, runs: number): string {
 
 // ── Control checks (§6): what setup says will be checked ─────────────────
 
-export interface ControlPreview {
-  /** The result row's ID: ctl.pause_stop, or ctl.<rule type>.<rule ID>. */
-  id: string;
-  label: string;
-  mode: string | null;
-  /** Extra model calls this check makes; null when it isn't checked. */
-  calls: number | null;
-  note: string | null;
+/** "Call rate · Watch · 5 extra calls" / "Spend cap · Enforce · Not checked: it would need real spending.": a row as the engine planned it (source-model). */
+export function controlLine(c: PracticeControlCheck): string {
+  const name = c.mode ? `${c.label} · ${c.mode}` : c.label;
+  if (!c.checked) return `${name} · ${c.note ?? 'Not checked.'}`;
+  return `${name} · ${c.calls ? `${c.calls} extra call${c.calls === 1 ? '' : 's'}` : 'no extra calls'}`;
 }
 
-const RULE_LABELS = CATALOG.controls.labels as Record<string, string>;
-const MODE_LABELS = CATALOG.controls.modes as Record<string, string>;
-const LIMITS = CATALOG.controls.limits;
-
-/**
- * The control checks a run will make, from the fleet's rules, with the extra
- * calls each takes. The engine has the final say (it may skip a rule another
- * one shadows); this is what setup promises at most.
- */
-export function controlPreview(rules: GovernanceRule[], durableHolds: boolean, sampleWithoutAgents: boolean): ControlPreview[] {
-  const rows: ControlPreview[] = [];
-  if (durableHolds) rows.push({ id: 'ctl.pause_stop', label: RULE_LABELS.pause_stop, mode: null, calls: 2, note: null });
-  for (const r of rules) {
-    const id = `ctl.${r.ruleType}.${r.id}`;
-    const label = RULE_LABELS[r.ruleType] ?? r.ruleType;
-    const mode = MODE_LABELS[r.mode] ?? null;
-    const p = r.params as { maxCalls?: number; threshold?: number; allowedModels?: string[] };
-    const skip = (note: string): ControlPreview => ({ id, label, mode, calls: null, note });
-    if (r.ruleType === 'spend_cap') rows.push(skip('not checked (it would need real spending)'));
-    else if (r.ruleType === 'tool_list') rows.push(skip('not checked yet'));
-    else if (r.ruleType === 'model_allowlist' && !p.allowedModels?.length) rows.push(skip('not checked: no models on the list yet'));
-    else if ((r.ruleType === 'call_rate' && (p.maxCalls ?? 0) > LIMITS.call_rate) || (r.ruleType === 'loop_breaker' && (p.threshold ?? 0) > LIMITS.loop_breaker)) {
-      rows.push(skip('not checked: too many calls to test cheaply'));
-    } else if (r.appliesTo !== 'all' && sampleWithoutAgents) rows.push(skip('not checked: the sample agent only checks rules for all agents'));
-    else {
-      // A scoped rule is checked twice: with an agent it covers and one it doesn't.
-      const each = r.ruleType === 'call_rate' ? p.maxCalls ?? 0 : r.ruleType === 'loop_breaker' ? Math.max(0, (p.threshold ?? 1) - 1) : 0;
-      rows.push({ id, label, mode, calls: each * (r.appliesTo === 'all' ? 1 : 2), note: null });
-    }
-  }
-  return rows;
-}
-
-/** The control checks' extra calls, within the engine's budget for them; only the rows a rerun covers when it names some. */
-export function controlCalls(rows: ControlPreview[], scope: string[] | null = null): number {
-  const covered = rows.filter((r) => !scope || scope.includes('ctl') || scope.includes(r.id));
-  return Math.min(CATALOG.controlCallsMax, covered.reduce((n, r) => n + (r.calls ?? 0), 0));
-}
-
-/** "Call rate · Watch · 5 extra calls" / "Spend cap: not checked (it would need real spending)". */
-export function controlPreviewLine(r: ControlPreview): string {
-  const name = r.mode ? `${r.label} · ${r.mode}` : r.label;
-  if (r.calls === null) return `${name}: ${r.note}`;
-  return `${name} · ${r.calls ? `${r.calls} extra call${r.calls === 1 ? '' : 's'}` : 'no extra calls'}`;
+/** The control checks' extra calls on the agent's key, only the rows a rerun covers when it names some. */
+export function controlCalls(checks: PracticeControlCheck[], scope: string[] | null = null): number {
+  return checks.filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
 }
 
 // ── Results (§8) ─────────────────────────────────────────────────────────
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export const STATUS_LABEL: Record<PracticeCheck['status'], string> = {
-  passed: 'Passed', failed: 'Failed', not_tested: 'Didn’t run', unsupported: 'Not checked', error: 'Test problem (not your agent)',
-};
-export const VERDICT_LABEL: Record<PracticeVerdict, string> = { passed: 'Passed', not_passed: 'Didn’t pass', incomplete: 'Didn’t finish' };
+export const STATUS_LABEL: Record<PracticeCheck['status'], string> = CATALOG.statusLabels;
+export const VERDICT_LABEL: Record<PracticeVerdict, string> = CATALOG.verdictLabels;
 
 const required = (r: PracticeReport) => r.checks.filter((c) => c.required);
 /** Required checks that didn't pass. */
@@ -310,12 +251,12 @@ export function headline(r: PracticeReport): string {
   const runs = plural(r.runs, 'run');
   if (r.verdict === 'passed') {
     const scope = r.scope && [...new Set(required(r).map((c) => c.scenario))].join(', ');
-    return `Passed · ${scope ? `${scope} only` : `all ${plural(required(r).length, 'check')}`} · ${runs}`;
+    return `${VERDICT_LABEL.passed} · ${scope ? `${scope} only` : `all ${plural(required(r).length, 'check')}`} · ${runs}`;
   }
-  if (r.verdict === 'not_passed') return `Didn’t pass · ${plural(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`;
+  if (r.verdict === 'not_passed') return `${VERDICT_LABEL.not_passed} · ${plural(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`;
   const open = openChecks(r);
   const ours = open.length > 0 && open.every((c) => c.testProblem);
-  return `Didn’t finish · ${open.length ? `${plural(open.length, 'check')} couldn’t run` : 'no checks could run'}${ours ? ' (not your agent)' : ''}`;
+  return `${VERDICT_LABEL.incomplete} · ${open.length ? `${plural(open.length, 'check')} couldn't run` : 'no checks could run'}${ours ? ' (not your agent)' : ''}`;
 }
 
 /** What a passed result doesn't prove (Appendix D), or null. */
@@ -326,22 +267,16 @@ export function passCaveat(r: PracticeReport): string | null {
   return null;
 }
 
-/** The provider a test's calls went to: the Fleet key key's (R7), else the fleet's own key's, by the model it used. */
-export function providerOf(r: PracticeReport): SandboxProvider {
-  if (isSandboxProvider(r.tested.provider)) return r.tested.provider;
-  return /^claude/i.test(r.tested.modelsUsed[0] ?? r.tested.modelRequested ?? 'claude') ? 'anthropic' : 'openai';
-}
-
 /**
  * A check's fix line. A provider refusal names what the provider said and
- * what to check (§10 fixed copy, from what WhiteRoom saw); others are the
- * catalog's line as the engine filled it in.
+ * what to check (§10 fixed copy, from what WhiteRoom saw and where the calls
+ * went); others are the catalog's line as the engine filled it in.
  */
 export function fixLine(c: PracticeCheck, r: PracticeReport): string | null {
   const f = c.reason === 'provider_refused' ? asFailedCalls(c.failedCalls) : null;
-  if (!f) return c.fix;
-  const provider = providerOf(r);
-  return `Test problem (not your agent): ${failedCallReason(f, provider)}. ${providerNextStep(f.last, KEY_VARS[provider])} Rerun this check to try again.`;
+  const provider = r.tested.provider;
+  if (!f || !isPracticeProvider(provider)) return c.fix;
+  return `Test problem (not your agent): ${failedCallReason(f, provider)}. ${providerNextStep(f.last, CATALOG.providers[provider].keyVar)} Rerun this check to try again.`;
 }
 
 /** What to check before a rerun when the provider refused a practice task's calls. */
@@ -365,6 +300,18 @@ export function rerunScope(r: PracticeReport): string[] | null {
   return r.verdict === 'passed' || !ids.length ? null : ids;
 }
 
+/**
+ * The Fleet key key a rerun uses: the one the test used, if it's still on
+ * Fleet key and usable; else the only usable key of the same provider. `pick`
+ * when there are several to choose from, `gone` when none is left; null for
+ * a test on the fleet's own key.
+ */
+export function rerunKey(tested: PracticeReport['tested'], keys: PracticeProviderKey[]): PracticeProviderKey | 'pick' | 'gone' | null {
+  if (!tested.proxyKeyDisplayPrefix) return null;
+  const usable = keys.filter((k) => k.eligible && k.provider === tested.provider);
+  return usable.find((k) => k.displayPrefix === tested.proxyKeyDisplayPrefix) ?? (usable.length === 1 ? usable[0] : usable.length ? 'pick' : 'gone');
+}
+
 /** "Rerun 1 check × 3 runs · usually 15–25 model calls (≈ $0.20–$0.35), never more than 40." (§10 fixed copy) */
 export function rerunConfirm(scope: string[] | null, runs: number, e: CallEstimate): string {
   const what = scope ? `Rerun ${plural(scope.length, 'check')}` : 'Run the full test';
@@ -380,6 +327,9 @@ export function endedBecause(endReason: string | null): string {
     case 'lost_contact': return 'WhiteRoom lost contact with your computer for 5 minutes. It may have gone to sleep or lost its connection.';
     case 'engine_update': return 'WhiteRoom was updated during the test.';
     case 'code_expired': return 'The run code expired before the test started.';
+    case 'call_cap': return `Stopped to stay within the ${CATALOG.runCallCap}-call limit after WhiteRoom had to rerun a task (not your agent).`;
+    case 'stalled': return 'The test stopped moving: your computer stayed in touch but didn’t ask for the next practice task for 5 minutes.';
+    case 'too_many_restarts': return 'Practice tasks had to start again too many times, so the test stopped.';
     default: return 'The test stopped before it finished.';
   }
 }
@@ -398,7 +348,7 @@ export function draftFromStart(st: PracticeStart, made: RunCode & { runId: strin
   return {
     id: made.runId, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: st.fleet, agentId: st.agent ?? SAMPLE_AGENT,
     sample: st.sample, runs: st.runs, scope: st.scope ?? null, createdAt: now.toISOString(), startedAt: null, endedAt: null,
-    codeExpiresAt: made.codeExpiresAt, codeTriesLeft: null, progress: null,
+    codeExpiresAt: made.codeExpiresAt, codeTriesLeft: null, progress: null, provider: null, proxyKeyDisplayPrefix: st.proxyKeyDisplayPrefix ?? null, keyHint: null,
   };
 }
 
@@ -422,17 +372,10 @@ export function pastResult(row: PracticeRunRow): { label: string; tone: 'brand' 
   return { label: `Rerun · ${words[verdict]}`, tone };
 }
 
-/**
- * The Tasks column: tasks finished of those planned, control checks
- * included ("18/18", "4/6"), as the engine lists them. An older engine
- * doesn't list them: then "18/18" when every task ran and was judged
- * (Passed or Didn't pass), else "—".
- */
+/** The Tasks column: tasks finished of those planned, control checks included ("18/18", "4/6"), as the engine lists them. */
 export function pastTasks(row: PracticeRunRow): string {
-  const t = row.tasks;
-  if (t && Number.isFinite(t.finished) && Number.isFinite(t.total) && t.total > 0) return `${Math.min(t.finished, t.total)}/${t.total}`;
-  const n = practiceTaskCount(row.runs, row.scope);
-  return row.lifecycle === 'finished' && (row.verdict === 'passed' || row.verdict === 'not_passed') ? `${n}/${n}` : '—';
+  const { finished, total } = row.tasks;
+  return total > 0 ? `${Math.min(finished, total)}/${total}` : '—';
 }
 
 export const pastKind = (row: Pick<PracticeRunRow, 'sample'>) => (row.sample ? 'Practice (sample)' : 'Practice');
