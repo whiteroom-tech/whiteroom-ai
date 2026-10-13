@@ -1,9 +1,11 @@
 // Past tests › Download report: an ended test's report, as the engine kept it
 // (sandbox_report), in the same format as the live download. The end-test
-// dialog drops "only while the test is open" once the engine keeps reports.
+// dialog drops "only while the test is open" when status says reportsKept.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement as h } from 'react';
+import { createElement as h, type FC } from 'react';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 
@@ -16,10 +18,9 @@ const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
 const { GET } = await import('@/app/api/sandbox/[sandboxId]/report/route');
-const { reportsKept } = await import('@/lib/sandbox/api');
 const { buildTestReport, pastTestReport, reportHtml } = await import('@/lib/sandbox/report');
 const { PastTestDetail } = await import('@/components/sandbox/PastTests');
-const { endTestText } = await import('@/components/sandbox/TestRunFlow');
+const { endTestText, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 
 const NOW = Date.parse('2026-10-13T12:00:00Z');
 const ended: RunStatusResult = {
@@ -95,15 +96,22 @@ describe('Past tests row: Download report', () => {
 });
 
 describe('End this test?', () => {
-  it('knows reports are kept once the engine marks its past tests', () => {
-    expect(reportsKept(undefined)).toBe(false);
-    expect(reportsKept([test])).toBe(false);
-    expect(reportsKept([test, { ...test, sandboxId: 'sb2', hasReport: false }])).toBe(true);
-  });
-
-  it('drops “only while the test is open” when reports are kept', () => {
+  it('drops “only while the test is open” when the engine keeps reports', () => {
     expect(endTestText(false)).toContain('can only be downloaded while the test is open');
     expect(endTestText(true)).not.toContain('only be downloaded');
     expect(endTestText(true)).toContain('The result and its report stay in Past tests.');
+  });
+
+  it('follows reportsKept on the test’s status', () => {
+    const user = { previewUserId: 'u', previewPastTests: [] };
+    const run = (o: Partial<RunStatusResult>) => ({ ...ended, mode: 'connected' as const, expiresInSeconds: 1500, ...o });
+    const src = readFileSync(fileURLToPath(new URL('../components/sandbox/TestRunFlow.tsx', import.meta.url)), 'utf8');
+    expect(src).toContain('endTestText(!!run?.reportsKept)');
+    // No extra Past tests read to find out.
+    expect(src).not.toContain('getHistory');
+    // Renders either way (the dialog itself opens on click).
+    for (const reportsKept of [true, false, undefined]) {
+      expect(renderToStaticMarkup(h(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { ...user, previewRun: run({ reportsKept }) }))).toContain('End test');
+    }
   });
 });

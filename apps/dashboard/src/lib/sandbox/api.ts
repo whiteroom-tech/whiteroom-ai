@@ -77,6 +77,8 @@ export interface RunStatusResult {
     [key: string]: unknown;
   }[];
   failedCalls?: FailedCalls;
+  /** The engine keeps an ended test's report for Past tests (sandbox_report). Left out by engines that don't. */
+  reportsKept?: boolean;
   error?: string;
 }
 
@@ -248,11 +250,6 @@ export interface PastTest {
   isTrial: boolean;
   /** The engine kept this test's report (Download report). Left out by engines that keep none. */
   hasReport?: boolean;
-}
-
-/** Whether ended tests keep their report: the engine says, per test, once it can. */
-export function reportsKept(sessions: readonly PastTest[] | undefined): boolean {
-  return !!sessions?.some((t) => typeof t.hasReport === "boolean");
 }
 
 /** A finished test's report as the engine kept it: its status as it ended. */

@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getHistory, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, reportsKept, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
 import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
@@ -161,9 +161,9 @@ export function shownSetup(picked: Setup, provider: SandboxProvider): Setup {
 }
 
 /**
- * End this test? The report is kept with the result once the engine keeps
- * reports (Past tests can download it); until then it can only be downloaded
- * while the test is open.
+ * End this test? The report is kept with the result when the engine's status
+ * says so (reportsKept; Past tests can download it); otherwise it can only be
+ * downloaded while the test is open.
  */
 export function endTestText(keepsReports: boolean): string {
   return keepsReports
@@ -575,8 +575,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [prodFleetId, setProdFleetId] = useState<string | null>(null);
-  // Whether ended tests keep their report, by what Past tests says (false until known).
-  const [keepsReports, setKeepsReports] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   // The workspace's results heading (the summary line), focused when a live test finishes.
   const summaryHeading = useRef<HTMLHeadingElement>(null);
@@ -663,14 +661,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       .then((d: { fleetId?: string } | null) => { if (d?.fleetId) setProdFleetId(d.fleetId); })
       .catch(() => {});
   }, [allPassed, isDemo, prodFleetId]);
-
-  // Once per test: whether ending it keeps its report, by what the engine's Past tests say.
-  useEffect(() => {
-    if (!run?.sandboxId || previewRun) return;
-    let live = true;
-    getHistory().then(r => { if (live) setKeepsReports(reportsKept(r.sessions)); }, () => {});
-    return () => { live = false; };
-  }, [run?.sandboxId, previewRun]);
 
   // Once per page: someone opened the Sandbox.
   const opened = useRef(false);
@@ -1261,7 +1251,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         <div className={s.overlay} onClick={e => { if (e.target === e.currentTarget) setConfirmEnd(false); }}>
           <div className={s.modal} ref={modalRef} role="alertdialog" aria-labelledby="end-title">
             <h2 id="end-title" style={{ fontFamily: FONT_DISPLAY }}>End this test?</h2>
-            <p>{endTestText(keepsReports)}</p>
+            <p>{endTestText(!!run?.reportsKept)}</p>
             <div className={s.btnRow}>
               <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => void end()} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}>End test</button>
               <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy}>Download report</button>
