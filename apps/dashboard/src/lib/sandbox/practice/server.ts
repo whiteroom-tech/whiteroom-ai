@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { controlAccessError, CONTROL_SECRET_HEADER } from '@/lib/control-auth';
 import { getFleetAuthCookie, tokenFromUserFleets } from '@/lib/fleet-session';
 import { PROXY_URL } from '@/lib/whiteroom/client';
+import { RUN_ID_RE } from './model';
 
 // The BFF side of practice tests (spec §4 Start, §9.1). The engine's
 // /api/readiness owner routes take only the dashboard's service secret, so
@@ -12,7 +13,7 @@ import { PROXY_URL } from '@/lib/whiteroom/client';
 // agent behaved, so viewing is held to the same rule.
 
 const FLEET_RE = /^[A-Za-z0-9._:-]{1,128}$/;
-export const RUN_ID_RE = /^r-[0-9a-f-]{36}$/;
+export { RUN_ID_RE };
 
 const json = (status: number, error: string) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
 

@@ -1,13 +1,14 @@
 // Practice tests: the decisions behind the screens, replayed against the
 // engine's contract fixtures (fixtures/practice, engine cc65272e).
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import contract from './fixtures/practice/contract.json';
 import sandboxChecks from './fixtures/practice/dashboard-sandbox-checks.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import {
   callEstimate, CATALOG, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
-  lostContact, passCaveat, pastKind, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
+  CLI_ON_NPM, CLI_VERSION, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
 import type { PracticeReport, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
@@ -105,6 +106,18 @@ describe('practice test cost (§1, §10 fixed copy)', () => {
 });
 
 describe('practice test commands (§10 CLI)', () => {
+  it('names the CLI release that is published (the beta names the packed 2.0.0 build)', () => {
+    const cli = JSON.parse(readFileSync(new URL('../../../../packages/cli/package.json', import.meta.url), 'utf8')).version;
+    // The version is bumped only at publish (docs/practice-test-beta.md), so before then the two differ on purpose.
+    if (CLI_ON_NPM) expect(CLI_VERSION).toBe(cli);
+    else expect(CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('only takes engine run IDs from the address', () => {
+    expect(RUN_ID_RE.test('r-7f3a2c1e-0b4d-4e8a-9c61-2d5f8e7a1b30')).toBe(true);
+    for (const bad of ['r-7f3a', '../claim', 'r-7f3a2c1e-0b4d-4e8a-9c61-2d5f8e7a1b30/end', '']) expect(RUN_ID_RE.test(bad)).toBe(false);
+  });
+
   it('never puts the run code in a command and names the starter for your agent', () => {
     expect(cliCommands(true, 'js')).toEqual({ starter: null, run: 'whiteroom practice run' });
     expect(cliCommands(false, 'python')).toEqual({ starter: 'whiteroom practice adapter --lang python > wr_adapter.py', run: 'whiteroom practice run --adapter "python3 wr_adapter.py"' });
@@ -134,6 +147,9 @@ describe('practice test progress and Past tests', () => {
     expect(pastTasks(row)).toBe('1/1');
     expect(pastTasks({ ...row, scope: null, runs: 3, rerun: false })).toBe('15/15');
     expect(pastTasks({ ...row, lifecycle: 'cancelled' })).toBe('—');
+    // Finished without a verdict on every check (Didn't finish): how far it got isn't listed.
+    expect(pastTasks({ ...row, scope: null, runs: 3, verdict: 'incomplete' })).toBe('—');
+    expect(pastTasks({ ...row, scope: null, runs: 1, verdict: 'not_passed' })).toBe('5/5');
     expect(pastResult({ ...row, rerun: false, verdict: 'not_passed' }).label).toBe('Didn’t pass');
     expect(pastResult({ ...row, lifecycle: 'interrupted', verdict: null }).label).toBe('Rerun · didn’t finish');
     expect(pastKind({ sample: true })).toBe('Practice (sample)');

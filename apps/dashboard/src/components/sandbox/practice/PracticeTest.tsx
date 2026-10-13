@@ -7,7 +7,7 @@ import { analytics } from '@/lib/analytics';
 import { governanceList, listProviderKeys } from '@/lib/whiteroom/client';
 import { SANDBOX_PROVIDER_LABELS, isSandboxProvider } from '@/lib/sandbox/providers';
 import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, startPractice } from '@/lib/sandbox/practice/api';
-import { callEstimate, controlCalls, controlPreview, headline, isOpen, rerunConfirm, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
+import { callEstimate, controlCalls, controlPreview, headline, isOpen, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
 import type { PracticeResult, PracticeRun, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
@@ -90,8 +90,10 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       if (!f) throw new PracticeError('Sign in and connect a fleet first: practice tests run on your fleet’s key and controls.', 401);
       if (!live) return;
       setFleet(f);
+      // Only a well-formed run ID goes into a request; anything else opens setup.
       const asked = new URLSearchParams(location.search).get('run');
-      const id = asked ?? (await listPracticeRuns(f)).find((r) => isOpen(r.lifecycle))?.id;
+      const valid = asked && RUN_ID_RE.test(asked) ? asked : null;
+      const id = valid ?? (await listPracticeRuns(f)).find((r) => isOpen(r.lifecycle))?.id;
       if (id) await showRun(f, id);
       else await loadSetup(f);
     })().catch((e) => { if (live) setRefusal(fail(e)); }).finally(() => { if (live) setLoading(false); });
@@ -153,7 +155,12 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     setSaid('Run code ready. It expires in 30 minutes.');
     track('practice_started', { sample: st.sample, runs: st.runs, rerun: !!st.scope });
     setResult(null);
-    await showRun(st.fleet, made.runId);
+    // Shown from the start reply at once, so the run code can't be lost to a failed read; polling fills in the rest.
+    setRun({
+      id: made.runId, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: st.fleet, agentId: st.agent ?? SAMPLE_AGENT,
+      sample: st.sample, runs: st.runs, scope: st.scope ?? null, createdAt: new Date().toISOString(), startedAt: null, endedAt: null,
+      codeExpiresAt: made.codeExpiresAt, codeTriesLeft: null, progress: null,
+    });
     history.replaceState(null, '', `${ROUTES.practiceTest}?run=${made.runId}`);
     requestAnimationFrame(() => heading.current?.focus());
   });
@@ -171,12 +178,23 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     }
   });
 
+  /** Ends a test; false when it had already ended or the CLI claimed it meanwhile (409). */
+  const endRun = async (f: string, id: string): Promise<boolean> => {
+    try {
+      await endPractice(f, id);
+      track('practice_ended');
+      return true;
+    } catch (e) {
+      if (e instanceof PracticeError && e.status === 409) return false;
+      throw e;
+    }
+  };
+
   const end = (id: string) => act(async () => {
     if (!fleet) return;
-    await endPractice(fleet, id).catch((e) => { if (!(e instanceof PracticeError && e.status === 409)) throw e; });
+    await endRun(fleet, id);
     setConfirm(null);
     setCode(null);
-    track('practice_ended');
     await showRun(fleet, id);
   });
 
@@ -219,7 +237,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
           {busyRun && fleet && (
             busyRun.lifecycle === 'draft' ? <>
               <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => act(() => showRun(fleet, busyRun.id))}>Continue it</button>
-              <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => act(async () => { await endPractice(fleet, busyRun.id); setRefusal(null); })}>Cancel it</button>
+              <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => act(async () => { if (!(await endRun(fleet, busyRun.id))) await showRun(fleet, busyRun.id); })}>Cancel it</button>
             </> : <>
               <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => act(() => showRun(fleet, busyRun.id))}>View it</button>
               <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => setConfirm({ kind: 'end', id: busyRun.id })}>End it…</button>

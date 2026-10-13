@@ -298,6 +298,9 @@ export function practiceAgent(sample: boolean, agentId: string): string {
   return agentId === SAMPLE_AGENT ? 'WhiteRoom’s sample agent' : `WhiteRoom’s sample agent, as ${agentId}`;
 }
 
+/** A run ID as the engine makes them ("r-" and a UUID). */
+export const RUN_ID_RE = /^r-[0-9a-f-]{36}$/;
+
 /** The short test ID fix lines name ("contact us with test ID r-7f3a"). */
 export const shortId = (id: string) => id.slice(0, 6);
 
@@ -315,10 +318,14 @@ export function pastResult(row: PracticeRunRow): { label: string; tone: 'brand' 
   return { label: `Rerun · ${words[verdict]}`, tone };
 }
 
-/** The Tasks column: "15/15" once finished (every planned task ran), "—" when the count isn't kept. */
+/**
+ * The Tasks column: "15/15" when every planned practice task ran and was
+ * judged (Passed or Didn't pass); "—" otherwise, since the listing doesn't
+ * say how many tasks a test that didn't finish got through.
+ */
 export function pastTasks(row: PracticeRunRow): string {
   const n = practiceTaskCount(row.runs, row.scope);
-  return row.lifecycle === 'finished' ? `${n}/${n}` : '—';
+  return row.lifecycle === 'finished' && (row.verdict === 'passed' || row.verdict === 'not_passed') ? `${n}/${n}` : '—';
 }
 
 export const pastKind = (row: Pick<PracticeRunRow, 'sample'>) => (row.sample ? 'Practice (sample)' : 'Practice');
