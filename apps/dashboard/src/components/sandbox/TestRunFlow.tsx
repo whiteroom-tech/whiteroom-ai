@@ -131,6 +131,21 @@ export function detectKey(value: string): KeyKind {
   return 'unknown';
 }
 
+/** What a new test sends: a cloud test only its endpoint, a pasted key or fleet token as itself, and a live Anthropic or OpenAI test names its provider so status reports it back. */
+export function runOptions(mode: 'demo' | 'connected', provider: SandboxProvider, credential: string, target?: { provider: CloudProvider; endpoint: string }) {
+  const pasted = credential.trim();
+  const kind = detectKey(pasted);
+  const live = mode === 'connected' && !target;
+  const pastedToken = live && kind === 'fleet' ? pasted : undefined;
+  const apiKey = live && (kind === 'anthropic' || kind === 'openai') ? pasted : undefined;
+  const named = live && !isCloudProvider(provider) ? provider : undefined;
+  const opts = { mode, apiKey, selectedCatalogIds: [] as string[], policyMode: 'observe' as const, ...(named ? { provider: named } : {}) };
+  return { opts: target ? { ...opts, provider: target.provider, endpoint: target.endpoint } : opts, pastedToken };
+}
+
+/** Another account signed in on this browser (not a first sign-in or a sign-out): its stored choices aren't theirs. */
+export const accountSwitched = (previous: string | undefined, next: string | undefined) => !!previous && !!next && previous !== next;
+
 /** The Start form's key field: the agent's API key, what was pasted, and where to find one. */
 export function KeyField({ credential, showKey, provider, onChange, onToggleShow }: {
   credential: string; showKey: boolean; provider: DirectProvider; onChange: (value: string) => void; onToggleShow: () => void;
@@ -754,7 +769,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     if (ownerRef.current !== owner) {
       // A different account signed in on this browser: the stored sandbox
       // token belongs to the previous one.
-      if (ownerRef.current && owner) { clearSandboxToken(); forgetSandboxChoices(); setLastUsed(null); }
+      if (accountSwitched(ownerRef.current, owner)) { clearSandboxToken(); forgetSandboxChoices(); setLastUsed(null); }
       ownerRef.current = owner;
       setRun(null); setCredential(''); setPhase('start'); setBooting(true);
     }
@@ -869,16 +884,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
   const begin = (mode: 'demo' | 'connected', target?: { provider: CloudProvider; endpoint: string }) => act(async () => {
     try {
-      const pasted = credential.trim();
-      // A cloud test sends only its endpoint: the agent keeps its own key.
-      const pastedToken = mode === 'connected' && !target && keyKind === 'fleet' ? pasted : undefined;
-      const apiKey = mode === 'connected' && !target && (keyKind === 'anthropic' || keyKind === 'openai') ? pasted : undefined;
-      // A live Anthropic or OpenAI test names its provider too, so status reports it back.
-      const named = mode === 'connected' && !target && !isCloudProvider(provider) ? provider : undefined;
-      const opts = { mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' as const, ...(named ? { provider: named } : {}) };
+      const { opts, pastedToken } = runOptions(mode, provider, credential, target);
       let created;
       try {
-        created = await createRun(target ? { ...opts, provider: target.provider, endpoint: target.endpoint } : opts, pastedToken);
+        created = await createRun(opts, pastedToken);
       } catch (e) {
         // An engine without this provider: take the choice away and say so.
         if (target && e instanceof SandboxRequestError && e.code === PROVIDER_UNSUPPORTED) {
@@ -907,7 +916,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         window.dispatchEvent(new Event('storage'));
       }
       track(testStartedEvent(mode, provider));
-      setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : named ? { provider: named } : {}) });
+      setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : 'provider' in opts && opts.provider ? { provider: opts.provider } : {}) });
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
       if (mode === 'demo') {
         const d = await startDemo(result.sandboxId);

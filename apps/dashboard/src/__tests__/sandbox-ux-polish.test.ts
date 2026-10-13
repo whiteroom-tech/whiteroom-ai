@@ -11,7 +11,7 @@ import type { RunStatusResult } from '@/lib/sandbox/api';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { agentNameNote, directProviderOf, KeyField, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { accountSwitched, agentNameNote, directProviderOf, KeyField, runOptions, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 const { forgetSandboxChoices, PROVIDER_STORAGE } = await import('@/lib/sandbox/api');
 const { ProviderChoices } = await import('@/components/sandbox/CloudProviderParts');
 const { ENDPOINTS_STORAGE, KEY_HELP, noCodeSetup, offersNoCode, SANDBOX_PROVIDERS } = await import('@/lib/sandbox/providers');
@@ -142,5 +142,37 @@ describe('sign-out on a shared browser', () => {
     local.set('wr_theme', 'dark');
     forgetSandboxChoices();
     expect([...local.keys()]).toEqual(['wr_theme']);
+  });
+});
+
+describe('Starting a test: what is sent', () => {
+  it('a live Anthropic or OpenAI test names its provider and sends the pasted key', () => {
+    expect(runOptions('connected', 'openai', ' sk-abc ').opts).toMatchObject({ mode: 'connected', apiKey: 'sk-abc', provider: 'openai' });
+    expect(runOptions('connected', 'anthropic', 'sk-ant-abc').opts).toMatchObject({ apiKey: 'sk-ant-abc', provider: 'anthropic' });
+  });
+  it('a fleet token goes as the token, not as a key', () => {
+    const r = runOptions('connected', 'anthropic', 'wr_tok');
+    expect(r.pastedToken).toBe('wr_tok');
+    expect(r.opts.apiKey).toBeUndefined();
+  });
+  it('a demo names no provider and sends no key', () => {
+    const r = runOptions('demo', 'openai', 'sk-abc');
+    expect(r.opts).not.toHaveProperty('provider');
+    expect(r.opts.apiKey).toBeUndefined();
+    expect(r.pastedToken).toBeUndefined();
+  });
+  it('a cloud test sends only its endpoint and provider', () => {
+    const r = runOptions('connected', 'azure-openai', 'sk-abc', { provider: 'azure-openai', endpoint: 'https://acme.openai.azure.com' });
+    expect(r.opts).toMatchObject({ provider: 'azure-openai', endpoint: 'https://acme.openai.azure.com' });
+    expect(r.opts.apiKey).toBeUndefined();
+  });
+});
+
+describe('Another account on this browser', () => {
+  it('forgets the previous account’s choices only on a real switch', () => {
+    expect(accountSwitched('u1', 'u2')).toBe(true);
+    expect(accountSwitched(undefined, 'u2')).toBe(false); // first sign-in
+    expect(accountSwitched('u1', undefined)).toBe(false); // signed out
+    expect(accountSwitched('u1', 'u1')).toBe(false);
   });
 });
