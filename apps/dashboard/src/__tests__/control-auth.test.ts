@@ -257,12 +257,14 @@ describe('the engine BFF', () => {
     expect(sentHeaders()['x-wr-dashboard-user-sig']).toBe('1ff71fe9070decd59b9af8e54f93f1c55df9c4d5ebdca305214c1b30cc5ef698');
   });
 
-  it('names no one for a session with only a fleet cookie (unchecked, so it mustn\u2019t mint buckets), or without a secret', async () => {
+  it('names no one for a session with only a fleet cookie, which isn’t checked here and mustn’t mint buckets', async () => {
     mocks.auth.mockResolvedValue(null);
     await call({ action: 'fleet_report', fleet_id: 'f1' });
     expect(sentHeaders()['x-wr-dashboard-user']).toBeUndefined();
     expect(sentHeaders()['x-wr-dashboard-user-sig']).toBeUndefined();
-    fetchMock.mockClear();
+  });
+
+  it('names no one without the service secret', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
     await call({ action: 'fleet_report', fleet_id: 'f1' });
