@@ -78,7 +78,7 @@ export interface StubOptions {
   taskMs?: number;
   /** Per-request override: return a reply to answer instead of the stub. `n` counts requests to that path. */
   route?: (path: string, body: any, n: number) => Reply | undefined;
-  /** The fake model's first call on each practice task is answered as WhiteRoom does while it saves a summary. */
+  /** The fake model's first call on each practice task is answered twice as WhiteRoom does while it saves a summary. */
   summaryFirst?: boolean;
   /** The result tasks/next returns at the end (default: the fixture's). */
   done?: unknown;
@@ -111,7 +111,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const counts = new Map<string, number>();
   const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[], cancels: [] as unknown[] };
   let attempt = 0;
-  let current: { id: string; reads: Set<string>; summarised: boolean } | null = null;
+  let current: { id: string; reads: Set<string>; summaryWaits: number } | null = null;
   let controlSteps = 0;
   let origin = "";
   let provider = "anthropic";
@@ -150,7 +150,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       if (!item) return o.done ? [200, o.done] : fromFixture("tasks.next.done");
       const id = `a-${++attempt}`;
       const progress = { done: total - plan.length - 1, total };
-      current = { id, reads: new Set(), summarised: false };
+      current = { id, reads: new Set(), summaryWaits: 0 };
       const deadline = new Date(Date.now() + (o.taskMs ?? 60_000)).toISOString();
       if (item === "controls") {
         controlSteps = 0;
@@ -235,8 +235,9 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       return [200, anthropic ? { content: [{ type: "text", text: "Hi" }] } : { choices: [{ message: { role: "assistant", content: "Hi" } }] }];
     }
     stub.models.push(body.model);
-    if (o.summaryFirst && current && !current.summarised) {
-      current.summarised = true;
+    // Twice in a row, as a summary that takes a while: the starters say so once.
+    if (o.summaryFirst && current && current.summaryWaits < 2) {
+      current.summaryWaits++;
       return [429, { type: "error", error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }];
     }
     // What the agent has done so far, from the conversation.

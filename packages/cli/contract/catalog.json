@@ -155,6 +155,10 @@
     "fault_not_fired"
   ],
   "runCallCap": 120,
+  "minutesPerRun": [
+    5,
+    10
+  ],
   "fixLines": {
     "over_allowance": "Your agent used more than the {allowance} model calls this practice task allows, so it was stopped. Agents that loop or retry too often do this. Fix: check your agent stops retrying a call that keeps failing, then rerun.",
     "wrong_records": "Your agent didn't act on exactly the records the task asked for. Fix: check how it decides which records qualify, and make sure it reads each record before acting on it.",

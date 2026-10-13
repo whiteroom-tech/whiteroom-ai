@@ -6,7 +6,7 @@ import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
   callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlLine, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
-  providerKeyLabel, SAMPLE_AGENT, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
+  PRACTICE_TASKS, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
@@ -157,7 +157,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
     <div className={p.wrap}>
       <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
       <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Set up a practice test</h2>
-      <p className={s.pageSub}>Your agent works through 5 practice tasks while WhiteRoom checks the results and your controls. You start it from your computer with one command.</p>
+      <p className={s.pageSub}>Your agent works through {PRACTICE_TASKS} practice tasks while WhiteRoom checks the results and your controls. A run usually takes {usualMinutes(1)}. You start it from your computer with one command.</p>
 
       {blocked && (
         <div className={s.notice} role="status">
@@ -215,7 +215,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
             <span className={s.formLabel}>Runs</span>
             <SegmentedControl<'1' | '3'> label="Runs" value={String(runs) as '1' | '3'} onChange={(v) => setRuns(v === '3' ? 3 : 1)}
               options={[{ value: '1', label: '1 run' }, { value: '3', label: '3 runs' }]} />
-            <p className={s.small} style={{ marginTop: 6 }}>3 runs show it passes every time, and take three times as long.</p>
+            <p className={s.small} style={{ marginTop: 6 }}>3 runs show it passes every time, and take about {usualMinutes(3)}.</p>
           </div>
         )}
 

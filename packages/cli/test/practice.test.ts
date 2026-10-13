@@ -46,7 +46,7 @@ describe("practice run: the sample agent and the starters complete Template A", 
     assert.match(r.stdout, /Passed · all 11 checks · 3 runs/);
     assert.match(r.stdout, /not as a certificate/);
     assert.match(r.stdout, /app\.whiteroom\.tech\/sandbox/);
-    assert.match(r.stderr, /WhiteRoom is saving a summary of your agent's memory\. Waiting 2 s/);
+    assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);
     assert.doesNotMatch(r.stdout + r.stderr, /watch_limit_exceeded|handover|compress|context/i);
     // The sample agent reports itself as such; the key went only to the claim, tasks/next and model calls.
     assert.equal(JSON.parse(s.seen.find((x) => x.path === "/api/readiness/claim")!.body).cli.adapter, "sample agent");
@@ -66,7 +66,7 @@ describe("practice run: the sample agent and the starters complete Template A", 
     const r = await run(s, ["--adapter", "python3 starters/wr_adapter.py"]);
     assert.equal(r.code, 0, r.stderr);
     assertTemplateA(s);
-    assert.match(r.stderr, /WhiteRoom is saving a summary of your agent's memory\. Waiting 2 s/);
+    assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);
   });
 });
 

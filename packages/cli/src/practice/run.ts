@@ -182,7 +182,8 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   engine.session = claim.body.session as string;
   hideSecret(engine.session);
   const runs = Number(claim.body.run?.runs) || 1;
-  say(copy.started(Number(claim.body.run?.tasks) || 0, runs));
+  const controls: unknown = claim.body.run?.controls;
+  say(copy.started(Number(claim.body.run?.tasks) || 0, runs, typeof controls === "boolean" ? controls : null));
 
   // ── From here the session is live: Ctrl+C twice, a signal, or WhiteRoom (heartbeat) can stop it ──
   const stop = new AbortController();

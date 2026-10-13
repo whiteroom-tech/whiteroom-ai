@@ -1,5 +1,5 @@
 Copied unchanged from the engine's practice-test fixtures (apps/engine/fixtures/readiness).
 Refresh with scripts/sync-practice-contract.sh; never edit these files by hand.
-engine ea1f1c58431d246f212ad62b9214609745ea4219
-sha256 catalog.json 0d48262e0ff2f14a83818e771f9dcd803c889fd2f2b5a5c64b0ab11e8c1a00b9
-sha256 contract.json 2b5a3d065a34ab3cc7a31956309ad00138caa43767264c585a587d89b2485571
+engine c66a730f8482e8d5f84ce9b9d4a0a25aac611a99
+sha256 catalog.json e94de326a3ddf6d8058f74c79a116bce828e517f3678492c41ff7bcae62ee2f2
+sha256 contract.json d46c4689ce8265820876165ad64803dfcbc2c24a060e6e66880b7b85dd06eb95

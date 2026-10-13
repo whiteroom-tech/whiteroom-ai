@@ -130,6 +130,8 @@ export interface PracticeSource {
   /** The whole fleet can't be tested: it reaches Bedrock through an IAM role. */
   blocked: 'bedrock_role' | null;
   providerKeys: PracticeProviderKey[];
+  /** The Fleet key key the agent's latest call came with (its display prefix); null: its own key. Absent from engines before it was recorded. */
+  usedProxyKeyDisplayPrefix?: string | null;
   /** The control checks a test of this agent makes (§6), from the engine's planner; null when they couldn't be read. */
   controls: { checks: PracticeControlCheck[]; calls: number } | null;
 }
