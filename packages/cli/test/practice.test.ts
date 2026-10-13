@@ -340,6 +340,14 @@ describe("practice run: claim errors (exit 2, nothing else sent)", () => {
     assert.match(r.stderr, /doesn't work any more.*click Get a new run code/);
   });
 
+  it("ended from the dashboard while claiming (409 ended_by_owner): says so, exit 3", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [409, { lifecycle: "cancelled", reason: "ended_by_owner" }] : undefined) });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /ended from the dashboard/);
+    assert.deepEqual(s.seen.map((x) => x.path), ["/api/readiness/claim"]);
+  });
+
   it("a malformed run code uses no try: nothing is sent", async () => {
     const s = await stub();
     const r = await run(s, [], { stdin: "wrrt_short\n" });

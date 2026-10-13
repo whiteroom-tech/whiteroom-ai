@@ -171,6 +171,8 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
   if (claim.status === 429) return fail(ending(3, copy.busy));
+  // The owner ended the test while this claim was on its way.
+  if (claim.status === 409 && claim.body?.reason === "ended_by_owner") return fail(ending(3, copy.endedByOwner));
   if (claim.status === 404) return fail(ending(2, copy.unavailable));
   if (claim.status !== 200 || typeof claim.body?.session !== "string") return fail(ending(2, copy.cliOutdated));
   // The provider the run's calls go to decides the adapter's key variable, the header and the API.
