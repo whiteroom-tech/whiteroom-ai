@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
 import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, isSandboxProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
@@ -772,8 +772,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     if (ownerRef.current !== owner) {
       // A different account signed in on this browser: the stored sandbox
       // token belongs to the previous one.
-      if (accountSwitched(ownerRef.current, owner)) {
-        clearSandboxToken(); forgetSandboxChoices();
+      // Also when the page loads for someone other than whose choices are stored (no sign-out ran).
+      const forgot = owner ? claimSandboxChoices(owner) : false;
+      if (accountSwitched(ownerRef.current, owner) || forgot) {
+        clearSandboxToken(); forgetSandboxChoices(); if (owner) claimSandboxChoices(owner);
         // And what this page already loaded from them: back to a first visit.
         setLastUsed(FIRST_VISIT.lastUsed); setProvider(FIRST_VISIT.provider); setEndpoints(FIRST_VISIT.endpoints);
       }

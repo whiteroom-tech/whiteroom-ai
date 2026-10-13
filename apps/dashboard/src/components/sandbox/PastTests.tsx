@@ -48,8 +48,8 @@ async function downloadPastReport(test: PastTest): Promise<void> {
   const kept = await getPastReport(test.sandboxId);
   const report = pastTestReport(kept, test.sandboxId);
   if (!report) throw new Error(kept.error ?? 'No report');
-  analytics.capture('sandbox_report_exported', { mode: report.mode, from: 'past_tests' });
   saveReportFile(report);
+  analytics.capture('sandbox_report_exported', { mode: report.mode, from: 'past_tests' });
 }
 
 /** A Past tests download: in progress, and how the last attempt went. */

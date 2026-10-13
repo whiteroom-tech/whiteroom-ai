@@ -12,7 +12,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { accountSwitched, agentNameNote, FIRST_VISIT, directProviderOf, KeyField, runOptions, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
-const { forgetSandboxChoices, PROVIDER_STORAGE } = await import('@/lib/sandbox/api');
+const { CHOICES_OWNER_STORAGE, claimSandboxChoices, forgetSandboxChoices, PROVIDER_STORAGE } = await import('@/lib/sandbox/api');
 const { ProviderChoices } = await import('@/components/sandbox/CloudProviderParts');
 const { ENDPOINTS_STORAGE, KEY_HELP, noCodeSetup, offersNoCode, SANDBOX_PROVIDERS } = await import('@/lib/sandbox/providers');
 
@@ -140,8 +140,29 @@ describe('sign-out on a shared browser', () => {
     local.set(PROVIDER_STORAGE, 'bedrock-mantle');
     local.set(ENDPOINTS_STORAGE, '{"bedrock-mantle":"us-east-1"}');
     local.set('wr_theme', 'dark');
+    local.set(CHOICES_OWNER_STORAGE, 'u1');
     forgetSandboxChoices();
     expect([...local.keys()]).toEqual(['wr_theme']);
+  });
+
+  it('drops another account’s choices when the page loads for someone else, even with no sign-out', () => {
+    local.set(PROVIDER_STORAGE, 'bedrock-mantle');
+    local.set(ENDPOINTS_STORAGE, '{"bedrock-mantle":"us-east-1"}');
+    local.set(CHOICES_OWNER_STORAGE, 'u1');
+    expect(claimSandboxChoices('u2')).toBe(true);
+    expect(local.get(PROVIDER_STORAGE)).toBeUndefined();
+    expect(local.get(ENDPOINTS_STORAGE)).toBeUndefined();
+    expect(local.get(CHOICES_OWNER_STORAGE)).toBe('u2');
+  });
+
+  it('keeps the same account’s choices, and claims unowned ones', () => {
+    local.set(PROVIDER_STORAGE, 'openai');
+    local.set(CHOICES_OWNER_STORAGE, 'u1');
+    expect(claimSandboxChoices('u1')).toBe(false);
+    expect(local.get(PROVIDER_STORAGE)).toBe('openai');
+    local.delete(CHOICES_OWNER_STORAGE);
+    expect(claimSandboxChoices('u3')).toBe(false);
+    expect(local.get(CHOICES_OWNER_STORAGE)).toBe('u3');
   });
 });
 

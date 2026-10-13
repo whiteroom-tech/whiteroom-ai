@@ -119,6 +119,22 @@ export const PROVIDER_STORAGE = 'wr_sandbox_provider';
 export function forgetSandboxChoices(): void {
   safeRemove(PROVIDER_STORAGE);
   safeRemove(ENDPOINTS_STORAGE);
+  safeRemove(CHOICES_OWNER_STORAGE);
+}
+
+/** Whose Start-form choices this browser holds, so they're dropped for anyone else even if no sign-out ran. */
+export const CHOICES_OWNER_STORAGE = 'wr_sandbox_choices_owner';
+
+/**
+ * Marks the stored choices as `owner`'s. True when they belonged to another
+ * account and were forgotten (the caller resets what it already loaded).
+ */
+export function claimSandboxChoices(owner: string): boolean {
+  const previous = safeGet(CHOICES_OWNER_STORAGE);
+  const other = !!previous && previous !== owner;
+  if (other) forgetSandboxChoices();
+  safeSet(CHOICES_OWNER_STORAGE, owner);
+  return other;
 }
 
 // A cloud test's proxy key is returned once, when the test starts. It is kept
