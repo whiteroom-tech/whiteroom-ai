@@ -77,6 +77,17 @@ export interface PracticeRunRow {
   createdAt: string;
   endedAt: string | null;
   checks: { passed: number; total: number } | null;
+  /** Tasks finished of those planned; the control checks count as one task a run. Older engines leave it out. */
+  tasks?: { finished: number; total: number } | null;
+}
+
+/** Where the source agent's calls go, so setup can refuse a fleet practice tests can't run yet before Start. */
+export type PracticeSourceProvider = 'direct-anthropic' | 'direct-openai' | 'proxy-url' | 'cloud' | 'unknown';
+
+/** GET /source-model: the model the agent asked for most recently, and where its calls go. */
+export interface PracticeSource {
+  model: string | null;
+  provider: PracticeSourceProvider;
 }
 
 /** GET /runs/:id/report: the run's result. `report` is null for a test that was ended, or after 30 days. */

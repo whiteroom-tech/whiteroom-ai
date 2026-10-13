@@ -1,2 +1,2 @@
-Copied unchanged from the engine's practice-test contract fixtures at engine commit cc65272e.
+Copied unchanged from the engine's practice-test contract fixtures at engine commit ff2b40dc.
 Refresh by copying them again; never edit them here.

@@ -59,6 +59,8 @@ export interface StubOptions {
   summaryFirst?: boolean;
   /** The result tasks/next returns at the end (default: the fixture's). */
   done?: unknown;
+  /** The practice task's model (default: the fixture's); null means none was chosen. */
+  taskModel?: string | null;
 }
 
 export interface Stub {
@@ -67,6 +69,8 @@ export interface Stub {
   /** Request bodies that don't match the fixture's request for that route. */
   contractErrors: string[];
   escalations: Array<{ ticketId: string; team: string }>;
+  /** The model each practice-task model call asked for. */
+  models: string[];
   finals: Array<{ attemptId: string; output: string | null; ended: string }>;
   controlResults: unknown[];
   count: (path: string) => number;
@@ -77,7 +81,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const plan = [...(o.plan ?? ["A"])];
   const total = plan.length;
   const counts = new Map<string, number>();
-  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], finals: [] as Stub["finals"], controlResults: [] as unknown[] };
+  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], finals: [] as Stub["finals"], controlResults: [] as unknown[] };
   let attempt = 0;
   let current: { id: string; reads: Set<string>; summarised: boolean } | null = null;
   let controlSteps = 0;
@@ -120,6 +124,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       return fromFixture("tasks.next.task.A", (r) => {
         Object.assign(r.task, { attemptId: id, deadline, baseUrl: origin });
         r.progress = progress;
+        if (o.taskModel !== undefined) r.task.model = o.taskModel;
         r.task.headers = { "x-whiteroom-fleet": `sandbox-r-${id}`, "x-wr-readiness-attempt": id, "x-whiteroom-agent": "support-bot" };
       });
     }
@@ -170,6 +175,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       }
       return [200, anthropic ? { content: [{ type: "text", text: "Hi" }] } : { choices: [{ message: { role: "assistant", content: "Hi" } }] }];
     }
+    stub.models.push(body.model);
     if (o.summaryFirst && current && !current.summarised) {
       current.summarised = true;
       return [429, { type: "error", error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }];

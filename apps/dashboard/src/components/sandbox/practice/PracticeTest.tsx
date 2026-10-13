@@ -9,7 +9,7 @@ import { SANDBOX_PROVIDER_LABELS, isSandboxProvider } from '@/lib/sandbox/provid
 import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, retryable, startPractice, unavailable } from '@/lib/sandbox/practice/api';
 import { callEstimate, controlCalls, controlPreview, draftFromStart, headline, isOpen, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
-import type { PracticeResult, PracticeRun, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
+import type { PracticeResult, PracticeRun, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import { PracticeDialog } from './PracticeDialog';
 import { PracticeResults, type ResultAction } from './PracticeResults';
@@ -29,6 +29,8 @@ export interface PracticePreview {
   fleet: string;
   setup?: SetupData;
   model?: string | null;
+  /** Where the agent's calls go (source-model); unknown when left out. */
+  provider?: PracticeSourceProvider;
   run?: PracticeRun;
   code?: RunCode | null;
   result?: PracticeResult | null;
@@ -222,14 +224,15 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     const runs: 1 | 3 = a.kind === 'three' ? 3 : r.runs === 3 ? 3 : 1;
     const gov = scope && !scope.some((id) => id.startsWith('ctl')) ? null : await governanceList(fleet);
     const calls = gov ? controlCalls(controlPreview(gov.rules ?? [], !!gov.govV1, run.sample && run.agentId === SAMPLE_AGENT), scope) : 0;
-    const model = r.tested.modelRequested ?? r.tested.modelsUsed[0] ?? null;
+    // The sample agent keeps its own model unless the test was started with one.
+    const model = run.sample ? r.tested.modelRequested : r.tested.modelRequested ?? r.tested.modelsUsed[0] ?? null;
     const st: PracticeStart = {
       fleet, sample: run.sample, runs,
       ...(run.agentId !== SAMPLE_AGENT && { agent: run.agentId }),
-      ...(!run.sample && model && { model }),
+      ...(model && { model }),
       ...(scope && { scope }),
     };
-    setConfirm({ kind: 'rerun', start: st, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, controlCalls: calls, model })) });
+    setConfirm({ kind: 'rerun', start: st, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, controlCalls: calls, model: model ?? r.tested.modelsUsed[0] ?? null })) });
   });
 
   const download = () => {
@@ -264,7 +267,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
 
       {view === 'unavailable' && <PracticeUnavailable />}
       {view === 'loading' && <p>Checking for a practice test…</p>}
-      {view === 'setup' && fleet && setup && <PracticeSetup fleet={fleet} data={setup} busy={busy} previewModel={preview ? preview.model ?? null : undefined} onStart={(st) => { void start(st); }} />}
+      {view === 'setup' && fleet && setup && <PracticeSetup fleet={fleet} data={setup} busy={busy} previewModel={preview ? preview.model ?? null : undefined} previewProvider={preview?.provider} onStart={(st) => { void start(st); }} />}
       {view === 'run' && run && (
         <PracticeRunView run={run} code={code} model={model} now={now} heading={heading} busy={busy} onNewCode={() => { void renewCode(); }} onEnd={() => setConfirm({ kind: 'end', id: run.id })} />
       )}

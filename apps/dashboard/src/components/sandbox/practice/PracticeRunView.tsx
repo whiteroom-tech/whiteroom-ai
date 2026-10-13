@@ -59,7 +59,7 @@ function TerminalSteps({ run, code, model, now, busy, onNewCode }: {
     <div className={p.step}>
       <p className={p.stepTitle}>{++n}. Run the test</p>
       <Command text={cmd.run} label="Copy the test command" />
-      <p className={p.meta}>Needs Node 20 or later. Set <code>{keyVariable(run.sample ? null : model)}</code> to the key your agent uses with {run.sourceFleetId}. Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.</p>
+      <p className={p.meta}>Needs Node 20 or later. Set <code>{keyVariable(model)}</code> to the key your agent uses with {run.sourceFleetId}. Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.</p>
       <p className={p.meta}>If the terminal says <code>Unknown command: practice</code>, an older WhiteRoom CLI ran instead: {CLI_ON_NPM ? 'copy the command again, it names the right version.' : 'install the beta above, then run the command again.'}</p>
     </div>
     <div className={p.step}>

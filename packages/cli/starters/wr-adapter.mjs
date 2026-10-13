@@ -18,7 +18,8 @@ async function callTool(name, input) {
 }
 
 const anthropic = !!process.env.ANTHROPIC_API_KEY;
-const MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
+// The model to use when the practice task doesn't name one.
+const DEFAULT_MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
 const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
 
 // One model call through WhiteRoom; null if one of the fleet's controls blocked it.
@@ -45,9 +46,11 @@ async function model(base_url, headers, body) {
 }
 
 // ── Replace this function with a call to your own agent. ────────────────
-// It gets the task, the test tools and WhiteRoom's address; it calls tools
-// with callTool(name, input) and returns its final answer as text.
-async function runAgent({ task, tools, base_url, headers }) {
+// It gets the task, the test tools, WhiteRoom's address and the model your
+// dashboard chose (null: use your own); it calls tools with
+// callTool(name, input) and returns its final answer as text.
+async function runAgent({ task, tools, base_url, headers, model: chosen }) {
+  const MODEL = chosen || DEFAULT_MODEL;
   const messages = [{ role: "user", content: task }];
   const fns = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }));
   for (let turn = 0; turn < 40; turn++) {

@@ -42,6 +42,8 @@ interface PracticeTask {
   deadline: string;
   baseUrl: string;
   scenario: string;
+  /** The model the sample agent and the starters use; null keeps their own default. */
+  model?: string | null;
   prompt: string;
   tools: unknown[];
   headers: Record<string, string>;
@@ -141,7 +143,8 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   }
   if (claim.status === 401 && claim.body?.reason === "key_mismatch") {
     const left = Number(claim.body.triesLeft) || 0;
-    return fail(ending(2, left > 0 ? copy.keyMismatch(keyVar, left) : copy.lastTry));
+    const fleet = typeof claim.body.fleetName === "string" && claim.body.fleetName.trim() ? claim.body.fleetName.trim().slice(0, 100) : null;
+    return fail(ending(2, left > 0 ? copy.keyMismatch(keyVar, left, fleet) : copy.lastTry));
   }
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
@@ -198,6 +201,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
       launch, env: childEnv(process.env, keyVar, key), deadline, signal: stop.signal,
       message: {
         type: "task", task: t.prompt, tools: t.tools, headers: t.headers,
+        model: typeof t.model === "string" && t.model ? t.model : null,
         // OpenAI SDKs take a base URL that ends in /v1.
         base_url: keyVar === "OPENAI_API_KEY" ? `${t.baseUrl}/v1` : t.baseUrl,
       },

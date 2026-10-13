@@ -69,6 +69,55 @@ describe("practice run: the sample agent and the starters complete Template A", 
   });
 });
 
+describe("practice run: the model the practice test was started with", () => {
+  it("the sample agent uses the practice task's model", async () => {
+    const s = await stub({ taskModel: "claude-sonnet-4-5" });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assertTemplateA(s);
+    assert.ok(s.models.length > 0);
+    assert.deepEqual([...new Set(s.models)], ["claude-sonnet-4-5"]);
+  });
+
+  it("the sample agent keeps its own model when none was chosen", async () => {
+    const s = await stub({ taskModel: null });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([...new Set(s.models)], ["claude-haiku-4-5"]);
+  });
+
+  it("the JS starter with an OpenAI key keeps its own model when none was chosen", async () => {
+    const s = await stub({ taskModel: null });
+    const r = await run(s, ["--adapter", "node starters/wr-adapter.mjs"], { env: testEnv({ OPENAI_API_KEY: OPENAI_KEY }) });
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([...new Set(s.models)], ["gpt-4o-mini"]);
+  });
+
+  it("the Python starter uses the practice task's model, and its own when none was chosen", async () => {
+    const chosen = await stub({ taskModel: "gpt-4.1-mini" });
+    let r = await run(chosen, ["--adapter", "python3 starters/wr_adapter.py"], { env: testEnv({ OPENAI_API_KEY: OPENAI_KEY }) });
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([...new Set(chosen.models)], ["gpt-4.1-mini"]);
+    const none = await stub({ taskModel: null });
+    r = await run(none, ["--adapter", "python3 starters/wr_adapter.py"]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual([...new Set(none.models)], ["claude-haiku-4-5"]);
+  });
+
+  it("the adapter's task line carries the model, or null", async () => {
+    const seen = join(dir, "task-line.json");
+    const adapter = script("echo-model.mjs", `import { createInterface } from "node:readline"; import { writeFileSync } from "node:fs";
+const it = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
+const msg = JSON.parse((await it.next()).value);
+writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ model: msg.model, has: "model" in msg }));
+console.log(JSON.stringify({ type: "final", output: "done" }));`);
+    const s = await stub({ taskModel: null });
+    const r = await run(s, ["--adapter", `node ${adapter}`]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(seen, "utf8")), { model: null, has: true });
+  });
+});
+
 describe("practice run: the starters and the fleet's controls", () => {
   it("a call blocked by a control ends the agent's answer plainly instead of crashing", async () => {
     const block = { error: { type: "permission_error", message: "Blocked by WhiteRoom governance." }, whiteroom: { error: "governance_block", reason: "model_not_allowed", retryable: false } };
@@ -138,8 +187,19 @@ describe("practice run: claim errors (exit 2, nothing else sent)", () => {
     const s = await claimOnly("claim.key_mismatch");
     const r = await run(s);
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /This key isn't the one your agent uses with this fleet\. Nothing was charged, and your run code still works \(4 more tries\)\. Set ANTHROPIC_API_KEY to the right key, then run the same command again\./);
+    assert.match(r.stderr, /This key isn't the one your agent uses with <fleet>\. Nothing was charged, and your run code still works \(4 more tries\)\. Set ANTHROPIC_API_KEY to the right key, then run the same command again\./);
     assert.deepEqual(s.seen.map((x) => x.path), ["/api/readiness/claim"]);
+  });
+
+  it("wrong key names the fleet the dashboard shows, or says this fleet", async () => {
+    const named = await stub({ route: (p) => (p === "/api/readiness/claim" ? [401, { ...(fixture("claim.key_mismatch").response as object), fleetName: "prod-eu" }] : undefined) });
+    let r = await run(named);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /This key isn't the one your agent uses with prod-eu\. Nothing was charged/);
+    const { fleetName: _, ...bare } = fixture("claim.key_mismatch").response as Record<string, unknown>;
+    const unnamed = await stub({ route: (p) => (p === "/api/readiness/claim" ? [401, bare] : undefined) });
+    r = await run(unnamed);
+    assert.match(r.stderr, /This key isn't the one your agent uses with this fleet\. Nothing was charged/);
   });
 
   it("wrong key on the last try", async () => {
@@ -321,7 +381,7 @@ describe("practice run: child process rules (§9.4)", () => {
     });
     assert.equal(r.code, 0, r.stderr);
     const seen = JSON.parse(s.finals[0].output!);
-    assert.deepEqual(seen, { vars: ["ANTHROPIC_API_KEY"], key: KEY, secrets: 0, message: ["base_url", "headers", "task", "tools", "type"] });
+    assert.deepEqual(seen, { vars: ["ANTHROPIC_API_KEY"], key: KEY, secrets: 0, message: ["base_url", "headers", "model", "task", "tools", "type"] });
     // WHITEROOM_URL is ignored, and said so.
     assert.match(r.stdout, /Ignoring WHITEROOM_URL: practice tests always run on WhiteRoom\./);
     // Stdout that isn't JSON is shown here and never uploaded.

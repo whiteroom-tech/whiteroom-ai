@@ -7,7 +7,8 @@
 import json, os, sys, time, urllib.error, urllib.request
 
 ANTHROPIC = bool(os.environ.get("ANTHROPIC_API_KEY"))
-MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
+# The model to use when the practice task doesn't name one.
+DEFAULT_MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
 BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call."
 calls = 0
 
@@ -63,9 +64,11 @@ def model(base_url, headers, body):
 
 
 # ── Replace this function with a call to your own agent. ────────────────
-# It gets the task, the test tools and WhiteRoom's address; it calls tools
-# with call_tool(name, input) and returns its final answer as text.
-def run_agent(task, tools, base_url, headers):
+# It gets the task, the test tools, WhiteRoom's address and the model your
+# dashboard chose (None: use your own); it calls tools with
+# call_tool(name, input) and returns its final answer as text.
+def run_agent(task, tools, base_url, headers, chosen_model=None):
+    MODEL = chosen_model or DEFAULT_MODEL
     messages = [{"role": "user", "content": task}]
     fns = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}} for t in tools]
     for _ in range(40):
@@ -98,7 +101,7 @@ if __name__ == "__main__":
         msg = receive()
         if not msg or msg.get("type") != "task":
             raise RuntimeError("Expected a task from the WhiteRoom CLI.")
-        send({"type": "final", "output": run_agent(msg["task"], msg["tools"], msg["base_url"], msg["headers"])})
+        send({"type": "final", "output": run_agent(msg["task"], msg["tools"], msg["base_url"], msg["headers"], msg.get("model"))})
     except Exception as err:
         print(err, file=sys.stderr)
         sys.exit(1)

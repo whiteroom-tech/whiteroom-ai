@@ -29,12 +29,13 @@ The CLI starts the adapter once per practice task and talks to it in JSON lines:
 
 | Direction | Line |
 |---|---|
-| CLI → adapter | `{"type":"task","task":"<instructions>","tools":[…],"base_url":"…","headers":{…}}` |
+| CLI → adapter | `{"type":"task","task":"<instructions>","tools":[…],"base_url":"…","headers":{…},"model":"…"}` |
 | adapter → CLI | `{"type":"tool_call","id":"<your id>","name":"<tool>","input":{…}}` |
 | CLI → adapter | `{"type":"tool_result","id":"<your id>","result":…}` |
 | adapter → CLI | `{"type":"final","output":"<your agent's answer>"}` |
 
 - Send model calls to `base_url` with every header in `headers`. For OpenAI SDKs `base_url` already ends in `/v1`. The key is in `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the adapter's environment.
 - When WhiteRoom answers 429 or 503 with a `whiteroom` field, wait a moment and send the same call again. Let model calls run up to 180 seconds.
+- `model` is the model chosen for the practice test in the dashboard, or `null` when none was chosen: then use your agent's own model. The starters do this.
 - Write logs to stderr. Lines on stdout that aren't JSON are shown in your terminal and never sent to WhiteRoom.
 - Limits: lines up to 1 MiB, tool calls up to 64 KiB, 200 tool calls per practice task. The adapter is stopped (its whole process group) at the task's deadline.

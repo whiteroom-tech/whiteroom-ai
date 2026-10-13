@@ -24,7 +24,7 @@ export function PracticePastDetail({ row, onClose }: { row: PracticeRunRow; onCl
       </div>
       <dl className={s.pastDetailList}>
         <dt>Result</dt><dd><Tag tone={result.tone}>{result.label}</Tag>{row.checks && <span className={s.small}> {row.checks.passed} of {row.checks.total} checks passed</span>}</dd>
-        <dt>Tasks</dt><dd>{pastTasks(row)} <span className={s.small}>(practice tasks)</span></dd>
+        <dt>Tasks</dt><dd>{pastTasks(row)} <span className={s.small}>(practice tasks and control checks)</span></dd>
         <dt>Kind</dt><dd>{pastKind(row)} · {row.runs} run{row.runs === 1 ? '' : 's'}</dd>
         <dt>Agent</dt><dd>{practiceAgent(row.sample, row.agentId)}</dd>
         <dt>Test ID</dt><dd style={{ fontFamily: FONT_MONO, overflowWrap: 'anywhere' }}>{row.id}</dd>
