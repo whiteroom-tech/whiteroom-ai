@@ -188,10 +188,12 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   /** One practice task through the adapter. An Ending stops the test; null asks for the next task. */
   const practiceTask = async (t: PracticeTask, p: Progress): Promise<Ending | null> => {
     if (!ourHost(t.baseUrl)) return ending(3, copy.otherHost);
+    const deadline = Date.parse(t.deadline);
+    if (!Number.isFinite(deadline)) return ending(3, copy.cliOutdated);
     const run = runs > 1 ? ` (run ${t.runIndex + 1} of ${runs})` : "";
     say(`Practice task ${p.done + 1} of ${p.total}: ${SCENARIOS[t.scenario] ?? "Practice task"}${run}`);
     const out = await runAdapter({
-      launch, env: childEnv(process.env, keyVar, key), deadline: Date.parse(t.deadline), signal: stop.signal,
+      launch, env: childEnv(process.env, keyVar, key), deadline, signal: stop.signal,
       message: {
         type: "task", task: t.prompt, tools: t.tools, headers: t.headers,
         // OpenAI SDKs take a base URL that ends in /v1.

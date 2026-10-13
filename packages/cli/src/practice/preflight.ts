@@ -57,18 +57,28 @@ const isExecutable = (p: string) => {
 };
 const SCRIPT = /\.(m?js|cjs|ts|mts|py|rb|php|pl|sh|jar|exe)$/i;
 
-/** Why `--adapter` can't start, or null: its program is on PATH (or a file), and arguments that look like files exist. */
+/** Shell syntax and builtins this check can't follow: the user's shell runs the command, so it isn't second-guessed. */
+const SHELL_SYNTAX = /[&|;<>$`(){}*?~\n]/;
+const BUILTINS = new Set(["cd", "source", ".", "export", "exec", "eval", "set", "alias", "command", "builtin", "time", "nohup", "env"]);
+
+/**
+ * Why `--adapter` can't start, or null: its program is on PATH (or a file), and
+ * script files it names (by extension) exist. Commands with shell syntax or a
+ * builtin first word are left to the shell.
+ */
 export function adapterProblem(cmd: string, cwd = process.cwd(), path = process.env.PATH ?? ""): string | null {
+  if (!cmd.trim()) return "the command is empty";
+  if (SHELL_SYNTAX.test(cmd)) return null;
   const w = words(cmd);
   while (w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(w[0])) w.shift(); // FOO=1 node agent.js
   const [program, ...args] = w;
-  if (!program) return "the command is empty";
+  if (!program || BUILTINS.has(program)) return null;
   if (program.includes("/")) {
     if (!isExecutable(resolve(cwd, program))) return `${program} isn't a file you can run`;
   } else if (!path.split(delimiter).some((dir) => dir && isExecutable(join(isAbsolute(dir) ? dir : resolve(cwd, dir), program)))) {
     return `${program} isn't on your PATH`;
   }
-  const missing = args.find((a) => !a.startsWith("-") && (a.includes("/") || SCRIPT.test(a)) && !isFile(resolve(cwd, a)));
+  const missing = args.find((a) => !a.startsWith("-") && SCRIPT.test(a) && !/^[a-z][a-z0-9+.-]*:\/\//i.test(a) && !isFile(resolve(cwd, a)));
   return missing ? `${missing} doesn't exist` : null;
 }
 

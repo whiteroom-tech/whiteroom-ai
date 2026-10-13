@@ -59,24 +59,35 @@ export class Engine {
   session: string | null = null;
   /** Aborts any request in flight when the session stops. */
   signal: AbortSignal | null = null;
-  /** `offlineMs`: how long to keep retrying (tests shorten it). */
-  constructor(readonly origin: string, private readonly offlineMs = OFFLINE_MS) {}
+  /** `offlineMs`: how long to keep retrying; `timeoutMs`: one request, body included (tests shorten both). */
+  constructor(readonly origin: string, private readonly offlineMs = OFFLINE_MS, private readonly timeoutMs = REQUEST_TIMEOUT_MS) {}
 
-  private send(path: string, body: unknown, timeoutMs: number, signal: AbortSignal | null): Promise<Response> {
+  /** One request, its body read inside the same timeout: a server that stalls mid-body fails like one that never answers. */
+  private async send(path: string, body: unknown, timeoutMs: number, signal: AbortSignal | null) {
     const ac = new AbortController();
     const abort = () => ac.abort();
     const timer = setTimeout(abort, timeoutMs);
     signal?.addEventListener("abort", abort, { once: true });
-    return fetch(this.origin + path, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(this.session && { authorization: `Bearer ${this.session}` }) },
-      body: JSON.stringify(body),
-      redirect: "error",
-      signal: ac.signal,
-    }).finally(() => {
+    try {
+      const res = await fetch(this.origin + path, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(this.session && { authorization: `Bearer ${this.session}` }) },
+        body: JSON.stringify(body),
+        redirect: "error",
+        signal: ac.signal,
+      });
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Not JSON: the caller reads a null body.
+      }
+      return { status: res.status, retryAfter: res.headers.get("retry-after"), json };
+    } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
-    });
+    }
   }
 
   /** Ends the run (best effort, one try, not paced): after Ctrl+C or a crashed adapter. */
@@ -96,9 +107,9 @@ export class Engine {
     for (;;) {
       await pace();
       if (this.signal?.aborted) throw new Stopped();
-      let res: Response;
+      let res: Awaited<ReturnType<Engine["send"]>>;
       try {
-        res = await this.send(path, body, REQUEST_TIMEOUT_MS, this.signal);
+        res = await this.send(path, body, this.timeoutMs, this.signal);
       } catch (err) {
         if (this.signal?.aborted) throw new Stopped();
         if (isRedirectError(err)) return { status: REDIRECTED, body: { reason: "redirected" } };
@@ -108,7 +119,7 @@ export class Engine {
         await sleep(Math.min(5_000, this.offlineMs), this.signal ?? undefined);
         continue;
       }
-      const json = await res.json().catch(() => null);
+      const { json } = res;
       if (res.status >= 500 && res.status !== 503) {
         // It may have been handled: only a request that is safe to repeat is sent again.
         if (!o.retryNetwork || Date.now() - started > this.offlineMs) throw new Unreachable();
@@ -118,7 +129,7 @@ export class Engine {
       const wait = res.status === 503 || (res.status === 429 && !ANSWERS_429.has(json?.reason));
       if (wait) {
         if (Date.now() - started > this.offlineMs) throw new Unreachable();
-        const after = res.headers.get("retry-after");
+        const after = res.retryAfter;
         await sleep(after === null ? 5_000 : Math.min(Math.max(Number(after) || 0, 1), 60) * 1000, this.signal ?? undefined);
         continue;
       }

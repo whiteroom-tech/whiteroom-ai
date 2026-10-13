@@ -2,6 +2,8 @@
 // adapter driver's caps, what gets printed, and the results screen.
 
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { after, describe, it } from "node:test";
 import { childEnv, MAX_TOOL_CALLS, runAdapter, type ToolCall } from "../src/practice/adapter.js";
 import { parseArgs } from "../src/legacy-args.js";
@@ -30,6 +32,11 @@ describe("preflight", () => {
     assert.equal(adapterProblem("node gone.mjs"), "gone.mjs doesn't exist");
     assert.equal(adapterProblem("./starters/wr_adapter.py"), "./starters/wr_adapter.py isn't a file you can run");
     assert.equal(adapterProblem("  "), "the command is empty");
+    // Left to the shell: operators, builtins, and URLs or plain paths that aren't script files.
+    for (const ok of ["cd agent && node wr-adapter.mjs", "source .venv/bin/activate; python3 x.py", "node a.mjs 2>/dev/null | tee log",
+      "node starters/wr-adapter.mjs --endpoint http://localhost:8080", "node starters/wr-adapter.mjs --out /tmp/nowhere/x"]) {
+      assert.equal(adapterProblem(ok), null, ok);
+    }
   });
 
   it("reads the key from the environment, or by its shape when pasted", () => {
@@ -187,6 +194,21 @@ describe("Engine.post", () => {
     assert.equal(s.count("/api/readiness/tools"), 1);
     await assert.rejects(new Engine(s.url, 300).post("/api/readiness/tasks/next", {}, { retryNetwork: true }), Unreachable);
     assert.ok(s.count("/api/readiness/tasks/next") >= 2);
+  });
+
+  it("a server that stalls mid-body times out like one that never answers", async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write('{"lifecycle":');
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await assert.rejects(new Engine(url, 300, 200).post("/api/readiness/tools", {}), Unreachable);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
   });
 
   it("never follows a redirect: nothing reaches the other host", async () => {

@@ -351,6 +351,21 @@ describe("practice run: redirects and refusals", () => {
     assert.equal(s.count("/api/readiness/cancel"), 1);
   });
 
+  it("a task without a readable deadline never starts the adapter (nothing is charged to the agent)", async () => {
+    const s = await stub({
+      route: (p) => {
+        if (p !== "/api/readiness/tasks/next") return undefined;
+        const f = fixture("tasks.next.task.A");
+        (f.response as any).task.baseUrl = s.url;
+        return [200, f.response]; // deadline is the fixture's "<time>"
+      },
+    });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /Update the CLI/);
+    assert.deepEqual(s.finals, []);
+  });
+
   it("a refused request (403) after the claim has its own plain copy", async () => {
     const s = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [403, { error: "Forbidden." }] : undefined) });
     const r = await run(s);
