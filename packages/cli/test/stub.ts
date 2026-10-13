@@ -33,13 +33,13 @@ export const fixture = (name: string): Entry => {
   return structuredClone(e);
 };
 
-/** session.finished as WhiteRoom sends it now: with the result, here one where the first check failed. */
 /** session.finished as an older WhiteRoom sent it: no result in it. */
 export function finishedWithoutResult(): any {
   const { verdict: _v, report: _r, ...rest } = fixture("session.finished").response as any;
   return rest;
 }
 
+/** session.finished as WhiteRoom sends it now: with the result, here one where the first check failed. */
 export function finishedNotPassed(): any {
   const { report } = fixture("tasks.next.done").response as any;
   report.verdict = "not_passed";
