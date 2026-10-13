@@ -773,9 +773,11 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       // A different account signed in on this browser: the stored sandbox
       // token belongs to the previous one.
       // Also when the page loads for someone other than whose choices are stored (no sign-out ran).
+      const switched = accountSwitched(ownerRef.current, owner);
+      if (switched) forgetSandboxChoices();
       const forgot = owner ? claimSandboxChoices(owner) : false;
-      if (accountSwitched(ownerRef.current, owner) || forgot) {
-        clearSandboxToken(); forgetSandboxChoices(); if (owner) claimSandboxChoices(owner);
+      if (switched || forgot) {
+        clearSandboxToken();
         // And what this page already loaded from them: back to a first visit.
         setLastUsed(FIRST_VISIT.lastUsed); setProvider(FIRST_VISIT.provider); setEndpoints(FIRST_VISIT.endpoints);
       }
