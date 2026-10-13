@@ -90,9 +90,9 @@ export class Engine {
     }
   }
 
-  /** Ends the run (best effort, one try, not paced): after Ctrl+C or a crashed adapter. */
-  async cancel(): Promise<void> {
-    await this.send("/api/readiness/cancel", {}, 5_000, null).catch(() => null);
+  /** Ends the run (best effort, one try, not paced): after Ctrl+C, or a crashed adapter (`keepResults`: with a result over the tasks done). */
+  async cancel(keepResults = false): Promise<void> {
+    await this.send("/api/readiness/cancel", keepResults ? { keepResults } : {}, 5_000, null).catch(() => null);
   }
 
   /**

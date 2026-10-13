@@ -33,22 +33,25 @@ const anthropic = !["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"].includes(KEY_VAR);
 // The model to use when the practice task doesn't name one (cloud providers always name one).
 const DEFAULT_MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
 const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
+const GONE = "Stopped: WhiteRoom closed this practice task.";
 
-// One model call through WhiteRoom; null if one of the fleet's controls blocked it.
+// One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
+// Never follows a redirect, so the key only goes to WhiteRoom.
 // Waits and tries again when WhiteRoom or the provider asks it to.
 async function model(base_url, headers, body) {
   const url = anthropic ? `${base_url}/v1/messages` : `${base_url}/chat/completions`;
   const auth = { ...KEYS[KEY_VAR](process.env[KEY_VAR] ?? ""), ...(anthropic && { "anthropic-version": "2023-06-01" }) };
   for (let tries = 1; ; tries++) {
     const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers, ...auth },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) });
+      body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000) });
     if (res.ok) return res.json();
     const wr = (await res.json().catch(() => null))?.whiteroom;
     const wait = res.status === 503 && wr ? ["WhiteRoom is switching servers.", Number(res.headers.get("retry-after") || 1)]
       : res.status === 429 && wr ? ["WhiteRoom is saving a summary of your agent's memory.", 2]
       : res.status === 403 && wr?.retryable ? ["One of your WhiteRoom controls is limiting calls.", 10]
       : [429, 500, 502, 503, 529].includes(res.status) && !wr && tries < 5 ? ["Your model provider is busy.", 5 * tries] : null;
-    if (res.status === 403 && wr && !wait) return null; // Blocked by one of the fleet's controls.
+    if (res.status === 403 && wr && !wait) return BLOCKED; // Blocked by one of the fleet's controls.
+    if (res.status === 410) return GONE; // The practice task's fleet is gone: WhiteRoom reran or ended it.
     if (!wait || tries > 150) throw new Error(`The model call failed (HTTP ${res.status}).`);
     console.error(`${wait[0]} Waiting ${wait[1]} s, then trying again.`);
     await sleep(wait[1] * 1000);
@@ -66,7 +69,7 @@ async function runAgent({ task, tools, base_url, headers, model: chosen }) {
   for (let turn = 0; turn < 40; turn++) {
     if (anthropic) {
       const r = await model(base_url, headers, { model: MODEL, max_tokens: 1024, tools, messages });
-      if (!r) return BLOCKED;
+      if (typeof r === "string") return r;
       messages.push({ role: "assistant", content: r.content });
       const uses = r.content.filter((b) => b.type === "tool_use");
       if (!uses.length) return r.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
@@ -75,7 +78,7 @@ async function runAgent({ task, tools, base_url, headers, model: chosen }) {
       messages.push({ role: "user", content: results });
     } else {
       const r = await model(base_url, headers, { model: MODEL, tools: fns, messages });
-      if (!r) return BLOCKED;
+      if (typeof r === "string") return r;
       const m = r.choices[0].message;
       messages.push(m);
       if (!m.tool_calls?.length) return m.content ?? "";

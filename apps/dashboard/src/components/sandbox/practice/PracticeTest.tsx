@@ -22,7 +22,7 @@ import p from './practice.module.css';
 /** §10 Polling: every 5 s while the page is visible, 30 s while hidden. */
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
 
-/** `run`: owner_busy's open test, with its ID when it's on this fleet; `otherFleet` when it's on another fleet of the account. */
+/** `run`: owner_busy's open test, with its ID when it's on this fleet; `otherFleet` when it's on another fleet (this account's or another one). */
 type Refusal = { message: string; reason?: string; run?: { id?: string; lifecycle: string; otherFleet?: boolean } };
 type Confirm = { kind: 'end'; id: string } | { kind: 'rerun'; start: PracticeStart; key?: PracticeKeyChoice | null; text: string };
 
@@ -323,7 +323,7 @@ function PracticeRefusal({ refusal, busy, onView, onCancel, onEnd }: {
   return (
     <div className={s.error} role="alert" style={{ flexWrap: 'wrap', maxWidth: 720 }}>
       <span>
-        {open?.otherFleet ? 'You already have a practice test open on another fleet of your account. Finish or end it there, then start this one.' : refusal.message}
+        {open?.otherFleet ? 'You already have a practice test open on another fleet. Finish or end it there, then start this one.' : refusal.message}
         {refusal.reason && USE_CONNECTION_TEST.has(refusal.reason) && <> Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}
         {refusal.reason && FIX_ON_FLEET_KEY.has(refusal.reason) && <> <Link href={ROUTES.fleetKey}>Open Fleet key →</Link></>}
         {refusal.reason === 'pick_key' && <> <Link href={ROUTES.practiceTest}>Set up a practice test →</Link></>}

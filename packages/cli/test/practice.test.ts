@@ -127,6 +127,24 @@ describe("practice run: the starters and the fleet's controls", () => {
     assert.equal(r.code, 0, r.stderr);
     assert.deepEqual(s.finals.map((f) => [f.ended, f.output]), [["final", "Stopped: one of my WhiteRoom controls blocked the model call."]]);
   });
+
+  for (const [who, extra] of [["JS starter", []], ["Python starter", ["--adapter", "python3 starters/wr_adapter.py"]]] as const) {
+    it(`${who}: a 410 (the practice fleet is gone) ends the agent's answer plainly instead of crashing`, async () => {
+      const s = await stub({ route: (p) => (p === "/v1/messages" ? [410, { error: "Gone." }] : undefined) });
+      const r = await run(s, [...extra]);
+      assert.equal(r.code, 0, r.stderr);
+      assert.deepEqual(s.finals.map((f) => [f.ended, f.output]), [["final", "Stopped: WhiteRoom closed this practice task."]]);
+    });
+
+    it(`${who}: never follows a redirect, so the key never reaches another host`, async () => {
+      const other = await stub();
+      const s = await stub({ route: (p) => (p === "/v1/messages" ? [302, {}, { location: `${other.url}${p}` }] : undefined) });
+      const r = await run(s, [...extra]);
+      assert.equal(r.code, 3);
+      assert.equal(s.count("/v1/messages"), 1);
+      assert.equal(other.seen.length, 0);
+    });
+  }
 });
 
 describe("practice run: control checks", () => {
@@ -386,11 +404,30 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     assert.match(r.stderr, /ended from the dashboard/);
   });
 
-  it("ended to stay within the call limit after WhiteRoom reran tasks (409 call_cap): says it wasn't the agent", async () => {
-    const s = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [409, { lifecycle: "interrupted", reason: "call_cap" }] : undefined) });
+  for (const [reason, said] of [
+    ["call_cap", /Stopped at this test's model-call limit after WhiteRoom had to rerun a task \(not your agent\)\./],
+    ["no_model_calls", /didn't make any model calls through WhiteRoom in 2 practice tasks in a row\. Check your adapter sends its calls to the base_url/],
+    ["engine_error", /WhiteRoom couldn't finish working out the result \(not your agent\)\./],
+  ] as const) {
+    it(`ended by WhiteRoom (409 ${reason}): says so in plain words`, async () => {
+      const s = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [409, { lifecycle: "interrupted", reason }] : undefined) });
+      const r = await run(s);
+      assert.equal(r.code, 3);
+      assert.match(r.stderr, said);
+    });
+  }
+
+  it("a run that already finished: tasks/next's finished answer shows the result, or where to see it, never a refusal", async () => {
+    const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [409, { lifecycle: "finished", reason: "finished" }] : undefined) });
     const r = await run(s);
-    assert.equal(r.code, 3);
-    assert.match(r.stderr, /Stopped to stay within the 120-call limit after WhiteRoom had to rerun a task \(not your agent\)\./);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /The practice test finished\. See the results in the dashboard \(.*\), under Past tests\./);
+    assert.doesNotMatch(r.stdout + r.stderr, /was updated|doesn't understand/);
+    const done = fixture("tasks.next.done").response as any;
+    const withReport = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [409, { lifecycle: "finished", reason: "finished", report: done.report }] : undefined) });
+    const shown = await run(withReport);
+    assert.equal(shown.code, 0, shown.stderr);
+    assert.match(shown.stdout, /Passed · all \d+ checks · 3 runs/);
   });
 
   it("a discarded practice task is stopped and run again, without counting", async () => {
@@ -406,14 +443,30 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     assert.equal(s.finals[0].attemptId, "a-2");
   });
 
-  it("an adapter crash keeps the task as ended, cancels the run and shows the last 5 stderr lines", async () => {
+  it("an adapter crash keeps the task as ended, ends the run with a result so far and shows the last 5 stderr lines", async () => {
     const s = await stub();
     const crash = script("crash.mjs", `for (let i = 1; i <= 7; i++) console.error("boom-" + i); process.exit(4);`);
     const r = await run(s, ["--adapter", `node ${crash}`]);
     assert.equal(r.code, 3);
     assert.match(r.stderr, /Your adapter stopped before it finished the practice task \(exit code 4\)\.\nIts last lines:\n  boom-3\n  boom-4\n  boom-5\n  boom-6\n  boom-7\n/);
+    assert.match(r.stderr, /The practice tasks your agent finished are in the results/);
     assert.deepEqual(s.finals.map((f) => f.ended), ["adapter_exited"]);
-    assert.equal(s.count("/api/readiness/cancel"), 1);
+    assert.deepEqual(s.cancels, [{ keepResults: true }]);
+  });
+
+  it("an adapter crash on a task WhiteRoom dropped runs the task again, without ending the run", async () => {
+    const once = join(dir, "crashed-once");
+    const flaky = script("flaky.mjs", `import { existsSync, writeFileSync } from "node:fs";
+if (!existsSync(${JSON.stringify(once)})) { writeFileSync(${JSON.stringify(once)}, "1"); process.exit(4); }
+await import(${JSON.stringify(new URL("../starters/wr-adapter.mjs", import.meta.url).href)});`);
+    const s = await stub({
+      plan: ["A", "A"],
+      route: (p) => (p === "/api/readiness/tasks/a-1/final" ? [409, fixture("tools.attempt_discarded").response] : undefined),
+    });
+    const r = await run(s, ["--adapter", `node ${flaky}`]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stderr, /WhiteRoom restarted this practice task, so it starts again\./);
+    assert.deepEqual(s.cancels, []);
   });
 });
 
@@ -561,7 +614,7 @@ describe("practice run: redirects and refusals", () => {
     assert.equal(r.code, 3);
     assert.match(r.stderr, /Your adapter made more test-tool calls than a practice task allows, so it was stopped\./);
     assert.deepEqual(s.finals.map((f) => f.ended), ["adapter_exited"]);
-    assert.equal(s.count("/api/readiness/cancel"), 1);
+    assert.deepEqual(s.cancels, [{ keepResults: true }]);
   });
 
   it("a task without a readable deadline never starts the adapter (nothing is charged to the agent)", async () => {

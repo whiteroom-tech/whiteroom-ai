@@ -86,6 +86,7 @@ export interface Stub {
   calls: Array<{ path: string; keyHeader: string }>;
   finals: Array<{ attemptId: string; output: string | null; ended: string }>;
   controlResults: unknown[];
+  cancels: unknown[];
   count: (path: string) => number;
   close: () => Promise<void>;
 }
@@ -94,7 +95,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const plan = [...(o.plan ?? ["A"])];
   const total = plan.length;
   const counts = new Map<string, number>();
-  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[] };
+  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[], cancels: [] as unknown[] };
   let attempt = 0;
   let current: { id: string; reads: Set<string>; summarised: boolean } | null = null;
   let controlSteps = 0;
@@ -186,7 +187,11 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       });
     }
     if (path === "/api/readiness/heartbeat") return expect("heartbeat", body), fromFixture("heartbeat");
-    if (path === "/api/readiness/cancel") return expect("cancel", body), fromFixture("cancel");
+    if (path === "/api/readiness/cancel") {
+      stub.cancels.push(body);
+      // keepResults (a crashed adapter) has no fixture yet: it finishes the run with a result.
+      return body?.keepResults ? [200, { lifecycle: "finished" }] : (expect("cancel", body), fromFixture("cancel"));
+    }
     return [404, { error: "Not found." }];
   };
 
