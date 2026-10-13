@@ -11,7 +11,7 @@ import type { RunStatusResult } from '@/lib/sandbox/api';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { accountSwitched, agentNameNote, directProviderOf, KeyField, runOptions, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { accountSwitched, agentNameNote, FIRST_VISIT, directProviderOf, KeyField, runOptions, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 const { forgetSandboxChoices, PROVIDER_STORAGE } = await import('@/lib/sandbox/api');
 const { ProviderChoices } = await import('@/components/sandbox/CloudProviderParts');
 const { ENDPOINTS_STORAGE, KEY_HELP, noCodeSetup, offersNoCode, SANDBOX_PROVIDERS } = await import('@/lib/sandbox/providers');
@@ -174,5 +174,10 @@ describe('Another account on this browser', () => {
     expect(accountSwitched(undefined, 'u2')).toBe(false); // first sign-in
     expect(accountSwitched('u1', undefined)).toBe(false); // signed out
     expect(accountSwitched('u1', 'u1')).toBe(false);
+  });
+
+  it('a switch starts the form over like a first visit: Anthropic, no endpoints, no Last used', () => {
+    expect(FIRST_VISIT).toEqual({ provider: 'anthropic', endpoints: {}, lastUsed: null });
+    expect(renderToStaticMarkup(createElement(ProviderChoices, { value: FIRST_VISIT.provider, unsupported: [], onPick: () => {}, lastUsed: FIRST_VISIT.lastUsed }))).not.toContain('Last used');
   });
 });

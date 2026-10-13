@@ -143,6 +143,9 @@ export function runOptions(mode: 'demo' | 'connected', provider: SandboxProvider
   return { opts: target ? { ...opts, provider: target.provider, endpoint: target.endpoint } : opts, pastedToken };
 }
 
+/** The Start form's choices before anything is remembered: what a first visit, and an account switch, start from. */
+export const FIRST_VISIT: { provider: SandboxProvider; endpoints: CloudEndpoints; lastUsed: SandboxProvider | null } = { provider: 'anthropic', endpoints: {}, lastUsed: null };
+
 /** Another account signed in on this browser (not a first sign-in or a sign-out): its stored choices aren't theirs. */
 export const accountSwitched = (previous: string | undefined, next: string | undefined) => !!previous && !!next && previous !== next;
 
@@ -599,15 +602,15 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [phase, setPhase] = useState<Phase>(previewRun ? 'workspace' : 'start');
   const [wsTab, setWsTab] = useState<WorkspaceTab>('setup');
   const [run, setRun] = useState<RunStatusResult | null>(() => (previewRun ? withRunMode(previewRun) : null));
-  const [provider, setProvider] = useState<Provider>(() => (previewRun && isSandboxProvider(previewRun.provider) ? previewRun.provider : 'anthropic'));
+  const [provider, setProvider] = useState<Provider>(() => (previewRun && isSandboxProvider(previewRun.provider) ? previewRun.provider : FIRST_VISIT.provider));
   const [pickedSetup, setLanguage] = useState<Setup>('Python');
   // The provider this browser's last test used, tagged on Start your test.
-  const [lastUsed, setLastUsed] = useState<SandboxProvider | null>(null);
+  const [lastUsed, setLastUsed] = useState<SandboxProvider | null>(FIRST_VISIT.lastUsed);
   // "Nothing happening?": opened by the user, or once on its own after a minute with no calls.
   const [help, helpDispatch] = useReducer(helpReducer, { testId: null, open: false, autoOpenedFor: null });
   const [credential, setCredential] = useState('');
   // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
-  const [endpoints, setEndpoints] = useState<CloudEndpoints>({});
+  const [endpoints, setEndpoints] = useState<CloudEndpoints>(FIRST_VISIT.endpoints);
   const [endpointError, setEndpointError] = useState('');
   const [unsupported, setUnsupported] = useState<CloudProvider[]>([]);
   // The proxy key issued for one test, so it can't show against another.
@@ -769,7 +772,11 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     if (ownerRef.current !== owner) {
       // A different account signed in on this browser: the stored sandbox
       // token belongs to the previous one.
-      if (accountSwitched(ownerRef.current, owner)) { clearSandboxToken(); forgetSandboxChoices(); setLastUsed(null); }
+      if (accountSwitched(ownerRef.current, owner)) {
+        clearSandboxToken(); forgetSandboxChoices();
+        // And what this page already loaded from them: back to a first visit.
+        setLastUsed(FIRST_VISIT.lastUsed); setProvider(FIRST_VISIT.provider); setEndpoints(FIRST_VISIT.endpoints);
+      }
       ownerRef.current = owner;
       setRun(null); setCredential(''); setPhase('start'); setBooting(true);
     }
