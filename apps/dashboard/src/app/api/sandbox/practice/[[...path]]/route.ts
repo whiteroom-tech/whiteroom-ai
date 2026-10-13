@@ -47,15 +47,15 @@ export async function GET(req: Request, { params }: Params) {
   const owner = await practiceOwner(q.get('fleet'));
   if ('error' in owner) return owner.error;
   const fleet = encodeURIComponent(owner.fleet);
-  if (path.length === 0) return practiceEngine('GET', `runs?fleet=${fleet}`);
+  if (path.length === 0) return practiceEngine('GET', `runs?fleet=${fleet}`, undefined, owner.userId);
   if (path.length === 1 && path[0] === 'source-model') {
     const agent = q.get('agent');
     if (!agent || agent.length > 128) return invalid();
-    return practiceEngine('GET', `source-model?fleet=${fleet}&agent=${encodeURIComponent(agent)}`);
+    return practiceEngine('GET', `source-model?fleet=${fleet}&agent=${encodeURIComponent(agent)}`, undefined, owner.userId);
   }
   const [run, sub] = path;
   if (!RUN_ID_RE.test(run) || path.length > 2 || (sub !== undefined && sub !== 'report')) return notFound();
-  return practiceEngine('GET', `runs/${run}${sub ? '/report' : ''}?fleet=${fleet}`);
+  return practiceEngine('GET', `runs/${run}${sub ? '/report' : ''}?fleet=${fleet}`, undefined, owner.userId);
 }
 
 export async function POST(req: Request, { params }: Params) {
@@ -83,9 +83,9 @@ export async function POST(req: Request, { params }: Params) {
     if (scope !== undefined && (!Array.isArray(scope) || scope.length > 64 || !scope.every((s) => typeof s === 'string' && s.length <= 128))) return invalid();
     // R7: a Fleet key key, by the display prefix Fleet key lists (never the key itself).
     if (proxyKeyDisplayPrefix !== undefined && (typeof proxyKeyDisplayPrefix !== 'string' || !PROXY_KEY_PREFIX_RE.test(proxyKeyDisplayPrefix))) return invalid();
-    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, startedBy: owner.userId });
+    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, startedBy: owner.userId }, owner.userId);
   }
   const [run, action] = path;
   if (path.length !== 2 || !RUN_ID_RE.test(run) || (action !== 'code' && action !== 'end')) return notFound();
-  return practiceEngine('POST', `runs/${run}/${action}`, { fleet: owner.fleet });
+  return practiceEngine('POST', `runs/${run}/${action}`, { fleet: owner.fleet }, owner.userId);
 }

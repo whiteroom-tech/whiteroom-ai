@@ -213,11 +213,11 @@ describe('the engine BFF', () => {
     vi.stubGlobal('fetch', fetchMock);
     mocks.origin.mockResolvedValue(null);
     mocks.cookie.mockResolvedValue('wr_fleet_token');
-    mocks.auth.mockReset();
+    mocks.auth.mockReset().mockResolvedValue(null);
     mocks.query.mockReset();
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'dash-secret');
   });
-  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   const call = (b: Record<string, unknown>) => POST(new Request('http://localhost/api/fleet/engine', { method: 'POST', body: body(b) }));
   const sentHeaders = () => fetchMock.mock.calls[0][1].headers as Record<string, string>;
@@ -245,10 +245,30 @@ describe('the engine BFF', () => {
     expect(sentHeaders()['x-wr-dashboard-user']).toBe('u1');
   });
 
-  it('never sends a user on ordinary actions', async () => {
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+  it('names the user on ordinary actions by signature only, so the engine rate-limits per user', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'user-1' } });
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'test-dashboard-secret');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(29_000_000 * 60_000 + 5_000);
     await call({ action: 'fleet_report', fleet_id: 'f1' });
-    expect(sentHeaders()['x-wr-dashboard-user']).toBeUndefined();
+    expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
+    expect(sentHeaders()['x-wr-dashboard-user']).toBe('user-1');
+    // The engine's rateLimitUserSig for the same secret and id (engine rate-limit test pins it too).
+    expect(sentHeaders()['x-wr-dashboard-user-sig']).toBe('1ff71fe9070decd59b9af8e54f93f1c55df9c4d5ebdca305214c1b30cc5ef698');
+  });
+
+  it('names a fleet-key-only session by its token hash, and sends nothing without a secret', async () => {
+    mocks.auth.mockResolvedValue(null);
+    await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(sentHeaders()['x-wr-dashboard-user']).toMatch(/^fleet-[0-9a-f]{40}$/);
+    expect(sentHeaders()['x-wr-dashboard-user']).not.toContain('wr_fleet_token');
+    expect(sentHeaders()['x-wr-dashboard-user-sig']).toMatch(/^[0-9a-f]{64}$/);
+    expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
+    fetchMock.mockClear();
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
+    await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(sentHeaders()['x-wr-dashboard-user-sig']).toBeUndefined();
   });
 
   it('refuses a token the account doesn’t hold for that fleet, before reaching the engine', async () => {
