@@ -3,14 +3,20 @@
 
 import { accessSync, constants, statSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
+import { CATALOG } from "./catalog.js";
 import { copy } from "./text.js";
 
 export const PRODUCTION = "https://proxy.whiteroom.tech";
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 export const RUN_CODE = /^wrrt_[A-Za-z0-9_-]{43}$/;
 
-/** The origin practice commands talk to: production, or `--url` if it is https or loopback. Null if `--url` isn't allowed. */
-export function targetOrigin(url: string | undefined): string | null {
+/**
+ * The origin practice commands talk to: production, or `--url` if it is
+ * WhiteRoom's own (https on whiteroom.tech) or loopback, since the provider
+ * key goes there. Any other https host only with WHITEROOM_PRACTICE_DEV=1
+ * (testing WhiteRoom itself). Null if `--url` isn't allowed.
+ */
+export function targetOrigin(url: string | undefined, env: NodeJS.ProcessEnv = process.env): string | null {
   if (url === undefined) return PRODUCTION;
   let u: URL;
   try {
@@ -19,7 +25,10 @@ export function targetOrigin(url: string | undefined): string | null {
     return null;
   }
   if (u.username || u.password) return null;
-  return u.protocol === "https:" || (u.protocol === "http:" && LOOPBACK.has(u.hostname)) ? u.origin : null;
+  if (u.protocol === "http:") return LOOPBACK.has(u.hostname) ? u.origin : null;
+  if (u.protocol !== "https:") return null;
+  const ours = u.hostname === "whiteroom.tech" || u.hostname.endsWith(".whiteroom.tech") || LOOPBACK.has(u.hostname);
+  return ours || env.WHITEROOM_PRACTICE_DEV === "1" ? u.origin : null;
 }
 
 /** Splits a command line into words as a POSIX shell would for plain words and quotes (enough to find files). */
@@ -96,34 +105,22 @@ export function adapterLabel(cmd: string): string {
 
 // ── The provider key (§4 Claim, §17) ──
 
-/** Where a practice test's model calls go: the claim names it (R7: the Fleet key provider key the owner picked). */
-export type Provider = "anthropic" | "openai" | "azure-openai" | "foundry" | "bedrock-mantle";
+/** Where a practice test's model calls go, as the claim names it: one of the catalog's providers. */
+export type Provider = string;
+export const isProvider = (v: unknown): v is Provider => typeof v === "string" && Object.hasOwn(CATALOG.providers, v);
 
-/** The variable each provider's key is read from, and the adapter gets it in (the providers' own SDKs read these). */
-export const KEY_VARS = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  "azure-openai": "AZURE_OPENAI_API_KEY",
-  foundry: "ANTHROPIC_FOUNDRY_API_KEY",
-  "bedrock-mantle": "AWS_BEARER_TOKEN_BEDROCK",
-} as const satisfies Record<Provider, string>;
-export type KeyVar = (typeof KEY_VARS)[Provider];
-const ALL_KEY_VARS = Object.values(KEY_VARS);
-export const isKeyVar = (v: string): v is KeyVar => (ALL_KEY_VARS as string[]).includes(v);
-
-/** The providers as Fleet key names them. */
-export const PROVIDER_LABELS: Record<Provider, string> = {
-  anthropic: "Anthropic", openai: "OpenAI", "azure-openai": "Azure OpenAI", foundry: "Claude on Azure (Foundry)", "bedrock-mantle": "AWS Bedrock",
-};
-export const isProvider = (v: unknown): v is Provider => typeof v === "string" && Object.hasOwn(KEY_VARS, v);
+/** The variable a provider's key is read from, and the adapter gets it in. */
+export const keyVarOf = (p: Provider) => CATALOG.providers[p].keyVar;
+const ALL_KEY_VARS = Object.values(CATALOG.providers).map((p) => p.keyVar);
+export const isKeyVar = (v: string) => ALL_KEY_VARS.includes(v);
 
 /** OpenAI and Azure OpenAI take chat completions (their SDKs want a base URL ending in /v1); the others Anthropic's Messages API. */
-export const chatCompletions = (p: Provider) => p === "openai" || p === "azure-openai";
+export const chatCompletions = (p: Provider) => CATALOG.providers[p].api === "chat_completions";
 
-/** The header a provider's key travels in: Azure's api-key, a Bearer token for OpenAI and Bedrock, x-api-key for Anthropic and Foundry. */
+/** The header a provider's key travels in, as the catalog says: Azure's api-key, a Bearer token, or x-api-key. */
 export function keyHeader(p: Provider, key: string): Record<string, string> {
-  if (p === "azure-openai") return { "api-key": key };
-  return p === "openai" || p === "bedrock-mantle" ? { authorization: `Bearer ${key}` } : { "x-api-key": key };
+  const h = CATALOG.providers[p].header;
+  return h === "bearer" ? { authorization: `Bearer ${key}` } : { [h]: key };
 }
 
 /** A direct key's provider, by its shape: what an older WhiteRoom that names no provider means. */
@@ -134,17 +131,18 @@ export const isShortTermBedrockKey = (key: string) => key.startsWith("bedrock-ap
 
 export interface KeyChoice {
   /** The variable the key came from; null when it was pasted. */
-  from: KeyVar | null;
+  from: string | null;
   key: string;
 }
 
 /**
- * The key from the one provider variable that is set; null to prompt. When
- * more than one is set, the variables: before the claim the CLI can't tell
- * which provider the run uses, and a guess could use a try.
+ * The key from `keyEnv` (`--key-env`, the variable the dashboard's command
+ * names), else from the one provider variable that is set; null to prompt.
+ * When more than one is set, the variables: before the claim the CLI can't
+ * tell which provider the run uses, and a guess could use a try.
  */
-export function keyFromEnv(env: NodeJS.ProcessEnv): KeyChoice | KeyVar[] | null {
-  const set = ALL_KEY_VARS.filter((v) => env[v]?.trim());
+export function keyFromEnv(env: NodeJS.ProcessEnv, keyEnv?: string): KeyChoice | string[] | null {
+  const set = keyEnv ? [keyEnv].filter((v) => env[v]?.trim()) : ALL_KEY_VARS.filter((v) => env[v]?.trim());
   if (set.length > 1) return set;
   return set.length ? { from: set[0], key: env[set[0]]!.trim() } : null;
 }

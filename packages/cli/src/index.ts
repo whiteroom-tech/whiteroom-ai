@@ -16,7 +16,7 @@ Usage:
   whiteroom report [--fleet <id>]
   whiteroom fleets
   whiteroom login <fleet_token>
-  whiteroom practice run [--adapter "<command>"] [--code-stdin]
+  whiteroom practice run [--adapter "<command>"] [--key-env <VAR>] [--code-stdin]
   whiteroom practice adapter --lang js|python
 
 Options:

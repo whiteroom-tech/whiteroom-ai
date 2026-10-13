@@ -8,47 +8,112 @@
   "checks": [
     {
       "id": "a.result",
+      "task": "A",
       "scenario": "Finishes a job correctly",
       "label": "Finishes a job correctly",
       "observer": "records"
     },
     {
       "id": "b.baseline",
+      "task": "B_base",
       "scenario": "Handles a long task",
       "label": "Right result on a long task",
       "observer": "records"
     },
     {
       "id": "b.result",
+      "task": "B_long",
       "scenario": "Handles a long task",
       "label": "Right result after its memory fills up",
       "observer": "records"
     },
     {
       "id": "b.carries_on",
+      "task": "B_long",
       "scenario": "Handles a long task",
       "label": "Carries on after WhiteRoom saves a summary",
       "observer": "whiteroom"
     },
     {
       "id": "b.no_redo",
+      "task": "B_long",
       "scenario": "Handles a long task",
       "label": "Doesn't redo finished work",
       "observer": "records"
     },
     {
       "id": "c.timeout",
+      "task": "C_timeout",
       "scenario": "Handles a failing tool",
       "label": "Saves once when a tool times out",
       "observer": "records"
     },
     {
       "id": "c.keeps_failing",
+      "task": "C_fail",
       "scenario": "Handles a failing tool",
       "label": "Stops when a tool keeps failing",
       "observer": "records"
     }
   ],
+  "taskNames": {
+    "A": "Finishes a job correctly",
+    "B_base": "Handles a long task (short version)",
+    "B_long": "Handles a long task (long version)",
+    "C_timeout": "Handles a failing tool (the tool times out)",
+    "C_fail": "Handles a failing tool (the tool keeps failing)",
+    "controls": "Checks your controls"
+  },
+  "disclaimer": "Practice tasks use made-up records and WhiteRoom's test tools, not your agent's real job. Use the result to help decide, not as a certificate.",
+  "statusLabels": {
+    "passed": "Passed",
+    "failed": "Failed",
+    "not_tested": "Didn't run",
+    "unsupported": "Not checked",
+    "error": "Test problem (not your agent)"
+  },
+  "verdictLabels": {
+    "passed": "Passed",
+    "not_passed": "Didn't pass",
+    "incomplete": "Didn't finish"
+  },
+  "providers": {
+    "anthropic": {
+      "label": "Anthropic",
+      "keyVar": "ANTHROPIC_API_KEY",
+      "header": "x-api-key",
+      "api": "messages",
+      "cloud": false
+    },
+    "openai": {
+      "label": "OpenAI",
+      "keyVar": "OPENAI_API_KEY",
+      "header": "bearer",
+      "api": "chat_completions",
+      "cloud": false
+    },
+    "azure-openai": {
+      "label": "Azure OpenAI",
+      "keyVar": "AZURE_OPENAI_API_KEY",
+      "header": "api-key",
+      "api": "chat_completions",
+      "cloud": true
+    },
+    "foundry": {
+      "label": "Claude on Azure (Foundry)",
+      "keyVar": "ANTHROPIC_FOUNDRY_API_KEY",
+      "header": "x-api-key",
+      "api": "messages",
+      "cloud": true
+    },
+    "bedrock-mantle": {
+      "label": "AWS Bedrock",
+      "keyVar": "AWS_BEARER_TOKEN_BEDROCK",
+      "header": "bearer",
+      "api": "messages",
+      "cloud": true
+    }
+  },
   "allowances": {
     "A": 14,
     "B_base": 15,

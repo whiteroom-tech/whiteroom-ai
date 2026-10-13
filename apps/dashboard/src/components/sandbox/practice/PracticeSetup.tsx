@@ -5,31 +5,27 @@ import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, controlPreview, controlPreviewLine, costLine, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
-  providerKeyLabel, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
+  callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlLine, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
+  providerKeyLabel, SAMPLE_AGENT, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
-import type { PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
-import type { GovernanceRule } from '@/lib/whiteroom/types';
+import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 
-/** What setup needs to know about the fleet: from Controls (governance_list) and Fleet key. */
+/** What setup needs to know about the fleet: its agents, from Controls (governance_list). */
 export interface SetupData {
   agents: string[];
-  rules: GovernanceRule[];
-  /** The fleet uses durable Pause and Stop, so they're checked too. */
-  durableHolds: boolean;
 }
 
 /** "Set `ANTHROPIC_API_KEY` to the key your agent uses with prod-eu." / R7: "Run this where `AZURE_OPENAI_API_KEY` is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2)." */
-export function KeyLine({ choice, model, fleet, className }: { choice: PracticeKeyChoice | null; model: string | null | undefined; fleet: string; className: string }) {
-  const l = keyLine(choice, model, fleet);
+function KeyLine({ choice, fleet, className }: { choice: PracticeKeyChoice | null; fleet: string; className: string }) {
+  const l = keyLine(choice, fleet);
   return <p className={className}>{l.before}<code>{l.keyVar}</code>{l.after}</p>;
 }
 
-/** The 7 agent checks by scenario, then the fleet's controls: what the results will show, by the same names. */
-export function PracticeCheckPreview({ controls, durableHolds }: { controls: string[]; durableHolds: boolean }) {
+/** The 7 agent checks by scenario, then the fleet's controls as the engine plans them: what the results will show, by the same names. */
+function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] | null }) {
   const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
   return (
     <section className={s.preview} aria-labelledby="practice-checks-preview">
@@ -48,9 +44,10 @@ export function PracticeCheckPreview({ controls, durableHolds }: { controls: str
           <span className={s.previewNum} aria-hidden="true">{scenarios.length + 1}</span>
           <span>
             <span className={s.previewName}>{CATALOG.controls.scenario}</span>
-            {controls.length ? <ul className={p.list}>{controls.map((c, i) => <li key={i}>{c}</li>)}</ul>
+            {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
+              : controls.length ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
               : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
-            {!durableHolds && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
+            {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
           </span>
         </li>
       </ol>
@@ -60,7 +57,7 @@ export function PracticeCheckPreview({ controls, durableHolds }: { controls: str
 
 const NO_KEYS = { keys: [], direct: true, initial: null };
 /** What setup assumes when the engine can't say: the fleet's own key, Start's checks still apply. */
-const OWN_KEY_ONLY: PracticeSource = { model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [] };
+const OWN_KEY_ONLY: PracticeSource = { model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: null };
 /** Whether `prefix` is a cloud provider's key, which needs a model typed in. */
 const cloudKey = (src: PracticeSource | undefined, prefix: string | null) => {
   const k = prefix ? src?.providerKeys.find((x) => x.displayPrefix === prefix) : undefined;
@@ -98,10 +95,11 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   const [typed, setTyped] = useState(() => (cloudKey(preview, picked) ? preview?.model ?? '' : ''));
 
   useEffect(() => {
-    if (preview || !agent) { setSrc(preview ?? OWN_KEY_ONLY); return; }
+    if (preview) { setSrc(preview); return; }
     let live = true;
     setSrc(undefined);
-    sourceModel(fleet, agent).then(
+    // The agent the test will run as: the sample agent's own name on a fleet with none yet.
+    sourceModel(fleet, agent || SAMPLE_AGENT).then(
       (m) => { if (live) setSrc(m); },
       () => { if (live) setSrc(OWN_KEY_ONLY); },
     );
@@ -132,9 +130,12 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
     : src?.provider === 'proxy-url' && !key ? 'host'
     : src?.provider === 'cloud' && !sample && !key ? 'cloud'
     : null;
-  const controls = controlPreview(data.rules, data.durableHolds, sample && !data.agents.length);
+  // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
+  const controls = src === undefined ? [] : src.controls?.checks ?? null;
+  // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
+  const keyChoice = choice ?? directChoice(src);
   const est = callEstimate({
-    runs: sample ? 1 : runs, scope: null, controlCalls: controlCalls(controls), provider: choice?.provider ?? null,
+    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? src.controls.calls : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
   });
   const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };
@@ -144,7 +145,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
     ...(agent && { agent }),
     ...(model && { model }),
     ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
-  }, choice);
+  }, keyChoice);
   const modelInput = (label: string, hint: string, placeholder: string = SAMPLE_MODELS.anthropic, required = false) => <>
     <label className={s.formLabel} htmlFor="practice-model">{label} <span className={s.formLabelHint}>{hint}</span></label>
     <input id="practice-model" className={s.formInput} value={typed} maxLength={128} spellCheck={false} placeholder={placeholder} required={required} aria-required={required || undefined} onChange={(e) => setTyped(e.target.value)} />
@@ -229,7 +230,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
         </div>
 
         <p className={s.small}>{costLine(est, sample ? 1 : runs)}</p>
-        {!blocked && <KeyLine choice={choice} model={model} fleet={fleet} className={s.small} />}
+        {!blocked && <KeyLine choice={keyChoice} fleet={fleet} className={s.small} />}
 
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
@@ -239,7 +240,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>
       </div>
 
-      <PracticeCheckPreview controls={controls.map(controlPreviewLine)} durableHolds={data.durableHolds} />
+      <PracticeCheckPreview controls={controls} />
       <p className={s.small}>{DISCLAIMER}</p>
     </div>
   );

@@ -8,3 +8,5 @@ e09ef176d57aeab504c280330c4f399113394049:apps/dashboard/src/__tests__/provisioni
 # uses "bedrock-api-key-" + base64("bedrock.amazonaws.com") as a placeholder. Not a credential.
 e04e7e26e3ce3b0a3a9102336b57ffe079e4f312:apps/dashboard/src/__tests__/fixtures/practice/contract.json:aws-amazon-bedrock-api-key-short-lived:282
 e04e7e26e3ce3b0a3a9102336b57ffe079e4f312:packages/cli/test/fixtures/contract.json:aws-amazon-bedrock-api-key-short-lived:282
+# Same contract, now the single copy (engine de2084a4): placeholder "bedrock-api-key-0123456789abcdef". Not a credential.
+935eae1549fdddc5f1861e32325946fe3cb0e9d0:packages/cli/contract/contract.json:generic-api-key:282

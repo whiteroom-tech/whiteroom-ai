@@ -12,6 +12,8 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /repo
 COPY packages/ui ./packages/ui
+# The practice-test catalog the dashboard imports (the copy the CLI ships).
+COPY packages/cli/contract/catalog.json ./packages/cli/contract/catalog.json
 COPY --from=deps /repo/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY apps/dashboard ./apps/dashboard
 WORKDIR /repo/apps/dashboard

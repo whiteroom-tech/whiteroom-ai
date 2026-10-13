@@ -4,9 +4,8 @@ import type { RefObject } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  CATALOG, DISCLAIMER, endedBecause, fixLine, headline, openChecks, passCaveat, practiceAgent, rerunScope, shortId, STATUS_LABEL,
+  CATALOG, DISCLAIMER, endedBecause, fixLine, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, shortId, STATUS_LABEL,
 } from '@/lib/sandbox/practice/model';
-import { isSandboxProvider, SANDBOX_PROVIDER_LABELS } from '@/lib/sandbox/providers';
 import { canDownload } from '@/lib/sandbox/practice/report';
 import type { PracticeCheck, PracticeReport, PracticeResult, PracticeRun } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
@@ -82,6 +81,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
   const fixes = r ? open.map((c) => ({ c, fix: fixLine(c, r) })).filter((x) => x.fix) : [];
   const who = practiceAgent(run.sample, run.agentId);
   const model = r?.tested.modelsUsed[0] ?? r?.tested.modelRequested;
+  const provider = r?.tested.provider;
 
   return (
     <div className={p.wrap}>
@@ -131,7 +131,8 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
           <dl className={p.facts}>
             <dt>Fleet</dt><dd>{r.tested.fleet}</dd>
             <dt>Agent</dt><dd>{practiceAgent(r.sample, r.tested.agent)} <span className={s.small}>(sent by the CLI, not verified)</span></dd>
-            {r.tested.provider && <><dt>Provider</dt><dd>{isSandboxProvider(r.tested.provider) ? SANDBOX_PROVIDER_LABELS[r.tested.provider] : r.tested.provider} <span className={s.small}>(the key you picked from Fleet key)</span></dd></>}
+            {provider && <><dt>Provider</dt><dd>{isPracticeProvider(provider) ? CATALOG.providers[provider].label : provider}
+              {r.tested.proxyKeyDisplayPrefix && <span className={s.small}> (the key you picked from Fleet key{r.tested.keyHint ? `, ending ${r.tested.keyHint}` : ''})</span>}</dd></>}
             <dt>Adapter (reported by the CLI)</dt><dd>{r.tested.adapter ?? '—'}</dd>
             <dt>Model asked for</dt><dd>{r.tested.modelRequested ?? '—'}</dd>
             <dt>Model used</dt><dd>{r.tested.modelsUsed.join(', ') || '—'}</dd>

@@ -6,11 +6,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { childEnv, runAdapter, type Launch, type ToolAnswer } from "./adapter.js";
 import { Engine, pace, REDIRECTED, sleep, Stopped, Unreachable, type Reply } from "./engine.js";
+import { CATALOG } from "./catalog.js";
 import {
-  adapterLabel, adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isProvider, isShortTermBedrockKey, KEY_VARS, keyFromEnv, keyHeader,
-  nodeTooOld, PROVIDER_LABELS, providerByShape, RUN_CODE, targetOrigin, type KeyChoice, type Provider,
+  adapterLabel, adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isKeyVar, isProvider, isShortTermBedrockKey, keyFromEnv, keyHeader,
+  keyVarOf, nodeTooOld, providerByShape, RUN_CODE, targetOrigin, type KeyChoice, type Provider,
 } from "./preflight.js";
-import { copy, ending, hideSecret, results, say, SCENARIOS, warn, type Ending } from "./text.js";
+import { copy, ending, hideSecret, results, say, warn, type Ending } from "./text.js";
 
 const HEARTBEAT_MS = 30_000;
 /** A practice task WhiteRoom dropped (a restart, a failed capture): ask for it again, it doesn't count (§2 rule 4). */
@@ -31,6 +32,8 @@ export interface RunArgs {
   adapter?: string;
   codeStdin: boolean;
   url?: string;
+  /** --key-env: the variable the run's key is read from, when several are set. */
+  keyEnv?: string;
 }
 
 interface Progress {
@@ -42,8 +45,6 @@ interface PracticeTask {
   runIndex: number;
   deadline: string;
   baseUrl: string;
-  /** Where its model calls go (R7); an older WhiteRoom leaves it out. */
-  provider?: string;
   scenario: string;
   /** The model the sample agent and the starters use; null keeps their own default. */
   model?: string | null;
@@ -55,7 +56,6 @@ interface ControlPlan {
   attemptId: string;
   runIndex: number;
   baseUrl: string;
-  provider?: string;
 }
 interface ControlRequest {
   url: string;
@@ -75,6 +75,7 @@ function sessionEnding(r: Reply): Ending {
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
   if (reason === "expired") return ending(3, copy.expired);
+  if (reason === "call_cap") return ending(3, copy.callCap);
   if (r.status === 401) return ending(3, copy.sessionGone);
   if (r.status === 429) return ending(3, copy.busy);
   if (r.status === 403) return ending(3, copy.refused);
@@ -103,16 +104,17 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   // The user's own command runs through their shell as typed; nothing from WhiteRoom is ever put into it (§9.4).
   const launch: Launch = a.adapter !== undefined ? { shell: a.adapter } : { file: process.execPath, args: [SAMPLE_AGENT] };
 
-  const fromEnv = keyFromEnv(process.env);
+  if (a.keyEnv !== undefined && !isKeyVar(a.keyEnv)) return fail(ending(2, copy.badKeyEnv(a.keyEnv)));
+  const fromEnv = keyFromEnv(process.env, a.keyEnv);
   if (Array.isArray(fromEnv)) return fail(ending(2, copy.bothKeys(fromEnv)));
   let choice: KeyChoice | null = fromEnv;
   let code = "";
   try {
     if (a.codeStdin) code = await firstLineOfStdin();
     if (!choice) {
-      if (!process.stdin.isTTY) return fail(ending(2, copy.noKey));
+      if (!process.stdin.isTTY) return fail(ending(2, copy.noKey(a.keyEnv)));
       const pasted = await hiddenPrompt(copy.needKey);
-      if (!pasted) return fail(ending(2, copy.noKey));
+      if (!pasted) return fail(ending(2, copy.noKey(a.keyEnv)));
       choice = { from: null, key: pasted };
     }
     if (!a.codeStdin) {
@@ -155,10 +157,10 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     const keyProvider: unknown = b.provider;
     if (isProvider(keyProvider)) {
       const hint = typeof b.keyHint === "string" && /^[\w-]{1,8}$/.test(b.keyHint) && b.keyHint !== "none" ? b.keyHint : null;
-      return fail(ending(2, copy.providerKeyMismatch(from, key, PROVIDER_LABELS[keyProvider], hint)));
+      return fail(ending(2, copy.providerKeyMismatch(from, key, CATALOG.providers[keyProvider].label, hint)));
     }
     const fleet = typeof b.fleetName === "string" && b.fleetName.trim() ? b.fleetName.trim().slice(0, 100) : null;
-    return fail(ending(2, copy.keyMismatch(from ?? KEY_VARS[providerByShape(key)], left, fleet)));
+    return fail(ending(2, copy.keyMismatch(from ?? keyVarOf(providerByShape(key)), left, fleet)));
   }
   if (claim.status === 400 && claim.body?.reason === "short_term_key") return fail(ending(2, copy.shortTermKey));
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
@@ -166,10 +168,10 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   if (claim.status === 429) return fail(ending(3, copy.busy));
   if (claim.status === 404) return fail(ending(2, copy.unavailable));
   if (claim.status !== 200 || typeof claim.body?.session !== "string") return fail(ending(2, copy.cliOutdated));
-  // The provider the run's calls go to decides the adapter's key variable, the header and the API. An older WhiteRoom names none: a direct key, by its shape.
-  const named = claim.body.run?.provider;
-  if (named !== undefined && named !== null && !isProvider(named)) return fail(ending(2, copy.cliOutdated));
-  const runProvider: Provider = isProvider(named) ? named : providerByShape(key);
+  // The provider the run's calls go to decides the adapter's key variable, the header and the API.
+  const runProvider: unknown = claim.body.run?.provider;
+  if (!isProvider(runProvider)) return fail(ending(2, copy.cliOutdated));
+  const provider: Provider = runProvider;
   engine.session = claim.body.session as string;
   hideSecret(engine.session);
   const runs = Number(claim.body.run?.runs) || 1;
@@ -212,13 +214,12 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   /** One practice task through the adapter. An Ending stops the test; null asks for the next task. */
   const practiceTask = async (t: PracticeTask, p: Progress): Promise<Ending | null> => {
     if (!ourHost(t.baseUrl)) return ending(3, copy.otherHost);
-    const provider = isProvider(t.provider) ? t.provider : runProvider;
     const deadline = Date.parse(t.deadline);
     if (!Number.isFinite(deadline)) return ending(3, copy.cliOutdated);
     const run = runs > 1 ? ` (run ${t.runIndex + 1} of ${runs})` : "";
-    say(`Practice task ${p.done + 1} of ${p.total}: ${SCENARIOS[t.scenario] ?? "Practice task"}${run}`);
+    say(`Practice task ${p.done + 1} of ${p.total}: ${CATALOG.taskNames[t.scenario] ?? "Practice task"}${run}`);
     const out = await runAdapter({
-      launch, env: childEnv(process.env, KEY_VARS[provider], key), deadline, signal: stop.signal,
+      launch, env: childEnv(process.env, keyVarOf(provider), key), deadline, signal: stop.signal,
       message: {
         type: "task", task: t.prompt, tools: t.tools, headers: t.headers,
         model: typeof t.model === "string" && t.model ? t.model : null,
@@ -259,7 +260,6 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   /** The control checks: each call WhiteRoom plans, sent with the key, its response reported back (§6). */
   const controlChecks = async (c: ControlPlan): Promise<Ending | null> => {
     if (!ourHost(c.baseUrl)) return ending(3, copy.otherHost);
-    const provider = isProvider(c.provider) ? c.provider : runProvider;
     say(`Checking your controls${runs > 1 ? ` (run ${c.runIndex + 1} of ${runs})` : ""}`);
     let result: { status: number; reason: string | null; ruleId: string | null } | null = null;
     for (;;) {
