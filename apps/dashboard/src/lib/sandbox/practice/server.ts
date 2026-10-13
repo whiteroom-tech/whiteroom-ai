@@ -65,7 +65,11 @@ export async function practiceEngine(method: 'GET' | 'POST', path: string, body?
     return json(502, 'Couldn’t reach WhiteRoom. Check your connection and try again.');
   }
   const data = await res.json().catch(() => null);
-  if (engineUnavailable(res.status, data)) return unavailable(404);
+  if (engineUnavailable(res.status, data)) {
+    // A 404 that isn't the engine's own JSON may be a misrouted PROXY_URL or a proxy in between: leave a trail.
+    if (data === null || typeof data !== 'object') console.warn(`[practice] engine answered 404 without JSON on ${method} /api/readiness/${path.split('?')[0]}; showing practice tests as unavailable`);
+    return unavailable(404);
+  }
   // An unreadable answer is never passed on as a success.
   if (data === null) return json(502, 'WhiteRoom sent an answer the dashboard couldn’t read. Try again.');
   return Response.json(data, { status: res.status, headers: { 'Cache-Control': 'no-store' } });
