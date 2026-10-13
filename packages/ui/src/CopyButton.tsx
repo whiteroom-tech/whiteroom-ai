@@ -3,13 +3,18 @@
 import { useState } from 'react';
 import { color } from './theme';
 
-/** Copy-to-clipboard button with a transient "Copied" confirmation. */
-export function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
+/**
+ * Copy-to-clipboard button with a transient "Copied" confirmation. `label`
+ * names what it copies for screen readers ("Copy run code") when the visible
+ * "Copy" alone wouldn't say.
+ */
+export function CopyButton({ text, disabled, label }: { text: string; disabled?: boolean; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   return (
     <button
       disabled={disabled}
+      aria-label={label && !copied ? label : undefined}
       onClick={() => {
         if (disabled) return;
         navigator.clipboard.writeText(text).then(() => {

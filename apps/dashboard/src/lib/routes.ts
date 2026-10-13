@@ -6,6 +6,7 @@ export const ROUTES = {
   performance: '/performance',
   controls: '/controls',
   sandbox: '/sandbox',
+  practiceTest: '/sandbox/practice',
   fleetKey: '/fleet-key',
   settings: '/settings',
   organization: '/organization',

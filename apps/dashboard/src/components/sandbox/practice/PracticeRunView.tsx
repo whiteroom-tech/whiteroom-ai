@@ -1,0 +1,120 @@
+'use client';
+
+import { type RefObject, useState } from 'react';
+import { CopyButton, FONT_DISPLAY } from '@whiteroom/ui';
+import {
+  BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyVariable, lostContact, progressLine, type StarterLang, taskList,
+} from '@/lib/sandbox/practice/model';
+import type { PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
+import s from '../guided.module.css';
+import p from './practice.module.css';
+
+function Command({ text, label }: { text: string; label: string }) {
+  return (
+    <div className={p.copyRow}>
+      <pre className={p.cmd}>{text}</pre>
+      <CopyButton text={text} label={label} />
+    </div>
+  );
+}
+
+/**
+ * The terminal steps (Appendix D): install (beta), the starter adapter (own
+ * agent), the exact command, then the run code it asks for. The run code is
+ * never part of a command and is shown only from this page's memory.
+ */
+function TerminalSteps({ run, code, model, now, busy, onNewCode }: {
+  run: PracticeRun;
+  code: RunCode | null;
+  model: string | null;
+  now: number;
+  busy: boolean;
+  onNewCode: () => void;
+}) {
+  const [lang, setLang] = useState<StarterLang>('js');
+  const cmd = cliCommands(run.sample, lang);
+  const left = code ? codeCountdown(code.codeExpiresAt, now) : null;
+  const tries = run.codeTriesLeft;
+  let n = 0;
+  return <>
+    {!CLI_ON_NPM && (
+      <div className={p.step}>
+        <p className={p.stepTitle}>{++n}. Install the WhiteRoom CLI (beta)</p>
+        <p className={p.meta}>Use the file from your invite. The sha256 the first line prints must match the one in your invite.</p>
+        <Command text={BETA_INSTALL.join('\n')} label="Copy the install commands" />
+      </div>
+    )}
+    {cmd.starter && (
+      <div className={p.step}>
+        <p className={p.stepTitle}>{++n}. Get the starter adapter</p>
+        <div className={s.selectRow} role="group" aria-label="Adapter language">
+          {(['js', 'python'] as const).map((l) => (
+            <button key={l} type="button" className={`${s.selectPill} ${lang === l ? s.selectPillOn : ''}`} aria-pressed={lang === l} onClick={() => setLang(l)}>{l === 'js' ? 'JavaScript' : 'Python'}</button>
+          ))}
+        </div>
+        <Command text={cmd.starter} label="Copy the starter adapter command" />
+        <p className={p.meta}>Replace its marked function with a call to your agent. Skip this if you already have an adapter.</p>
+      </div>
+    )}
+    <div className={p.step}>
+      <p className={p.stepTitle}>{++n}. Run the test</p>
+      <Command text={cmd.run} label="Copy the test command" />
+      <p className={p.meta}>Needs Node 20 or later. Set <code>{keyVariable(run.sample ? null : model)}</code> to the key your agent uses with {run.sourceFleetId}. Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.</p>
+      <p className={p.meta}>If the terminal says <code>Unknown command: practice</code>, an older WhiteRoom CLI ran instead: {CLI_ON_NPM ? 'copy the command again, it names the right version.' : 'install the beta above, then run the command again.'}</p>
+    </div>
+    <div className={p.step}>
+      <p className={p.stepTitle}>{++n}. Paste this run code when it asks</p>
+      {code && left ? <>
+        <Command text={code.code} label="Copy run code" />
+        <p className={p.meta}>
+          Expires in {left}{tries !== null && tries < 5 ? <> · <span className={p.warnText}>{tries} {tries === 1 ? 'try' : 'tries'} left with the wrong key</span></> : null} · Works once.
+        </p>
+      </> : <p className={p.meta}>{code ? 'This run code has expired.' : 'The run code is shown only once, when it’s made. Get a new one to see it here.'}</p>}
+      <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={onNewCode} style={{ marginTop: 8, fontSize: 12 }}>Get a new run code</button>
+    </div>
+  </>;
+}
+
+/** A practice test between Start and its result: waiting for the CLI, running, lost contact, finishing. */
+export function PracticeRunView({ run, code, model, now, busy, heading, onNewCode, onEnd }: {
+  run: PracticeRun;
+  heading?: RefObject<HTMLHeadingElement | null>;
+  code: RunCode | null;
+  model: string | null;
+  now: number;
+  busy: boolean;
+  onNewCode: () => void;
+  onEnd: () => void;
+}) {
+  const lost = lostContact(run, now);
+  const title = run.lifecycle === 'draft' ? 'Run it from your computer' : run.lifecycle === 'finalizing' ? 'Working out the result' : 'Practice test running';
+  return (
+    <div className={p.wrap}>
+      <div className={s.eyebrow}>WHITEROOM / SANDBOX / PRACTICE TEST</div>
+      <h2 ref={heading} className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>{title}</h2>
+      {run.lifecycle === 'draft' ? <>
+        <p className={s.pageSub}>On the computer where your agent runs. This page updates on its own once the test starts.</p>
+        <div className={s.card}>
+          <TerminalSteps run={run} code={code} model={model} now={now} busy={busy} onNewCode={onNewCode} />
+          <p className={s.small} role="status">Waiting for the CLI to start the test…</p>
+        </div>
+      </> : <>
+        {lost && <div className={s.error} role="alert">Lost contact with your computer. Check it’s awake and online, with the terminal still open. The test ends on its own after 5 minutes without contact.</div>}
+        <div className={s.card}>
+          <p style={{ color: 'var(--tx)' }}>{run.lifecycle === 'finalizing' ? 'Every practice task is done. The result shows here in a moment.' : progressLine(run, now)}</p>
+          {run.lifecycle === 'active' && (
+            <ol className={p.tasks} aria-label="Practice tasks">
+              {taskList(run).map((t, i) => (
+                <li key={i} className={`${p.task} ${t.state === 'done' ? p.taskDone : t.state === 'now' ? p.taskNow : ''}`}>
+                  <span className={p.taskMark} aria-hidden="true">{t.state === 'done' ? '✓' : t.state === 'now' ? '›' : '·'}</span>
+                  <span>{t.name}<span className={s.srOnly}>{t.state === 'done' ? ', done' : t.state === 'now' ? ', running' : ''}</span></span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </>}
+      {run.lifecycle !== 'finalizing' && <div className={s.btnRow}><button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={onEnd}>End test</button></div>}
+    </div>
+  );
+}

@@ -111,6 +111,26 @@ describe("practice run: control checks", () => {
   });
 });
 
+describe("practice run: a practice task on another host", () => {
+  it("is refused before the adapter starts, so the key never goes there", async () => {
+    const marker = join(dir, "adapter-started");
+    const adapter = script("marker-adapter.mjs", `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "1");`);
+    const s = await stub({
+      route: (path) => {
+        if (path !== "/api/readiness/tasks/next") return undefined;
+        const f = fixture("tasks.next.task.A");
+        Object.assign((f.response as any).task, { attemptId: "a-1", deadline: new Date(Date.now() + 60_000).toISOString(), baseUrl: "https://attacker.example" });
+        return [200, f.response];
+      },
+    });
+    const r = await run(s, ["--adapter", `node ${adapter}`]);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /another host, so the CLI stopped before sending your key there/);
+    assert.equal(existsSync(marker), false);
+    assert.equal(s.count("/v1/messages"), 0);
+  });
+});
+
 describe("practice run: claim errors (exit 2, nothing else sent)", () => {
   const claimOnly = (name: string) => stub({ route: (p) => (p === "/api/readiness/claim" ? [fixture(name).status, fixture(name).response] : undefined) });
 

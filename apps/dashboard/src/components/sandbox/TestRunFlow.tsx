@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
@@ -15,6 +16,7 @@ import { buildTestReport, checkLabel, memoryCheckDetail, reportFileName, reportH
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
+import { PracticeCard, type PracticeEntry, usePracticeEntry } from './practice/PracticeCard';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
 type Phase = 'start' | 'setup' | 'workspace';
@@ -500,7 +502,7 @@ export function WorkspacePanel({ tab, active, children }: { tab: WorkspaceTab; a
   );
 }
 
-export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previewSeenSecondsAgo }: {
+export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previewSeenSecondsAgo, previewPractice }: {
   /** /dev/sandbox only: render as this signed-in user without a real session. */
   previewUserId?: string;
   /** /dev/sandbox only: sample Past tests. */
@@ -509,6 +511,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   previewRun?: RunStatusResult;
   /** /dev/sandbox only: how long ago this page "first saw" the sample test, in seconds. */
   previewSeenSecondsAgo?: number;
+  /** /dev/sandbox only: sample practice tests. */
+  previewPractice?: PracticeEntry;
 } = {}) {
   const live = useSession();
   const session = previewUserId ? { user: { id: previewUserId } } : live.data;
@@ -577,6 +581,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   // Analytics never carry keys, endpoints, fleet or test ids, or agent names. The /dev preview sends none.
   const track = useCallback((e: SandboxEvent) => { if (!previewUserId) analytics.capture(e.name, e.props); }, [previewUserId]);
   const noCalls = hasNoCalls(run);
+  // Practice tests: the start screen's card and Past tests rows, and the line on Ready to go live.
+  const practice = usePracticeEntry(!!session?.user?.id && !booting && (phase === 'start' || (allPassed && !isDemo)), previewPractice);
 
   // The provider follows the pasted key; a fleet token doesn't say, so the
   // user picks it.
@@ -1000,6 +1006,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           <button className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => void begin('demo')}>See a demo first</button>
         </div>
         <p className={s.small} style={{ marginTop: 10 }}>You’ll need the API key your agent uses. The demo needs nothing.</p>
+        <PracticeCard entry={practice} />
       </> : phase === 'setup' ? <>
         {/* ═══ SETUP ═══ */}
         <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
@@ -1167,6 +1174,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
                 {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)} />}
                 <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
               </div>
+              {!liveCloud && practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: 5 practice tasks plus a check of your controls, about 30 minutes.</p>}
             </div>
           )}
 
@@ -1201,7 +1209,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {run && <div className={s.footer}>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()} · ` : ''}Test {run.sandboxId}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
       </>}
 
-      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} onDemo={busy ? undefined : () => void begin('demo')} />}
+      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} practice={practice.rows ?? undefined} onDemo={busy ? undefined : () => void begin('demo')} />}
       </div>
       </div>
 
