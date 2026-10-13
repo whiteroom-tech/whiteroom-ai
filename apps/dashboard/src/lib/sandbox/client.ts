@@ -1,6 +1,7 @@
 import "server-only";
 import { PROXY_URL } from "@/lib/whiteroom/client";
 import { getFleetAuthCookie, tokenFromUserFleets } from "@/lib/fleet-session";
+import { rateLimitHeaders } from "@/lib/rate-limit-headers";
 
 export interface SandboxResponse<T = Record<string, unknown>> {
   data: T;
@@ -28,7 +29,8 @@ async function proxyCall<T = Record<string, unknown>>(
 ): Promise<SandboxResponse<T>> {
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: "POST",
-    headers: authHeaders(key),
+    // The Test-run page polls status every few seconds: counted per user, not per dashboard IP.
+    headers: { ...authHeaders(key), ...rateLimitHeaders(typeof body.user_id === "string" && body.user_id.startsWith("dashboard:") ? body.user_id.slice("dashboard:".length) : null) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);

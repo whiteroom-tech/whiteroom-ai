@@ -21,7 +21,8 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, rateLimitHeaders } from '@/lib/control-auth';
+import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
+import { fleetSessionId, rateLimitHeaders } from '@/lib/rate-limit-headers';
 import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
@@ -80,8 +81,9 @@ export async function POST(req: Request) {
       if (actorId) headers[CONTROL_USER_HEADER] = actorId;
     }
   } else {
-    // Counted against the signed-in user, not the dashboard's shared IP (engine rate limit).
-    Object.assign(headers, rateLimitHeaders(await auth().then((s) => s?.user?.id ?? null, () => null)));
+    // Counted against the signed-in user (or this fleet-key session), not the dashboard's shared IP (engine rate limit).
+    const userId = await auth().then((s) => s?.user?.id ?? null, () => null);
+    Object.assign(headers, rateLimitHeaders(userId ?? fleetSessionId(token)));
   }
 
   let upstream: Response;

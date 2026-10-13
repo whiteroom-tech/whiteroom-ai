@@ -7,7 +7,7 @@ vi.mock("@/lib/fleet-session", () => ({
   tokenFromUserFleets: async () => null,
 }));
 
-import { type SandboxResponse, toResponse } from "@/lib/sandbox/client";
+import { getStatus, type SandboxResponse, toResponse } from "@/lib/sandbox/client";
 
 describe("toResponse", () => {
   it("forwards engine status code", () => {
@@ -44,5 +44,20 @@ describe("toResponse", () => {
     const result: SandboxResponse = { data: { error: "Not configured." }, status: 503 };
     const res = toResponse(result);
     expect(res.status).toBe(503);
+  });
+});
+
+describe("the Test-run status poll", () => {
+  it("names the signed-in user for the engine's rate limit, by signature, not the service secret", async () => {
+    vi.stubEnv("WR_DASHBOARD_SERVICE_SECRET", "test-dashboard-secret");
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await getStatus("dashboard:user-1");
+    const h = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+    expect(h["x-wr-dashboard-user"]).toBe("user-1");
+    expect(h["x-wr-dashboard-user-sig"]).toBe("2eef0c6bfb7d73a0bf271c9c3aff4e2deceeb376a5b6bc8daff90c07f5975dbf");
+    expect(h["x-wr-dashboard-secret"]).toBeUndefined();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });
