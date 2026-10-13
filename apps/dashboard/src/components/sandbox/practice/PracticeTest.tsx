@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList, listProviderKeys } from '@/lib/whiteroom/client';
 import { SANDBOX_PROVIDER_LABELS, isSandboxProvider } from '@/lib/sandbox/providers';
-import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, startPractice } from '@/lib/sandbox/practice/api';
+import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, retryable, startPractice } from '@/lib/sandbox/practice/api';
 import { callEstimate, controlCalls, controlPreview, draftFromStart, headline, isOpen, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
 import type { PracticeResult, PracticeRun, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
@@ -119,8 +119,10 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     let timer: ReturnType<typeof setTimeout>;
     // One read at a time: coming back to the tab polls now, unless a read is already on its way.
     let pending = false;
+    // Set by a refusal that asking again won't fix: polling stops and the page says why.
+    let stopped = false;
     const poll = async () => {
-      if (pending) return;
+      if (pending || stopped) return;
       pending = true;
       try {
         const next = await getPracticeRun(fleet, runId);
@@ -135,11 +137,12 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
         setSaid(`Practice test finished: ${res.report ? headline(res.report) : 'Didn’t finish'}.`);
         track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
         requestAnimationFrame(() => heading.current?.focus());
-      } catch { /* the next poll tries again */ }
-      finally {
+      } catch (e) {
+        if (!retryable(e)) { stopped = true; if (live) setRefusal(fail(e, ACTION_FAILED)); }
+      } finally {
         pending = false;
         clearTimeout(timer);
-        if (live) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible);
+        if (live && !stopped) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible);
       }
     };
     timer = setTimeout(poll, POLL_MS.visible);

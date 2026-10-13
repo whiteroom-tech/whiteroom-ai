@@ -11,6 +11,17 @@ export class PracticeError extends Error {
   }
 }
 
+/**
+ * Whether a failed progress read is worth trying again: network errors
+ * (status 0), timeouts, rate limits and server errors are; any other refusal
+ * (signed out, not the owner, no such test) won't change by asking again.
+ */
+export function retryable(e: unknown): boolean {
+  if (!(e instanceof PracticeError)) return true;
+  const { status } = e;
+  return status === 0 || status === 408 || status === 429 || status >= 500 || status < 400;
+}
+
 async function call<T>(path: string, init?: { body: Record<string, unknown> }): Promise<T> {
   let res: Response;
   try {

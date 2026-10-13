@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import contract from './fixtures/practice/contract.json';
 import sandboxChecks from './fixtures/practice/dashboard-sandbox-checks.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
+import { PracticeError, retryable } from '@/lib/sandbox/practice/api';
 import {
   callEstimate, CATALOG, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
   CLI_ON_NPM, CLI_VERSION, draftFromStart, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
@@ -135,6 +136,12 @@ describe('practice test start', () => {
 });
 
 describe('practice test progress and Past tests', () => {
+  it('polling retries what can recover and stops on refusals that won’t', () => {
+    for (const status of [0, 408, 429, 500, 502, 503]) expect(retryable(new PracticeError('x', status))).toBe(true);
+    for (const status of [400, 401, 403, 404, 409, 410]) expect(retryable(new PracticeError('x', status))).toBe(false);
+    expect(retryable(new TypeError('network'))).toBe(true);
+  });
+
   const now = Date.parse('2026-10-12T14:20:00Z');
   const run = (p: Partial<PracticeRun>): PracticeRun => ({ ...fixture<PracticeRun>('runs.get'), scope: null, runs: 3, lifecycle: 'active', startedAt: '2026-10-12T14:08:00Z', ...p });
 
