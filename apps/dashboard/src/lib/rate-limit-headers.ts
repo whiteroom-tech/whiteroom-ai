@@ -7,14 +7,14 @@ import { createHash, createHmac } from 'node:crypto';
  * counts it against them rather than the dashboard's shared egress IP: the
  * signed-in user, or a fleet-key-only session by a hash of its token. The
  * signature (never the service secret, which gates control actions) picks a
- * rate-limit bucket and nothing else.
+ * rate-limit bucket and nothing else, and is good for this minute and the next.
  * Keep in step with rateLimitUserSig in the engine's middleware/dashboard-auth.ts.
  */
-export function rateLimitHeaders(userId: string | null | undefined, secret = process.env.WR_DASHBOARD_SERVICE_SECRET): Record<string, string> {
+export function rateLimitHeaders(userId: string | null | undefined, secret = process.env.WR_DASHBOARD_SERVICE_SECRET, now = Date.now()): Record<string, string> {
   if (!userId || !secret) return {};
   return {
     'x-wr-dashboard-user': userId,
-    'x-wr-dashboard-user-sig': createHmac('sha256', secret).update(`rate-limit:${userId}`).digest('hex'),
+    'x-wr-dashboard-user-sig': createHmac('sha256', secret).update(`rate-limit:${userId}:${Math.floor(now / 60_000)}`).digest('hex'),
   };
 }
 

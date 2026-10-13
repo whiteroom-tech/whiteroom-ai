@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/whiteroom/client", () => ({ PROXY_URL: "http://engine:3000" }));
@@ -48,16 +48,26 @@ describe("toResponse", () => {
 });
 
 describe("the Test-run status poll", () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
   it("names the signed-in user for the engine's rate limit, by signature, not the service secret", async () => {
     vi.stubEnv("WR_DASHBOARD_SERVICE_SECRET", "test-dashboard-secret");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(29_000_000 * 60_000 + 5_000);
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: true }));
     vi.stubGlobal("fetch", fetchMock);
     await getStatus("dashboard:user-1");
     const h = fetchMock.mock.calls[0][1].headers as Record<string, string>;
     expect(h["x-wr-dashboard-user"]).toBe("user-1");
-    expect(h["x-wr-dashboard-user-sig"]).toBe("2eef0c6bfb7d73a0bf271c9c3aff4e2deceeb376a5b6bc8daff90c07f5975dbf");
+    expect(h["x-wr-dashboard-user-sig"]).toBe("1ff71fe9070decd59b9af8e54f93f1c55df9c4d5ebdca305214c1b30cc5ef698");
     expect(h["x-wr-dashboard-secret"]).toBeUndefined();
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
+  });
+
+  it("sends no user for an owner that isn't a dashboard account", async () => {
+    vi.stubEnv("WR_DASHBOARD_SERVICE_SECRET", "test-dashboard-secret");
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await getStatus("sandbox:abc");
+    expect((fetchMock.mock.calls[0][1].headers as Record<string, string>)["x-wr-dashboard-user"]).toBeUndefined();
   });
 });

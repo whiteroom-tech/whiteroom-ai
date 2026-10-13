@@ -217,7 +217,7 @@ describe('the engine BFF', () => {
     mocks.query.mockReset();
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'dash-secret');
   });
-  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   const call = (b: Record<string, unknown>) => POST(new Request('http://localhost/api/fleet/engine', { method: 'POST', body: body(b) }));
   const sentHeaders = () => fetchMock.mock.calls[0][1].headers as Record<string, string>;
@@ -248,11 +248,13 @@ describe('the engine BFF', () => {
   it('names the user on ordinary actions by signature only, so the engine rate-limits per user', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'user-1' } });
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'test-dashboard-secret');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(29_000_000 * 60_000 + 5_000);
     await call({ action: 'fleet_report', fleet_id: 'f1' });
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
     expect(sentHeaders()['x-wr-dashboard-user']).toBe('user-1');
     // The engine's rateLimitUserSig for the same secret and id (engine rate-limit test pins it too).
-    expect(sentHeaders()['x-wr-dashboard-user-sig']).toBe('2eef0c6bfb7d73a0bf271c9c3aff4e2deceeb376a5b6bc8daff90c07f5975dbf');
+    expect(sentHeaders()['x-wr-dashboard-user-sig']).toBe('1ff71fe9070decd59b9af8e54f93f1c55df9c4d5ebdca305214c1b30cc5ef698');
   });
 
   it('names a fleet-key-only session by its token hash, and sends nothing without a secret', async () => {

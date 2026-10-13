@@ -1,6 +1,7 @@
 import "server-only";
 import { auth } from "@/auth";
 import { checkSameOrigin } from "@/lib/origin-check";
+import { ownerSubjectOf } from "./owner";
 
 export const SANDBOX_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
@@ -11,7 +12,7 @@ export async function requireSandboxUser(): Promise<
   if (!session?.user?.id) {
     return { error: Response.json({ error: "Unauthorized." }, { status: 401 }) };
   }
-  return { ownerSubject: `dashboard:${session.user.id}` };
+  return { ownerSubject: ownerSubjectOf(session.user.id) };
 }
 
 export async function requireSandboxMutation(): Promise<
