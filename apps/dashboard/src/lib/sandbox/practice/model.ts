@@ -7,7 +7,9 @@
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
 import CATALOG from './catalog.json';
-import type { PracticeCheck, PracticeFailedCalls, PracticeReport, PracticeRun, PracticeRunRow, PracticeStart, PracticeVerdict, RunCode } from './types';
+import type {
+  PracticeCheck, PracticeFailedCalls, PracticeReport, PracticeRun, PracticeRunRow, PracticeSourceProvider, PracticeStart, PracticeVerdict, RunCode,
+} from './types';
 
 export { CATALOG };
 /** The BFF's reason when practice tests aren't on for this engine: a calm page, not an error, and never retried. */
@@ -39,9 +41,9 @@ export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
   return !scope || scope.some((id) => id.startsWith('ctl')) ? [...agent, 'controls'] : agent;
 }
 
-/** Practice tasks in a whole test, control checks left out: Past tests' "15/15". */
+/** Tasks in a whole test, the control checks counted as one a run (as the engine counts them): Past tests' "18/18". */
 export function practiceTaskCount(runs: number, scope: string[] | null): number {
-  return runs * planOf(scope).filter((s) => s !== 'controls').length;
+  return runs * planOf(scope).length;
 }
 
 // ── The CLI ──────────────────────────────────────────────────────────────
@@ -77,8 +79,13 @@ export function keyVariable(model: string | null | undefined): string {
   return /^claude/i.test(model) ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
 }
 
-/** The models the sample agent uses (the JS starter's own choice, by key). */
+/** The models the sample agent uses unless setup names one (the JS starter's own choice, by key). */
 export const SAMPLE_MODELS = { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' } as const;
+
+/** Where the agent's calls go, from source-model: practice tests can't run these yet, so setup says so before Start. */
+export const BLOCKED_PROVIDERS: readonly PracticeSourceProvider[] = ['proxy-url', 'cloud'];
+/** The engine's own words when Start refuses such a fleet (reason `unsupported`). */
+export const UNSUPPORTED_FLEET = 'Practice tests don’t support this fleet’s provider yet.';
 
 // ── Cost (§1: the range and the cap before anything runs) ────────────────
 
@@ -249,7 +256,7 @@ export function fixLine(c: PracticeCheck, r: PracticeReport): string | null {
   const f = c.reason === 'provider_refused' ? asFailedCalls(c.failedCalls) : null;
   if (!f) return c.fix;
   const provider = providerOf(r);
-  return `Test problem (not your agent): ${failedCallReason(f, provider)}. ${providerNextStep(f.last, provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY')} Then click Rerun checks that didn’t run.`;
+  return `Test problem (not your agent): ${failedCallReason(f, provider)}. ${providerNextStep(f.last, provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY')} Rerun this check to try again.`;
 }
 
 /** What to check before a rerun when the provider refused a practice task's calls. */
@@ -330,11 +337,14 @@ export function pastResult(row: PracticeRunRow): { label: string; tone: 'brand' 
 }
 
 /**
- * The Tasks column: "15/15" when every planned practice task ran and was
- * judged (Passed or Didn't pass); "—" otherwise, since the listing doesn't
- * say how many tasks a test that didn't finish got through.
+ * The Tasks column: tasks finished of those planned, control checks
+ * included ("18/18", "4/6"), as the engine lists them. An older engine
+ * doesn't list them: then "18/18" when every task ran and was judged
+ * (Passed or Didn't pass), else "—".
  */
 export function pastTasks(row: PracticeRunRow): string {
+  const t = row.tasks;
+  if (t && Number.isFinite(t.finished) && Number.isFinite(t.total) && t.total > 0) return `${Math.min(t.finished, t.total)}/${t.total}`;
   const n = practiceTaskCount(row.runs, row.scope);
   return row.lifecycle === 'finished' && (row.verdict === 'passed' || row.verdict === 'not_passed') ? `${n}/${n}` : '—';
 }

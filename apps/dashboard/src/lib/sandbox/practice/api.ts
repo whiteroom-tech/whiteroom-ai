@@ -3,7 +3,7 @@
 // only; it is held in the page and never stored.
 
 import { PRACTICE_UNAVAILABLE } from './model';
-import type { PracticeResult, PracticeRun, PracticeRunRow, PracticeStart, RunCode } from './types';
+import type { PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
 
 /** A refusal from the BFF or the engine, with the engine's reason when it sent one. */
 export class PracticeError extends Error {
@@ -55,8 +55,13 @@ const q = (fleet: string) => `?fleet=${encodeURIComponent(fleet)}`;
 export const listPracticeRuns = (fleet: string) => call<{ runs: PracticeRunRow[] }>(q(fleet)).then((r) => r.runs);
 export const getPracticeRun = (fleet: string, id: string) => call<PracticeRun>(`/${id}${q(fleet)}`);
 export const getPracticeResult = (fleet: string, id: string) => call<PracticeResult>(`/${id}/report${q(fleet)}`);
+const PROVIDERS: readonly PracticeSourceProvider[] = ['direct-anthropic', 'direct-openai', 'proxy-url', 'cloud', 'unknown'];
+/** The agent's latest model and where its calls go; an engine that doesn't say where reads as not yet known. */
 export const sourceModel = (fleet: string, agent: string) =>
-  call<{ model: string | null }>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r) => r.model);
+  call<Partial<PracticeSource>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => ({
+    model: typeof r.model === 'string' && r.model ? r.model : null,
+    provider: PROVIDERS.includes(r.provider as PracticeSourceProvider) ? (r.provider as PracticeSourceProvider) : 'unknown',
+  }));
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });
 export const newRunCode = (fleet: string, id: string) => call<RunCode>(`/${id}/code`, { body: { fleet } });
 export const endPractice = (fleet: string, id: string) => call<{ lifecycle: string }>(`/${id}/end`, { body: { fleet } });

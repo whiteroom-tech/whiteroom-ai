@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, controlCalls, controlPreview, controlPreviewLine, costLine, DISCLAIMER, keyVariable, SAMPLE_MODELS,
+  BLOCKED_PROVIDERS, callEstimate, CATALOG, controlCalls, controlPreview, controlPreviewLine, costLine, DISCLAIMER, keyVariable, SAMPLE_MODELS, UNSUPPORTED_FLEET,
 } from '@/lib/sandbox/practice/model';
-import type { PracticeStart } from '@/lib/sandbox/practice/types';
+import type { PracticeSourceProvider, PracticeStart } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
@@ -58,12 +58,14 @@ export function PracticeCheckPreview({ controls, durableHolds }: { controls: str
  * costs and checks. A test is started from the computer the agent runs on,
  * so on a phone the Start button gives way to a note saying so.
  */
-export function PracticeSetup({ fleet, data, busy, previewModel, onStart }: {
+export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider, onStart }: {
   fleet: string;
   data: SetupData;
   busy: boolean;
   /** /dev/practice: the agent's latest model, instead of asking the engine. */
   previewModel?: string | null;
+  /** /dev/practice: where the agent's calls go, instead of asking the engine. */
+  previewProvider?: PracticeSourceProvider;
   onStart: (start: PracticeStart) => void;
 }) {
   // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
@@ -71,33 +73,59 @@ export function PracticeSetup({ fleet, data, busy, previewModel, onStart }: {
   const [sample, setSample] = useState(noAgents);
   const [agent, setAgent] = useState(data.agents[0] ?? '');
   const [runs, setRuns] = useState<1 | 3>(1);
-  // The model the agent used most recently (undefined while loading), else what the owner types.
+  // The model the agent used most recently (undefined while loading), and where its calls go.
   const [latest, setLatest] = useState<string | null | undefined>(previewModel);
+  const [provider, setProvider] = useState<PracticeSourceProvider>(previewProvider ?? 'unknown');
+  // A model the owner chose with Change (or typed, when the agent's isn't known).
+  const [changing, setChanging] = useState(false);
   const [typed, setTyped] = useState('');
 
   useEffect(() => {
-    if (previewModel !== undefined || !agent) { setLatest(previewModel ?? null); return; }
+    if (previewModel !== undefined || !agent) { setLatest(previewModel ?? null); setProvider(previewProvider ?? 'unknown'); return; }
     let live = true;
     setLatest(undefined);
-    sourceModel(fleet, agent).then((m) => { if (live) setLatest(m); }, () => { if (live) setLatest(null); });
+    setProvider('unknown');
+    sourceModel(fleet, agent).then(
+      (m) => { if (live) { setLatest(m.model); setProvider(m.provider); } },
+      // Not known: Start's own checks still apply.
+      () => { if (live) { setLatest(null); setProvider('unknown'); } },
+    );
     return () => { live = false; };
-  }, [fleet, agent, previewModel]);
+  }, [fleet, agent, previewModel, previewProvider]);
 
-  const model = sample ? SAMPLE_MODELS.anthropic : latest || typed.trim() || null;
+  const chosen = typed.trim() || null;
+  // Sent with Start, so the sample agent or the starter uses it: the sample keeps its own unless one is chosen.
+  const model = sample ? (changing ? chosen : null) : changing || !latest ? chosen : latest;
+  // The sample agent calls the provider itself, so a fleet whose agent uses a cloud provider can still run it;
+  // a fleet with its own endpoint (proxy URL) is refused at Start either way.
+  const blocked = provider === 'proxy-url' || (!sample && BLOCKED_PROVIDERS.includes(provider));
   const controls = controlPreview(data.rules, data.durableHolds, sample && !data.agents.length);
-  const est = callEstimate({ runs: sample ? 1 : runs, scope: null, controlCalls: controlCalls(controls), model });
-  const keyVar = sample ? keyVariable(null) : keyVariable(model);
+  const est = callEstimate({ runs: sample ? 1 : runs, scope: null, controlCalls: controlCalls(controls), model: model ?? (sample ? SAMPLE_MODELS.anthropic : null) });
+  const keyVar = keyVariable(model);
+  const pick = (v: boolean) => { setSample(v); setChanging(false); setTyped(''); };
+  const change = () => { setTyped(sample ? '' : latest ?? ''); setChanging(true); };
   const start = () => onStart({
     fleet, sample, runs: sample ? 1 : runs,
     ...(agent && { agent }),
-    ...(!sample && model && { model }),
+    ...(model && { model }),
   });
+  const modelInput = (label: string, hint: string) => <>
+    <label className={s.formLabel} htmlFor="practice-model">{label} <span className={s.formLabelHint}>{hint}</span></label>
+    <input id="practice-model" className={s.formInput} value={typed} maxLength={128} spellCheck={false} placeholder={SAMPLE_MODELS.anthropic} onChange={(e) => setTyped(e.target.value)} />
+  </>;
+  const changeLink = <> · <button type="button" className={s.linkBtn} onClick={change}>Change</button></>;
 
   return (
     <div className={p.wrap}>
       <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
       <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Set up a practice test</h2>
       <p className={s.pageSub}>Your agent works through 5 practice tasks while WhiteRoom checks the results and your controls. You start it from your computer with one command.</p>
+
+      {blocked && (
+        <div className={s.notice} role="status">
+          {UNSUPPORTED_FLEET} Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link>
+        </div>
+      )}
 
       {data.proxyProviders.length > 0 && (
         <div className={s.notice}>
@@ -114,7 +142,7 @@ export function PracticeSetup({ fleet, data, busy, previewModel, onStart }: {
               [false, 'Your agent', noAgents ? 'Run your agent through WhiteRoom once first, so it shows up here.' : 'Needs a small adapter.'],
             ] as const).map(([v, name, sub]) => (
               <label key={name} className={`${s.choice} ${sample === v ? s.choiceOn : ''} ${!v && noAgents ? s.choiceOff : ''}`}>
-                <input type="radio" name="practice-who" checked={sample === v} disabled={!v && noAgents} onChange={() => setSample(v)} className={s.choiceInput} />
+                <input type="radio" name="practice-who" checked={sample === v} disabled={!v && noAgents} onChange={() => pick(v)} className={s.choiceInput} />
                 <span className={s.choiceText}><span className={s.choiceName}>{name}</span><span className={s.choiceSub}>{sub}</span></span>
               </label>
             ))}
@@ -140,19 +168,19 @@ export function PracticeSetup({ fleet, data, busy, previewModel, onStart }: {
         )}
 
         <div className={s.formGroup}>
-          {sample ? <p className={s.small}>Model the sample agent uses: {SAMPLE_MODELS.anthropic} with an Anthropic key, {SAMPLE_MODELS.openai} with an OpenAI key.</p>
-            : latest ? <p className={s.small}>Model: {latest}, the one {agent} used most recently.</p>
-            : latest === null ? <>
-              <label className={s.formLabel} htmlFor="practice-model">Model your agent uses <span className={s.formLabelHint}>for the cost estimate</span></label>
-              <input id="practice-model" className={s.formInput} value={typed} maxLength={128} spellCheck={false} placeholder="claude-haiku-4-5" onChange={(e) => setTyped(e.target.value)} />
-            </> : <p className={s.small}>Looking up the model {agent} uses…</p>}
+          {sample ? (changing ? modelInput('Model the sample agent uses', '· leave it empty for its own')
+            : <p className={s.small}>Model the sample agent uses: {SAMPLE_MODELS.anthropic} with an Anthropic key, {SAMPLE_MODELS.openai} with an OpenAI key{changeLink}</p>)
+            : changing ? modelInput('Model your agent uses', '· for the cost estimate; the starter adapters use it too')
+            : latest ? <p className={s.small}>Model: {latest}, the one {agent} used most recently{changeLink}</p>
+            : latest === null ? modelInput('Model your agent uses', '· for the cost estimate')
+            : <p className={s.small}>Looking up the model {agent} uses…</p>}
         </div>
 
         <p className={s.small}>{costLine(est, sample ? 1 : runs)}</p>
         <p className={s.small}>Set <code>{keyVar}</code> to the key your agent uses with {fleet}.</p>
 
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || blocked} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
           <Link className={`${s.btn} ${s.btnGhost}`} href={ROUTES.sandbox}>Back</Link>
         </div>
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>

@@ -109,7 +109,7 @@ describe('practice BFF', () => {
     const OFF = { error: 'Practice tests aren’t available yet.', reason: 'practice_unavailable' };
 
     it('the engine router with the feature off (current and older wording): one calm answer, never the engine’s words', async () => {
-      for (const error of ["Practice tests aren't available on this WhiteRoom server yet.", "Readiness tests aren't available on this WhiteRoom server yet."]) {
+      for (const error of ["Practice tests aren't available yet. Try again later.", "Practice tests aren't available on this WhiteRoom server yet.", "Readiness tests aren't available on this WhiteRoom server yet."]) {
         engine.mockResolvedValue(Response.json({ error }, { status: 404 }));
         for (const res of [await get(undefined, 'fleet=prod-eu'), await get([RUN], 'fleet=prod-eu'), await post(['start'], { fleet: 'prod-eu', sample: true, runs: 1 })]) {
           expect(res.status).toBe(404);
@@ -149,6 +149,7 @@ describe('practice BFF', () => {
     it('engineUnavailable: 404 and either not JSON or the router’s off message', () => {
       expect(engineUnavailable(404, null)).toBe(true);
       expect(engineUnavailable(404, 'text')).toBe(true);
+      expect(engineUnavailable(404, { error: "Practice tests aren't available yet. Try again later." })).toBe(true);
       expect(engineUnavailable(404, { error: "Practice tests aren't available on this WhiteRoom server yet." })).toBe(true);
       expect(engineUnavailable(404, { error: 'Not found.' })).toBe(false);
       expect(engineUnavailable(404, {})).toBe(false);

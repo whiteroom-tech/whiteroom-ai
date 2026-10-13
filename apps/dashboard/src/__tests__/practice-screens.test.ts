@@ -32,7 +32,7 @@ describe('practice test screens', () => {
   it('setup shows who runs it, cost and cap, the checks, the key and the disclaimer', () => {
     const t = text(render('setup'));
     for (const s of ['Sample agent', 'No code, 1 run. Doesn’t test your agent.', 'Your agent', 'Needs a small adapter.', '1 run', '3 runs',
-      'Model: claude-haiku-4-5, the one support-bot used most recently.', 'Never more than 120 calls, including control checks and memory summaries.',
+      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', 'Never more than 120 calls, including control checks and memory summaries.',
       'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up', 'Loop breaker · Enforce · 2 extra calls',
       'Spend cap · Enforce: not checked (it would need real spending)', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
@@ -45,6 +45,32 @@ describe('practice test screens', () => {
     expect(radios[1]).toContain('disabled=""');
     expect(text(render('setup-new-agent'))).toContain('Pause and Stop: not checked on this fleet.');
     expect(text(render('setup-proxy'))).toContain('Practice tests can’t yet run agents that call through a WhiteRoom proxy URL (Azure OpenAI, AWS Bedrock).');
+  });
+
+  it('a fleet whose calls go through a proxy URL or a cloud provider is refused before Start, in Start’s own words', () => {
+    const startButton = (html: string) => html.match(/<button[^>]*>Start test<\/button>/)?.[0] ?? '';
+    for (const provider of ['proxy-url', 'cloud'] as const) {
+      const html = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider } }));
+      expect(text(html)).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');
+      expect(startButton(html)).toContain('disabled=""');
+    }
+    // The sample agent calls the provider itself: a cloud fleet can still run it; a proxy-URL fleet can't.
+    const sampleOnly = (provider: 'cloud' | 'proxy-url') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider, setup: { ...PRACTICE_STATES['setup-blocked'].setup!, agents: [] } } }));
+    expect(text(sampleOnly('cloud'))).not.toContain('provider yet');
+    expect(startButton(sampleOnly('cloud'))).not.toContain('disabled=""');
+    expect(startButton(sampleOnly('proxy-url'))).toContain('disabled=""');
+    // Direct keys, or not yet known: Start stays open (its own checks still apply).
+    for (const provider of ['direct-anthropic', 'direct-openai', 'unknown', undefined] as const) {
+      const html = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, provider } }));
+      expect(text(html)).not.toContain('provider yet');
+      expect(startButton(html)).not.toContain('disabled=""');
+    }
+  });
+
+  it('the sample agent’s model line names its own models and offers Change', () => {
+    const none = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, setup: { ...PRACTICE_STATES.setup.setup!, agents: [] } } }));
+    expect(text(none)).toContain('Model the sample agent uses: claude-haiku-4-5 with an Anthropic key, gpt-4o-mini with an OpenAI key · Change');
+    expect(none).toMatch(/<button type="button"[^>]*>Change<\/button>/);
   });
 
   it('practice tests off: a calm page with the way back, not an error', () => {
@@ -135,9 +161,9 @@ describe('the Sandbox screens practice tests are added to', () => {
   it('adds finished practice tests as rows, newest first; open ones stay on the card', () => {
     const rows = [...PRACTICE_ROWS, { ...PRACTICE_ROWS[0], id: 'r-00000000-0000-4000-8000-000000000000', lifecycle: 'active' as const, endedAt: null }];
     const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows })));
-    expect(t).toMatch(/Passed 15\/15 Practice/);
+    expect(t).toMatch(/Passed 18\/18 Practice/);
     expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice/);
-    expect(t).toMatch(/Didn’t finish — Practice \(sample\)/);
+    expect(t).toMatch(/Didn’t finish 2\/6 Practice \(sample\)/);
     expect(t).toMatch(/All checks passed 4 Your agent/);
     expect(t).toContain('Past tests 6');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));

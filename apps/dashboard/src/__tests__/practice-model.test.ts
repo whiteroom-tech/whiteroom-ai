@@ -1,12 +1,12 @@
 // Practice tests: the decisions behind the screens, replayed against the
-// engine's contract fixtures (fixtures/practice, engine cc65272e).
+// engine's contract fixtures (fixtures/practice, engine ff2b40dc).
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import contract from './fixtures/practice/contract.json';
 import sandboxChecks from './fixtures/practice/dashboard-sandbox-checks.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
-import { PracticeError, retryable } from '@/lib/sandbox/practice/api';
+import { PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
   callEstimate, CATALOG, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
   CLI_ON_NPM, CLI_VERSION, draftFromStart, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
@@ -21,6 +21,12 @@ const withCheck = (r: PracticeReport, id: string, patch: Partial<PracticeReport[
   ({ ...r, verdict, checks: r.checks.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
 
 describe('practice test catalog', () => {
+  it('fix lines that send the owner to a rerun say so in the catalog’s own words, never the old button copy', () => {
+    const lines = Object.values(CATALOG.fixLines as Record<string, string>);
+    expect(lines.filter((l) => l.endsWith('Rerun this check to try again.'))).toHaveLength(6);
+    for (const l of lines) expect(l).not.toMatch(/Then click|Rerun checks that didn|open Activity/);
+  });
+
   it('no check label equals a connection test check label', () => {
     const connection = new Set([...SANDBOX_CHECKS.map((c) => c.label), ...sandboxChecks.labels]);
     expect(sandboxChecks.labels).toEqual(SANDBOX_CHECKS.map((c) => c.label));
@@ -34,6 +40,31 @@ describe('practice test catalog', () => {
     // claim says 18 tasks for 3 runs: the plan includes the control checks.
     const claim = fixture<{ run: { runs: number; tasks: number } }>('claim');
     expect(claim.run.runs * planOf(null).length).toBe(claim.run.tasks);
+  });
+});
+
+describe('practice test setup: the agent’s model and where its calls go', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+  const answer = (body: unknown) => vi.stubGlobal('fetch', vi.fn(async () => Response.json(body)));
+
+  it('reads source-model as the engine sends it', async () => {
+    answer(fixture('source-model'));
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown' });
+    answer({ model: 'gpt-4o', provider: 'cloud' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'gpt-4o', provider: 'cloud' });
+  });
+
+  it('an older engine that doesn’t say where calls go, or an unknown kind, reads as not yet known', async () => {
+    answer({ model: 'claude-haiku-4-5' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'claude-haiku-4-5', provider: 'unknown' });
+    answer({ model: '', provider: 'somewhere-new' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown' });
+  });
+
+  it('claim and the practice task carry the model the test was started with', () => {
+    const start = contract.entries.find((e) => e.name === 'start')!.request as { model?: string };
+    expect(fixture<{ run: { model: string | null } }>('claim').run.model).toBe(start.model);
+    expect(fixture<{ task: { model: string | null } }>('tasks.next.task.A').task.model).toBe(start.model);
   });
 });
 
@@ -67,7 +98,7 @@ describe('practice test results (§8)', () => {
   it('turns a provider refusal into what it said and what to check', () => {
     const r = withCheck(fullReport(), 'b.result', { status: 'error', reason: 'provider_refused', testProblem: true, fix: 'engine line', failedCalls: { count: 2, last: { status: 401, reason: 'upstream_error' } } }, 'incomplete');
     expect(fixLine(r.checks.find((c) => c.id === 'b.result')!, r)).toBe(
-      'Test problem (not your agent): Anthropic refused the key (HTTP 401). Check that ANTHROPIC_API_KEY is the key your agent uses and that it’s still active. Then click Rerun checks that didn’t run.');
+      'Test problem (not your agent): Anthropic refused the key (HTTP 401). Check that ANTHROPIC_API_KEY is the key your agent uses and that it’s still active. Rerun this check to try again.');
     // Without what WhiteRoom saw, the catalog's line stands.
     const bare = withCheck(r, 'b.result', { failedCalls: undefined }, 'incomplete');
     expect(fixLine(bare.checks.find((c) => c.id === 'b.result')!, bare)).toBe('engine line');
@@ -161,12 +192,19 @@ describe('practice test progress and Past tests', () => {
   it('reads the owner listing as Past tests rows', () => {
     const [row] = fixture<{ runs: PracticeRunRow[] }>('runs.list').runs;
     expect(pastResult(row)).toEqual({ label: 'Rerun · passed (1 check)', tone: 'brand' });
+    // The engine lists tasks finished of those planned, the control checks counted as one a run.
+    expect(row.tasks).toEqual({ finished: 1, total: 1 });
     expect(pastTasks(row)).toBe('1/1');
-    expect(pastTasks({ ...row, scope: null, runs: 3, rerun: false })).toBe('15/15');
-    expect(pastTasks({ ...row, lifecycle: 'cancelled' })).toBe('—');
-    // Finished without a verdict on every check (Didn't finish): how far it got isn't listed.
-    expect(pastTasks({ ...row, scope: null, runs: 3, verdict: 'incomplete' })).toBe('—');
-    expect(pastTasks({ ...row, scope: null, runs: 1, verdict: 'not_passed' })).toBe('5/5');
+    expect(pastTasks({ ...row, scope: null, runs: 3, rerun: false, tasks: { finished: 18, total: 18 } })).toBe('18/18');
+    expect(pastTasks({ ...row, lifecycle: 'cancelled', scope: null, tasks: { finished: 4, total: 6 } })).toBe('4/6');
+    expect(pastTasks({ ...row, scope: null, runs: 3, verdict: 'incomplete', tasks: { finished: 0, total: 18 } })).toBe('0/18');
+    // An older engine that doesn't list them: every task when it was judged, else "—".
+    const older = { ...row, tasks: undefined };
+    expect(pastTasks(older)).toBe('1/1');
+    expect(pastTasks({ ...older, scope: null, runs: 3, rerun: false })).toBe('18/18');
+    expect(pastTasks({ ...older, lifecycle: 'cancelled' })).toBe('—');
+    expect(pastTasks({ ...older, scope: null, runs: 3, verdict: 'incomplete' })).toBe('—');
+    expect(pastTasks({ ...older, scope: null, runs: 1, verdict: 'not_passed' })).toBe('6/6');
     expect(pastResult({ ...row, rerun: false, verdict: 'not_passed' }).label).toBe('Didn’t pass');
     expect(pastResult({ ...row, lifecycle: 'interrupted', verdict: null }).label).toBe('Rerun · didn’t finish');
     expect(pastKind({ sample: true })).toBe('Practice (sample)');

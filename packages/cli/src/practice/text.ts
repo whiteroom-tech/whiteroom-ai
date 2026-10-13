@@ -65,12 +65,12 @@ export const copy = {
   adapterMissing: (cmd: string, why: string) =>
     `Couldn't start the adapter \`${cmd}\`: ${why}. Nothing was sent or charged, and your run code still works.`,
 
-  keyMismatch: (v: string, left: number) =>
-    `This key isn't the one your agent uses with this fleet. Nothing was charged, and your run code still works (${plural(left, "more try", "more tries")}). Set ${v} to the right key, then run the same command again.`,
+  keyMismatch: (v: string, left: number, fleet: string | null = null) =>
+    `This key isn't the one your agent uses with ${fleet ?? "this fleet"}. Nothing was charged, and your run code still works (${plural(left, "more try", "more tries")}). Set ${v} to the right key, then run the same command again.`,
   lastTry: `That was the last try, so this run code no longer works. Nothing was charged. ${button("Get a new run code")}, then set the right key and run the command again.`,
   codeInvalid: `This run code doesn't work any more: it expired or was already used. ${button("Get a new run code")}, then run the command again.`,
   busy: "Practice tests are busy right now. Try again in a few minutes. Your run code still works.",
-  unavailable: "Practice tests aren't available on this WhiteRoom server yet.",
+  unavailable: "Practice tests aren't available yet. Try again later.",
   unreachable: "Couldn't reach WhiteRoom. Check your connection, then run the command again.",
   cliOutdated: "WhiteRoom sent something this CLI doesn't understand. Update the CLI, then run the test again.",
   redirected: "WhiteRoom's server tried to send the CLI to another address, so it stopped there. Nothing was sent anywhere else. Try again in a few minutes.",

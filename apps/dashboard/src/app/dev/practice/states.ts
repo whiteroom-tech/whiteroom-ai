@@ -72,7 +72,7 @@ const FAILED = { ...swap(REPORT, 'c.timeout', {
   fix: 'Your agent changed the operation key when it retried a save, so the save could have happened twice. Fix: create the key once per action and send the same key on every retry.',
 }), verdict: 'not_passed' as const };
 const INCOMPLETE = { ...swap(swap(REPORT, 'b.result', {
-  status: 'error', reason: 'provider_refused', testProblem: true, summary: 'Passed in 2 of 3 runs.', fix: 'Test problem (not your agent): your model provider refused some of the calls. Then click Rerun checks that didn’t run.',
+  status: 'error', reason: 'provider_refused', testProblem: true, summary: 'Passed in 2 of 3 runs.', fix: 'Test problem (not your agent): your model provider refused some of the calls. Rerun this check to try again.',
   failedCalls: { count: 3, last: { status: 429, reason: 'upstream_error' } },
 }), 'b.carries_on', {
   status: 'not_tested', reason: 'no_summary', summary: 'Passed in 2 of 3 runs.',
@@ -85,6 +85,7 @@ export const PRACTICE_STATES = {
   setup: preview({ setup: SETUP, model: 'claude-haiku-4-5' }),
   'setup-new-agent': preview({ setup: { ...SETUP, rules: [], durableHolds: false }, model: null }),
   'setup-proxy': preview({ setup: { ...SETUP, proxyProviders: ['Azure OpenAI', 'AWS Bedrock'] }, model: 'claude-haiku-4-5' }),
+  'setup-blocked': preview({ setup: SETUP, model: 'gpt-4o', provider: 'cloud' }),
   'refused-today': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You can start more tomorrow (00:00 UTC).', reason: 'starts_today' } }),
   'refused-open': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You already have a practice test open.', reason: 'owner_busy', run: { id: ID, lifecycle: 'active' } } }),
   code: preview({ run: RUN, code: CODE }),
@@ -108,11 +109,11 @@ export type PracticeState = keyof typeof PRACTICE_STATES;
 /** Practice tests on the Sandbox start screen: the card and Past tests rows. */
 const row = (r: Partial<PracticeRunRow>): PracticeRunRow => ({
   id: ID, lifecycle: 'finished', verdict: 'passed', endReason: null, sourceFleetId: FLEET, agentId: 'support-bot', sample: false, runs: 3, scope: null,
-  rerun: false, createdAt: ago(200), endedAt: ago(150), checks: { passed: 11, total: 11 }, ...r,
+  rerun: false, createdAt: ago(200), endedAt: ago(150), checks: { passed: 11, total: 11 }, tasks: { finished: 18, total: 18 }, ...r,
 });
 export const PRACTICE_ROWS: PracticeRunRow[] = [
   row({}),
-  row({ id: 'r-2b81d0aa-6e1f-4a50-8f3c-90b7c4d2e611', verdict: 'passed', rerun: true, runs: 3, scope: ['c.timeout'], endedAt: ago(1500), checks: { passed: 1, total: 1 } }),
+  row({ id: 'r-2b81d0aa-6e1f-4a50-8f3c-90b7c4d2e611', verdict: 'passed', rerun: true, runs: 3, scope: ['c.timeout'], endedAt: ago(1500), checks: { passed: 1, total: 1 }, tasks: { finished: 3, total: 3 } }),
   row({ id: 'r-91c4e7b2-3d5a-4f68-a0b9-1e2c3d4f5a60', verdict: 'not_passed', endedAt: ago(1560), checks: { passed: 10, total: 11 } }),
-  row({ id: 'r-5d6e7f80-1a2b-4c3d-8e9f-a0b1c2d3e4f5', sample: true, runs: 1, lifecycle: 'cancelled', verdict: null, endReason: 'ended_by_owner', endedAt: ago(3000), checks: null }),
+  row({ id: 'r-5d6e7f80-1a2b-4c3d-8e9f-a0b1c2d3e4f5', sample: true, runs: 1, lifecycle: 'cancelled', verdict: null, endReason: 'ended_by_owner', endedAt: ago(3000), checks: null, tasks: { finished: 2, total: 6 } }),
 ];
