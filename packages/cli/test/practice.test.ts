@@ -341,10 +341,11 @@ describe("practice run: claim errors (exit 2, nothing else sent)", () => {
   });
 
   it("ended from the dashboard while claiming (409 ended_by_owner): says so, exit 3", async () => {
-    const s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [409, { lifecycle: "cancelled", reason: "ended_by_owner" }] : undefined) });
+    const s = await claimOnly("claim.ended_by_owner");
     const r = await run(s);
     assert.equal(r.code, 3);
-    assert.match(r.stderr, /ended from the dashboard/);
+    assert.match(r.stderr, /ended from the dashboard before it started\./);
+    assert.doesNotMatch(r.stderr, /were kept/);
     assert.deepEqual(s.seen.map((x) => x.path), ["/api/readiness/claim"]);
   });
 
