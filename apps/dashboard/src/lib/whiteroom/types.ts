@@ -207,6 +207,31 @@ export interface DeleteKeyResult {
   error?: string;
 }
 
+// -- Bedrock cross-account role --
+//
+// A separate, single-slot config per fleet (not a list like provider keys):
+// the engine assumes this role via sts:AssumeRole rather than holding a key.
+// externalId is write-only — bedrock_role_status never echoes it back, same
+// as a provider key's raw value never being listed again.
+
+export interface BedrockRoleStatus {
+  configured: boolean;
+  awsAccountId?: string;
+  roleArn?: string;
+  region?: string;
+  createdAt?: string;
+}
+
+export interface StoreBedrockRoleResult {
+  success?: boolean;
+  error?: string;
+}
+
+export interface DeleteBedrockRoleResult {
+  success?: boolean;
+  error?: string;
+}
+
 // -- Performance --
 
 export interface PerformanceModelSummary {

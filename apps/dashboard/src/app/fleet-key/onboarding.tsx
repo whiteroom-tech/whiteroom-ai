@@ -4,17 +4,32 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { setByok } from '@/lib/users';
 import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
 import type { ProviderKeyRequest, ProviderTab } from '@/lib/provider-key-form';
-import { deleteProviderKey, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
+import { EMPTY_ROLE_FORM, bedrockRoleRequest, canSubmitRoleForm, generateExternalId, roleFormReducer } from '@/lib/bedrock-role-form';
+import type { BedrockRoleRequest } from '@/lib/bedrock-role-form';
+import { deleteBedrockRole, deleteProviderKey, getBedrockRoleStatus, listProviderKeys, storeBedrockRole, storeProviderKey } from '@/lib/whiteroom/client';
 import type { FleetAuth } from '@/lib/whiteroom/client';
-import type { ProviderKey } from '@/lib/whiteroom/types';
+import type { BedrockRoleStatus, ProviderKey } from '@/lib/whiteroom/types';
 import { Banner, Button, Panel, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, CopyValueButton } from '@/components/citadel/CopyChip';
 import { ROUTES } from '@/lib/routes';
-import { AGENT_PY_HEADERS, BEDROCK_KEY_ENV, BEDROCK_LINES, BEDROCK_NOTES, PROXY_ORIGIN, SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
+import {
+  AGENT_PY_HEADERS,
+  BEDROCK_KEY_ENV,
+  BEDROCK_LINES,
+  BEDROCK_NOTES,
+  BEDROCK_ROLE_LINES,
+  PROXY_ORIGIN,
+  SETUP_GUIDE_URL,
+  SETUP_LINES,
+  bedrockRoleTrustPolicy,
+} from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
+
+/** AWS Bedrock has two unrelated ways in: a bearer key (Claude only, via Mantle) or a cross-account IAM role (any model, via WhiteRoom's native adapter). */
+type BedrockMode = 'api-key' | 'role';
 
 interface Props {
   name: string;
@@ -215,6 +230,187 @@ function KeyForm({ tab, onConnect, onCancel }: {
   );
 }
 
+const BEDROCK_MODE_TABS: { value: BedrockMode; label: string }[] = [
+  { value: 'api-key', label: 'API key (Claude)' },
+  { value: 'role', label: 'Cross-account role (any model)' },
+];
+
+/**
+ * The cross-account IAM role, not a key: one slot per fleet (register is an
+ * upsert on the engine), fetched and shown like ByokCard's list, but for a
+ * single config instead of several keys.
+ */
+function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; fleetId: string; fleetToken: string | null }) {
+  const auth = useMemo<FleetAuth>(() => ({ apiKey, fleetId, fleetToken }), [apiKey, fleetId, fleetToken]);
+  const [role, setRole] = useState<BedrockRoleStatus | null>(null);
+  // Separate from `role`: a failed status fetch must never look like "no role
+  // configured yet" — that would invite connecting a fresh role over a
+  // working one with no warning.
+  const [statusError, setStatusError] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+
+  const refresh = useCallback(async () => {
+    const res = await getBedrockRoleStatus(auth);
+    setRole(res);
+    setStatusError('');
+    return res;
+  }, [auth]);
+
+  // Never throws: a refresh failure after a successful connect/disconnect
+  // must not be reported as if that mutation itself failed.
+  const safeRefresh = useCallback(async () => {
+    await refresh().catch((e) => setStatusError(e instanceof Error ? e.message : 'Network error.'));
+  }, [refresh]);
+
+  useEffect(() => { void safeRefresh(); }, [safeRefresh]);
+
+  async function connect(req: BedrockRoleRequest): Promise<string | null> {
+    try {
+      const result = await storeBedrockRole(auth, req);
+      if (!result.success) return result.error || 'Could not connect that role.';
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Network error.';
+    }
+    setAdding(false);
+    await safeRefresh();
+    return null;
+  }
+
+  async function disconnect() {
+    setRemoveBusy(true); setRemoveError('');
+    try {
+      const result = await deleteBedrockRole(auth);
+      if (!result.success) { setRemoveError(result.error || 'Could not remove that role.'); return; }
+    } catch (e) {
+      setRemoveError(e instanceof Error ? e.message : 'Network error.'); return;
+    } finally {
+      setRemoveBusy(false);
+    }
+    await safeRefresh();
+  }
+
+  const showForm = adding || (role !== null && !role.configured);
+
+  return (
+    <Panel
+      title="Cross-account role"
+      count="no API key"
+      actions={role?.configured && !adding ? <Button size={28} onClick={() => setAdding(true)}>Replace role&hellip;</Button> : undefined}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
+        {role === null && statusError ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>Couldn&rsquo;t load role status: {statusError}</p>
+            <Button size={28} onClick={() => void safeRefresh()} style={{ justifySelf: 'start' }}>Retry</Button>
+          </div>
+        ) : role === null ? (
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading role status&hellip;</p>
+        ) : role.configured && !adding && (
+          <div style={{ display: 'grid', gap: 6, fontSize: 12.5, color: 'var(--tx2)' }}>
+            <span><strong style={{ color: 'var(--tx)' }}>Account</strong> {role.awsAccountId}</span>
+            <span style={{ fontFamily: FONT_MONO }}>{role.roleArn}</span>
+            <span><strong style={{ color: 'var(--tx)' }}>Region</strong> {role.region}</span>
+            {role.createdAt && <span>connected {fmtDay(role.createdAt)}</span>}
+            <Button variant="danger" size={28} disabled={removeBusy} onClick={() => setRemoving(true)} style={{ justifySelf: 'start', marginTop: 4 }}>Remove&hellip;</Button>
+          </div>
+        )}
+
+        {showForm && <RoleForm onConnect={connect} onCancel={role?.configured ? () => setAdding(false) : undefined} />}
+        {removeError && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{removeError}</p>}
+      </div>
+
+      <ConfirmDialog
+        open={removing}
+        title="Remove the Bedrock cross-account role?"
+        body={<>Calls using it fail at once until a new role is connected. The role itself (and its trust policy) stays in your AWS account until you delete it there.</>}
+        confirmLabel="Remove role"
+        busy={removeBusy}
+        onConfirm={() => { setRemoving(false); void disconnect(); }}
+        onCancel={() => setRemoving(false)}
+      />
+    </Panel>
+  );
+}
+
+/** The role_arn / external ID / region fields. Mounted fresh each time, so it never shows a previous external ID back (the engine doesn't echo it either). */
+function RoleForm({ onConnect, onCancel }: {
+  onConnect: (req: BedrockRoleRequest) => Promise<string | null>;
+  onCancel?: () => void;
+}) {
+  const [form, dispatch] = useReducer(roleFormReducer, EMPTY_ROLE_FORM);
+  const { roleArn, externalId, region, status, msg } = form;
+  const inFlight = useRef(false);
+  const saving = status === 'saving';
+
+  async function submit() {
+    if (inFlight.current || !canSubmitRoleForm(form)) return;
+    const check = bedrockRoleRequest(roleArn, externalId, region);
+    if (!check.ok) { dispatch({ type: 'error', msg: check.error }); return; }
+    inFlight.current = true;
+    dispatch({ type: 'saving' });
+    try {
+      const error = await onConnect(check.request);
+      dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
+    } finally {
+      inFlight.current = false;
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+        Create a role in your AWS account first (see the trust policy below), then paste its ARN and the external ID you put in it.
+      </p>
+      <input
+        type="text"
+        aria-label="Role ARN"
+        value={roleArn}
+        onChange={(e) => dispatch({ type: 'edit', field: 'roleArn', text: e.target.value })}
+        placeholder="arn:aws:iam::123456789012:role/WhiteRoomBedrock"
+        autoCapitalize="none"
+        spellCheck={false}
+        readOnly={saving}
+        className="wr-input"
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          aria-label="External ID"
+          value={externalId}
+          onChange={(e) => dispatch({ type: 'edit', field: 'externalId', text: e.target.value })}
+          placeholder="A random value, at least 20 characters"
+          autoCapitalize="none"
+          spellCheck={false}
+          readOnly={saving}
+          className="wr-input"
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Button onClick={() => dispatch({ type: 'edit', field: 'externalId', text: generateExternalId() })} disabled={saving}>Generate</Button>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          aria-label="Region"
+          value={region}
+          onChange={(e) => dispatch({ type: 'edit', field: 'region', text: e.target.value })}
+          placeholder="Region, e.g. us-east-1"
+          autoCapitalize="none"
+          spellCheck={false}
+          readOnly={saving}
+          className="wr-input"
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
+        {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
+      </div>
+      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+    </div>
+  );
+}
+
 const PROVIDER_TABS: { value: ProviderTab; label: string; disabled?: boolean }[] = [
   { value: 'direct', label: 'Anthropic or OpenAI' },
   { value: 'azure', label: 'Azure OpenAI' },
@@ -229,6 +425,7 @@ function maskKey(key: string): string {
 export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, previewKeys }: Props & { previewKeys?: ProviderKey[] }) {
   const [showKey, setShowKey] = useState(isNew);
   const [tab, setTab] = useState<ProviderTab>('direct');
+  const [bedrockMode, setBedrockMode] = useState<BedrockMode>('api-key');
 
   useEffect(() => {
     // Hand the fresh fleet token to server-side custody: POST it to the
@@ -280,7 +477,10 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                   <AgentNaming />
                 </>
               ) : tab === 'aws' ? (
-                <BedrockRecipe />
+                <>
+                  <SegmentedControl<BedrockMode> label="Bedrock access" value={bedrockMode} onChange={setBedrockMode} options={BEDROCK_MODE_TABS} size={24} />
+                  {bedrockMode === 'api-key' ? <BedrockRecipe /> : <BedrockRoleRecipe />}
+                </>
               ) : (
                 <>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
@@ -295,7 +495,11 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
             </div>
           </Panel>
 
-          <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} previewKeys={previewKeys} />
+          {tab === 'aws' && bedrockMode === 'role' ? (
+            <BedrockRoleCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />
+          ) : (
+            <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} previewKeys={previewKeys} />
+          )}
 
           <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <a href={SETUP_GUIDE_URL} className="wr-link">Setup guide</a>
@@ -345,6 +549,30 @@ function BedrockRecipe() {
         <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />
         <CopyChip text={BEDROCK_LINES[lang]} label={`Copy the Bedrock ${lang === 'python' ? 'Python' : 'TypeScript'} client`} />
       </div>
+    </>
+  );
+}
+
+/**
+ * Native Bedrock Runtime, any model: your agent keeps its own AWS
+ * credentials. WhiteRoom proves who's calling by replaying a signed
+ * sts:GetCallerIdentity, never a bearer key — there's nothing to paste into
+ * the client beyond the SDK install below.
+ */
+function BedrockRoleRecipe() {
+  return (
+    <>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+        Create an IAM role in your AWS account that trusts WhiteRoom, then connect it under Cross-account role below. No API key — your agent authenticates with its own AWS credentials; WhiteRoom verifies the call and assumes this role to reach Bedrock on its behalf.
+      </p>
+      <RecipeStep
+        label="1. Create the role's trust policy, with the external ID you'll use below"
+        code={bedrockRoleTrustPolicy('<your-external-id>')}
+      />
+      <RecipeStep label="2. Grant the role Bedrock access, e.g." code={'bedrock:InvokeModel\nbedrock:InvokeModelWithResponseStream\nbedrock:Converse\nbedrock:ConverseStream'} />
+      <RecipeStep label="3. Install the client shim" code={BEDROCK_ROLE_LINES.pythonInstall} />
+      <RecipeStep label="4. Point boto3 at WhiteRoom (JS/TS coming soon)" code={BEDROCK_ROLE_LINES.python('<your-region>')} />
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--tx2)' }}>Streaming calls aren&rsquo;t proxied yet — use <code>converse</code>/<code>invoke_model</code> for now.</p>
     </>
   );
 }
