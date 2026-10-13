@@ -46,7 +46,8 @@ async function proxyCall<T = Record<string, unknown>>(
 }
 
 export function toResponse(result: SandboxResponse): Response {
-  const headers: Record<string, string> = {};
+  // Per-user test data (status, history, reports, keys): never cached.
+  const headers: Record<string, string> = { "Cache-Control": "private, no-store" };
   if (result.retryAfter) headers["Retry-After"] = result.retryAfter;
   return Response.json(result.data, { status: result.status, headers });
 }
@@ -115,4 +116,12 @@ export function rotateProxyKey(ownerSubject: string, sandboxId: string, key?: st
 /** The owner's finished tests (Sandbox › Past tests), oldest first. */
 export function getHistory(ownerSubject: string, key?: string) {
   return proxyCall({ action: "sandbox_history", user_id: ownerSubject }, key);
+}
+
+/**
+ * A finished test's report (Sandbox › Past tests): its status as it ended.
+ * The engine answers only for the test's owner.
+ */
+export function getReport(ownerSubject: string, sandboxId: string, key?: string) {
+  return proxyCall({ action: "sandbox_report", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }

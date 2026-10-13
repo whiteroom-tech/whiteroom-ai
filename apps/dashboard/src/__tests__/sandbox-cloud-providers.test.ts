@@ -1,7 +1,7 @@
 // Sandbox tests through Azure OpenAI, Claude on Azure (Foundry) and AWS
 // Bedrock: the Start form checks the endpoint and builds the one the engine
-// admits, the BFF forwards provider + endpoint (and nothing new for Anthropic
-// or OpenAI), and the Connect recipe points each SDK at the proxy URL with
+// admits, the BFF forwards provider + endpoint (for Anthropic or OpenAI, only
+// the provider name), and the Connect recipe points each SDK at the proxy URL with
 // the test's proxy key. All placeholders; no real keys.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -173,7 +173,7 @@ describe('POST /api/sandbox/runs', () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-  it('Anthropic/OpenAI: the engine request is exactly as before (no provider, no endpoint)', async () => {
+  it('Anthropic/OpenAI with no provider named: the engine request is exactly as before (no provider, no endpoint)', async () => {
     for (const apiKey of ['sk-ant-placeholder', 'sk-proj-placeholder']) {
       fetchMock.mockReset();
       engineReplies({ body: { success: true, sandboxId: 'sb1', fleetToken: 'wr_placeholder' } });
@@ -186,9 +186,17 @@ describe('POST /api/sandbox/runs', () => {
     }
   });
 
-  it('a named anthropic provider is not forwarded either', async () => {
-    engineReplies({ body: { success: true, sandboxId: 'sb1' } });
+  it('a named Anthropic or OpenAI provider is forwarded for a connected test, so status reports it back', async () => {
+    engineReplies({ body: { success: true, sandboxId: 'sb1' } }, { body: { success: true, sandboxId: 'sb2' } });
     await post({ mode: 'connected', apiKey: 'sk-ant-placeholder', provider: 'anthropic' });
+    await post({ mode: 'connected', provider: 'openai' });
+    expect(engineBodies().map(b => b.provider)).toEqual(['anthropic', 'openai']);
+    expect(engineBodies()[0]).not.toHaveProperty('endpoint');
+  });
+
+  it('a demo never names a provider (the engine refuses one)', async () => {
+    engineReplies({ body: { success: true, sandboxId: 'sb1' } });
+    await post({ mode: 'demo', provider: 'anthropic' });
     expect(engineBodies()[0]).not.toHaveProperty('provider');
   });
 

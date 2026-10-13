@@ -7,12 +7,12 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, noCodeSetup, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, isSandboxProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
-import { buildTestReport, checkLabel, memoryCheckDetail, reportFileName, reportHtml, reportSource, SANDBOX_CHECKS } from '@/lib/sandbox/report';
+import { buildTestReport, checkLabel, memoryCheckDetail, reportSource, SANDBOX_CHECKS, saveReportFile } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
@@ -131,6 +131,49 @@ export function detectKey(value: string): KeyKind {
   return 'unknown';
 }
 
+/** What a new test sends: a cloud test only its endpoint, a pasted key or fleet token as itself, and a live Anthropic or OpenAI test names its provider so status reports it back. */
+export function runOptions(mode: 'demo' | 'connected', provider: SandboxProvider, credential: string, target?: { provider: CloudProvider; endpoint: string }) {
+  const pasted = credential.trim();
+  const kind = detectKey(pasted);
+  const live = mode === 'connected' && !target;
+  const pastedToken = live && kind === 'fleet' ? pasted : undefined;
+  const apiKey = live && (kind === 'anthropic' || kind === 'openai') ? pasted : undefined;
+  const named = live && !isCloudProvider(provider) ? provider : undefined;
+  const opts = { mode, apiKey, selectedCatalogIds: [] as string[], policyMode: 'observe' as const, ...(named ? { provider: named } : {}) };
+  return { opts: target ? { ...opts, provider: target.provider, endpoint: target.endpoint } : opts, pastedToken };
+}
+
+/** The Start form's choices before anything is remembered: what a first visit, and an account switch, start from. */
+export const FIRST_VISIT: { provider: SandboxProvider; endpoints: CloudEndpoints; lastUsed: SandboxProvider | null } = { provider: 'anthropic', endpoints: {}, lastUsed: null };
+
+/** Another account signed in on this browser (not a first sign-in or a sign-out): its stored choices aren't theirs. */
+export const accountSwitched = (previous: string | undefined, next: string | undefined) => !!previous && !!next && previous !== next;
+
+/** The Start form's key field: the agent's API key, what was pasted, and where to find one. */
+export function KeyField({ credential, showKey, provider, onChange, onToggleShow }: {
+  credential: string; showKey: boolean; provider: DirectProvider; onChange: (value: string) => void; onToggleShow: () => void;
+}) {
+  const keyKind = detectKey(credential);
+  return (
+    <div className={s.formGroup}>
+      <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s API key</label>
+      <div className={s.keyWrap}>
+        <input id="sandbox-key" className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={credential} onChange={e => onChange(e.target.value)} placeholder="sk-ant-…, sk-…, or wr_…" aria-describedby={keyKind === 'empty' ? 'sandbox-key-hint sandbox-key-token' : 'sandbox-key-hint'} />
+        <button type="button" className={s.keyShow} onClick={onToggleShow}>{showKey ? 'Hide' : 'Show'}</button>
+      </div>
+      <p id="sandbox-key-hint" className={s.small} style={{ marginTop: 6 }} aria-live="polite">
+        {keyKind === 'empty' && `Use the same key your agent uses, so we can match its calls to this test. ${KEY_HELP[provider]}`}
+        {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
+        {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
+        {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
+        {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s a WhiteRoom account key. Paste your Anthropic or OpenAI key, or a fleet token (wr_…).</span>}
+        {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
+      </p>
+      {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have a WhiteRoom fleet token? Paste it instead.</p>}
+    </div>
+  );
+}
+
 export function connectionRecipe(provider: DirectProvider, fleetId: string, agentId: string, language: Language) {
   const base = PROXY_URL.replace(/\/$/, '') + (provider === 'openai' ? '/v1' : '');
   const headers = { 'x-whiteroom-fleet': fleetId, 'x-whiteroom-agent': agentId };
@@ -140,6 +183,44 @@ export function connectionRecipe(provider: DirectProvider, fleetId: string, agen
   return provider === 'openai'
     ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
     : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
+}
+
+/** The agent name Connect's code starts with, until the agent's own name is seen. */
+export const PLACEHOLDER_AGENT = 'test-agent';
+
+/** The line under Connect's code: what to put in x-whiteroom-agent. None once an agent has called (its own name is in the code). */
+export function agentNameNote(run: RunStatusResult | null): string | null {
+  return run?.agents?.length ? null : `Put your agent’s own name in place of ${PLACEHOLDER_AGENT}. Any name works.`;
+}
+
+/**
+ * Anthropic vs OpenAI for the test: what the engine reports for a live test
+ * when it names one, else the choice on this page (restored from storage).
+ */
+export function directProviderOf(run: RunStatusResult | null, picked: SandboxProvider): DirectProvider {
+  if (run?.sandboxId && run.mode !== 'demo' && (run.provider === 'anthropic' || run.provider === 'openai')) return run.provider;
+  return picked === 'openai' ? 'openai' : 'anthropic';
+}
+
+/** Connect's setup choices for this provider: "No code change" only where it can work. */
+export function setupChoices(provider: SandboxProvider): Setup[] {
+  return offersNoCode(provider) ? ['Python', 'JavaScript', 'env'] : ['Python', 'JavaScript'];
+}
+
+/** The setup shown: the one picked, or Python when "No code change" isn't offered for this provider. */
+export function shownSetup(picked: Setup, provider: SandboxProvider): Setup {
+  return setupChoices(provider).includes(picked) ? picked : 'Python';
+}
+
+/**
+ * End this test? The report is kept with the result when the engine's status
+ * says so (reportsKept; Past tests can download it); otherwise it can only be
+ * downloaded while the test is open.
+ */
+export function endTestText(run: Pick<RunStatusResult, 'reportsKept'> | null): string {
+  return run?.reportsKept
+    ? 'The result and its report stay in Past tests. Ending doesn’t stop your agent; its calls just stop being part of this test.'
+    : 'The result stays in Past tests. The full report, with each check and the activity, can only be downloaded while the test is open. Ending doesn’t stop your agent; its calls just stop being part of this test.';
 }
 
 function connectionVerified(status: RunStatusResult | null) {
@@ -521,13 +602,15 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [phase, setPhase] = useState<Phase>(previewRun ? 'workspace' : 'start');
   const [wsTab, setWsTab] = useState<WorkspaceTab>('setup');
   const [run, setRun] = useState<RunStatusResult | null>(() => (previewRun ? withRunMode(previewRun) : null));
-  const [provider, setProvider] = useState<Provider>(() => (previewRun && isCloudProvider(previewRun.provider) ? previewRun.provider : 'anthropic'));
-  const [language, setLanguage] = useState<Setup>('Python');
+  const [provider, setProvider] = useState<Provider>(() => (previewRun && isSandboxProvider(previewRun.provider) ? previewRun.provider : FIRST_VISIT.provider));
+  const [pickedSetup, setLanguage] = useState<Setup>('Python');
+  // The provider this browser's last test used, tagged on Start your test.
+  const [lastUsed, setLastUsed] = useState<SandboxProvider | null>(FIRST_VISIT.lastUsed);
   // "Nothing happening?": opened by the user, or once on its own after a minute with no calls.
   const [help, helpDispatch] = useReducer(helpReducer, { testId: null, open: false, autoOpenedFor: null });
   const [credential, setCredential] = useState('');
   // Kept per provider: Azure and Foundry take an endpoint, Bedrock a region.
-  const [endpoints, setEndpoints] = useState<CloudEndpoints>({});
+  const [endpoints, setEndpoints] = useState<CloudEndpoints>(FIRST_VISIT.endpoints);
   const [endpointError, setEndpointError] = useState('');
   const [unsupported, setUnsupported] = useState<CloudProvider[]>([]);
   // The proxy key issued for one test, so it can't show against another.
@@ -553,7 +636,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const isDemo = run?.mode === 'demo';
   const expired = run?.expiresInSeconds === 0;
   const fleetId = run?.sandboxId ? `sandbox-${run.sandboxId}` : '';
-  const agentId = run?.agents?.[0]?.agentId ?? 'test-agent';
+  const agentId = run?.agents?.[0]?.agentId ?? PLACEHOLDER_AGENT;
   const keyKind = detectKey(credential);
   // A cloud test's agent calls through its proxy key: the one this tab keeps
   // for the test, else the one issued in this page (storage may be blocked).
@@ -561,7 +644,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const cloud = isCloudProvider(provider) ? provider : null;
   const endpointInput = cloud ? endpoints[cloud] ?? '' : '';
   // Demos and Anthropic/OpenAI tests use the fleet-header recipe, as before.
-  const directProvider: DirectProvider = provider === 'openai' ? 'openai' : 'anthropic';
+  const directProvider = directProviderOf(run, provider);
   // A live cloud test, by what the engine reports (an engine that reports no
   // provider at all falls back to the choice made at start).
   const liveCloud = !run || isDemo ? null
@@ -569,6 +652,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     : run.provider === undefined ? cloud : null;
   // The provider this test's calls go to, for naming it when they fail.
   const testProvider: SandboxProvider = liveCloud ?? directProvider;
+  const language = shownSetup(pickedSetup, testProvider);
   // The code shown when "No code change" is picked but code is still needed (the live card).
   const codeLanguage: Language = language === 'env' ? 'Python' : language;
   const recipe = liveCloud
@@ -593,9 +677,9 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   // Remember the provider for this test so a reload shows the right code,
   // and the endpoint or region typed for each cloud provider.
   useEffect(() => {
-    const saved = safeGet('wr_sandbox_provider');
+    const saved = safeGet(PROVIDER_STORAGE);
     const restored = restorableProvider(saved, []);
-    if (restored) setProvider(restored);
+    if (restored) { setProvider(restored); setLastUsed(restored); }
     setEndpoints(savedEndpoints());
   }, []);
 
@@ -688,13 +772,19 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     if (ownerRef.current !== owner) {
       // A different account signed in on this browser: the stored sandbox
       // token belongs to the previous one.
-      if (ownerRef.current && owner) clearSandboxToken();
+      // Also when the page loads for someone other than whose choices are stored (no sign-out ran).
+      const forgot = owner ? claimSandboxChoices(owner) : false;
+      if (accountSwitched(ownerRef.current, owner) || forgot) {
+        clearSandboxToken(); forgetSandboxChoices(); if (owner) claimSandboxChoices(owner);
+        // And what this page already loaded from them: back to a first visit.
+        setLastUsed(FIRST_VISIT.lastUsed); setProvider(FIRST_VISIT.provider); setEndpoints(FIRST_VISIT.endpoints);
+      }
       ownerRef.current = owner;
       setRun(null); setCredential(''); setPhase('start'); setBooting(true);
     }
     if (!owner) return;
     if (previewRun) {
-      if (isCloudProvider(previewRun.provider)) setProvider(previewRun.provider);
+      if (isSandboxProvider(previewRun.provider)) setProvider(previewRun.provider);
       setRun(withRunMode(previewRun)); setPhase('workspace'); setBooting(false);
       return;
     }
@@ -703,7 +793,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       if (disposed) return;
       if (st.error) throw new Error(st.error);
       if (st.sandboxId) {
-        if (isCloudProvider(st.provider)) setProvider(st.provider);
+        if (isSandboxProvider(st.provider)) setProvider(st.provider);
         setRun(withRunMode(st));
         setPhase('workspace');
         setWsTab(connectionVerified(st) || st.mode === 'demo' || st.expiresInSeconds === 0 ? 'results' : 'setup');
@@ -803,14 +893,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
   const begin = (mode: 'demo' | 'connected', target?: { provider: CloudProvider; endpoint: string }) => act(async () => {
     try {
-      const pasted = credential.trim();
-      // A cloud test sends only its endpoint: the agent keeps its own key.
-      const pastedToken = mode === 'connected' && !target && keyKind === 'fleet' ? pasted : undefined;
-      const apiKey = mode === 'connected' && !target && (keyKind === 'anthropic' || keyKind === 'openai') ? pasted : undefined;
-      const opts = { mode, apiKey, selectedCatalogIds: [], policyMode: 'observe' as const };
+      const { opts, pastedToken } = runOptions(mode, provider, credential, target);
       let created;
       try {
-        created = await createRun(target ? { ...opts, provider: target.provider, endpoint: target.endpoint } : opts, pastedToken);
+        created = await createRun(opts, pastedToken);
       } catch (e) {
         // An engine without this provider: take the choice away and say so.
         if (target && e instanceof SandboxRequestError && e.code === PROVIDER_UNSUPPORTED) {
@@ -818,7 +904,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           setUnsupported(next.unsupported);
           setProvider(next.provider);
           // Never come back to a refused provider on reload.
-          if (safeGet('wr_sandbox_provider') === target.provider) safeRemove('wr_sandbox_provider');
+          if (safeGet(PROVIDER_STORAGE) === target.provider) safeRemove(PROVIDER_STORAGE);
+          setLastUsed(l => (l === target.provider ? null : l));
         }
         throw e;
       }
@@ -827,7 +914,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       const { proxyKey: issuedProxyKey, ...result } = created;
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
       // Remembered only once the engine accepted it, so a reload shows the right code.
-      if (mode === 'connected') safeSet('wr_sandbox_provider', provider);
+      if (mode === 'connected') { safeSet(PROVIDER_STORAGE, provider); setLastUsed(provider); }
       if (issuedProxyKey) {
         saveProxyKey(result.sandboxId, issuedProxyKey);
         setShownKey({ sandboxId: result.sandboxId, proxyKey: issuedProxyKey });
@@ -838,7 +925,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         window.dispatchEvent(new Event('storage'));
       }
       track(testStartedEvent(mode, provider));
-      setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : {}) });
+      setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : 'provider' in opts && opts.provider ? { provider: opts.provider } : {}) });
       setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
       if (mode === 'demo') {
         const d = await startDemo(result.sandboxId);
@@ -882,9 +969,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     const latest = await getStatus().catch(() => ({}) as RunStatusResult);
     const report = buildTestReport(reportSource(latest.error ? {} : latest, run));
     track({ name: 'sandbox_report_exported', props: { mode: run.mode } });
-    const url = URL.createObjectURL(new Blob([reportHtml(report)], { type: 'text/html' }));
-    const a = document.createElement('a'); a.href = url; a.download = reportFileName(report); a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveReportFile(report);
   });
 
   const end = () => act(async () => {
@@ -1015,7 +1100,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           ? 'Tell us where your agent’s model runs. Your agent keeps its own key; this test gives it a URL to call through.'
           : 'Paste the API key your agent uses. We only use it to link this test to your agent’s calls; the key itself is never stored.'}</p>
         <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 480 }}>
-          <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} onPick={pickProvider} />
+          <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} lastUsed={lastUsed} onPick={pickProvider} />
           {cloud ? (
             <CloudEndpointField provider={cloud} value={endpointInput} error={endpointError}
               onChange={v => {
@@ -1025,21 +1110,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
-          <div className={s.formGroup}>
-            <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s API key <span className={s.formLabelHint}>or a WhiteRoom fleet token</span></label>
-            <div className={s.keyWrap}>
-              <input id="sandbox-key" className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={credential} onChange={e => setCredential(e.target.value)} placeholder="sk-ant-…, sk-…, or wr_…" aria-describedby="sandbox-key-hint" />
-              <button type="button" className={s.keyShow} onClick={() => setShowKey(v => !v)}>{showKey ? 'Hide' : 'Show'}</button>
-            </div>
-            <p id="sandbox-key-hint" className={s.small} style={{ marginTop: 6 }} aria-live="polite">
-              {keyKind === 'empty' && 'Use the same key your agent uses, so we can match its calls to this test.'}
-              {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
-              {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
-              {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
-              {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s a WhiteRoom account key. Paste your Anthropic or OpenAI key, or a fleet token (wr_…).</span>}
-              {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
-            </p>
-          </div>
+          <KeyField credential={credential} showKey={showKey} provider={directProvider} onChange={setCredential} onToggleShow={() => setShowKey(v => !v)} />
           )}
           <div className={s.btnRow} style={{ marginTop: 8 }}>
             <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy || (cloud ? !endpointInput.trim() : !['anthropic', 'openai', 'fleet'].includes(keyKind))} onClick={startTest}>{busy ? 'Starting…' : 'Start test →'}</button>
@@ -1083,7 +1154,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               <span className={s.small} style={{ alignSelf: 'center' }}>{liveCloud ? providerSummary(liveCloud, run?.endpointHost) : provider === 'openai' ? 'OpenAI' : 'Anthropic'}</span>
             )}
             <span style={{ width: 12 }} />
-            {(['Python', 'JavaScript', 'env'] as const).map(l => (
+            {setupChoices(testProvider).map(l => (
               <button key={l} type="button" className={`${s.selectPill} ${language === l ? s.selectPillOn : ''}`} aria-pressed={language === l} onClick={() => setLanguage(l)}>{l === 'env' ? 'No code change' : l}</button>
             ))}
           </div>
@@ -1097,6 +1168,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           </> : <>
             <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{recipe}</pre>
             <CopyButton text={recipe} disabled={!!liveCloud && !proxyKey} />
+            {!isDemo && agentNameNote(run) && <p className={s.small} style={{ marginTop: 8 }}>{agentNameNote(run)}</p>}
           </>}
           {liveCloud && !proxyKey && <ProxyKeyNotice disabled={busy || !!expired} onRecover={() => { void recoverProxyKey(); }} />}
 
@@ -1218,7 +1290,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         <div className={s.overlay} onClick={e => { if (e.target === e.currentTarget) setConfirmEnd(false); }}>
           <div className={s.modal} ref={modalRef} role="alertdialog" aria-labelledby="end-title">
             <h2 id="end-title" style={{ fontFamily: FONT_DISPLAY }}>End this test?</h2>
-            <p>The result stays in Past tests. The full report, with each check and the activity, can only be downloaded while the test is open. Ending doesn’t stop your agent; its calls just stop being part of this test.</p>
+            <p>{endTestText(run)}</p>
             <div className={s.btnRow}>
               <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => void end()} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}>End test</button>
               <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy}>Download report</button>

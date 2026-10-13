@@ -102,9 +102,12 @@ export async function POST(req: Request) {
     customControls: body.customControls as unknown[] | undefined,
     policyMode: body.policyMode as "observe" | "enforce" | undefined,
     mode: body.mode as "demo" | "connected" | undefined,
-    // Only a cloud provider is forwarded, so an Anthropic or OpenAI request
-    // reaches the engine exactly as it did before providers existed.
-    provider: cloud ? (body.provider as CloudProvider) : undefined,
+    // Anthropic or OpenAI is forwarded for a connected test so status reports
+    // it back (a reload shows the right code). The engine has accepted and
+    // stored both since cloud Sandbox tests; older engines ignore it. A demo
+    // names none: the engine refuses a provider for one.
+    provider: cloud ? (body.provider as CloudProvider)
+      : body.mode === "connected" && (body.provider === "anthropic" || body.provider === "openai") ? body.provider : undefined,
     endpoint: cloud ? (body.endpoint as string) : undefined,
   }, token);
 

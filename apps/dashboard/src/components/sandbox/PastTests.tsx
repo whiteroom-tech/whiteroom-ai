@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DataTable, Hint, Panel, Tag, FONT_MONO } from '@whiteroom/ui';
-import { getHistory, type PastTest } from '@/lib/sandbox/api';
+import { getHistory, getPastReport, type PastTest } from '@/lib/sandbox/api';
+import { pastTestReport, saveReportFile } from '@/lib/sandbox/report';
+import { analytics } from '@/lib/analytics';
 import { HELP } from '@/lib/metric-definitions';
 import { isOpen, pastKind, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
 import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
@@ -41,9 +43,55 @@ function endedFull(iso: string): string {
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
 }
 
+/** Fetches an ended test's kept report and saves it, in the live download's format. Throws when it can't. */
+async function downloadPastReport(test: PastTest): Promise<void> {
+  const kept = await getPastReport(test.sandboxId);
+  const report = pastTestReport(kept, test.sandboxId);
+  if (!report) throw new Error(kept.error ?? 'No report');
+  saveReportFile(report);
+  analytics.capture('sandbox_report_exported', { mode: report.mode, from: 'past_tests' });
+}
+
+/** A Past tests download: in progress, and how the last attempt went. */
+export interface DownloadState { saving: boolean; outcome: 'saved' | 'failed' | null }
+export const DOWNLOAD_IDLE: DownloadState = { saving: false, outcome: null };
+
+/**
+ * One click on Download report: ignored while a download is in progress,
+ * else saving until `save` settles, then saved or failed. Returns null when
+ * the click was ignored.
+ */
+export function startDownload(state: DownloadState, save: () => Promise<void>, set: (s: DownloadState) => void): Promise<void> | null {
+  if (state.saving) return null;
+  set({ saving: true, outcome: null });
+  return save().then(() => set({ saving: false, outcome: 'saved' }), () => set({ saving: false, outcome: 'failed' }));
+}
+
+/**
+ * Download report and its status line. While saving the button is
+ * aria-disabled, not disabled, so it keeps focus; the outcome is announced
+ * politely.
+ */
+export function DownloadReport({ state, onClick }: { state: DownloadState; onClick: () => void }) {
+  return <>
+    <div className={s.btnRow} style={{ marginTop: 10 }}>
+      <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onClick} aria-disabled={state.saving || undefined} style={{ fontSize: 12 }}>{state.saving ? 'Downloading…' : 'Download report'}</button>
+    </div>
+    <p className={s.small} aria-live="polite" style={{ margin: state.outcome ? '6px 0 0' : 0, color: state.outcome === 'failed' ? 'var(--bad)' : undefined }}>
+      {state.outcome === 'saved' ? 'Report downloaded.' : state.outcome === 'failed' ? 'Couldn’t get this report. Try again.' : ''}
+    </p>
+  </>;
+}
+
 /** What history keeps about one test, which is all that's left once it ends. */
-export function PastTestDetail({ test, onClose }: { test: PastTest; onClose: () => void }) {
+export function PastTestDetail({ test, onClose, onDownload = downloadPastReport }: {
+  test: PastTest;
+  onClose: () => void;
+  /** Saves the test's report. Defaults to fetching the kept report and saving its file. */
+  onDownload?: (test: PastTest) => Promise<void>;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const [download, setDownload] = useState<DownloadState>(DOWNLOAD_IDLE);
   useEffect(() => { ref.current?.focus(); }, [test.sandboxId]);
   const result = RESULT[pastResult(test)];
   return (
@@ -58,7 +106,7 @@ export function PastTestDetail({ test, onClose }: { test: PastTest; onClose: () 
         <dt>Kind</dt><dd>{test.isTrial ? 'Demo' : 'Your agent'}</dd>
         <dt>Test ID</dt><dd style={{ fontFamily: FONT_MONO, overflowWrap: 'anywhere' }}>{test.sandboxId}</dd>
       </dl>
-      <p className={s.small} style={{ margin: '10px 0 0' }}>Each check’s result and the activity aren’t kept after a test ends. To keep them, download the report before you end a test.</p>
+      {test.hasReport ? <DownloadReport state={download} onClick={() => { void startDownload(download, () => onDownload(test), setDownload); }} /> : <p className={s.small} style={{ margin: '10px 0 0' }}>Each check’s result and the activity aren’t kept after a test ends. To keep them, download the report before you end a test.</p>}
     </div>
   );
 }

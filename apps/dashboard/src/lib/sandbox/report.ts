@@ -209,3 +209,22 @@ ${r.events.map((e) => `<tr><td class="mono">${esc(e.at)}</td><td class="mono">${
 export function reportFileName(r: TestReport): string {
   return `whiteroom-test-report-${r.generatedAt.slice(0, 10)}-${r.testId.slice(0, 8)}.html`;
 }
+
+/**
+ * An ended test's report, from what the engine kept (its status as it ended),
+ * in the same format as the live download, dated when the test ended (else
+ * now). Null when nothing was kept.
+ */
+export function pastTestReport(kept: { report?: RunStatusResult & { endedAt?: string }; destroyedAt?: string }, sandboxId: string, now: number = Date.now()): TestReport | null {
+  if (!kept.report || typeof kept.report !== 'object') return null;
+  // The first of these that is a real date: the report's own end, then the row's.
+  const endedAt = [kept.report.endedAt, kept.destroyedAt].map((t) => Date.parse(t ?? '')).find(Number.isFinite);
+  return buildTestReport(withRunMode({ ...kept.report, sandboxId }), endedAt ?? now);
+}
+
+/** Saves the report as its HTML file. Browser only. */
+export function saveReportFile(r: TestReport): void {
+  const url = URL.createObjectURL(new Blob([reportHtml(r)], { type: 'text/html' }));
+  const a = document.createElement('a'); a.href = url; a.download = reportFileName(r); a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -1,5 +1,5 @@
 import { safeGet, safeRemove, safeSessionGet, safeSessionRemove, safeSessionSet, safeSet } from '@/lib/safe-storage';
-import type { CloudProvider } from '@/lib/sandbox/providers';
+import { ENDPOINTS_STORAGE, type SandboxProvider } from '@/lib/sandbox/providers';
 import type {
   ControlDefinition,
   CustomControlInput,
@@ -33,7 +33,7 @@ export interface RunStatusResult {
   experience?: "legacy" | "new";
   expiresAt?: string;
   expiresInSeconds?: number | null;
-  /** The provider named when the test started; null when none was (Anthropic or OpenAI by key). */
+  /** The provider named when the test started; null when none was (older tests, demos). */
   provider?: string | null;
   /** Hostname only, for Azure OpenAI, Foundry and Bedrock tests. */
   endpointHost?: string | null;
@@ -77,6 +77,8 @@ export interface RunStatusResult {
     [key: string]: unknown;
   }[];
   failedCalls?: FailedCalls;
+  /** The engine keeps an ended test's report for Past tests (sandbox_report). Left out by engines that don't. */
+  reportsKept?: boolean;
   error?: string;
 }
 
@@ -104,6 +106,35 @@ export function clearSandboxToken(): void {
   safeRemove('wr_sandbox_token');
   safeSessionRemove(PROXY_KEY_STORAGE);
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
+}
+
+/** Where the Start form remembers the last test's provider (the "Last used" tag). */
+export const PROVIDER_STORAGE = 'wr_sandbox_provider';
+
+/**
+ * Forgets this browser's Start-form choices (last provider, cloud endpoints),
+ * on sign-out or when another account signs in, so a shared browser doesn't
+ * show one user's choices to the next.
+ */
+export function forgetSandboxChoices(): void {
+  safeRemove(PROVIDER_STORAGE);
+  safeRemove(ENDPOINTS_STORAGE);
+  safeRemove(CHOICES_OWNER_STORAGE);
+}
+
+/** Whose Start-form choices this browser holds, so they're dropped for anyone else even if no sign-out ran. */
+export const CHOICES_OWNER_STORAGE = 'wr_sandbox_choices_owner';
+
+/**
+ * Marks the stored choices as `owner`'s. True when they belonged to another
+ * account and were forgotten (the caller resets what it already loaded).
+ */
+export function claimSandboxChoices(owner: string): boolean {
+  const previous = safeGet(CHOICES_OWNER_STORAGE);
+  const other = !!previous && previous !== owner;
+  if (other) forgetSandboxChoices();
+  safeSet(CHOICES_OWNER_STORAGE, owner);
+  return other;
 }
 
 // A cloud test's proxy key is returned once, when the test starts. It is kept
@@ -204,7 +235,8 @@ export function createRun(opts: {
   selectedCatalogIds?: string[];
   customControls?: CustomControlInput[];
   policyMode?: "observe" | "enforce";
-  provider?: CloudProvider;
+  /** Any provider for a connected test; the engine reports it back on status. */
+  provider?: SandboxProvider;
   endpoint?: string;
 }, fleetToken?: string): Promise<{ success?: boolean; sandboxId?: string; fleetToken?: string; expiresAt?: string; mode?: "demo" | "connected"; controls?: ControlDefinition[]; provider?: string; proxyKey?: string; error?: string }> {
   // A pasted fleet token authenticates this one request and is never stored.
@@ -246,6 +278,21 @@ export interface PastTest {
   overall: "pass" | "fail" | "partial" | "empty";
   totalTasks: number;
   isTrial: boolean;
+  /** The engine kept this test's report (Download report). Left out by engines that keep none. */
+  hasReport?: boolean;
+}
+
+/** A finished test's report as the engine kept it: its status as it ended. */
+export interface PastReport {
+  success?: boolean;
+  sandboxId?: string;
+  destroyedAt?: string;
+  report?: RunStatusResult & { createdAt?: string; endedAt?: string };
+  error?: string;
+}
+
+export function getPastReport(sandboxId: string): Promise<PastReport> {
+  return bffFetch(`${encodeURIComponent(sandboxId)}/report`);
 }
 
 export function getHistory(): Promise<{ success?: boolean; sessions?: PastTest[]; error?: string }> {
