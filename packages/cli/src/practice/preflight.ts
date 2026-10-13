@@ -101,13 +101,11 @@ export interface KeyChoice {
   fromEnv: boolean;
 }
 
-/** The key from ANTHROPIC_API_KEY or OPENAI_API_KEY, or null to prompt. */
-export function keyFromEnv(env: NodeJS.ProcessEnv): KeyChoice | null {
-  for (const keyVar of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] as const) {
-    const key = env[keyVar]?.trim();
-    if (key) return { keyVar, key, fromEnv: true };
-  }
-  return null;
+/** The key from ANTHROPIC_API_KEY or OPENAI_API_KEY; null to prompt; "both" when it can't tell which (a guess could burn a try). */
+export function keyFromEnv(env: NodeJS.ProcessEnv): KeyChoice | "both" | null {
+  const set = (["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] as const).filter((v) => env[v]?.trim());
+  if (set.length > 1) return "both";
+  return set.length ? { keyVar: set[0], key: env[set[0]]!.trim(), fromEnv: true } : null;
 }
 
 /** A pasted key: the variable it goes in is the provider's, by the key's shape. */
@@ -115,9 +113,11 @@ export const keyFromPaste = (key: string): KeyChoice => ({ keyVar: key.startsWit
 
 export class Interrupted extends Error {}
 
+type Terminal = Pick<NodeJS.ReadStream, "setRawMode" | "setEncoding" | "resume" | "pause" | "on" | "off">;
+
 /** Reads a line from the terminal without echoing it. Ctrl+C rejects with Interrupted. */
-export function hiddenPrompt(question: string): Promise<string> {
-  const { stdin, stderr } = process;
+export function hiddenPrompt(question: string, stdin: Terminal = process.stdin): Promise<string> {
+  const { stderr } = process;
   stderr.write(question);
   stdin.setRawMode(true);
   stdin.setEncoding("utf8");

@@ -57,6 +57,7 @@ export const copy = {
   badCode: "That isn't a run code. Copy it again from the dashboard (it starts with wrrt_).",
   needCode: "Paste the run code from the dashboard (it won't show): ",
   needKey: "Paste the model provider key your agent uses (it won't show): ",
+  bothKeys: "Both ANTHROPIC_API_KEY and OPENAI_API_KEY are set. Unset the one your agent doesn't use, then run the command again. Nothing was sent.",
   noKey: "Set ANTHROPIC_API_KEY or OPENAI_API_KEY to the key your agent uses, then run the command again.",
   node: (v: string) => `Needs Node 20 or later (you have ${v}).`,
   windows: "Practice tests run on macOS and Linux in this beta. Run the command there, or in WSL.",

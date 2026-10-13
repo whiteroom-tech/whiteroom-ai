@@ -138,7 +138,8 @@ export function runAdapter(o: RunOptions): Promise<Outcome> {
       void killGroup(child).then(() => resolve(out));
     };
     const onAbort = () => finish({ kind: "stopped" });
-    const timer = setTimeout(() => finish({ kind: "deadline" }), Math.max(0, o.deadline - Date.now()));
+    // setTimeout fires at once past 2^31-1 ms, so a far deadline is clamped.
+    const timer = setTimeout(() => finish({ kind: "deadline" }), Math.min(2 ** 31 - 1, Math.max(0, o.deadline - Date.now())));
     o.signal.addEventListener("abort", onAbort, { once: true });
     if (o.signal.aborted) onAbort();
 

@@ -8,7 +8,9 @@ import { after, describe, it } from "node:test";
 import { childEnv, MAX_TOOL_CALLS, runAdapter, type ToolCall } from "../src/practice/adapter.js";
 import { parseArgs } from "../src/legacy-args.js";
 import { Engine, REDIRECTED, Unreachable } from "../src/practice/engine.js";
-import { adapterLabel, adapterProblem, keyFromEnv, keyFromPaste, nodeTooOld, targetOrigin, words } from "../src/practice/preflight.js";
+import { PassThrough } from "node:stream";
+import { adapterLabel, adapterProblem, hiddenPrompt, Interrupted, keyFromEnv, keyFromPaste, nodeTooOld, targetOrigin, words } from "../src/practice/preflight.js";
+import { finalText } from "../src/practice/run.js";
 import { clean, copy, hideSecret, results, type Report } from "../src/practice/text.js";
 import { fixture, startStub, type Stub } from "./stub.js";
 
@@ -42,8 +44,27 @@ describe("preflight", () => {
   it("reads the key from the environment, or by its shape when pasted", () => {
     assert.deepEqual(keyFromEnv({ OPENAI_API_KEY: "sk-abc12345" }), { keyVar: "OPENAI_API_KEY", key: "sk-abc12345", fromEnv: true });
     assert.equal(keyFromEnv({ ANTHROPIC_API_KEY: "  " }), null);
+    assert.equal(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", OPENAI_API_KEY: "sk-b" }), "both");
     assert.equal(keyFromPaste("sk-ant-abc").keyVar, "ANTHROPIC_API_KEY");
     assert.equal(keyFromPaste("sk-proj-abc").keyVar, "OPENAI_API_KEY");
+  });
+
+  it("the hidden prompt: backspace, bracketed paste, raw mode restored; Ctrl+C interrupts", async () => {
+    const term = () => {
+      const t = Object.assign(new PassThrough(), { raw: [] as boolean[] });
+      return Object.assign(t, { setRawMode: (on: boolean) => (t.raw.push(on), t) }) as unknown as NodeJS.ReadStream & { raw: boolean[] };
+    };
+    const esc = String.fromCharCode(27);
+    let t = term();
+    let p = hiddenPrompt("", t);
+    t.write(`wrrt_x${String.fromCharCode(127)}y${esc}[200~-pasted${esc}[201~\r`);
+    assert.equal(await p, "wrrt_y-pasted");
+    assert.deepEqual(t.raw, [true, false]);
+    t = term();
+    p = hiddenPrompt("", t);
+    t.write(String.fromCharCode(3));
+    await assert.rejects(p, Interrupted);
+    assert.deepEqual(t.raw, [true, false]);
   });
 
   it("needs Node 20", () => {
@@ -148,6 +169,15 @@ describe("results (§8)", () => {
     assert.match(results(rep).lines.join("\n"), /Run it 3 times/);
     rep.sample = true;
     assert.match(results(rep).lines.join("\n"), /sample agent/);
+  });
+});
+
+describe("the final answer sent to WhiteRoom", () => {
+  it("fits 32 Ki characters and the body limit, multi-byte text included", () => {
+    assert.equal(finalText("a".repeat(40_000)).length, 32 * 1024);
+    const wide = finalText(String.fromCodePoint(0x1f600).repeat(20_000));
+    assert.ok(Buffer.byteLength(wide) <= 60_000 && wide.length > 0);
+    assert.equal(finalText("short"), "short");
   });
 });
 

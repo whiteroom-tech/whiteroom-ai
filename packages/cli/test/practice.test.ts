@@ -144,6 +144,14 @@ describe("practice run: claim errors (exit 2, nothing else sent)", () => {
     assert.equal(s.seen.length, 0);
   });
 
+  it("both provider keys set: asks which, rather than guessing and using a try", async () => {
+    const s = await stub();
+    const r = await run(s, [], { env: testEnv({ ANTHROPIC_API_KEY: KEY, OPENAI_API_KEY: OPENAI_KEY }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Both ANTHROPIC_API_KEY and OPENAI_API_KEY are set/);
+    assert.equal(s.seen.length, 0);
+  });
+
   it("no key and no terminal to ask for one: says which variables to set", async () => {
     const s = await stub();
     const r = await run(s, [], { env: testEnv() });
@@ -249,6 +257,18 @@ describe("practice run: child process rules (§9.4)", () => {
     assert.equal(alive(Number(readFileSync(pidFile, "utf8"))), false);
   });
 
+  it("SIGTERM to the CLI ends the run the same way (exit 3, cancelled, group killed)", async () => {
+    const s = await stub();
+    const pidFile = join(dir, "term.pid");
+    const r = await run(s, ["--adapter", `node ${hang(pidFile)}`], {
+      during: (pid) => void waitFor(() => existsSync(pidFile)).then(() => process.kill(pid, "SIGTERM")),
+    });
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /Practice test ended\./);
+    assert.equal(s.count("/api/readiness/cancel"), 1);
+    assert.equal(alive(Number(readFileSync(pidFile, "utf8"))), false);
+  });
+
   it("at the deadline: SIGTERM, then SIGKILL after 5 s, to the whole group; the task ends as 'deadline'", async () => {
     const s = await stub({ taskMs: 1_000, done: fixture("tasks.next.done").response });
     const pidFile = join(dir, "deadline.pid");
@@ -277,7 +297,7 @@ describe("practice run: child process rules (§9.4)", () => {
       });
     `);
     const r = await run(s, ["--adapter", `node ${spy}`], {
-      env: testEnv({ ANTHROPIC_API_KEY: KEY, OPENAI_API_KEY: OPENAI_KEY, WHITEROOM_API_KEY: "wr_placeholder", WHITEROOM_URL: "http://127.0.0.1:9" }),
+      env: testEnv({ ANTHROPIC_API_KEY: KEY, WHITEROOM_API_KEY: "wr_placeholder", WHITEROOM_URL: "http://127.0.0.1:9" }),
     });
     assert.equal(r.code, 0, r.stderr);
     const seen = JSON.parse(s.finals[0].output!);

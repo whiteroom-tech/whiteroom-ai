@@ -15,7 +15,7 @@ const HEARTBEAT_MS = 30_000;
 /** A practice task WhiteRoom dropped (a restart, a failed capture): ask for it again, it doesn't count (§2 rule 4). */
 const RESTART = new Set(["attempt_discarded", "not_found"]);
 /** The final answer WhiteRoom takes: 32 Ki characters, inside its 64 KiB body limit. */
-function finalText(s: string): string {
+export function finalText(s: string): string {
   let out = s.slice(0, 32 * 1024);
   while (Buffer.byteLength(out) > 60_000) out = out.slice(0, Math.floor(out.length * 0.9));
   return out;
@@ -97,7 +97,9 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   // The user's own command runs through their shell as typed; nothing from WhiteRoom is ever put into it (§9.4).
   const launch: Launch = a.adapter !== undefined ? { shell: a.adapter } : { file: process.execPath, args: [SAMPLE_AGENT] };
 
-  let choice: KeyChoice | null = keyFromEnv(process.env);
+  const fromEnv = keyFromEnv(process.env);
+  if (fromEnv === "both") return fail(ending(2, copy.bothKeys));
+  let choice: KeyChoice | null = fromEnv;
   let code = "";
   try {
     if (a.codeStdin) code = await firstLineOfStdin();
