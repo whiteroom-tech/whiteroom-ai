@@ -105,9 +105,9 @@ describe('practice test screens', () => {
     const open = text(render('refused-open'));
     expect(open).toContain('You already have a practice test open.');
     expect(open).toMatch(/View it.*End it…/);
-    // Open on another fleet of the account: said so, with nothing to open or end from here.
+    // Open on another fleet (or another account): said so, with nothing to open or end from here.
     const elsewhere = text(render('refused-open-elsewhere'));
-    expect(elsewhere).toContain('You already have a practice test open on another fleet of your account. Finish or end it there, then start this one.');
+    expect(elsewhere).toContain('You already have a practice test open on another fleet. Finish or end it there, then start this one.');
     expect(elsewhere).not.toMatch(/View it|End it|Continue it|Cancel it/);
   });
 
@@ -132,6 +132,10 @@ describe('practice test screens', () => {
     expect(text(render('running'))).toContain('Practice tasks: 4 of 18 done (run 1 of 3)');
     expect(text(render('lost'))).toContain('Lost contact with your computer.');
     expect(text(render('finalizing'))).toContain('Working out the result');
+    expect(text(render('finalizing'))).toContain('Every practice task is done.');
+    // A run ended early (a crashed adapter) never claims every task is done.
+    expect(text(render('finalizing-early'))).toContain('Working out the result from the practice tasks that ran.');
+    expect(text(render('finalizing-early'))).not.toContain('Every practice task is done');
     expect(render('finalizing')).not.toContain('End test');
   });
 
@@ -153,7 +157,11 @@ describe('practice test screens', () => {
     expect(incomplete).toContain('Rerun checks that didn’t run');
     const ended = text(render('ended'));
     expect(ended).toMatch(/Didn’t finish.*What stopped the test.*You ended the test from the dashboard\..*Start a new test/);
-    expect(text(render('ended-call-cap'))).toContain('What stopped the test Stopped to stay within the 120-call limit after WhiteRoom had to rerun a task (not your agent).');
+    expect(text(render('ended-call-cap'))).toContain('What stopped the test Stopped at this test’s model-call limit after WhiteRoom had to rerun a task (not your agent).');
+    expect(text(render('ended-no-model-calls'))).toContain('What stopped the test Stopped: your agent didn’t make any model calls through WhiteRoom');
+    expect(text(render('ended-engine-error'))).toMatch(/What stopped the test WhiteRoom couldn’t finish working out the result \(not your agent\)\..*Start a new test/);
+    // A crashed adapter still gets a result over the tasks it finished, and says why it ended early.
+    expect(text(render('incomplete-adapter-crashed'))).toMatch(/Didn't finish · .*Your adapter stopped with an error, so the test ended early\..*Rerun checks that didn’t run/);
   });
 
   it('confirms a rerun’s cost and ending a test before acting', () => {

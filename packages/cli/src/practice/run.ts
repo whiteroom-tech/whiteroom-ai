@@ -71,11 +71,15 @@ interface ControlRequest {
  */
 function sessionEnding(r: Reply): Ending {
   const reason = r.body?.reason;
+  // The run already finished (WhiteRoom finished it meanwhile): its result, not a refusal. Without one, tasks/next replays it.
+  if (r.body?.done || reason === "finished") return r.body?.report ? results(r.body.report) : { ...ending(3, copy.finished(r.body?.verdict)), result: true, replay: true };
   if (r.status === REDIRECTED) return ending(3, copy.redirected);
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
   if (reason === "expired") return ending(3, copy.expired);
   if (reason === "call_cap") return ending(3, copy.callCap);
+  if (reason === "no_model_calls") return ending(3, copy.noModelCalls);
+  if (reason === "engine_error") return ending(3, copy.engineError);
   if (r.status === 401) return ending(3, copy.sessionGone);
   if (r.status === 429) return ending(3, copy.busy);
   if (r.status === 403) return ending(3, copy.refused);
@@ -87,7 +91,8 @@ const print = (e: Ending, out = say) => {
   for (const l of e.lines) out(l);
   return e.code;
 };
-const fail = (e: Ending) => print(e, warn);
+/** A refusal on stderr; a result (the run had already finished) on stdout. */
+const fail = (e: Ending) => print(e, e.result ? say : warn);
 
 export async function practiceRun(a: RunArgs): Promise<number> {
   // ── Preflight: nothing is sent until every check passes ──
@@ -196,7 +201,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     if (beating) return;
     beating = true;
     engine.post("/api/readiness/heartbeat", {}, { retryNetwork: true })
-      .then((r) => r.status !== 200 && stopWith(sessionEnding(r), false))
+      .then((r) => (r.status !== 200 || r.body?.done) && stopWith(sessionEnding(r), false))
       .catch((err) => err instanceof Unreachable && stopWith(ending(3, copy.unreachable), false))
       .finally(() => { beating = false; });
   }, HEARTBEAT_MS);
@@ -250,11 +255,15 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     };
     if (out.kind === "final") return final(finalText(out.output), "final");
     if (why === "deadline") return warn(copy.deadline), final(null, "deadline");
-    // The adapter crashed or broke the protocol: kept as this task's result, then the test stops (exit 3).
-    await send(null, "adapter_exited");
-    await engine.cancel();
-    if (out.kind === "exited") return ending(3, ...copy.adapterCrashed(out.how, out.tail));
-    return ending(3, copy.adapterBroke(out.kind === "broke" ? out.why : why === "tool_limit" ? copy.tooManyTools : copy.badTool), copy.cancelled);
+    // The adapter crashed or broke the protocol: kept as this task's result, unless WhiteRoom dropped the task
+    // (it runs again); then the test ends with a result over the tasks done so far (exit 3).
+    const r = await send(null, "adapter_exited");
+    if (r && r.status !== 200) return RESTART.has(r.body?.reason) ? (warn(copy.restart), null) : sessionEnding(r);
+    const c = await engine.cancel(true);
+    if (c && c.status !== 200 && c.body?.reason === "finished") return sessionEnding(c); // It finished meanwhile: its result wins.
+    const kept = c?.status === 200 && c.body?.lifecycle === "finished" ? copy.keptResults : copy.keptUnconfirmed;
+    if (out.kind === "exited") return ending(3, ...copy.adapterCrashed(out.how, out.tail), kept);
+    return ending(3, copy.adapterBroke(out.kind === "broke" ? out.why : why === "tool_limit" ? copy.tooManyTools : copy.badTool), kept);
   };
 
   /** The control checks: each call WhiteRoom plans, sent with the key, its response reported back (§6). */
@@ -291,6 +300,16 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     }
   };
 
+  /** Shows how the test ended; a finished run whose reply had no result gets it from tasks/next (one try). */
+  const end = async (e: Ending): Promise<number> => {
+    if (e.replay) {
+      engine.signal = null;
+      const r = await engine.post("/api/readiness/tasks/next", { key }).catch(() => null);
+      if (r?.status === 200 && r.body?.done && r.body.report) return print(results(r.body.report));
+    }
+    return fail(e);
+  };
+
   // ── The practice tasks, until the result ──
   try {
     while (!halt.why) {
@@ -302,15 +321,15 @@ export async function practiceRun(a: RunArgs): Promise<number> {
         if (err instanceof Unreachable) return fail(ending(3, copy.unreachable));
         throw err;
       }
-      if (next.status !== 200) return fail(sessionEnding(next));
+      if (next.status !== 200 || next.body?.done) return end(sessionEnding(next));
       const b = next.body;
-      if (b?.done && b.report) return print(results(b.report));
       const e = b?.task ? await practiceTask(b.task, b.progress) : b?.controls ? await controlChecks(b.controls) : ending(3, copy.cliOutdated);
-      if (e && !halt.why) return fail(e);
+      // A result wins over how the session stopped meanwhile.
+      if (e && (!halt.why || e.result)) return end(e);
     }
     // Ctrl+C or a signal ends the run, so the dashboard doesn't wait for this computer.
     if (halt.cancel) await engine.cancel();
-    return fail(halt.why!);
+    return end(halt.why!);
   } finally {
     clearInterval(heartbeat);
     process.off("SIGINT", onSigint);

@@ -90,6 +90,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
         <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 18 }}>{head}</h2>
         <div>{[run.sourceFleetId, who, model, run.endedAt && when(run.endedAt)].filter(Boolean).join(' · ')}</div>
         {caveat && <div style={{ marginTop: 4 }}>{caveat}</div>}
+        {!ended && run.endReason && <div style={{ marginTop: 4 }}>{endedBecause(run.endReason)}</div>}
       </div>
 
       {(ended || !r) && (

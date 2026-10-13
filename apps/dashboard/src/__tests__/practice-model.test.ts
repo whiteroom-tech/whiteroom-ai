@@ -190,7 +190,10 @@ describe('practice test progress and Past tests', () => {
   const run = (p: Partial<PracticeRun>): PracticeRun => ({ ...fixture<PracticeRun>('runs.get'), scope: null, runs: 3, lifecycle: 'active', startedAt: '2026-10-12T14:08:00Z', ...p });
 
   it('says why a test ended without a result, never blaming the agent for WhiteRoom’s reruns', () => {
-    expect(endedBecause('call_cap')).toBe('Stopped to stay within the 120-call limit after WhiteRoom had to rerun a task (not your agent).');
+    expect(endedBecause('call_cap')).toBe('Stopped at this test’s model-call limit after WhiteRoom had to rerun a task (not your agent).');
+    expect(endedBecause('no_model_calls')).toMatch(/didn’t make any model calls through WhiteRoom in 2 practice tasks in a row\. Check your adapter/);
+    expect(endedBecause('adapter_crashed')).toMatch(/^Your adapter stopped with an error, so the test ended early\. The practice tasks it finished are in the results\.$/);
+    expect(endedBecause('engine_error')).toMatch(/\(not your agent\)\. Start a new test\.$/);
     expect(endedBecause('stalled')).toMatch(/didn’t ask for the next practice task for 5 minutes/);
     expect(endedBecause('too_many_restarts')).toMatch(/start again too many times/);
     expect(endedBecause('something_new')).toBe('The test stopped before it finished.');

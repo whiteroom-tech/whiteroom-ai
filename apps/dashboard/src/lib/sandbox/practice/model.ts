@@ -319,7 +319,7 @@ export function rerunConfirm(scope: string[] | null, runs: number, e: CallEstima
   return `${what} × ${plural(runs, 'run')} · ${usualCalls(e)}, never more than ${e.cap}${billing(e)}.`;
 }
 
-/** Why a test ended without a result (§4 Lifecycle end reasons). */
+/** Why a test ended early, with no result or a partial one (§4 Lifecycle end reasons). */
 export function endedBecause(endReason: string | null): string {
   switch (endReason) {
     case 'ended_by_owner': return 'You ended the test from the dashboard.';
@@ -327,7 +327,10 @@ export function endedBecause(endReason: string | null): string {
     case 'lost_contact': return 'WhiteRoom lost contact with your computer for 5 minutes. It may have gone to sleep or lost its connection.';
     case 'engine_update': return 'WhiteRoom was updated during the test.';
     case 'code_expired': return 'The run code expired before the test started.';
-    case 'call_cap': return `Stopped to stay within the ${CATALOG.runCallCap}-call limit after WhiteRoom had to rerun a task (not your agent).`;
+    case 'call_cap': return 'Stopped at this test’s model-call limit after WhiteRoom had to rerun a task (not your agent).';
+    case 'no_model_calls': return 'Stopped: your agent didn’t make any model calls through WhiteRoom in 2 practice tasks in a row. Check your adapter sends its calls to the base URL the CLI gives it.';
+    case 'adapter_crashed': return 'Your adapter stopped with an error, so the test ended early. The practice tasks it finished are in the results.';
+    case 'engine_error': return 'WhiteRoom couldn’t finish working out the result (not your agent). Start a new test.';
     case 'stalled': return 'The test stopped moving: your computer stayed in touch but didn’t ask for the next practice task for 5 minutes.';
     case 'too_many_restarts': return 'Practice tasks had to start again too many times, so the test stopped.';
     default: return 'The test stopped before it finished.';

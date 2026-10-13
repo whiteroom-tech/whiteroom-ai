@@ -22,7 +22,17 @@ ANTHROPIC = KEY_VAR not in ("OPENAI_API_KEY", "AZURE_OPENAI_API_KEY")
 # The model to use when the practice task doesn't name one (cloud providers always name one).
 DEFAULT_MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
 BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call."
+GONE = "Stopped: WhiteRoom closed this practice task."
 calls = 0
+
+
+class NoRedirects(urllib.request.HTTPRedirectHandler):
+    # A redirect is an error, never followed, so the key only goes to WhiteRoom.
+    def redirect_request(self, *args):
+        return None
+
+
+open_url = urllib.request.build_opener(NoRedirects).open
 
 
 def receive():
@@ -43,14 +53,14 @@ def call_tool(name, args):
 
 
 def model(base_url, headers, body):
-    """One model call through WhiteRoom; None if one of the fleet's controls blocked it.
+    """One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
     Waits and tries again when WhiteRoom or the provider asks it to."""
     url = f"{base_url}/v1/messages" if ANTHROPIC else f"{base_url}/chat/completions"
     auth = {**KEYS[KEY_VAR](os.environ.get(KEY_VAR, "")), **({"anthropic-version": "2023-06-01"} if ANTHROPIC else {})}
     for tries in range(1, 152):
         req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", **headers, **auth})
         try:
-            with urllib.request.urlopen(req, timeout=180) as res:
+            with open_url(req, timeout=180) as res:
                 return json.load(res)
         except urllib.error.HTTPError as err:
             try:
@@ -64,7 +74,9 @@ def model(base_url, headers, body):
             elif err.code == 403 and wr and wr.get("retryable"):
                 wait = ("One of your WhiteRoom controls is limiting calls.", 10)
             elif err.code == 403 and wr:
-                return None  # Blocked by one of the fleet's controls.
+                return BLOCKED  # Blocked by one of the fleet's controls.
+            elif err.code == 410:
+                return GONE  # The practice task's fleet is gone: WhiteRoom reran or ended it.
             elif err.code in (429, 500, 502, 503, 529) and not wr and tries < 5:
                 wait = ("Your model provider is busy.", 5 * tries)
             else:
@@ -85,8 +97,8 @@ def run_agent(task, tools, base_url, headers, chosen_model=None):
     for _ in range(40):
         if ANTHROPIC:
             r = model(base_url, headers, {"model": MODEL, "max_tokens": 1024, "tools": tools, "messages": messages})
-            if r is None:
-                return BLOCKED
+            if isinstance(r, str):
+                return r
             messages.append({"role": "assistant", "content": r["content"]})
             uses = [b for b in r["content"] if b["type"] == "tool_use"]
             if not uses:
@@ -95,8 +107,8 @@ def run_agent(task, tools, base_url, headers, chosen_model=None):
                 {"type": "tool_result", "tool_use_id": u["id"], "content": json.dumps(call_tool(u["name"], u["input"]))} for u in uses]})
         else:
             r = model(base_url, headers, {"model": MODEL, "tools": fns, "messages": messages})
-            if r is None:
-                return BLOCKED
+            if isinstance(r, str):
+                return r
             m = r["choices"][0]["message"]
             messages.append(m)
             if not m.get("tool_calls"):

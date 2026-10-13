@@ -33,6 +33,20 @@ export const fixture = (name: string): Entry => {
   return structuredClone(e);
 };
 
+/** session.finished as WhiteRoom sends it now: with the result, here one where the first check failed. */
+/** session.finished as an older WhiteRoom sent it: no result in it. */
+export function finishedWithoutResult(): any {
+  const { verdict: _v, report: _r, ...rest } = fixture("session.finished").response as any;
+  return rest;
+}
+
+export function finishedNotPassed(): any {
+  const { report } = fixture("tasks.next.done").response as any;
+  report.verdict = "not_passed";
+  report.checks[0].status = "failed";
+  return { ...(fixture("session.finished").response as object), verdict: "not_passed", report };
+}
+
 /** A body's shape: its keys, all the way down, except values the CLI passes through untouched. */
 function shape(v: unknown, key = ""): unknown {
   if (["input", "result", "output", "code", "key", "version", "adapter"].includes(key)) return "*";
@@ -86,6 +100,7 @@ export interface Stub {
   calls: Array<{ path: string; keyHeader: string }>;
   finals: Array<{ attemptId: string; output: string | null; ended: string }>;
   controlResults: unknown[];
+  cancels: unknown[];
   count: (path: string) => number;
   close: () => Promise<void>;
 }
@@ -94,7 +109,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const plan = [...(o.plan ?? ["A"])];
   const total = plan.length;
   const counts = new Map<string, number>();
-  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[] };
+  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[], cancels: [] as unknown[] };
   let attempt = 0;
   let current: { id: string; reads: Set<string>; summarised: boolean } | null = null;
   let controlSteps = 0;
@@ -186,7 +201,12 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       });
     }
     if (path === "/api/readiness/heartbeat") return expect("heartbeat", body), fromFixture("heartbeat");
-    if (path === "/api/readiness/cancel") return expect("cancel", body), fromFixture("cancel");
+    if (path === "/api/readiness/cancel") {
+      stub.cancels.push(body);
+      // keepResults (a crashed adapter) finishes the run with a result.
+      const name = body?.keepResults ? "cancel.keep_results" : "cancel";
+      return (expect(name, body), fromFixture(name));
+    }
     return [404, { error: "Not found." }];
   };
 

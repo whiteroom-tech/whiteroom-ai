@@ -35,6 +35,10 @@ const button = (name: string) => `In the dashboard (${DASHBOARD}), click ${name}
 export interface Ending {
   code: 0 | 1 | 2 | 3;
   lines: string[];
+  /** The test's result (printed on stdout), not a refusal. */
+  result?: true;
+  /** The run finished, but the reply didn't carry its result: ask tasks/next for it. */
+  replay?: true;
 }
 export const ending = (code: Ending["code"], ...lines: string[]): Ending => ({ code, lines });
 
@@ -81,15 +85,23 @@ export const copy = {
   engineUpdate: (kept: number) => `WhiteRoom was updated during your practice test, so it stopped. ${kept ? `${plural(kept, "finished practice task")} kept. ` : ""}${button("Start test")} to run it again.`,
   endedByOwner: `The practice test was ended from the dashboard. Finished practice tasks were kept. ${button("Start test")} to test again.`,
   expired: `This practice test has ended: it lost contact with this computer or ran out of time. ${button("Start test")} to run it again.`,
-  callCap: `Stopped to stay within the ${CATALOG.runCallCap}-call limit after WhiteRoom had to rerun a task (not your agent). ${button("Start test")} to run it again.`,
+  callCap: `Stopped at this test's model-call limit after WhiteRoom had to rerun a task (not your agent). ${button("Start test")} to run it again.`,
+  noModelCalls: `Stopped: your agent didn't make any model calls through WhiteRoom in 2 practice tasks in a row. Check your adapter sends its calls to the base_url the CLI gives it. ${button("Start test")} to run it again.`,
+  engineError: `WhiteRoom couldn't finish working out the result (not your agent). ${button("Start test")} to run a new test.`,
+  finished: (verdict: unknown) => {
+    const label = typeof verdict === "string" && Object.hasOwn(CATALOG.verdictLabels, verdict) ? `: ${CATALOG.verdictLabels[verdict as Report["verdict"]]}` : "";
+    return `The practice test finished${label}. See the results in the dashboard (${DASHBOARD}), under Past tests.`;
+  },
   sessionGone: `WhiteRoom no longer knows this practice test. ${button("Start test")} to run it again.`,
   cancelled: `Practice test ended. Finished practice tasks were kept. ${button("Start test")} to run it again.`,
   adapterCrashed: (code: string, tail: string[]) => [
     `Your adapter stopped before it finished the practice task (${code}).`,
     ...(tail.length ? ["Its last lines:", ...tail.map((l) => `  ${l}`)] : []),
-    `Run the adapter on its own to see why. ${button("Start test")} to run the test again.`,
+    "Run the adapter on its own to see why.",
   ],
   adapterBroke: (why: string) => `Your adapter ${why}, so it was stopped.`,
+  keptResults: `The test ended early. The practice tasks your agent finished are in the results: see the dashboard (${DASHBOARD}), under Past tests.`,
+  keptUnconfirmed: `The test ended early. WhiteRoom didn't confirm it kept the results: check Past tests in the dashboard (${DASHBOARD}).`,
   tooManyTools: "made more test-tool calls than a practice task allows",
   badTool: "sent a tool call WhiteRoom couldn't accept",
   noTerminal: "There's no terminal to paste the run code into. Pipe it in with --code-stdin instead.",
@@ -155,5 +167,5 @@ export function results(r: Report): Ending {
   }
   const next = code === 1 ? "Rerun failed checks" : code === 3 ? "Rerun checks that didn't run" : !r.sample && r.runs === 1 ? "Run it 3 times" : "Past tests";
   lines.push("", CATALOG.disclaimer, next === "Past tests" ? `See the full result in the dashboard (${DASHBOARD}), under Past tests.` : `${button(next)}.`);
-  return { code, lines };
+  return { code, lines, result: true };
 }
