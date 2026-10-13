@@ -84,6 +84,7 @@ export const copy = {
 
   engineUpdate: (kept: number) => `WhiteRoom was updated during your practice test, so it stopped. ${kept ? `${plural(kept, "finished practice task")} kept. ` : ""}${button("Start test")} to run it again.`,
   endedByOwner: `The practice test was ended from the dashboard. Finished practice tasks were kept. ${button("Start test")} to test again.`,
+  endedBeforeStart: `The practice test was ended from the dashboard before it started. ${button("Start test")} to test again.`,
   expired: `This practice test has ended: it lost contact with this computer or ran out of time. ${button("Start test")} to run it again.`,
   callCap: `Stopped at this test's model-call limit after WhiteRoom had to rerun a task (not your agent). ${button("Start test")} to run it again.`,
   noModelCalls: `Stopped: your agent didn't make any model calls through WhiteRoom in 2 practice tasks in a row. Check your adapter sends its calls to the base_url the CLI gives it. ${button("Start test")} to run it again.`,

@@ -132,6 +132,25 @@
       }
     },
     {
+      "name": "claim.ended_by_owner",
+      "method": "POST",
+      "path": "/api/readiness/claim",
+      "auth": "run code",
+      "request": {
+        "code": "<run code>",
+        "key": "<provider key>",
+        "cli": {
+          "version": "2.0.0",
+          "adapter": "node agent.mjs"
+        }
+      },
+      "status": 409,
+      "response": {
+        "lifecycle": "cancelled",
+        "reason": "ended_by_owner"
+      }
+    },
+    {
       "name": "claim.key_mismatch",
       "method": "POST",
       "path": "/api/readiness/claim",
