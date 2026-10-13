@@ -212,11 +212,13 @@ export function reportFileName(r: TestReport): string {
 
 /**
  * An ended test's report, from what the engine kept (its status as it ended),
- * in the same format as the live download. Null when nothing was kept.
+ * in the same format as the live download, dated when the test ended (else
+ * now). Null when nothing was kept.
  */
-export function pastTestReport(kept: { report?: RunStatusResult }, sandboxId: string, now: number = Date.now()): TestReport | null {
+export function pastTestReport(kept: { report?: RunStatusResult & { endedAt?: string }; destroyedAt?: string }, sandboxId: string, now: number = Date.now()): TestReport | null {
   if (!kept.report || typeof kept.report !== 'object') return null;
-  return buildTestReport(withRunMode({ ...kept.report, sandboxId }), now);
+  const endedAt = Date.parse(kept.report.endedAt ?? kept.destroyedAt ?? '');
+  return buildTestReport(withRunMode({ ...kept.report, sandboxId }), Number.isFinite(endedAt) ? endedAt : now);
 }
 
 /** Saves the report as its HTML file. Browser only. */

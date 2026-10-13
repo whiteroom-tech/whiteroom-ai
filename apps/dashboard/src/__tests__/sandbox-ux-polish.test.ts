@@ -3,7 +3,7 @@
 // Start form asks for the API key first (fleet token as a side note) and says
 // where to find it, and the remembered provider is tagged "Last used".
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
@@ -13,9 +13,10 @@ import type { RunStatusResult } from '@/lib/sandbox/api';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { agentNameNote, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { agentNameNote, directProviderOf, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { forgetSandboxChoices, PROVIDER_STORAGE } = await import('@/lib/sandbox/api');
 const { ProviderChoices } = await import('@/components/sandbox/CloudProviderParts');
-const { KEY_HELP, noCodeSetup, offersNoCode, SANDBOX_PROVIDERS } = await import('@/lib/sandbox/providers');
+const { ENDPOINTS_STORAGE, KEY_HELP, noCodeSetup, offersNoCode, SANDBOX_PROVIDERS } = await import('@/lib/sandbox/providers');
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const opts = { proxyUrl: 'https://proxy.whiteroom.tech/', base: 'https://proxy.whiteroom.tech/sk-wr-test', fleetId: 'sandbox-1234' };
@@ -39,16 +40,22 @@ describe('Connect: No code change only where it works', () => {
     expect(shownSetup('env', 'anthropic')).toBe('env');
   });
 
-  it('renders the tab for Anthropic and cloud tests', () => {
+  it('renders the tab for Anthropic and cloud tests, not for an OpenAI test', () => {
     expect(render(live())).toContain('No code change');
+    expect(render(live({ provider: 'anthropic' }))).toContain('No code change');
+    expect(render(live({ provider: 'openai' }))).not.toContain('No code change');
     expect(render(live({ provider: 'azure-openai', endpointHost: 'acme.openai.azure.com' }))).toContain('No code change');
   });
 });
 
 describe('Connect: the agent name', () => {
-  it('says to replace the placeholder while the code shows it', () => {
-    expect(agentNameNote(PLACEHOLDER_AGENT)).toBe('Put your agent’s own name in place of test-agent. Any name works.');
-    expect(agentNameNote('support-bot')).toBeNull();
+  const agent = (agentId: string) => ({ agentId, role: 'worker', status: 'active', watchMinutes: 2, watchCount: 0, totalTasks: 0, totalTokens: 0, pairedWith: null, currentWatch: null });
+  it('says to replace the placeholder until an agent has called', () => {
+    expect(agentNameNote(live())).toBe(`Put your agent’s own name in place of ${PLACEHOLDER_AGENT}. Any name works.`);
+    expect(agentNameNote(null)).not.toBeNull();
+    expect(agentNameNote(live({ agents: [agent('support-bot')] }))).toBeNull();
+    // Even one that kept the placeholder name: it has called, so the note is done.
+    expect(agentNameNote(live({ agents: [agent(PLACEHOLDER_AGENT)] }))).toBeNull();
   });
 
   it('shows the line under a live test’s code, not once the agent’s own name is in it, nor in a demo', () => {
@@ -72,7 +79,7 @@ describe('Start your test: the key field', () => {
   });
 
   it('says where to find each key', () => {
-    expect(KEY_HELP.anthropic).toBe('Find it at console.anthropic.com → API keys.');
+    expect(KEY_HELP.anthropic).toBe('Find it in Claude Console → Settings → API keys.');
     expect(KEY_HELP.openai).toBe('Find it at platform.openai.com → API keys.');
     expect(src).toContain('KEY_HELP[directProvider]');
   });
@@ -92,5 +99,43 @@ describe('Start your test: the remembered provider', () => {
     expect(html({})).not.toContain('Last used');
     expect(html({ lastUsed: null })).not.toContain('Last used');
     expect(html({ lastUsed: 'foundry', unsupported: ['foundry'] })).not.toContain('Last used');
+  });
+});
+
+describe('the test’s provider after a reload', () => {
+  it('comes from the engine for a live Anthropic or OpenAI test', () => {
+    expect(directProviderOf(live({ provider: 'openai' }), 'anthropic')).toBe('openai');
+    expect(directProviderOf(live({ provider: 'anthropic' }), 'openai')).toBe('anthropic');
+  });
+
+  it('falls back to the page’s choice when the engine names none, for a demo, or before a test', () => {
+    expect(directProviderOf(live({ provider: null }), 'openai')).toBe('openai');
+    expect(directProviderOf(live(), 'anthropic')).toBe('anthropic');
+    expect(directProviderOf(live({ mode: 'demo', provider: 'anthropic' }), 'openai')).toBe('openai');
+    expect(directProviderOf(null, 'openai')).toBe('openai');
+    expect(directProviderOf(live({ provider: 'azure-openai' }), 'bedrock-mantle')).toBe('anthropic');
+  });
+
+  it('shows the engine’s provider in Connect', () => {
+    const html = render(live({ provider: 'openai' }));
+    expect(html).toContain('from openai import OpenAI');
+    expect(html).not.toContain('import anthropic');
+  });
+});
+
+describe('sign-out on a shared browser', () => {
+  const local = new Map<string, string>();
+  beforeEach(() => {
+    local.clear();
+    vi.stubGlobal('window', { localStorage: { getItem: (k: string) => local.get(k) ?? null, setItem: (k: string, v: string) => { local.set(k, v); }, removeItem: (k: string) => { local.delete(k); } } });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('forgets the last provider and endpoints, and nothing else', () => {
+    local.set(PROVIDER_STORAGE, 'bedrock-mantle');
+    local.set(ENDPOINTS_STORAGE, '{"bedrock-mantle":"us-east-1"}');
+    local.set('wr_theme', 'dark');
+    forgetSandboxChoices();
+    expect([...local.keys()]).toEqual(['wr_theme']);
   });
 });

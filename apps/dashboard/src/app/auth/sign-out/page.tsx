@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { signOut } from 'next-auth/react';
 import { clearFleetCredentials } from '@/lib/fleet-credentials';
-import { clearSandboxToken } from '@/lib/sandbox/api';
+import { clearSandboxToken, forgetSandboxChoices } from '@/lib/sandbox/api';
 import { ThemedShell } from '@/components/ThemedShell';
 
 export default function SignOut() {
@@ -12,6 +12,7 @@ export default function SignOut() {
     // The sandbox token survives a fleet sign-out but not an account one: it
     // would otherwise authenticate the next account's sandbox calls.
     clearSandboxToken();
+    forgetSandboxChoices();
     // Wait for the fleet cookie to be cleared before signing out. signOut()
     // navigates away, and a request still in flight at that point can be
     // cancelled — leaving a 30-day fleet cookie behind for whoever signs in

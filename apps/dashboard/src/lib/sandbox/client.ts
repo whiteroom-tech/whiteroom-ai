@@ -46,7 +46,8 @@ async function proxyCall<T = Record<string, unknown>>(
 }
 
 export function toResponse(result: SandboxResponse): Response {
-  const headers: Record<string, string> = {};
+  // Per-user test data (status, history, reports, keys): never cached.
+  const headers: Record<string, string> = { "Cache-Control": "private, no-store" };
   if (result.retryAfter) headers["Retry-After"] = result.retryAfter;
   return Response.json(result.data, { status: result.status, headers });
 }

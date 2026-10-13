@@ -42,7 +42,7 @@ export function providerSummary(provider: SandboxProvider, endpointHost?: string
 
 /** Where to find the key the Start form asks for, for Anthropic and OpenAI. */
 export const KEY_HELP: Record<DirectProvider, string> = {
-  anthropic: 'Find it at console.anthropic.com → API keys.',
+  anthropic: 'Find it in Claude Console → Settings → API keys.',
   openai: 'Find it at platform.openai.com → API keys.',
 };
 

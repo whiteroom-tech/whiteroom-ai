@@ -3,9 +3,7 @@
 // dialog drops "only while the test is open" when status says reportsKept.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement as h, type FC } from 'react';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 
@@ -18,9 +16,10 @@ const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
 const { GET } = await import('@/app/api/sandbox/[sandboxId]/report/route');
-const { buildTestReport, pastTestReport, reportHtml } = await import('@/lib/sandbox/report');
-const { PastTestDetail } = await import('@/components/sandbox/PastTests');
-const { endTestText, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { buildTestReport, pastTestReport, reportFileName, reportHtml } = await import('@/lib/sandbox/report');
+const { DOWNLOAD_IDLE, DownloadReport, PastTestDetail, startDownload } = await import('@/components/sandbox/PastTests');
+type DownloadState = import('@/components/sandbox/PastTests').DownloadState;
+const { endTestText } = await import('@/components/sandbox/TestRunFlow');
 
 const NOW = Date.parse('2026-10-13T12:00:00Z');
 const ended: RunStatusResult = {
@@ -48,6 +47,8 @@ describe('GET /api/sandbox/[id]/report', () => {
     const res = await get('sb1');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(body);
+    // Per-user data: never cached (every sandbox route goes through toResponse).
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: 'sandbox_report', user_id: 'dashboard:u1', sandbox_id: 'sb1' });
   });
 
@@ -68,6 +69,15 @@ describe('the kept report', () => {
     expect(r?.testId).toBe('sb1');
     expect(r?.calls).toBe(3);
     expect(reportHtml(r!)).toContain('support-bot');
+  });
+
+  it('is dated when the test ended, not when it was downloaded', () => {
+    const r = pastTestReport({ report: { ...ended, endedAt: '2026-10-01T09:15:00.000Z' } }, 'sb1', NOW);
+    expect(r?.generatedAt).toBe('2026-10-01T09:15:00.000Z');
+    expect(reportFileName(r!)).toBe('whiteroom-test-report-2026-10-01-sb1.html');
+    // Without endedAt in the report, the row's end time; without either, now.
+    expect(pastTestReport({ report: ended, destroyedAt: '2026-10-02T08:00:00.000Z' }, 'sb1', NOW)?.generatedAt).toBe('2026-10-02T08:00:00.000Z');
+    expect(pastTestReport({ report: { ...ended, endedAt: 'garbage' } }, 'sb1', NOW)?.generatedAt).toBe(new Date(NOW).toISOString());
   });
 
   it('is nothing when the engine kept none', () => {
@@ -93,25 +103,56 @@ describe('Past tests row: Download report', () => {
       expect(html).toContain('aren’t kept after a test ends');
     }
   });
+
+  const render = (state: DownloadState) => renderToStaticMarkup(h(DownloadReport, { state, onClick: () => {} }));
+  it('stays focusable while saving: aria-disabled, never disabled', () => {
+    const saving = render({ saving: true, outcome: null });
+    expect(saving).toContain('aria-disabled="true"');
+    expect(saving).not.toMatch(/\sdisabled=""/);
+    expect(saving).toContain('Downloading…');
+    expect(render(DOWNLOAD_IDLE)).not.toContain('aria-disabled');
+  });
+
+  it('announces the outcome politely', () => {
+    expect(render(DOWNLOAD_IDLE)).toMatch(/aria-live="polite"[^>]*><\/p>/);
+    expect(render({ saving: false, outcome: 'saved' })).toMatch(/aria-live="polite"[^>]*>Report downloaded\.<\/p>/);
+    expect(render({ saving: false, outcome: 'failed' })).toMatch(/aria-live="polite"[^>]*>Couldn’t get this report\. Try again\.<\/p>/);
+  });
+
+  it('a click saves, then says saved', async () => {
+    const states: DownloadState[] = [];
+    const save = vi.fn(async () => {});
+    await startDownload(DOWNLOAD_IDLE, save, (st) => states.push(st));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(states).toEqual([{ saving: true, outcome: null }, { saving: false, outcome: 'saved' }]);
+  });
+
+  it('a failed save says so, and a retry clears it', async () => {
+    const states: DownloadState[] = [];
+    await startDownload(DOWNLOAD_IDLE, async () => { throw new Error('No report'); }, (st) => states.push(st));
+    expect(states.at(-1)).toEqual({ saving: false, outcome: 'failed' });
+    await startDownload(states.at(-1)!, async () => {}, (st) => states.push(st));
+    expect(states.slice(-2)).toEqual([{ saving: true, outcome: null }, { saving: false, outcome: 'saved' }]);
+  });
+
+  it('ignores clicks while a download is in progress', () => {
+    const save = vi.fn(async () => {});
+    const set = vi.fn();
+    expect(startDownload({ saving: true, outcome: null }, save, set)).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+  });
 });
 
 describe('End this test?', () => {
-  it('drops “only while the test is open” when the engine keeps reports', () => {
-    expect(endTestText(false)).toContain('can only be downloaded while the test is open');
-    expect(endTestText(true)).not.toContain('only be downloaded');
-    expect(endTestText(true)).toContain('The result and its report stay in Past tests.');
+  it('drops “only while the test is open” when status says reportsKept', () => {
+    expect(endTestText({ reportsKept: true })).not.toContain('only be downloaded');
+    expect(endTestText({ reportsKept: true })).toContain('The result and its report stay in Past tests.');
   });
 
-  it('follows reportsKept on the test’s status', () => {
-    const user = { previewUserId: 'u', previewPastTests: [] };
-    const run = (o: Partial<RunStatusResult>) => ({ ...ended, mode: 'connected' as const, expiresInSeconds: 1500, ...o });
-    const src = readFileSync(fileURLToPath(new URL('../components/sandbox/TestRunFlow.tsx', import.meta.url)), 'utf8');
-    expect(src).toContain('endTestText(!!run?.reportsKept)');
-    // No extra Past tests read to find out.
-    expect(src).not.toContain('getHistory');
-    // Renders either way (the dialog itself opens on click).
-    for (const reportsKept of [true, false, undefined]) {
-      expect(renderToStaticMarkup(h(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { ...user, previewRun: run({ reportsKept }) }))).toContain('End test');
+  it('keeps the warning for an engine that doesn’t say so', () => {
+    for (const run of [null, {}, { reportsKept: false }]) {
+      expect(endTestText(run)).toContain('can only be downloaded while the test is open');
     }
   });
 });

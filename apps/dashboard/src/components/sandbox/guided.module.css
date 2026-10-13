@@ -131,7 +131,7 @@
 .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:38px; padding:8px 18px; border-radius:6px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:opacity .12s; text-decoration:none; }
 .btn:active { opacity:.85; }
 .btn:focus-visible { outline:2px solid var(--brand); outline-offset:3px; }
-.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity:.4; cursor:not-allowed; }
 .btnPrimary { background:var(--brand); color:var(--on-brand); border:1px solid var(--brand); }
 .btnGood { background:var(--ok); color:var(--bg); border:1px solid var(--ok); }
 .btnSecondary { background:var(--card); color:var(--tx); border:1px solid var(--line2); }
