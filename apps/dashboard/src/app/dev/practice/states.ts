@@ -100,6 +100,7 @@ export const PRACTICE_STATES = {
   incomplete: preview(finished(INCOMPLETE)),
   ended: preview(finished(null, { endReason: 'ended_by_owner' })),
   'confirm-rerun': preview({ ...finished(FAILED), confirm: { kind: 'rerun', start: { fleet: FLEET, sample: false, runs: 3, scope: ['c.timeout'] }, text: rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'claude-haiku-4-5' })) } }),
+  unavailable: preview({ unavailable: true }),
   'confirm-end': preview({ run: { ...RUN, lifecycle: 'active', startedAt: ago(5), progress: { done: 1, total: 6, lastContactAt: ago(0.2) } }, confirm: { kind: 'end', id: ID } }),
 } satisfies Record<string, PracticePreview>;
 export type PracticeState = keyof typeof PRACTICE_STATES;
