@@ -13,6 +13,8 @@ vi.mock('@/lib/fleet-session', () => ({ getFleetAuthCookie: () => cookie(), toke
 vi.mock('@/lib/origin-check', () => ({ checkSameOrigin: () => sameOrigin() }));
 
 const { GET, POST } = await import('@/app/api/sandbox/practice/[[...path]]/route');
+const { engineUnavailable } = await import('@/lib/sandbox/practice/server');
+const { PracticeError, retryable, unavailable } = await import('@/lib/sandbox/practice/api');
 
 const RUN = 'r-7f3a2c1e-0b4d-4e8a-9c61-2d5f8e7a1b30';
 const engine = vi.fn();
@@ -101,5 +103,66 @@ describe('practice BFF', () => {
     expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'a'.repeat(129) })).status).toBe(400);
     expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'bot', scope: Array(65).fill('a.result') })).status).toBe(400);
     expect(engine).not.toHaveBeenCalled();
+  });
+
+  describe('practice tests off on the engine', () => {
+    const OFF = { error: 'Practice tests aren’t available yet.', reason: 'practice_unavailable' };
+
+    it('the engine router with the feature off (current and older wording): one calm answer, never the engine’s words', async () => {
+      for (const error of ["Practice tests aren't available on this WhiteRoom server yet.", "Readiness tests aren't available on this WhiteRoom server yet."]) {
+        engine.mockResolvedValue(Response.json({ error }, { status: 404 }));
+        for (const res of [await get(undefined, 'fleet=prod-eu'), await get([RUN], 'fleet=prod-eu'), await post(['start'], { fleet: 'prod-eu', sample: true, runs: 1 })]) {
+          expect(res.status).toBe(404);
+          const body = await res.json();
+          expect(body).toEqual(OFF);
+          expect(JSON.stringify(body)).not.toMatch(/readiness/i);
+        }
+      }
+    });
+
+    it('an engine without the practice routes (its plain-text 404 page) reads the same', async () => {
+      engine.mockResolvedValue(new Response('404 Not Found', { status: 404, headers: { 'Content-Type': 'text/plain' } }));
+      const res = await get(undefined, 'fleet=prod-eu');
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual(OFF);
+    });
+
+    it('no dashboard secret set: unavailable too', async () => {
+      vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
+      const res = await get(undefined, 'fleet=prod-eu');
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual(OFF);
+    });
+
+    it('with the feature on, a 404 for a run or fleet still passes through as it is', async () => {
+      for (const error of ['Not found.', 'Fleet not found.']) {
+        engine.mockResolvedValue(Response.json({ error }, { status: 404 }));
+        const res = await get([RUN], 'fleet=prod-eu');
+        expect(res.status).toBe(404);
+        expect(await res.json()).toEqual({ error });
+      }
+      // Only a 404 means off: an unreadable answer otherwise is still a 502.
+      engine.mockResolvedValue(new Response('Service Unavailable', { status: 503 }));
+      expect((await get([RUN], 'fleet=prod-eu')).status).toBe(502);
+    });
+
+    it('engineUnavailable: 404 and either not JSON or the router’s off message', () => {
+      expect(engineUnavailable(404, null)).toBe(true);
+      expect(engineUnavailable(404, 'text')).toBe(true);
+      expect(engineUnavailable(404, { error: "Practice tests aren't available on this WhiteRoom server yet." })).toBe(true);
+      expect(engineUnavailable(404, { error: 'Not found.' })).toBe(false);
+      expect(engineUnavailable(404, {})).toBe(false);
+      expect(engineUnavailable(409, { error: "Practice tests aren't available on this WhiteRoom server yet." })).toBe(false);
+      expect(engineUnavailable(200, null)).toBe(false);
+    });
+
+    it('the browser side: unavailable is its own state and is never retried', () => {
+      const off = new PracticeError(OFF.error, 503, OFF.reason);
+      expect(unavailable(off)).toBe(true);
+      expect(retryable(off)).toBe(false);
+      expect(unavailable(new PracticeError('Not found.', 404))).toBe(false);
+      expect(unavailable(new Error('x'))).toBe(false);
+      expect(retryable(new PracticeError('Server error.', 503))).toBe(true);
+    });
   });
 });

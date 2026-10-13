@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList, listProviderKeys } from '@/lib/whiteroom/client';
 import { SANDBOX_PROVIDER_LABELS, isSandboxProvider } from '@/lib/sandbox/providers';
-import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, retryable, startPractice } from '@/lib/sandbox/practice/api';
+import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, retryable, startPractice, unavailable } from '@/lib/sandbox/practice/api';
 import { callEstimate, controlCalls, controlPreview, draftFromStart, headline, isOpen, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
 import type { PracticeResult, PracticeRun, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
@@ -16,6 +16,7 @@ import { PracticeResults, type ResultAction } from './PracticeResults';
 import { PracticeRunView } from './PracticeRunView';
 import { PracticeSetup, type SetupData } from './PracticeSetup';
 import s from '../guided.module.css';
+import p from './practice.module.css';
 
 /** §10 Polling: every 5 s while the page is visible, 30 s while hidden. */
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
@@ -34,6 +35,8 @@ export interface PracticePreview {
   refusal?: Refusal;
   confirm?: Confirm;
   now?: number;
+  /** Practice tests aren't on for this engine. */
+  unavailable?: boolean;
 }
 
 /** A refusal to show: the engine's or the BFF's own words, else `fallback`. */
@@ -54,6 +57,8 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [refusal, setRefusal] = useState<Refusal | null>(preview?.refusal ?? null);
   const [confirm, setConfirm] = useState<Confirm | null>(preview?.confirm ?? null);
   const [loading, setLoading] = useState(!preview);
+  // Practice tests aren't on for this engine: a calm page instead of an error, and nothing is asked again.
+  const [off, setOff] = useState(!!preview?.unavailable);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState('');
   // The model the test was started with, for naming the key variable.
@@ -64,7 +69,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const track = useCallback((name: string, props?: Record<string, string | number | boolean>) => { if (!preview) analytics.capture(name, props); }, [preview]);
 
   const open = !!run && isOpen(run.lifecycle);
-  const view = loading ? 'loading' : run ? (open ? 'run' : 'results') : 'setup';
+  const view = off ? 'unavailable' : loading ? 'loading' : run ? (open ? 'run' : 'results') : 'setup';
 
   const loadSetup = useCallback(async (f: string) => {
     const [gov, keys] = await Promise.all([
@@ -100,7 +105,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       const id = valid ?? (await listPracticeRuns(f)).find((r) => isOpen(r.lifecycle))?.id;
       if (id) await showRun(f, id);
       else await loadSetup(f);
-    })().catch((e) => { if (live) setRefusal(fail(e, LOAD_FAILED)); }).finally(() => { if (live) setLoading(false); });
+    })().catch((e) => { if (!live) return; if (unavailable(e)) setOff(true); else setRefusal(fail(e, LOAD_FAILED)); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [preview, showRun, loadSetup]);
 
@@ -138,7 +143,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
         track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
         requestAnimationFrame(() => heading.current?.focus());
       } catch (e) {
-        if (!retryable(e)) { stopped = true; if (live) setRefusal(fail(e, ACTION_FAILED)); }
+        if (!retryable(e)) { stopped = true; if (live) { if (unavailable(e)) setOff(true); else setRefusal(fail(e, ACTION_FAILED)); } }
       } finally {
         pending = false;
         clearTimeout(timer);
@@ -160,7 +165,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true); setRefusal(null);
-    try { await fn(); } catch (e) { setRefusal(fail(e, ACTION_FAILED)); } finally { setBusy(false); }
+    try { await fn(); } catch (e) { if (unavailable(e)) setOff(true); else setRefusal(fail(e, ACTION_FAILED)); } finally { setBusy(false); }
   };
 
   const start = (st: PracticeStart) => act(async () => {
@@ -241,7 +246,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
-      {refusal && (
+      {refusal && view !== 'unavailable' && (
         <div className={s.error} role="alert" style={{ flexWrap: 'wrap', maxWidth: 720 }}>
           <span>{refusal.message}{refusal.reason === 'unsupported' && <> Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}</span>
           {refusal.reason === 'retry' && <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => location.reload()}>Try again</button>}
@@ -257,6 +262,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
         </div>
       )}
 
+      {view === 'unavailable' && <PracticeUnavailable />}
       {view === 'loading' && <p>Checking for a practice test…</p>}
       {view === 'setup' && fleet && setup && <PracticeSetup fleet={fleet} data={setup} busy={busy} previewModel={preview ? preview.model ?? null : undefined} onStart={(st) => { void start(st); }} />}
       {view === 'run' && run && (
@@ -276,4 +282,15 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       </PracticeDialog>
     )}
   </>;
+}
+
+/** Practice tests aren't on for this WhiteRoom server: said plainly, with the way back. */
+export function PracticeUnavailable() {
+  return (
+    <section className={`${s.card} ${p.wrap}`} aria-labelledby="practice-unavailable-title">
+      <h2 id="practice-unavailable-title">Practice tests aren’t available yet</h2>
+      <p>Try again later.</p>
+      <Link className={`${s.btn} ${s.btnSecondary}`} href={ROUTES.sandbox}>← Back to Sandbox</Link>
+    </section>
+  );
 }

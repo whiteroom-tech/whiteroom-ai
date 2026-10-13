@@ -10,6 +10,8 @@ import CATALOG from './catalog.json';
 import type { PracticeCheck, PracticeFailedCalls, PracticeReport, PracticeRun, PracticeRunRow, PracticeStart, PracticeVerdict, RunCode } from './types';
 
 export { CATALOG };
+/** The BFF's reason when practice tests aren't on for this engine: a calm page, not an error, and never retried. */
+export const PRACTICE_UNAVAILABLE = 'practice_unavailable';
 export const DISCLAIMER = 'Practice tasks use made-up records and WhiteRoom’s test tools, not your agent’s real job. Use the result to help decide, not as a certificate.';
 
 // ── The plan: which practice tasks a test plays ──────────────────────────

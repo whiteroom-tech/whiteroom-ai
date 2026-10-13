@@ -47,6 +47,19 @@ describe('practice test screens', () => {
     expect(text(render('setup-proxy'))).toContain('Practice tests can’t yet run agents that call through a WhiteRoom proxy URL (Azure OpenAI, AWS Bedrock).');
   });
 
+  it('practice tests off: a calm page with the way back, not an error', () => {
+    const html = render('unavailable');
+    const t = text(html);
+    expect(t).toContain('Practice tests aren’t available yet');
+    expect(t).toContain('Try again later.');
+    expect(html).toMatch(/<a[^>]*href="\/sandbox"[^>]*>← Back to Sandbox<\/a>/);
+    expect(html).not.toContain('role="alert"');
+    expect(t).not.toMatch(/couldn’t read|Try again<|readiness|WhiteRoom server/i);
+    // Even with a refusal left over, only the calm page shows.
+    const both = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.unavailable, refusal: { message: 'WhiteRoom sent an answer the dashboard couldn’t read. Try again.' } } }));
+    expect(both).not.toContain('role="alert"');
+  });
+
   it('refusals say what to do next', () => {
     expect(text(render('refused-today'))).toContain('You can start more tomorrow (00:00 UTC).');
     const open = text(render('refused-open'));

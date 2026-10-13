@@ -2,6 +2,7 @@
 // app/api/sandbox/practice. The run code is returned by start and new-code
 // only; it is held in the page and never stored.
 
+import { PRACTICE_UNAVAILABLE } from './model';
 import type { PracticeResult, PracticeRun, PracticeRunRow, PracticeStart, RunCode } from './types';
 
 /** A refusal from the BFF or the engine, with the engine's reason when it sent one. */
@@ -11,6 +12,11 @@ export class PracticeError extends Error {
   }
 }
 
+/** Practice tests aren't on for this engine (the BFF's practice_unavailable): nothing to retry. */
+export function unavailable(e: unknown): boolean {
+  return e instanceof PracticeError && e.reason === PRACTICE_UNAVAILABLE;
+}
+
 /**
  * Whether a failed progress read is worth trying again: network errors
  * (status 0), timeouts, rate limits and server errors are; any other refusal
@@ -18,6 +24,7 @@ export class PracticeError extends Error {
  */
 export function retryable(e: unknown): boolean {
   if (!(e instanceof PracticeError)) return true;
+  if (unavailable(e)) return false;
   const { status } = e;
   return status === 0 || status === 408 || status === 429 || status >= 500 || status < 400;
 }
