@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DataTable, Hint, Panel, Tag, FONT_MONO } from '@whiteroom/ui';
-import { getHistory, type PastTest } from '@/lib/sandbox/api';
+import { getHistory, getPastReport, type PastTest } from '@/lib/sandbox/api';
+import { pastTestReport, saveReportFile } from '@/lib/sandbox/report';
+import { analytics } from '@/lib/analytics';
 import { HELP } from '@/lib/metric-definitions';
 import { isOpen, pastKind, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
 import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
@@ -41,9 +43,29 @@ function endedFull(iso: string): string {
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
 }
 
+/** Fetches an ended test's kept report and saves it, in the live download's format. Throws when it can't. */
+async function downloadPastReport(test: PastTest): Promise<void> {
+  const kept = await getPastReport(test.sandboxId);
+  const report = pastTestReport(kept, test.sandboxId);
+  if (!report) throw new Error(kept.error ?? 'No report');
+  analytics.capture('sandbox_report_exported', { mode: report.mode, from: 'past_tests' });
+  saveReportFile(report);
+}
+
 /** What history keeps about one test, which is all that's left once it ends. */
-export function PastTestDetail({ test, onClose }: { test: PastTest; onClose: () => void }) {
+export function PastTestDetail({ test, onClose, onDownload = downloadPastReport }: {
+  test: PastTest;
+  onClose: () => void;
+  /** Saves the test's report; /dev/sandbox passes a stand-in. */
+  onDownload?: (test: PastTest) => Promise<void>;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const download = () => {
+    setSaving(true); setFailed(false);
+    onDownload(test).catch(() => setFailed(true)).finally(() => setSaving(false));
+  };
   useEffect(() => { ref.current?.focus(); }, [test.sandboxId]);
   const result = RESULT[pastResult(test)];
   return (
@@ -58,7 +80,12 @@ export function PastTestDetail({ test, onClose }: { test: PastTest; onClose: () 
         <dt>Kind</dt><dd>{test.isTrial ? 'Demo' : 'Your agent'}</dd>
         <dt>Test ID</dt><dd style={{ fontFamily: FONT_MONO, overflowWrap: 'anywhere' }}>{test.sandboxId}</dd>
       </dl>
-      <p className={s.small} style={{ margin: '10px 0 0' }}>Each check’s result and the activity aren’t kept after a test ends. To keep them, download the report before you end a test.</p>
+      {test.hasReport ? <>
+        <div className={s.btnRow} style={{ marginTop: 10 }}>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={download} disabled={saving} style={{ fontSize: 12 }}>{saving ? 'Downloading…' : 'Download report'}</button>
+        </div>
+        {failed && <p className={s.small} role="alert" style={{ margin: '6px 0 0', color: 'var(--bad)' }}>Couldn’t get this report. Try again.</p>}
+      </> : <p className={s.small} style={{ margin: '10px 0 0' }}>Each check’s result and the activity aren’t kept after a test ends. To keep them, download the report before you end a test.</p>}
     </div>
   );
 }

@@ -116,3 +116,11 @@ export function rotateProxyKey(ownerSubject: string, sandboxId: string, key?: st
 export function getHistory(ownerSubject: string, key?: string) {
   return proxyCall({ action: "sandbox_history", user_id: ownerSubject }, key);
 }
+
+/**
+ * A finished test's report (Sandbox › Past tests): its status as it ended.
+ * The engine answers only for the test's owner.
+ */
+export function getReport(ownerSubject: string, sandboxId: string, key?: string) {
+  return proxyCall({ action: "sandbox_report", user_id: ownerSubject, sandbox_id: sandboxId }, key);
+}

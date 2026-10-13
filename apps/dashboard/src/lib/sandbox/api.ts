@@ -246,6 +246,26 @@ export interface PastTest {
   overall: "pass" | "fail" | "partial" | "empty";
   totalTasks: number;
   isTrial: boolean;
+  /** The engine kept this test's report (Download report). Left out by engines that keep none. */
+  hasReport?: boolean;
+}
+
+/** Whether ended tests keep their report: the engine says, per test, once it can. */
+export function reportsKept(sessions: readonly PastTest[] | undefined): boolean {
+  return !!sessions?.some((t) => typeof t.hasReport === "boolean");
+}
+
+/** A finished test's report as the engine kept it: its status as it ended. */
+export interface PastReport {
+  success?: boolean;
+  sandboxId?: string;
+  destroyedAt?: string;
+  report?: RunStatusResult & { createdAt?: string; endedAt?: string };
+  error?: string;
+}
+
+export function getPastReport(sandboxId: string): Promise<PastReport> {
+  return bffFetch(`${encodeURIComponent(sandboxId)}/report`);
 }
 
 export function getHistory(): Promise<{ success?: boolean; sessions?: PastTest[]; error?: string }> {

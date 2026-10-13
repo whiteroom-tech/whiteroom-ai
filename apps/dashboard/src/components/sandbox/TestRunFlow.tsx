@@ -7,12 +7,12 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { announceProxyKeyRotation, type PastTest, clearSandboxToken, createRun, forgetProxyKey, getHistory, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, reportsKept, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
 import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
-import { buildTestReport, checkLabel, memoryCheckDetail, reportFileName, reportHtml, reportSource, SANDBOX_CHECKS } from '@/lib/sandbox/report';
+import { buildTestReport, checkLabel, memoryCheckDetail, reportSource, SANDBOX_CHECKS, saveReportFile } from '@/lib/sandbox/report';
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
@@ -158,6 +158,17 @@ export function setupChoices(provider: SandboxProvider): Setup[] {
 /** The setup shown: the one picked, or Python when "No code change" isn't offered for this provider. */
 export function shownSetup(picked: Setup, provider: SandboxProvider): Setup {
   return setupChoices(provider).includes(picked) ? picked : 'Python';
+}
+
+/**
+ * End this test? The report is kept with the result once the engine keeps
+ * reports (Past tests can download it); until then it can only be downloaded
+ * while the test is open.
+ */
+export function endTestText(keepsReports: boolean): string {
+  return keepsReports
+    ? 'The result and its report stay in Past tests. Ending doesn’t stop your agent; its calls just stop being part of this test.'
+    : 'The result stays in Past tests. The full report, with each check and the activity, can only be downloaded while the test is open. Ending doesn’t stop your agent; its calls just stop being part of this test.';
 }
 
 function connectionVerified(status: RunStatusResult | null) {
@@ -564,6 +575,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [prodFleetId, setProdFleetId] = useState<string | null>(null);
+  // Whether ended tests keep their report, by what Past tests says (false until known).
+  const [keepsReports, setKeepsReports] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   // The workspace's results heading (the summary line), focused when a live test finishes.
   const summaryHeading = useRef<HTMLHeadingElement>(null);
@@ -650,6 +663,14 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       .then((d: { fleetId?: string } | null) => { if (d?.fleetId) setProdFleetId(d.fleetId); })
       .catch(() => {});
   }, [allPassed, isDemo, prodFleetId]);
+
+  // Once per test: whether ending it keeps its report, by what the engine's Past tests say.
+  useEffect(() => {
+    if (!run?.sandboxId || previewRun) return;
+    let live = true;
+    getHistory().then(r => { if (live) setKeepsReports(reportsKept(r.sessions)); }, () => {});
+    return () => { live = false; };
+  }, [run?.sandboxId, previewRun]);
 
   // Once per page: someone opened the Sandbox.
   const opened = useRef(false);
@@ -904,9 +925,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     const latest = await getStatus().catch(() => ({}) as RunStatusResult);
     const report = buildTestReport(reportSource(latest.error ? {} : latest, run));
     track({ name: 'sandbox_report_exported', props: { mode: run.mode } });
-    const url = URL.createObjectURL(new Blob([reportHtml(report)], { type: 'text/html' }));
-    const a = document.createElement('a'); a.href = url; a.download = reportFileName(report); a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveReportFile(report);
   });
 
   const end = () => act(async () => {
@@ -1242,7 +1261,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         <div className={s.overlay} onClick={e => { if (e.target === e.currentTarget) setConfirmEnd(false); }}>
           <div className={s.modal} ref={modalRef} role="alertdialog" aria-labelledby="end-title">
             <h2 id="end-title" style={{ fontFamily: FONT_DISPLAY }}>End this test?</h2>
-            <p>The result stays in Past tests. The full report, with each check and the activity, can only be downloaded while the test is open. Ending doesn’t stop your agent; its calls just stop being part of this test.</p>
+            <p>{endTestText(keepsReports)}</p>
             <div className={s.btnRow}>
               <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => void end()} style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}>End test</button>
               <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy}>Download report</button>
