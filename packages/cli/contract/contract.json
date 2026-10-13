@@ -13,6 +13,79 @@
       }
     },
     {
+      "name": "cancel.keep_results",
+      "method": "POST",
+      "path": "/api/readiness/cancel",
+      "auth": "session",
+      "request": {
+        "keepResults": true
+      },
+      "status": 200,
+      "response": {
+        "lifecycle": "finished",
+        "verdict": "incomplete",
+        "report": {
+          "testVersion": 1,
+          "verdict": "incomplete",
+          "runs": 3,
+          "sample": false,
+          "scope": [
+            "a.result"
+          ],
+          "checks": [
+            {
+              "id": "a.result",
+              "label": "Finishes a job correctly",
+              "scenario": "Finishes a job correctly",
+              "observer": "records",
+              "required": true,
+              "status": "not_tested",
+              "reason": "not_run",
+              "testProblem": false,
+              "summary": "Passed in 1 of 3 runs.",
+              "fix": "This practice task didn't run, so this check couldn't be judged. Rerun this check to try again.",
+              "attempts": [
+                {
+                  "attemptId": "<attempt id>",
+                  "runIndex": 0,
+                  "status": "passed",
+                  "reason": null
+                },
+                {
+                  "attemptId": null,
+                  "runIndex": 1,
+                  "status": "not_tested",
+                  "reason": "not_run"
+                },
+                {
+                  "attemptId": null,
+                  "runIndex": 2,
+                  "status": "not_tested",
+                  "reason": "not_run"
+                }
+              ]
+            }
+          ],
+          "how": {
+            "memoryLimitAdjusted": false
+          },
+          "tested": {
+            "fleet": "<fleet>",
+            "agent": "support-bot",
+            "modelRequested": "claude-haiku-4-5",
+            "provider": "anthropic",
+            "proxyKeyDisplayPrefix": null,
+            "keyHint": null,
+            "modelsUsed": [
+              "claude-haiku-4-5-20251001"
+            ],
+            "adapter": "node agent.mjs",
+            "cli": "2.0.0"
+          }
+        }
+      }
+    },
+    {
       "name": "claim",
       "method": "POST",
       "path": "/api/readiness/claim",
@@ -372,7 +445,7 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "support-gpt4o-mini",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ],
@@ -396,7 +469,7 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "claude-haiku-4-5",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ]
@@ -418,7 +491,7 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "m",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ],
@@ -440,7 +513,7 @@
         "sample": false,
         "runs": 1,
         "agent": "support-bot",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ],
@@ -760,6 +833,32 @@
       }
     },
     {
+      "name": "session.finished",
+      "method": "POST",
+      "path": "/api/readiness/heartbeat",
+      "auth": "session",
+      "request": {},
+      "status": 409,
+      "response": {
+        "lifecycle": "finished",
+        "reason": "finished",
+        "tasksFinished": 1
+      }
+    },
+    {
+      "name": "session.no_model_calls",
+      "method": "POST",
+      "path": "/api/readiness/heartbeat",
+      "auth": "session",
+      "request": {},
+      "status": 409,
+      "response": {
+        "lifecycle": "interrupted",
+        "reason": "no_model_calls",
+        "tasksFinished": 4
+      }
+    },
+    {
       "name": "session.unknown",
       "method": "POST",
       "path": "/api/readiness/heartbeat",
@@ -800,7 +899,7 @@
         "runs": 3,
         "agent": "support-bot",
         "model": "claude-haiku-4-5",
-        "startedBy": "user-1"
+        "startedBy": "user-<fleet>"
       },
       "status": 201,
       "response": {
@@ -820,7 +919,7 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "claude-haiku-4-5",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ]
@@ -842,7 +941,7 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "claude-haiku-4-5",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ]
@@ -864,7 +963,7 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "claude-haiku-4-5",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ]
@@ -880,6 +979,32 @@
       }
     },
     {
+      "name": "start.owner_busy.user",
+      "method": "POST",
+      "path": "/api/readiness/start",
+      "auth": "dashboard",
+      "request": {
+        "fleet": "<fleet>",
+        "sample": false,
+        "runs": 1,
+        "agent": "support-bot",
+        "model": "claude-haiku-4-5",
+        "startedBy": "user-<fleet>",
+        "scope": [
+          "a.result"
+        ]
+      },
+      "status": 429,
+      "response": {
+        "error": "You already have a practice test open.",
+        "reason": "owner_busy",
+        "run": {
+          "lifecycle": "draft",
+          "otherFleet": true
+        }
+      }
+    },
+    {
       "name": "start.starts_today",
       "method": "POST",
       "path": "/api/readiness/start",
@@ -890,7 +1015,29 @@
         "runs": 1,
         "agent": "support-bot",
         "model": "claude-haiku-4-5",
-        "startedBy": "user-1",
+        "startedBy": "user-<fleet>",
+        "scope": [
+          "a.result"
+        ]
+      },
+      "status": 429,
+      "response": {
+        "error": "You can start more tomorrow (00:00 UTC).",
+        "reason": "starts_today"
+      }
+    },
+    {
+      "name": "start.starts_today.user",
+      "method": "POST",
+      "path": "/api/readiness/start",
+      "auth": "dashboard",
+      "request": {
+        "fleet": "<fleet>",
+        "sample": false,
+        "runs": 1,
+        "agent": "support-bot",
+        "model": "claude-haiku-4-5",
+        "startedBy": "user-<fleet>",
         "scope": [
           "a.result"
         ]
@@ -1420,6 +1567,79 @@
       }
     },
     {
+      "name": "tasks.next.finished",
+      "method": "POST",
+      "path": "/api/readiness/tasks/next",
+      "auth": "session",
+      "request": {
+        "key": "<provider key>"
+      },
+      "status": 200,
+      "response": {
+        "done": true,
+        "verdict": "incomplete",
+        "report": {
+          "how": {
+            "memoryLimitAdjusted": false
+          },
+          "runs": 3,
+          "scope": [
+            "a.result"
+          ],
+          "checks": [
+            {
+              "id": "a.result",
+              "fix": "This practice task didn't run, so this check couldn't be judged. Rerun this check to try again.",
+              "label": "Finishes a job correctly",
+              "reason": "not_run",
+              "status": "not_tested",
+              "summary": "Passed in 1 of 3 runs.",
+              "attempts": [
+                {
+                  "reason": null,
+                  "status": "passed",
+                  "runIndex": 0,
+                  "attemptId": "<attempt id>"
+                },
+                {
+                  "reason": "not_run",
+                  "status": "not_tested",
+                  "runIndex": 1,
+                  "attemptId": null
+                },
+                {
+                  "reason": "not_run",
+                  "status": "not_tested",
+                  "runIndex": 2,
+                  "attemptId": null
+                }
+              ],
+              "observer": "records",
+              "required": true,
+              "scenario": "Finishes a job correctly",
+              "testProblem": false
+            }
+          ],
+          "sample": false,
+          "tested": {
+            "cli": "2.0.0",
+            "agent": "support-bot",
+            "fleet": "<fleet>",
+            "adapter": "node agent.mjs",
+            "keyHint": null,
+            "provider": "anthropic",
+            "modelsUsed": [
+              "claude-haiku-4-5-20251001"
+            ],
+            "modelRequested": "claude-haiku-4-5",
+            "proxyKeyDisplayPrefix": null
+          },
+          "verdict": "incomplete",
+          "testVersion": 1
+        }
+      }
+    },
+    {
       "name": "tasks.next.key_mismatch",
       "method": "POST",
       "path": "/api/readiness/tasks/next",
@@ -1431,6 +1651,20 @@
       "response": {
         "error": "This key isn't the one your agent uses with this fleet.",
         "reason": "key_mismatch"
+      }
+    },
+    {
+      "name": "tasks.next.no_model_calls",
+      "method": "POST",
+      "path": "/api/readiness/tasks/next",
+      "auth": "session",
+      "request": {
+        "key": "<provider key>"
+      },
+      "status": 409,
+      "response": {
+        "lifecycle": "interrupted",
+        "reason": "no_model_calls"
       }
     },
     {
@@ -1898,17 +2132,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rbnr-73d0cca0",
+        "id": "call-mv6s4v17-39f361e5",
         "name": "create_escalation",
         "input": {
           "ticketId": "<ticket>",
-          "team": "billing",
+          "team": "platform",
           "reason": "Enterprise outage."
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rbnr-73d0cca0",
+        "id": "call-mv6s4v17-39f361e5",
         "result": {
           "escalationId": "<escalation>"
         }
@@ -1921,17 +2155,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rcw1-49e06067",
+        "id": "call-mv6s4wn6-76106f96",
         "name": "create_refund",
         "input": {
           "orderId": "<order>",
-          "amount": 240.97,
+          "amount": 23.85,
           "operationKey": "refund-key-0001"
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rcw1-49e06067",
+        "id": "call-mv6s4wn6-76106f96",
         "result": {
           "error": "timeout",
           "message": "The refund service didn't answer in time. The refund may or may not have been made."
@@ -1945,16 +2179,16 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rc2k-df07ff20",
+        "id": "call-mv6s4vfu-2ac4e710",
         "name": "get_queue",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rc2k-df07ff20",
+        "id": "call-mv6s4vfu-2ac4e710",
         "result": {
           "policy": {
-            "approvalLimit": 450,
+            "approvalLimit": 400,
             "regionCode": "AP-2"
           },
           "claimIds": [
@@ -1973,24 +2207,24 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rbo1-91d00b3e",
+        "id": "call-mv6s4v1i-7c42b6e4",
         "name": "list_escalations",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rbo1-91d00b3e",
+        "id": "call-mv6s4v1i-7c42b6e4",
         "result": {
           "escalations": [
             {
               "id": "<escalation>",
               "ticketId": "<ticket>",
-              "team": "billing"
+              "team": "platform"
             },
             {
               "id": "<escalation>",
               "ticketId": "<ticket>",
-              "team": "platform"
+              "team": "billing"
             }
           ]
         }
@@ -2003,18 +2237,18 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rbnq-de971cdd",
+        "id": "call-mv6s4v17-0e3c1f64",
         "name": "list_tickets",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rbnq-de971cdd",
+        "id": "call-mv6s4v17-0e3c1f64",
         "result": {
           "tickets": [
             {
               "id": "<ticket>",
-              "subject": "Invoice totals are wrong for every account"
+              "subject": "Card payments are failing at checkout"
             },
             {
               "id": "<ticket>",
@@ -2022,7 +2256,7 @@
             },
             {
               "id": "<ticket>",
-              "subject": "Card payments are failing at checkout"
+              "subject": "Refunds are stuck in pending"
             }
           ]
         }
@@ -2052,7 +2286,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rc2l-4c73a1c0",
+        "id": "call-mv6s4vfu-c00b14f6",
         "name": "read_claim",
         "input": {
           "id": "<claim>"
@@ -2060,11 +2294,11 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rc2l-4c73a1c0",
+        "id": "call-mv6s4vfu-c00b14f6",
         "result": {
           "id": "<claim>",
-          "customer": "Fay Morgan",
-          "amount": 384,
+          "customer": "Chen Li",
+          "amount": 346,
           "notes": "Note 1: photos, receipts and the customer's statement were checked again; nothing here changes the claimed amount.\nNote 2: photos, receipts and the customer's statement were checked again; nothing her"
         }
       }
@@ -2076,7 +2310,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rcw1-f4bd6a1d",
+        "id": "call-mv6s4wn6-a6872b1e",
         "name": "read_order",
         "input": {
           "id": "<order>"
@@ -2084,11 +2318,11 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rcw1-f4bd6a1d",
+        "id": "call-mv6s4wn6-a6872b1e",
         "result": {
           "id": "<order>",
           "customer": "Chen Li",
-          "amountPaid": 240.97,
+          "amountPaid": 23.85,
           "reason": "Item arrived damaged."
         }
       }
@@ -2100,7 +2334,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rbnq-09edd9f7",
+        "id": "call-mv6s4v17-05278707",
         "name": "read_ticket",
         "input": {
           "id": "<ticket>"
@@ -2108,14 +2342,14 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rbnq-09edd9f7",
+        "id": "call-mv6s4v17-05278707",
         "result": {
           "id": "<ticket>",
-          "subject": "Invoice totals are wrong for every account",
+          "subject": "Card payments are failing at checkout",
           "customerPlan": "Enterprise",
-          "severity": "outage",
+          "severity": "minor",
           "team": "billing",
-          "message": "Invoice totals are wrong for every account. Please help."
+          "message": "Card payments are failing at checkout. Please help."
         }
       }
     },
@@ -2126,7 +2360,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv67rc2l-8a9e4852",
+        "id": "call-mv6s4vfv-56f43520",
         "name": "save_decision",
         "input": {
           "claimId": "<claim>",
@@ -2136,7 +2370,7 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv67rc2l-8a9e4852",
+        "id": "call-mv6s4vfv-56f43520",
         "result": {
           "saved": true
         }

@@ -189,8 +189,9 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
     if (path === "/api/readiness/heartbeat") return expect("heartbeat", body), fromFixture("heartbeat");
     if (path === "/api/readiness/cancel") {
       stub.cancels.push(body);
-      // keepResults (a crashed adapter) has no fixture yet: it finishes the run with a result.
-      return body?.keepResults ? [200, { lifecycle: "finished" }] : (expect("cancel", body), fromFixture("cancel"));
+      // keepResults (a crashed adapter) finishes the run with a result.
+      const name = body?.keepResults ? "cancel.keep_results" : "cancel";
+      return (expect(name, body), fromFixture(name));
     }
     return [404, { error: "Not found." }];
   };
