@@ -22,7 +22,7 @@ import {
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
 import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf } from '@/lib/control-auth';
-import { fleetSessionId, rateLimitHeaders } from '@/lib/rate-limit-headers';
+import { rateLimitHeaders } from '@/lib/rate-limit-headers';
 import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
@@ -81,9 +81,9 @@ export async function POST(req: Request) {
       if (actorId) headers[CONTROL_USER_HEADER] = actorId;
     }
   } else {
-    // Counted against the signed-in user (or this fleet-key session), not the dashboard's shared IP (engine rate limit).
-    const userId = await auth().then((s) => s?.user?.id ?? null, () => null);
-    Object.assign(headers, rateLimitHeaders(userId ?? fleetSessionId(token)));
+    // Counted against the signed-in user, not the dashboard's shared IP (engine rate limit). A session with
+    // only a fleet cookie isn't named: the cookie is unchecked here, so naming it would let anyone mint buckets.
+    Object.assign(headers, rateLimitHeaders(await auth().then((s) => s?.user?.id ?? null, () => null)));
   }
 
   let upstream: Response;
