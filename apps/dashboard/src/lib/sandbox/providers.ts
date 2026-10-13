@@ -40,6 +40,12 @@ export function providerSummary(provider: SandboxProvider, endpointHost?: string
   return isCloudProvider(provider) && endpointHost ? `${label} · ${endpointHost}` : label;
 }
 
+/** Where to find the key the Start form asks for, for Anthropic and OpenAI. */
+export const KEY_HELP: Record<DirectProvider, string> = {
+  anthropic: 'Find it at console.anthropic.com → API keys.',
+  openai: 'Find it at platform.openai.com → API keys.',
+};
+
 /**
  * What each cloud choice asks for, and where to find it. Only the endpoint:
  * the agent keeps sending its own key, and the test is tied to it by the
@@ -259,6 +265,16 @@ export function restorableProvider(saved: string | null, unsupported: readonly C
 /** After the engine refuses a provider: that choice is disabled, and the form falls back to Anthropic. */
 export function withUnsupported(list: readonly CloudProvider[], provider: CloudProvider): { unsupported: CloudProvider[]; provider: SandboxProvider } {
   return { unsupported: list.includes(provider) ? [...list] : [...list, provider], provider: 'anthropic' };
+}
+
+/**
+ * Whether Connect offers "No code change" for this provider: only where
+ * noCodeSetup has something that works to copy. An OpenAI test needs the
+ * x-whiteroom-fleet header, which the OpenAI SDK can't take from the
+ * environment, so it isn't offered there.
+ */
+export function offersNoCode(provider: SandboxProvider): boolean {
+  return provider !== 'openai';
 }
 
 /**

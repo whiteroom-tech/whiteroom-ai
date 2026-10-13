@@ -1,6 +1,7 @@
 // The Sandbox pieces that differ for Azure OpenAI, Foundry and Bedrock tests,
 // kept out of TestRunFlow so each can be rendered and tested on its own.
 
+import { Tag } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
 import {
   CLOUD_FIELDS, type CloudProvider, isCloudProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider,
@@ -17,13 +18,15 @@ export const PROVIDER_CHOICES: { value: SandboxProvider; sub: string }[] = [
 ];
 
 /** Native radios in a fieldset: arrow keys, focus and the group name come from the browser. */
-export function ProviderChoices({ value, unsupported, disabled, followsKey, onPick }: {
+export function ProviderChoices({ value, unsupported, disabled, followsKey, lastUsed, onPick }: {
   value: SandboxProvider;
   /** Choices the engine refused: shown, but disabled. */
   unsupported: readonly CloudProvider[];
   disabled?: boolean;
   /** An sk- key is pasted, so Anthropic vs OpenAI comes from it. */
   followsKey?: boolean;
+  /** The provider of this browser's last test, tagged "Last used"; none on a first visit. */
+  lastUsed?: SandboxProvider | null;
   onPick: (p: SandboxProvider) => void;
 }) {
   return (
@@ -36,7 +39,7 @@ export function ProviderChoices({ value, unsupported, disabled, followsKey, onPi
             <label key={c.value} className={`${s.choice} ${value === c.value ? s.choiceOn : ''} ${off ? s.choiceOff : ''}`}>
               <input type="radio" name="sandbox-provider" value={c.value} checked={value === c.value} disabled={off || disabled} onChange={() => onPick(c.value)} className={s.choiceInput} />
               <span className={s.choiceText}>
-                <span className={s.choiceName}>{SANDBOX_PROVIDER_LABELS[c.value]}</span>
+                <span className={s.choiceName}>{SANDBOX_PROVIDER_LABELS[c.value]}{lastUsed === c.value && !off && <> <Tag tone="muted">Last used</Tag></>}</span>
                 <span className={s.choiceSub}>{off ? 'Not available yet' : c.sub}</span>
               </span>
             </label>
