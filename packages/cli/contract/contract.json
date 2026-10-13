@@ -805,6 +805,19 @@
       }
     },
     {
+      "name": "session.engine_error",
+      "method": "POST",
+      "path": "/api/readiness/heartbeat",
+      "auth": "session",
+      "request": {},
+      "status": 409,
+      "response": {
+        "lifecycle": "interrupted",
+        "reason": "engine_error",
+        "tasksFinished": 1
+      }
+    },
+    {
       "name": "session.engine_update",
       "method": "POST",
       "path": "/api/readiness/tasks/next",
@@ -842,7 +855,67 @@
       "response": {
         "lifecycle": "finished",
         "reason": "finished",
-        "tasksFinished": 1
+        "tasksFinished": 1,
+        "verdict": "incomplete",
+        "report": {
+          "how": {
+            "memoryLimitAdjusted": false
+          },
+          "runs": 3,
+          "scope": [
+            "a.result"
+          ],
+          "checks": [
+            {
+              "id": "a.result",
+              "fix": "This practice task didn't run, so this check couldn't be judged. Rerun this check to try again.",
+              "label": "Finishes a job correctly",
+              "reason": "not_run",
+              "status": "not_tested",
+              "summary": "Passed in 1 of 3 runs.",
+              "attempts": [
+                {
+                  "reason": null,
+                  "status": "passed",
+                  "runIndex": 0,
+                  "attemptId": "<attempt id>"
+                },
+                {
+                  "reason": "not_run",
+                  "status": "not_tested",
+                  "runIndex": 1,
+                  "attemptId": null
+                },
+                {
+                  "reason": "not_run",
+                  "status": "not_tested",
+                  "runIndex": 2,
+                  "attemptId": null
+                }
+              ],
+              "observer": "records",
+              "required": true,
+              "scenario": "Finishes a job correctly",
+              "testProblem": false
+            }
+          ],
+          "sample": false,
+          "tested": {
+            "cli": "2.0.0",
+            "agent": "support-bot",
+            "fleet": "<fleet>",
+            "adapter": "node agent.mjs",
+            "keyHint": null,
+            "provider": "anthropic",
+            "modelsUsed": [
+              "claude-haiku-4-5-20251001"
+            ],
+            "modelRequested": "claude-haiku-4-5",
+            "proxyKeyDisplayPrefix": null
+          },
+          "verdict": "incomplete",
+          "testVersion": 1
+        }
       }
     },
     {

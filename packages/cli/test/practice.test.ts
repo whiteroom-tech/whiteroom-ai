@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { CATALOG } from "../src/practice/catalog.js";
-import { alive, ATTEMPT_PROXY_KEY, cli, CLOUD, CODE, finishedNotPassed, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type CloudProvider, type Stub } from "./stub.js";
+import { alive, ATTEMPT_PROXY_KEY, cli, CLOUD, CODE, finishedNotPassed, finishedWithoutResult, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type CloudProvider, type Stub } from "./stub.js";
 
 const dir = mkdtempSync(join(tmpdir(), "wr-cli-test-"));
 /** A throwaway adapter script; returns its path. */
@@ -404,6 +404,13 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     assert.match(r.stderr, /ended from the dashboard/);
   });
 
+  it("WhiteRoom couldn't work out the result (409 engine_error, from the contract)", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/tools" ? [409, fixture("session.engine_error").response] : undefined) });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /WhiteRoom couldn't finish working out the result \(not your agent\)\./);
+  });
+
   for (const [reason, said] of [
     ["call_cap", /Stopped at this test's model-call limit after WhiteRoom had to rerun a task \(not your agent\)\./],
     ["no_model_calls", /didn't make any model calls through WhiteRoom in 2 practice tasks in a row\. Check your adapter sends its calls to the base_url/],
@@ -427,7 +434,7 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     });
 
     it("without it (an older WhiteRoom): tasks/next replays the result once", async () => {
-      const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [409, fixture("session.finished").response] : undefined) });
+      const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [409, finishedWithoutResult()] : undefined) });
       const r = await run(s);
       assert.equal(r.code, 0, r.stderr);
       assert.match(r.stdout, /Passed · all \d+ checks · 3 runs/);
@@ -435,7 +442,7 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     });
 
     it("no result from the replay either: says where to see it, exit 3", async () => {
-      const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n >= 2 ? [409, fixture("session.finished").response] : undefined) });
+      const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n >= 2 ? [409, finishedWithoutResult()] : undefined) });
       const r = await run(s);
       assert.equal(r.code, 3);
       assert.match(r.stdout, /The practice test finished\. See the results in the dashboard \(.*\), under Past tests\./);
