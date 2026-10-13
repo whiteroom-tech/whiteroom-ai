@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { WhiteRoomClient, WhiteRoomError } from "@whiteroom-ai/sdk";
+import { parseArgs as parseArgv } from "node:util";
 
 const USAGE = `whiteroom — CLI for WhiteRoom agent governance
 
@@ -16,27 +16,38 @@ Usage:
   whiteroom report [--fleet <id>]
   whiteroom fleets
   whiteroom login <fleet_token>
+  whiteroom practice run [--adapter "<command>"] [--code-stdin]
+  whiteroom practice adapter --lang js|python
 
 Options:
   --url <base_url>   Server URL (default: WHITEROOM_URL or http://localhost:3000)
   --key <api_key>    API key (default: WHITEROOM_API_KEY)
 `;
 
+// The fleet commands' flags; anything else is ignored, as before.
+const LEGACY_FLAGS = ["url", "key", "fleet", "role", "minutes", "tokens"] as const;
+
 function parseArgs(argv: string[]) {
-  const args: string[] = [];
+  const { values, positionals } = parseArgv({
+    args: argv,
+    strict: false,
+    allowPositionals: true,
+    options: Object.fromEntries(LEGACY_FLAGS.map((f) => [f, { type: "string" as const }])),
+  });
   const flags: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith("--") && i + 1 < argv.length) {
-      flags[argv[i].slice(2)] = argv[++i];
-    } else {
-      args.push(argv[i]);
-    }
-  }
-  return { args, flags };
+  for (const [k, v] of Object.entries(values)) if (typeof v === "string") flags[k] = v;
+  return { args: positionals, flags };
 }
 
 async function main() {
-  const { args, flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  // Practice tests never load the SDK (spec §9.5): plain fetch only.
+  if (argv[0] === "practice" || argv[0] === "readiness") {
+    const { practice } = await import("./practice/index.js");
+    process.exitCode = await practice(argv.slice(1));
+    return;
+  }
+  const { args, flags } = parseArgs(argv);
   const command = args[0];
 
   if (!command || command === "help" || command === "--help") {
@@ -44,6 +55,7 @@ async function main() {
     process.exit(0);
   }
 
+  const { WhiteRoomClient, WhiteRoomError } = await import("@whiteroom-ai/sdk");
   const client = new WhiteRoomClient({
     baseUrl: flags.url ?? process.env.WHITEROOM_URL ?? "http://localhost:3000",
     apiKey: flags.key ?? process.env.WHITEROOM_API_KEY,
@@ -123,7 +135,7 @@ async function main() {
     }
   } catch (e) {
     if (e instanceof WhiteRoomError) {
-      console.error(`Error ${(e as WhiteRoomError).status}: ${(e as WhiteRoomError).message}`);
+      console.error(`Error ${e.status}: ${e.message}`);
       process.exit(1);
     }
     throw e;

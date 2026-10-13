@@ -1,0 +1,2 @@
+Copied unchanged from whiteroom-ai-whiteroom apps/engine/fixtures/readiness/ at cc65272e (main, R4 merged as #217).
+Refresh by copying them again; never edit them here.
