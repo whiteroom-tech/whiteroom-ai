@@ -54,6 +54,11 @@ describe('practice test screens', () => {
       expect(text(html)).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');
       expect(startButton(html)).toContain('disabled=""');
     }
+    // The sample agent calls the provider itself: a cloud fleet can still run it; a proxy-URL fleet can't.
+    const sampleOnly = (provider: 'cloud' | 'proxy-url') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider, setup: { ...PRACTICE_STATES['setup-blocked'].setup!, agents: [] } } }));
+    expect(text(sampleOnly('cloud'))).not.toContain('provider yet');
+    expect(startButton(sampleOnly('cloud'))).not.toContain('disabled=""');
+    expect(startButton(sampleOnly('proxy-url'))).toContain('disabled=""');
     // Direct keys, or not yet known: Start stays open (its own checks still apply).
     for (const provider of ['direct-anthropic', 'direct-openai', 'unknown', undefined] as const) {
       const html = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, provider } }));

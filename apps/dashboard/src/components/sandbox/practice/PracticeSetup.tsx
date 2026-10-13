@@ -96,7 +96,9 @@ export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider
   const chosen = typed.trim() || null;
   // Sent with Start, so the sample agent or the starter uses it: the sample keeps its own unless one is chosen.
   const model = sample ? (changing ? chosen : null) : changing || !latest ? chosen : latest;
-  const blocked = BLOCKED_PROVIDERS.includes(provider);
+  // The sample agent calls the provider itself, so a fleet whose agent uses a cloud provider can still run it;
+  // a fleet with its own endpoint (proxy URL) is refused at Start either way.
+  const blocked = provider === 'proxy-url' || (!sample && BLOCKED_PROVIDERS.includes(provider));
   const controls = controlPreview(data.rules, data.durableHolds, sample && !data.agents.length);
   const est = callEstimate({ runs: sample ? 1 : runs, scope: null, controlCalls: controlCalls(controls), model: model ?? (sample ? SAMPLE_MODELS.anthropic : null) });
   const keyVar = keyVariable(model);
