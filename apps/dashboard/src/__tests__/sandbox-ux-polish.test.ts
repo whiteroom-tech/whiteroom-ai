@@ -6,19 +6,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { agentNameNote, directProviderOf, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { agentNameNote, directProviderOf, KeyField, PLACEHOLDER_AGENT, setupChoices, shownSetup, TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 const { forgetSandboxChoices, PROVIDER_STORAGE } = await import('@/lib/sandbox/api');
 const { ProviderChoices } = await import('@/components/sandbox/CloudProviderParts');
 const { ENDPOINTS_STORAGE, KEY_HELP, noCodeSetup, offersNoCode, SANDBOX_PROVIDERS } = await import('@/lib/sandbox/providers');
 
-const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const opts = { proxyUrl: 'https://proxy.whiteroom.tech/', base: 'https://proxy.whiteroom.tech/sk-wr-test', fleetId: 'sandbox-1234' };
 const render = (previewRun: RunStatusResult) => renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewPastTests: [], previewRun }));
 const live = (o: Partial<RunStatusResult> = {}): RunStatusResult => ({ sandboxId: 'live-1', mode: 'connected', expiresInSeconds: 1500, agents: [], auditLog: [], controls: [], ...o });
@@ -69,19 +66,27 @@ describe('Connect: the agent name', () => {
 });
 
 describe('Start your test: the key field', () => {
-  const src = read('../components/sandbox/TestRunFlow.tsx');
+  const noop = () => {};
+  const field = (credential = '', provider: 'anthropic' | 'openai' = 'anthropic') =>
+    renderToStaticMarkup(createElement(KeyField, { credential, showKey: false, provider, onChange: noop, onToggleShow: noop }));
+
   it('asks for the API key, with the fleet token as a side note', () => {
-    expect(src).toContain('htmlFor="sandbox-key">Your agent’s API key</label>');
-    expect(src).not.toContain('or a WhiteRoom fleet token</span>');
-    expect(src).toContain('Have a WhiteRoom fleet token? Paste it instead.');
+    const empty = field();
+    expect(empty).toContain('<label class="');
+    expect(empty).toMatch(/for="sandbox-key">Your agent’s API key<\/label>/);
+    expect(empty).not.toContain('or a WhiteRoom fleet token');
+    expect(empty).toContain('Have a WhiteRoom fleet token? Paste it instead.');
     // Placeholder prefixes stay.
-    expect(src).toContain('placeholder="sk-ant-…, sk-…, or wr_…"');
+    expect(empty).toContain('placeholder="sk-ant-…, sk-…, or wr_…"');
+    // The side note goes once something is pasted.
+    expect(field('sk-ant-x')).not.toContain('Have a WhiteRoom fleet token?');
   });
 
-  it('says where to find each key', () => {
+  it('says where to find the key for the provider picked', () => {
     expect(KEY_HELP.anthropic).toBe('Find it in Claude Console → Settings → API keys.');
     expect(KEY_HELP.openai).toBe('Find it at platform.openai.com → API keys.');
-    expect(src).toContain('KEY_HELP[directProvider]');
+    expect(field('', 'anthropic')).toContain(KEY_HELP.anthropic);
+    expect(field('', 'openai')).toContain(KEY_HELP.openai);
   });
 });
 

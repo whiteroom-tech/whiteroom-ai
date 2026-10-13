@@ -131,6 +131,31 @@ export function detectKey(value: string): KeyKind {
   return 'unknown';
 }
 
+/** The Start form's key field: the agent's API key, what was pasted, and where to find one. */
+export function KeyField({ credential, showKey, provider, onChange, onToggleShow }: {
+  credential: string; showKey: boolean; provider: DirectProvider; onChange: (value: string) => void; onToggleShow: () => void;
+}) {
+  const keyKind = detectKey(credential);
+  return (
+    <div className={s.formGroup}>
+      <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s API key</label>
+      <div className={s.keyWrap}>
+        <input id="sandbox-key" className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={credential} onChange={e => onChange(e.target.value)} placeholder="sk-ant-…, sk-…, or wr_…" aria-describedby={keyKind === 'empty' ? 'sandbox-key-hint sandbox-key-token' : 'sandbox-key-hint'} />
+        <button type="button" className={s.keyShow} onClick={onToggleShow}>{showKey ? 'Hide' : 'Show'}</button>
+      </div>
+      <p id="sandbox-key-hint" className={s.small} style={{ marginTop: 6 }} aria-live="polite">
+        {keyKind === 'empty' && `Use the same key your agent uses, so we can match its calls to this test. ${KEY_HELP[provider]}`}
+        {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
+        {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
+        {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
+        {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s a WhiteRoom account key. Paste your Anthropic or OpenAI key, or a fleet token (wr_…).</span>}
+        {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
+      </p>
+      {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have a WhiteRoom fleet token? Paste it instead.</p>}
+    </div>
+  );
+}
+
 export function connectionRecipe(provider: DirectProvider, fleetId: string, agentId: string, language: Language) {
   const base = PROXY_URL.replace(/\/$/, '') + (provider === 'openai' ? '/v1' : '');
   const headers = { 'x-whiteroom-fleet': fleetId, 'x-whiteroom-agent': agentId };
@@ -1067,22 +1092,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               }}
               onSubmit={() => { if (!busy) startTest(); }} />
           ) : (
-          <div className={s.formGroup}>
-            <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s API key</label>
-            <div className={s.keyWrap}>
-              <input id="sandbox-key" className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={credential} onChange={e => setCredential(e.target.value)} placeholder="sk-ant-…, sk-…, or wr_…" aria-describedby={keyKind === 'empty' ? 'sandbox-key-hint sandbox-key-token' : 'sandbox-key-hint'} />
-              <button type="button" className={s.keyShow} onClick={() => setShowKey(v => !v)}>{showKey ? 'Hide' : 'Show'}</button>
-            </div>
-            <p id="sandbox-key-hint" className={s.small} style={{ marginTop: 6 }} aria-live="polite">
-              {keyKind === 'empty' && `Use the same key your agent uses, so we can match its calls to this test. ${KEY_HELP[directProvider]}`}
-              {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
-              {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
-              {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
-              {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s a WhiteRoom account key. Paste your Anthropic or OpenAI key, or a fleet token (wr_…).</span>}
-              {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
-            </p>
-            {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have a WhiteRoom fleet token? Paste it instead.</p>}
-          </div>
+          <KeyField credential={credential} showKey={showKey} provider={directProvider} onChange={setCredential} onToggleShow={() => setShowKey(v => !v)} />
           )}
           <div className={s.btnRow} style={{ marginTop: 8 }}>
             <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy || (cloud ? !endpointInput.trim() : !['anthropic', 'openai', 'fleet'].includes(keyKind))} onClick={startTest}>{busy ? 'Starting…' : 'Start test →'}</button>
