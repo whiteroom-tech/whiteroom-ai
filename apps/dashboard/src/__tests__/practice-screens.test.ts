@@ -36,6 +36,13 @@ describe('practice test screens', () => {
       'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up', 'Loop breaker · Enforce · 2 extra calls',
       'Spend cap · Enforce: not checked (it would need real spending)', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
+    // A fleet with no agents yet: the sample agent, since Your agent needs one that has called through WhiteRoom.
+    const none = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, setup: { ...PRACTICE_STATES.setup.setup!, agents: [] } } }));
+    expect(text(none)).toContain('Run your agent through WhiteRoom once first, so it shows up here.');
+    const radios = none.match(/<input[^>]*name="practice-who"[^>]*>/g) ?? [];
+    expect(radios).toHaveLength(2);
+    expect(radios[0]).toContain('checked=""');
+    expect(radios[1]).toContain('disabled=""');
     expect(text(render('setup-new-agent'))).toContain('Pause and Stop: not checked on this fleet.');
     expect(text(render('setup-proxy'))).toContain('Practice tests can’t yet run agents that call through a WhiteRoom proxy URL (Azure OpenAI, AWS Bedrock).');
   });

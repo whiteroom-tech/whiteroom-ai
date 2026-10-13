@@ -45,6 +45,8 @@ export async function practiceEngine(method: 'GET' | 'POST', path: string, body?
   } catch {
     return json(502, 'Couldn’t reach WhiteRoom. Check your connection and try again.');
   }
-  const data = await res.json().catch(() => ({ error: 'WhiteRoom sent an answer the dashboard couldn’t read. Try again.' }));
+  const data = await res.json().catch(() => null);
+  // An unreadable answer is never passed on as a success.
+  if (data === null) return json(502, 'WhiteRoom sent an answer the dashboard couldn’t read. Try again.');
   return Response.json(data, { status: res.status, headers: { 'Cache-Control': 'no-store' } });
 }

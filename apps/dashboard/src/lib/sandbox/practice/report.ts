@@ -9,7 +9,7 @@ import { DISCLAIMER, fixLine, headline, STATUS_LABEL } from './model';
 import type { PracticeReport } from './types';
 
 /** Control, C1 and bidi characters, which could make the file read differently from what it says (§9.7). */
-const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f؜‎‏‪-‮⁦-⁩]/g;
+const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 const esc = (s: unknown) => String(s ?? '').replace(UNSAFE, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export const REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";

@@ -66,7 +66,9 @@ export function PracticeSetup({ fleet, data, busy, previewModel, onStart }: {
   previewModel?: string | null;
   onStart: (start: PracticeStart) => void;
 }) {
-  const [sample, setSample] = useState(false);
+  // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
+  const noAgents = data.agents.length === 0;
+  const [sample, setSample] = useState(noAgents);
   const [agent, setAgent] = useState(data.agents[0] ?? '');
   const [runs, setRuns] = useState<1 | 3>(1);
   // The model the agent used most recently (undefined while loading), else what the owner types.
@@ -109,10 +111,10 @@ export function PracticeSetup({ fleet, data, busy, previewModel, onStart }: {
           <div className={s.choices}>
             {([
               [true, 'Sample agent', 'No code, 1 run. Doesn’t test your agent.'],
-              [false, 'Your agent', 'Needs a small adapter.'],
+              [false, 'Your agent', noAgents ? 'Run your agent through WhiteRoom once first, so it shows up here.' : 'Needs a small adapter.'],
             ] as const).map(([v, name, sub]) => (
-              <label key={name} className={`${s.choice} ${sample === v ? s.choiceOn : ''}`}>
-                <input type="radio" name="practice-who" checked={sample === v} onChange={() => setSample(v)} className={s.choiceInput} />
+              <label key={name} className={`${s.choice} ${sample === v ? s.choiceOn : ''} ${!v && noAgents ? s.choiceOff : ''}`}>
+                <input type="radio" name="practice-who" checked={sample === v} disabled={!v && noAgents} onChange={() => setSample(v)} className={s.choiceInput} />
                 <span className={s.choiceText}><span className={s.choiceName}>{name}</span><span className={s.choiceSub}>{sub}</span></span>
               </label>
             ))}

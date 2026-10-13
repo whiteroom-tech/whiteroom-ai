@@ -76,9 +76,10 @@ export async function POST(req: Request, { params }: Params) {
   if (path.length === 1 && path[0] === 'start') {
     const { sample, runs, agent, model, scope } = body;
     if (typeof sample !== 'boolean' || (runs !== 1 && runs !== 3)) return invalid();
-    if (agent !== undefined && typeof agent !== 'string') return invalid();
-    if (model !== undefined && typeof model !== 'string') return invalid();
-    if (scope !== undefined && (!Array.isArray(scope) || scope.some((s) => typeof s !== 'string'))) return invalid();
+    // The same bounds as the engine's, so nothing bigger is forwarded.
+    const name = (v: unknown) => v === undefined || (typeof v === 'string' && v.length >= 1 && v.length <= 128);
+    if (!name(agent) || !name(model)) return invalid();
+    if (scope !== undefined && (!Array.isArray(scope) || scope.length > 64 || !scope.every((s) => typeof s === 'string' && s.length <= 128))) return invalid();
     return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, startedBy: owner.userId });
   }
   const [run, action] = path;

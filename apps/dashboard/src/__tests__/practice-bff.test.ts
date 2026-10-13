@@ -93,4 +93,13 @@ describe('practice BFF', () => {
     await get(['source-model'], 'fleet=prod-eu&agent=support%20bot');
     expect(sent().url).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support%20bot$/);
   });
+
+  it('never passes an unreadable engine answer on as a success, and bounds names like the engine', async () => {
+    engine.mockResolvedValue(new Response('<html>proxy page</html>', { status: 200 }));
+    expect((await get([RUN], 'fleet=prod-eu')).status).toBe(502);
+    engine.mockClear();
+    expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'a'.repeat(129) })).status).toBe(400);
+    expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'bot', scope: Array(65).fill('a.result') })).status).toBe(400);
+    expect(engine).not.toHaveBeenCalled();
+  });
 });

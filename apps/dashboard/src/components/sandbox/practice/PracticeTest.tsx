@@ -36,9 +36,13 @@ export interface PracticePreview {
   now?: number;
 }
 
-const fail = (e: unknown): Refusal => e instanceof PracticeError
+/** A refusal to show: the engine's or the BFF's own words, else `fallback`. */
+const fail = (e: unknown, fallback: Refusal): Refusal => e instanceof PracticeError
   ? { message: e.message, reason: e.reason, run: e.body?.run as Refusal['run'] }
-  : { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
+  : fallback;
+/** First load only: the fleet or its controls couldn't be read, so offer a reload. */
+const LOAD_FAILED: Refusal = { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
+const ACTION_FAILED: Refusal = { message: 'That didn’t work. Check your connection and try again.' };
 
 /** Sandbox › Practice test: setup, the terminal steps, progress and the result, one test at a time. */
 export function PracticeTest({ preview }: { preview?: PracticePreview }) {
@@ -96,7 +100,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       const id = valid ?? (await listPracticeRuns(f)).find((r) => isOpen(r.lifecycle))?.id;
       if (id) await showRun(f, id);
       else await loadSetup(f);
-    })().catch((e) => { if (live) setRefusal(fail(e)); }).finally(() => { if (live) setLoading(false); });
+    })().catch((e) => { if (live) setRefusal(fail(e, LOAD_FAILED)); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [preview, showRun, loadSetup]);
 
@@ -153,7 +157,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true); setRefusal(null);
-    try { await fn(); } catch (e) { setRefusal(fail(e)); } finally { setBusy(false); }
+    try { await fn(); } catch (e) { setRefusal(fail(e, ACTION_FAILED)); } finally { setBusy(false); }
   };
 
   const start = (st: PracticeStart) => act(async () => {
