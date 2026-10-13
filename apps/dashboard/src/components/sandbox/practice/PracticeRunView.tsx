@@ -32,7 +32,8 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
   onNewCode: () => void;
 }) {
   const [lang, setLang] = useState<StarterLang>('js');
-  const cmd = cliCommands(run.sample, lang, keyChoice?.provider);
+  // --key-env only for a provider the engine named, or a Fleet key key: setup's guess for the fleet's own key could be wrong.
+  const cmd = cliCommands(run.sample, lang, run.provider || keyChoice?.fleetKey ? keyChoice?.provider : null);
   const left = code ? codeCountdown(code.codeExpiresAt, now) : null;
   const tries = run.codeTriesLeft;
   const key = keyLine(keyChoice, run.sourceFleetId);

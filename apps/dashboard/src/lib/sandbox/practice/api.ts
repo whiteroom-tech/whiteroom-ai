@@ -79,14 +79,14 @@ function providerKey(k: unknown): PracticeProviderKey | null {
 /** The agent's latest model, where its calls go, the keys setup can pick from, and the control checks a test would make. */
 export const sourceModel = (fleet: string, agent: string) =>
   call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => {
-    const controls = (r.controls ?? {}) as { checks?: PracticeControlCheck[]; calls?: number };
+    const controls = r.controls as { checks?: PracticeControlCheck[]; calls?: number } | undefined;
     return {
       model: str(r.model),
       provider: PROVIDERS.includes(r.provider as PracticeSourceProvider) ? (r.provider as PracticeSourceProvider) : 'unknown',
       directKey: r.directKey === true,
       blocked: r.blocked === 'bedrock_role' ? 'bedrock_role' : null,
       providerKeys: Array.isArray(r.providerKeys) ? r.providerKeys.map(providerKey).filter((k): k is PracticeProviderKey => k !== null) : [],
-      controls: { checks: Array.isArray(controls.checks) ? controls.checks : [], calls: Number(controls.calls) || 0 },
+      controls: controls && Array.isArray(controls.checks) ? { checks: controls.checks, calls: Number(controls.calls) || 0 } : null,
     };
   });
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });

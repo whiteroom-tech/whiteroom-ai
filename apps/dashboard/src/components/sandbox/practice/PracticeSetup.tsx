@@ -25,7 +25,7 @@ function KeyLine({ choice, fleet, className }: { choice: PracticeKeyChoice | nul
 }
 
 /** The 7 agent checks by scenario, then the fleet's controls as the engine plans them: what the results will show, by the same names. */
-function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] }) {
+function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] | null }) {
   const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
   return (
     <section className={s.preview} aria-labelledby="practice-checks-preview">
@@ -44,9 +44,10 @@ function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] }
           <span className={s.previewNum} aria-hidden="true">{scenarios.length + 1}</span>
           <span>
             <span className={s.previewName}>{CATALOG.controls.scenario}</span>
-            {controls.some((c) => c.id !== 'ctl.pause_stop') ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
+            {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
+              : controls.length ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
               : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
-            {!controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
+            {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
           </span>
         </li>
       </ol>
@@ -56,7 +57,7 @@ function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] }
 
 const NO_KEYS = { keys: [], direct: true, initial: null };
 /** What setup assumes when the engine can't say: the fleet's own key, Start's checks still apply. */
-const OWN_KEY_ONLY: PracticeSource = { model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: { checks: [], calls: 0 } };
+const OWN_KEY_ONLY: PracticeSource = { model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: null };
 /** Whether `prefix` is a cloud provider's key, which needs a model typed in. */
 const cloudKey = (src: PracticeSource | undefined, prefix: string | null) => {
   const k = prefix ? src?.providerKeys.find((x) => x.displayPrefix === prefix) : undefined;
@@ -129,11 +130,12 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
     : src?.provider === 'proxy-url' && !key ? 'host'
     : src?.provider === 'cloud' && !sample && !key ? 'cloud'
     : null;
-  const controls = src?.controls.checks ?? [];
+  // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
+  const controls = src === undefined ? [] : src.controls?.checks ?? null;
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
   const keyChoice = choice ?? directChoice(src);
   const est = callEstimate({
-    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls.calls ?? 0, provider: choice?.provider ?? null,
+    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? src.controls.calls : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
   });
   const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };

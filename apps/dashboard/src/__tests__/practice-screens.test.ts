@@ -7,6 +7,7 @@ import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 import type { PracticeEntry } from '@/components/sandbox/practice/PracticeCard';
+import type { PracticeControlCheck } from '@/lib/sandbox/practice/types';
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
@@ -45,6 +46,19 @@ describe('practice test screens', () => {
     expect(radios[0]).toContain('checked=""');
     expect(radios[1]).toContain('disabled=""');
     expect(text(render('setup-new-agent'))).toContain('Pause and Stop: not checked on this fleet.');
+  });
+
+  it('the controls preview lists Pause and Stop on a fleet with no rules, and says so when the controls couldn’t be read', () => {
+    const setup = (controls: PracticeControlCheck[] | null) => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, controls } })));
+    const pauseOnly = setup([{ id: 'ctl.pause_stop', label: 'Pause and Stop', mode: null, agents: [], checked: true, note: null, calls: 2 }]);
+    expect(pauseOnly).toContain('Pause and Stop');
+    expect(pauseOnly).not.toContain('No controls set');
+    expect(pauseOnly).not.toContain('Pause and Stop: not checked');
+    const unknown = setup(null);
+    expect(unknown).toContain('Couldn’t read this fleet’s controls just now.');
+    expect(unknown).not.toContain('No controls set');
+    expect(unknown).not.toContain('Pause and Stop: not checked');
+    expect(setup([])).toContain('No controls set on this fleet yet');
   });
 
   it('a fleet whose calls go through a proxy URL or a cloud provider, with no Fleet key key to pick, is refused before Start', () => {

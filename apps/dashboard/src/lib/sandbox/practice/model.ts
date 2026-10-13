@@ -306,7 +306,7 @@ export function rerunScope(r: PracticeReport): string[] | null {
  * when there are several to choose from, `gone` when none is left; null for
  * a test on the fleet's own key.
  */
-export function rerunKey(tested: PracticeReport['tested'], keys: PracticeProviderKey[]): PracticeProviderKey | 'pick' | 'gone' | null {
+export function rerunKey(tested: Pick<PracticeReport['tested'], 'provider' | 'proxyKeyDisplayPrefix'>, keys: PracticeProviderKey[]): PracticeProviderKey | 'pick' | 'gone' | null {
   if (!tested.proxyKeyDisplayPrefix) return null;
   const usable = keys.filter((k) => k.eligible && k.provider === tested.provider);
   return usable.find((k) => k.displayPrefix === tested.proxyKeyDisplayPrefix) ?? (usable.length === 1 ? usable[0] : usable.length ? 'pick' : 'gone');
