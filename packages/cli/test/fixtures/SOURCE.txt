@@ -1,0 +1,2 @@
+Copied unchanged from the engine's practice-test contract fixtures at engine commit cc65272e.
+Refresh by copying them again; never edit them here.
