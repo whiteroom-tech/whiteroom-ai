@@ -78,6 +78,8 @@ describe('the kept report', () => {
     // Without endedAt in the report, the row's end time; without either, now.
     expect(pastTestReport({ report: ended, destroyedAt: '2026-10-02T08:00:00.000Z' }, 'sb1', NOW)?.generatedAt).toBe('2026-10-02T08:00:00.000Z');
     expect(pastTestReport({ report: { ...ended, endedAt: 'garbage' } }, 'sb1', NOW)?.generatedAt).toBe(new Date(NOW).toISOString());
+    // A malformed endedAt doesn't hide a good destroyedAt.
+    expect(pastTestReport({ report: { ...ended, endedAt: 'garbage' }, destroyedAt: '2026-10-02T08:00:00.000Z' }, 'sb1', NOW)?.generatedAt).toBe('2026-10-02T08:00:00.000Z');
   });
 
   it('is nothing when the engine kept none', () => {

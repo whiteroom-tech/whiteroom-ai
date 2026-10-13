@@ -217,8 +217,9 @@ export function reportFileName(r: TestReport): string {
  */
 export function pastTestReport(kept: { report?: RunStatusResult & { endedAt?: string }; destroyedAt?: string }, sandboxId: string, now: number = Date.now()): TestReport | null {
   if (!kept.report || typeof kept.report !== 'object') return null;
-  const endedAt = Date.parse(kept.report.endedAt ?? kept.destroyedAt ?? '');
-  return buildTestReport(withRunMode({ ...kept.report, sandboxId }), Number.isFinite(endedAt) ? endedAt : now);
+  // The first of these that is a real date: the report's own end, then the row's.
+  const endedAt = [kept.report.endedAt, kept.destroyedAt].map((t) => Date.parse(t ?? '')).find(Number.isFinite);
+  return buildTestReport(withRunMode({ ...kept.report, sandboxId }), endedAt ?? now);
 }
 
 /** Saves the report as its HTML file. Browser only. */
