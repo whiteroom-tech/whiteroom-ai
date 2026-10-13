@@ -23,6 +23,23 @@ const MAX_BODY_BYTES = 16 * 1024;
 const notFound = () => Response.json({ error: 'Not found.' }, { status: 404 });
 const invalid = () => Response.json({ error: 'Invalid request.' }, { status: 400 });
 
+/** The body as text, or null past `max` bytes: refused by Content-Length first, then counted while reading (chunked bodies). */
+async function readCapped(req: Request, max: number): Promise<string | null> {
+  if (Number(req.headers.get('content-length') ?? 0) > max) return null;
+  const reader = req.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) { await reader.cancel(); return null; }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 export async function GET(req: Request, { params }: Params) {
   const path = (await params).path ?? [];
   const q = new URL(req.url).searchParams;
@@ -44,11 +61,11 @@ export async function POST(req: Request, { params }: Params) {
   const originError = await checkSameOrigin();
   if (originError) return originError;
   const path = (await params).path ?? [];
-  const raw = await req.arrayBuffer();
-  if (raw.byteLength > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
+  const raw = await readCapped(req, MAX_BODY_BYTES);
+  if (raw === null) return Response.json({ error: 'Request too large.' }, { status: 413 });
   let body: Record<string, unknown>;
   try {
-    body = JSON.parse(new TextDecoder().decode(raw));
+    body = JSON.parse(raw);
   } catch {
     return invalid();
   }

@@ -78,4 +78,19 @@ describe('practice BFF', () => {
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
     expect((await get(undefined, 'fleet=prod-eu')).status).toBe(503);
   });
+
+  it('refuses a body over 16 KiB without reading past it, with or without Content-Length', async () => {
+    const big = JSON.stringify({ fleet: 'prod-eu', pad: 'x'.repeat(20_000) });
+    expect((await POST(new Request('https://app.example/x', { method: 'POST', body: big, headers: { 'content-length': String(big.length) } }), ctx(['start']))).status).toBe(413);
+    const chunked = new ReadableStream({ start(c) { for (let i = 0; i < 40; i++) c.enqueue(new TextEncoder().encode('x'.repeat(1024))); c.close(); } });
+    expect((await POST(new Request('https://app.example/x', { method: 'POST', body: chunked, duplex: 'half' } as RequestInit), ctx(['start']))).status).toBe(413);
+    expect(engine).not.toHaveBeenCalled();
+  });
+
+  it('asks for the agent’s latest model only with a sane agent name', async () => {
+    expect((await get(['source-model'], 'fleet=prod-eu')).status).toBe(400);
+    expect((await get(['source-model'], `fleet=prod-eu&agent=${'a'.repeat(129)}`)).status).toBe(400);
+    await get(['source-model'], 'fleet=prod-eu&agent=support%20bot');
+    expect(sent().url).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support%20bot$/);
+  });
 });

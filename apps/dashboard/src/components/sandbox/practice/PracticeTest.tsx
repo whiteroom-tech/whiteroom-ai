@@ -7,7 +7,7 @@ import { analytics } from '@/lib/analytics';
 import { governanceList, listProviderKeys } from '@/lib/whiteroom/client';
 import { SANDBOX_PROVIDER_LABELS, isSandboxProvider } from '@/lib/sandbox/providers';
 import { endPractice, getPracticeResult, getPracticeRun, listPracticeRuns, newRunCode, PracticeError, startPractice } from '@/lib/sandbox/practice/api';
-import { callEstimate, controlCalls, controlPreview, headline, isOpen, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
+import { callEstimate, controlCalls, controlPreview, draftFromStart, headline, isOpen, rerunConfirm, RUN_ID_RE, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
 import type { PracticeResult, PracticeRun, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
@@ -113,7 +113,11 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     if (!open || preview || !fleet || !runId) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
+    // One read at a time: coming back to the tab polls now, unless a read is already on its way.
+    let pending = false;
     const poll = async () => {
+      if (pending) return;
+      pending = true;
       try {
         const next = await getPracticeRun(fleet, runId);
         if (!live) return;
@@ -128,10 +132,14 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
         track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
         requestAnimationFrame(() => heading.current?.focus());
       } catch { /* the next poll tries again */ }
-      finally { if (live) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible); }
+      finally {
+        pending = false;
+        clearTimeout(timer);
+        if (live) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible);
+      }
     };
     timer = setTimeout(poll, POLL_MS.visible);
-    const onVisible = () => { if (!document.hidden) { clearTimeout(timer); void poll(); } };
+    const onVisible = () => { if (!document.hidden && !pending) { clearTimeout(timer); void poll(); } };
     document.addEventListener('visibilitychange', onVisible);
     return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [open, preview, fleet, runId, track]);
@@ -156,11 +164,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     track('practice_started', { sample: st.sample, runs: st.runs, rerun: !!st.scope });
     setResult(null);
     // Shown from the start reply at once, so the run code can't be lost to a failed read; polling fills in the rest.
-    setRun({
-      id: made.runId, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: st.fleet, agentId: st.agent ?? SAMPLE_AGENT,
-      sample: st.sample, runs: st.runs, scope: st.scope ?? null, createdAt: new Date().toISOString(), startedAt: null, endedAt: null,
-      codeExpiresAt: made.codeExpiresAt, codeTriesLeft: null, progress: null,
-    });
+    setRun(draftFromStart(st, made));
     history.replaceState(null, '', `${ROUTES.practiceTest}?run=${made.runId}`);
     requestAnimationFrame(() => heading.current?.focus());
   });

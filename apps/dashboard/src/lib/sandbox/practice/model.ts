@@ -7,7 +7,7 @@
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
 import CATALOG from './catalog.json';
-import type { PracticeCheck, PracticeFailedCalls, PracticeReport, PracticeRun, PracticeRunRow, PracticeVerdict } from './types';
+import type { PracticeCheck, PracticeFailedCalls, PracticeReport, PracticeRun, PracticeRunRow, PracticeStart, PracticeVerdict, RunCode } from './types';
 
 export { CATALOG };
 export const DISCLAIMER = 'Practice tasks use made-up records and WhiteRoom’s test tools, not your agent’s real job. Use the result to help decide, not as a certificate.';
@@ -296,6 +296,15 @@ export const SAMPLE_AGENT = 'readiness-sample';
 export function practiceAgent(sample: boolean, agentId: string): string {
   if (!sample) return agentId;
   return agentId === SAMPLE_AGENT ? 'WhiteRoom’s sample agent' : `WhiteRoom’s sample agent, as ${agentId}`;
+}
+
+/** The test Start just made, from its reply alone: shown at once so the run code can't be lost to a failed read. */
+export function draftFromStart(st: PracticeStart, made: RunCode & { runId: string }, now = new Date()): PracticeRun {
+  return {
+    id: made.runId, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: st.fleet, agentId: st.agent ?? SAMPLE_AGENT,
+    sample: st.sample, runs: st.runs, scope: st.scope ?? null, createdAt: now.toISOString(), startedAt: null, endedAt: null,
+    codeExpiresAt: made.codeExpiresAt, codeTriesLeft: null, progress: null,
+  };
 }
 
 /** A run ID as the engine makes them ("r-" and a UUID). */

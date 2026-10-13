@@ -8,7 +8,7 @@ import sandboxChecks from './fixtures/practice/dashboard-sandbox-checks.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import {
   callEstimate, CATALOG, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
-  CLI_ON_NPM, CLI_VERSION, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
+  CLI_ON_NPM, CLI_VERSION, draftFromStart, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
 import type { PracticeReport, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
@@ -121,6 +121,16 @@ describe('practice test commands (§10 CLI)', () => {
   it('never puts the run code in a command and names the starter for your agent', () => {
     expect(cliCommands(true, 'js')).toEqual({ starter: null, run: 'whiteroom practice run' });
     expect(cliCommands(false, 'python')).toEqual({ starter: 'whiteroom practice adapter --lang python > wr_adapter.py', run: 'whiteroom practice run --adapter "python3 wr_adapter.py"' });
+  });
+});
+
+describe('practice test start', () => {
+  it('shows the new test from the start reply alone, run code expiry included', () => {
+    const made = fixture<{ runId: string; code: string; codeExpiresAt: string }>('start');
+    const r = draftFromStart({ fleet: 'prod-eu', sample: false, runs: 3, agent: 'support-bot', scope: ['a.result'] }, made, new Date('2026-10-12T14:20:00Z'));
+    expect(r).toMatchObject({ id: made.runId, lifecycle: 'draft', sourceFleetId: 'prod-eu', agentId: 'support-bot', runs: 3, scope: ['a.result'], codeExpiresAt: made.codeExpiresAt, progress: null });
+    expect(draftFromStart({ fleet: 'prod-eu', sample: true, runs: 1 }, made).agentId).toBe('readiness-sample');
+    expect(practiceAgent(true, draftFromStart({ fleet: 'prod-eu', sample: true, runs: 1 }, made).agentId)).toBe('WhiteRoom’s sample agent');
   });
 });
 
