@@ -17,8 +17,20 @@ async function callTool(name, input) {
   return (await receive()).result;
 }
 
-const anthropic = !!process.env.ANTHROPIC_API_KEY;
-// The model to use when the practice task doesn't name one.
+// The CLI sets only the variable of the provider the practice test uses.
+// It decides the API: chat completions for OpenAI and Azure OpenAI (where the
+// model is your deployment name), Anthropic's Messages API for Anthropic,
+// Claude on Azure (Foundry) and AWS Bedrock. And the header the key goes in.
+const KEYS = {
+  ANTHROPIC_API_KEY: (k) => ({ "x-api-key": k }),
+  ANTHROPIC_FOUNDRY_API_KEY: (k) => ({ "x-api-key": k }),
+  AWS_BEARER_TOKEN_BEDROCK: (k) => ({ authorization: `Bearer ${k}` }),
+  OPENAI_API_KEY: (k) => ({ authorization: `Bearer ${k}` }),
+  AZURE_OPENAI_API_KEY: (k) => ({ "api-key": k }),
+};
+const KEY_VAR = Object.keys(KEYS).find((v) => process.env[v]) ?? "ANTHROPIC_API_KEY";
+const anthropic = !["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"].includes(KEY_VAR);
+// The model to use when the practice task doesn't name one (cloud providers always name one).
 const DEFAULT_MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
 const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
 
@@ -26,9 +38,7 @@ const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
 // Waits and tries again when WhiteRoom or the provider asks it to.
 async function model(base_url, headers, body) {
   const url = anthropic ? `${base_url}/v1/messages` : `${base_url}/chat/completions`;
-  const auth = anthropic
-    ? { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" }
-    : { authorization: `Bearer ${process.env.OPENAI_API_KEY}` };
+  const auth = { ...KEYS[KEY_VAR](process.env[KEY_VAR] ?? ""), ...(anthropic && { "anthropic-version": "2023-06-01" }) };
   for (let tries = 1; ; tries++) {
     const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers, ...auth },
       body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) });

@@ -39,7 +39,11 @@ export interface PracticeReport {
   scope: string[] | null;
   checks: PracticeCheck[];
   how: { memoryTokens: Record<string, number>; memoryLimitAdjusted: boolean };
-  tested: { fleet: string; agent: string; modelRequested: string | null; modelsUsed: string[]; adapter: string | null; cli: string | null };
+  tested: {
+    fleet: string; agent: string; modelRequested: string | null; modelsUsed: string[]; adapter: string | null; cli: string | null;
+    /** R7: the provider of the Fleet key key the test used; null for the fleet's own key. Older engines leave it out. */
+    provider?: string | null;
+  };
 }
 
 /** GET /runs/:id: progress, one primary-key read. */
@@ -84,10 +88,30 @@ export interface PracticeRunRow {
 /** Where the source agent's calls go, so setup can refuse a fleet practice tests can't run yet before Start. */
 export type PracticeSourceProvider = 'direct-anthropic' | 'direct-openai' | 'proxy-url' | 'cloud' | 'unknown';
 
-/** GET /source-model: the model the agent asked for most recently, and where its calls go. */
+/** Why a practice test can't use a key or fleet (R7): the engine's catalog `keyRefusals`. */
+export type PracticeKeyRefusal = 'engine_access_key' | 'other_host' | 'unsupported_provider' | 'short_term_key' | 'bedrock_role' | 'key_not_found' | 'model_required';
+
+/** A Fleet key provider key, as setup's picker shows it (R7). No secrets: the display prefix is what Fleet key lists. */
+export interface PracticeProviderKey {
+  displayPrefix: string;
+  provider: string;
+  endpointHost: string | null;
+  region: string | null;
+  keyHint: string;
+  createdAt: string;
+  eligible: boolean;
+  reason: PracticeKeyRefusal | null;
+}
+
+/** GET /source-model: the model the agent asked for most recently, where its calls go, and (R7) the keys setup can pick from. */
 export interface PracticeSource {
   model: string | null;
   provider: PracticeSourceProvider;
+  /** The fleet's own key can start a test (bound, with no host of its own). */
+  directKey: boolean;
+  /** The whole fleet can't be tested: it reaches Bedrock through an IAM role. */
+  blocked: 'bedrock_role' | null;
+  providerKeys: PracticeProviderKey[];
 }
 
 /** GET /runs/:id/report: the run's result. `report` is null for a test that was ended, or after 30 days. */
@@ -108,6 +132,8 @@ export interface PracticeStart {
   agent?: string;
   model?: string;
   scope?: string[];
+  /** R7: the Fleet key provider key to test with ("sk-wr-" and 16 hex, as Fleet key lists it). */
+  proxyKeyDisplayPrefix?: string;
 }
 
 export interface RunCode {

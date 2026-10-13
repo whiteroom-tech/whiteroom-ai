@@ -9,7 +9,9 @@ import { childEnv, MAX_TOOL_CALLS, runAdapter, type ToolCall } from "../src/prac
 import { parseArgs } from "../src/legacy-args.js";
 import { Engine, REDIRECTED, Unreachable } from "../src/practice/engine.js";
 import { PassThrough } from "node:stream";
-import { adapterLabel, adapterProblem, hiddenPrompt, Interrupted, keyFromEnv, keyFromPaste, nodeTooOld, targetOrigin, words } from "../src/practice/preflight.js";
+import {
+  adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, KEY_VARS, keyFromEnv, keyHeader, nodeTooOld, providerByShape, targetOrigin, words,
+} from "../src/practice/preflight.js";
 import { finalText } from "../src/practice/run.js";
 import { clean, copy, hideSecret, results, type Report } from "../src/practice/text.js";
 import { fixture, startStub, type Stub } from "./stub.js";
@@ -41,12 +43,29 @@ describe("preflight", () => {
     }
   });
 
-  it("reads the key from the environment, or by its shape when pasted", () => {
-    assert.deepEqual(keyFromEnv({ OPENAI_API_KEY: "sk-abc12345" }), { keyVar: "OPENAI_API_KEY", key: "sk-abc12345", fromEnv: true });
+  it("reads the key from the one provider variable that is set, and names them all when several are", () => {
+    assert.deepEqual(keyFromEnv({ OPENAI_API_KEY: "sk-abc12345" }), { from: "OPENAI_API_KEY", key: "sk-abc12345" });
+    for (const v of ["AZURE_OPENAI_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"]) {
+      assert.deepEqual(keyFromEnv({ [v]: " cloud-key-1234 " }), { from: v, key: "cloud-key-1234" });
+    }
     assert.equal(keyFromEnv({ ANTHROPIC_API_KEY: "  " }), null);
-    assert.equal(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", OPENAI_API_KEY: "sk-b" }), "both");
-    assert.equal(keyFromPaste("sk-ant-abc").keyVar, "ANTHROPIC_API_KEY");
-    assert.equal(keyFromPaste("sk-proj-abc").keyVar, "OPENAI_API_KEY");
+    assert.deepEqual(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", OPENAI_API_KEY: "sk-b" }), ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
+    assert.deepEqual(keyFromEnv({ ANTHROPIC_API_KEY: "sk-ant-a", AZURE_OPENAI_API_KEY: "az" }), ["ANTHROPIC_API_KEY", "AZURE_OPENAI_API_KEY"]);
+    // An older WhiteRoom names no provider: a direct key, by its shape.
+    assert.equal(providerByShape("sk-ant-abc"), "anthropic");
+    assert.equal(providerByShape("sk-proj-abc"), "openai");
+  });
+
+  it("each provider's key variable, header and API (§17)", () => {
+    assert.deepEqual(KEY_VARS, {
+      anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", "azure-openai": "AZURE_OPENAI_API_KEY", foundry: "ANTHROPIC_FOUNDRY_API_KEY", "bedrock-mantle": "AWS_BEARER_TOKEN_BEDROCK",
+    });
+    assert.deepEqual(keyHeader("azure-openai", "k"), { "api-key": "k" });
+    assert.deepEqual(keyHeader("bedrock-mantle", "k"), { authorization: "Bearer k" });
+    assert.deepEqual(keyHeader("openai", "k"), { authorization: "Bearer k" });
+    assert.deepEqual(keyHeader("foundry", "k"), { "x-api-key": "k" });
+    assert.deepEqual(keyHeader("anthropic", "k"), { "x-api-key": "k" });
+    assert.deepEqual((["anthropic", "openai", "azure-openai", "foundry", "bedrock-mantle"] as const).filter(chatCompletions), ["openai", "azure-openai"]);
   });
 
   it("the hidden prompt: backspace, bracketed paste, raw mode restored; Ctrl+C interrupts", async () => {
@@ -77,6 +96,8 @@ describe("the adapter's environment", () => {
   it("drops WHITEROOM_* and other provider keys, and adds only the key in use (a prompted key too)", () => {
     const env = childEnv({ PATH: "/bin", WHITEROOM_API_KEY: "wr_x", whiteroom_url: "u", OPENAI_API_KEY: "sk-old", HOME: "/h" }, "ANTHROPIC_API_KEY", "sk-ant-pasted");
     assert.deepEqual(env, { PATH: "/bin", HOME: "/h", ANTHROPIC_API_KEY: "sk-ant-pasted" });
+    const cloud = childEnv({ PATH: "/bin", ANTHROPIC_API_KEY: "sk-ant-x", AZURE_OPENAI_API_KEY: "az", ANTHROPIC_FOUNDRY_API_KEY: "f" }, "AWS_BEARER_TOKEN_BEDROCK", "long-term");
+    assert.deepEqual(cloud, { PATH: "/bin", AWS_BEARER_TOKEN_BEDROCK: "long-term" });
   });
 });
 

@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  BLOCKED_PROVIDERS, callEstimate, CATALOG, controlCalls, controlPreview, controlPreviewLine, costLine, DISCLAIMER, keyVariable, SAMPLE_MODELS, UNSUPPORTED_FLEET,
+  callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, controlPreview, controlPreviewLine, costLine, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
+  providerKeyLabel, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
-import type { PracticeSourceProvider, PracticeStart } from '@/lib/sandbox/practice/types';
+import type { PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
@@ -19,8 +20,12 @@ export interface SetupData {
   rules: GovernanceRule[];
   /** The fleet uses durable Pause and Stop, so they're checked too. */
   durableHolds: boolean;
-  /** Fleet key providers whose agents call through a WhiteRoom proxy URL: not in practice tests yet. */
-  proxyProviders: string[];
+}
+
+/** "Set `ANTHROPIC_API_KEY` to the key your agent uses with prod-eu." / R7: "Run this where `AZURE_OPENAI_API_KEY` is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2)." */
+export function KeyLine({ choice, model, fleet, className }: { choice: PracticeKeyChoice | null; model: string | null | undefined; fleet: string; className: string }) {
+  const l = keyLine(choice, model, fleet);
+  return <p className={className}>{l.before}<code>{l.keyVar}</code>{l.after}</p>;
 }
 
 /** The 7 agent checks by scenario, then the fleet's controls: what the results will show, by the same names. */
@@ -53,67 +58,99 @@ export function PracticeCheckPreview({ controls, durableHolds }: { controls: str
   );
 }
 
+const NO_KEYS = { keys: [], direct: true, initial: null };
+/** What setup assumes when the engine can't say: the fleet's own key, Start's checks still apply. */
+const OWN_KEY_ONLY: PracticeSource = { model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [] };
+/** Whether `prefix` is a cloud provider's key, which needs a model typed in. */
+const cloudKey = (src: PracticeSource | undefined, prefix: string | null) => {
+  const k = prefix ? src?.providerKeys.find((x) => x.displayPrefix === prefix) : undefined;
+  const c = k && choiceOf(k);
+  return !!c && !!CLOUD_MODEL_FIELD[c.provider];
+};
+
 /**
- * Practice test setup (§10, Appendix D): who runs it, how many runs, what it
- * costs and checks. A test is started from the computer the agent runs on,
- * so on a phone the Start button gives way to a note saying so.
+ * Practice test setup (§10, Appendix D): who runs it, how many runs, which
+ * key (R7: a Fleet key provider key), what it costs and checks. A test is
+ * started from the computer the agent runs on, so on a phone the Start
+ * button gives way to a note saying so.
  */
-export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider, onStart }: {
+export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart }: {
   fleet: string;
   data: SetupData;
   busy: boolean;
-  /** /dev/practice: the agent's latest model, instead of asking the engine. */
-  previewModel?: string | null;
-  /** /dev/practice: where the agent's calls go, instead of asking the engine. */
-  previewProvider?: PracticeSourceProvider;
-  onStart: (start: PracticeStart) => void;
+  /** /dev/practice: what source-model would say, instead of asking the engine. */
+  preview?: PracticeSource;
+  /** Changes when the keys should be read again (Start said the picked one is gone). */
+  refresh?: number;
+  onStart: (start: PracticeStart, key: PracticeKeyChoice | null) => void;
 }) {
   // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
   const noAgents = data.agents.length === 0;
   const [sample, setSample] = useState(noAgents);
   const [agent, setAgent] = useState(data.agents[0] ?? '');
   const [runs, setRuns] = useState<1 | 3>(1);
-  // The model the agent used most recently (undefined while loading), and where its calls go.
-  const [latest, setLatest] = useState<string | null | undefined>(previewModel);
-  const [provider, setProvider] = useState<PracticeSourceProvider>(previewProvider ?? 'unknown');
-  // A model the owner chose with Change (or typed, when the agent's isn't known).
+  // What source-model says: the agent's latest model, where its calls go, the keys to pick from (undefined while loading).
+  const [src, setSrc] = useState<PracticeSource | undefined>(preview);
+  // The Fleet key key picked (its display prefix), or null for the fleet's own key.
+  const [picked, setPicked] = useState<string | null>(() => (preview ? keyOptions(preview).initial : null));
+  // A model the owner chose with Change (or typed, when the agent's isn't known, or a cloud provider needs one).
   const [changing, setChanging] = useState(false);
-  const [typed, setTyped] = useState('');
+  const [typed, setTyped] = useState(() => (cloudKey(preview, picked) ? preview?.model ?? '' : ''));
 
   useEffect(() => {
-    if (previewModel !== undefined || !agent) { setLatest(previewModel ?? null); setProvider(previewProvider ?? 'unknown'); return; }
+    if (preview || !agent) { setSrc(preview ?? OWN_KEY_ONLY); return; }
     let live = true;
-    setLatest(undefined);
-    setProvider('unknown');
+    setSrc(undefined);
     sourceModel(fleet, agent).then(
-      (m) => { if (live) { setLatest(m.model); setProvider(m.provider); } },
-      // Not known: Start's own checks still apply.
-      () => { if (live) { setLatest(null); setProvider('unknown'); } },
+      (m) => { if (live) setSrc(m); },
+      () => { if (live) setSrc(OWN_KEY_ONLY); },
     );
     return () => { live = false; };
-  }, [fleet, agent, previewModel, previewProvider]);
+  }, [fleet, agent, preview, refresh]);
 
+  const options = src ? keyOptions(src) : NO_KEYS;
+  /** Picks a key; a cloud key's model field starts as the model the agent used most recently. */
+  const pickKey = (prefix: string | null, from = src) => {
+    setPicked(prefix);
+    setChanging(false);
+    setTyped(cloudKey(from, prefix) ? from?.model ?? '' : '');
+  };
+  // A new answer picks its default key again.
+  useEffect(() => { if (src) pickKey(keyOptions(src).initial, src); }, [src]);
+
+  const latest = src === undefined ? undefined : src.model;
+  const key = options.keys.find((k) => k.displayPrefix === picked) ?? null;
+  const choice = key ? choiceOf(key) : null;
+  const cloudField = choice ? CLOUD_MODEL_FIELD[choice.provider] : undefined;
   const chosen = typed.trim() || null;
-  // Sent with Start, so the sample agent or the starter uses it: the sample keeps its own unless one is chosen.
-  const model = sample ? (changing ? chosen : null) : changing || !latest ? chosen : latest;
-  // The sample agent calls the provider itself, so a fleet whose agent uses a cloud provider can still run it;
-  // a fleet with its own endpoint (proxy URL) is refused at Start either way.
-  const blocked = provider === 'proxy-url' || (!sample && BLOCKED_PROVIDERS.includes(provider));
+  // Sent with Start, so the sample agent or the starter uses it: the sample keeps its own unless one is chosen; a cloud key always needs one.
+  const model = cloudField ? chosen : sample ? (changing ? chosen : null) : changing || !latest ? chosen : latest;
+  const ineligible = src?.providerKeys.filter((k) => !k.eligible) ?? [];
+  // Why Start can't run here at all: an IAM-role fleet; a fleet with its own host, or a cloud agent, with no Fleet key key to pick.
+  // (The sample agent calls with the fleet's own key, so a cloud agent's fleet can still run it.)
+  const blocked: 'role' | 'host' | 'cloud' | null = src?.blocked === 'bedrock_role' ? 'role'
+    : src?.provider === 'proxy-url' && !key ? 'host'
+    : src?.provider === 'cloud' && !sample && !key ? 'cloud'
+    : null;
   const controls = controlPreview(data.rules, data.durableHolds, sample && !data.agents.length);
-  const est = callEstimate({ runs: sample ? 1 : runs, scope: null, controlCalls: controlCalls(controls), model: model ?? (sample ? SAMPLE_MODELS.anthropic : null) });
-  const keyVar = keyVariable(model);
-  const pick = (v: boolean) => { setSample(v); setChanging(false); setTyped(''); };
+  const est = callEstimate({
+    runs: sample ? 1 : runs, scope: null, controlCalls: controlCalls(controls), provider: choice?.provider ?? null,
+    model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
+  });
+  const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };
   const change = () => { setTyped(sample ? '' : latest ?? ''); setChanging(true); };
   const start = () => onStart({
     fleet, sample, runs: sample ? 1 : runs,
     ...(agent && { agent }),
     ...(model && { model }),
-  });
-  const modelInput = (label: string, hint: string) => <>
+    ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
+  }, choice);
+  const modelInput = (label: string, hint: string, placeholder: string = SAMPLE_MODELS.anthropic, required = false) => <>
     <label className={s.formLabel} htmlFor="practice-model">{label} <span className={s.formLabelHint}>{hint}</span></label>
-    <input id="practice-model" className={s.formInput} value={typed} maxLength={128} spellCheck={false} placeholder={SAMPLE_MODELS.anthropic} onChange={(e) => setTyped(e.target.value)} />
+    <input id="practice-model" className={s.formInput} value={typed} maxLength={128} spellCheck={false} placeholder={placeholder} required={required} aria-required={required || undefined} onChange={(e) => setTyped(e.target.value)} />
   </>;
   const changeLink = <> · <button type="button" className={s.linkBtn} onClick={change}>Change</button></>;
+  const keyChoices = options.keys.length + (options.direct ? 1 : 0);
 
   return (
     <div className={p.wrap}>
@@ -123,13 +160,9 @@ export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider
 
       {blocked && (
         <div className={s.notice} role="status">
-          {UNSUPPORTED_FLEET} Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link>
-        </div>
-      )}
-
-      {data.proxyProviders.length > 0 && (
-        <div className={s.notice}>
-          Practice tests can’t yet run agents that call through a WhiteRoom proxy URL ({data.proxyProviders.join(', ')}). For those, use the connection test: <Link href={ROUTES.sandbox}>Test my agent →</Link>
+          {blocked === 'role' ? <>{KEY_REFUSALS.bedrock_role} Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>
+            : blocked === 'cloud' ? <>To test an agent that uses Azure OpenAI, Claude on Azure (Foundry) or AWS Bedrock, add its key on <Link href={ROUTES.fleetKey}>Fleet key</Link>, then come back and pick it here.</>
+            : <>{UNSUPPORTED_FLEET} Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}
         </div>
       )}
 
@@ -158,6 +191,24 @@ export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider
           </div>
         )}
 
+        {options.keys.length > 0 && (
+          <div className={s.formGroup}>
+            {keyChoices > 1 ? <>
+              <label className={s.formLabel} htmlFor="practice-key">Key to test with <span className={s.formLabelHint}>· from Fleet key</span></label>
+              <select id="practice-key" className={s.formInput} value={picked ?? ''} onChange={(e) => pickKey(e.target.value || null)}>
+                {options.keys.map((k) => <option key={k.displayPrefix} value={k.displayPrefix}>{providerKeyLabel(k)}</option>)}
+                {options.direct && <option value="">The key your agent sends with each call (not on Fleet key)</option>}
+              </select>
+            </> : key && <p className={s.small}>Key: {providerKeyLabel(key)}, from Fleet key</p>}
+          </div>
+        )}
+        {ineligible.length > 0 && (options.keys.length > 0 || blocked) && (
+          <div className={s.formGroup}>
+            <span className={s.small}>Fleet key keys a practice test can’t use:</span>
+            <ul className={p.list}>{ineligible.map((k) => <li key={k.displayPrefix}>{providerKeyLabel(k)}: {KEY_REFUSALS[k.reason ?? 'unsupported_provider']}</li>)}</ul>
+          </div>
+        )}
+
         {!sample && (
           <div className={s.formGroup}>
             <span className={s.formLabel}>Runs</span>
@@ -168,7 +219,8 @@ export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider
         )}
 
         <div className={s.formGroup}>
-          {sample ? (changing ? modelInput('Model the sample agent uses', '· leave it empty for its own')
+          {cloudField ? modelInput(cloudField.label, cloudField.hint, cloudField.placeholder, true)
+            : sample ? (changing ? modelInput('Model the sample agent uses', '· leave it empty for its own')
             : <p className={s.small}>Model the sample agent uses: {SAMPLE_MODELS.anthropic} with an Anthropic key, {SAMPLE_MODELS.openai} with an OpenAI key{changeLink}</p>)
             : changing ? modelInput('Model your agent uses', '· for the cost estimate; the starter adapters use it too')
             : latest ? <p className={s.small}>Model: {latest}, the one {agent} used most recently{changeLink}</p>
@@ -177,12 +229,13 @@ export function PracticeSetup({ fleet, data, busy, previewModel, previewProvider
         </div>
 
         <p className={s.small}>{costLine(est, sample ? 1 : runs)}</p>
-        <p className={s.small}>Set <code>{keyVar}</code> to the key your agent uses with {fleet}.</p>
+        {!blocked && <KeyLine choice={choice} model={model} fleet={fleet} className={s.small} />}
 
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || blocked} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
           <Link className={`${s.btn} ${s.btnGhost}`} href={ROUTES.sandbox}>Back</Link>
         </div>
+        {cloudField && !model && !blocked && <p className={`${s.small} ${p.desktopOnly}`}>{cloudField.missing}</p>}
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>
       </div>
 

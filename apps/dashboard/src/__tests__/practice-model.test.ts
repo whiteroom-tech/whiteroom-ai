@@ -1,5 +1,5 @@
 // Practice tests: the decisions behind the screens, replayed against the
-// engine's contract fixtures (fixtures/practice, engine ff2b40dc).
+// engine's contract fixtures (fixtures/practice, engine d50dd97f).
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,11 +8,11 @@ import sandboxChecks from './fixtures/practice/dashboard-sandbox-checks.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
+  callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, providerOf, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlPreview, controlPreviewLine, costLine, fixLine, headline,
   CLI_ON_NPM, CLI_VERSION, draftFromStart, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm, rerunScope, taskList,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
-import type { PracticeReport, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
+import type { PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 const fixture = <T>(name: string) => structuredClone(contract.entries.find((e) => e.name === name)!.response) as T;
@@ -47,18 +47,37 @@ describe('practice test setup: the agent’s model and where its calls go', () =
   afterEach(() => { vi.unstubAllGlobals(); });
   const answer = (body: unknown) => vi.stubGlobal('fetch', vi.fn(async () => Response.json(body)));
 
+  const OWN_KEY_ONLY = { directKey: true, blocked: null, providerKeys: [] };
+
   it('reads source-model as the engine sends it', async () => {
     answer(fixture('source-model'));
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown' });
-    answer({ model: 'gpt-4o', provider: 'cloud' });
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'gpt-4o', provider: 'cloud' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', ...OWN_KEY_ONLY });
+    answer({ model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role', providerKeys: [] });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role', providerKeys: [] });
   });
 
-  it('an older engine that doesn’t say where calls go, or an unknown kind, reads as not yet known', async () => {
+  it('an older engine that doesn’t say where calls go, or an unknown kind, reads as not yet known; one from before R7 as the fleet’s own key only', async () => {
     answer({ model: 'claude-haiku-4-5' });
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'claude-haiku-4-5', provider: 'unknown' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: 'claude-haiku-4-5', provider: 'unknown', ...OWN_KEY_ONLY });
     answer({ model: '', provider: 'somewhere-new' });
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown' });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', ...OWN_KEY_ONLY });
+  });
+
+  it('R7: reads the Fleet key keys, and never lets one it can’t read be picked', async () => {
+    const src = fixture<{ providerKeys: Record<string, unknown>[] }>('r7.source-model');
+    // The fixture's prefixes are placeholders: give them the shape Fleet key lists.
+    src.providerKeys.forEach((k, i) => { k.displayPrefix = `sk-wr-${String(i).padStart(16, '0')}`; });
+    src.providerKeys.push(
+      { ...src.providerKeys[3], displayPrefix: 'sk-wr-short' },
+      { ...src.providerKeys[3], displayPrefix: `sk-wr-${'9'.repeat(16)}`, reason: 'something_new' },
+    );
+    answer(src);
+    const keys = (await sourceModel('prod-eu', 'support-bot')).providerKeys;
+    expect(keys.map((k) => [k.provider, k.eligible, k.reason])).toEqual([
+      ['bedrock-sigv4', false, 'engine_access_key'], ['foundry-entra', false, 'engine_access_key'], ['openai', false, 'other_host'],
+      ['azure-openai', true, null], ['anthropic', true, null], ['azure-openai', false, 'unsupported_provider'],
+    ]);
+    expect(keys[0]).toMatchObject({ endpointHost: 'bedrock-mantle.us-west-2.api.aws', region: 'us-west-2', keyHint: 'none' });
   });
 
   it('claim and the practice task carry the model the test was started with', () => {
@@ -229,5 +248,73 @@ describe('practice test report (§9.8)', () => {
     expect(canDownload(r)).toBe(true);
     expect(canDownload({ ...r, sample: true })).toBe(false);
     expect(canDownload({ ...r, scope: ['c.timeout'] })).toBe(false);
+  });
+});
+
+describe('practice tests on cloud providers (R7, §17)', () => {
+  const k = (provider: string, extra: Partial<PracticeProviderKey> = {}): PracticeProviderKey => ({
+    displayPrefix: `sk-wr-${'0'.repeat(15)}${provider.length % 10}`, provider, endpointHost: null, region: null, keyHint: 'a1b2', createdAt: '2026-10-03T09:00:00Z',
+    eligible: true, reason: null, ...extra,
+  });
+  const src = (o: Partial<PracticeSource>): PracticeSource => ({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], ...o });
+  const NOW = Date.parse('2026-10-12T14:20:00Z');
+
+  it('names each key in Fleet key’s words', () => {
+    expect(providerKeyLabel(k('bedrock-mantle', { region: 'us-east-1', endpointHost: 'bedrock-mantle.us-east-1.api.aws' }), NOW)).toBe('AWS Bedrock · us-east-1 · key ending a1b2 · added Oct 3');
+    expect(providerKeyLabel(k('azure-openai', { endpointHost: 'acme.openai.azure.com' }), NOW)).toBe('Azure OpenAI · acme.openai.azure.com · key ending a1b2 · added Oct 3');
+    expect(providerKeyLabel(k('anthropic'), NOW)).toBe('Anthropic · key ending a1b2 · added Oct 3');
+    // Keys on WhiteRoom's own access have no last four.
+    expect(providerKeyLabel(k('bedrock-sigv4', { region: 'us-west-2', keyHint: 'none' }), NOW)).toBe('AWS Bedrock · us-west-2 · added Oct 3');
+  });
+
+  it('offers the eligible keys, and the fleet’s own key when its agent calls with it', () => {
+    const azure = k('azure-openai');
+    const gone = k('openai', { eligible: false, reason: 'other_host' });
+    expect(keyOptions(src({ provider: 'cloud', directKey: false, providerKeys: [azure, gone] }))).toEqual({ keys: [azure], direct: false, initial: azure.displayPrefix });
+    expect(keyOptions(src({ provider: 'direct-anthropic', providerKeys: [azure] }))).toEqual({ keys: [azure], direct: true, initial: null });
+    expect(keyOptions(src({ provider: 'unknown', providerKeys: [azure] }))).toEqual({ keys: [azure], direct: false, initial: azure.displayPrefix });
+    expect(keyOptions(src({ provider: 'direct-openai' }))).toEqual({ keys: [], direct: true, initial: null });
+    expect(keyOptions(src({ provider: 'proxy-url', directKey: false, providerKeys: [gone] }))).toEqual({ keys: [], direct: false, initial: null });
+  });
+
+  it('the key line names the provider’s variable and the Fleet key key (§10 fixed copy)', () => {
+    const line = (c: Parameters<typeof keyLine>[0], model: string | null = null) => Object.values(keyLine(c, model, 'prod-eu')).join('');
+    expect(line({ provider: 'azure-openai', keyHint: 'a1b2' })).toBe('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
+    expect(line({ provider: 'bedrock-mantle', keyHint: '7c3d' })).toBe('Run this where AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d).');
+    expect(line({ provider: 'foundry', keyHint: null })).toBe('Run this where ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key.');
+    expect(line(null, 'claude-haiku-4-5')).toBe('Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.');
+    expect(choiceOf(k('bedrock-sigv4', { keyHint: 'none' }))).toBeNull();
+  });
+
+  it('cost: Azure and Foundry show only the cap, Bedrock Anthropic’s list prices marked approx.', () => {
+    const est = (provider: 'azure-openai' | 'foundry' | 'bedrock-mantle', model: string, runs = 1) => callEstimate({ runs, scope: null, controlCalls: 0, model, provider });
+    expect(costLine(est('azure-openai', 'my-gpt-4o-mini'), 1)).toBe('Never more than 120 calls, billed by your Azure account. That includes control checks and memory summaries.');
+    expect(costLine(est('foundry', 'claude-haiku-4-5', 3), 3)).toBe('Never more than 120 calls a run (360 in all), billed by your Azure account. That includes control checks and memory summaries.');
+    const bedrock = costLine(est('bedrock-mantle', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'), 1);
+    expect(bedrock).toMatch(/^On your own key: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account, including control checks and memory summaries\.$/);
+    expect(est('bedrock-mantle', 'anthropic.claude-haiku-4-5').cost).toEqual(callEstimate({ runs: 1, scope: null, controlCalls: 0, model: 'claude-haiku-4-5' }).cost);
+    expect(rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'd', provider: 'azure-openai' })))
+      .toBe('Rerun 1 check × 3 runs · never more than 30 model calls, billed by your Azure account.');
+  });
+
+  it('a provider refusal on a cloud test names that provider and its key variable', () => {
+    const r = { ...fullReport(), tested: { ...fullReport().tested, provider: 'azure-openai' } };
+    const c = { ...r.checks[0], reason: 'provider_refused', failedCalls: { count: 2, last: { status: 401, reason: 'upstream_error' as const } } };
+    expect(providerOf(r)).toBe('azure-openai');
+    expect(fixLine(c, r)).toBe('Test problem (not your agent): Azure OpenAI refused the key (HTTP 401). Check that AZURE_OPENAI_API_KEY is the key your agent uses and that it’s still active. Rerun this check to try again.');
+    // The fleet's own key: no provider recorded.
+    expect(fullReport().tested.provider).toBeNull();
+  });
+
+  it('every key refusal the engine can send has the catalog’s words, and Start answers with them', () => {
+    expect(Object.keys(KEY_REFUSALS).sort()).toEqual(['bedrock_role', 'engine_access_key', 'key_not_found', 'model_required', 'other_host', 'short_term_key', 'unsupported_provider']);
+    for (const e of contract.entries.filter((x) => /^r7\.(start|claim)\./.test(x.name) && x.status === 400)) {
+      const res = e.response as { reason: keyof typeof KEY_REFUSALS; error: string };
+      expect(res.error).toBe(KEY_REFUSALS[res.reason]);
+    }
+    const start = contract.entries.find((e) => e.name === 'r7.start')!.request as Record<string, unknown>;
+    expect(Object.keys(start)).toContain('proxyKeyDisplayPrefix');
+    expect(PROXY_KEY_PREFIX_RE.test(`sk-wr-${'a1'.repeat(8)}`)).toBe(true);
+    expect(PROXY_KEY_PREFIX_RE.test('sk-wr-a1b2...')).toBe(false);
   });
 });

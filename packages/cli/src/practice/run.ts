@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { childEnv, runAdapter, type Launch, type ToolAnswer } from "./adapter.js";
 import { Engine, pace, REDIRECTED, sleep, Stopped, Unreachable, type Reply } from "./engine.js";
 import {
-  adapterLabel, adapterProblem, firstLineOfStdin, hiddenPrompt, Interrupted, keyFromEnv, keyFromPaste, nodeTooOld, RUN_CODE, targetOrigin, type KeyChoice,
+  adapterLabel, adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isProvider, isShortTermBedrockKey, KEY_VARS, keyFromEnv, keyHeader,
+  nodeTooOld, PROVIDER_LABELS, providerByShape, RUN_CODE, targetOrigin, type KeyChoice, type Provider,
 } from "./preflight.js";
 import { copy, ending, hideSecret, results, say, SCENARIOS, warn, type Ending } from "./text.js";
 
@@ -41,6 +42,8 @@ interface PracticeTask {
   runIndex: number;
   deadline: string;
   baseUrl: string;
+  /** Where its model calls go (R7); an older WhiteRoom leaves it out. */
+  provider?: string;
   scenario: string;
   /** The model the sample agent and the starters use; null keeps their own default. */
   model?: string | null;
@@ -52,6 +55,7 @@ interface ControlPlan {
   attemptId: string;
   runIndex: number;
   baseUrl: string;
+  provider?: string;
 }
 interface ControlRequest {
   url: string;
@@ -100,7 +104,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   const launch: Launch = a.adapter !== undefined ? { shell: a.adapter } : { file: process.execPath, args: [SAMPLE_AGENT] };
 
   const fromEnv = keyFromEnv(process.env);
-  if (fromEnv === "both") return fail(ending(2, copy.bothKeys));
+  if (Array.isArray(fromEnv)) return fail(ending(2, copy.bothKeys(fromEnv)));
   let choice: KeyChoice | null = fromEnv;
   let code = "";
   try {
@@ -109,7 +113,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
       if (!process.stdin.isTTY) return fail(ending(2, copy.noKey));
       const pasted = await hiddenPrompt(copy.needKey);
       if (!pasted) return fail(ending(2, copy.noKey));
-      choice = keyFromPaste(pasted);
+      choice = { from: null, key: pasted };
     }
     if (!a.codeStdin) {
       if (!process.stdin.isTTY) return fail(ending(2, copy.noTerminal));
@@ -124,10 +128,12 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     throw err;
   }
   if (!RUN_CODE.test(code)) return fail(ending(2, copy.badCode));
-  const { key, keyVar } = choice;
+  const { key, from } = choice;
   hideSecret(key);
   hideSecret(code);
-  if (choice.fromEnv) say(copy.keyInUse(keyVar, key));
+  // WhiteRoom refuses these without using a try; saying so here sends nothing.
+  if (isShortTermBedrockKey(key)) return fail(ending(2, copy.shortTermKey));
+  if (from) say(copy.keyInUse(from, key));
   say(copy.host(new URL(origin).host));
 
   // ── Claim: the key is checked against the fleet's; a mismatch uses a try and nothing else ──
@@ -142,15 +148,28 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     throw err;
   }
   if (claim.status === 401 && claim.body?.reason === "key_mismatch") {
-    const left = Number(claim.body.triesLeft) || 0;
-    const fleet = typeof claim.body.fleetName === "string" && claim.body.fleetName.trim() ? claim.body.fleetName.trim().slice(0, 100) : null;
-    return fail(ending(2, left > 0 ? copy.keyMismatch(keyVar, left, fleet) : copy.lastTry));
+    const b = claim.body;
+    const left = Number(b.triesLeft) || 0;
+    if (left <= 0) return fail(ending(2, copy.lastTry));
+    // A run on a Fleet key provider key (R7) names that key's provider and last four.
+    const keyProvider: unknown = b.provider;
+    if (isProvider(keyProvider)) {
+      const hint = typeof b.keyHint === "string" && /^[\w-]{1,8}$/.test(b.keyHint) && b.keyHint !== "none" ? b.keyHint : null;
+      return fail(ending(2, copy.providerKeyMismatch(from, key, PROVIDER_LABELS[keyProvider], hint)));
+    }
+    const fleet = typeof b.fleetName === "string" && b.fleetName.trim() ? b.fleetName.trim().slice(0, 100) : null;
+    return fail(ending(2, copy.keyMismatch(from ?? KEY_VARS[providerByShape(key)], left, fleet)));
   }
+  if (claim.status === 400 && claim.body?.reason === "short_term_key") return fail(ending(2, copy.shortTermKey));
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
   if (claim.status === 429) return fail(ending(3, copy.busy));
   if (claim.status === 404) return fail(ending(2, copy.unavailable));
   if (claim.status !== 200 || typeof claim.body?.session !== "string") return fail(ending(2, copy.cliOutdated));
+  // The provider the run's calls go to decides the adapter's key variable, the header and the API. An older WhiteRoom names none: a direct key, by its shape.
+  const named = claim.body.run?.provider;
+  if (named !== undefined && named !== null && !isProvider(named)) return fail(ending(2, copy.cliOutdated));
+  const runProvider: Provider = isProvider(named) ? named : providerByShape(key);
   engine.session = claim.body.session as string;
   hideSecret(engine.session);
   const runs = Number(claim.body.run?.runs) || 1;
@@ -193,17 +212,18 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   /** One practice task through the adapter. An Ending stops the test; null asks for the next task. */
   const practiceTask = async (t: PracticeTask, p: Progress): Promise<Ending | null> => {
     if (!ourHost(t.baseUrl)) return ending(3, copy.otherHost);
+    const provider = isProvider(t.provider) ? t.provider : runProvider;
     const deadline = Date.parse(t.deadline);
     if (!Number.isFinite(deadline)) return ending(3, copy.cliOutdated);
     const run = runs > 1 ? ` (run ${t.runIndex + 1} of ${runs})` : "";
     say(`Practice task ${p.done + 1} of ${p.total}: ${SCENARIOS[t.scenario] ?? "Practice task"}${run}`);
     const out = await runAdapter({
-      launch, env: childEnv(process.env, keyVar, key), deadline, signal: stop.signal,
+      launch, env: childEnv(process.env, KEY_VARS[provider], key), deadline, signal: stop.signal,
       message: {
         type: "task", task: t.prompt, tools: t.tools, headers: t.headers,
         model: typeof t.model === "string" && t.model ? t.model : null,
-        // OpenAI SDKs take a base URL that ends in /v1.
-        base_url: keyVar === "OPENAI_API_KEY" ? `${t.baseUrl}/v1` : t.baseUrl,
+        // OpenAI SDKs (Azure OpenAI's too) take a base URL that ends in /v1.
+        base_url: chatCompletions(provider) ? `${t.baseUrl}/v1` : t.baseUrl,
       },
       tool: async (call): Promise<ToolAnswer> => {
         const r = await engine.post("/api/readiness/tools", { attemptId: t.attemptId, ...call }).catch(() => null);
@@ -239,6 +259,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   /** The control checks: each call WhiteRoom plans, sent with the key, its response reported back (§6). */
   const controlChecks = async (c: ControlPlan): Promise<Ending | null> => {
     if (!ourHost(c.baseUrl)) return ending(3, copy.otherHost);
+    const provider = isProvider(c.provider) ? c.provider : runProvider;
     say(`Checking your controls${runs > 1 ? ` (run ${c.runIndex + 1} of ${runs})` : ""}`);
     let result: { status: number; reason: string | null; ruleId: string | null } | null = null;
     for (;;) {
@@ -255,7 +276,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
       if (stop.signal.aborted) return null;
       const headers: Record<string, string> = {};
       for (const [h, v] of Object.entries(q.headers ?? {})) if (!/^(authorization|x-api-key|api-key)$/i.test(h)) headers[h] = String(v);
-      Object.assign(headers, q.path.endsWith("/messages") ? { "x-api-key": key } : { authorization: `Bearer ${key}` });
+      Object.assign(headers, keyHeader(provider, key));
       await pace();
       try {
         const res = await fetch(q.url, { method: "POST", headers, body: JSON.stringify(q.body), redirect: "error", signal: AbortSignal.timeout(60_000) });

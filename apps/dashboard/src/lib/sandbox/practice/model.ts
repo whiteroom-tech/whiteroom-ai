@@ -6,9 +6,12 @@
 
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
+import { isSandboxProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider } from '@/lib/sandbox/providers';
+import { fmtDay } from '@/lib/format';
 import CATALOG from './catalog.json';
 import type {
-  PracticeCheck, PracticeFailedCalls, PracticeReport, PracticeRun, PracticeRunRow, PracticeSourceProvider, PracticeStart, PracticeVerdict, RunCode,
+  PracticeCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource, PracticeStart,
+  PracticeVerdict, RunCode,
 } from './types';
 
 export { CATALOG };
@@ -73,19 +76,84 @@ export function cliCommands(sample: boolean, lang: StarterLang): { starter: stri
   };
 }
 
-/** The variable the CLI reads the key from, by the model the agent uses; both when it isn't known. */
+/** The variable the CLI reads each provider's key from (the providers' own SDKs read these). */
+export const KEY_VARS: Record<SandboxProvider, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  'azure-openai': 'AZURE_OPENAI_API_KEY',
+  foundry: 'ANTHROPIC_FOUNDRY_API_KEY',
+  'bedrock-mantle': 'AWS_BEARER_TOKEN_BEDROCK',
+};
+
+/** The variable the CLI reads the fleet's own key from, by the model the agent uses; both when it isn't known. */
 export function keyVariable(model: string | null | undefined): string {
   if (!model) return 'ANTHROPIC_API_KEY or OPENAI_API_KEY';
-  return /^claude/i.test(model) ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
+  return /^claude/i.test(model) ? KEY_VARS.anthropic : KEY_VARS.openai;
 }
 
 /** The models the sample agent uses unless setup names one (the JS starter's own choice, by key). */
 export const SAMPLE_MODELS = { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' } as const;
 
-/** Where the agent's calls go, from source-model: practice tests can't run these yet, so setup says so before Start. */
-export const BLOCKED_PROVIDERS: readonly PracticeSourceProvider[] = ['proxy-url', 'cloud'];
-/** The engine's own words when Start refuses such a fleet (reason `unsupported`). */
+/** The engine's own words when Start refuses a fleet with a host of its own and no Fleet key key to pick (reason `unsupported`). */
 export const UNSUPPORTED_FLEET = 'Practice tests don’t support this fleet’s provider yet.';
+
+// ── Provider keys (R7, §17): the Fleet key key a test runs on ───────────
+
+/** Why a key or fleet can't be tested, in the engine's catalog words: Start answers with these reasons too. */
+export const KEY_REFUSALS = CATALOG.keyRefusals as Record<PracticeKeyRefusal, string>;
+/** A Fleet key key's display prefix, as Start takes it. */
+export const PROXY_KEY_PREFIX_RE = /^sk-wr-[0-9a-f]{16}$/;
+
+/** The key a test runs on: a Fleet key provider key (R7), or the fleet's own key. What the key line and cost say. */
+export interface PracticeKeyChoice {
+  provider: SandboxProvider;
+  keyHint: string | null;
+}
+
+/** Cloud providers have no default model: setup asks for it, and Start needs it. */
+export const CLOUD_MODEL_FIELD: Partial<Record<SandboxProvider, { label: string; hint: string; placeholder: string; missing: string }>> = {
+  'azure-openai': { label: 'Azure deployment name', hint: '· the deployment your agent calls', placeholder: 'my-gpt-4o-mini', missing: 'Enter the deployment name to start.' },
+  'bedrock-mantle': { label: 'Bedrock model ID', hint: '· like anthropic.claude-haiku-4-5', placeholder: 'anthropic.claude-haiku-4-5', missing: 'Enter the Bedrock model ID to start.' },
+  foundry: { label: 'Foundry model', hint: '· your Claude deployment’s name, like claude-haiku-4-5', placeholder: 'claude-haiku-4-5', missing: 'Enter the Foundry model to start.' },
+};
+
+/** Fleet key's names for every provider a key can have, the ones practice tests can't use included. */
+const KEY_PROVIDER_LABELS: Record<string, string> = {
+  ...SANDBOX_PROVIDER_LABELS, azure: 'Azure OpenAI', 'bedrock-sigv4': 'AWS Bedrock', 'foundry-entra': 'Claude on Azure (Foundry)',
+};
+/** A key's last four, as Fleet key shows them; keys that use WhiteRoom's own access have none. */
+const hintOf = (k: Pick<PracticeProviderKey, 'keyHint'>) => (k.keyHint && k.keyHint !== 'none' ? k.keyHint : null);
+
+/** "AWS Bedrock · us-east-1 · key ending a1b2 · added Oct 3", in Fleet key's words. */
+export function providerKeyLabel(k: PracticeProviderKey, now = Date.now()): string {
+  const hint = hintOf(k);
+  const added = k.createdAt ? fmtDay(k.createdAt, now) : '';
+  return [KEY_PROVIDER_LABELS[k.provider] ?? k.provider, k.region ?? k.endpointHost, hint && `key ending ${hint}`, added && `added ${added}`].filter(Boolean).join(' · ');
+}
+
+export const choiceOf = (k: PracticeProviderKey): PracticeKeyChoice | null =>
+  isSandboxProvider(k.provider) ? { provider: k.provider, keyHint: hintOf(k) } : null;
+
+/**
+ * What setup can test with, from source-model: the eligible Fleet key keys,
+ * and whether the fleet's own key is a choice too (it is when it can start
+ * a test; with Fleet key keys too, only when the agent's calls use it). The
+ * default is the fleet's own key when its agent calls with it, else the
+ * first eligible key.
+ */
+export function keyOptions(src: PracticeSource): { keys: PracticeProviderKey[]; direct: boolean; initial: string | null } {
+  const keys = src.providerKeys.filter((k) => k.eligible && isSandboxProvider(k.provider));
+  const agentDirect = src.provider === 'direct-anthropic' || src.provider === 'direct-openai';
+  const direct = src.directKey && (keys.length === 0 || agentDirect);
+  return { keys, direct, initial: direct && (agentDirect || !keys.length) ? null : keys[0]?.displayPrefix ?? null };
+}
+
+/** The key line: which variable to set, to which key (§10 fixed copy; R7 names the Fleet key key). */
+export function keyLine(choice: PracticeKeyChoice | null, model: string | null | undefined, fleet: string): { before: string; keyVar: string; after: string } {
+  if (!choice) return { before: 'Set ', keyVar: keyVariable(model), after: ` to the key your agent uses with ${fleet}.` };
+  const hint = choice.keyHint ? ` (key ending ${choice.keyHint})` : '';
+  return { before: 'Run this where ', keyVar: KEY_VARS[choice.provider], after: ` is set to the same ${SANDBOX_PROVIDER_LABELS[choice.provider]} key you added on Fleet key${hint}.` };
+}
 
 // ── Cost (§1: the range and the cap before anything runs) ────────────────
 
@@ -106,6 +174,9 @@ const PRICES: [string, number, number][] = [
 /** A practice call's size: 6k–10k tokens in (records and tool results), 150–400 out. */
 const CALL_TOKENS = { in: [6_000, 10_000], out: [150, 400] } as const;
 
+/** A Bedrock model ID as Anthropic names the model: "us.anthropic.claude-haiku-4-5-20251001-v1:0" → "claude-haiku-4-5-20251001". */
+const anthropicName = (model: string) => model.toLowerCase().replace(/^(?:[a-z]{2,6}\.)?anthropic\./, '').replace(/-v\d+(?::\d+)?$/, '');
+
 function perCall(model: string | null | undefined): [number, number] | null {
   const p = model ? PRICES.find(([prefix]) => model.toLowerCase().startsWith(prefix)) : undefined;
   if (!p) return null;
@@ -123,13 +194,18 @@ export interface CallEstimate {
   cap: number;
   /** At list price, when the model has one we know. */
   cost: [number, number] | null;
+  /** R7: who bills the calls, when it's a cloud account. Azure's prices aren't shown; Bedrock's are Anthropic's list prices, approximately. */
+  billedBy: 'Azure' | 'AWS' | null;
 }
+
+/** Who bills a provider's calls, for the cost line. */
+const BILLED_BY: Partial<Record<SandboxProvider, 'Azure' | 'AWS'>> = { 'azure-openai': 'Azure', foundry: 'Azure', 'bedrock-mantle': 'AWS' };
 
 /**
  * What a test usually costs and its hard cap, for `runs` runs of `scope`
  * (null: everything) plus `controlCalls` extra calls for the control checks.
  */
-export function callEstimate(o: { runs: number; scope: string[] | null; controlCalls: number; model: string | null | undefined }): CallEstimate {
+export function callEstimate(o: { runs: number; scope: string[] | null; controlCalls: number; model: string | null | undefined; provider?: SandboxProvider | null }): CallEstimate {
   const plan = planOf(o.scope);
   const tasks = plan.filter((s): s is Scenario => s !== 'controls');
   const controls = plan.includes('controls') ? o.controlCalls : 0;
@@ -137,19 +213,25 @@ export function callEstimate(o: { runs: number; scope: string[] | null; controlC
   const low = o.runs * (tasks.reduce((n, s) => n + USUAL_CALLS[s][0], 0) + controls);
   const high = o.runs * (tasks.reduce((n, s) => n + USUAL_CALLS[s][1], 0) + controls);
   const perRun = Math.min(CATALOG.runCallCap, tasks.reduce((n, s) => n + allowances[s], 0) + (plan.includes('controls') ? CATALOG.controlCallsMax : 0));
-  const price = perCall(o.model);
-  return { low, high, cap: o.runs * perRun, cost: price && [low * price[0], high * price[1]] };
+  const billedBy = (o.provider && BILLED_BY[o.provider]) ?? null;
+  const price = billedBy === 'Azure' ? null : perCall(billedBy === 'AWS' && o.model ? anthropicName(o.model) : o.model);
+  return { low, high, cap: o.runs * perRun, cost: price && [low * price[0], high * price[1]], billedBy };
 }
 
-/** "usually 40–65 model calls (≈ $0.25–$0.80 at list price)". */
+/** "usually 40–65 model calls (≈ $0.25–$0.80 at list price)"; Bedrock "(approx. $0.25–$0.80 at Anthropic’s list prices)". */
 export function usualCalls(e: CallEstimate): string {
-  return `usually ${e.low}–${e.high} model calls${e.cost ? ` (≈ ${dollars(e.cost[0])}–${dollars(e.cost[1])} at list price)` : ''}`;
+  const range = e.cost && `${dollars(e.cost[0])}–${dollars(e.cost[1])}`;
+  const price = !range ? '' : e.billedBy === 'AWS' ? ` (approx. ${range} at Anthropic’s list prices)` : ` (≈ ${range} at list price)`;
+  return `usually ${e.low}–${e.high} model calls${price}`;
 }
 
-/** Setup's cost line. */
+const billing = (e: CallEstimate) => (e.billedBy ? `, billed by your ${e.billedBy} account` : '');
+
+/** Setup's cost line. On Azure, only the cap: what the calls cost depends on the deployment. */
 export function costLine(e: CallEstimate, runs: number): string {
   const cap = runs > 1 ? `${CATALOG.runCallCap} calls a run (${e.cap} in all)` : `${e.cap} calls`;
-  return `On your own key: ${usualCalls(e)}. Never more than ${cap}, including control checks and memory summaries.`;
+  if (e.billedBy === 'Azure') return `Never more than ${cap}${billing(e)}. That includes control checks and memory summaries.`;
+  return `On your own key: ${usualCalls(e)}. Never more than ${cap}${billing(e)}, including control checks and memory summaries.`;
 }
 
 // ── Control checks (§6): what setup says will be checked ─────────────────
@@ -244,8 +326,11 @@ export function passCaveat(r: PracticeReport): string | null {
   return null;
 }
 
-/** The provider a test's calls went to, from the model it used (direct-key fleets only in v1). */
-const providerOf = (r: PracticeReport) => (/^claude/i.test(r.tested.modelsUsed[0] ?? r.tested.modelRequested ?? 'claude') ? 'anthropic' : 'openai');
+/** The provider a test's calls went to: the Fleet key key's (R7), else the fleet's own key's, by the model it used. */
+export function providerOf(r: PracticeReport): SandboxProvider {
+  if (isSandboxProvider(r.tested.provider)) return r.tested.provider;
+  return /^claude/i.test(r.tested.modelsUsed[0] ?? r.tested.modelRequested ?? 'claude') ? 'anthropic' : 'openai';
+}
 
 /**
  * A check's fix line. A provider refusal names what the provider said and
@@ -256,7 +341,7 @@ export function fixLine(c: PracticeCheck, r: PracticeReport): string | null {
   const f = c.reason === 'provider_refused' ? asFailedCalls(c.failedCalls) : null;
   if (!f) return c.fix;
   const provider = providerOf(r);
-  return `Test problem (not your agent): ${failedCallReason(f, provider)}. ${providerNextStep(f.last, provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY')} Rerun this check to try again.`;
+  return `Test problem (not your agent): ${failedCallReason(f, provider)}. ${providerNextStep(f.last, KEY_VARS[provider])} Rerun this check to try again.`;
 }
 
 /** What to check before a rerun when the provider refused a practice task's calls. */
@@ -283,7 +368,8 @@ export function rerunScope(r: PracticeReport): string[] | null {
 /** "Rerun 1 check × 3 runs · usually 15–25 model calls (≈ $0.20–$0.35), never more than 40." (§10 fixed copy) */
 export function rerunConfirm(scope: string[] | null, runs: number, e: CallEstimate): string {
   const what = scope ? `Rerun ${plural(scope.length, 'check')}` : 'Run the full test';
-  return `${what} × ${plural(runs, 'run')} · ${usualCalls(e)}, never more than ${e.cap}.`;
+  if (e.billedBy === 'Azure') return `${what} × ${plural(runs, 'run')} · never more than ${e.cap} model calls${billing(e)}.`;
+  return `${what} × ${plural(runs, 'run')} · ${usualCalls(e)}, never more than ${e.cap}${billing(e)}.`;
 }
 
 /** Why a test ended without a result (§4 Lifecycle end reasons). */

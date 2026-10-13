@@ -94,22 +94,60 @@ export function adapterLabel(cmd: string): string {
   return [w[0] && safe(w[0]), script && safe(script)].filter(Boolean).join(" ") || "adapter";
 }
 
+// ── The provider key (§4 Claim, §17) ──
+
+/** Where a practice test's model calls go: the claim names it (R7: the Fleet key provider key the owner picked). */
+export type Provider = "anthropic" | "openai" | "azure-openai" | "foundry" | "bedrock-mantle";
+
+/** The variable each provider's key is read from, and the adapter gets it in (the providers' own SDKs read these). */
+export const KEY_VARS = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  "azure-openai": "AZURE_OPENAI_API_KEY",
+  foundry: "ANTHROPIC_FOUNDRY_API_KEY",
+  "bedrock-mantle": "AWS_BEARER_TOKEN_BEDROCK",
+} as const satisfies Record<Provider, string>;
+export type KeyVar = (typeof KEY_VARS)[Provider];
+const ALL_KEY_VARS = Object.values(KEY_VARS);
+export const isKeyVar = (v: string): v is KeyVar => (ALL_KEY_VARS as string[]).includes(v);
+
+/** The providers as Fleet key names them. */
+export const PROVIDER_LABELS: Record<Provider, string> = {
+  anthropic: "Anthropic", openai: "OpenAI", "azure-openai": "Azure OpenAI", foundry: "Claude on Azure (Foundry)", "bedrock-mantle": "AWS Bedrock",
+};
+export const isProvider = (v: unknown): v is Provider => typeof v === "string" && Object.hasOwn(KEY_VARS, v);
+
+/** OpenAI and Azure OpenAI take chat completions (their SDKs want a base URL ending in /v1); the others Anthropic's Messages API. */
+export const chatCompletions = (p: Provider) => p === "openai" || p === "azure-openai";
+
+/** The header a provider's key travels in: Azure's api-key, a Bearer token for OpenAI and Bedrock, x-api-key for Anthropic and Foundry. */
+export function keyHeader(p: Provider, key: string): Record<string, string> {
+  if (p === "azure-openai") return { "api-key": key };
+  return p === "openai" || p === "bedrock-mantle" ? { authorization: `Bearer ${key}` } : { "x-api-key": key };
+}
+
+/** A direct key's provider, by its shape: what an older WhiteRoom that names no provider means. */
+export const providerByShape = (key: string): Provider => (key.startsWith("sk-ant-") ? "anthropic" : "openai");
+
+/** Short-term Bedrock keys can expire during a test; WhiteRoom refuses them without using a try. */
+export const isShortTermBedrockKey = (key: string) => key.startsWith("bedrock-api-key-");
+
 export interface KeyChoice {
-  /** The environment variable the adapter gets the key in. */
-  keyVar: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY";
+  /** The variable the key came from; null when it was pasted. */
+  from: KeyVar | null;
   key: string;
-  fromEnv: boolean;
 }
 
-/** The key from ANTHROPIC_API_KEY or OPENAI_API_KEY; null to prompt; "both" when it can't tell which (a guess could burn a try). */
-export function keyFromEnv(env: NodeJS.ProcessEnv): KeyChoice | "both" | null {
-  const set = (["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] as const).filter((v) => env[v]?.trim());
-  if (set.length > 1) return "both";
-  return set.length ? { keyVar: set[0], key: env[set[0]]!.trim(), fromEnv: true } : null;
+/**
+ * The key from the one provider variable that is set; null to prompt. When
+ * more than one is set, the variables: before the claim the CLI can't tell
+ * which provider the run uses, and a guess could use a try.
+ */
+export function keyFromEnv(env: NodeJS.ProcessEnv): KeyChoice | KeyVar[] | null {
+  const set = ALL_KEY_VARS.filter((v) => env[v]?.trim());
+  if (set.length > 1) return set;
+  return set.length ? { from: set[0], key: env[set[0]]!.trim() } : null;
 }
-
-/** A pasted key: the variable it goes in is the provider's, by the key's shape. */
-export const keyFromPaste = (key: string): KeyChoice => ({ keyVar: key.startsWith("sk-ant-") ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY", key, fromEnv: false });
 
 export class Interrupted extends Error {}
 

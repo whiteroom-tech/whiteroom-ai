@@ -4,7 +4,7 @@
 //   GET  /api/sandbox/practice/source-model?fleet=&agent=
 //   GET  /api/sandbox/practice/<run>?fleet=           progress
 //   GET  /api/sandbox/practice/<run>/report?fleet=    result
-//   POST /api/sandbox/practice/start                  {fleet, sample, runs, agent?, model?, scope?}
+//   POST /api/sandbox/practice/start                  {fleet, sample, runs, agent?, model?, scope?, proxyKeyDisplayPrefix?}
 //   POST /api/sandbox/practice/<run>/code             {fleet}: Get a new run code
 //   POST /api/sandbox/practice/<run>/end              {fleet}: End test
 //
@@ -13,6 +13,7 @@
 // above are forwarded; the engine validates them strictly.
 
 import { checkSameOrigin } from '@/lib/origin-check';
+import { PROXY_KEY_PREFIX_RE } from '@/lib/sandbox/practice/model';
 import { practiceEngine, practiceOwner, RUN_ID_RE } from '@/lib/sandbox/practice/server';
 
 export const runtime = 'nodejs';
@@ -74,13 +75,15 @@ export async function POST(req: Request, { params }: Params) {
   if ('error' in owner) return owner.error;
 
   if (path.length === 1 && path[0] === 'start') {
-    const { sample, runs, agent, model, scope } = body;
+    const { sample, runs, agent, model, scope, proxyKeyDisplayPrefix } = body;
     if (typeof sample !== 'boolean' || (runs !== 1 && runs !== 3)) return invalid();
     // The same bounds as the engine's, so nothing bigger is forwarded.
     const name = (v: unknown) => v === undefined || (typeof v === 'string' && v.length >= 1 && v.length <= 128);
     if (!name(agent) || !name(model)) return invalid();
     if (scope !== undefined && (!Array.isArray(scope) || scope.length > 64 || !scope.every((s) => typeof s === 'string' && s.length <= 128))) return invalid();
-    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, startedBy: owner.userId });
+    // R7: a Fleet key key, by the display prefix Fleet key lists (never the key itself).
+    if (proxyKeyDisplayPrefix !== undefined && (typeof proxyKeyDisplayPrefix !== 'string' || !PROXY_KEY_PREFIX_RE.test(proxyKeyDisplayPrefix))) return invalid();
+    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, startedBy: owner.userId });
   }
   const [run, action] = path;
   if (path.length !== 2 || !RUN_ID_RE.test(run) || (action !== 'code' && action !== 'end')) return notFound();

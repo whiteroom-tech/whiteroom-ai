@@ -14,6 +14,15 @@ export const PKG = new URL("..", import.meta.url).pathname;
 export const KEY = "sk-ant-placeholder-test-key-91c0";
 export const OPENAI_KEY = "sk-placeholder-openai-test-key-77aa";
 export const CODE = `wrrt_${"A".repeat(43)}`;
+/** R7: a key saved on Fleet key per cloud provider, and the variable it's read from. */
+export const CLOUD = {
+  "azure-openai": { key: "azure-placeholder-test-key-a1b2", keyVar: "AZURE_OPENAI_API_KEY" },
+  foundry: { key: "foundry-placeholder-test-key-c3d4", keyVar: "ANTHROPIC_FOUNDRY_API_KEY" },
+  "bedrock-mantle": { key: "bedrock-placeholder-long-term-key-e5f6", keyVar: "AWS_BEARER_TOKEN_BEDROCK" },
+} as const;
+export type CloudProvider = keyof typeof CLOUD;
+/** The attempt's proxy key in a provider-key run's base URL (placeholder). */
+export const ATTEMPT_PROXY_KEY = `sk-wr-${"0".repeat(40)}`;
 export const SESSION = `wrrs_${"B".repeat(43)}`;
 
 type Entry = { name: string; method: string; path: string; request: unknown; status: number; response: unknown };
@@ -61,6 +70,8 @@ export interface StubOptions {
   done?: unknown;
   /** The practice task's model (default: the fixture's); null means none was chosen. */
   taskModel?: string | null;
+  /** R7: the run uses this cloud provider's Fleet key key (the r7 fixtures); else the fleet's own Anthropic or OpenAI key. */
+  cloud?: CloudProvider;
 }
 
 export interface Stub {
@@ -71,6 +82,8 @@ export interface Stub {
   escalations: Array<{ ticketId: string; team: string }>;
   /** The model each practice-task model call asked for. */
   models: string[];
+  /** Each model call's path and the header its key came in. */
+  calls: Array<{ path: string; keyHeader: string }>;
   finals: Array<{ attemptId: string; output: string | null; ended: string }>;
   controlResults: unknown[];
   count: (path: string) => number;
@@ -81,11 +94,14 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const plan = [...(o.plan ?? ["A"])];
   const total = plan.length;
   const counts = new Map<string, number>();
-  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], finals: [] as Stub["finals"], controlResults: [] as unknown[] };
+  const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[] };
   let attempt = 0;
   let current: { id: string; reads: Set<string>; summarised: boolean } | null = null;
   let controlSteps = 0;
   let origin = "";
+  let provider = "anthropic";
+  /** Where the run's model calls go: this server, or a provider-key run's attempt proxy key URL. */
+  const baseUrl = () => (o.cloud ? `${origin}/${ATTEMPT_PROXY_KEY}${o.cloud === "azure-openai" ? "/openai" : ""}` : origin);
 
   const expect = (name: string, body: unknown) => {
     const want = JSON.stringify(shape(fixture(name).request));
@@ -102,8 +118,15 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
     if (path === "/api/readiness/claim") {
       expect("claim", body);
       if (body.code !== CODE) return fromFixture("claim.code_invalid");
+      if (o.cloud) {
+        if (body.key.startsWith("bedrock-api-key-")) return fromFixture("r7.claim.short_term_key");
+        if (body.key !== CLOUD[o.cloud].key) return fromFixture("r7.claim.key_mismatch", (r) => Object.assign(r, { provider: o.cloud }));
+        provider = o.cloud;
+        return fromFixture("r7.claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length } }));
+      }
       if (body.key !== KEY && body.key !== OPENAI_KEY) return fromFixture("claim.key_mismatch");
-      return fromFixture("claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, runs: 1, tasks: plan.length } }));
+      provider = body.key === KEY ? "anthropic" : "openai";
+      return fromFixture("claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length } }));
     }
     if (headers.authorization !== `Bearer ${SESSION}`) return fromFixture("session.unknown");
     if (path === "/api/readiness/tasks/next") {
@@ -117,12 +140,12 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       if (item === "controls") {
         controlSteps = 0;
         return fromFixture("tasks.next.controls", (r) => {
-          Object.assign(r.controls, { attemptId: id, deadline, baseUrl: origin });
+          Object.assign(r.controls, { attemptId: id, deadline, baseUrl: baseUrl(), provider });
           r.progress = progress;
         });
       }
-      return fromFixture("tasks.next.task.A", (r) => {
-        Object.assign(r.task, { attemptId: id, deadline, baseUrl: origin });
+      return fromFixture(o.cloud ? "r7.tasks.next.task" : "tasks.next.task.A", (r) => {
+        Object.assign(r.task, { attemptId: id, deadline, baseUrl: baseUrl(), provider });
         r.progress = progress;
         if (o.taskModel !== undefined) r.task.model = o.taskModel;
         r.task.headers = { "x-whiteroom-fleet": `sandbox-r-${id}`, "x-wr-readiness-attempt": id, "x-whiteroom-agent": "support-bot" };
@@ -150,7 +173,13 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       if (body.result) stub.controlResults.push(body.result);
       if (++controlSteps > 2) return fromFixture("controls.next.done");
       return fromFixture("controls.next.request", (r) => {
-        r.request.url = `${origin}${r.request.path}`;
+        r.request.url = `${baseUrl()}${r.request.path}`;
+        if (provider === "openai" || provider === "azure-openai") {
+          r.request.path = "/v1/chat/completions";
+          r.request.url = `${baseUrl()}/v1/chat/completions`;
+          delete r.request.headers["anthropic-version"];
+          r.request.body = { model: r.request.body.model, max_completion_tokens: 1, messages: [{ role: "user", content: "Hi" }] };
+        }
         Object.assign(r.request.headers, { "x-whiteroom-fleet": `sandbox-r-${current!.id}`, "x-wr-readiness-attempt": current!.id });
         // The first planned call is the allowlist check's unlisted model.
         if (controlSteps === 1) r.request.body.model = "whiteroom-practice-unlisted-model";
@@ -161,10 +190,20 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
     return [404, { error: "Not found." }];
   };
 
+  /** The header each provider's key comes in, as the proxy reads it. */
+  const KEY_HEADER: Record<string, string> = { anthropic: "x-api-key", foundry: "x-api-key", openai: "authorization", "bedrock-mantle": "authorization", "azure-openai": "api-key" };
   const model = (path: string, body: any, headers: IncomingMessage["headers"]): Reply => {
-    const anthropic = path === "/v1/messages";
-    const key = anthropic ? headers["x-api-key"] : String(headers.authorization ?? "").replace(/^Bearer /, "");
-    if (key !== KEY && key !== OPENAI_KEY) return [401, { error: { message: "invalid key" } }];
+    const anthropic = path.endsWith("/v1/messages");
+    // A provider-key run's calls go through its attempt proxy key (Azure's under /openai); the others to this server's own routes.
+    const want = o.cloud ? `/${ATTEMPT_PROXY_KEY}${o.cloud === "azure-openai" ? "/openai/v1/chat/completions" : "/v1/messages"}` : provider === "openai" ? "/v1/chat/completions" : "/v1/messages";
+    if (path !== want) return [404, { error: { message: `wrong route ${path} for ${provider}` } }];
+    const keyHeader = KEY_HEADER[provider];
+    const sent = ["x-api-key", "authorization", "api-key"].filter((h) => headers[h] !== undefined);
+    const key = String(headers[keyHeader] ?? "").replace(/^Bearer /, "");
+    if (sent.length !== 1 || sent[0] !== keyHeader || key !== (o.cloud ? CLOUD[o.cloud].key : provider === "openai" ? OPENAI_KEY : KEY)) {
+      return [401, { error: { message: "invalid key" } }];
+    }
+    stub.calls.push({ path, keyHeader });
     if (!headers["x-whiteroom-fleet"] || !headers["x-wr-readiness-attempt"] || !headers["x-whiteroom-agent"]) {
       return [400, { error: { message: "missing practice headers" } }];
     }
@@ -224,7 +263,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       const [status, json, headers] = o.route?.(path, body, n)
         ?? (path === "/health" ? [200, { status: "ok" }]
           : path.startsWith("/api/readiness/") ? readiness(path, body, req.headers)
-          : path === "/v1/messages" || path === "/v1/chat/completions" ? model(path, body, req.headers)
+          : /\/v1\/(messages|chat\/completions)$/.test(path) ? model(path, body, req.headers)
           : [404, { error: "Not found." }]);
       res.writeHead(status, { "content-type": "application/json", ...headers });
       res.end(JSON.stringify(json));
@@ -243,7 +282,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
 /** The env the CLI runs with in tests: this process's, without any key or WhiteRoom setting, plus `extra`. */
 export function testEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) if (!/^(WHITEROOM_|ANTHROPIC_|OPENAI_)/.test(k) && k !== "NODE_OPTIONS") env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (!/^(WHITEROOM_|ANTHROPIC_|OPENAI_|AZURE_OPENAI_|AWS_BEARER_TOKEN_)/.test(k) && k !== "NODE_OPTIONS") env[k] = v;
   return { ...env, ...extra };
 }
 

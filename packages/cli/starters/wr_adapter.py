@@ -6,8 +6,20 @@
 # own logs to stderr: stdout is only for these JSON lines.
 import json, os, sys, time, urllib.error, urllib.request
 
-ANTHROPIC = bool(os.environ.get("ANTHROPIC_API_KEY"))
-# The model to use when the practice task doesn't name one.
+# The CLI sets only the variable of the provider the practice test uses.
+# It decides the API: chat completions for OpenAI and Azure OpenAI (where the
+# model is your deployment name), Anthropic's Messages API for Anthropic,
+# Claude on Azure (Foundry) and AWS Bedrock. And the header the key goes in.
+KEYS = {
+    "ANTHROPIC_API_KEY": lambda k: {"x-api-key": k},
+    "ANTHROPIC_FOUNDRY_API_KEY": lambda k: {"x-api-key": k},
+    "AWS_BEARER_TOKEN_BEDROCK": lambda k: {"authorization": "Bearer " + k},
+    "OPENAI_API_KEY": lambda k: {"authorization": "Bearer " + k},
+    "AZURE_OPENAI_API_KEY": lambda k: {"api-key": k},
+}
+KEY_VAR = next((v for v in KEYS if os.environ.get(v)), "ANTHROPIC_API_KEY")
+ANTHROPIC = KEY_VAR not in ("OPENAI_API_KEY", "AZURE_OPENAI_API_KEY")
+# The model to use when the practice task doesn't name one (cloud providers always name one).
 DEFAULT_MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
 BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call."
 calls = 0
@@ -34,8 +46,7 @@ def model(base_url, headers, body):
     """One model call through WhiteRoom; None if one of the fleet's controls blocked it.
     Waits and tries again when WhiteRoom or the provider asks it to."""
     url = f"{base_url}/v1/messages" if ANTHROPIC else f"{base_url}/chat/completions"
-    auth = ({"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01"} if ANTHROPIC
-            else {"authorization": "Bearer " + os.environ["OPENAI_API_KEY"]})
+    auth = {**KEYS[KEY_VAR](os.environ.get(KEY_VAR, "")), **({"anthropic-version": "2023-06-01"} if ANTHROPIC else {})}
     for tries in range(1, 152):
         req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", **headers, **auth})
         try:

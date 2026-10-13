@@ -3,7 +3,8 @@
 // only; it is held in the page and never stored.
 
 import { PRACTICE_UNAVAILABLE } from './model';
-import type { PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
+import { KEY_REFUSALS, PROXY_KEY_PREFIX_RE } from './model';
+import type { PracticeKeyRefusal, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
 
 /** A refusal from the BFF or the engine, with the engine's reason when it sent one. */
 export class PracticeError extends Error {
@@ -56,11 +57,35 @@ export const listPracticeRuns = (fleet: string) => call<{ runs: PracticeRunRow[]
 export const getPracticeRun = (fleet: string, id: string) => call<PracticeRun>(`/${id}${q(fleet)}`);
 export const getPracticeResult = (fleet: string, id: string) => call<PracticeResult>(`/${id}/report${q(fleet)}`);
 const PROVIDERS: readonly PracticeSourceProvider[] = ['direct-anthropic', 'direct-openai', 'proxy-url', 'cloud', 'unknown'];
-/** The agent's latest model and where its calls go; an engine that doesn't say where reads as not yet known. */
+const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+const refusal = (v: unknown) => (typeof v === 'string' && Object.hasOwn(KEY_REFUSALS, v) ? (v as PracticeKeyRefusal) : null);
+
+/** A Fleet key key as the picker can show it, or null; one with a refusal this dashboard doesn't know can't be picked. */
+function providerKey(k: unknown): PracticeProviderKey | null {
+  if (!k || typeof k !== 'object') return null;
+  const r = k as Record<string, unknown>;
+  const displayPrefix = str(r.displayPrefix);
+  const provider = str(r.provider);
+  if (!displayPrefix || !PROXY_KEY_PREFIX_RE.test(displayPrefix) || !provider) return null;
+  const eligible = r.eligible === true && r.reason == null;
+  return {
+    displayPrefix, provider, endpointHost: str(r.endpointHost), region: str(r.region), keyHint: str(r.keyHint) ?? '', createdAt: str(r.createdAt) ?? '',
+    eligible, reason: eligible ? null : refusal(r.reason) ?? 'unsupported_provider',
+  };
+}
+
+/**
+ * The agent's latest model, where its calls go, and the keys setup can pick
+ * from. An engine that doesn't say where reads as not yet known; one from
+ * before provider keys (R7) as a fleet with only its own key.
+ */
 export const sourceModel = (fleet: string, agent: string) =>
-  call<Partial<PracticeSource>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => ({
-    model: typeof r.model === 'string' && r.model ? r.model : null,
+  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => ({
+    model: str(r.model),
     provider: PROVIDERS.includes(r.provider as PracticeSourceProvider) ? (r.provider as PracticeSourceProvider) : 'unknown',
+    directKey: r.directKey !== false,
+    blocked: r.blocked === 'bedrock_role' ? 'bedrock_role' : null,
+    providerKeys: Array.isArray(r.providerKeys) ? r.providerKeys.map(providerKey).filter((k): k is PracticeProviderKey => k !== null) : [],
   }));
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });
 export const newRunCode = (fleet: string, id: string) => call<RunCode>(`/${id}/code`, { body: { fleet } });

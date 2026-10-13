@@ -25,6 +25,8 @@ export const say = (s: string) => process.stdout.write(clean(s) + "\n");
 export const warn = (s: string) => process.stderr.write(clean(s) + "\n");
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** "A, B and C". */
+const list = (xs: string[], and = "and") => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} ${and} ${xs[xs.length - 1]}` : xs.join(""));
 const button = (name: string) => `In the dashboard (${DASHBOARD}), click ${name}`;
 
 /** A way the command ends: the exit code (§8) and what to print. */
@@ -57,8 +59,11 @@ export const copy = {
   badCode: "That isn't a run code. Copy it again from the dashboard (it starts with wrrt_).",
   needCode: "Paste the run code from the dashboard (it won't show): ",
   needKey: "Paste the model provider key your agent uses (it won't show): ",
-  bothKeys: "Both ANTHROPIC_API_KEY and OPENAI_API_KEY are set. Unset the one your agent doesn't use, then run the command again. Nothing was sent.",
-  noKey: "Set ANTHROPIC_API_KEY or OPENAI_API_KEY to the key your agent uses, then run the command again.",
+  bothKeys: (vars: string[]) => vars.length === 2
+    ? `Both ${vars[0]} and ${vars[1]} are set. Unset the one your agent doesn't use, then run the command again. Nothing was sent.`
+    : `${list(vars)} are all set. Unset the ones your agent doesn't use, then run the command again. Nothing was sent.`,
+  noKey: `Set the key your agent uses (${list(["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"], "or")}), then run the command again.`,
+  shortTermKey: "Short-term Bedrock keys can expire during a test. Add a long-term Bedrock API key on Fleet key to test with.",
   node: (v: string) => `Needs Node 20 or later (you have ${v}).`,
   windows: "Practice tests run on macOS and Linux in this beta. Run the command there, or in WSL.",
   badUrl: "--url must be an https:// address (or http://localhost for local testing).",
@@ -67,6 +72,9 @@ export const copy = {
 
   keyMismatch: (v: string, left: number, fleet: string | null = null) =>
     `This key isn't the one your agent uses with ${fleet ?? "this fleet"}. Nothing was charged, and your run code still works (${plural(left, "more try", "more tries")}). Set ${v} to the right key, then run the same command again.`,
+  /** §17: a run on a Fleet key provider key names that key as Fleet key does; a new test is the way to pick another. */
+  providerKeyMismatch: (from: string | null, key: string, provider: string, hint: string | null) =>
+    `${from ? `The key in ${from}` : "The key you pasted"} (ends ${key.slice(-4)}) isn't the ${provider} key saved on Fleet key${hint ? ` (key ending ${hint})` : ""}. Nothing was charged. If you've changed keys, add the new one on Fleet key, then start a new test in the dashboard and pick that key.`,
   lastTry: `That was the last try, so this run code no longer works. Nothing was charged. ${button("Get a new run code")}, then set the right key and run the command again.`,
   codeInvalid: `This run code doesn't work any more: it expired or was already used. ${button("Get a new run code")}, then run the command again.`,
   busy: "Practice tests are busy right now. Try again in a few minutes. Your run code still works.",
