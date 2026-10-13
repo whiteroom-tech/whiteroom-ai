@@ -2,11 +2,13 @@
 // adapter driver's caps, what gets printed, and the results screen.
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { childEnv, MAX_TOOL_CALLS, runAdapter, type ToolCall } from "../src/practice/adapter.js";
-import { adapterProblem, keyFromEnv, keyFromPaste, nodeTooOld, targetOrigin, words } from "../src/practice/preflight.js";
+import { parseArgs } from "../src/legacy-args.js";
+import { Engine, REDIRECTED, Unreachable } from "../src/practice/engine.js";
+import { adapterLabel, adapterProblem, keyFromEnv, keyFromPaste, nodeTooOld, targetOrigin, words } from "../src/practice/preflight.js";
 import { clean, copy, hideSecret, results, type Report } from "../src/practice/text.js";
-import { fixture } from "./stub.js";
+import { fixture, startStub, type Stub } from "./stub.js";
 
 describe("preflight", () => {
   it("targets production unless --url is https or loopback", () => {
@@ -79,9 +81,11 @@ describe("what gets printed", () => {
     assert.equal(clean(`a${esc}[2Jb${rlo}c\tkey sk-ant-secret-value-1234 end`), "a[2Jbc\tkey [hidden] end");
   });
 
-  it("reports the adapter command to WhiteRoom without anything that looks like a secret", () => {
-    assert.equal(copy.adapterLabel("python3 wr_adapter.py --token sk-live-abc123 --db postgres://u:pw@h/x"), "python3 wr_adapter.py --token [hidden] --db [hidden]h/x");
-    assert.equal(copy.adapterLabel("node task-runner.mjs"), "node task-runner.mjs");
+  it("reports only the adapter's program and script names to WhiteRoom", () => {
+    assert.equal(adapterLabel("API_TOKEN=s3cret python3 /home/me/bots/wr_adapter.py --token sk-abc --db postgres://u:pw@h/x"), "python3 wr_adapter.py");
+    assert.equal(adapterLabel("/usr/local/bin/node --env-file .env task-runner.mjs"), "node task-runner.mjs");
+    assert.equal(adapterLabel("./run-agent --key abc"), "run-agent");
+    assert.equal(adapterLabel("FOO=1"), "adapter");
   });
 
   it("uses no internal words in practice copy (§2 rule 7)", () => {
@@ -137,5 +141,59 @@ describe("results (§8)", () => {
     assert.match(results(rep).lines.join("\n"), /Run it 3 times/);
     rep.sample = true;
     assert.match(results(rep).lines.join("\n"), /sample agent/);
+  });
+});
+
+describe("fleet commands' arguments (unchanged)", () => {
+  it("every --name takes the next word, whatever it looks like", () => {
+    assert.deepEqual(parseArgs(["health", "--verbose", "foo"]), { args: ["health"], flags: { verbose: "foo" } });
+    assert.deepEqual(parseArgs(["task", "a1", "t", "--minutes", "-5"]), { args: ["task", "a1", "t"], flags: { minutes: "-5" } });
+    assert.deepEqual(parseArgs(["task", "a1", "--minutes=5", "x"]), { args: ["task", "a1"], flags: { "minutes=5": "x" } });
+    assert.deepEqual(parseArgs(["--help"]), { args: ["--help"], flags: {} });
+  });
+});
+
+describe("Engine.post", () => {
+  const stubs: Stub[] = [];
+  const stub = async (route: Parameters<typeof startStub>[0]["route"]) => {
+    const s = await startStub({ route });
+    stubs.push(s);
+    return s;
+  };
+  after(() => Promise.all(stubs.map((s) => s.close())));
+  const ok = [200, { lifecycle: "active" }] as [number, unknown];
+
+  it("waits as Retry-After says on a 503 and on a 429 that isn't an answer, then retries", async () => {
+    for (const first of [[503, {}, { "retry-after": "1" }], [429, { error: "Rate limit exceeded." }, { "retry-after": "1" }]] as const) {
+      const s = await stub((_p, _b, n) => (n === 1 ? [first[0], first[1], { ...first[2] }] : ok));
+      const t0 = Date.now();
+      const r = await new Engine(s.url).post("/api/readiness/heartbeat", {});
+      assert.equal(r.status, 200);
+      assert.ok(Date.now() - t0 >= 900, `waited ${Date.now() - t0} ms`);
+      assert.equal(s.count("/api/readiness/heartbeat"), 2);
+    }
+  });
+
+  it("returns a 429 that is an answer at once", async () => {
+    const s = await stub(() => [429, { lifecycle: "active", reason: "tool_limit" }]);
+    assert.equal((await new Engine(s.url).post("/api/readiness/tools", {})).status, 429);
+    assert.equal(s.count("/api/readiness/tools"), 1);
+  });
+
+  it("gives up with Unreachable after the offline window; a request that isn't safe to repeat is never resent", async () => {
+    await assert.rejects(new Engine("http://127.0.0.1:9", 300).post("/api/readiness/tasks/next", {}, { retryNetwork: true }), Unreachable);
+    const s = await stub(() => [500, { error: "boom" }]);
+    await assert.rejects(new Engine(s.url, 300).post("/api/readiness/tools", {}), Unreachable);
+    assert.equal(s.count("/api/readiness/tools"), 1);
+    await assert.rejects(new Engine(s.url, 300).post("/api/readiness/tasks/next", {}, { retryNetwork: true }), Unreachable);
+    assert.ok(s.count("/api/readiness/tasks/next") >= 2);
+  });
+
+  it("never follows a redirect: nothing reaches the other host", async () => {
+    const other = await stub(() => ok);
+    const s = await stub((p) => [307, {}, { location: `${other.url}${p}` }]);
+    const r = await new Engine(s.url).post("/api/readiness/claim", { key: "sk-ant-placeholder" });
+    assert.equal(r.status, REDIRECTED);
+    assert.equal(other.seen.length, 0);
   });
 });

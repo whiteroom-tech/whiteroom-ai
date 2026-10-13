@@ -65,11 +65,15 @@ const signalGroup = (pid: number, sig: NodeJS.Signals) => {
 /** SIGTERM to the adapter's whole process group, then SIGKILL if anything is left after KILL_GRACE_MS. */
 export async function killGroup(child: ChildProcess): Promise<void> {
   const pid = child.pid;
-  if (!pid) return;
+  if (!pid) {
+    live.delete(child); // Never started: nothing to kill.
+    return;
+  }
   signalGroup(pid, "SIGTERM");
   const until = Date.now() + KILL_GRACE_MS;
   while (groupAlive(pid) && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
   if (groupAlive(pid)) signalGroup(pid, "SIGKILL");
+  // Only now: if the CLI exits during the grace period, the exit handler still SIGKILLs the group.
   live.delete(child);
 }
 

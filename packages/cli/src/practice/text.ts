@@ -9,10 +9,6 @@ export const DISCLAIMER =
 /** Control, C1 and bidi characters, which could rewrite what the terminal shows. Tabs and newlines stay. */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 const secrets = new Set<string>();
-/** Tokens an adapter command might carry (spec §9.7's prefixes, long hex runs, user:pass@ URLs). */
-const SECRET_LIKE =
-  /(?<![\w-])(?:sk-|sk_live_|rk_|whsec_|wrrt_|wrrs_|AKIA|ASIA|AIza|ya29\.|ghp_|github_pat_|gho_|ghs_|xox[abprs]-|xapp-|eyJ|ABSK|bedrock-api-key-)[^\s'"]*|(?<![\w-])wr_[\w-]{16,}|\b[0-9a-fA-F]{32,}\b|[a-z][a-z0-9+.-]*:\/\/[^\s/@]+@/g;
-
 /** Remembers a secret (provider key, run code, session) so `clean` never prints it. */
 export function hideSecret(s: string): void {
   if (s.length >= 8) secrets.add(s);
@@ -76,6 +72,8 @@ export const copy = {
   unavailable: "Practice tests aren't available on this WhiteRoom server yet.",
   unreachable: "Couldn't reach WhiteRoom. Check your connection, then run the command again.",
   cliOutdated: "WhiteRoom sent something this CLI doesn't understand. Update the CLI, then run the test again.",
+  redirected: "WhiteRoom's server tried to send the CLI to another address, so it stopped there. Nothing was sent anywhere else. Try again in a few minutes.",
+  refused: `WhiteRoom refused the CLI's request. ${button("Start test")} to run it again.`,
   otherHost: "WhiteRoom sent an address on another host, so the CLI stopped before sending your key there.",
 
   engineUpdate: (kept: number) => `WhiteRoom was updated during your practice test, so it stopped. ${kept ? `${plural(kept, "finished practice task")} kept. ` : ""}${button("Start test")} to run it again.`,
@@ -93,8 +91,6 @@ export const copy = {
   badTool: "sent a tool call WhiteRoom couldn't accept",
   noTerminal: "There's no terminal to paste the run code into. Pipe it in with --code-stdin instead.",
   stoppedEarly: "Stopped before the practice test started.",
-  /** The adapter command as reported to WhiteRoom (§7 "What was tested"): anything that looks like a secret is hidden. */
-  adapterLabel: (cmd: string) => clean(cmd).replace(SECRET_LIKE, "[hidden]").slice(0, 200),
 };
 
 // ── Results (§8) ─────────────────────────────────────────────────────────

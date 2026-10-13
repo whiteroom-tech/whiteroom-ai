@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { parseArgs as parseArgv } from "node:util";
+import { parseArgs } from "./legacy-args.js";
 
 const USAGE = `whiteroom — CLI for WhiteRoom agent governance
 
@@ -23,21 +23,6 @@ Options:
   --url <base_url>   Server URL (default: WHITEROOM_URL or http://localhost:3000)
   --key <api_key>    API key (default: WHITEROOM_API_KEY)
 `;
-
-// The fleet commands' flags; anything else is ignored, as before.
-const LEGACY_FLAGS = ["url", "key", "fleet", "role", "minutes", "tokens"] as const;
-
-function parseArgs(argv: string[]) {
-  const { values, positionals } = parseArgv({
-    args: argv,
-    strict: false,
-    allowPositionals: true,
-    options: Object.fromEntries(LEGACY_FLAGS.map((f) => [f, { type: "string" as const }])),
-  });
-  const flags: Record<string, string> = {};
-  for (const [k, v] of Object.entries(values)) if (typeof v === "string") flags[k] = v;
-  return { args: positionals, flags };
-}
 
 async function main() {
   const argv = process.argv.slice(2);

@@ -2,7 +2,7 @@
 // the adapter command, the provider key and the run code's shape.
 
 import { accessSync, constants, statSync } from "node:fs";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 import { copy } from "./text.js";
 
 export const PRODUCTION = "https://proxy.whiteroom.tech";
@@ -70,6 +70,18 @@ export function adapterProblem(cmd: string, cwd = process.cwd(), path = process.
   }
   const missing = args.find((a) => !a.startsWith("-") && (a.includes("/") || SCRIPT.test(a)) && !isFile(resolve(cwd, a)));
   return missing ? `${missing} doesn't exist` : null;
+}
+
+/**
+ * The adapter as reported to WhiteRoom (§7 "What was tested"): only the
+ * program's name and its script file's name, e.g. "python3 wr_adapter.py".
+ * Never environment assignments, flags, flag values or directories.
+ */
+export function adapterLabel(cmd: string): string {
+  const w = words(cmd).filter((x) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(x));
+  const safe = (p: string) => basename(p).replace(/[^\w.+-]/g, "").slice(0, 64);
+  const script = w.slice(1).find((a) => !a.startsWith("-") && SCRIPT.test(a));
+  return [w[0] && safe(w[0]), script && safe(script)].filter(Boolean).join(" ") || "adapter";
 }
 
 export interface KeyChoice {

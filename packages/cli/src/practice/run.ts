@@ -5,9 +5,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { childEnv, runAdapter, type Launch, type ToolAnswer } from "./adapter.js";
-import { Engine, pace, sleep, Stopped, Unreachable, type Reply } from "./engine.js";
+import { Engine, pace, REDIRECTED, sleep, Stopped, Unreachable, type Reply } from "./engine.js";
 import {
-  adapterProblem, firstLineOfStdin, hiddenPrompt, Interrupted, keyFromEnv, keyFromPaste, nodeTooOld, RUN_CODE, targetOrigin, type KeyChoice,
+  adapterLabel, adapterProblem, firstLineOfStdin, hiddenPrompt, Interrupted, keyFromEnv, keyFromPaste, nodeTooOld, RUN_CODE, targetOrigin, type KeyChoice,
 } from "./preflight.js";
 import { copy, ending, hideSecret, results, say, SCENARIOS, warn, type Ending } from "./text.js";
 
@@ -59,14 +59,21 @@ interface ControlRequest {
   delayMs?: number;
 }
 
-/** Any failure after a good claim ends the test with exit 3 (§8, §10 "Post-claim 409s"). */
+/**
+ * Any refusal after a good claim ends the test with exit 3 (§8, §10 "Post-claim 409s").
+ * 5xx and network errors never get here: Engine.post retries them or throws Unreachable.
+ */
 function sessionEnding(r: Reply): Ending {
   const reason = r.body?.reason;
+  if (r.status === REDIRECTED) return ending(3, copy.redirected);
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
   if (reason === "expired") return ending(3, copy.expired);
   if (r.status === 401) return ending(3, copy.sessionGone);
-  return ending(3, copy.cliOutdated);
+  if (r.status === 429) return ending(3, copy.busy);
+  if (r.status === 403) return ending(3, copy.refused);
+  if (r.status === 404 && !reason) return ending(3, copy.unavailable);
+  return ending(3, copy.cliOutdated); // A 4xx this CLI doesn't know: it's older than the server.
 }
 
 const print = (e: Ending, out = say) => {
@@ -124,7 +131,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   let claim: Reply;
   try {
     claim = await engine.post("/api/readiness/claim", {
-      code, key, cli: { version: VERSION, adapter: a.adapter === undefined ? "sample agent" : copy.adapterLabel(a.adapter) },
+      code, key, cli: { version: VERSION, adapter: a.adapter === undefined ? "sample agent" : adapterLabel(a.adapter) },
     });
   } catch (err) {
     if (err instanceof Unreachable) return fail(ending(3, copy.unreachable));
@@ -134,6 +141,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     const left = Number(claim.body.triesLeft) || 0;
     return fail(ending(2, left > 0 ? copy.keyMismatch(keyVar, left) : copy.lastTry));
   }
+  if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
   if (claim.status === 429) return fail(ending(3, copy.busy));
   if (claim.status === 404) return fail(ending(2, copy.unavailable));
@@ -242,12 +250,14 @@ export async function practiceRun(a: RunArgs): Promise<number> {
       Object.assign(headers, q.path.endsWith("/messages") ? { "x-api-key": key } : { authorization: `Bearer ${key}` });
       await pace();
       try {
-        const res = await fetch(q.url, { method: "POST", headers, body: JSON.stringify(q.body), signal: AbortSignal.timeout(60_000) });
+        const res = await fetch(q.url, { method: "POST", headers, body: JSON.stringify(q.body), redirect: "error", signal: AbortSignal.timeout(60_000) });
         const wr = (await res.json().catch(() => null))?.whiteroom;
         const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
         result = { status: res.status, reason: str(wr?.reason, 64), ruleId: str(wr?.ruleId, 128) };
       } catch {
-        result = { status: 0, reason: null, ruleId: null }; // Never a result: WhiteRoom calls it a test problem.
+        // A network error or a redirect (never followed, so the key stays on this host):
+        // not a result, so WhiteRoom calls the check a test problem.
+        result = { status: 0, reason: null, ruleId: null };
       }
     }
   };

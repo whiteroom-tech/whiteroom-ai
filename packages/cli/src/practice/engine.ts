@@ -39,6 +39,14 @@ export interface Reply {
   body: any;
 }
 
+/**
+ * A reply that tried to send the CLI somewhere else. Requests that carry the
+ * key or the session never follow a redirect (`redirect: "error"`): nothing is
+ * resent, and the caller stops with plain copy.
+ */
+export const REDIRECTED = 0;
+export const isRedirectError = (err: unknown) => /redirect/i.test(String((err as { cause?: { message?: string } })?.cause?.message ?? ""));
+
 /** WhiteRoom couldn't be reached (or kept asking the CLI to wait) for OFFLINE_MS. */
 export class Unreachable extends Error {}
 /** The session's stop signal fired (Ctrl+C, or WhiteRoom ended the test). */
@@ -51,7 +59,8 @@ export class Engine {
   session: string | null = null;
   /** Aborts any request in flight when the session stops. */
   signal: AbortSignal | null = null;
-  constructor(readonly origin: string) {}
+  /** `offlineMs`: how long to keep retrying (tests shorten it). */
+  constructor(readonly origin: string, private readonly offlineMs = OFFLINE_MS) {}
 
   private send(path: string, body: unknown, timeoutMs: number, signal: AbortSignal | null): Promise<Response> {
     const ac = new AbortController();
@@ -62,6 +71,7 @@ export class Engine {
       method: "POST",
       headers: { "content-type": "application/json", ...(this.session && { authorization: `Bearer ${this.session}` }) },
       body: JSON.stringify(body),
+      redirect: "error",
       signal: ac.signal,
     }).finally(() => {
       clearTimeout(timer);
@@ -75,8 +85,10 @@ export class Engine {
   }
 
   /**
-   * POSTs to a route. `retryNetwork`: also retry when the request may not
-   * have arrived (only for requests that are safe to repeat).
+   * POSTs to a route. WhiteRoom's waits (503, a 429 that isn't an answer) are
+   * retried as Retry-After says. `retryNetwork`: also retry a network error or
+   * another 5xx, for requests that are safe to repeat; otherwise those throw
+   * Unreachable. A redirect is returned as status REDIRECTED, never followed.
    */
   async post(path: string, body: unknown, o: { retryNetwork?: boolean } = {}): Promise<Reply> {
     const started = Date.now();
@@ -87,18 +99,25 @@ export class Engine {
       let res: Response;
       try {
         res = await this.send(path, body, REQUEST_TIMEOUT_MS, this.signal);
-      } catch {
+      } catch (err) {
         if (this.signal?.aborted) throw new Stopped();
-        if (!o.retryNetwork || Date.now() - started > OFFLINE_MS) throw new Unreachable();
+        if (isRedirectError(err)) return { status: REDIRECTED, body: { reason: "redirected" } };
+        if (!o.retryNetwork || Date.now() - started > this.offlineMs) throw new Unreachable();
         if (!warned) warn(copy.offline);
         warned = true;
-        await sleep(5_000, this.signal ?? undefined);
+        await sleep(Math.min(5_000, this.offlineMs), this.signal ?? undefined);
         continue;
       }
       const json = await res.json().catch(() => null);
+      if (res.status >= 500 && res.status !== 503) {
+        // It may have been handled: only a request that is safe to repeat is sent again.
+        if (!o.retryNetwork || Date.now() - started > this.offlineMs) throw new Unreachable();
+        await sleep(Math.min(5_000, this.offlineMs), this.signal ?? undefined);
+        continue;
+      }
       const wait = res.status === 503 || (res.status === 429 && !ANSWERS_429.has(json?.reason));
       if (wait) {
-        if (Date.now() - started > OFFLINE_MS) throw new Unreachable();
+        if (Date.now() - started > this.offlineMs) throw new Unreachable();
         const after = res.headers.get("retry-after");
         await sleep(after === null ? 5_000 : Math.min(Math.max(Number(after) || 0, 1), 60) * 1000, this.signal ?? undefined);
         continue;

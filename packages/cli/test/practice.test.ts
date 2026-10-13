@@ -311,6 +311,60 @@ describe("practice run: child process rules (§9.4)", () => {
   });
 });
 
+describe("practice run: redirects and refusals", () => {
+  const redirectTo = (other: Stub, path: string) => (p: string) => (p === path ? [307, {}, { location: `${other.url}${p}` }] as [number, unknown, Record<string, string>] : undefined);
+
+  it("a redirect on the claim: stops (exit 2), and the key never leaves the chosen host", async () => {
+    const other = await stub();
+    const s = await stub({ route: redirectTo(other, "/api/readiness/claim") });
+    const r = await run(s);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /tried to send the CLI to another address/);
+    assert.equal(other.seen.length, 0);
+    assert.equal(s.count("/api/readiness/claim"), 1);
+  });
+
+  it("a redirect after the claim ends the test (exit 3)", async () => {
+    const other = await stub();
+    const s = await stub({ route: redirectTo(other, "/api/readiness/tasks/next") });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /tried to send the CLI to another address/);
+    assert.equal(other.seen.length, 0);
+  });
+
+  it("a redirect on a control check's model call is reported as no result, and isn't followed", async () => {
+    const other = await stub();
+    const s = await stub({ plan: ["controls"], route: redirectTo(other, "/v1/messages") });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(s.controlResults, [{ status: 0, reason: null, ruleId: null }, { status: 0, reason: null, ruleId: null }]);
+    assert.equal(other.seen.length, 0);
+  });
+
+  it("WhiteRoom's test-tool limit ends the task as the adapter's, cancels and exits 3", async () => {
+    const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tools" && n === 3 ? [429, fixture("tools.tool_limit").response] : undefined) });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /Your adapter made more test-tool calls than a practice task allows, so it was stopped\./);
+    assert.deepEqual(s.finals.map((f) => f.ended), ["adapter_exited"]);
+    assert.equal(s.count("/api/readiness/cancel"), 1);
+  });
+
+  it("a refused request (403) after the claim has its own plain copy", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [403, { error: "Forbidden." }] : undefined) });
+    const r = await run(s);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /WhiteRoom refused the CLI's request\./);
+  });
+
+  it("WhiteRoom can't be reached at the claim: exit 3, safe to retry", async () => {
+    const r = await cli(["practice", "run", "--code-stdin", "--url", "http://127.0.0.1:9"]);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom/);
+  });
+});
+
 describe("practice run: target (§9.3)", () => {
   it("refuses a --url that isn't https or loopback, before sending anything", async () => {
     const r = await cli(["practice", "run", "--code-stdin", "--url", "http://example.com"]);
