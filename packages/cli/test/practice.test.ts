@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { alive, cli, CODE, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type Stub } from "./stub.js";
+import { alive, ATTEMPT_PROXY_KEY, cli, CLOUD, CODE, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type CloudProvider, type Stub } from "./stub.js";
 
 const dir = mkdtempSync(join(tmpdir(), "wr-cli-test-"));
 /** A throwaway adapter script; returns its path. */
@@ -180,6 +180,96 @@ describe("practice run: a practice task on another host", () => {
   });
 });
 
+describe("practice run: cloud providers through a Fleet key provider key (R7, §17)", () => {
+  const ROUTE: Record<CloudProvider, string> = {
+    "azure-openai": `/${ATTEMPT_PROXY_KEY}/openai/v1/chat/completions`,
+    foundry: `/${ATTEMPT_PROXY_KEY}/v1/messages`,
+    "bedrock-mantle": `/${ATTEMPT_PROXY_KEY}/v1/messages`,
+  };
+  const HEADER: Record<CloudProvider, string> = { "azure-openai": "api-key", foundry: "x-api-key", "bedrock-mantle": "authorization" };
+  const MODEL = fixture("r7.tasks.next.task").response as { task: { model: string } };
+  const env = (p: CloudProvider) => testEnv({ [CLOUD[p].keyVar]: CLOUD[p].key });
+
+  for (const provider of Object.keys(CLOUD) as CloudProvider[]) {
+    for (const [who, extra] of [["sample agent", []], ["Python starter", ["--adapter", "python3 starters/wr_adapter.py"]]] as const) {
+      it(`${provider}, ${who}: the key from ${CLOUD[provider].keyVar}, in that provider's header, on its route, with the chosen model`, async () => {
+        const s = await stub({ cloud: provider });
+        const r = await run(s, [...extra], { env: env(provider) });
+        assert.equal(r.code, 0, r.stderr);
+        assertTemplateA(s);
+        assert.match(r.stdout, new RegExp(`Using the key in ${CLOUD[provider].keyVar} \\(ends ${CLOUD[provider].key.slice(-4)}\\)\\.`));
+        assert.ok(s.calls.length >= 6);
+        assert.deepEqual([...new Set(s.calls.map((c) => `${c.path} ${c.keyHeader}`))], [`${ROUTE[provider]} ${HEADER[provider]}`]);
+        assert.deepEqual([...new Set(s.models)], [MODEL.task.model]);
+      });
+    }
+  }
+
+  it("the adapter gets the key only in the run's provider variable, and an OpenAI-style base URL for Azure", async () => {
+    const seen = join(dir, "cloud-env.json");
+    const spy = script("cloud-env.mjs", `import { createInterface } from "node:readline"; import { writeFileSync } from "node:fs";
+const it = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
+const msg = JSON.parse((await it.next()).value);
+writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ vars: Object.keys(process.env).filter((k) => /API_KEY|BEARER_TOKEN/.test(k)).sort(), base: msg.base_url }));
+console.log(JSON.stringify({ type: "final", output: "done" }));`);
+    const s = await stub({ cloud: "azure-openai" });
+    const r = await run(s, ["--adapter", `node ${spy}`], { env: env("azure-openai") });
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(seen, "utf8")), { vars: ["AZURE_OPENAI_API_KEY"], base: `${s.url}/${ATTEMPT_PROXY_KEY}/openai/v1` });
+  });
+
+  it("control checks send the key in the provider's header (Azure: api-key, nothing else)", async () => {
+    const s = await stub({ cloud: "azure-openai", plan: ["controls"] });
+    const r = await run(s, [], { env: env("azure-openai") });
+    assert.equal(r.code, 0, r.stderr);
+    const calls = s.seen.filter((x) => x.path === ROUTE["azure-openai"]);
+    assert.equal(calls.length, 2);
+    for (const c of calls) {
+      assert.equal(c.headers["api-key"], CLOUD["azure-openai"].key);
+      assert.equal(c.headers.authorization, undefined);
+      assert.equal(c.headers["x-api-key"], undefined);
+    }
+    assert.deepEqual(s.controlResults, [{ status: 403, reason: "model_not_allowed", ruleId: "gr_allow" }, { status: 200, reason: null, ruleId: null }]);
+  });
+
+  it("the wrong key names the Fleet key key it should be (exit 2, nothing else sent)", async () => {
+    const s = await stub({ cloud: "azure-openai" });
+    const r = await run(s, [], { env: testEnv({ AZURE_OPENAI_API_KEY: "azure-placeholder-other-key-91c0" }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /The key in AZURE_OPENAI_API_KEY \(ends 91c0\) isn't the Azure OpenAI key saved on Fleet key \(key ending 1e8c\)\. Nothing was charged\. If you've changed keys, add the new one on Fleet key, then start a new test in the dashboard and pick that key\./);
+    assert.deepEqual(s.seen.map((x) => x.path), ["/api/readiness/claim"]);
+  });
+
+  it("a short-term Bedrock key: refused before anything is sent, and in WhiteRoom's answer too (exit 2)", async () => {
+    const s = await stub({ cloud: "bedrock-mantle" });
+    const short = "bedrock-api-key-placeholder-short-term";
+    let r = await run(s, [], { env: testEnv({ AWS_BEARER_TOKEN_BEDROCK: short }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Short-term Bedrock keys can expire during a test\. Add a long-term Bedrock API key on Fleet key to test with\./);
+    assert.equal(s.seen.length, 0);
+    const answered = await stub({ route: (p) => (p === "/api/readiness/claim" ? [fixture("r7.claim.short_term_key").status, fixture("r7.claim.short_term_key").response] : undefined) });
+    r = await run(answered, [], { env: env("bedrock-mantle") });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Short-term Bedrock keys can expire during a test/);
+  });
+
+  it("several provider variables set: names them and sends nothing", async () => {
+    const s = await stub({ cloud: "foundry" });
+    const r = await run(s, [], { env: testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_FOUNDRY_API_KEY: CLOUD.foundry.key, AWS_BEARER_TOKEN_BEDROCK: CLOUD["bedrock-mantle"].key }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /ANTHROPIC_API_KEY, ANTHROPIC_FOUNDRY_API_KEY and AWS_BEARER_TOKEN_BEDROCK are all set\. Unset the ones your agent doesn't use/);
+    assert.equal(s.seen.length, 0);
+  });
+
+  it("a provider this CLI doesn't know: asks to update it before any task runs", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [200, { ...(fixture("r7.claim").response as object), session: SESSION, run: { ...(fixture("r7.claim").response as any).run, provider: "vertex" } }] : undefined) });
+    const r = await run(s);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Update the CLI/);
+    assert.equal(s.count("/api/readiness/tasks/next"), 0);
+  });
+});
+
 describe("practice run: claim errors (exit 2, nothing else sent)", () => {
   const claimOnly = (name: string) => stub({ route: (p) => (p === "/api/readiness/claim" ? [fixture(name).status, fixture(name).response] : undefined) });
 
@@ -236,7 +326,7 @@ describe("practice run: claim errors (exit 2, nothing else sent)", () => {
     const s = await stub();
     const r = await run(s, [], { env: testEnv() });
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /Set ANTHROPIC_API_KEY or OPENAI_API_KEY/);
+    assert.match(r.stderr, /Set the key your agent uses \(ANTHROPIC_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY, ANTHROPIC_FOUNDRY_API_KEY or AWS_BEARER_TOKEN_BEDROCK\)/);
     assert.equal(s.seen.length, 0);
   });
 });

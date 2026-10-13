@@ -4,9 +4,9 @@
 
 import type { PracticePreview } from '@/components/sandbox/practice/PracticeTest';
 import type { SetupData } from '@/components/sandbox/practice/PracticeSetup';
-import type { PracticeCheck, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
+import type { PracticeCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
-import { callEstimate, rerunConfirm } from '@/lib/sandbox/practice/model';
+import { callEstimate, KEY_REFUSALS, rerunConfirm } from '@/lib/sandbox/practice/model';
 
 const FLEET = 'prod-eu';
 const ID = 'r-7f3a2c1e-0b4d-4e8a-9c61-2d5f8e7a1b30';
@@ -26,8 +26,20 @@ const SETUP: SetupData = {
     rule('gr_spend', 'spend_cap', 'enforce', { dailyCap: 20, scope: 'day', unit: 'dollars' }),
   ],
   durableHolds: true,
-  proxyProviders: [],
 };
+
+/** R7: Fleet key keys as source-model lists them (placeholder prefixes, no real keys). */
+const key = (n: number, provider: string, extra: Partial<PracticeProviderKey> = {}): PracticeProviderKey => ({
+  displayPrefix: `sk-wr-${String(n).padStart(16, '0')}`, provider, endpointHost: null, region: null, keyHint: 'a1b2', createdAt: '2026-10-03T09:00:00Z',
+  eligible: true, reason: null, ...extra,
+});
+const AZURE = key(1, 'azure-openai', { endpointHost: 'acme.openai.azure.com' });
+const BEDROCK = key(2, 'bedrock-mantle', { endpointHost: 'bedrock-mantle.us-east-1.api.aws', region: 'us-east-1', keyHint: '7c3d' });
+const FOUNDRY = key(3, 'foundry', { endpointHost: 'acme.services.ai.azure.com', keyHint: '5e6f' });
+const ANTHROPIC_PROXY = key(4, 'anthropic', { keyHint: 'b5be', createdAt: '2026-09-21T09:00:00Z' });
+const ENGINE_ACCESS = key(5, 'bedrock-sigv4', { endpointHost: 'bedrock-mantle.us-west-2.api.aws', region: 'us-west-2', keyHint: 'none', eligible: false, reason: 'engine_access_key' });
+const OTHER_HOST = key(6, 'openai', { endpointHost: 'api.groq.com', keyHint: '117d', eligible: false, reason: 'other_host' });
+const cloud = (keys: PracticeProviderKey[], model: string | null) => ({ setup: SETUP, model, provider: 'cloud' as const, directKey: false, keys });
 
 const RUN: PracticeRun = {
   id: ID, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: FLEET, agentId: 'support-bot', sample: false, runs: 1, scope: null,
@@ -84,12 +96,27 @@ const preview = (p: Partial<PracticePreview>): PracticePreview => ({ fleet: FLEE
 export const PRACTICE_STATES = {
   setup: preview({ setup: SETUP, model: 'claude-haiku-4-5' }),
   'setup-new-agent': preview({ setup: { ...SETUP, rules: [], durableHolds: false }, model: null }),
-  'setup-proxy': preview({ setup: { ...SETUP, proxyProviders: ['Azure OpenAI', 'AWS Bedrock'] }, model: 'claude-haiku-4-5' }),
   'setup-blocked': preview({ setup: SETUP, model: 'gpt-4o', provider: 'cloud' }),
+  // R7: cloud providers through a Fleet key key.
+  'setup-azure': preview(cloud([AZURE], 'support-gpt4o-mini')),
+  'setup-azure-no-model': preview(cloud([AZURE], null)),
+  'setup-bedrock': preview(cloud([BEDROCK], 'anthropic.claude-haiku-4-5')),
+  'setup-foundry': preview(cloud([FOUNDRY], 'claude-haiku-4-5')),
+  'setup-keys': preview(cloud([AZURE, BEDROCK, FOUNDRY, ANTHROPIC_PROXY, ENGINE_ACCESS, OTHER_HOST], 'support-gpt4o-mini')),
+  'setup-proxy-url': preview({ setup: SETUP, model: 'claude-haiku-4-5', provider: 'proxy-url', directKey: false, keys: [ANTHROPIC_PROXY] }),
+  'setup-no-cloud-key': preview(cloud([ENGINE_ACCESS, OTHER_HOST], 'gpt-4o')),
+  'setup-bedrock-role': preview({ setup: SETUP, model: 'anthropic.claude-haiku-4-5', provider: 'cloud', blocked: 'bedrock_role' }),
+  'refused-key-gone': preview({ ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.key_not_found, reason: 'key_not_found' } }),
+  'refused-engine-access': preview({ ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.engine_access_key, reason: 'engine_access_key' } }),
+  'refused-other-host': preview({ ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.other_host, reason: 'other_host' } }),
+  'refused-model': preview({ ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.model_required, reason: 'model_required' } }),
   'refused-today': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You can start more tomorrow (00:00 UTC).', reason: 'starts_today' } }),
   'refused-open': preview({ setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You already have a practice test open.', reason: 'owner_busy', run: { id: ID, lifecycle: 'active' } } }),
   code: preview({ run: RUN, code: CODE }),
   'code-sample': preview({ run: { ...RUN, sample: true }, code: CODE }),
+  'code-azure': preview({ run: RUN, code: CODE, model: 'support-gpt4o-mini', key: { provider: 'azure-openai', keyHint: 'a1b2' } }),
+  'code-bedrock': preview({ run: RUN, code: CODE, model: 'anthropic.claude-haiku-4-5', key: { provider: 'bedrock-mantle', keyHint: '7c3d' } }),
+  'code-foundry': preview({ run: RUN, code: CODE, model: 'claude-haiku-4-5', key: { provider: 'foundry', keyHint: '5e6f' } }),
   'code-gone': preview({ run: { ...RUN, codeTriesLeft: 2 }, code: null }),
   running: preview({ run: { ...RUN, lifecycle: 'active', runs: 3, startedAt: ago(12), codeExpiresAt: null, codeTriesLeft: null, progress: { done: 4, total: 18, lastContactAt: ago(0.2) } } }),
   lost: preview({ run: { ...RUN, lifecycle: 'active', startedAt: ago(9), codeExpiresAt: null, codeTriesLeft: null, progress: { done: 2, total: 6, lastContactAt: ago(2) } } }),
@@ -97,6 +124,8 @@ export const PRACTICE_STATES = {
   passed: preview(finished(REPORT)),
   'passed-1run': preview(finished({ ...REPORT, runs: 1 })),
   'passed-sample': preview(finished({ ...REPORT, runs: 1, sample: true })),
+  'passed-azure': preview(finished({ ...REPORT, tested: { ...REPORT.tested, provider: 'azure-openai', modelRequested: 'support-gpt4o-mini', modelsUsed: ['gpt-4o-mini-2024-07-18'] } })),
+  'incomplete-bedrock': preview(finished({ ...INCOMPLETE, tested: { ...REPORT.tested, provider: 'bedrock-mantle', modelRequested: 'anthropic.claude-haiku-4-5', modelsUsed: ['anthropic.claude-haiku-4-5'] } })),
   failed: preview(finished(FAILED)),
   incomplete: preview(finished(INCOMPLETE)),
   ended: preview(finished(null, { endReason: 'ended_by_owner' })),

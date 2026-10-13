@@ -3,7 +3,7 @@
 import { type RefObject, useState } from 'react';
 import { CopyButton, FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyVariable, lostContact, progressLine, type StarterLang, taskList,
+  BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, lostContact, progressLine, type PracticeKeyChoice, type StarterLang, taskList,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
@@ -23,10 +23,11 @@ function Command({ text, label }: { text: string; label: string }) {
  * agent), the exact command, then the run code it asks for. The run code is
  * never part of a command and is shown only from this page's memory.
  */
-function TerminalSteps({ run, code, model, now, busy, onNewCode }: {
+function TerminalSteps({ run, code, model, keyChoice, now, busy, onNewCode }: {
   run: PracticeRun;
   code: RunCode | null;
   model: string | null;
+  keyChoice: PracticeKeyChoice | null;
   now: number;
   busy: boolean;
   onNewCode: () => void;
@@ -35,6 +36,7 @@ function TerminalSteps({ run, code, model, now, busy, onNewCode }: {
   const cmd = cliCommands(run.sample, lang);
   const left = code ? codeCountdown(code.codeExpiresAt, now) : null;
   const tries = run.codeTriesLeft;
+  const key = keyLine(keyChoice, model, run.sourceFleetId);
   let n = 0;
   return <>
     {!CLI_ON_NPM && (
@@ -59,7 +61,7 @@ function TerminalSteps({ run, code, model, now, busy, onNewCode }: {
     <div className={p.step}>
       <p className={p.stepTitle}>{++n}. Run the test</p>
       <Command text={cmd.run} label="Copy the test command" />
-      <p className={p.meta}>Needs Node 20 or later. Set <code>{keyVariable(model)}</code> to the key your agent uses with {run.sourceFleetId}. Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.</p>
+      <p className={p.meta}>Needs Node 20 or later. {key.before}<code>{key.keyVar}</code>{key.after} Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.</p>
       <p className={p.meta}>If the terminal says <code>Unknown command: practice</code>, an older WhiteRoom CLI ran instead: {CLI_ON_NPM ? 'copy the command again, it names the right version.' : 'install the beta above, then run the command again.'}</p>
     </div>
     <div className={p.step}>
@@ -76,11 +78,13 @@ function TerminalSteps({ run, code, model, now, busy, onNewCode }: {
 }
 
 /** A practice test between Start and its result: waiting for the CLI, running, lost contact, finishing. */
-export function PracticeRunView({ run, code, model, now, busy, heading, onNewCode, onEnd }: {
+export function PracticeRunView({ run, code, model, keyChoice = null, now, busy, heading, onNewCode, onEnd }: {
   run: PracticeRun;
   heading?: RefObject<HTMLHeadingElement | null>;
   code: RunCode | null;
   model: string | null;
+  /** R7: the Fleet key key the test was started with; null for the fleet's own key, or when this page doesn't know. */
+  keyChoice?: PracticeKeyChoice | null;
   now: number;
   busy: boolean;
   onNewCode: () => void;
@@ -95,7 +99,7 @@ export function PracticeRunView({ run, code, model, now, busy, heading, onNewCod
       {run.lifecycle === 'draft' ? <>
         <p className={s.pageSub}>On the computer where your agent runs. This page updates on its own once the test starts.</p>
         <div className={s.card}>
-          <TerminalSteps run={run} code={code} model={model} now={now} busy={busy} onNewCode={onNewCode} />
+          <TerminalSteps run={run} code={code} model={model} keyChoice={keyChoice} now={now} busy={busy} onNewCode={onNewCode} />
           <p className={s.small} role="status">Waiting for the CLI to start the test…</p>
         </div>
       </> : <>

@@ -5,6 +5,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Readable } from "node:stream";
+import { isKeyVar, type KeyVar } from "./preflight.js";
 import { clean, say } from "./text.js";
 
 export const MAX_LINE_BYTES = 1024 * 1024;
@@ -35,11 +36,11 @@ export type Outcome =
 
 export type ToolAnswer = { result: unknown } | { end: unknown };
 
-/** The adapter's environment: the CLI's, minus WhiteRoom's settings, with only the provider key added. */
-export function childEnv(parent: NodeJS.ProcessEnv, keyVar: string, key: string): NodeJS.ProcessEnv {
+/** The adapter's environment: the CLI's, minus WhiteRoom's settings and every provider key, with only the run's key added. */
+export function childEnv(parent: NodeJS.ProcessEnv, keyVar: KeyVar, key: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(parent)) {
-    if (!/^WHITEROOM_/i.test(k) && k !== "ANTHROPIC_API_KEY" && k !== "OPENAI_API_KEY") env[k] = v;
+    if (!/^WHITEROOM_/i.test(k) && !isKeyVar(k)) env[k] = v;
   }
   env[keyVar] = key;
   return env;

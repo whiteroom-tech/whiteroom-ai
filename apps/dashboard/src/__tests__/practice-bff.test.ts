@@ -45,6 +45,17 @@ describe('practice BFF', () => {
     expect(JSON.parse(String(init.body))).toEqual({ fleet: 'prod-eu', sample: false, runs: 3, agent: 'support-bot', model: 'claude-haiku-4-5', startedBy: 'u1' });
   });
 
+  it('R7: forwards the picked Fleet key key by its display prefix, and nothing that isn’t one', async () => {
+    const prefix = `sk-wr-${'0'.repeat(15)}1`;
+    await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', model: 'support-gpt4o-mini', proxyKeyDisplayPrefix: prefix });
+    expect(JSON.parse(String(sent().init.body))).toEqual({ fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', model: 'support-gpt4o-mini', proxyKeyDisplayPrefix: prefix, startedBy: 'u1' });
+    engine.mockClear();
+    for (const bad of ['sk-wr-1a2b...', `sk-wr-${'0'.repeat(40)}`, 'sk-ant-placeholder', 7]) {
+      expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', proxyKeyDisplayPrefix: bad })).status).toBe(400);
+    }
+    expect(engine).not.toHaveBeenCalled();
+  });
+
   it('refuses anyone who doesn’t own the fleet, before the engine is asked', async () => {
     access.mockResolvedValue({ status: 403, error: 'Only this fleet’s owner can change its controls and settings.' });
     const res = await get(undefined, 'fleet=prod-eu');

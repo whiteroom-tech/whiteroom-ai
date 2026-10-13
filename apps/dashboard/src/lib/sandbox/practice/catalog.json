@@ -115,5 +115,14 @@
     "provider_refused": "Test problem (not your agent): your model provider refused some of the calls. Rerun this check to try again.",
     "summary_in_baseline": "Test problem (not your agent): WhiteRoom saved a summary during a task meant to finish without one. Rerun this check to try again.",
     "control_unclear": "Test problem (not your agent): WhiteRoom couldn't tell what happened to a check call, often because a network limit refused it before it reached WhiteRoom. Run the test from another network if you can. Rerun this check to try again."
+  },
+  "keyRefusals": {
+    "engine_access_key": "This key uses WhiteRoom's own cloud access, so there's no key of yours to test with. Add a provider key on Fleet key, then pick it.",
+    "other_host": "This key sends its calls to a host other than its provider's own. Practice tests don't support that.",
+    "unsupported_provider": "Practice tests don't support this key's provider.",
+    "short_term_key": "This is a short-term Bedrock key, which expires within hours. Add a long-term Bedrock API key on Fleet key, then start a new test and pick it.",
+    "bedrock_role": "This fleet reaches AWS Bedrock through an IAM role, which practice tests don't support.",
+    "key_not_found": "That key isn't on Fleet key any more. Pick another key.",
+    "model_required": "Enter the model your agent uses: the deployment name on Azure, or a Bedrock model ID like anthropic.claude-haiku-4-5."
   }
 }

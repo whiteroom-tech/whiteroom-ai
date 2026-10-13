@@ -1174,7 +1174,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
                 {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)} />}
                 <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
               </div>
-              {!liveCloud && practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: 5 practice tasks plus a check of your controls, about 30 minutes.</p>}
+              {practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: 5 practice tasks plus a check of your controls, about 30 minutes.</p>}
             </div>
           )}
 

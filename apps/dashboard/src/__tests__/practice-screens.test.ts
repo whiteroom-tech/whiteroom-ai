@@ -44,16 +44,15 @@ describe('practice test screens', () => {
     expect(radios[0]).toContain('checked=""');
     expect(radios[1]).toContain('disabled=""');
     expect(text(render('setup-new-agent'))).toContain('Pause and Stop: not checked on this fleet.');
-    expect(text(render('setup-proxy'))).toContain('Practice tests can’t yet run agents that call through a WhiteRoom proxy URL (Azure OpenAI, AWS Bedrock).');
   });
 
-  it('a fleet whose calls go through a proxy URL or a cloud provider is refused before Start, in Start’s own words', () => {
+  it('a fleet whose calls go through a proxy URL or a cloud provider, with no Fleet key key to pick, is refused before Start', () => {
     const startButton = (html: string) => html.match(/<button[^>]*>Start test<\/button>/)?.[0] ?? '';
-    for (const provider of ['proxy-url', 'cloud'] as const) {
-      const html = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider } }));
-      expect(text(html)).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');
-      expect(startButton(html)).toContain('disabled=""');
-    }
+    const blocked = (provider: 'proxy-url' | 'cloud') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider } }));
+    expect(text(blocked('proxy-url'))).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');
+    expect(text(blocked('cloud'))).toContain('To test an agent that uses Azure OpenAI, Claude on Azure (Foundry) or AWS Bedrock, add its key on Fleet key , then come back and pick it here.');
+    expect(blocked('cloud')).toMatch(/<a[^>]*href="\/fleet-key"[^>]*>Fleet key<\/a>/);
+    for (const provider of ['proxy-url', 'cloud'] as const) expect(startButton(blocked(provider))).toContain('disabled=""');
     // The sample agent calls the provider itself: a cloud fleet can still run it; a proxy-URL fleet can't.
     const sampleOnly = (provider: 'cloud' | 'proxy-url') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider, setup: { ...PRACTICE_STATES['setup-blocked'].setup!, agents: [] } } }));
     expect(text(sampleOnly('cloud'))).not.toContain('provider yet');
@@ -145,6 +144,92 @@ describe('practice test screens', () => {
   });
 });
 
+describe('practice tests on cloud providers (R7)', () => {
+  const startButton = (html: string) => html.match(/<button[^>]*>Start test<\/button>/)?.[0] ?? '';
+
+  it('one eligible key is named as text; its provider labels the model field, prefilled, and names the key variable', () => {
+    for (const [state, label, keyText, keyLine, modelValue] of [
+      ['setup-azure', 'Azure deployment name', 'Key: Azure OpenAI · acme.openai.azure.com · key ending a1b2 · added Oct 3, from Fleet key',
+        'Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).', 'support-gpt4o-mini'],
+      ['setup-bedrock', 'Bedrock model ID · like anthropic.claude-haiku-4-5', 'Key: AWS Bedrock · us-east-1 · key ending 7c3d · added Oct 3, from Fleet key',
+        'Run this where AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d).', 'anthropic.claude-haiku-4-5'],
+      ['setup-foundry', 'Foundry model', 'Key: Claude on Azure (Foundry) · acme.services.ai.azure.com · key ending 5e6f · added Oct 3, from Fleet key',
+        'Run this where ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f).', 'claude-haiku-4-5'],
+    ] as const) {
+      const html = render(state);
+      const t = text(html);
+      for (const want of [label, keyText, keyLine]) expect(t, state).toContain(want);
+      expect(html).not.toContain('id="practice-key"');
+      const input = html.match(/<input id="practice-model"[^>]*>/)?.[0] ?? '';
+      expect(input).toContain(`value="${modelValue}"`);
+      expect(input).toContain('required=""');
+      expect(startButton(html)).not.toContain('disabled=""');
+    }
+    expect(text(render('setup-azure'))).toContain('Never more than 120 calls, billed by your Azure account. That includes control checks and memory summaries.');
+    expect(text(render('setup-foundry'))).toContain('billed by your Azure account');
+    expect(text(render('setup-bedrock'))).toMatch(/approx\. \$[\d.]+–\$[\d.]+ at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account/);
+  });
+
+  it('a cloud key with no model yet: Start waits for one', () => {
+    const html = render('setup-azure-no-model');
+    expect(html).toMatch(/<input id="practice-model"[^>]*value=""/);
+    expect(startButton(html)).toContain('disabled=""');
+    expect(text(html)).toContain('Enter the deployment name to start.');
+  });
+
+  it('several keys: a picker in Fleet key’s words, and the keys it can’t use with why', () => {
+    const html = render('setup-keys');
+    const options = [...html.matchAll(/<option value="(sk-wr-[^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => m[2]);
+    expect(options).toEqual([
+      'Azure OpenAI · acme.openai.azure.com · key ending a1b2 · added Oct 3', 'AWS Bedrock · us-east-1 · key ending 7c3d · added Oct 3',
+      'Claude on Azure (Foundry) · acme.services.ai.azure.com · key ending 5e6f · added Oct 3', 'Anthropic · key ending b5be · added Sep 21',
+    ]);
+    const t = text(html);
+    expect(t).toContain('Fleet key keys a practice test can’t use:');
+    expect(t).toContain('AWS Bedrock · us-west-2 · added Oct 3: This key uses WhiteRoom\'s own cloud access, so there\'s no key of yours to test with. Add a provider key on Fleet key, then pick it.');
+    expect(t).toContain('OpenAI · api.groq.com · key ending 117d · added Oct 3: This key sends its calls to a host other than its provider\'s own. Practice tests don\'t support that.');
+  });
+
+  it('a proxy URL fleet with an Anthropic key on Fleet key can now run; one with only unusable keys says why', () => {
+    const html = render('setup-proxy-url');
+    expect(text(html)).toContain('Run this where ANTHROPIC_API_KEY is set to the same Anthropic key you added on Fleet key (key ending b5be).');
+    expect(text(html)).not.toContain('provider yet');
+    expect(startButton(html)).not.toContain('disabled=""');
+    const none = render('setup-no-cloud-key');
+    expect(text(none)).toContain('add its key on Fleet key');
+    expect(text(none)).toContain('Fleet key keys a practice test can’t use:');
+    expect(startButton(none)).toContain('disabled=""');
+  });
+
+  it('a fleet on a Bedrock IAM role is refused for both agents, in the catalog’s words', () => {
+    const html = render('setup-bedrock-role');
+    expect(text(html)).toContain('This fleet reaches AWS Bedrock through an IAM role, which practice tests don\'t support. Use the connection test instead: Test my agent →');
+    expect(startButton(html)).toContain('disabled=""');
+    const sample = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-bedrock-role'], setup: { ...PRACTICE_STATES['setup-bedrock-role'].setup!, agents: [] } } }));
+    expect(startButton(sample)).toContain('disabled=""');
+  });
+
+  it('Start’s key refusals say what to do next', () => {
+    expect(text(render('refused-key-gone'))).toContain('That key isn\'t on Fleet key any more. Pick another key. Open Fleet key →');
+    expect(text(render('refused-engine-access'))).toContain('Open Fleet key →');
+    expect(text(render('refused-other-host'))).toContain('Use the connection test instead: Test my agent →');
+    expect(text(render('refused-model'))).toContain('Enter the model your agent uses: the deployment name on Azure');
+  });
+
+  it('the terminal steps name the key variable and Fleet key key for each provider', () => {
+    expect(text(render('code-azure'))).toContain('Needs Node 20 or later. Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2). Keep');
+    expect(text(render('code-bedrock'))).toContain('AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d)');
+    expect(text(render('code-foundry'))).toContain('ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f)');
+    expect(text(render('code'))).toContain('Set ANTHROPIC_API_KEY or OPENAI_API_KEY to the key your agent uses with prod-eu.');
+  });
+
+  it('results say which provider was tested, and a provider refusal names it', () => {
+    expect(text(render('passed-azure'))).toContain('Provider Azure OpenAI (the key you picked from Fleet key)');
+    expect(text(render('passed'))).not.toContain('Provider');
+    expect(text(render('incomplete-bedrock'))).toContain('Test problem (not your agent): AWS Bedrock hit a rate limit or quota (HTTP 429).');
+  });
+});
+
 describe('the Sandbox screens practice tests are added to', () => {
   const sandboxOnly = [
     { sandboxId: 's2', destroyedAt: '2026-10-11T10:00:00Z', overall: 'pass' as const, totalTasks: 4, isTrial: false },
@@ -187,6 +272,18 @@ describe('the Sandbox screens practice tests are added to', () => {
     const withLine = flow({ fleet: 'prod-eu', rows: [], open: null });
     expect(withLine).toContain(line);
     // Everything else on the card is as it was.
+    expect(withLine.replace(` ${line}`, '')).toBe(without);
+  });
+
+  it('a cloud connection test that passed points to practice tests too (R7)', () => {
+    const cloud = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [], provider: 'azure-openai', endpointHost: 'acme.openai.azure.com',
+      controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
+    const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: cloud, previewPractice: practice })));
+    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks plus a check of your controls, about 30 minutes.';
+    const without = flow({ fleet: null, rows: null, open: null });
+    expect(without).toContain('Ready to go live');
+    const withLine = flow({ fleet: 'prod-eu', rows: [], open: null });
+    expect(withLine).toContain(line);
     expect(withLine.replace(` ${line}`, '')).toBe(without);
   });
 });

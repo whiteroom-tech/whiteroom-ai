@@ -1,4 +1,4 @@
 contract.json and dashboard-sandbox-checks.json are copied unchanged from the
 engine's practice-test contract fixtures (apps/engine/fixtures/readiness) at
-engine commit ff2b40dc, as is src/lib/sandbox/practice/catalog.json.
+engine commit d50dd97f, as is src/lib/sandbox/practice/catalog.json.
 Refresh by copying them again; never edit them here.
