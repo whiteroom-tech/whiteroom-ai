@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { CATALOG } from "../src/practice/catalog.js";
-import { alive, ATTEMPT_PROXY_KEY, cli, CLOUD, CODE, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type CloudProvider, type Stub } from "./stub.js";
+import { alive, ATTEMPT_PROXY_KEY, cli, CLOUD, CODE, finishedNotPassed, fixture, KEY, OPENAI_KEY, SESSION, startStub, testEnv, waitFor, type CloudProvider, type Stub } from "./stub.js";
 
 const dir = mkdtempSync(join(tmpdir(), "wr-cli-test-"));
 /** A throwaway adapter script; returns its path. */
@@ -417,17 +417,30 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     });
   }
 
-  it("a run that already finished: tasks/next's finished answer shows the result, or where to see it, never a refusal", async () => {
-    const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [409, { lifecycle: "finished", reason: "finished" }] : undefined) });
-    const r = await run(s);
-    assert.equal(r.code, 0, r.stderr);
-    assert.match(r.stdout, /The practice test finished\. See the results in the dashboard \(.*\), under Past tests\./);
-    assert.doesNotMatch(r.stdout + r.stderr, /was updated|doesn't understand/);
-    const done = fixture("tasks.next.done").response as any;
-    const withReport = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [409, { lifecycle: "finished", reason: "finished", report: done.report }] : undefined) });
-    const shown = await run(withReport);
-    assert.equal(shown.code, 0, shown.stderr);
-    assert.match(shown.stdout, /Passed · all \d+ checks · 3 runs/);
+  describe("a run that already finished (409 finished): its result, exit by verdict, never a refusal", () => {
+    it("with the result in the reply", async () => {
+      const s = await stub({ route: (p) => (p === "/api/readiness/tasks/next" ? [409, finishedNotPassed()] : undefined) });
+      const r = await run(s);
+      assert.equal(r.code, 1, r.stderr);
+      assert.match(r.stdout, /Didn't pass · 1 check failed/);
+      assert.doesNotMatch(r.stdout + r.stderr, /was updated|doesn't understand/);
+    });
+
+    it("without it (an older WhiteRoom): tasks/next replays the result once", async () => {
+      const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [409, fixture("session.finished").response] : undefined) });
+      const r = await run(s);
+      assert.equal(r.code, 0, r.stderr);
+      assert.match(r.stdout, /Passed · all \d+ checks · 3 runs/);
+      assert.equal(s.count("/api/readiness/tasks/next"), 3);
+    });
+
+    it("no result from the replay either: says where to see it, exit 3", async () => {
+      const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n >= 2 ? [409, fixture("session.finished").response] : undefined) });
+      const r = await run(s);
+      assert.equal(r.code, 3);
+      assert.match(r.stdout, /The practice test finished\. See the results in the dashboard \(.*\), under Past tests\./);
+      assert.equal(s.count("/api/readiness/tasks/next"), 3);
+    });
   });
 
   it("a discarded practice task is stopped and run again, without counting", async () => {
@@ -452,6 +465,21 @@ describe("practice run: the session ends mid-run (exit 3)", () => {
     assert.match(r.stderr, /The practice tasks your agent finished are in the results/);
     assert.deepEqual(s.finals.map((f) => f.ended), ["adapter_exited"]);
     assert.deepEqual(s.cancels, [{ keepResults: true }]);
+  });
+
+  it("an adapter crash whose cancel WhiteRoom didn't confirm says so, and still exits 3", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/cancel" ? [500, { error: "x" }] : undefined) });
+    const r = await run(s, ["--adapter", `node ${script("crash2.mjs", "process.exit(4);")}`]);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /The test ended early\. WhiteRoom didn't confirm it kept the results: check Past tests in the dashboard/);
+    assert.doesNotMatch(r.stderr, /are in the results/);
+  });
+
+  it("an adapter crash on a run that finished meanwhile shows that result (exit by verdict)", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/cancel" ? [409, finishedNotPassed()] : undefined) });
+    const r = await run(s, ["--adapter", `node ${script("crash3.mjs", "process.exit(4);")}`]);
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stdout, /Didn't pass · 1 check failed/);
   });
 
   it("an adapter crash on a task WhiteRoom dropped runs the task again, without ending the run", async () => {

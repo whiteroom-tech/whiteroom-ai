@@ -71,8 +71,8 @@ interface ControlRequest {
  */
 function sessionEnding(r: Reply): Ending {
   const reason = r.body?.reason;
-  // The run already finished (WhiteRoom finished it meanwhile): its result, not a refusal.
-  if (r.body?.done || reason === "finished") return r.body?.report ? results(r.body.report) : { ...ending(0, copy.finished(r.body?.verdict)), result: true };
+  // The run already finished (WhiteRoom finished it meanwhile): its result, not a refusal. Without one, tasks/next replays it.
+  if (r.body?.done || reason === "finished") return r.body?.report ? results(r.body.report) : { ...ending(3, copy.finished(r.body?.verdict)), result: true, replay: true };
   if (r.status === REDIRECTED) return ending(3, copy.redirected);
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
@@ -259,9 +259,11 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     // (it runs again); then the test ends with a result over the tasks done so far (exit 3).
     const r = await send(null, "adapter_exited");
     if (r && r.status !== 200) return RESTART.has(r.body?.reason) ? (warn(copy.restart), null) : sessionEnding(r);
-    await engine.cancel(true);
-    if (out.kind === "exited") return ending(3, ...copy.adapterCrashed(out.how, out.tail));
-    return ending(3, copy.adapterBroke(out.kind === "broke" ? out.why : why === "tool_limit" ? copy.tooManyTools : copy.badTool), copy.keptResults);
+    const c = await engine.cancel(true);
+    if (c && c.status !== 200 && c.body?.reason === "finished") return sessionEnding(c); // It finished meanwhile: its result wins.
+    const kept = c?.status === 200 && c.body?.lifecycle === "finished" ? copy.keptResults : copy.keptUnconfirmed;
+    if (out.kind === "exited") return ending(3, ...copy.adapterCrashed(out.how, out.tail), kept);
+    return ending(3, copy.adapterBroke(out.kind === "broke" ? out.why : why === "tool_limit" ? copy.tooManyTools : copy.badTool), kept);
   };
 
   /** The control checks: each call WhiteRoom plans, sent with the key, its response reported back (§6). */
@@ -298,6 +300,16 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     }
   };
 
+  /** Shows how the test ended; a finished run whose reply had no result gets it from tasks/next (one try). */
+  const end = async (e: Ending): Promise<number> => {
+    if (e.replay) {
+      engine.signal = null;
+      const r = await engine.post("/api/readiness/tasks/next", { key }).catch(() => null);
+      if (r?.status === 200 && r.body?.done && r.body.report) return print(results(r.body.report));
+    }
+    return fail(e);
+  };
+
   // ── The practice tasks, until the result ──
   try {
     while (!halt.why) {
@@ -309,14 +321,15 @@ export async function practiceRun(a: RunArgs): Promise<number> {
         if (err instanceof Unreachable) return fail(ending(3, copy.unreachable));
         throw err;
       }
-      if (next.status !== 200 || next.body?.done) return fail(sessionEnding(next));
+      if (next.status !== 200 || next.body?.done) return end(sessionEnding(next));
       const b = next.body;
       const e = b?.task ? await practiceTask(b.task, b.progress) : b?.controls ? await controlChecks(b.controls) : ending(3, copy.cliOutdated);
-      if (e && !halt.why) return fail(e);
+      // A result wins over how the session stopped meanwhile.
+      if (e && (!halt.why || e.result)) return end(e);
     }
     // Ctrl+C or a signal ends the run, so the dashboard doesn't wait for this computer.
     if (halt.cancel) await engine.cancel();
-    return fail(halt.why!);
+    return end(halt.why!);
   } finally {
     clearInterval(heartbeat);
     process.off("SIGINT", onSigint);

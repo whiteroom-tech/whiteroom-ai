@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { alive, cli, fixture, startStub } from "./stub.js";
+import { alive, cli, finishedNotPassed, fixture, startStub } from "./stub.js";
 
 /** A heartbeat answered with `reply` while the adapter hangs (with a grandchild in its group). */
 async function heartbeatSays(reply: [number, unknown]) {
@@ -45,5 +45,18 @@ describe("the heartbeat", { concurrency: true }, () => {
     assert.match(r.stdout, /Passed · all \d+ checks · 3 runs/);
     assert.doesNotMatch(r.stderr, /was updated/);
     assert.deepEqual(s.cancels, []);
+  });
+
+  it("a heartbeat's 409 finished with the result exits by its verdict", { timeout: 60_000 }, async () => {
+    const { r } = await heartbeatSays([409, finishedNotPassed()]);
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stdout, /Didn't pass · 1 check failed/);
+  });
+
+  it("a heartbeat's 409 finished without the result gets it from tasks/next", { timeout: 60_000 }, async () => {
+    const { r, s } = await heartbeatSays([409, fixture("session.finished").response]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Passed · all \d+ checks · 3 runs/);
+    assert.equal(s.count("/api/readiness/tasks/next"), 2);
   });
 });

@@ -33,6 +33,14 @@ export const fixture = (name: string): Entry => {
   return structuredClone(e);
 };
 
+/** session.finished as WhiteRoom sends it now: with the result, here one where the first check failed. */
+export function finishedNotPassed(): any {
+  const { report } = fixture("tasks.next.done").response as any;
+  report.verdict = "not_passed";
+  report.checks[0].status = "failed";
+  return { ...(fixture("session.finished").response as object), verdict: "not_passed", report };
+}
+
 /** A body's shape: its keys, all the way down, except values the CLI passes through untouched. */
 function shape(v: unknown, key = ""): unknown {
   if (["input", "result", "output", "code", "key", "version", "adapter"].includes(key)) return "*";

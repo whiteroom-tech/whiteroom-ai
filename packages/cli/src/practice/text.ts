@@ -37,10 +37,10 @@ export interface Ending {
   lines: string[];
   /** The test's result (printed on stdout), not a refusal. */
   result?: true;
+  /** The run finished, but the reply didn't carry its result: ask tasks/next for it. */
+  replay?: true;
 }
 export const ending = (code: Ending["code"], ...lines: string[]): Ending => ({ code, lines });
-
-const keptResults = `The test ended early. The practice tasks your agent finished are in the results: see the dashboard (${DASHBOARD}), under Past tests.`;
 
 export const copy = {
   ignoringUrl: "Ignoring WHITEROOM_URL: practice tests always run on WhiteRoom.",
@@ -98,10 +98,10 @@ export const copy = {
     `Your adapter stopped before it finished the practice task (${code}).`,
     ...(tail.length ? ["Its last lines:", ...tail.map((l) => `  ${l}`)] : []),
     "Run the adapter on its own to see why.",
-    keptResults,
   ],
   adapterBroke: (why: string) => `Your adapter ${why}, so it was stopped.`,
-  keptResults,
+  keptResults: `The test ended early. The practice tasks your agent finished are in the results: see the dashboard (${DASHBOARD}), under Past tests.`,
+  keptUnconfirmed: `The test ended early. WhiteRoom didn't confirm it kept the results: check Past tests in the dashboard (${DASHBOARD}).`,
   tooManyTools: "made more test-tool calls than a practice task allows",
   badTool: "sent a tool call WhiteRoom couldn't accept",
   noTerminal: "There's no terminal to paste the run code into. Pipe it in with --code-stdin instead.",

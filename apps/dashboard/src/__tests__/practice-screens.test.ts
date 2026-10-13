@@ -132,6 +132,10 @@ describe('practice test screens', () => {
     expect(text(render('running'))).toContain('Practice tasks: 4 of 18 done (run 1 of 3)');
     expect(text(render('lost'))).toContain('Lost contact with your computer.');
     expect(text(render('finalizing'))).toContain('Working out the result');
+    expect(text(render('finalizing'))).toContain('Every practice task is done.');
+    // A run ended early (a crashed adapter) never claims every task is done.
+    expect(text(render('finalizing-early'))).toContain('Working out the result from the practice tasks that ran.');
+    expect(text(render('finalizing-early'))).not.toContain('Every practice task is done');
     expect(render('finalizing')).not.toContain('End test');
   });
 

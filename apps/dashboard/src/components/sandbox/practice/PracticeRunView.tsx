@@ -78,6 +78,9 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
 }
 
 /** A practice test between Start and its result: waiting for the CLI, running, lost contact, finishing. */
+/** Every practice task ran (not a run ended early, like a crashed adapter's, whose result covers the tasks done). */
+const allDone = (run: PracticeRun) => !run.endReason && !!run.progress && run.progress.done >= run.progress.total;
+
 export function PracticeRunView({ run, code, keyChoice = null, now, busy, heading, onNewCode, onEnd }: {
   run: PracticeRun;
   heading?: RefObject<HTMLHeadingElement | null>;
@@ -104,7 +107,7 @@ export function PracticeRunView({ run, code, keyChoice = null, now, busy, headin
       </> : <>
         {lost && <div className={s.error} role="alert">Lost contact with your computer. Check it’s awake and online, with the terminal still open. The test ends on its own after 5 minutes without contact.</div>}
         <div className={s.card}>
-          <p style={{ color: 'var(--tx)' }}>{run.lifecycle === 'finalizing' ? 'Every practice task is done. The result shows here in a moment.' : progressLine(run, now)}</p>
+          <p style={{ color: 'var(--tx)' }}>{run.lifecycle !== 'finalizing' ? progressLine(run, now) : allDone(run) ? 'Every practice task is done. The result shows here in a moment.' : 'Working out the result from the practice tasks that ran. It shows here in a moment.'}</p>
           {run.lifecycle === 'active' && (
             <ol className={p.tasks} aria-label="Practice tasks">
               {taskList(run).map((t, i) => (
