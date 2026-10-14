@@ -82,6 +82,8 @@ export interface StubOptions {
   legacyClaim?: boolean;
   /** The fake model's first call on each practice task is answered twice as WhiteRoom does while it saves a summary. */
   summaryFirst?: boolean;
+  /** Every model call on a task is answered once as WhiteRoom does while it saves a summary, then served. */
+  summaryEach?: boolean;
   /** The result tasks/next returns at the end (default: the fixture's). */
   done?: unknown;
   /** The practice task's model (default: the fixture's); null means none was chosen. */
@@ -113,7 +115,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const counts = new Map<string, number>();
   const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[], cancels: [] as unknown[] };
   let attempt = 0;
-  let current: { id: string; reads: Set<string>; summaryWaits: number } | null = null;
+  let current: { id: string; reads: Set<string>; summaryWaits: number; waitedAt?: number } | null = null;
   let controlSteps = 0;
   let origin = "";
   let provider = "anthropic";
@@ -139,7 +141,10 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
         if (body.key.startsWith("bedrock-api-key-")) return fromFixture("r7.claim.short_term_key");
         if (body.key !== CLOUD[o.cloud].key) return fromFixture("r7.claim.key_mismatch", (r) => Object.assign(r, { provider: o.cloud }));
         provider = o.cloud;
-        return fromFixture("r7.claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } }));
+        return fromFixture("r7.claim", (r) => {
+          Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } });
+          if (o.legacyClaim) { delete r.run.practiceTasks; delete r.run.controls; }
+        });
       }
       if (body.key !== KEY && body.key !== OPENAI_KEY) return fromFixture("claim.key_mismatch");
       provider = body.key === KEY ? "anthropic" : "openai";
@@ -243,6 +248,10 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
     // Twice in a row, as a summary that takes a while: the starters say so once.
     if (o.summaryFirst && current && current.summaryWaits < 2) {
       current.summaryWaits++;
+      return [429, { type: "error", error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }];
+    }
+    if (o.summaryEach && current && current.waitedAt !== body.messages.length) {
+      current.waitedAt = body.messages.length;
       return [429, { type: "error", error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }];
     }
     // What the agent has done so far, from the conversation.

@@ -177,6 +177,16 @@ describe("practice run: control checks", () => {
     assert.equal(r.stdout.match(/Checking your controls/g)?.length, 2);
   });
 
+  for (const [who, adapter] of [["JS starter", "node starters/wr-adapter.mjs"], ["Python starter", "python3 starters/wr_adapter.py"]] as const) {
+    it(`${who}: says "saving a summary" once per task, though every model call waits for one`, async () => {
+      const s = await stub({ summaryEach: true });
+      const r = await run(s, ["--adapter", adapter]);
+      assert.equal(r.code, 0, r.stderr);
+      assert.ok(s.models.length > 2, "the task made several model calls");
+      assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);
+    });
+  }
+
   it("an engine before practiceTasks: counts its every step, as it did", async () => {
     const s = await stub({ plan: ["A", "controls"], legacyClaim: true });
     const r = await run(s);
