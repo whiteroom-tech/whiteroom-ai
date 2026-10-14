@@ -32,6 +32,7 @@ invite-only beta: invited owners install a packed CLI build.
   ```
   Then `npm view @whiteroom-ai/cli version` prints `2.0.0`. `prepublishOnly` builds `dist` first, so the package never ships a stale build. (Provenance needs a publish from CI; add a release workflow before the next version.) The practice commands load no runtime dependencies; the fleet commands load `@whiteroom-ai/sdk`.
 - Published Oct 14 2026 from the npm account `whiteroomtech` (2FA on: `npm publish` asks for a code from its authenticator, or a browser approval).
-- [x] Only after `npm view` shows `2.0.0`: in `model.ts`, set `CLI_ON_NPM = true` (its own PR). The dashboard then shows `npx @whiteroom-ai/cli@2.0.0 practice …` and drops the install step and sha256 note. Promote that dashboard to prod.
+- [x] Only after `npm view` shows `2.0.0`: in `model.ts`, set `CLI_ON_NPM = true` (its own PR). The dashboard then shows `npx @whiteroom-ai/cli@2.0.0 practice …` and drops the install step and sha256 note (PR #239).
+- [ ] Promote that dashboard to prod after checking it on staging.
 - [ ] Bump `CLI_VERSION` together with every later CLI release.
 - [x] `WR_READINESS` on in production (owner sign-off, Oct 13 2026).
