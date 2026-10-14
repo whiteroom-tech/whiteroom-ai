@@ -114,10 +114,12 @@ describe('practice test screens', () => {
   it('the terminal steps: the command, then the run code, which is never part of a command', () => {
     const html = render('code');
     const t = text(html);
-    expect(t.indexOf('whiteroom practice run --adapter "node wr-adapter.mjs"')).toBeLessThan(t.indexOf('Paste this run code'));
+    expect(t.indexOf('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs"')).toBeLessThan(t.indexOf('Paste this run code'));
     expect(t).toContain('Expires in 29:48');
     expect(t).toContain('Get a new run code');
-    expect(t).toContain('shasum -a 256 whiteroom-ai-cli-2.0.0.tgz');
+    // On npm: no beta install step, no sha256 check.
+    expect(t).not.toContain('Install the WhiteRoom CLI (beta)');
+    expect(t).not.toContain('shasum');
     expect(t).toContain('Unknown command: practice');
     expect(t).toContain('End test');
     const commands = [...html.matchAll(/<pre[^>]*>([^<]*)<\/pre>/g)].map((m) => m[1]);
@@ -247,7 +249,7 @@ describe('practice tests on cloud providers (R7)', () => {
   it('the terminal steps name the key variable and Fleet key key for each provider', () => {
     expect(text(render('code-azure'))).toContain('Needs Node 20 or later. Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2). Keep');
     // From the run's own fields, so any tab names the key; the command picks its variable, so other keys set on the computer don't matter.
-    expect(text(render('code-azure'))).toContain('whiteroom practice run --adapter "node wr-adapter.mjs" --key-env AZURE_OPENAI_API_KEY');
+    expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --key-env AZURE_OPENAI_API_KEY');
     expect(text(render('code'))).not.toContain('--key-env');
     expect(text(render('code-bedrock'))).toContain('AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d)');
     expect(text(render('code-foundry'))).toContain('ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f)');

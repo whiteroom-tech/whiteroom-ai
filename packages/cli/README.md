@@ -12,7 +12,7 @@ whiteroom practice run                                   # WhiteRoom's sample ag
 whiteroom practice run --adapter "node wr-adapter.mjs"   # your own agent
 ```
 
-The dashboard shows these commands ready to copy.
+The dashboard shows these commands ready to copy, run with `npx @whiteroom-ai/cli@<version>` so nothing needs installing. To use the `whiteroom` command as above, install it once: `npm install -g @whiteroom-ai/cli`.
 
 Set the one variable for your agent's provider. For Azure OpenAI, Claude on Azure (Foundry) and AWS Bedrock, use the same key you added on Fleet key and picked in the dashboard:
 
