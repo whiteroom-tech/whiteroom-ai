@@ -52,12 +52,15 @@ def call_tool(name, args):
     return receive()["result"]
 
 
+# Each practice task runs in its own adapter process, so this is per task.
+SAID = set()
+
+
 def model(base_url, headers, body):
     """One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
-    Waits and tries again when WhiteRoom or the provider asks it to, saying each reason once per call."""
+    Waits and tries again when WhiteRoom or the provider asks it to, saying each reason once per practice task."""
     url = f"{base_url}/v1/messages" if ANTHROPIC else f"{base_url}/chat/completions"
     auth = {**KEYS[KEY_VAR](os.environ.get(KEY_VAR, "")), **({"anthropic-version": "2023-06-01"} if ANTHROPIC else {})}
-    said = set()
     for tries in range(1, 152):
         req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", **headers, **auth})
         try:
@@ -82,8 +85,8 @@ def model(base_url, headers, body):
                 wait = ("Your model provider is busy. Waiting, then trying again.", 5 * tries)
             else:
                 raise RuntimeError(f"The model call failed (HTTP {err.code}).") from None
-            if wait[0] not in said:
-                said.add(wait[0])
+            if wait[0] not in SAID:
+                SAID.add(wait[0])
                 print(wait[0], file=sys.stderr)
             time.sleep(wait[1])
     raise RuntimeError("The model call kept failing.")

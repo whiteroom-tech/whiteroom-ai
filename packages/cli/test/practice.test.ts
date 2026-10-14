@@ -159,6 +159,15 @@ describe("practice run: the starters and the fleet's controls", () => {
 });
 
 describe("practice run: control checks", () => {
+  it("counts practice tasks without the control-check step, as the start line does", async () => {
+    const s = await stub({ plan: ["A", "controls"] });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 1: Finishes a job correctly/);
+    assert.doesNotMatch(r.stdout, /of 2:/);
+    assert.match(r.stdout, /Checking your controls/);
+  });
+
   it("sends each planned call with the key and reports WhiteRoom's answer back", async () => {
     const s = await stub({ plan: ["controls"] });
     const r = await run(s);

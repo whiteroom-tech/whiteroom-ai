@@ -137,11 +137,11 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
         if (body.key.startsWith("bedrock-api-key-")) return fromFixture("r7.claim.short_term_key");
         if (body.key !== CLOUD[o.cloud].key) return fromFixture("r7.claim.key_mismatch", (r) => Object.assign(r, { provider: o.cloud }));
         provider = o.cloud;
-        return fromFixture("r7.claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length } }));
+        return fromFixture("r7.claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } }));
       }
       if (body.key !== KEY && body.key !== OPENAI_KEY) return fromFixture("claim.key_mismatch");
       provider = body.key === KEY ? "anthropic" : "openai";
-      return fromFixture("claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length } }));
+      return fromFixture("claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } }));
     }
     if (headers.authorization !== `Bearer ${SESSION}`) return fromFixture("session.unknown");
     if (path === "/api/readiness/tasks/next") {

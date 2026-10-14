@@ -183,8 +183,11 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   hideSecret(engine.session);
   const runs = Number(claim.body.run?.runs) || 1;
   // An engine before practiceTasks counts every step as a practice task.
+  const claimTasks = Number(claim.body.run?.tasks) || 0;
   const practiceTasks = Number(claim.body.run?.practiceTasks ?? claim.body.run?.tasks) || 0;
   say(copy.started(practiceTasks, runs, claim.body.run?.controls === true));
+  // The runs whose control checks have started: progress counts them as steps, the task line doesn't.
+  const controlRuns = new Set<number>();
 
   // ── From here the session is live: Ctrl+C twice, a signal, or WhiteRoom (heartbeat) can stop it ──
   const stop = new AbortController();
@@ -226,7 +229,10 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     const deadline = Date.parse(t.deadline);
     if (!Number.isFinite(deadline)) return ending(3, copy.cliOutdated);
     const run = runs > 1 ? ` (run ${t.runIndex + 1} of ${runs})` : "";
-    say(`Practice task ${p.done + 1} of ${p.total}: ${CATALOG.taskNames[t.scenario] ?? "Practice task"}${run}`);
+    // Counted without the control-check steps, as the start line says ("5 practice tasks and a check of your controls").
+    // The progress total is the plan's every step; when it's the plan the claim described, count its practice tasks only.
+    const total = p.total === claimTasks && practiceTasks ? practiceTasks : p.total;
+    say(`Practice task ${p.done + 1 - (total === p.total ? 0 : controlRuns.size)} of ${total}: ${CATALOG.taskNames[t.scenario] ?? "Practice task"}${run}`);
     const out = await runAdapter({
       launch, env: childEnv(process.env, keyVarOf(provider), key), deadline, signal: stop.signal,
       message: {
@@ -273,6 +279,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   /** The control checks: each call WhiteRoom plans, sent with the key, its response reported back (§6). */
   const controlChecks = async (c: ControlPlan): Promise<Ending | null> => {
     if (!ourHost(c.baseUrl)) return ending(3, copy.otherHost);
+    controlRuns.add(c.runIndex);
     say(`Checking your controls${runs > 1 ? ` (run ${c.runIndex + 1} of ${runs})` : ""}`);
     let result: { status: number; reason: string | null; ruleId: string | null } | null = null;
     for (;;) {
