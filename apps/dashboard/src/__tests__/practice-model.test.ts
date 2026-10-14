@@ -8,7 +8,7 @@ import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
   billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlLine, costLine, fixLine, headline,
-  CLI_ON_NPM, CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
+  CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
   rerunKey, rerunScope, runKeyChoice, taskList,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
@@ -157,11 +157,9 @@ describe('practice test cost (§1, §10 fixed copy)', () => {
 });
 
 describe('practice test commands (§10 CLI)', () => {
-  it('names the CLI release that is published (the beta names the packed 2.0.0 build)', () => {
+  it("names the CLI's own version, so the npx line and the beta file match the release", () => {
     const cli = JSON.parse(readFileSync(new URL('../../../../packages/cli/package.json', import.meta.url), 'utf8')).version;
-    // The version is bumped only at publish (docs/practice-test-beta.md), so before then the two differ on purpose.
-    if (CLI_ON_NPM) expect(CLI_VERSION).toBe(cli);
-    else expect(CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(CLI_VERSION).toBe(cli);
   });
 
   it('only takes engine run IDs from the address', () => {

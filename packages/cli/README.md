@@ -12,6 +12,8 @@ whiteroom practice run                                   # WhiteRoom's sample ag
 whiteroom practice run --adapter "node wr-adapter.mjs"   # your own agent
 ```
 
+The dashboard shows these commands ready to copy.
+
 Set the one variable for your agent's provider. For Azure OpenAI, Claude on Azure (Foundry) and AWS Bedrock, use the same key you added on Fleet key and picked in the dashboard:
 
 | Provider | Variable |
@@ -22,7 +24,7 @@ Set the one variable for your agent's provider. For Azure OpenAI, Claude on Azur
 | Claude on Azure (Foundry) | `ANTHROPIC_FOUNDRY_API_KEY` |
 | AWS Bedrock (a long-term Bedrock API key) | `AWS_BEARER_TOKEN_BEDROCK` |
 
-The CLI asks for the run code from the dashboard (or reads it from stdin with `--code-stdin`), and asks for the key if none of these is set. If more than one is set, it stops and asks you to unset the others. Keep the terminal open until it prints the result. Exit codes: `0` passed, `1` didn't pass, `2` a setup or usage problem, `3` didn't finish (safe to run again). macOS and Linux only in this beta.
+The CLI asks for the run code from the dashboard (or reads it from stdin with `--code-stdin`), and asks for the key if none of these is set. If more than one is set, it stops and asks you to unset the others. Keep the terminal open until it prints the result. Exit codes: `0` passed, `1` didn't pass, `2` a setup or usage problem, `3` didn't finish (safe to run again). macOS and Linux only for now.
 
 Practice tasks use made-up records and WhiteRoom's test tools, not your agent's real job. Use the result to help decide, not as a certificate.
 
