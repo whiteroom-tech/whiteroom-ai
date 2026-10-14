@@ -8,7 +8,7 @@ import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
-import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -428,6 +428,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const totalCacheWrite = c.writeTokens;
     const cacheHitRate = c.hitRate;
     const cacheMicros = c.savedMicros;
+    const ownCaching = ownCachingMicros(c);
     const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
     const govTokens = govSavings?.tokensSaved ?? 0;
     const totalSavingsMicros = cacheMicros + govCostMicros;
@@ -454,8 +455,8 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache savings</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
-            { label: 'Saved by WhiteRoom', value: fmtCost(cacheMicros), color: 'var(--ok)' },
-            ...(c.agentSavedMicros != null && c.agentSavedMicros > 0 ? [{ label: 'Your own caching (not counted)', value: fmtCost(c.agentSavedMicros), color: 'var(--tx2)' }] : []),
+            { label: 'Caching WhiteRoom added', value: fmtCost(cacheMicros), color: 'var(--ok)' },
+            ...(ownCaching != null ? [{ label: 'Your own caching (not counted)', value: fmtCost(ownCaching), color: 'var(--tx2)' }] : []),
             { label: 'Cache hit rate', value: `${(cacheHitRate * 100).toFixed(1)}%`, color: cacheHitRate > 0.3 ? 'var(--ok)' : 'var(--tx)' },
             { label: 'Cache read tokens', value: fmtTokens(totalCacheRead), color: 'var(--tx)' },
             { label: 'Cache write tokens', value: fmtTokens(totalCacheWrite), color: 'var(--tx)' },
@@ -476,7 +477,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
               </div>
               <span style={{ fontFamily: FONT_MONO, fontSize: 11, whiteSpace: 'nowrap' }}>{(cacheHitRate * 100).toFixed(1)}%</span>
             </div>
-            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed.{c.writePremiumMicros > 0 && <> Est. saved is net of the <strong>{fmtCost(c.writePremiumMicros)}</strong> extra that cache writes cost.</>}</span>
+            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed{ownCaching != null && ', your agents\' own caching included'}.{c.writePremiumMicros > 0 && <> Est. saved is net of the <strong>{fmtCost(c.writePremiumMicros)}</strong> extra that cache writes cost.</>}</span>
           </div>
         )}
         {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}

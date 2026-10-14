@@ -72,6 +72,11 @@ export function cacheFigures(cache: CacheSummary | undefined, hourly: Array<{ in
   };
 }
 
+/** The agents' own caching to show beside WhiteRoom's figure: null when there's none, or the engine sends none. */
+export function ownCachingMicros(c: Pick<CacheFigures, 'agentSavedMicros'>): number | null {
+  return c.agentSavedMicros != null && c.agentSavedMicros > 0 ? c.agentSavedMicros : null;
+}
+
 /** YYYY-MM-DD in the browser's local timezone. */
 function localDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

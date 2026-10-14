@@ -423,8 +423,8 @@ export function parseUsd(s: unknown): number | null {
  * Performance's Savings card shows for its range. Older engines send only the
  * handover figure (cache null). partial: some saved tokens or cache reads had no price.
  */
-export interface SavedOverall { usd: number; handover: number; cache: number | null; partial: boolean; agentCache: number | null }
-export function savedOverall(e: { estimatedCostSaved: string; cacheCostSaved?: string; totalCostSaved?: string; agentCacheCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): SavedOverall | null {
+export interface SavedByWhiteRoom { usd: number; handover: number; cache: number | null; partial: boolean; agentCache: number | null }
+export function savedByWhiteRoom(e: { estimatedCostSaved: string; cacheCostSaved?: string; totalCostSaved?: string; agentCacheCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): SavedByWhiteRoom | null {
   const handover = parseUsd(e.estimatedCostSaved) ?? 0;
   const total = parseUsd(e.totalCostSaved);
   // A missing or non-positive total falls back to handover savings alone.
@@ -433,8 +433,8 @@ export function savedOverall(e: { estimatedCostSaved: string; cacheCostSaved?: s
   return { usd, handover, cache: total == null ? null : parseUsd(e.cacheCostSaved) ?? 0, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens, agentCache: parseUsd(e.agentCacheCostSaved) };
 }
 
-/** The Spend card's ⓘ line: where "saved overall" comes from, and how it relates to Performance. */
-export function savedOverallHint(s: SavedOverall): string {
+/** The Spend card's ⓘ line: where "Saved by WhiteRoom" comes from, and how it relates to Performance. */
+export function savedByWhiteRoomHint(s: SavedByWhiteRoom): string {
   const plus = s.partial ? '+' : '';
   // The cache part is the total less handovers, in shown cents, so the line
   // always adds up ($8.984 + $2.094 would otherwise read $8.98 + $2.09 = $11.08).
