@@ -82,6 +82,8 @@ export interface StubOptions {
   legacyClaim?: boolean;
   /** Runs the claim reports; each run's control step ends it (default 1). */
   runs?: number;
+  /** A progress total other than the plan's, as when it isn't the plan the claim described. */
+  progressTotal?: number;
   /** The fake model's first call on each practice task is answered twice as WhiteRoom does while it saves a summary. */
   summaryFirst?: boolean;
   /** Every model call on a task is answered once as WhiteRoom does while it saves a summary, then served. */
@@ -162,7 +164,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       const item = plan.shift();
       if (!item) return o.done ? [200, o.done] : fromFixture("tasks.next.done");
       const id = `a-${++attempt}`;
-      const progress = { done: total - plan.length - 1, total };
+      const progress = { done: total - plan.length - 1, total: o.progressTotal ?? total };
       current = { id, reads: new Set(), summaryWaits: 0 };
       const deadline = new Date(Date.now() + (o.taskMs ?? 60_000)).toISOString();
       if (item === "controls") {

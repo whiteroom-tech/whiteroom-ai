@@ -188,6 +188,13 @@ describe("practice run: control checks", () => {
     });
   }
 
+  it("a progress total that isn't the claim's plan: shows the engine's own numbers", async () => {
+    const s = await stub({ plan: ["A", "controls"], progressTotal: 4 });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 4: Finishes a job correctly/);
+  });
+
   it("an engine before practiceTasks: counts its every step, as it did", async () => {
     const s = await stub({ plan: ["A", "controls"], legacyClaim: true });
     const r = await run(s);
