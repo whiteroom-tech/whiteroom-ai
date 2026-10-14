@@ -78,6 +78,8 @@ export interface StubOptions {
   taskMs?: number;
   /** Per-request override: return a reply to answer instead of the stub. `n` counts requests to that path. */
   route?: (path: string, body: any, n: number) => Reply | undefined;
+  /** A claim from an engine before practiceTasks/controls. */
+  legacyClaim?: boolean;
   /** The fake model's first call on each practice task is answered twice as WhiteRoom does while it saves a summary. */
   summaryFirst?: boolean;
   /** The result tasks/next returns at the end (default: the fixture's). */
@@ -141,7 +143,10 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       }
       if (body.key !== KEY && body.key !== OPENAI_KEY) return fromFixture("claim.key_mismatch");
       provider = body.key === KEY ? "anthropic" : "openai";
-      return fromFixture("claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } }));
+      return fromFixture("claim", (r) => {
+        Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } });
+        if (o.legacyClaim) { delete r.run.practiceTasks; delete r.run.controls; }
+      });
     }
     if (headers.authorization !== `Bearer ${SESSION}`) return fromFixture("session.unknown");
     if (path === "/api/readiness/tasks/next") {

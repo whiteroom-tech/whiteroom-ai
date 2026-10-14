@@ -168,6 +168,22 @@ describe("practice run: control checks", () => {
     assert.match(r.stdout, /Checking your controls/);
   });
 
+  it("counts across runs: each run's control step is left out", async () => {
+    const s = await stub({ plan: ["A", "controls", "A", "controls"] });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 2: Finishes a job correctly/);
+    assert.match(r.stdout, /Practice task 2 of 2: Finishes a job correctly/);
+    assert.equal(r.stdout.match(/Checking your controls/g)?.length, 2);
+  });
+
+  it("an engine before practiceTasks: counts its every step, as it did", async () => {
+    const s = await stub({ plan: ["A", "controls"], legacyClaim: true });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 2: Finishes a job correctly/);
+  });
+
   it("sends each planned call with the key and reports WhiteRoom's answer back", async () => {
     const s = await stub({ plan: ["controls"] });
     const r = await run(s);
