@@ -297,6 +297,12 @@
 
 /* ── Home (components/home) ── README › Screens › 1a/1b */
 .wr-home-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+/* Stat cards in a strip share label, value and caption rows, so a label that
+   wraps (e.g. "Saved by WhiteRoom" on a phone) doesn't push its value below
+   its neighbour's. */
+.wr-home-strip > .wr-stat-card, .wr-perf-strip > .wr-stat-card { display: grid; grid-template-rows: subgrid; grid-row: span 3; row-gap: 0; align-content: start; }
+/* A one-line label in a two-line row sits on the row's last line, just above its value. */
+.wr-home-strip > .wr-stat-card > :first-child, .wr-perf-strip > .wr-stat-card > :first-child { align-self: end; }
 /* The card ⋯ menu opens below its card; the panel must not clip it. */
 .wr-panel:has(.wr-home-agents) { overflow: visible; }
 .wr-home-agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -339,6 +345,10 @@
 .wr-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
 @media (max-width: 1100px) {
   .wr-home-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Two narrow columns: the caption wraps to two lines instead of cutting off
+     ("est. $10.09 saved by WhiteRoom →" lost its last words). Overrides
+     StatCard's inline single-line style. */
+  .wr-stat-sub { white-space: normal !important; text-overflow: clip !important; display: -webkit-box !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 }
 @media (max-width: 720px) {
   .wr-home-agents { grid-template-columns: 1fr; }
