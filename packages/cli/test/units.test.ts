@@ -72,6 +72,15 @@ describe("preflight", () => {
     assert.ok(!copy.providerKeyMismatch(null, key, "Azure OpenAI", null).includes(key));
   });
 
+  it("the started line counts practice tasks apart from the control checks, as the dashboard does", () => {
+    const keep = " Keep this terminal open and your computer awake.";
+    assert.equal(copy.started(5, 1, true), `Practice test started: 5 practice tasks and a check of your controls.${keep}`);
+    assert.equal(copy.started(15, 3, true), `Practice test started: 3 runs, each 5 practice tasks and a check of your controls.${keep}`);
+    // No control check makes calls (no rules, or all Off): only the practice tasks.
+    assert.equal(copy.started(5, 1, false), `Practice test started: 5 practice tasks.${keep}`);
+    assert.equal(copy.started(0, 1, true), `Practice test started: a check of your controls.${keep}`);
+  });
+
   it("each provider's key variable, header and API (§17)", () => {
     assert.deepEqual(["anthropic", "openai", "azure-openai", "foundry", "bedrock-mantle"].map(keyVarOf),
       ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"]);

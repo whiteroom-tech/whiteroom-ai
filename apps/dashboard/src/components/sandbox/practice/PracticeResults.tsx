@@ -4,7 +4,7 @@ import type { RefObject } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  CATALOG, DISCLAIMER, endedBecause, fixLine, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, shortId, STATUS_LABEL,
+  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, shortId, STATUS_LABEL,
 } from '@/lib/sandbox/practice/model';
 import { canDownload } from '@/lib/sandbox/practice/report';
 import type { PracticeCheck, PracticeReport, PracticeResult, PracticeRun } from '@/lib/sandbox/practice/types';
@@ -143,7 +143,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
             {r.how.memoryLimitAdjusted && <><dt>Memory</dt><dd>Memory limit adjusted during the test</dd></>}
           </dl>
         </details>
-        <p className={s.small}>Model calls were billed to your own key, never more than {CATALOG.runCallCap} a run.</p>
+        <p className={s.small}>{billedLine(r)}</p>
       </>}
 
       <p className={s.small}>{DISCLAIMER}</p>

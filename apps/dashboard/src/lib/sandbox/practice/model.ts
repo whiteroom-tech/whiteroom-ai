@@ -28,6 +28,18 @@ export type Scenario = Exclude<keyof typeof CATALOG.taskNames, 'controls'>;
 /** What the running screen calls each practice task, in the engine's order. */
 export const TASK_NAMES = CATALOG.taskNames;
 
+/** The practice tasks one full run plays, the control checks apart (B's short and long versions are two). */
+export const PRACTICE_TASKS = Object.keys(TASK_NAMES).length - 1;
+
+/** "5–10 min", "15–30 min": how long `runs` runs usually take, from the catalog. */
+export function usualMinutes(runs: number): string {
+  const [lo, hi] = CATALOG.minutesPerRun;
+  return `${lo * runs}–${hi * runs} min`;
+}
+
+/** What a practice test is, for the ways into it: "5 practice tasks and a check of your controls, about 5–10 min for one run". */
+export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your controls, about ${usualMinutes(1)} for one run`;
+
 /** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
 export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
   return (Object.keys(TASK_NAMES) as (Scenario | 'controls')[]).filter((s) => !scope
@@ -122,14 +134,16 @@ export const choiceOf = (k: PracticeProviderKey): PracticeKeyChoice | null =>
  * What setup can test with, from source-model: the eligible Fleet key keys,
  * and whether the fleet's own key is a choice too (it is when it can start
  * a test; with Fleet key keys too, only when the agent's calls use it). The
- * default is the fleet's own key when its agent calls with it, else the
- * first eligible key.
+ * default is the key the agent's latest call came with: the Fleet key key it
+ * used, else the fleet's own key when it calls with that, else the first
+ * eligible key.
  */
 export function keyOptions(src: PracticeSource): { keys: PracticeProviderKey[]; direct: boolean; initial: string | null } {
   const keys = src.providerKeys.filter((k) => k.eligible && isPracticeProvider(k.provider));
-  const agentDirect = src.provider === 'direct-anthropic' || src.provider === 'direct-openai';
+  const used = keys.find((k) => k.displayPrefix === src.usedProxyKeyDisplayPrefix);
+  const agentDirect = !src.usedProxyKeyDisplayPrefix && (src.provider === 'direct-anthropic' || src.provider === 'direct-openai');
   const direct = src.directKey && (keys.length === 0 || agentDirect);
-  return { keys, direct, initial: direct && (agentDirect || !keys.length) ? null : keys[0]?.displayPrefix ?? null };
+  return { keys, direct, initial: used?.displayPrefix ?? (direct && (agentDirect || !keys.length) ? null : keys[0]?.displayPrefix ?? null) };
 }
 
 /** The key line: which variable to set, to which key (§10 fixed copy; R7 names the Fleet key key). Both direct variables while the provider isn't known. */
@@ -218,7 +232,14 @@ const billing = (e: CallEstimate) => (e.billedBy ? `, billed by your ${e.billedB
 export function costLine(e: CallEstimate, runs: number): string {
   const cap = runs > 1 ? `${CATALOG.runCallCap} calls a run (${e.cap} in all)` : `${e.cap} calls`;
   if (e.billedBy === 'Azure') return `Never more than ${cap}${billing(e)}. That includes control checks and memory summaries.`;
-  return `On your own key: ${usualCalls(e)}. Never more than ${cap}${billing(e)}, including control checks and memory summaries.`;
+  return `On the key you test with: ${usualCalls(e)}. Never more than ${cap}${billing(e)}, including control checks and memory summaries.`;
+}
+
+/** The results' billing line, for the key the test used and its runs: "… never more than 120 a run (360 in all)." */
+export function billedLine(r: Pick<PracticeReport, 'runs' | 'tested'>): string {
+  const key = r.tested.proxyKeyDisplayPrefix ? ` (from Fleet key${r.tested.keyHint ? `, ending ${r.tested.keyHint}` : ''})` : '';
+  const cap = r.runs > 1 ? `${CATALOG.runCallCap} a run (${CATALOG.runCallCap * r.runs} in all)` : `${CATALOG.runCallCap}`;
+  return `Model calls were billed to the key you tested with${key}, never more than ${cap}.`;
 }
 
 // ── Control checks (§6): what setup says will be checked ─────────────────
@@ -394,10 +415,10 @@ export function lostContact(run: PracticeRun, now: number): boolean {
   return run.lifecycle === 'active' && !!run.progress && now - Date.parse(run.progress.lastContactAt) > LOST_CONTACT_MS;
 }
 
-/** "Practice tasks: 4 of 18 done (run 1 of 3) · 12 min so far, usually 20–35 min a run". */
+/** "Practice tasks: 4 of 18 done (run 1 of 3) · 12 min so far, usually 15–30 min in total". */
 export function progressLine(run: PracticeRun, now: number): string {
   const since = run.startedAt ? Math.max(0, Math.round((now - Date.parse(run.startedAt)) / 60_000)) : 0;
-  const usual = run.runs > 1 ? `usually 60–105 min in total` : 'usually 20–35 min in total';
+  const usual = `usually ${usualMinutes(run.runs)} in total`;
   const p = run.progress;
   if (!p) return `Running · ${since} min so far, ${usual}`;
   const perRun = Math.max(1, Math.round(p.total / run.runs));

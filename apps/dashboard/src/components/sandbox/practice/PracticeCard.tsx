@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import { getPracticeRun, listPracticeRuns } from '@/lib/sandbox/practice/api';
-import { isOpen, progressLine } from '@/lib/sandbox/practice/model';
+import { isOpen, PRACTICE_SUMMARY, progressLine } from '@/lib/sandbox/practice/model';
 import type { PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
@@ -54,7 +54,7 @@ export function PracticeCard({ entry }: { entry: PracticeEntry }) {
         <p>{open.lifecycle === 'draft' ? 'Waiting for you to run it from your computer.' : open.lifecycle === 'finalizing' ? 'Finished. Working out the result.' : progressLine(open, Date.now())}</p>
         <Link className={`${s.btn} ${s.btnPrimary}`} href={`${ROUTES.practiceTest}?run=${open.id}`}>Open it →</Link>
       </> : <>
-        <p>5 practice tasks and a check of your controls, about 30 min, about 50 model calls on your own key.</p>
+        <p>{PRACTICE_SUMMARY}, about 50 model calls on your key.</p>
         <Link className={`${s.btn} ${s.btnSecondary}`} href={ROUTES.practiceTest}>Set up a practice test →</Link>
       </>}
     </section>

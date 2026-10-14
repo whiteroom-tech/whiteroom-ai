@@ -7,7 +7,7 @@ import contract from '@practice-contract/contract.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlLine, costLine, fixLine, headline,
+  billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlLine, costLine, fixLine, headline,
   CLI_ON_NPM, CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
   rerunKey, rerunScope, runKeyChoice, taskList,
 } from '@/lib/sandbox/practice/model';
@@ -136,7 +136,7 @@ describe('practice test cost (§1, §10 fixed copy)', () => {
     const e = callEstimate({ runs: 1, scope: null, controlCalls: 9, model: 'claude-haiku-4-5-20251001' });
     expect(e.cap).toBe(120);
     expect(e.cost).not.toBeNull();
-    expect(costLine(e, 1)).toMatch(/^On your own key: usually \d+–\d+ model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\)\. Never more than 120 calls, including control checks and memory summaries\.$/);
+    expect(costLine(e, 1)).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\)\. Never more than 120 calls, including control checks and memory summaries\.$/);
     expect(costLine(callEstimate({ runs: 3, scope: null, controlCalls: 9, model: null }), 3)).toMatch(/usually \d+–\d+ model calls\. Never more than 120 calls a run \(360 in all\)/);
   });
 
@@ -201,7 +201,7 @@ describe('practice test progress and Past tests', () => {
 
   it('says how far a test has got, and when contact is lost', () => {
     const r = run({ progress: { done: 7, total: 18, lastContactAt: '2026-10-12T14:19:30Z' } });
-    expect(progressLine(r, now)).toBe('Practice tasks: 7 of 18 done (run 2 of 3) · 12 min so far, usually 60–105 min in total');
+    expect(progressLine(r, now)).toBe('Practice tasks: 7 of 18 done (run 2 of 3) · 12 min so far, usually 15–30 min in total');
     expect(lostContact(r, now)).toBe(false);
     expect(lostContact(run({ progress: { done: 7, total: 18, lastContactAt: '2026-10-12T14:18:00Z' } }), now)).toBe(true);
     const list = taskList(r);
@@ -274,6 +274,24 @@ describe('practice tests on cloud providers (R7, §17)', () => {
     expect(keyOptions(src({ provider: 'proxy-url', directKey: false, providerKeys: [gone] }))).toEqual({ keys: [], direct: false, initial: null });
   });
 
+  it('the results’ billing line names the key the test used, and the cap over all its runs', () => {
+    const tested = (proxyKeyDisplayPrefix: string | null, keyHint: string | null) => ({ proxyKeyDisplayPrefix, keyHint }) as PracticeReport['tested'];
+    expect(billedLine({ runs: 1, tested: tested(null, null) })).toBe('Model calls were billed to the key you tested with, never more than 120.');
+    expect(billedLine({ runs: 3, tested: tested('sk-wr-5aaa000000000000', '5wAA') }))
+      .toBe('Model calls were billed to the key you tested with (from Fleet key, ending 5wAA), never more than 120 a run (360 in all).');
+  });
+
+  it('defaults to the Fleet key key the agent’s latest call came with, not the fleet’s own key', () => {
+    const azure = k('azure-openai');
+    const anthropic = k('anthropic', { displayPrefix: 'sk-wr-5aaa000000000000' });
+    // The agent calls Anthropic through its Fleet key key: that key, and the fleet's own key isn't offered.
+    expect(keyOptions(src({ provider: 'direct-anthropic', providerKeys: [azure, anthropic], usedProxyKeyDisplayPrefix: anthropic.displayPrefix })))
+      .toEqual({ keys: [azure, anthropic], direct: false, initial: anthropic.displayPrefix });
+    // A key since removed from Fleet key: the usual default.
+    expect(keyOptions(src({ provider: 'direct-anthropic', providerKeys: [azure], usedProxyKeyDisplayPrefix: 'sk-wr-0000000000000000' })))
+      .toEqual({ keys: [azure], direct: false, initial: azure.displayPrefix });
+  });
+
   it('the key line names the provider’s variable and the Fleet key key (§10 fixed copy)', () => {
     const line = (c: Parameters<typeof keyLine>[0]) => Object.values(keyLine(c, 'prod-eu')).join('');
     expect(line({ provider: 'azure-openai', keyHint: 'a1b2', fleetKey: true })).toBe('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
@@ -312,7 +330,7 @@ describe('practice tests on cloud providers (R7, §17)', () => {
     expect(costLine(est('azure-openai', 'my-gpt-4o-mini'), 1)).toBe('Never more than 120 calls, billed by your Azure account. That includes control checks and memory summaries.');
     expect(costLine(est('foundry', 'claude-haiku-4-5', 3), 3)).toBe('Never more than 120 calls a run (360 in all), billed by your Azure account. That includes control checks and memory summaries.');
     const bedrock = costLine(est('bedrock-mantle', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'), 1);
-    expect(bedrock).toMatch(/^On your own key: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account, including control checks and memory summaries\.$/);
+    expect(bedrock).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account, including control checks and memory summaries\.$/);
     expect(est('bedrock-mantle', 'anthropic.claude-haiku-4-5').cost).toEqual(callEstimate({ runs: 1, scope: null, controlCalls: 0, model: 'claude-haiku-4-5' }).cost);
     expect(rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'd', provider: 'azure-openai' })))
       .toBe('Rerun 1 check × 3 runs · never more than 30 model calls, billed by your Azure account.');

@@ -108,7 +108,9 @@
           "agent": "support-bot",
           "model": "claude-haiku-4-5",
           "provider": "anthropic",
-          "tasks": 18
+          "tasks": 18,
+          "practiceTasks": 15,
+          "controls": true
         }
       }
     },
@@ -337,7 +339,9 @@
           "agent": "support-bot",
           "model": "support-gpt4o-mini",
           "provider": "azure-openai",
-          "tasks": 1
+          "tasks": 1,
+          "practiceTasks": 1,
+          "controls": false
         }
       }
     },
@@ -361,7 +365,7 @@
         "triesLeft": 4,
         "fleetName": "<fleet>",
         "provider": "azure-openai",
-        "keyHint": "b736"
+        "keyHint": "8470"
       }
     },
     {
@@ -421,7 +425,7 @@
             "provider": "openai",
             "endpointHost": "api.groq.com",
             "region": null,
-            "keyHint": "56ef",
+            "keyHint": "b18c",
             "createdAt": "<time>",
             "eligible": false,
             "reason": "other_host"
@@ -431,7 +435,7 @@
             "provider": "azure-openai",
             "endpointHost": "acme-r7.openai.azure.com",
             "region": null,
-            "keyHint": "e259",
+            "keyHint": "48ef",
             "createdAt": "<time>",
             "eligible": true,
             "reason": null
@@ -441,12 +445,13 @@
             "provider": "anthropic",
             "endpointHost": null,
             "region": null,
-            "keyHint": "eb8a",
+            "keyHint": "c5e3",
             "createdAt": "<time>",
             "eligible": true,
             "reason": null
           }
         ],
+        "usedProxyKeyDisplayPrefix": null,
         "controls": {
           "checks": [],
           "calls": 0
@@ -974,6 +979,7 @@
         "directKey": true,
         "blocked": null,
         "providerKeys": [],
+        "usedProxyKeyDisplayPrefix": null,
         "controls": {
           "checks": [],
           "calls": 0
@@ -2224,17 +2230,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4v17-39f361e5",
+        "id": "call-mv7cew8h-f9009b36",
         "name": "create_escalation",
         "input": {
           "ticketId": "<ticket>",
-          "team": "platform",
+          "team": "billing",
           "reason": "Enterprise outage."
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4v17-39f361e5",
+        "id": "call-mv7cew8h-f9009b36",
         "result": {
           "escalationId": "<escalation>"
         }
@@ -2247,17 +2253,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4wn6-76106f96",
+        "id": "call-mv7cexh8-38d0218f",
         "name": "create_refund",
         "input": {
           "orderId": "<order>",
-          "amount": 23.85,
+          "amount": 43.62,
           "operationKey": "refund-key-0001"
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4wn6-76106f96",
+        "id": "call-mv7cexh8-38d0218f",
         "result": {
           "error": "timeout",
           "message": "The refund service didn't answer in time. The refund may or may not have been made."
@@ -2271,17 +2277,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4vfu-2ac4e710",
+        "id": "call-mv7cewn9-84a50dc8",
         "name": "get_queue",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4vfu-2ac4e710",
+        "id": "call-mv7cewn9-84a50dc8",
         "result": {
           "policy": {
-            "approvalLimit": 400,
-            "regionCode": "AP-2"
+            "approvalLimit": 450,
+            "regionCode": "SA-5"
           },
           "claimIds": [
             "<claim>",
@@ -2299,24 +2305,24 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4v1i-7c42b6e4",
+        "id": "call-mv7cew8r-f3e99f73",
         "name": "list_escalations",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4v1i-7c42b6e4",
+        "id": "call-mv7cew8r-f3e99f73",
         "result": {
           "escalations": [
             {
               "id": "<escalation>",
               "ticketId": "<ticket>",
-              "team": "platform"
+              "team": "billing"
             },
             {
               "id": "<escalation>",
               "ticketId": "<ticket>",
-              "team": "billing"
+              "team": "platform"
             }
           ]
         }
@@ -2329,26 +2335,26 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4v17-0e3c1f64",
+        "id": "call-mv7cew8h-561b9256",
         "name": "list_tickets",
         "input": {}
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4v17-0e3c1f64",
+        "id": "call-mv7cew8h-561b9256",
         "result": {
           "tickets": [
             {
               "id": "<ticket>",
-              "subject": "Card payments are failing at checkout"
-            },
-            {
-              "id": "<ticket>",
-              "subject": "Sign-in is failing for all users"
-            },
-            {
-              "id": "<ticket>",
               "subject": "Refunds are stuck in pending"
+            },
+            {
+              "id": "<ticket>",
+              "subject": "The API returns errors on every request"
+            },
+            {
+              "id": "<ticket>",
+              "subject": "The API returns errors on every request"
             }
           ]
         }
@@ -2378,7 +2384,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4vfu-c00b14f6",
+        "id": "call-mv7cewn9-9cf8bdbf",
         "name": "read_claim",
         "input": {
           "id": "<claim>"
@@ -2386,11 +2392,11 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4vfu-c00b14f6",
+        "id": "call-mv7cewn9-9cf8bdbf",
         "result": {
           "id": "<claim>",
-          "customer": "Chen Li",
-          "amount": 346,
+          "customer": "Eli Haddad",
+          "amount": 621,
           "notes": "Note 1: photos, receipts and the customer's statement were checked again; nothing here changes the claimed amount.\nNote 2: photos, receipts and the customer's statement were checked again; nothing her"
         }
       }
@@ -2402,7 +2408,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4wn6-a6872b1e",
+        "id": "call-mv7cexh6-31de9f35",
         "name": "read_order",
         "input": {
           "id": "<order>"
@@ -2410,11 +2416,11 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4wn6-a6872b1e",
+        "id": "call-mv7cexh6-31de9f35",
         "result": {
           "id": "<order>",
           "customer": "Chen Li",
-          "amountPaid": 23.85,
+          "amountPaid": 43.62,
           "reason": "Item arrived damaged."
         }
       }
@@ -2426,7 +2432,7 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4v17-05278707",
+        "id": "call-mv7cew8h-83d87271",
         "name": "read_ticket",
         "input": {
           "id": "<ticket>"
@@ -2434,14 +2440,14 @@
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4v17-05278707",
+        "id": "call-mv7cew8h-83d87271",
         "result": {
           "id": "<ticket>",
-          "subject": "Card payments are failing at checkout",
+          "subject": "Refunds are stuck in pending",
           "customerPlan": "Enterprise",
-          "severity": "minor",
+          "severity": "outage",
           "team": "billing",
-          "message": "Card payments are failing at checkout. Please help."
+          "message": "Refunds are stuck in pending. Please help."
         }
       }
     },
@@ -2452,17 +2458,17 @@
       "auth": "session",
       "request": {
         "attemptId": "<attempt id>",
-        "id": "call-mv6s4vfv-56f43520",
+        "id": "call-mv7cewna-6bba498f",
         "name": "save_decision",
         "input": {
           "claimId": "<claim>",
-          "decision": "approve",
-          "regionCode": "AP-2"
+          "decision": "review",
+          "regionCode": "SA-5"
         }
       },
       "status": 200,
       "response": {
-        "id": "call-mv6s4vfv-56f43520",
+        "id": "call-mv7cewna-6bba498f",
         "result": {
           "saved": true
         }

@@ -46,7 +46,7 @@ describe("practice run: the sample agent and the starters complete Template A", 
     assert.match(r.stdout, /Passed · all 11 checks · 3 runs/);
     assert.match(r.stdout, /not as a certificate/);
     assert.match(r.stdout, /app\.whiteroom\.tech\/sandbox/);
-    assert.match(r.stderr, /WhiteRoom is saving a summary of your agent's memory\. Waiting 2 s/);
+    assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);
     assert.doesNotMatch(r.stdout + r.stderr, /watch_limit_exceeded|handover|compress|context/i);
     // The sample agent reports itself as such; the key went only to the claim, tasks/next and model calls.
     assert.equal(JSON.parse(s.seen.find((x) => x.path === "/api/readiness/claim")!.body).cli.adapter, "sample agent");
@@ -66,7 +66,7 @@ describe("practice run: the sample agent and the starters complete Template A", 
     const r = await run(s, ["--adapter", "python3 starters/wr_adapter.py"]);
     assert.equal(r.code, 0, r.stderr);
     assertTemplateA(s);
-    assert.match(r.stderr, /WhiteRoom is saving a summary of your agent's memory\. Waiting 2 s/);
+    assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);
   });
 });
 
@@ -134,6 +134,17 @@ describe("practice run: the starters and the fleet's controls", () => {
       const r = await run(s, [...extra]);
       assert.equal(r.code, 0, r.stderr);
       assert.deepEqual(s.finals.map((f) => [f.ended, f.output]), [["final", "Stopped: WhiteRoom closed this practice task."]]);
+    });
+
+    it(`${who}: says each reason it waits once per call, even when the reasons alternate`, async () => {
+      const summary = [429, { error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }] as const;
+      const switching = [503, { error: "Switching." , whiteroom: { reason: "lease_handover" } }, { "retry-after": "0" }] as const;
+      const waits = [summary, switching, summary];
+      const s = await stub({ route: (p) => (p === "/v1/messages" ? waits.shift() as never : undefined) });
+      const r = await run(s, [...extra]);
+      assert.equal(r.code, 0, r.stderr);
+      assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\./g)?.length, 1);
+      assert.equal(r.stderr.match(/WhiteRoom is switching servers\./g)?.length, 1);
     });
 
     it(`${who}: never follows a redirect, so the key never reaches another host`, async () => {

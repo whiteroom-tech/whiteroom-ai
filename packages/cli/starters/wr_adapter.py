@@ -54,9 +54,10 @@ def call_tool(name, args):
 
 def model(base_url, headers, body):
     """One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
-    Waits and tries again when WhiteRoom or the provider asks it to."""
+    Waits and tries again when WhiteRoom or the provider asks it to, saying each reason once per call."""
     url = f"{base_url}/v1/messages" if ANTHROPIC else f"{base_url}/chat/completions"
     auth = {**KEYS[KEY_VAR](os.environ.get(KEY_VAR, "")), **({"anthropic-version": "2023-06-01"} if ANTHROPIC else {})}
+    said = set()
     for tries in range(1, 152):
         req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", **headers, **auth})
         try:
@@ -68,20 +69,22 @@ def model(base_url, headers, body):
             except Exception:
                 wr = None
             if err.code == 503 and wr:
-                wait = ("WhiteRoom is switching servers.", float(err.headers.get("retry-after") or 1))
+                wait = ("WhiteRoom is switching servers. Waiting, then trying again.", float(err.headers.get("retry-after") or 1))
             elif err.code == 429 and wr:
-                wait = ("WhiteRoom is saving a summary of your agent's memory.", 2)
+                wait = ("WhiteRoom is saving a summary of your agent's memory. Waiting until it's saved.", 2)
             elif err.code == 403 and wr and wr.get("retryable"):
-                wait = ("One of your WhiteRoom controls is limiting calls.", 10)
+                wait = ("One of your WhiteRoom controls is limiting calls. Waiting, then trying again.", 10)
             elif err.code == 403 and wr:
                 return BLOCKED  # Blocked by one of the fleet's controls.
             elif err.code == 410:
                 return GONE  # The practice task's fleet is gone: WhiteRoom reran or ended it.
             elif err.code in (429, 500, 502, 503, 529) and not wr and tries < 5:
-                wait = ("Your model provider is busy.", 5 * tries)
+                wait = ("Your model provider is busy. Waiting, then trying again.", 5 * tries)
             else:
                 raise RuntimeError(f"The model call failed (HTTP {err.code}).") from None
-            print(f"{wait[0]} Waiting {wait[1]:g} s, then trying again.", file=sys.stderr)
+            if wait[0] not in said:
+                said.add(wait[0])
+                print(wait[0], file=sys.stderr)
             time.sleep(wait[1])
     raise RuntimeError("The model call kept failing.")
 

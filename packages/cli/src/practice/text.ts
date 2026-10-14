@@ -46,8 +46,12 @@ export const copy = {
   ignoringUrl: "Ignoring WHITEROOM_URL: practice tests always run on WhiteRoom.",
   keyInUse: (v: string, key: string) => `Using the key in ${v} (ends ${key.slice(-4)}).`,
   host: (host: string) => `Sending your key to ${host} to start the practice test.`,
-  started: (tasks: number, runs: number) =>
-    `Practice test started: ${plural(tasks, "practice task")}${runs > 1 ? ` over ${runs} runs` : ""}. Keep this terminal open and your computer awake.`,
+  /** `tasks`: the practice tasks over all runs; `controls`: whether a control check makes calls. */
+  started: (tasks: number, runs: number, controls: boolean) => {
+    const perRun = Math.round(tasks / runs);
+    const run = [perRun > 0 && plural(perRun, "practice task"), controls && "a check of your controls"].filter(Boolean).join(" and ");
+    return `Practice test started: ${runs > 1 ? `${runs} runs, each ${run}` : run}. Keep this terminal open and your computer awake.`;
+  },
   restart: "WhiteRoom restarted this practice task, so it starts again. This doesn't count against your agent.",
   lostTask: "Lost contact with WhiteRoom during this practice task, so it starts again. This doesn't count against your agent.",
   offline: "Lost connection to WhiteRoom. Trying again for up to 5 minutes.",

@@ -17,6 +17,7 @@ import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
 import { PracticeCard, type PracticeEntry, usePracticeEntry } from './practice/PracticeCard';
+import { PRACTICE_SUMMARY } from '@/lib/sandbox/practice/model';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
 type Phase = 'start' | 'setup' | 'workspace';
@@ -1248,7 +1249,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
                 {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)} />}
                 <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
               </div>
-              {practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: 5 practice tasks plus a check of your controls, about 30 minutes.</p>}
+              {practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: {PRACTICE_SUMMARY}.</p>}
             </div>
           )}
 
