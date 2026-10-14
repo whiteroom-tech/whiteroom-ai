@@ -136,6 +136,17 @@ describe("practice run: the starters and the fleet's controls", () => {
       assert.deepEqual(s.finals.map((f) => [f.ended, f.output]), [["final", "Stopped: WhiteRoom closed this practice task."]]);
     });
 
+    it(`${who}: says each reason it waits once per call, even when the reasons alternate`, async () => {
+      const summary = [429, { error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }] as const;
+      const switching = [503, { error: "Switching." , whiteroom: { reason: "lease_handover" } }, { "retry-after": "0" }] as const;
+      const waits = [summary, switching, summary];
+      const s = await stub({ route: (p) => (p === "/v1/messages" ? waits.shift() as never : undefined) });
+      const r = await run(s, [...extra]);
+      assert.equal(r.code, 0, r.stderr);
+      assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\./g)?.length, 1);
+      assert.equal(r.stderr.match(/WhiteRoom is switching servers\./g)?.length, 1);
+    });
+
     it(`${who}: never follows a redirect, so the key never reaches another host`, async () => {
       const other = await stub();
       const s = await stub({ route: (p) => (p === "/v1/messages" ? [302, {}, { location: `${other.url}${p}` }] : undefined) });

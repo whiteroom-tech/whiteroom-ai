@@ -37,11 +37,11 @@ const GONE = "Stopped: WhiteRoom closed this practice task.";
 
 // One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
 // Never follows a redirect, so the key only goes to WhiteRoom.
-// Waits and tries again when WhiteRoom or the provider asks it to, saying why once per wait.
+// Waits and tries again when WhiteRoom or the provider asks it to, saying each reason once per call.
 async function model(base_url, headers, body) {
   const url = anthropic ? `${base_url}/v1/messages` : `${base_url}/chat/completions`;
   const auth = { ...KEYS[KEY_VAR](process.env[KEY_VAR] ?? ""), ...(anthropic && { "anthropic-version": "2023-06-01" }) };
-  let said = null;
+  const said = new Set();
   for (let tries = 1; ; tries++) {
     const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers, ...auth },
       body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000) });
@@ -54,7 +54,7 @@ async function model(base_url, headers, body) {
     if (res.status === 403 && wr && !wait) return BLOCKED; // Blocked by one of the fleet's controls.
     if (res.status === 410) return GONE; // The practice task's fleet is gone: WhiteRoom reran or ended it.
     if (!wait || tries > 150) throw new Error(`The model call failed (HTTP ${res.status}).`);
-    if (wait[0] !== said) console.error((said = wait[0]));
+    if (!said.has(wait[0])) { said.add(wait[0]); console.error(wait[0]); }
     await sleep(wait[1] * 1000);
   }
 }

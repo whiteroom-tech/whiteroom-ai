@@ -74,10 +74,11 @@ describe("preflight", () => {
 
   it("the started line counts practice tasks apart from the control checks, as the dashboard does", () => {
     const keep = " Keep this terminal open and your computer awake.";
-    assert.equal(copy.started(6, 1, true), `Practice test started: 5 practice tasks and a check of your controls.${keep}`);
-    assert.equal(copy.started(18, 3, true), `Practice test started: 3 runs, each 5 practice tasks and a check of your controls.${keep}`);
-    assert.equal(copy.started(1, 1, false), `Practice test started: 1 practice task.${keep}`);
-    assert.equal(copy.started(1, 1, true), `Practice test started: a check of your controls.${keep}`);
+    assert.equal(copy.started(5, 1, true), `Practice test started: 5 practice tasks and a check of your controls.${keep}`);
+    assert.equal(copy.started(15, 3, true), `Practice test started: 3 runs, each 5 practice tasks and a check of your controls.${keep}`);
+    // No control check makes calls (no rules, or all Off): only the practice tasks.
+    assert.equal(copy.started(5, 1, false), `Practice test started: 5 practice tasks.${keep}`);
+    assert.equal(copy.started(0, 1, true), `Practice test started: a check of your controls.${keep}`);
   });
 
   it("each provider's key variable, header and API (§17)", () => {

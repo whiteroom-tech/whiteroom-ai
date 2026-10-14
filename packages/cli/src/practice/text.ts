@@ -46,11 +46,10 @@ export const copy = {
   ignoringUrl: "Ignoring WHITEROOM_URL: practice tests always run on WhiteRoom.",
   keyInUse: (v: string, key: string) => `Using the key in ${v} (ends ${key.slice(-4)}).`,
   host: (host: string) => `Sending your key to ${host} to start the practice test.`,
-  /** `steps` counts every step over all runs, a run's control checks included when `controls` (null: an engine that doesn't say). */
-  started: (steps: number, runs: number, controls: boolean | null) => {
-    const perRun = Math.round(steps / runs) - (controls ? 1 : 0);
-    const run = controls === null ? plural(perRun, "practice task")
-      : [perRun > 0 && plural(perRun, "practice task"), controls && "a check of your controls"].filter(Boolean).join(" and ");
+  /** `tasks`: the practice tasks over all runs; `controls`: whether a control check makes calls. */
+  started: (tasks: number, runs: number, controls: boolean) => {
+    const perRun = Math.round(tasks / runs);
+    const run = [perRun > 0 && plural(perRun, "practice task"), controls && "a check of your controls"].filter(Boolean).join(" and ");
     return `Practice test started: ${runs > 1 ? `${runs} runs, each ${run}` : run}. Keep this terminal open and your computer awake.`;
   },
   restart: "WhiteRoom restarted this practice task, so it starts again. This doesn't count against your agent.",
