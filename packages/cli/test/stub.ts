@@ -80,6 +80,8 @@ export interface StubOptions {
   route?: (path: string, body: any, n: number) => Reply | undefined;
   /** A claim from an engine before practiceTasks/controls. */
   legacyClaim?: boolean;
+  /** Runs the claim reports; each run's control step ends it (default 1). */
+  runs?: number;
   /** The fake model's first call on each practice task is answered twice as WhiteRoom does while it saves a summary. */
   summaryFirst?: boolean;
   /** Every model call on a task is answered once as WhiteRoom does while it saves a summary, then served. */
@@ -115,6 +117,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const counts = new Map<string, number>();
   const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[], cancels: [] as unknown[] };
   let attempt = 0;
+  let runAt = 0;
   let current: { id: string; reads: Set<string>; summaryWaits: number; waitedAt?: number } | null = null;
   let controlSteps = 0;
   let origin = "";
@@ -149,7 +152,7 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       if (body.key !== KEY && body.key !== OPENAI_KEY) return fromFixture("claim.key_mismatch");
       provider = body.key === KEY ? "anthropic" : "openai";
       return fromFixture("claim", (r) => {
-        Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } });
+        Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: o.runs ?? 1, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } });
         if (o.legacyClaim) { delete r.run.practiceTasks; delete r.run.controls; }
       });
     }
@@ -164,13 +167,14 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       const deadline = new Date(Date.now() + (o.taskMs ?? 60_000)).toISOString();
       if (item === "controls") {
         controlSteps = 0;
+        const runIndex = runAt++;
         return fromFixture("tasks.next.controls", (r) => {
-          Object.assign(r.controls, { attemptId: id, deadline, baseUrl: baseUrl(), provider });
+          Object.assign(r.controls, { attemptId: id, deadline, baseUrl: baseUrl(), provider, runIndex });
           r.progress = progress;
         });
       }
       return fromFixture(o.cloud ? "r7.tasks.next.task" : "tasks.next.task.A", (r) => {
-        Object.assign(r.task, { attemptId: id, deadline, baseUrl: baseUrl(), provider });
+        Object.assign(r.task, { attemptId: id, deadline, baseUrl: baseUrl(), provider, runIndex: runAt });
         r.progress = progress;
         if (o.taskModel !== undefined) r.task.model = o.taskModel;
         r.task.headers = { "x-whiteroom-fleet": `sandbox-r-${id}`, "x-wr-readiness-attempt": id, "x-whiteroom-agent": "support-bot" };

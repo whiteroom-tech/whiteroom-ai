@@ -169,12 +169,13 @@ describe("practice run: control checks", () => {
   });
 
   it("counts across runs: each run's control step is left out", async () => {
-    const s = await stub({ plan: ["A", "controls", "A", "controls"] });
+    const s = await stub({ plan: ["A", "controls", "A", "controls"], runs: 2 });
     const r = await run(s);
     assert.equal(r.code, 0, r.stderr);
-    assert.match(r.stdout, /Practice task 1 of 2: Finishes a job correctly/);
-    assert.match(r.stdout, /Practice task 2 of 2: Finishes a job correctly/);
-    assert.equal(r.stdout.match(/Checking your controls/g)?.length, 2);
+    assert.match(r.stdout, /Practice task 1 of 2: Finishes a job correctly \(run 1 of 2\)/);
+    assert.match(r.stdout, /Checking your controls \(run 1 of 2\)/);
+    assert.match(r.stdout, /Practice task 2 of 2: Finishes a job correctly \(run 2 of 2\)/);
+    assert.match(r.stdout, /Checking your controls \(run 2 of 2\)/);
   });
 
   for (const [who, adapter] of [["JS starter", "node starters/wr-adapter.mjs"], ["Python starter", "python3 starters/wr_adapter.py"]] as const) {
