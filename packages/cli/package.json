@@ -19,7 +19,7 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@whiteroom-ai/sdk": "^1.1.1"
+    "@whiteroom-ai/sdk": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
