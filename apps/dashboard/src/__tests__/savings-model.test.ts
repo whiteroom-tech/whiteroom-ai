@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cacheFigures, savingsDollars } from '../lib/analytics-metrics';
+import { cacheFigures, ownCachingMicros, savingsDollars } from '../lib/analytics-metrics';
 import { burnCaption, remainingTasksNote } from '../lib/cost-tracking';
 import { partialMark } from '../lib/format';
 
@@ -35,7 +35,16 @@ describe('cache figures (audit M08)', () => {
 
   it('with an older engine, shows tokens only, never a price inferred from total spend', () => {
     const c = cacheFigures(undefined, [{ inputTokens: 1_000, cacheReadTokens: 3_000, cacheWriteTokens: 0 }]);
-    expect(c).toMatchObject({ savedMicros: 0, readTokens: 3_000, hitRate: 0.75 });
+    expect(c).toMatchObject({ savedMicros: 0, readTokens: 3_000, hitRate: 0.75, agentSavedMicros: null });
+  });
+
+  it("keeps the agents' own caching apart from WhiteRoom's, shown only when there is some", () => {
+    const base = { freshInputTokens: 1_000, readTokens: 9_000, writeTokens: 0, readSavedMicros: 2_700, writePremiumMicros: 0, unpricedReadTokens: 0 };
+    const own = cacheFigures({ ...base, agentSavedMicros: 5_400 }, []);
+    expect(own).toMatchObject({ savedMicros: 2_700, agentSavedMicros: 5_400 }); // never added in
+    expect(ownCachingMicros(own)).toBe(5_400);
+    expect(ownCachingMicros(cacheFigures({ ...base, agentSavedMicros: 0 }, []))).toBeNull();
+    expect(ownCachingMicros(cacheFigures(base, []))).toBeNull(); // an engine without the split
   });
 });
 

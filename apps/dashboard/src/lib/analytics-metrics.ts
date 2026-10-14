@@ -31,8 +31,10 @@ export function savingsDollars(buckets: SavingsBucket[], engine?: SavingsTotals)
 
 /** Prompt-cache figures for the Performance page. */
 export interface CacheFigures {
-  /** Read savings less the write premium, never below zero (micro-dollars). */
+  /** Read savings less the write premium, never below zero (micro-dollars): caching WhiteRoom added only. */
   savedMicros: number;
+  /** The agents' own caching, net: shown apart, never added to savings. Null from older engines. */
+  agentSavedMicros: number | null;
   readSavedMicros: number;
   writePremiumMicros: number;
   /** Cache reads over all input (fresh + reads + writes, each once). */
@@ -59,6 +61,7 @@ export function cacheFigures(cache: CacheSummary | undefined, hourly: Array<{ in
   const all = c.freshInputTokens + c.readTokens + c.writeTokens;
   return {
     savedMicros: Math.max(0, c.readSavedMicros - c.writePremiumMicros),
+    agentSavedMicros: c.agentSavedMicros ?? null,
     readSavedMicros: c.readSavedMicros,
     writePremiumMicros: c.writePremiumMicros,
     hitRate: all > 0 ? c.readTokens / all : 0,
@@ -67,6 +70,11 @@ export function cacheFigures(cache: CacheSummary | undefined, hourly: Array<{ in
     freshInputTokens: c.freshInputTokens,
     unpricedReadTokens: c.unpricedReadTokens,
   };
+}
+
+/** The agents' own caching to show beside WhiteRoom's figure: null when there's none, or the engine sends none. */
+export function ownCachingMicros(c: Pick<CacheFigures, 'agentSavedMicros'>): number | null {
+  return c.agentSavedMicros != null && c.agentSavedMicros > 0 ? c.agentSavedMicros : null;
 }
 
 /** YYYY-MM-DD in the browser's local timezone. */

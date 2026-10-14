@@ -8,7 +8,7 @@ import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
 import { burnCaption, remainingTasksNote } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
-import { agentTotalsFromBuckets, cacheFigures, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -428,13 +428,14 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const totalCacheWrite = c.writeTokens;
     const cacheHitRate = c.hitRate;
     const cacheMicros = c.savedMicros;
+    const ownCaching = ownCachingMicros(c);
     const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
     const govTokens = govSavings?.tokensSaved ?? 0;
     const totalSavingsMicros = cacheMicros + govCostMicros;
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Savings breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Combined estimated savings from prompt caching and handover compression (handovers and context offloads), each at the input prices your agents actually pay.</div>
+        <h3 style={H3}>Saved by WhiteRoom</h3>
+        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from handover compression (handovers and context offloads) and the prompt caching WhiteRoom added, each at the input prices your agents actually pay. Caching your agents already do on their own isn&apos;t counted.</div>
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
@@ -442,7 +443,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{savingsFigure(!!auditFailed, totalSavingsMicros, !!govSavings?.partial || c.unpricedReadTokens > 0)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Cache</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Caching WhiteRoom added</div>
             <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(cacheMicros)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
@@ -454,7 +455,8 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache savings</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
-            { label: 'Est. Saved', value: fmtCost(cacheMicros), color: 'var(--ok)' },
+            { label: 'Caching WhiteRoom added', value: fmtCost(cacheMicros), color: 'var(--ok)' },
+            ...(ownCaching != null ? [{ label: 'Your own caching (not counted)', value: fmtCost(ownCaching), color: 'var(--tx2)' }] : []),
             { label: 'Cache hit rate', value: `${(cacheHitRate * 100).toFixed(1)}%`, color: cacheHitRate > 0.3 ? 'var(--ok)' : 'var(--tx)' },
             { label: 'Cache read tokens', value: fmtTokens(totalCacheRead), color: 'var(--tx)' },
             { label: 'Cache write tokens', value: fmtTokens(totalCacheWrite), color: 'var(--tx)' },
@@ -475,7 +477,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
               </div>
               <span style={{ fontFamily: FONT_MONO, fontSize: 11, whiteSpace: 'nowrap' }}>{(cacheHitRate * 100).toFixed(1)}%</span>
             </div>
-            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed.{c.writePremiumMicros > 0 && <> Est. saved is net of the <strong>{fmtCost(c.writePremiumMicros)}</strong> extra that cache writes cost.</>}</span>
+            <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed{ownCaching != null && ', your agents\' own caching included'}.{c.writePremiumMicros > 0 && <> Est. saved is net of the <strong>{fmtCost(c.writePremiumMicros)}</strong> extra that cache writes cost.</>}</span>
           </div>
         )}
         {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
@@ -852,7 +854,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         />
         <StatCard
           variant="card"
-          label="Savings"
+          label="Saved by WhiteRoom"
           hint={HELP.savings}
           value={auditFailed ? '—' : <><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
           sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
@@ -872,7 +874,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
             <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-            <MetricCard label="Savings, est." value={savingsFigure(auditFailed, savings.totalMicros, savings.partial)} sub={auditFailed ? UNAVAILABLE : savings.totalMicros > 0 ? 'cache + handover compression' : undefined} sparklineData={displayHourly.map(h => h.cacheReadTokens)} sparklineColor="var(--ok)" onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="Saved by WhiteRoom, est." value={savingsFigure(auditFailed, savings.totalMicros, savings.partial)} sub={auditFailed ? UNAVAILABLE : savings.totalMicros > 0 ? 'handovers + caching WhiteRoom added' : undefined} onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
             <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />

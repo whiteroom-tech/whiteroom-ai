@@ -70,11 +70,13 @@ export interface FleetReport {
     compressionRatio?: number; estimatedTokensSaved: number; estimatedCostSaved: string; estimatedEnergySaved: string; formula: string;
     /** Saved tokens with no price to value them: estimatedCostSaved leaves them out (absent on older engines). */
     unpricedTokensSaved?: number;
-    /** Prompt-cache savings over everything stored, net of write premiums (absent on older engines). */
+    /** Prompt-cache savings over everything stored, net of write premiums: only caching WhiteRoom added (absent on older engines). */
     cacheCostSaved?: string;
+    /** What the agents' own caching saved: shown apart, never in totalCostSaved (absent on older engines). */
+    agentCacheCostSaved?: string;
     /** Cache reads with no price: cacheCostSaved leaves them out. */
     unpricedCacheReadTokens?: number;
-    /** estimatedCostSaved + cacheCostSaved: Home's "saved overall" (absent on older engines). */
+    /** estimatedCostSaved + cacheCostSaved: "Saved by WhiteRoom" on Home (absent on older engines). */
     totalCostSaved?: string;
     /** in_memory_estimate: the engine couldn't read its stored trail; newest events only, at the fallback rate. */
     pricing?: 'cache_aware_input' | 'in_memory_estimate';
@@ -474,11 +476,13 @@ export interface CacheSummary {
   freshInputTokens: number;
   readTokens: number;
   writeTokens: number;
-  /** reads × (input rate − cache-read rate), per model. */
+  /** The three below cover only calls WhiteRoom marked for caching. reads × (input rate − cache-read rate), per model. */
   readSavedMicros: number;
   /** writes × (cache-write rate − input rate), per model. */
   writePremiumMicros: number;
   unpricedReadTokens: number;
+  /** What the agents' own caching saved, net, never counted as WhiteRoom's (absent on older engines). */
+  agentSavedMicros?: number;
 }
 
 export interface SetBudgetResult {
