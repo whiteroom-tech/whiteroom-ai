@@ -50,8 +50,8 @@ export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
 
 /** The exact CLI release the dashboard names (D12). Bumped with the CLI at publish. */
 export const CLI_VERSION = '2.0.0';
-/** Until the CLI is on npm (D2), the invite-only beta installs a packed build with its sha256. Flip at publish. */
-export const CLI_ON_NPM = false;
+/** The CLI is on npm (D2): commands run it with npx at CLI_VERSION. False only for a packed beta build. */
+export const CLI_ON_NPM = true;
 export const BETA_TGZ = `whiteroom-ai-cli-${CLI_VERSION}.tgz`;
 const CLI = CLI_ON_NPM ? `npx @whiteroom-ai/cli@${CLI_VERSION}` : 'whiteroom';
 
