@@ -51,12 +51,21 @@ describe('practice test setup: the agent’s model and where its calls go', () =
 
   it('reads source-model as the engine sends it', async () => {
     answer(fixture('source-model'));
-    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: NO_CONTROLS });
+    expect(await sourceModel('prod-eu', 'support-bot')).toEqual({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: NO_CONTROLS, usedProxyKeyDisplayPrefix: null });
     answer({ ...fixture<Record<string, unknown>>('source-model'), model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role' });
     expect(await sourceModel('prod-eu', 'support-bot')).toMatchObject({ model: 'gpt-4o', provider: 'cloud', directKey: false, blocked: 'bedrock_role' });
     // A kind this dashboard doesn't know reads as not yet known.
     answer({ ...fixture<Record<string, unknown>>('source-model'), model: '', provider: 'somewhere-new' });
     expect(await sourceModel('prod-eu', 'support-bot')).toMatchObject({ model: null, provider: 'unknown' });
+  });
+
+  it('carries the Fleet key key the agent’s latest call used through to setup’s default', async () => {
+    const used = `sk-wr-${'5'.repeat(16)}`;
+    const key = { displayPrefix: used, provider: 'anthropic', endpointHost: null, region: null, keyHint: '5wAA', createdAt: '2026-09-29T00:00:00Z', eligible: true, reason: null };
+    answer({ ...fixture<Record<string, unknown>>('source-model'), provider: 'direct-anthropic', directKey: true, providerKeys: [key], usedProxyKeyDisplayPrefix: used });
+    const src = await sourceModel('prod-eu', 'lead-agent');
+    expect(src.usedProxyKeyDisplayPrefix).toBe(used);
+    expect(keyOptions(src)).toMatchObject({ initial: used, direct: false });
   });
 
   it('renders the control checks as the engine planned them, and counts a rerun’s', () => {

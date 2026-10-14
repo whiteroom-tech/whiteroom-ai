@@ -87,6 +87,7 @@ export const sourceModel = (fleet: string, agent: string) =>
       blocked: r.blocked === 'bedrock_role' ? 'bedrock_role' : null,
       providerKeys: Array.isArray(r.providerKeys) ? r.providerKeys.map(providerKey).filter((k): k is PracticeProviderKey => k !== null) : [],
       controls: controls && Array.isArray(controls.checks) ? { checks: controls.checks, calls: Number(controls.calls) || 0 } : null,
+      usedProxyKeyDisplayPrefix: str(r.usedProxyKeyDisplayPrefix),
     };
   });
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });
