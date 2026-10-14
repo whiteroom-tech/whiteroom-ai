@@ -1,6 +1,7 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { auth } from '@/auth';
+import { readCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { getUserFleets, type UserFleet } from '@/lib/user-fleets';
 
@@ -118,11 +119,12 @@ async function primaryFleet(): Promise<LinkedFleetCredential | null> {
     const session = await auth();
     if (!session?.user?.id) return null;
     const { rows } = await db().query(
-      'SELECT fleet_id, fleet_token FROM users WHERE id = $1',
+      'SELECT fleet_id, fleet_token, fleet_token_enc FROM users WHERE id = $1',
       [session.user.id],
     );
     const row = rows[0];
-    return row?.fleet_token ? { token: row.fleet_token, fleetId: row.fleet_id ?? null } : null;
+    const token = readCred('users.fleet_token', session.user.id, row?.fleet_token ?? null, row?.fleet_token_enc ?? null);
+    return token ? { token, fleetId: row.fleet_id ?? null } : null;
   } catch {
     return null;
   }

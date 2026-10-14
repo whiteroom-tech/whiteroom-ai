@@ -73,7 +73,8 @@ describe('server-side fleet ownership', () => {
     const insertCall = mocks.query.mock.calls.find(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
     );
-    expect(insertCall?.[1]).toEqual(['user-1', 'test-token', 'owned', 'Fleet']);
+    // No WR_CRED_ENCRYPTION_KEY under test, so no encrypted copy (null).
+    expect(insertCall?.[1]).toEqual(['user-1', 'test-token', 'owned', 'Fleet', null]);
     expect(mocks.sync).not.toHaveBeenCalled();
   });
 

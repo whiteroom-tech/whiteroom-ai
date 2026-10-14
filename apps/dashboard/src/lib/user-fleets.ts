@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import { readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
@@ -21,11 +22,14 @@ export async function getUserFleets(): Promise<UserFleet[]> {
   if (!userId) return [];
 
   const { rows } = await db().query(
-    `SELECT id, fleet_token, fleet_id, label, created_at::text
+    `SELECT id, fleet_token, fleet_token_enc, fleet_id, label, created_at::text
      FROM user_fleets WHERE user_id = $1 ORDER BY created_at ASC`,
     [userId],
   );
-  return rows;
+  return rows.map(({ fleet_token_enc, ...row }) => ({
+    ...row,
+    fleet_token: readCred('user_fleets.fleet_token', userId, row.fleet_token, fleet_token_enc) as string,
+  }));
 }
 
 export async function addUserFleet(
@@ -91,8 +95,8 @@ export async function addUserFleet(
     }
 
     await client.query(
-      `INSERT INTO user_fleets (user_id, fleet_token, fleet_id, label) VALUES ($1, $2, $3, $4)`,
-      [userId, fleetToken, fleetId, label],
+      `INSERT INTO user_fleets (user_id, fleet_token, fleet_id, label, fleet_token_enc) VALUES ($1, $2, $3, $4, $5)`,
+      [userId, fleetToken, fleetId, label, sealCred('user_fleets.fleet_token', userId, fleetToken)],
     );
     await enqueueEntitlementSync(client, userId, 'fleet_linked');
     await client.query('COMMIT');
