@@ -419,18 +419,18 @@ export function parseUsd(s: unknown): number | null {
 }
 
 /**
- * Home's "saved overall": handover plus prompt-cache savings, the same sum
+ * Home's "Saved by WhiteRoom": handover savings plus the prompt caching WhiteRoom added (never the agents' own), the same sum
  * Performance's Savings card shows for its range. Older engines send only the
  * handover figure (cache null). partial: some saved tokens or cache reads had no price.
  */
-export interface SavedOverall { usd: number; handover: number; cache: number | null; partial: boolean }
-export function savedOverall(e: { estimatedCostSaved: string; cacheCostSaved?: string; totalCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): SavedOverall | null {
+export interface SavedOverall { usd: number; handover: number; cache: number | null; partial: boolean; agentCache: number | null }
+export function savedOverall(e: { estimatedCostSaved: string; cacheCostSaved?: string; totalCostSaved?: string; agentCacheCostSaved?: string; unpricedTokensSaved?: number; unpricedCacheReadTokens?: number }): SavedOverall | null {
   const handover = parseUsd(e.estimatedCostSaved) ?? 0;
   const total = parseUsd(e.totalCostSaved);
   // A missing or non-positive total falls back to handover savings alone.
   const usd = total ?? (handover > 0 ? handover : null);
   if (usd == null) return null;
-  return { usd, handover, cache: total == null ? null : parseUsd(e.cacheCostSaved) ?? 0, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens };
+  return { usd, handover, cache: total == null ? null : parseUsd(e.cacheCostSaved) ?? 0, partial: !!e.unpricedTokensSaved || !!e.unpricedCacheReadTokens, agentCache: parseUsd(e.agentCacheCostSaved) };
 }
 
 /** The Spend card's ⓘ line: where "saved overall" comes from, and how it relates to Performance. */
@@ -439,10 +439,12 @@ export function savedOverallHint(s: SavedOverall): string {
   // The cache part is the total less handovers, in shown cents, so the line
   // always adds up ($8.984 + $2.094 would otherwise read $8.98 + $2.09 = $11.08).
   const cents = (n: number) => Math.round(n * 100);
-  const parts = s.cache == null
+  const cacheCents = s.cache == null ? 0 : Math.max(0, cents(s.usd) - cents(s.handover));
+  const parts = cacheCents === 0
     ? `${usd(s.handover)} from smaller handovers`
-    : `${usd(s.handover)} from smaller handovers + ${usd(Math.max(0, cents(s.usd) - cents(s.handover)) / 100)} from prompt caching`;
-  return `Saved overall: est. ${usd(s.usd)}${plus} = ${parts}, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.${s.partial ? ' "+" means some tokens had no price on file.' : ''}`;
+    : `${usd(s.handover)} from smaller handovers + ${usd(cacheCents / 100)} from caching WhiteRoom added`;
+  const own = s.agentCache != null && s.agentCache > 0 ? ` Your agents' own caching saved a further ${usd(s.agentCache)}, which isn't counted.` : '';
+  return `Saved by WhiteRoom: est. ${usd(s.usd)}${plus} = ${parts}, across everything stored.${own} Performance shows the same sum for the last 24h, 3d or 7d.${s.partial ? ' "+" means some tokens had no price on file.' : ''}`;
 }
 
 /** Holds whose agent is no longer registered (removed while held), oldest first. */

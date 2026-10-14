@@ -199,7 +199,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             label="Spend today"
             hint={saved ? `${HELP.spendToday} ${savedOverallHint(saved)}` : HELP.spendToday}
             value={today ? `${usd(today.costUsd)}${partialMark(!!today.partial)}` : '—'}
-            sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved overall →` : todaySub}
+            sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved by WhiteRoom →` : todaySub}
             subHref={saved && !todayFailing ? ROUTES.performance : undefined}
           />
           <StatCard variant="card" label="Smaller handovers" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? (energyOverall ? `${energyOverall} saved overall` : undefined) : 'no handovers yet'} />

@@ -203,9 +203,9 @@ describe('formatting', () => {
     expect(parseUsd('$0.0000')).toBeNull();
     expect(parseUsd(undefined)).toBeNull();
   });
-  it('saved overall adds prompt caching, like Performance, and falls back on older engines', () => {
-    expect(savedOverall({ estimatedCostSaved: '$4.2200', cacheCostSaved: '$1.9200', totalCostSaved: '$6.1400' })).toEqual({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false });
-    expect(savedOverall({ estimatedCostSaved: '$4.2200' })).toEqual({ usd: 4.22, handover: 4.22, cache: null, partial: false });
+  it('saved by WhiteRoom adds the caching WhiteRoom added, like Performance, and falls back on older engines', () => {
+    expect(savedOverall({ estimatedCostSaved: '$4.2200', cacheCostSaved: '$1.9200', totalCostSaved: '$6.1400', agentCacheCostSaved: '$3.0000' })).toEqual({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false, agentCache: 3 });
+    expect(savedOverall({ estimatedCostSaved: '$4.2200' })).toEqual({ usd: 4.22, handover: 4.22, cache: null, partial: false, agentCache: null });
     expect(savedOverall({ estimatedCostSaved: '$1.0000', totalCostSaved: '$2.0000', unpricedCacheReadTokens: 5 })?.partial).toBe(true);
     expect(savedOverall({ estimatedCostSaved: '$1.0000', unpricedTokensSaved: 40 })?.partial).toBe(true);
     // A zero or malformed total never hides a positive handover saving.
@@ -215,14 +215,16 @@ describe('formatting', () => {
   });
   it('the ⓘ parts add up to the shown total, whatever the rounding', () => {
     // Live Oct 12: $8.984 + $2.094 = $11.078 read "$11.08 = $8.98 + $2.09".
-    expect(savedOverallHint({ usd: 11.078, handover: 8.984, cache: 2.094, partial: false }))
-      .toContain('est. $11.08 = $8.98 from smaller handovers + $2.10 from prompt caching');
+    expect(savedOverallHint({ usd: 11.078, handover: 8.984, cache: 2.094, partial: false, agentCache: null }))
+      .toContain('est. $11.08 = $8.98 from smaller handovers + $2.10 from caching WhiteRoom added');
   });
-  it('explains saved overall in the Spend card ⓘ', () => {
-    expect(savedOverallHint({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false }))
-      .toBe('Saved overall: est. $6.14 = $4.22 from smaller handovers + $1.92 from prompt caching, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');
-    expect(savedOverallHint({ usd: 4.22, handover: 4.22, cache: null, partial: true }))
-      .toBe('Saved overall: est. $4.22+ = $4.22 from smaller handovers, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d. "+" means some tokens had no price on file.');
+  it('explains saved by WhiteRoom in the Spend card ⓘ, keeping the agents\' own caching out', () => {
+    expect(savedOverallHint({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false, agentCache: null }))
+      .toBe('Saved by WhiteRoom: est. $6.14 = $4.22 from smaller handovers + $1.92 from caching WhiteRoom added, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');
+    expect(savedOverallHint({ usd: 4.22, handover: 4.22, cache: 0, partial: false, agentCache: 2.5 }))
+      .toBe('Saved by WhiteRoom: est. $4.22 = $4.22 from smaller handovers, across everything stored. Your agents\' own caching saved a further $2.50, which isn\'t counted. Performance shows the same sum for the last 24h, 3d or 7d.');
+    expect(savedOverallHint({ usd: 4.22, handover: 4.22, cache: null, partial: true, agentCache: null }))
+      .toBe('Saved by WhiteRoom: est. $4.22+ = $4.22 from smaller handovers, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d. "+" means some tokens had no price on file.');
   });
 });
 
