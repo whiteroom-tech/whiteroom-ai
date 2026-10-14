@@ -8,11 +8,11 @@ Start a practice test in the dashboard (Sandbox), then run it from your computer
 
 ```sh
 export ANTHROPIC_API_KEY=...   # the key your agent uses (see the table below)
-npx @whiteroom-ai/cli@2.0.0 practice run                                   # WhiteRoom's sample agent
-npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs"   # your own agent
+whiteroom practice run                                   # WhiteRoom's sample agent
+whiteroom practice run --adapter "node wr-adapter.mjs"   # your own agent
 ```
 
-The dashboard shows these commands with the exact version to run. With the CLI installed globally (`npm install -g @whiteroom-ai/cli`), `whiteroom` works in place of `npx @whiteroom-ai/cli@2.0.0`; the examples below use `whiteroom` for short.
+The dashboard shows these commands ready to copy.
 
 Set the one variable for your agent's provider. For Azure OpenAI, Claude on Azure (Foundry) and AWS Bedrock, use the same key you added on Fleet key and picked in the dashboard:
 
