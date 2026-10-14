@@ -159,6 +159,49 @@ describe("practice run: the starters and the fleet's controls", () => {
 });
 
 describe("practice run: control checks", () => {
+  it("counts practice tasks without the control-check step, as the start line does", async () => {
+    const s = await stub({ plan: ["A", "controls"] });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 1: Finishes a job correctly/);
+    assert.doesNotMatch(r.stdout, /of 2:/);
+    assert.match(r.stdout, /Checking your controls/);
+  });
+
+  it("counts across runs: each run's control step is left out", async () => {
+    const s = await stub({ plan: ["A", "controls", "A", "controls"], runs: 2 });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 2: Finishes a job correctly \(run 1 of 2\)/);
+    assert.match(r.stdout, /Checking your controls \(run 1 of 2\)/);
+    assert.match(r.stdout, /Practice task 2 of 2: Finishes a job correctly \(run 2 of 2\)/);
+    assert.match(r.stdout, /Checking your controls \(run 2 of 2\)/);
+  });
+
+  for (const [who, adapter] of [["JS starter", "node starters/wr-adapter.mjs"], ["Python starter", "python3 starters/wr_adapter.py"]] as const) {
+    it(`${who}: says "saving a summary" once per task, though every model call waits for one`, async () => {
+      const s = await stub({ summaryEach: true });
+      const r = await run(s, ["--adapter", adapter]);
+      assert.equal(r.code, 0, r.stderr);
+      assert.ok(s.models.length > 2, "the task made several model calls");
+      assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);
+    });
+  }
+
+  it("a progress total that isn't the claim's plan: shows the engine's own numbers", async () => {
+    const s = await stub({ plan: ["A", "controls"], progressTotal: 4 });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 4: Finishes a job correctly/);
+  });
+
+  it("an engine before practiceTasks: counts its every step, as it did", async () => {
+    const s = await stub({ plan: ["A", "controls"], legacyClaim: true });
+    const r = await run(s);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /Practice task 1 of 2: Finishes a job correctly/);
+  });
+
   it("sends each planned call with the key and reports WhiteRoom's answer back", async () => {
     const s = await stub({ plan: ["controls"] });
     const r = await run(s);

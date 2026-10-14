@@ -78,8 +78,16 @@ export interface StubOptions {
   taskMs?: number;
   /** Per-request override: return a reply to answer instead of the stub. `n` counts requests to that path. */
   route?: (path: string, body: any, n: number) => Reply | undefined;
+  /** A claim from an engine before practiceTasks/controls. */
+  legacyClaim?: boolean;
+  /** Runs the claim reports; each run's control step ends it (default 1). */
+  runs?: number;
+  /** A progress total other than the plan's, as when it isn't the plan the claim described. */
+  progressTotal?: number;
   /** The fake model's first call on each practice task is answered twice as WhiteRoom does while it saves a summary. */
   summaryFirst?: boolean;
+  /** Every model call on a task is answered once as WhiteRoom does while it saves a summary, then served. */
+  summaryEach?: boolean;
   /** The result tasks/next returns at the end (default: the fixture's). */
   done?: unknown;
   /** The practice task's model (default: the fixture's); null means none was chosen. */
@@ -111,7 +119,8 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
   const counts = new Map<string, number>();
   const stub = { seen: [] as Seen[], contractErrors: [] as string[], escalations: [] as Stub["escalations"], models: [] as string[], calls: [] as Stub["calls"], finals: [] as Stub["finals"], controlResults: [] as unknown[], cancels: [] as unknown[] };
   let attempt = 0;
-  let current: { id: string; reads: Set<string>; summaryWaits: number } | null = null;
+  let runAt = 0;
+  let current: { id: string; reads: Set<string>; summaryWaits: number; waitedAt?: number } | null = null;
   let controlSteps = 0;
   let origin = "";
   let provider = "anthropic";
@@ -137,11 +146,17 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
         if (body.key.startsWith("bedrock-api-key-")) return fromFixture("r7.claim.short_term_key");
         if (body.key !== CLOUD[o.cloud].key) return fromFixture("r7.claim.key_mismatch", (r) => Object.assign(r, { provider: o.cloud }));
         provider = o.cloud;
-        return fromFixture("r7.claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length } }));
+        return fromFixture("r7.claim", (r) => {
+          Object.assign(r, { session: SESSION, run: { ...r.run, provider, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } });
+          if (o.legacyClaim) { delete r.run.practiceTasks; delete r.run.controls; }
+        });
       }
       if (body.key !== KEY && body.key !== OPENAI_KEY) return fromFixture("claim.key_mismatch");
       provider = body.key === KEY ? "anthropic" : "openai";
-      return fromFixture("claim", (r) => Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: 1, tasks: plan.length } }));
+      return fromFixture("claim", (r) => {
+        Object.assign(r, { session: SESSION, run: { ...r.run, provider, runs: o.runs ?? 1, tasks: plan.length, practiceTasks: plan.filter((t) => t !== "controls").length, controls: plan.includes("controls") } });
+        if (o.legacyClaim) { delete r.run.practiceTasks; delete r.run.controls; }
+      });
     }
     if (headers.authorization !== `Bearer ${SESSION}`) return fromFixture("session.unknown");
     if (path === "/api/readiness/tasks/next") {
@@ -149,18 +164,19 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
       const item = plan.shift();
       if (!item) return o.done ? [200, o.done] : fromFixture("tasks.next.done");
       const id = `a-${++attempt}`;
-      const progress = { done: total - plan.length - 1, total };
+      const progress = { done: total - plan.length - 1, total: o.progressTotal ?? total };
       current = { id, reads: new Set(), summaryWaits: 0 };
       const deadline = new Date(Date.now() + (o.taskMs ?? 60_000)).toISOString();
       if (item === "controls") {
         controlSteps = 0;
+        const runIndex = runAt++;
         return fromFixture("tasks.next.controls", (r) => {
-          Object.assign(r.controls, { attemptId: id, deadline, baseUrl: baseUrl(), provider });
+          Object.assign(r.controls, { attemptId: id, deadline, baseUrl: baseUrl(), provider, runIndex });
           r.progress = progress;
         });
       }
       return fromFixture(o.cloud ? "r7.tasks.next.task" : "tasks.next.task.A", (r) => {
-        Object.assign(r.task, { attemptId: id, deadline, baseUrl: baseUrl(), provider });
+        Object.assign(r.task, { attemptId: id, deadline, baseUrl: baseUrl(), provider, runIndex: runAt });
         r.progress = progress;
         if (o.taskModel !== undefined) r.task.model = o.taskModel;
         r.task.headers = { "x-whiteroom-fleet": `sandbox-r-${id}`, "x-wr-readiness-attempt": id, "x-whiteroom-agent": "support-bot" };
@@ -238,6 +254,10 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
     // Twice in a row, as a summary that takes a while: the starters say so once.
     if (o.summaryFirst && current && current.summaryWaits < 2) {
       current.summaryWaits++;
+      return [429, { type: "error", error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }];
+    }
+    if (o.summaryEach && current && current.waitedAt !== body.messages.length) {
+      current.waitedAt = body.messages.length;
       return [429, { type: "error", error: { type: "rate_limit_error", message: "x" }, whiteroom: { reason: "watch_limit_exceeded" } }];
     }
     // What the agent has done so far, from the conversation.

@@ -37,11 +37,12 @@ const GONE = "Stopped: WhiteRoom closed this practice task.";
 
 // One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
 // Never follows a redirect, so the key only goes to WhiteRoom.
-// Waits and tries again when WhiteRoom or the provider asks it to, saying each reason once per call.
+// Waits and tries again when WhiteRoom or the provider asks it to, saying each reason once per practice task.
+// Each practice task runs in its own adapter process, so this is per task.
+const said = new Set();
 async function model(base_url, headers, body) {
   const url = anthropic ? `${base_url}/v1/messages` : `${base_url}/chat/completions`;
   const auth = { ...KEYS[KEY_VAR](process.env[KEY_VAR] ?? ""), ...(anthropic && { "anthropic-version": "2023-06-01" }) };
-  const said = new Set();
   for (let tries = 1; ; tries++) {
     const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers, ...auth },
       body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000) });
