@@ -66,7 +66,7 @@ export const copy = {
   badKeyEnv: (v: string) => `--key-env must name a provider key variable (${list(KEY_VARS, "or")}), not ${v}.`,
   shortTermKey: CATALOG.keyRefusals.short_term_key,
   node: (v: string) => `Needs Node 20 or later (you have ${v}).`,
-  windows: "Practice tests run on macOS and Linux in this beta. Run the command there, or in WSL.",
+  windows: "Practice tests run on macOS and Linux for now. Run the command there, or in WSL.",
   badUrl: "--url must be a WhiteRoom address (https://….whiteroom.tech) or http://localhost for local testing.",
   adapterMissing: (cmd: string, why: string) =>
     `Couldn't start the adapter \`${cmd}\`: ${why}. Nothing was sent or charged, and your run code still works.`,
