@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -21,17 +20,16 @@ vi.mock('@/lib/fleet-session', () => ({
   tokenFromUserFleets: async () => null,
 }));
 
-import { sealCred } from '@/lib/cred-seal';
 import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
 
 const body = (b: Record<string, unknown>) => JSON.stringify(b);
 
-type Held = { token: string | null; tokenEnc?: string; fleetId: string | null; id?: string; provisioned?: boolean };
-type Holder = { userId: string; provisioned: boolean; since: number; fleetId: string | null; token?: string; tokenEnc?: string };
+type Held = { token: string; fleetId: string | null };
+type Holder = { userId: string; provisioned: boolean; since: number };
 /** Answers the access check's queries: the account's held tokens, then the fleet's holders. */
-function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: true, since: 1, fleetId: 'f1' }]) {
+function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: true, since: 1 }]) {
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.startsWith('UPDATE')) return { rows: [] };
     if (sql.includes('extract(epoch')) return { rows: holders };
@@ -88,7 +86,7 @@ describe('controlAccessError', () => {
     signedIn();
     holds({ token: 'tok', fleetId: 'f1' });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1']);
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'tok']);
     expect(mocks.tokenLogin).not.toHaveBeenCalled();
   });
 
@@ -135,8 +133,8 @@ describe('controlAccessError', () => {
     signedIn();
     // An agent's own account that linked the fleet after the person who provisioned it.
     fakeDb([{ token: 'tok', fleetId: 'f1' }], [
-      { userId: 'u-owner', provisioned: true, since: 100, fleetId: 'f1' },
-      { userId: 'u1', provisioned: false, since: 50, fleetId: 'f1' },
+      { userId: 'u-owner', provisioned: true, since: 100 },
+      { userId: 'u1', provisioned: false, since: 50 },
     ]);
     expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/Only this fleet’s owner/) });
   });
@@ -144,55 +142,28 @@ describe('controlAccessError', () => {
   it('allows the account that linked the fleet first when nobody provisioned it', async () => {
     signedIn();
     fakeDb([{ token: 'tok', fleetId: 'f1' }], [
-      { userId: 'u-later', provisioned: false, since: 200, fleetId: 'f1' },
-      { userId: 'u1', provisioned: false, since: 100, fleetId: 'f1' },
+      { userId: 'u-later', provisioned: false, since: 200 },
+      { userId: 'u1', provisioned: false, since: 100 },
     ]);
     expect(await controlAccessError('f1', 'tok')).toBeNull();
   });
 
   it('records the engine-verified fleet id on a fleet-id-less row, then judges ownership with it', async () => {
     signedIn();
-    fakeDb([
-      { id: 'u1', provisioned: true, token: 'tok', fleetId: null },
-      { id: '7', provisioned: false, token: 'tok', fleetId: null },
-      { id: '8', provisioned: false, token: 'other', fleetId: null },
-    ], [{ userId: 'u1', provisioned: false, since: 1, fleetId: null, token: 'tok' }]);
+    fakeDb([{ token: 'tok', fleetId: null }], [{ userId: 'u1', provisioned: false, since: 1 }]);
     mocks.tokenLogin.mockResolvedValue({ success: true, fleetId: 'f1' });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
     const updates = mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'));
-    expect(updates.map(([sql, params]) => [String(sql).split(' ')[1], params])).toEqual([['users', ['u1', 'f1']], ['user_fleets', ['7', 'f1']]]);
+    expect(updates.map(([, params]) => params)).toEqual([['u1', 'tok', 'f1'], ['u1', 'tok', 'f1']]);
   });
 
   it('counts holders by fleet id or, for rows without one, by this fleet’s token', async () => {
     signedIn();
-    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
-      { userId: 'u1', provisioned: true, since: 100, fleetId: 'f1' },
-      { userId: 'u-other', provisioned: false, since: 1, fleetId: null, token: 'other-fleet-token' },
-    ]);
-    expect(await controlAccessError('f1', 'tok')).toBeNull();
+    fakeDb([{ token: 'tok', fleetId: 'f1' }]);
+    await controlAccessError('f1', 'tok');
     const [sql, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
-    expect(params).toEqual(['f1']);
-    expect(String(sql).match(/fleet_id = \$1 OR fleet_id IS NULL/g)).toHaveLength(2);
-    // A fleet-id-less row holding this fleet's token counts, even when only its encrypted copy is left.
-    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
-    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
-      { userId: 'u1', provisioned: false, since: 100, fleetId: 'f1' },
-      { userId: 'u-old', provisioned: false, since: 1, fleetId: null, token: undefined, tokenEnc: sealCred('user_fleets.fleet_token', 'u-old', 'tok')! },
-    ]);
-    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/Only this fleet’s owner/) });
-    vi.unstubAllEnvs();
-  });
-
-  it('matches a held token by its decrypted value when the plain one is gone', async () => {
-    signedIn();
-    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
-    holds({ id: 'u1', provisioned: true, token: null, tokenEnc: sealCred('users.fleet_token', 'u1', 'tok')!, fleetId: 'f1' });
-    expect(await controlAccessError('f1', 'tok')).toBeNull();
-    expect(await controlAccessError('f1', 'other')).toMatchObject({ status: 403 });
-    // An envelope saved for another account doesn't open here: the lookup fails closed.
-    holds({ id: 'u1', provisioned: true, token: null, tokenEnc: sealCred('users.fleet_token', 'u2', 'tok')!, fleetId: 'f1' });
-    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
-    vi.unstubAllEnvs();
+    expect(params).toEqual(['f1', 'tok']);
+    expect(String(sql).match(/fleet_id = \$1 OR \(fleet_id IS NULL AND fleet_token = \$2\)/g)).toHaveLength(2);
   });
 
   it('refuses when nobody can be shown to own the fleet, and fails closed if the owner lookup fails', async () => {
@@ -305,7 +276,7 @@ describe('the engine BFF', () => {
     mocks.query.mockResolvedValue({ rows: [] });
     const res = await call({ action: 'pause_agent', fleet_id: 'fleet-a', agent_id: 'a' });
     expect(res.status).toBe(403);
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1']);
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'wr_fleet_token']);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

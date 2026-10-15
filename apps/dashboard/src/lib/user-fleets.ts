@@ -26,10 +26,11 @@ export async function getUserFleets(): Promise<UserFleet[]> {
      FROM user_fleets WHERE user_id = $1 ORDER BY created_at ASC`,
     [userId],
   );
-  return rows.map(({ fleet_token_enc, ...row }) => ({
-    ...row,
-    fleet_token: readCred('user_fleets.fleet_token', userId, row.fleet_token, fleet_token_enc) as string,
-  }));
+  // A row with no readable token is left out rather than returned without one.
+  return rows.flatMap(({ fleet_token_enc, ...row }) => {
+    const fleet_token = readCred('user_fleets.fleet_token', userId, row.fleet_token, fleet_token_enc);
+    return fleet_token ? [{ ...row, fleet_token }] : [];
+  });
 }
 
 export async function addUserFleet(

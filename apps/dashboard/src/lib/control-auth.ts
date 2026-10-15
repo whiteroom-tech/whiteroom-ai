@@ -1,7 +1,6 @@
 import 'server-only';
 
 import { auth } from '@/auth';
-import { readCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 
@@ -145,19 +144,15 @@ export async function controlAccessError(fleetId: string | null, token: string):
   const userId = session?.user?.id;
   if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change this fleet’s controls or settings.' };
   if (!fleetId) return { status: 400, error: 'fleet_id is required.' };
-  // Tokens are compared after decrypting, so the account's rows are fetched by
-  // user id and matched here rather than in SQL.
-  let held: (HeldCredential & { provisioned: boolean; id: string })[];
+  let held: HeldCredential[];
   try {
     const { rows } = await db().query(
-      `SELECT id, true AS provisioned, fleet_token AS token, fleet_token_enc AS "tokenEnc", fleet_id AS "fleetId"
-         FROM users WHERE id = $1
+      `SELECT fleet_token AS token, fleet_id AS "fleetId" FROM users WHERE id = $1 AND fleet_token = $2
        UNION ALL
-       SELECT id::text, false, fleet_token, fleet_token_enc, fleet_id FROM user_fleets WHERE user_id = $1`,
-      [userId],
+       SELECT fleet_token, fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_token = $2`,
+      [userId, token],
     );
-    held = rows.map((r) => ({ ...r, token: readCred(r.provisioned ? 'users.fleet_token' : 'user_fleets.fleet_token', userId, r.token, r.tokenEnc) }))
-      .filter((r) => r.token);
+    held = rows;
   } catch {
     return LOOKUP_FAILED;
   }
@@ -170,44 +165,41 @@ export async function controlAccessError(fleetId: string | null, token: string):
     } catch (e) {
       return isAuthError(e) ? NOT_LINKED : LOOKUP_FAILED;
     }
-    await recordFleetId(held.filter((h) => h.token === token && h.fleetId === null), fleetId);
+    await recordFleetId(userId, token, fleetId);
   }
   try {
     // Holders are rows saved for this fleet, plus rows with no fleet id that
     // hold this fleet's token: a fleet token belongs to one fleet, so an old
     // row's owner still counts before anyone who linked the fleet later.
     const { rows } = await db().query(
-      `SELECT id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since,
-              fleet_id AS "fleetId", fleet_token AS token, fleet_token_enc AS "tokenEnc"
-         FROM users WHERE fleet_id = $1 OR fleet_id IS NULL
+      `SELECT id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
+         FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND fleet_token = $2)
        UNION ALL
-       SELECT user_id, false, extract(epoch FROM created_at)::float8, fleet_id, fleet_token, fleet_token_enc
-         FROM user_fleets WHERE fleet_id = $1 OR fleet_id IS NULL`,
-      [fleetId],
+       SELECT user_id, false, extract(epoch FROM created_at)::float8
+         FROM user_fleets WHERE fleet_id = $1 OR (fleet_id IS NULL AND fleet_token = $2)`,
+      [fleetId, token],
     );
-    const holders = rows.filter((r) => r.fleetId === fleetId
-      || readCred(r.provisioned ? 'users.fleet_token' : 'user_fleets.fleet_token', r.userId, r.token, r.tokenEnc) === token);
-    return fleetOwner(holders) === userId ? null : NOT_OWNER;
+    return fleetOwner(rows) === userId ? null : NOT_OWNER;
   } catch {
     return LOOKUP_FAILED;
   }
 }
 
 /**
- * Saves the engine-verified fleet id on the account's matched rows that have
- * none. Best effort: the ownership query already counts fleet-id-less rows
- * by their token, so a missed write changes nothing.
+ * Saves the engine-verified fleet id on the account's rows that have none.
+ * Best effort: the ownership query already counts fleet-id-less rows by
+ * their token, so a missed write changes nothing.
  */
-async function recordFleetId(rows: { provisioned: boolean; id: string }[], fleetId: string): Promise<void> {
+async function recordFleetId(userId: string, token: string, fleetId: string): Promise<void> {
   try {
-    for (const r of rows) {
-      await db().query(
-        r.provisioned
-          ? 'UPDATE users SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL'
-          : 'UPDATE user_fleets SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL',
-        [r.id, fleetId],
-      );
-    }
+    await db().query(
+      'UPDATE user_fleets SET fleet_id = $3 WHERE user_id = $1 AND fleet_token = $2 AND fleet_id IS NULL',
+      [userId, token, fleetId],
+    );
+    await db().query(
+      'UPDATE users SET fleet_id = $3 WHERE id = $1 AND fleet_token = $2 AND fleet_id IS NULL',
+      [userId, token, fleetId],
+    );
   } catch {
     // Only an optimisation: the ownership query counts these rows by token anyway.
   }

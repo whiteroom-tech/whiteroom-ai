@@ -79,11 +79,16 @@ export async function sealStoredCreds(): Promise<number> {
        WHERE ${column} IS NOT NULL AND ${column}_enc IS NULL`,
     );
     for (const r of rows) {
-      const { rowCount } = await db().query(
-        `UPDATE ${table} SET ${column}_enc = $2 WHERE id = $1 AND ${column} = $3 AND ${column}_enc IS NULL`,
-        [r.id, sealCred(cred, r.userId, r.value), r.value],
-      );
-      sealed += rowCount ?? 0;
+      try {
+        const { rowCount } = await db().query(
+          `UPDATE ${table} SET ${column}_enc = $2 WHERE id = $1 AND ${column} = $3 AND ${column}_enc IS NULL`,
+          [r.id, sealCred(cred, r.userId, r.value), r.value],
+        );
+        sealed += rowCount ?? 0;
+      } catch {
+        // One row failing doesn't stop the others; the next boot retries it.
+        console.error(`[cred-seal] couldn't encrypt a ${cred} row`);
+      }
     }
   }
   return sealed;
