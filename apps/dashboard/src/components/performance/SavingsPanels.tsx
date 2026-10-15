@@ -95,7 +95,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
                         {without ? fmtTokens(d.used) : '–'}
                       </div>
                       {without > 0 && (
-                        <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                           / {fmtTokens(without)}
                         </div>
                       )}

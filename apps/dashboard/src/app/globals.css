@@ -370,6 +370,8 @@
 .wr-savings-day { border-radius: 6px; padding: 2px 0; outline: none; }
 .wr-savings-day:hover, .wr-savings-day:focus-visible { background: var(--sunk); }
 .wr-savings-day:focus-visible { box-shadow: 0 0 0 2px var(--brand); }
+/* Phone: the "/ without" figures run into each other; tapping a day still shows both in the readout. */
+@media (max-width: 480px) { .wr-savings-without { display: none; } }
 
 /* A panel that fills the rest of the page, its body scrolling (Runs' event feed). */
 .wr-panel--fill { flex: 1; min-height: 320px; display: flex; flex-direction: column; }
@@ -411,6 +413,7 @@ a.wr-btn { text-decoration: none; }
 @media (max-width: 720px) {
   .wr-seg { flex-wrap: wrap; max-width: 100%; }
   .wr-panel__head { flex-wrap: wrap; }
+  .wr-panel__count { white-space: normal; }
   .wr-panel__actions { margin-left: 0; }
 }
 .wr-panel--danger { border-color: var(--bad-line); }

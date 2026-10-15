@@ -19,7 +19,7 @@ import { LiveFeedPanel } from './LiveFeedPanel';
 import { fmtKwh, partialMark } from '@/lib/format';
 import { NeedsYou } from '@/components/home/NeedsYou';
 import { AgentActions } from '@/components/home/AgentActions';
-import { RefreshFailed } from '@/components/citadel/States';
+import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EmptyHome } from './EmptyHome';
 
 export type AgentsView = 'cards' | 'table';
@@ -41,7 +41,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
 }) {
   const [report, setReport] = useState<FleetReport | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  // null until the first activity load, so a report that lands first doesn't show "Nothing yet".
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [today, setToday] = useState<{ calls: number; costUsd: number; partial: boolean } | null>(null);
   const [todayFailing, setTodayFailing] = useState(false);
   const [failing, setFailing] = useState(false);
@@ -160,7 +161,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
 export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet, onActed, onAuthError }: {
   report: FleetReport;
   agents: AgentInfo[];
-  entries: AuditEntry[];
+  /** null while the first activity load is pending. */
+  entries: AuditEntry[] | null;
   today: { calls: number; costUsd: number; partial?: boolean } | null;
   todayFailing?: boolean;
   failing: boolean;
@@ -178,9 +180,9 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   const working = agents.filter((a) => agentState(a) === 'working').length;
   const compression = report.energySavings.compressionRatio ?? 0;
   const saved = savedByWhiteRoom(report.energySavings);
-  const blocks = recentBlocksByAgent(entries);
-  const lastEvents = lastEventByAgent(entries);
-  const activity = latestActivity(entries, 4);
+  const blocks = recentBlocksByAgent(entries ?? []);
+  const lastEvents = lastEventByAgent(entries ?? []);
+  const activity = latestActivity(entries ?? [], 4);
   const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
   // The engine's own estimate, so Home and the fleet report agree.
   const energyOverall = fmtKwh(parseFloat(report.energySavings.estimatedEnergySaved));
@@ -263,7 +265,9 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
         </Panel>
 
         <Panel title={<>Activity<Hint text={HELP.activity} /></>} bodyPadding={0} actions={<a href={ROUTES.runs} className="wr-link">View all runs &rarr;</a>}>
-          <ActivityRows rows={activity} empty="Nothing yet. Events appear here as your agents work." />
+          {entries === null
+            ? <LoadingLine>{failing ? 'Couldn\u2019t load activity. Retrying\u2026' : 'Loading\u2026'}</LoadingLine>
+            : <ActivityRows rows={activity} empty="Nothing yet. Events appear here as your agents work." />}
         </Panel>
 
         {liveFeed}
