@@ -17,6 +17,9 @@ export function initAnalytics() {
       capture_pageview: false,
       capture_pageleave: false,
       disable_session_recording: true,
+      // Deliberate (security review Sept 22, item 3): nothing stored in the
+      // browser, so each page load is a new anonymous ID. Losing identity across
+      // reloads is the accepted cost; keep this as is (owner, Oct 15).
       persistence: 'memory',
       before_send: (event) => {
         if (window.location.pathname.startsWith('/auth/') ||
