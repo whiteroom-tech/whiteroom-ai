@@ -101,4 +101,36 @@ describe('instrumentation register', () => {
     await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(3));
     vi.restoreAllMocks();
   });
+
+  it('retries the backfill when the first connection fails, logging the message', async () => {
+    vi.useFakeTimers();
+    const { register } = await import('@/instrumentation');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    query.mockRejectedValueOnce(new Error('timeout exceeded when trying to connect')).mockResolvedValue({ rows: [] });
+    await register();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(errors).toHaveBeenCalledWith('[cred-seal] backfill failed (timeout exceeded when trying to connect)');
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(query).toHaveBeenCalledTimes(4);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('gives up after three tries, masking connection details in the log', async () => {
+    vi.useFakeTimers();
+    const { register } = await import('@/instrumentation');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    query.mockRejectedValue(new Error('connect ECONNREFUSED /cloudsql/project:region:db/.s.PGSQL.5432 at db.internal'));
+    await register();
+    await vi.advanceTimersByTimeAsync(75_000);
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(errors).toHaveBeenCalledTimes(3);
+    expect(errors).toHaveBeenLastCalledWith('[cred-seal] backfill failed (connect ECONNREFUSED … at …)');
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(query).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 });
