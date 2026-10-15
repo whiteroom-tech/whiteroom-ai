@@ -16,5 +16,5 @@ export async function register() {
   const { sealStoredCreds } = await import('@/lib/cred-seal');
   sealStoredCreds()
     .then((n) => { if (n) console.log(`[cred-seal] encrypted ${n} stored credentials`); })
-    .catch(() => console.error('[cred-seal] backfill failed'));
+    .catch((err: { code?: string }) => console.error(`[cred-seal] backfill failed (${err?.code ?? 'error'})`));
 }

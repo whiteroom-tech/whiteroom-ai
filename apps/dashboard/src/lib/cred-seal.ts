@@ -50,11 +50,18 @@ export function openCred(column: CredColumn, userId: string, sealed: string): st
 /**
  * The stored credential: the plain value while it is still there, else the
  * decrypted one. Plain wins so a write from an older revision (plain only)
- * can't be shadowed by a stale envelope.
+ * can't be shadowed by a stale envelope. An envelope that won't open reads
+ * as no credential (logged), so one bad row never fails the others.
  */
 export function readCred(column: CredColumn, userId: string, plain: string | null, sealed: string | null): string | null {
   if (plain) return plain;
-  return sealed ? openCred(column, userId, sealed) : null;
+  if (!sealed) return null;
+  try {
+    return openCred(column, userId, sealed);
+  } catch {
+    console.error(`[cred-seal] couldn't decrypt a ${column} value`);
+    return null;
+  }
 }
 
 /** Each encrypted column, and the column holding its row's user id. */
@@ -65,9 +72,10 @@ const SEALED_COLUMNS: [CredColumn, string][] = [
 ];
 
 /**
- * Encrypts rows saved before this change: a plain value and no envelope.
- * Run at boot (instrumentation.ts). Idempotent, so concurrent instances are
- * fine; an UPDATE only lands if the plain value is still the one encrypted.
+ * Encrypts every plain value whose envelope is missing or stale (an older
+ * revision changed the plain value). Run at boot (instrumentation.ts).
+ * Idempotent, so concurrent instances are fine; an UPDATE only lands if the
+ * row is still as read.
  */
 export async function sealStoredCreds(): Promise<number> {
   if (!credKey()) return 0;
@@ -75,14 +83,15 @@ export async function sealStoredCreds(): Promise<number> {
   for (const [cred, userIdColumn] of SEALED_COLUMNS) {
     const [table, column] = cred.split('.');
     const { rows } = await db().query(
-      `SELECT id, ${userIdColumn} AS "userId", ${column} AS value FROM ${table}
-       WHERE ${column} IS NOT NULL AND ${column}_enc IS NULL`,
+      `SELECT id, ${userIdColumn} AS "userId", ${column} AS value, ${column}_enc AS sealed FROM ${table}
+       WHERE ${column} IS NOT NULL`,
     );
     for (const r of rows) {
+      if (r.sealed && readCred(cred, r.userId, null, r.sealed) === r.value) continue;
       try {
         const { rowCount } = await db().query(
-          `UPDATE ${table} SET ${column}_enc = $2 WHERE id = $1 AND ${column} = $3 AND ${column}_enc IS NULL`,
-          [r.id, sealCred(cred, r.userId, r.value), r.value],
+          `UPDATE ${table} SET ${column}_enc = $2 WHERE id = $1 AND ${column} = $3 AND ${column}_enc IS NOT DISTINCT FROM $4`,
+          [r.id, sealCred(cred, r.userId, r.value), r.value, r.sealed],
         );
         sealed += rowCount ?? 0;
       } catch {

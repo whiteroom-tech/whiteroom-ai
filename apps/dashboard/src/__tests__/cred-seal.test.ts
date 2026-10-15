@@ -44,25 +44,37 @@ describe('readCred', () => {
     expect(readCred('users.fleet_token', 'u1', null, sealed)).toBe('tok');
     expect(readCred('users.fleet_token', 'u1', null, null)).toBeNull();
   });
+
+  it("reads an envelope that won't open as no credential instead of throwing", () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sealed = sealCred('users.fleet_token', 'u1', 'tok')!;
+    expect(readCred('users.fleet_token', 'u2', null, sealed)).toBeNull();
+    vi.restoreAllMocks();
+  });
 });
 
 describe('sealStoredCreds', () => {
-  it('encrypts each plain value that has no envelope, only if it is unchanged', async () => {
+  it('encrypts plain values with a missing or stale envelope, only if the row is unchanged', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const current = sealCred('users.fleet_token', 'u1', 'tok-1')!;
+    const stale = sealCred('user_fleets.fleet_token', 'u2', 'old-tok')!;
     query.mockImplementation(async (sql: string) => {
       if (sql.startsWith('UPDATE')) return { rowCount: 1 };
-      if (sql.includes('FROM user_fleets')) return { rows: [{ id: 7, userId: 'u2', value: 'tok-2' }] };
-      if (sql.includes('api_key AS value')) return { rows: [{ id: 'u1', userId: 'u1', value: 'sk-wr-placeholder' }] };
+      if (sql.includes('FROM user_fleets')) return { rows: [{ id: 7, userId: 'u2', value: 'tok-2', sealed: stale }] };
+      if (sql.includes('api_key AS value')) return { rows: [{ id: 'u1', userId: 'u1', value: 'sk-wr-placeholder', sealed: null }] };
+      if (sql.includes('fleet_token AS value')) return { rows: [{ id: 'u1', userId: 'u1', value: 'tok-1', sealed: current }] };
       return { rows: [] };
     });
     expect(await sealStoredCreds()).toBe(2);
     const updates = query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'));
     expect(updates.map(([sql]) => sql)).toEqual([
-      'UPDATE users SET api_key_enc = $2 WHERE id = $1 AND api_key = $3 AND api_key_enc IS NULL',
-      'UPDATE user_fleets SET fleet_token_enc = $2 WHERE id = $1 AND fleet_token = $3 AND fleet_token_enc IS NULL',
+      'UPDATE users SET api_key_enc = $2 WHERE id = $1 AND api_key = $3 AND api_key_enc IS NOT DISTINCT FROM $4',
+      'UPDATE user_fleets SET fleet_token_enc = $2 WHERE id = $1 AND fleet_token = $3 AND fleet_token_enc IS NOT DISTINCT FROM $4',
     ]);
-    const [, [id, sealed, plain]] = updates[1];
-    expect([id, plain]).toEqual([7, 'tok-2']);
+    const [, [id, sealed, plain, was]] = updates[1];
+    expect([id, plain, was]).toEqual([7, 'tok-2', stale]);
     expect(openCred('user_fleets.fleet_token', 'u2', sealed)).toBe('tok-2');
+    vi.restoreAllMocks();
   });
 
   it('does nothing without a key', async () => {
