@@ -23,9 +23,11 @@ export async function register() {
         if (n) console.log(`[cred-seal] encrypted ${n} stored credentials`);
         return;
       } catch (err) {
-        // Postgres errors carry a code; connection errors only a message (no values).
+        // Postgres errors carry a code; connection errors only a message,
+        // logged with hosts, paths and numbers masked.
         const e = err as { code?: string; message?: string };
-        console.error(`[cred-seal] backfill failed (${e?.code ?? String(e?.message).slice(0, 120)})`);
+        const why = e?.code ?? (e?.message?.replace(/\S*[\d/:]\S*/g, '…').slice(0, 120) || 'unknown');
+        console.error(`[cred-seal] backfill failed (${why})`);
       }
     }
   })();
