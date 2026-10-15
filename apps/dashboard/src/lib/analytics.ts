@@ -19,7 +19,8 @@ export function initAnalytics(userId: string) {
     // Another account signed in without a page load: start over as that user.
     if (userId !== currentId) {
       currentId = userId;
-      void loaded.then((p) => { p.reset(); p.identify(userId); });
+      // A failed load already cleared loaded/currentId (below); the next init starts fresh.
+      loaded.then((p) => { p.reset(); p.identify(userId); }).catch(() => {});
     }
     return;
   }
