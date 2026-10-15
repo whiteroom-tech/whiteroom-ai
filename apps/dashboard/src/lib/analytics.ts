@@ -4,27 +4,9 @@ type PostHog = typeof import('posthog-js').default;
 
 // posthog-js loads only once analytics starts, so it isn't in every page's bundle.
 let loaded: Promise<PostHog> | null = null;
-let currentId: string | null = null;
 
-/**
- * Starts analytics for a signed-in user. PostHog keeps nothing in the browser
- * (persistence 'memory'), so without a starting ID every page load would get a
- * fresh anonymous one: events on most pages belong to nobody, and each
- * identify() merges another ID into the person until PostHog's limit. Starting
- * from the user's own ID keeps one ID per user and still stores nothing.
- */
-export function initAnalytics(userId: string) {
-  if (typeof window === 'undefined' || !userId) return;
-  if (loaded) {
-    // Another account signed in without a page load: start over as that user.
-    if (userId !== currentId) {
-      currentId = userId;
-      // A failed load already cleared loaded/currentId (below); the next init starts fresh.
-      loaded.then((p) => { p.reset(); p.identify(userId); }).catch(() => {});
-    }
-    return;
-  }
-  currentId = userId;
+export function initAnalytics() {
+  if (loaded || typeof window === 'undefined') return;
   loaded = import('posthog-js').then(({ default: posthog }) => {
     posthog.init('phc_kkHTFEiVyW2Bto9QDvoBK5JB8aS62cwzYZBZNexerM9J', {
       api_host: 'https://us.i.posthog.com',
@@ -35,8 +17,10 @@ export function initAnalytics(userId: string) {
       capture_pageview: false,
       capture_pageleave: false,
       disable_session_recording: true,
+      // Deliberate (security review Sept 22, item 3): nothing stored in the
+      // browser, so each page load is a new anonymous ID. Losing identity across
+      // reloads is the accepted cost; keep this as is (owner, Oct 15).
       persistence: 'memory',
-      bootstrap: { distinctID: userId, isIdentifiedID: true },
       before_send: (event) => {
         if (window.location.pathname.startsWith('/auth/') ||
             window.location.pathname.startsWith('/settings/confirm-email') ||
@@ -51,7 +35,7 @@ export function initAnalytics(userId: string) {
   });
   // A chunk that fails to load (offline, a deploy in between) leaves analytics
   // off for this page instead of an unhandled rejection; the next init retries.
-  loaded.catch(() => { loaded = null; currentId = null; });
+  loaded.catch(() => { loaded = null; });
 }
 
 /** Events before initAnalytics are dropped, as posthog-js did before it was initialised. */
