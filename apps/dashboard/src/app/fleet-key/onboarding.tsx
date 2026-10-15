@@ -20,6 +20,7 @@ import {
   BEDROCK_LINES,
   BEDROCK_NOTES,
   BEDROCK_ROLE_LINES,
+  BEDROCK_ROLE_SUPPORT,
   PROXY_ORIGIN,
   SETUP_GUIDE_URL,
   SETUP_LINES,
@@ -572,7 +573,12 @@ function BedrockRoleRecipe() {
       <RecipeStep label="2. Grant the role Bedrock access, e.g." code={'bedrock:InvokeModel\nbedrock:InvokeModelWithResponseStream\nbedrock:Converse\nbedrock:ConverseStream'} />
       <RecipeStep label="3. Install the client shim" code={BEDROCK_ROLE_LINES.pythonInstall} />
       <RecipeStep label="4. Point boto3 at WhiteRoom (JS/TS coming soon)" code={BEDROCK_ROLE_LINES.python('<your-region>')} />
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--tx2)' }}>Streaming calls aren&rsquo;t proxied yet — use <code>converse</code>/<code>invoke_model</code> for now.</p>
+      <div style={{ display: 'grid', gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>Supported models</span>
+        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 2, fontSize: 12, color: 'var(--tx2)' }}>
+          {BEDROCK_ROLE_SUPPORT.map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      </div>
     </>
   );
 }
