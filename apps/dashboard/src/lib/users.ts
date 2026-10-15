@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import { readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
@@ -21,14 +22,14 @@ async function requireUserId(): Promise<string> {
 export async function getUserProvisioning(): Promise<UserProvisioning> {
   const userId = await requireUserId();
   const { rows } = await db().query(
-    `SELECT api_key, fleet_id, fleet_token, byok FROM users WHERE id = $1`,
+    `SELECT api_key, api_key_enc, fleet_id, fleet_token, fleet_token_enc, byok FROM users WHERE id = $1`,
     [userId],
   );
   const row = rows[0];
   return {
-    apiKey: row?.api_key ?? null,
+    apiKey: readCred('users.api_key', userId, row?.api_key ?? null, row?.api_key_enc ?? null),
     fleetId: row?.fleet_id ?? null,
-    fleetToken: row?.fleet_token ?? null,
+    fleetToken: readCred('users.fleet_token', userId, row?.fleet_token ?? null, row?.fleet_token_enc ?? null),
     byok: row?.byok ?? false,
   };
 }
@@ -59,16 +60,22 @@ export async function upsertUserProvisioning(input: {
     oldFleetId = current[0]?.fleet_id ?? null;
 
     await client.query(
-      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, now())
+      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
        ON CONFLICT (id) DO UPDATE SET
          email = EXCLUDED.email,
          name = EXCLUDED.name,
          api_key = EXCLUDED.api_key,
          fleet_id = EXCLUDED.fleet_id,
          fleet_token = EXCLUDED.fleet_token,
+         api_key_enc = EXCLUDED.api_key_enc,
+         fleet_token_enc = EXCLUDED.fleet_token_enc,
          updated_at = now()`,
-      [userId, session?.user?.email ?? null, session?.user?.name ?? null, input.apiKey, input.fleetId, input.fleetToken],
+      [
+        userId, session?.user?.email ?? null, session?.user?.name ?? null, input.apiKey, input.fleetId, input.fleetToken,
+        sealCred('users.api_key', userId, input.apiKey),
+        input.fleetToken ? sealCred('users.fleet_token', userId, input.fleetToken) : null,
+      ],
     );
     await enqueueEntitlementSync(client, userId, 'provisioning_upsert');
     await client.query('COMMIT');

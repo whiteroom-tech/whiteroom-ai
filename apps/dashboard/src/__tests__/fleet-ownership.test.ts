@@ -14,6 +14,8 @@ vi.mock('@/lib/entitlements', () => ({
   getSubscriptionRow: async () => null,
   revokeFleetEntitlement: mocks.revoke,
 }));
+import { randomBytes } from 'node:crypto';
+import { openCred } from '@/lib/cred-seal';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { addUserFleet } from '@/lib/user-fleets';
 import { upsertUserProvisioning } from '@/lib/users';
@@ -73,8 +75,21 @@ describe('server-side fleet ownership', () => {
     const insertCall = mocks.query.mock.calls.find(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
     );
-    expect(insertCall?.[1]).toEqual(['user-1', 'test-token', 'owned', 'Fleet']);
+    // No WR_CRED_ENCRYPTION_KEY under test, so no encrypted copy (null).
+    expect(insertCall?.[1]).toEqual(['user-1', 'test-token', 'owned', 'Fleet', null]);
     expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it('saves an encrypted copy of the linked token when a key is set', async () => {
+    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+    mocks.query.mockResolvedValue({ rows: [] });
+    expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+    const insertCall = mocks.query.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
+    );
+    expect(openCred('user_fleets.fleet_token', 'user-1', insertCall?.[1][4])).toBe('test-token');
+    vi.unstubAllEnvs();
   });
 
   it('rejects a provider API key at the provisioning storage boundary', async () => {
