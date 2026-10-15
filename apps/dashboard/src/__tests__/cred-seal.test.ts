@@ -101,4 +101,19 @@ describe('instrumentation register', () => {
     await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(3));
     vi.restoreAllMocks();
   });
+
+  it('retries the backfill when the first connection fails, logging the message', async () => {
+    vi.useFakeTimers();
+    const { register } = await import('@/instrumentation');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    query.mockRejectedValueOnce(new Error('timeout exceeded when trying to connect')).mockResolvedValue({ rows: [] });
+    await register();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(errors).toHaveBeenCalledWith('[cred-seal] backfill failed (timeout exceeded when trying to connect)');
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(query).toHaveBeenCalledTimes(4);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 });
