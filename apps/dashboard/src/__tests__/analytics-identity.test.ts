@@ -37,6 +37,17 @@ describe('analytics identity', () => {
     expect(posthog.reset).toHaveBeenCalledWith({ bootstrap: { distinctID: 'user-2', isIdentifiedID: true } });
   });
 
+  it('retries on the next call when starting failed', async () => {
+    const { initAnalytics } = await import('@/lib/analytics');
+    posthog.init.mockImplementationOnce(() => { throw new Error('chunk failed'); });
+    initAnalytics('user-1');
+    await flush();
+    initAnalytics('user-1');
+    await flush();
+    expect(posthog.init).toHaveBeenCalledTimes(2);
+    expect(posthog.reset).not.toHaveBeenCalled();
+  });
+
   it('stays off without a signed-in user', async () => {
     const { initAnalytics } = await import('@/lib/analytics');
     initAnalytics('');
