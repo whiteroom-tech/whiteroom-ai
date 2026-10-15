@@ -122,12 +122,12 @@ describe('instrumentation register', () => {
     const { register } = await import('@/instrumentation');
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
-    query.mockRejectedValue(new Error('connect ECONNREFUSED /cloudsql/project:region:db/.s.PGSQL.5432'));
+    query.mockRejectedValue(new Error('connect ECONNREFUSED /cloudsql/project:region:db/.s.PGSQL.5432 at db.internal'));
     await register();
     await vi.advanceTimersByTimeAsync(75_000);
     expect(query).toHaveBeenCalledTimes(3);
     expect(errors).toHaveBeenCalledTimes(3);
-    expect(errors).toHaveBeenLastCalledWith('[cred-seal] backfill failed (connect ECONNREFUSED …)');
+    expect(errors).toHaveBeenLastCalledWith('[cred-seal] backfill failed (connect ECONNREFUSED … at …)');
     await vi.advanceTimersByTimeAsync(300_000);
     expect(query).toHaveBeenCalledTimes(3);
     vi.useRealTimers();

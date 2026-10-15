@@ -24,9 +24,10 @@ export async function register() {
         return;
       } catch (err) {
         // Postgres errors carry a code; connection errors only a message,
-        // logged with hosts, paths and numbers masked.
+        // logged with any word holding a digit, '/', ':', '.' or '@'
+        // (hosts, paths, addresses, ports) masked.
         const e = err as { code?: string; message?: string };
-        const why = e?.code ?? (e?.message?.replace(/\S*[\d/:]\S*/g, '…').slice(0, 120) || 'unknown');
+        const why = e?.code ?? (e?.message?.replace(/\S*[\d/:.@]\S*/g, '…').slice(0, 120) || 'unknown');
         console.error(`[cred-seal] backfill failed (${why})`);
       }
     }
