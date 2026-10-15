@@ -19,7 +19,7 @@ export function initAnalytics(userId: string) {
     // Another account signed in without a page load: start over as that user.
     if (userId !== currentId) {
       currentId = userId;
-      void loaded.then((p) => p.reset({ bootstrap: { distinctID: userId, isIdentifiedID: true } }));
+      void loaded.then((p) => { p.reset(); p.identify(userId); });
     }
     return;
   }

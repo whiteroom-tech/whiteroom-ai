@@ -34,7 +34,9 @@ describe('analytics identity', () => {
     initAnalytics('user-2');
     await flush();
     expect(posthog.init).toHaveBeenCalledTimes(1);
-    expect(posthog.reset).toHaveBeenCalledWith({ bootstrap: { distinctID: 'user-2', isIdentifiedID: true } });
+    expect(posthog.reset).toHaveBeenCalledTimes(1);
+    expect(posthog.identify).toHaveBeenCalledWith('user-2');
+    expect(posthog.reset.mock.invocationCallOrder[0]).toBeLessThan(posthog.identify.mock.invocationCallOrder[0]);
   });
 
   it('retries on the next call when starting failed', async () => {
