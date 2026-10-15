@@ -9,17 +9,20 @@ vi.mock('@/auth', () => ({ auth: mocks.auth }));
 vi.mock('@/lib/db', () => ({
   db: () => ({ query: mocks.query, connect: async () => ({ query: mocks.query, release: vi.fn() }) }),
 }));
+vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers() }));
+vi.mock('@/lib/entitlements', () => ({ enqueueEntitlementSync: vi.fn(async () => {}), revokeFleetEntitlement: vi.fn() }));
 
-import { sealCred } from '@/lib/cred-seal';
+import { openCred, sealCred } from '@/lib/cred-seal';
+import { tokenFromUserFleets } from '@/lib/fleet-session';
 import { getUserFleets } from '@/lib/user-fleets';
-import { getUserProvisioning } from '@/lib/users';
+import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
 
 beforeEach(() => {
   vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
   mocks.query.mockReset();
   mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
 });
-afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('getUserFleets', () => {
   it('decrypts a row with no plain value and leaves out a row whose envelope will not open', async () => {
@@ -50,3 +53,25 @@ describe('getUserProvisioning', () => {
   });
 });
 
+
+describe('tokenFromUserFleets', () => {
+  it("uses the account's own fleet token from its envelope once the plain value is gone", async () => {
+    mocks.query.mockResolvedValue({
+      rows: [{ fleet_id: 'f1', fleet_token: null, fleet_token_enc: sealCred('users.fleet_token', 'u1', 'own-tok') }],
+    });
+    expect(await tokenFromUserFleets()).toEqual({ token: 'own-tok', fleetId: 'f1' });
+  });
+});
+
+describe('upsertUserProvisioning', () => {
+  it('saves encrypted copies of the API key and fleet token beside the plain values', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, fleetId: 'f1' })));
+    mocks.query.mockResolvedValue({ rows: [] });
+    const apiKey = 'sk-wr-' + 'a'.repeat(40);
+    await upsertUserProvisioning({ apiKey, fleetId: 'f1', fleetToken: 'tok' });
+    const insert = mocks.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO users'));
+    const params = insert?.[1] as string[];
+    expect(openCred('users.api_key', 'u1', params[6])).toBe(apiKey);
+    expect(openCred('users.fleet_token', 'u1', params[7])).toBe('tok');
+  });
+});
