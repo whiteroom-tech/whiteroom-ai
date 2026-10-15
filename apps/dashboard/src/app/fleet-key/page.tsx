@@ -114,7 +114,7 @@ export default function DashboardPage() {
       setProps({ name, email, apiKey, fleetId, fleetToken, isNew });
       setLoading(false);
 
-      initAnalytics();
+      initAnalytics(user.id);
       analytics.identify(user.id, { email });
       analytics.capture(isNew ? 'sign_up' : 'signed_in', { fleet_id: fleetId });
 
