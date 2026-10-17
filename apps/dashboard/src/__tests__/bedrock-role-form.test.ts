@@ -11,7 +11,7 @@ import {
   generateExternalId,
   roleFormReducer,
 } from '@/lib/bedrock-role-form';
-import { BEDROCK_ROLE_LINES, BEDROCK_ROLE_SERVER_ID, PROXY_ORIGIN, bedrockRoleTrustPolicy } from '@/lib/setup';
+import { BEDROCK_ROLE_LINES, BEDROCK_ROLE_SERVER_ID, BEDROCK_ROLE_SUPPORT, PROXY_ORIGIN, bedrockRoleTrustPolicy } from '@/lib/setup';
 import { deleteBedrockRole, getBedrockRoleStatus, storeBedrockRole } from '@/lib/whiteroom/client';
 
 const ROLE_ARN = 'arn:aws:iam::123456789012:role/WhiteRoomBedrock';
@@ -150,5 +150,15 @@ describe('bedrockRoleTrustPolicy and the SDK recipe', () => {
     expect(snippet).toContain(`endpoint_url="${PROXY_ORIGIN}"`);
     expect(snippet).toContain(`server_id="${BEDROCK_ROLE_SERVER_ID}"`);
     expect(snippet).toContain('region_name="us-east-1"');
+  });
+
+  it('names the agent in the example and uses a current model, with streaming called out as supported', () => {
+    const snippet = BEDROCK_ROLE_LINES.python('us-east-1');
+    expect(snippet).toContain('system=[{"text": "Your role: research agent."}]');
+    expect(snippet).toContain('claude-haiku-4-5');
+    expect(snippet).toContain('converse_stream');
+    // The published shim (0.1.0) has no agent_name: the example mustn't use it until a release that does.
+    expect(snippet).not.toContain('agent_name');
+    expect(BEDROCK_ROLE_SUPPORT.join(' ')).toContain('ConverseStream');
   });
 });

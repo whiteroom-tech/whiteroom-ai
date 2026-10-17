@@ -141,12 +141,21 @@ whiteroom_bedrock.install(
     region="${region}",
 )
 
-# From here down it's a normal bedrock-runtime client.
+# From here down it's a normal bedrock-runtime client: converse,
+# converse_stream, invoke_model and invoke_model_with_response_stream
+# all go through WhiteRoom. The system prompt names the agent.
 response = client.converse(
-    modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+    modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    system=[{"text": "Your role: research agent."}],
     messages=[{"role": "user", "content": [{"text": "hi"}]}],
 )`,
 } as const;
+
+/** What the Cross-account role route supports, under its recipe. */
+export const BEDROCK_ROLE_SUPPORT = [
+  'Converse and ConverseStream: every Bedrock model.',
+  'InvokeModel and InvokeModelWithResponseStream: Claude, Amazon Nova, Meta Llama and Mistral.',
+] as const;
 
 /** Shown when someone turns on Pause, Stop or a Stop rule in Enforce. */
 export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
