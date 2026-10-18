@@ -20,7 +20,17 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'fleet_data_settings_get', 'fleet_data_settings_set',
   'goal_get', 'goal_set_owner', 'agent_new_run',
   'compression_mode_set', 'compression_preview',
+  // Credentials (P0 #1): a rebind revokes everyone else's access and a
+  // Bedrock mapping lets an AWS account spend as the fleet, so only its owner.
+  'rebind_fleet_key', 'rotate_proxy_keys', 'store_bedrock_role', 'delete_bedrock_role',
 ]);
+
+/**
+ * Providers whose proxy keys run on the engine's own cloud identity: a leaked
+ * one spends on that identity, so minting one (store_key) is an owner's
+ * control action too. Keep in step with the engine's CLOUD_IDENTITY_PROVIDERS.
+ */
+export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-entra', 'bedrock-sigv4']);
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
 /** The signed-in account behind a control action, sent with the secret so the engine records who acted. */
@@ -35,8 +45,9 @@ export function controlActionOf(body: string): { action: string; fleetId: string
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const { action, fleet_id } = parsed as { action?: unknown; fleet_id?: unknown };
-  if (typeof action !== 'string' || !DASHBOARD_ONLY_ACTIONS.has(action)) return null;
+  const { action, fleet_id, provider } = parsed as { action?: unknown; fleet_id?: unknown; provider?: unknown };
+  const cloudKey = action === 'store_key' && typeof provider === 'string' && CLOUD_IDENTITY_PROVIDERS.has(provider);
+  if (typeof action !== 'string' || !(DASHBOARD_ONLY_ACTIONS.has(action) || cloudKey)) return null;
   return { action, fleetId: typeof fleet_id === 'string' && fleet_id ? fleet_id : null };
 }
 

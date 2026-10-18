@@ -363,14 +363,13 @@ export interface FleetAuth {
 }
 
 // Prefer the fleet token: the engine authenticates it against the fleet it was
-// issued for and resolves fleet_id from it, so these calls keep working even
-// once the fleet is no longer bound to the dashboard's sk-wr- key. Fall back
-// to the api key (with an explicit fleet_id) for users provisioned before
-// fleet tokens were handed back.
+// issued for, so these calls keep working even once the fleet is no longer
+// bound to the dashboard's sk-wr- key. Fall back to the api key for users
+// provisioned before fleet tokens were handed back. fleet_id is always sent:
+// the BFF's owner check for the owner-only ones (Bedrock role, cloud-identity
+// keys) needs it.
 function keyCall<T>(auth: FleetAuth, body: Record<string, unknown>): Promise<T> {
-  return auth.fleetToken
-    ? apiCall<T>(body, auth.fleetToken)
-    : apiCall<T>({ ...body, fleet_id: auth.fleetId }, auth.apiKey);
+  return apiCall<T>({ ...body, fleet_id: auth.fleetId }, auth.fleetToken ?? auth.apiKey);
 }
 
 export function listProviderKeys(auth: FleetAuth): Promise<ListKeysResult> {
