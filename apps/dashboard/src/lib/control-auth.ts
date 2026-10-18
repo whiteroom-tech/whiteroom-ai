@@ -171,19 +171,24 @@ export async function controlAccessError(fleetId: string | null, token: string):
     await recordFleetId(held.filter((h) => h.fleetId === null), fleetId);
   }
   try {
-    // Holders are the rows saved for this fleet. Rows saved without a fleet
-    // id get theirs at boot (recordLegacyFleetIds), and the caller's own just
-    // above, so an old row's owner still counts before anyone who linked the
-    // fleet later. Tokens are encrypted, so they can't be matched in SQL.
+    // Holders are rows saved for this fleet, plus rows with no fleet id that
+    // hold this fleet's token: a fleet token belongs to one fleet, so an old
+    // row's owner still counts before anyone who linked the fleet later.
+    // Tokens are encrypted, so fleet-id-less rows are matched here, not in
+    // SQL. Boot gives them their fleet id (recordLegacyFleetIds), so the ones
+    // left are only those the engine couldn't resolve: few, and fewer each boot.
     const { rows } = await db().query(
-      `SELECT id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
-         FROM users WHERE fleet_id = $1
+      `SELECT 'users' AS "table", id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since,
+              fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed
+         FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND (fleet_token IS NOT NULL OR fleet_token_enc IS NOT NULL))
        UNION ALL
-       SELECT user_id, false, extract(epoch FROM created_at)::float8
-         FROM user_fleets WHERE fleet_id = $1`,
+       SELECT 'user_fleets', user_id, false, extract(epoch FROM created_at)::float8, fleet_id, fleet_token, fleet_token_enc
+         FROM user_fleets WHERE fleet_id = $1 OR fleet_id IS NULL`,
       [fleetId],
     );
-    return fleetOwner(rows) === userId ? null : NOT_OWNER;
+    const holders = rows.filter((r) => r.fleetId === fleetId
+      || readCred(`${r.table}.fleet_token` as CredColumn, r.userId, r.plain, r.sealed) === token);
+    return fleetOwner(holders) === userId ? null : NOT_OWNER;
   } catch {
     return LOOKUP_FAILED;
   }

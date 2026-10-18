@@ -30,7 +30,7 @@ import { POST } from '@/app/api/fleet/engine/route';
 const body = (b: Record<string, unknown>) => JSON.stringify(b);
 
 type Held = { token: string; fleetId: string | null };
-type Holder = { userId: string; provisioned: boolean; since: number };
+type Holder = { userId: string; provisioned: boolean; since: number; fleetId?: string | null; token?: string };
 /**
  * Answers the access check's queries: the account's rows, then the fleet's
  * holders. Tokens are stored plain here, as D1 rows still are; the sealed
@@ -39,7 +39,9 @@ type Holder = { userId: string; provisioned: boolean; since: number };
 function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: true, since: 1 }]) {
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.startsWith('UPDATE')) return { rows: [] };
-    if (sql.includes('extract(epoch')) return { rows: holders };
+    if (sql.includes('extract(epoch')) {
+      return { rows: holders.map((h) => ({ table: 'user_fleets', ...h, fleetId: h.fleetId === undefined ? 'f1' : h.fleetId, plain: h.token ?? null, sealed: null })) };
+    }
     return { rows: held.map((h, i) => ({ table: 'user_fleets', rowId: `r${i}`, plain: h.token, sealed: null, fleetId: h.fleetId })) };
   });
 }
@@ -102,7 +104,7 @@ describe('controlAccessError', () => {
     signedIn();
     const sealed = sealCred('user_fleets.fleet_token', 'u1', 'tok');
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('extract(epoch')) return { rows: [{ userId: 'u1', provisioned: false, since: 1 }] };
+      if (sql.includes('extract(epoch')) return { rows: [{ table: 'user_fleets', userId: 'u1', provisioned: false, since: 1, fleetId: null, plain: null, sealed }] };
       return { rows: [{ table: 'user_fleets', rowId: 'r0', plain: null, sealed, fleetId: 'f1' }] };
     });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
@@ -177,20 +179,24 @@ describe('controlAccessError', () => {
     expect(updates).toEqual([['UPDATE user_fleets SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['r0', 'f1']]]);
   });
 
-  it('counts holders by fleet id, without reading anyone’s token', async () => {
+  it('counts holders by fleet id or, for rows without one, by this fleet’s token', async () => {
     signedIn();
-    fakeDb([{ token: 'tok', fleetId: 'f1' }]);
-    await controlAccessError('f1', 'tok');
-    const [sql, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
+    // An earlier account's fleet-id-less row holding this fleet's token outranks the caller.
+    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
+      { userId: 'u-other-fleet', provisioned: false, since: 1, fleetId: null, token: 'not-this-fleet' },
+      { userId: 'u-legacy', provisioned: false, since: 2, fleetId: null, token: 'tok' },
+      { userId: 'u1', provisioned: false, since: 3 },
+    ]);
+    expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403, error: expect.stringMatching(/Only this fleet’s owner/) });
+    const [, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
     expect(params).toEqual(['f1']);
-    expect(String(sql)).not.toMatch(/fleet_token/);
   });
 
   it('records a users row’s fleet id too, by row id', async () => {
     signedIn();
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.startsWith('UPDATE')) return { rows: [] };
-      if (sql.includes('extract(epoch')) return { rows: [{ userId: 'u1', provisioned: true, since: 1 }] };
+      if (sql.includes('extract(epoch')) return { rows: [{ table: 'users', userId: 'u1', provisioned: true, since: 1, fleetId: 'f1', plain: null, sealed: null }] };
       return { rows: [
         { table: 'users', rowId: 'u1', plain: 'tok', sealed: null, fleetId: null },
         { table: 'user_fleets', rowId: 'r9', plain: 'tok', sealed: null, fleetId: null },
