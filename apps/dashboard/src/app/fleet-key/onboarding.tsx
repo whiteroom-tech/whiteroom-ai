@@ -28,6 +28,8 @@ import {
 } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
+import type { CredentialChange } from '@/lib/owner-credentials';
+import { RotateDialog, RotationResult } from './rotate';
 
 /** AWS Bedrock has two unrelated ways in: a bearer key (Claude only, via Mantle) or a cross-account IAM role (any model, via WhiteRoom's native adapter). */
 type BedrockMode = 'api-key' | 'role';
@@ -59,6 +61,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   const [removing, setRemoving] = useState<ProviderKey | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState('');
+  const [replacing, setReplacing] = useState(false);
+  const [replaced, setReplaced] = useState<Extract<CredentialChange, { ok: true }> | null>(null);
 
   const refresh = useCallback(async (): Promise<ProviderKey[]> => {
     const res = await listProviderKeys(auth);
@@ -114,12 +118,19 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     <Panel
       title="Provider keys"
       count="bring your own key"
-      actions={keys && keys.length > 0 && !adding ? <Button size={28} onClick={() => setAdding(true)}>+ Add a provider key</Button> : undefined}
+      actions={keys && keys.length > 0 && !adding ? (
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!previewKeys && <Button size={28} onClick={() => setReplacing(true)}>Replace URLs&hellip;</Button>}
+          <Button size={28} onClick={() => setAdding(true)}>+ Add a provider key</Button>
+        </div>
+      ) : undefined}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
         <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
           Each key gets its own proxy URL. WhiteRoom stores only a hash; the key stays yours.
         </p>
+
+        {replaced && <RotationResult result={replaced} onDismiss={() => setReplaced(null)} />}
 
         {issued && (
           <Banner variant="info" icon="check">
@@ -162,6 +173,12 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
         busy={removeBusy}
         onConfirm={() => { const k = removing; setRemoving(null); if (k) void disconnect(k); }}
         onCancel={() => setRemoving(null)}
+      />
+      <RotateDialog
+        kind="proxy-urls"
+        open={replacing}
+        onClose={() => setReplacing(false)}
+        onDone={(result) => { setReplacing(false); setIssued(null); setReplaced(result); void refresh().catch(() => {}); }}
       />
     </Panel>
   );
@@ -425,6 +442,9 @@ function maskKey(key: string): string {
 
 export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, previewKeys }: Props & { previewKeys?: ProviderKey[] }) {
   const [showKey, setShowKey] = useState(isNew);
+  const [rotating, setRotating] = useState(false);
+  // A rotated API key: shown once, then the page reloads onto the new key and token.
+  const [rotated, setRotated] = useState<Extract<CredentialChange, { ok: true }> | null>(null);
   const [tab, setTab] = useState<ProviderTab>('direct');
   const [bedrockMode, setBedrockMode] = useState<BedrockMode>('api-key');
 
@@ -453,18 +473,21 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
             <Banner variant="info" icon="check">Welcome, {name}. Your account is ready: point an agent at WhiteRoom below and it appears on <a href={ROUTES.home} className="wr-link">Home</a> on its first call.</Banner>
           )}
 
-          <Panel title="Your API key">
+          <Panel title="Your API key" actions={!previewKeys && !rotated ? <Button size={28} variant="danger" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {rotated && <RotationResult result={rotated} onDismiss={() => window.location.reload()} />}
+              {/* After a rotation the old key is dead: only the new one, in the banner, is offered. */}
+              {!rotated && <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <code className="wr-key-field">{showKey ? apiKey : maskKey(apiKey)}</code>
                 <Button onClick={() => setShowKey((v) => !v)} aria-pressed={showKey}>{showKey ? 'Hide' : 'Reveal'}</Button>
                 {/* Reveal first: copying a secret you can't see is easy to do by accident. */}
                 <CopyValueButton text={apiKey} what="your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
-              </div>
+              </div>}
               <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
-                Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet.
+                Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet. If it leaks, rotate it.
               </p>
             </div>
+            <RotateDialog kind="api-key" open={rotating} onClose={() => setRotating(false)} onDone={(result) => { setRotating(false); setShowKey(false); setRotated(result); }} />
           </Panel>
 
           <Panel title="Point your agent at WhiteRoom">
@@ -496,7 +519,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
             </div>
           </Panel>
 
-          {tab === 'aws' && bedrockMode === 'role' ? (
+          {/* After a rotation the old token is gone: the cards come back on the reload. */}
+          {rotated ? null : tab === 'aws' && bedrockMode === 'role' ? (
             <BedrockRoleCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />
           ) : (
             <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} previewKeys={previewKeys} />
