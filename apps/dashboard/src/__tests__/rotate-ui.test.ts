@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/owner-credentials', () => ({ rotateApiKey: vi.fn(), replaceProxyUrls: vi.fn() }));
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { attempt, nextStep, RotationResult } from '@/app/fleet-key/rotate';
+import { attempt, canConfirm, dialogReducer, INITIAL_DIALOG, nextStep, RotationResult } from '@/app/fleet-key/rotate';
 
 const CLOUD = [{ prefix: 'sk-wr-dddddddddddddddd', provider: 'bedrock-sigv4', keyHint: 'none', cloudIdentity: true }];
 const KEY = { prefix: 'sk-wr-aaaaaaaaaaaaaaaa', provider: 'anthropic', keyHint: 'abcd', cloudIdentity: false, wrKey: 'sk-wr-' + 'a'.repeat(40) };
@@ -40,6 +40,35 @@ describe('the dialog’s flow', () => {
     const replaceProxyUrls = vi.fn().mockResolvedValue({ ok: false, error: 'restarting' });
     expect(await attempt('proxy-urls', false, { rotateApiKey, replaceProxyUrls })).toEqual({ step: 'error', error: 'restarting' });
     expect(rotateApiKey).not.toHaveBeenCalled();
+  });
+});
+
+describe('the dialog’s state', () => {
+  const unconfirmed = { step: 'error' as const, error: 'didn’t confirm', unconfirmedApiKey: 'sk-wr-maybe' };
+
+  it('an unconfirmed key after cloud consent lands on the main dialog, with retry off', () => {
+    let s = dialogReducer(INITIAL_DIALOG, { type: 'answer', next: { step: 'consent', keys: CLOUD } });
+    expect(s.cloudKeys).toEqual(CLOUD);
+    s = dialogReducer(dialogReducer(s, { type: 'start' }), { type: 'answer', next: unconfirmed });
+    expect(s).toEqual({ cloudKeys: null, error: 'didn’t confirm', unconfirmedKey: 'sk-wr-maybe' });
+    expect(canConfirm(s, false)).toBe(false);
+  });
+
+  it('keeps the unconfirmed key through close, start and another answer', () => {
+    let s = dialogReducer(INITIAL_DIALOG, { type: 'answer', next: unconfirmed });
+    for (const e of [{ type: 'close' }, { type: 'start' }, { type: 'unreachable' }, { type: 'answer', next: { step: 'error', error: 'x' } }] as const) {
+      s = dialogReducer(s, e);
+      expect(s.unconfirmedKey).toBe('sk-wr-maybe');
+      expect(canConfirm(s, false)).toBe(false);
+    }
+  });
+
+  it('without an unconfirmed key, close resets and confirm is allowed when not busy', () => {
+    const s = dialogReducer(INITIAL_DIALOG, { type: 'answer', next: { step: 'error', error: 'refused' } });
+    expect(s.error).toBe('refused');
+    expect(canConfirm(s, false)).toBe(true);
+    expect(canConfirm(s, true)).toBe(false);
+    expect(dialogReducer(s, { type: 'close' })).toEqual(INITIAL_DIALOG);
   });
 });
 

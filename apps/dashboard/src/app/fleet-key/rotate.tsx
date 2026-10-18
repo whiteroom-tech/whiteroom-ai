@@ -5,7 +5,7 @@
 // working; keys on the engine's cloud identity need a second, separate yes.
 // New values are shown once.
 
-import { useState } from 'react';
+import { useReducer, useState } from 'react';
 import { Banner, Button } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip } from '@/components/citadel/CopyChip';
@@ -25,6 +25,41 @@ export async function attempt(
   const result = kind === 'api-key' ? await actions.rotateApiKey(input) : await actions.replaceProxyUrls(input);
   return nextStep(result, reissueCloudIdentityKeys);
 }
+
+/** The dialog's state: which step shows, its error, and a key whose rotation couldn't be confirmed. */
+export interface DialogState { cloudKeys: CredentialKey[] | null; error: string; unconfirmedKey: string | null }
+export const INITIAL_DIALOG: DialogState = { cloudKeys: null, error: '', unconfirmedKey: null };
+
+export type DialogEvent =
+  | { type: 'start' }
+  | { type: 'answer'; next: ReturnType<typeof nextStep> }
+  | { type: 'unreachable' }
+  | { type: 'close' };
+
+/**
+ * An unconfirmed key may be the only copy of the fleet's key, so once one
+ * arrives it stays (closing doesn't clear it), it always shows on the main
+ * dialog, and no retry is offered until the page reloads: a retry would mint
+ * another key and could strand this one.
+ */
+export function dialogReducer(s: DialogState, e: DialogEvent): DialogState {
+  switch (e.type) {
+    case 'start': return { ...s, error: '' };
+    case 'unreachable': return { ...s, error: 'Couldn’t reach the dashboard. Nothing was changed; try again.' };
+    case 'close': return s.unconfirmedKey ? { ...s, cloudKeys: null } : INITIAL_DIALOG;
+    case 'answer': {
+      const n = e.next;
+      if (n.step === 'done') return INITIAL_DIALOG;
+      if (n.step === 'consent') return { ...s, cloudKeys: n.keys };
+      // Back on the main dialog (cloudKeys cleared), where the key is shown.
+      if (n.unconfirmedApiKey) return { cloudKeys: null, error: n.error, unconfirmedKey: n.unconfirmedApiKey };
+      return { ...s, error: n.error };
+    }
+  }
+}
+
+/** No confirm while busy, or while an unconfirmed key is on screen. */
+export const canConfirm = (s: DialogState, busy: boolean) => !busy && !s.unconfirmedKey;
 
 /** What the dialog does with an answer: finish, ask for cloud-identity consent, or show the error. */
 export function nextStep(result: CredentialChange, consented: boolean):
@@ -59,30 +94,24 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   onDone: (result: Extract<CredentialChange, { ok: true }>) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [cloudKeys, setCloudKeys] = useState<CredentialKey[] | null>(null);
-  // Outcome unknown: the possibly-new key, kept on screen until the dialog closes.
-  const [unconfirmedKey, setUnconfirmedKey] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(dialogReducer, INITIAL_DIALOG);
+  const { cloudKeys, error, unconfirmedKey } = state;
 
   async function run(reissueCloudIdentityKeys: boolean) {
-    setBusy(true); setError('');
+    if (!canConfirm(state, busy)) return;
+    setBusy(true); dispatch({ type: 'start' });
     try {
       const next = await attempt(kind, reissueCloudIdentityKeys);
-      if (next.step === 'done') { setCloudKeys(null); onDone(next.result); return; }
-      if (next.step === 'consent') { setCloudKeys(next.keys); return; }
-      setError(next.error);
-      if (next.unconfirmedApiKey) setUnconfirmedKey(next.unconfirmedApiKey);
+      dispatch({ type: 'answer', next });
+      if (next.step === 'done') onDone(next.result);
     } catch {
-      setError('Couldn’t reach the dashboard. Nothing was changed; try again.');
+      dispatch({ type: 'unreachable' });
     } finally {
       setBusy(false);
     }
   }
 
-  // An unconfirmed key is never cleared here: it may be the only copy of the
-  // fleet's key. It stays until the page reloads, and no retry is offered
-  // meanwhile (a retry would mint another key and could strand this one).
-  const close = () => { setCloudKeys(null); if (!unconfirmedKey) setError(''); onClose(); };
+  const close = () => { dispatch({ type: 'close' }); onClose(); };
   const title = kind === 'api-key' ? 'Rotate your API key?' : 'Replace every proxy URL?';
 
   return (
@@ -99,7 +128,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
           </div>
         }
         confirmLabel={kind === 'api-key' ? 'Rotate API key' : 'Replace URLs'}
-        busy={busy || !!unconfirmedKey}
+        busy={!canConfirm(state, busy)}
         onConfirm={() => void run(false)}
         onCancel={close}
       />
@@ -114,7 +143,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
           </div>
         }
         confirmLabel="Reissue them too"
-        busy={busy}
+        busy={!canConfirm(state, busy)}
         onConfirm={() => void run(true)}
         onCancel={close}
       />
