@@ -118,6 +118,8 @@ describe('Bedrock role client calls', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body).toMatchObject({
       action: 'store_bedrock_role',
+      // Always named, even with a fleet token: the dashboard's owner check needs it.
+      fleet_id: 'f',
       aws_account_id: '123456789012',
       role_arn: ROLE_ARN,
       external_id: EXTERNAL_ID,

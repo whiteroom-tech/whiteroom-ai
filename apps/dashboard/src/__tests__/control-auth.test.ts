@@ -56,6 +56,8 @@ describe('controlActionOf', () => {
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'foundry-entra' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'azure-openai' }))).toBeNull();
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1' }))).toBeNull();
+    expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: ' Bedrock-SigV4 ' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: ['bedrock-sigv4'] }))).toBeNull();
     expect(controlActionOf(body({ action: 'pause_agent', fleet_id: 'f1' }))).toEqual({ action: 'pause_agent', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'fleet_report', fleet_id: 'f1' }))).toBeNull();
     expect(controlActionOf('not json')).toBeNull();
@@ -285,6 +287,29 @@ describe('the engine BFF', () => {
     // Marked so the client shows the reason instead of signing the user out.
     expect(await res.json()).toMatchObject({ code: 'control_denied', error: expect.any(String) });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-owner the credential actions and a cloud-identity key, before reaching the engine', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    // u1 holds the fleet but linked it after the account that provisioned it.
+    fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }], [
+      { userId: 'u-owner', provisioned: true, since: 1 },
+      { userId: 'u1', provisioned: false, since: 2 },
+    ]);
+    for (const b of [
+      { action: 'rebind_fleet_key', fleet_id: 'f1', new_api_key: 'sk-wr-new-key-123' },
+      { action: 'rotate_proxy_keys', fleet_id: 'f1' },
+      { action: 'store_bedrock_role', fleet_id: 'f1' },
+      { action: 'delete_bedrock_role', fleet_id: 'f1' },
+      { action: 'store_key', fleet_id: 'f1', provider: 'foundry-entra' },
+    ]) {
+      const res = await call(b);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ code: 'control_denied', error: expect.stringMatching(/Only this fleet’s owner/) });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    // An ordinary key is not an owner's action.
+    expect((await call({ action: 'store_key', fleet_id: 'f1', provider: 'azure-openai', api_key: 'k' })).status).toBe(200);
   });
 
   it('adds the secret for a linked, signed-in user', async () => {

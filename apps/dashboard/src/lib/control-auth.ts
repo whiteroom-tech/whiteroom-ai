@@ -46,7 +46,8 @@ export function controlActionOf(body: string): { action: string; fleetId: string
   }
   if (!parsed || typeof parsed !== 'object') return null;
   const { action, fleet_id, provider } = parsed as { action?: unknown; fleet_id?: unknown; provider?: unknown };
-  const cloudKey = action === 'store_key' && typeof provider === 'string' && CLOUD_IDENTITY_PROVIDERS.has(provider);
+  // Matched loosely (case, spaces), so a variant spelling can't skip the owner check.
+  const cloudKey = action === 'store_key' && typeof provider === 'string' && CLOUD_IDENTITY_PROVIDERS.has(provider.trim().toLowerCase());
   if (typeof action !== 'string' || !(DASHBOARD_ONLY_ACTIONS.has(action) || cloudKey)) return null;
   return { action, fleetId: typeof fleet_id === 'string' && fleet_id ? fleet_id : null };
 }
