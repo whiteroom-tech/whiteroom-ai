@@ -83,10 +83,30 @@ describe('rotateApiKey', () => {
     expect(mocks.cookie).toHaveBeenCalledWith('wr_recovered');
   });
 
-  it('changes nothing here when the engine never made the change', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce(Response.json({ error: 'Fleet not found, or this credential isn’t valid for it.' }, { status: 401 }));
-    expect(await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false, error: expect.stringMatching(/nothing changed/) });
+  it('an outcome it can’t confirm hands back the new key, so the owner holds it either way', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(Response.json({ error: 'Fleet not found, or this credential isn’t valid for it.' }, { status: 401 }));
+    const p = rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false });
+    await vi.runAllTimersAsync();
+    const result = await p;
+    vi.useRealTimers();
+    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/didn’t confirm/), unconfirmedApiKey: expect.stringMatching(/^sk-wr-[0-9a-f]{64}$/) });
+    // It looked three times (the engine may still be finishing), then saved nothing.
+    expect(sent().filter((c) => c.body.action === 'find_fleet')).toHaveLength(3);
     expect(updates()).toEqual([]);
+  });
+
+  it('a rotation the engine finishes after the first look is still found', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce(Response.json({ error: 'not yet' }, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ success: true, fleetToken: 'wr_late' }));
+    const p = rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false });
+    await vi.runAllTimersAsync();
+    const result = await p;
+    vi.useRealTimers();
+    expect(result).toMatchObject({ ok: true, proxyKeysLost: true });
+    expect(mocks.cookie).toHaveBeenCalledWith('wr_late');
   });
 });
 

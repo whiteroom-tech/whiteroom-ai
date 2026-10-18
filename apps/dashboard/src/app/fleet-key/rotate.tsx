@@ -30,10 +30,10 @@ export async function attempt(
 export function nextStep(result: CredentialChange, consented: boolean):
   | { step: 'done'; result: Extract<CredentialChange, { ok: true }> }
   | { step: 'consent'; keys: CredentialKey[] }
-  | { step: 'error'; error: string } {
+  | { step: 'error'; error: string; unconfirmedApiKey?: string } {
   if (result.ok) return { step: 'done', result };
   if (result.cloudIdentityKeys?.length && !consented) return { step: 'consent', keys: result.cloudIdentityKeys };
-  return { step: 'error', error: result.error };
+  return { step: 'error', error: result.error, ...(result.unconfirmedApiKey && { unconfirmedApiKey: result.unconfirmedApiKey }) };
 }
 
 const label = (k: CredentialKey) => `${PROVIDER_LABELS[k.provider] ?? k.provider} key ending ${k.keyHint}`;
@@ -61,6 +61,8 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [cloudKeys, setCloudKeys] = useState<CredentialKey[] | null>(null);
+  // Outcome unknown: the possibly-new key, kept on screen until the dialog closes.
+  const [unconfirmedKey, setUnconfirmedKey] = useState<string | null>(null);
 
   async function run(reissueCloudIdentityKeys: boolean) {
     setBusy(true); setError('');
@@ -69,6 +71,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
       if (next.step === 'done') { setCloudKeys(null); onDone(next.result); return; }
       if (next.step === 'consent') { setCloudKeys(next.keys); return; }
       setError(next.error);
+      if (next.unconfirmedApiKey) setUnconfirmedKey(next.unconfirmedApiKey);
     } catch {
       setError('Couldn’t reach the dashboard. Nothing was changed; try again.');
     } finally {
@@ -76,7 +79,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
     }
   }
 
-  const close = () => { setCloudKeys(null); setError(''); onClose(); };
+  const close = () => { setCloudKeys(null); setError(''); setUnconfirmedKey(null); onClose(); };
   const title = kind === 'api-key' ? 'Rotate your API key?' : 'Replace every proxy URL?';
 
   return (
@@ -84,7 +87,13 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
       <ConfirmDialog
         open={open && !cloudKeys}
         title={title}
-        body={<div style={{ display: 'grid', gap: 10 }}>{consequences(kind)}{error && <p role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{error}</p>}</div>}
+        body={
+          <div style={{ display: 'grid', gap: 10 }}>
+            {consequences(kind)}
+            {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{error}</p>}
+            {unconfirmedKey && <CopyChip text={unconfirmedKey} display="Possibly new API key (hidden)" label="Copy the possibly new API key" />}
+          </div>
+        }
         confirmLabel={kind === 'api-key' ? 'Rotate API key' : 'Replace URLs'}
         busy={busy}
         onConfirm={() => void run(false)}

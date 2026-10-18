@@ -18,6 +18,7 @@ describe('nextStep', () => {
     // Consent already given: the refusal is shown, not asked again.
     expect(nextStep({ ok: false, error: 'confirm', cloudIdentityKeys: CLOUD }, true)).toEqual({ step: 'error', error: 'confirm' });
     expect(nextStep({ ok: false, error: 'Only this fleet’s owner…' }, false)).toEqual({ step: 'error', error: 'Only this fleet’s owner…' });
+    expect(nextStep({ ok: false, error: 'unconfirmed', unconfirmedApiKey: 'sk-wr-x' }, false)).toEqual({ step: 'error', error: 'unconfirmed', unconfirmedApiKey: 'sk-wr-x' });
   });
 });
 

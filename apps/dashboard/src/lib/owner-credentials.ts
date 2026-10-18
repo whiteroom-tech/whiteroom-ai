@@ -32,8 +32,12 @@ export type CredentialChange =
    * account, so this answer is the only copy of it.
    */
   | { ok: true; apiKey?: string; proxyKeys: CredentialKey[]; disconnected: CredentialKey[]; proxyKeysLost?: boolean; notSaved?: boolean }
-  /** `cloudIdentityKeys`: keys on the engine's cloud identity, which need their own consent to reissue. */
-  | { ok: false; error: string; cloudIdentityKeys?: CredentialKey[] };
+  /**
+   * `cloudIdentityKeys`: keys on the engine's cloud identity, which need their own consent to reissue.
+   * `unconfirmedApiKey`: the answer was lost and the outcome is unknown; if the old key stops
+   * working, this is the new one (it exists nowhere else).
+   */
+  | { ok: false; error: string; cloudIdentityKeys?: CredentialKey[]; unconfirmedApiKey?: string };
 
 interface Owner { userId: string; fleetId: string; token: string }
 
@@ -115,17 +119,31 @@ async function rotated(o: Owner, apiKey: string, token: string, json: Record<str
   };
 }
 
-/** After a rebind whose answer was lost or incomplete: the new key finds the fleet only if it happened. */
+/**
+ * After a rebind whose answer was lost or incomplete: the new key finds the
+ * fleet only once it has happened. The engine may still be finishing it, so
+ * this looks a few times before giving up.
+ */
 async function recover(o: Owner, apiKey: string): Promise<CredentialChange | null> {
-  try {
-    const found = await engine(o, { action: 'find_fleet', api_key: apiKey });
-    const token = found.json.fleetToken;
-    if (found.status === 200 && typeof token === 'string') return rotated(o, apiKey, token, {}, true);
-  } catch {
-    // Unknown either way: the old key still works if nothing changed.
+  for (const wait of [0, 2_000, 5_000]) {
+    await new Promise((r) => setTimeout(r, wait));
+    try {
+      const found = await engine(o, { action: 'find_fleet', api_key: apiKey });
+      const token = found.json.fleetToken;
+      if (found.status === 200 && typeof token === 'string') return rotated(o, apiKey, token, {}, true);
+    } catch {
+      // Not reachable this time; look again.
+    }
   }
   return null;
 }
+
+/** The outcome is unknown: the new key goes back with the answer, so the owner holds it either way. */
+const unconfirmed = (apiKey: string): CredentialChange => ({
+  ok: false,
+  error: 'WhiteRoom didn’t confirm the rotation. Check whether your old key still works: if it does, nothing changed and you can try again; if it doesn’t, the key below is your new one. Copy it now; it isn’t saved anywhere else.',
+  unconfirmedApiKey: apiKey,
+});
 
 /**
  * Other accounts that linked this fleet hold its old token, which stopped
@@ -167,14 +185,13 @@ export async function rotateApiKey(input: { disconnect: string[]; reissueCloudId
     // The answer was lost, so the change may or may not have happened. The
     // new key finds the fleet only if it did; then its token is recovered.
     // The new proxy URLs went with the answer: replacing them again issues new ones.
-    return (await recover(o, apiKey))
-      ?? { ok: false, error: 'Couldn’t reach WhiteRoom to finish rotating the key. If your old key still works, nothing changed; try again.' };
+    return (await recover(o, apiKey)) ?? unconfirmed(apiKey);
   }
   if (res.status !== 200) return refused(res.status, res.json);
   const token = res.json.fleetToken;
   if (typeof token === 'string') return rotated(o, apiKey, token, res.json);
   // A 200 without a token shouldn't happen; recover it the same way as a lost answer.
-  return (await recover(o, apiKey)) ?? { ok: false, error: 'WhiteRoom answered without the new token. If your old key still works, nothing changed; try again.' };
+  return (await recover(o, apiKey)) ?? unconfirmed(apiKey);
 }
 
 /** Replaces the fleet's proxy URLs one for one (each except those in `disconnect`); the API key stays. */
