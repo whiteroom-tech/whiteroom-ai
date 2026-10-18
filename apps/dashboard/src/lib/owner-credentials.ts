@@ -43,6 +43,8 @@ interface Owner { userId: string; fleetId: string; token: string }
 
 /** The signed-in account's provisioned fleet and its token, if the account owns that fleet. */
 async function owner(): Promise<Owner | { error: string }> {
+  // Checked before anything is sent, so a later throw always means the engine was asked.
+  if (!process.env.WR_DASHBOARD_SERVICE_SECRET) return { error: 'Key changes aren’t available on this dashboard right now. Nothing was changed.' };
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { error: 'Sign in to change this fleet’s keys.' };
@@ -56,8 +58,7 @@ async function owner(): Promise<Owner | { error: string }> {
 }
 
 async function engine(o: Owner, body: Record<string, unknown>, key = o.token): Promise<{ status: number; json: Record<string, unknown> }> {
-  const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
-  if (!secret) throw new Error('not configured');
+  const secret = process.env.WR_DASHBOARD_SERVICE_SECRET ?? '';
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
     signal: AbortSignal.timeout(30_000),
@@ -207,6 +208,7 @@ export async function replaceProxyUrls(input: { disconnect: string[]; reissueClo
     if (res.status !== 200) return refused(res.status, res.json);
     return { ok: true, proxyKeys: keys(res.json.proxyKeys), disconnected: keys(res.json.disconnected) };
   } catch {
-    return { ok: false, error: 'Couldn’t reach WhiteRoom. Check the list below: if the URLs changed, replace them again to get new ones shown.' };
+    // The request went out, so the URLs may or may not have changed.
+    return { ok: false, error: 'WhiteRoom didn’t answer, so it isn’t known whether the URLs changed. If your agents’ proxy URLs stop working, replace them again to get new ones shown.' };
   }
 }

@@ -181,7 +181,10 @@ describe('who may rotate', () => {
     expect(await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false, error: expect.stringMatching(/no fleet/) });
     expect(fetchMock).not.toHaveBeenCalled();
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
-    expect(await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false });
+    // Unconfigured: refused up front, never mistaken for a lost answer (no key handed back, nothing retried).
+    for (const r of [await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false }), await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: false })]) {
+      expect(r).toEqual({ ok: false, error: expect.stringMatching(/Nothing was changed/) });
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -205,6 +208,11 @@ describe('replaceProxyUrls', () => {
     expect(sent()[0].body).toEqual({ action: 'rotate_proxy_keys', disconnect: [], reissue_cloud_identity_keys: true, fleet_id: 'f1' });
     expect(updates()).toEqual([]);
     expect(mocks.cookie).not.toHaveBeenCalled();
+  });
+
+  it('a request that went out unanswered says the outcome is unknown', async () => {
+    fetchMock.mockRejectedValue(new Error('timeout'));
+    expect(await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false, error: expect.stringMatching(/isn’t known whether the URLs changed/) });
   });
 
   it('tells a restart from a refusal', async () => {
