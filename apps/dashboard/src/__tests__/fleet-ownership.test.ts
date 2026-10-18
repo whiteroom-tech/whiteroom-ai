@@ -15,7 +15,7 @@ vi.mock('@/lib/entitlements', () => ({
   revokeFleetEntitlement: mocks.revoke,
 }));
 import { randomBytes } from 'node:crypto';
-import { openCred } from '@/lib/cred-seal';
+import { openCred, sealCred } from '@/lib/cred-seal';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { addUserFleet } from '@/lib/user-fleets';
 import { upsertUserProvisioning } from '@/lib/users';
@@ -88,7 +88,23 @@ describe('server-side fleet ownership', () => {
     const insertCall = mocks.query.mock.calls.find(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
     );
+    expect(insertCall?.[1][1]).toBeNull();
     expect(openCred('user_fleets.fleet_token', 'user-1', insertCall?.[1][4])).toBe('test-token');
+    vi.unstubAllEnvs();
+  });
+
+  it('refuses a token the account already linked, comparing encrypted copies', async () => {
+    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned' }));
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM user_fleets WHERE user_id')) {
+        return { rows: [{ fleet_token: null, fleet_token_enc: sealCred('user_fleets.fleet_token', 'user-1', 'test-token') }] };
+      }
+      return { rows: [] };
+    });
+    expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: false, error: 'Fleet already linked' });
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO user_fleets'))).toBe(false);
+    expect(await addUserFleet('other-token', 'owned', 'Fleet')).toEqual({ ok: true });
     vi.unstubAllEnvs();
   });
 

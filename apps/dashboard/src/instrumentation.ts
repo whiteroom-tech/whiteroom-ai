@@ -12,15 +12,26 @@ export async function register() {
     process.exit(1);
   }
 
-  // Encrypt rows saved before encryption, in the background. A fresh
-  // instance's first database connection can fail, so try a few times.
-  const { sealStoredCreds } = await import('@/lib/cred-seal');
+  // D2 stores no plain user_fleets.fleet_token, so migration 011 must have
+  // made it nullable. Refuse to start in production when it plainly hasn't
+  // (a failed check doesn't block: the first connection can fail at cold
+  // start). Promote deploys with --no-traffic, so this fails before traffic.
+  const { plainColumnsNullable, sealStoredCreds } = await import('@/lib/cred-seal');
+  if (process.env.NODE_ENV === 'production' && (await plainColumnsNullable()) === false) {
+    console.error('[cred-seal] user_fleets.fleet_token is still NOT NULL; apply migration 011. Exiting.');
+    process.exit(1);
+  }
+
+  // Encrypt rows saved before encryption and clear their plain values, in the
+  // background. A fresh instance's first database connection can fail, so
+  // try a few times.
   void (async () => {
     for (const wait of [0, 15_000, 60_000]) {
       await new Promise((r) => setTimeout(r, wait));
       try {
-        const n = await sealStoredCreds();
-        if (n) console.log(`[cred-seal] encrypted ${n} stored credentials`);
+        const { sealed, cleared } = await sealStoredCreds();
+        if (sealed) console.log(`[cred-seal] encrypted ${sealed} stored credentials`);
+        if (cleared) console.log(`[cred-seal] cleared ${cleared} plain credentials`);
         return;
       } catch (err) {
         // Postgres errors carry a code; connection errors only a message,

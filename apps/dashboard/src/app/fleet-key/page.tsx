@@ -43,6 +43,13 @@ export default function DashboardPage() {
       const email = user.email || '';
       const name = user.name || email.split('@')[0];
       const provisioning = await getUserProvisioning();
+      // A key that's stored but can't be decrypted right now must never be
+      // replaced: minting a new one would cut off every agent using the old one.
+      if (provisioning.unreadable) {
+        setProvisionError('We couldn’t load your API key right now. Your agents are not affected. Try again in a few minutes.');
+        setLoading(false);
+        return;
+      }
       // The fleet is fixed once provisioned. Deriving it from the email on
       // every load meant an email change silently provisioned a new, empty
       // fleet and revoked the old one's entitlement (audit F11).

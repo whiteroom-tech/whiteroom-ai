@@ -20,6 +20,8 @@ vi.mock('@/lib/fleet-session', () => ({
   tokenFromUserFleets: async () => null,
 }));
 
+import { randomBytes } from 'node:crypto';
+import { sealCred } from '@/lib/cred-seal';
 import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
@@ -27,13 +29,19 @@ import { POST } from '@/app/api/fleet/engine/route';
 const body = (b: Record<string, unknown>) => JSON.stringify(b);
 
 type Held = { token: string; fleetId: string | null };
-type Holder = { userId: string; provisioned: boolean; since: number };
-/** Answers the access check's queries: the account's held tokens, then the fleet's holders. */
+type Holder = { userId: string; provisioned: boolean; since: number; fleetId?: string | null; token?: string };
+/**
+ * Answers the access check's queries: the account's rows, then the fleet's
+ * holders. Tokens are stored plain here, as D1 rows still are; the sealed
+ * case has its own test.
+ */
 function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: true, since: 1 }]) {
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.startsWith('UPDATE')) return { rows: [] };
-    if (sql.includes('extract(epoch')) return { rows: holders };
-    return { rows: held };
+    if (sql.includes('extract(epoch')) {
+      return { rows: holders.map((h) => ({ table: 'user_fleets', ...h, fleetId: h.fleetId === undefined ? 'f1' : h.fleetId, plain: h.token ?? null, sealed: null })) };
+    }
+    return { rows: held.map((h, i) => ({ table: 'user_fleets', rowId: `r${i}`, plain: h.token, sealed: null, fleetId: h.fleetId })) };
   });
 }
 
@@ -86,8 +94,21 @@ describe('controlAccessError', () => {
     signedIn();
     holds({ token: 'tok', fleetId: 'f1' });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'tok']);
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1']);
     expect(mocks.tokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('matches a token stored only encrypted (credentials-at-rest D2)', async () => {
+    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
+    signedIn();
+    const sealed = sealCred('user_fleets.fleet_token', 'u1', 'tok');
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('extract(epoch')) return { rows: [{ table: 'user_fleets', userId: 'u1', provisioned: false, since: 1, fleetId: null, plain: null, sealed }] };
+      return { rows: [{ table: 'user_fleets', rowId: 'r0', plain: null, sealed, fleetId: 'f1' }] };
+    });
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+    expect(await controlAccessError('f1', 'other')).toMatchObject({ status: 403 });
+    vi.unstubAllEnvs();
   });
 
   it('refuses a token the account doesn’t hold', async () => {
@@ -154,16 +175,19 @@ describe('controlAccessError', () => {
     mocks.tokenLogin.mockResolvedValue({ success: true, fleetId: 'f1' });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
     const updates = mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'));
-    expect(updates.map(([, params]) => params)).toEqual([['u1', 'tok', 'f1'], ['u1', 'tok', 'f1']]);
+    expect(updates).toEqual([['UPDATE user_fleets SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['r0', 'f1']]]);
   });
 
   it('counts holders by fleet id or, for rows without one, by this fleet’s token', async () => {
     signedIn();
-    fakeDb([{ token: 'tok', fleetId: 'f1' }]);
-    await controlAccessError('f1', 'tok');
-    const [sql, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
-    expect(params).toEqual(['f1', 'tok']);
-    expect(String(sql).match(/fleet_id = \$1 OR \(fleet_id IS NULL AND fleet_token = \$2\)/g)).toHaveLength(2);
+    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
+      { userId: 'u-other-fleet', provisioned: false, since: 1, fleetId: null, token: 'not-this-fleet' },
+      { userId: 'u1', provisioned: false, since: 2, fleetId: null, token: 'tok' },
+      { userId: 'u-later', provisioned: false, since: 3 },
+    ]);
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+    const [, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
+    expect(params).toEqual(['f1']);
   });
 
   it('refuses when nobody can be shown to own the fleet, and fails closed if the owner lookup fails', async () => {
@@ -172,7 +196,7 @@ describe('controlAccessError', () => {
     expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 403 });
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes('extract(epoch')) throw new Error('db down');
-      return { rows: [{ token: 'tok', fleetId: 'f1' }] };
+      return { rows: [{ table: 'user_fleets', rowId: 'r0', plain: 'tok', sealed: null, fleetId: 'f1' }] };
     });
     expect(await controlAccessError('f1', 'tok')).toMatchObject({ status: 503 });
   });
@@ -276,7 +300,7 @@ describe('the engine BFF', () => {
     mocks.query.mockResolvedValue({ rows: [] });
     const res = await call({ action: 'pause_agent', fleet_id: 'fleet-a', agent_id: 'a' });
     expect(res.status).toBe(403);
-    expect(mocks.query.mock.calls[0][1]).toEqual(['u1', 'wr_fleet_token']);
+    expect(mocks.query.mock.calls[0][1]).toEqual(['u1']);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

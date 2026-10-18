@@ -54,7 +54,7 @@ describe('readCred', () => {
 });
 
 describe('sealStoredCreds', () => {
-  it('encrypts plain values with a missing or stale envelope, only if the row is unchanged', async () => {
+  it('encrypts plain values with a missing or stale envelope, then clears them, only if the row is unchanged', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const current = sealCred('users.fleet_token', 'u1', 'tok-1')!;
     const stale = sealCred('user_fleets.fleet_token', 'u2', 'old-tok')!;
@@ -65,21 +65,38 @@ describe('sealStoredCreds', () => {
       if (sql.includes('fleet_token AS value')) return { rows: [{ id: 'u1', userId: 'u1', value: 'tok-1', sealed: current }] };
       return { rows: [] };
     });
-    expect(await sealStoredCreds()).toBe(2);
+    expect(await sealStoredCreds()).toEqual({ sealed: 2, cleared: 3 });
     const updates = query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'));
     expect(updates.map(([sql]) => sql)).toEqual([
       'UPDATE users SET api_key_enc = $2 WHERE id = $1 AND api_key = $3 AND api_key_enc IS NOT DISTINCT FROM $4',
+      'UPDATE users SET api_key = NULL WHERE id = $1 AND api_key = $2 AND api_key_enc = $3',
+      // Already sealed to the same value: only cleared.
+      'UPDATE users SET fleet_token = NULL WHERE id = $1 AND fleet_token = $2 AND fleet_token_enc = $3',
       'UPDATE user_fleets SET fleet_token_enc = $2 WHERE id = $1 AND fleet_token = $3 AND fleet_token_enc IS NOT DISTINCT FROM $4',
+      'UPDATE user_fleets SET fleet_token = NULL WHERE id = $1 AND fleet_token = $2 AND fleet_token_enc = $3',
     ]);
-    const [, [id, sealed, plain, was]] = updates[1];
+    const [, [id, sealed, plain, was]] = updates[3];
     expect([id, plain, was]).toEqual([7, 'tok-2', stale]);
     expect(openCred('user_fleets.fleet_token', 'u2', sealed)).toBe('tok-2');
+    // The clear names the envelope it just wrote, so a concurrent change keeps its plain value.
+    expect(updates[4][1]).toEqual([7, 'tok-2', sealed]);
+    expect(updates[2][1]).toEqual(['u1', 'tok-1', current]);
     vi.restoreAllMocks();
+  });
+
+  it('keeps the plain value when the row changed before it could be sealed', async () => {
+    query.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('UPDATE')) return { rowCount: 0 };
+      if (sql.includes('api_key AS value')) return { rows: [{ id: 'u1', userId: 'u1', value: 'sk-wr-placeholder', sealed: null }] };
+      return { rows: [] };
+    });
+    expect(await sealStoredCreds()).toEqual({ sealed: 0, cleared: 0 });
+    expect(query.mock.calls.filter(([sql]) => String(sql).includes('= NULL'))).toHaveLength(0);
   });
 
   it('does nothing without a key', async () => {
     vi.stubEnv('WR_CRED_ENCRYPTION_KEY', '');
-    expect(await sealStoredCreds()).toBe(0);
+    expect(await sealStoredCreds()).toEqual({ sealed: 0, cleared: 0 });
     expect(query).not.toHaveBeenCalled();
   });
 });
@@ -98,7 +115,29 @@ describe('instrumentation register', () => {
     vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
     query.mockResolvedValue({ rows: [] });
     await register();
-    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(3));
+    // The migration 011 check, then one backfill query per column.
+    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(4));
+    vi.restoreAllMocks();
+  });
+
+  it('exits in production while user_fleets.fleet_token is still NOT NULL (migration 011 not applied)', async () => {
+    const { register } = await import('@/instrumentation');
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('NODE_ENV', 'production');
+    query.mockResolvedValue({ rows: [{ is_nullable: 'NO' }] });
+    await expect(register()).rejects.toThrow('exit');
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(errors).toHaveBeenCalledWith(expect.stringMatching(/apply migration 011/));
+
+    // A check that can't run doesn't block the start.
+    exit.mockClear();
+    query.mockRejectedValueOnce(new Error('timeout')).mockResolvedValue({ rows: [] });
+    await register();
+    expect(exit).not.toHaveBeenCalled();
+    // Let the background backfill finish before the next test counts queries.
+    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(5));
     vi.restoreAllMocks();
   });
 
