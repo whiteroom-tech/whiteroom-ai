@@ -57,14 +57,15 @@ async function owner(): Promise<Owner | { error: string }> {
   return { userId, fleetId: row.fleet_id, token };
 }
 
-async function engine(o: Owner, body: Record<string, unknown>, key: string | undefined = o.token): Promise<{ status: number; json: Record<string, unknown> }> {
+/** `key` null: no credential header (find_fleet takes none). */
+async function engine(o: Owner, body: Record<string, unknown>, key: string | null = o.token): Promise<{ status: number; json: Record<string, unknown> }> {
   const secret = process.env.WR_DASHBOARD_SERVICE_SECRET ?? '';
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
     signal: AbortSignal.timeout(30_000),
     redirect: 'error',
     cache: 'no-store',
-    headers: { ...engineAuthHeaders(key), [CONTROL_SECRET_HEADER]: secret, [CONTROL_USER_HEADER]: o.userId },
+    headers: { ...engineAuthHeaders(key ?? undefined), [CONTROL_SECRET_HEADER]: secret, [CONTROL_USER_HEADER]: o.userId },
     body: JSON.stringify({ ...body, fleet_id: o.fleetId }),
   });
   return { status: res.status, json: await res.json().catch(() => ({})) };
@@ -137,7 +138,7 @@ async function recover(o: Owner, apiKey: string, answer: Record<string, unknown>
     await new Promise((r) => setTimeout(r, wait));
     try {
       // No credential: find_fleet takes none, and the old token may already be dead.
-      const found = await engine(o, { action: 'find_fleet', api_key: apiKey }, undefined);
+      const found = await engine(o, { action: 'find_fleet', api_key: apiKey }, null);
       const token = found.json.fleetToken;
       // URLs the engine did return (a 200 that only lacked the token) are kept; otherwise they were lost.
       if (found.status === 200 && typeof token === 'string') return rotated(o, apiKey, token, answer, !Array.isArray(answer.proxyKeys));
