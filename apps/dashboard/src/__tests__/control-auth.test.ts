@@ -22,6 +22,7 @@ vi.mock('@/lib/fleet-session', () => ({
 
 import { randomBytes } from 'node:crypto';
 import { sealCred } from '@/lib/cred-seal';
+import { recordLegacyFleetIds } from '@/lib/control-auth';
 import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
@@ -29,7 +30,7 @@ import { POST } from '@/app/api/fleet/engine/route';
 const body = (b: Record<string, unknown>) => JSON.stringify(b);
 
 type Held = { token: string; fleetId: string | null };
-type Holder = { userId: string; provisioned: boolean; since: number; fleetId?: string | null; token?: string };
+type Holder = { userId: string; provisioned: boolean; since: number };
 /**
  * Answers the access check's queries: the account's rows, then the fleet's
  * holders. Tokens are stored plain here, as D1 rows still are; the sealed
@@ -38,9 +39,7 @@ type Holder = { userId: string; provisioned: boolean; since: number; fleetId?: s
 function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: true, since: 1 }]) {
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.startsWith('UPDATE')) return { rows: [] };
-    if (sql.includes('extract(epoch')) {
-      return { rows: holders.map((h) => ({ table: 'user_fleets', ...h, fleetId: h.fleetId === undefined ? 'f1' : h.fleetId, plain: h.token ?? null, sealed: null })) };
-    }
+    if (sql.includes('extract(epoch')) return { rows: holders };
     return { rows: held.map((h, i) => ({ table: 'user_fleets', rowId: `r${i}`, plain: h.token, sealed: null, fleetId: h.fleetId })) };
   });
 }
@@ -103,7 +102,7 @@ describe('controlAccessError', () => {
     signedIn();
     const sealed = sealCred('user_fleets.fleet_token', 'u1', 'tok');
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('extract(epoch')) return { rows: [{ table: 'user_fleets', userId: 'u1', provisioned: false, since: 1, fleetId: null, plain: null, sealed }] };
+      if (sql.includes('extract(epoch')) return { rows: [{ userId: 'u1', provisioned: false, since: 1 }] };
       return { rows: [{ table: 'user_fleets', rowId: 'r0', plain: null, sealed, fleetId: 'f1' }] };
     });
     expect(await controlAccessError('f1', 'tok')).toBeNull();
@@ -178,16 +177,33 @@ describe('controlAccessError', () => {
     expect(updates).toEqual([['UPDATE user_fleets SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['r0', 'f1']]]);
   });
 
-  it('counts holders by fleet id or, for rows without one, by this fleet’s token', async () => {
+  it('counts holders by fleet id, without reading anyone’s token', async () => {
     signedIn();
-    fakeDb([{ token: 'tok', fleetId: 'f1' }], [
-      { userId: 'u-other-fleet', provisioned: false, since: 1, fleetId: null, token: 'not-this-fleet' },
-      { userId: 'u1', provisioned: false, since: 2, fleetId: null, token: 'tok' },
-      { userId: 'u-later', provisioned: false, since: 3 },
-    ]);
-    expect(await controlAccessError('f1', 'tok')).toBeNull();
-    const [, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
+    fakeDb([{ token: 'tok', fleetId: 'f1' }]);
+    await controlAccessError('f1', 'tok');
+    const [sql, params] = mocks.query.mock.calls.find(([q]) => String(q).includes('extract(epoch'))!;
     expect(params).toEqual(['f1']);
+    expect(String(sql)).not.toMatch(/fleet_token/);
+  });
+
+  it('records a users row’s fleet id too, by row id', async () => {
+    signedIn();
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('UPDATE')) return { rows: [] };
+      if (sql.includes('extract(epoch')) return { rows: [{ userId: 'u1', provisioned: true, since: 1 }] };
+      return { rows: [
+        { table: 'users', rowId: 'u1', plain: 'tok', sealed: null, fleetId: null },
+        { table: 'user_fleets', rowId: 'r9', plain: 'tok', sealed: null, fleetId: null },
+        { table: 'user_fleets', rowId: 'r8', plain: 'other', sealed: null, fleetId: null },
+      ] };
+    });
+    mocks.tokenLogin.mockResolvedValue({ success: true, fleetId: 'f1' });
+    expect(await controlAccessError('f1', 'tok')).toBeNull();
+    const updates = mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'));
+    expect(updates).toEqual([
+      ['UPDATE users SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['u1', 'f1']],
+      ['UPDATE user_fleets SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['r9', 'f1']],
+    ]);
   });
 
   it('refuses when nobody can be shown to own the fleet, and fails closed if the owner lookup fails', async () => {
@@ -325,5 +341,36 @@ describe('the engine BFF', () => {
     await call({ action: 'resume_agent', fleet_id: 'f1', agent_id: 'a' });
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
     expect(sentHeaders()['x-wr-dashboard-user']).toBeUndefined();
+  });
+});
+
+describe('recordLegacyFleetIds', () => {
+  beforeEach(() => { mocks.query.mockReset(); mocks.tokenLogin.mockReset(); });
+
+  it('saves the engine-verified fleet id on users and user_fleets rows saved without one', async () => {
+    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('UPDATE')) return { rows: [] };
+      return { rows: [
+        { table: 'users', rowId: 'u1', userId: 'u1', plain: null, sealed: sealCred('users.fleet_token', 'u1', 'tok-a') },
+        { table: 'user_fleets', rowId: 'r2', userId: 'u2', plain: 'tok-b', sealed: null },
+        { table: 'user_fleets', rowId: 'r3', userId: 'u3', plain: 'tok-dead', sealed: null },
+        { table: 'user_fleets', rowId: 'r4', userId: 'u4', plain: null, sealed: sealCred('user_fleets.fleet_token', 'someone-else', 'x') },
+      ] };
+    });
+    mocks.tokenLogin.mockImplementation(async (t: string) => {
+      if (t === 'tok-dead') throw new WhiteRoomApiError('HTTP 401', 401);
+      return { success: true, fleetId: t === 'tok-a' ? 'fa' : 'fb' };
+    });
+    expect(await recordLegacyFleetIds()).toBe(2);
+    expect(mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE'))).toEqual([
+      ['UPDATE users SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['u1', 'fa']],
+      ['UPDATE user_fleets SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL', ['r2', 'fb']],
+    ]);
+    // An undecryptable row never reaches the engine.
+    expect(mocks.tokenLogin).toHaveBeenCalledTimes(3);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 });

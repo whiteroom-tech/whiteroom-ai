@@ -49,7 +49,7 @@ describe('getUserProvisioning', () => {
       }],
     });
     const p = await getUserProvisioning();
-    expect(p).toMatchObject({ apiKey: 'sk-wr-placeholder', fleetToken: 'tok', unreadable: false });
+    expect(p).toMatchObject({ apiKey: 'sk-wr-placeholder', fleetToken: 'tok', apiKeyUnreadable: false });
   });
 
   it("flags a stored key it can't decrypt, so the Fleet key page never mints a replacement", async () => {
@@ -57,9 +57,17 @@ describe('getUserProvisioning', () => {
     mocks.query.mockResolvedValue({
       rows: [{ api_key: null, api_key_enc: sealCred('users.api_key', 'someone-else', 'sk-wr-x'), fleet_token: null, fleet_token_enc: null, fleet_id: 'f1', byok: false }],
     });
-    expect(await getUserProvisioning()).toMatchObject({ apiKey: null, unreadable: true });
+    expect(await getUserProvisioning()).toMatchObject({ apiKey: null, apiKeyUnreadable: true });
     mocks.query.mockResolvedValue({ rows: [] });
-    expect(await getUserProvisioning()).toMatchObject({ apiKey: null, unreadable: false });
+    expect(await getUserProvisioning()).toMatchObject({ apiKey: null, apiKeyUnreadable: false });
+  });
+
+  it('a fleet token it can\'t decrypt alone does not block the page (a new one is fetched)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.query.mockResolvedValue({
+      rows: [{ api_key: null, api_key_enc: sealCred('users.api_key', 'u1', 'sk-wr-ok'), fleet_token: null, fleet_token_enc: sealCred('users.fleet_token', 'other', 't'), fleet_id: 'f1', byok: false }],
+    });
+    expect(await getUserProvisioning()).toMatchObject({ apiKey: 'sk-wr-ok', fleetToken: null, apiKeyUnreadable: false });
   });
 });
 

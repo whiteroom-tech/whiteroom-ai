@@ -171,38 +171,67 @@ export async function controlAccessError(fleetId: string | null, token: string):
     await recordFleetId(held.filter((h) => h.fleetId === null), fleetId);
   }
   try {
-    // Holders are rows saved for this fleet, plus rows with no fleet id that
-    // hold this fleet's token: a fleet token belongs to one fleet, so an old
-    // row's owner still counts before anyone who linked the fleet later.
+    // Holders are the rows saved for this fleet. Rows saved without a fleet
+    // id get theirs at boot (recordLegacyFleetIds), and the caller's own just
+    // above, so an old row's owner still counts before anyone who linked the
+    // fleet later. Tokens are encrypted, so they can't be matched in SQL.
     const { rows } = await db().query(
-      `SELECT 'users' AS "table", id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since,
-              fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed
-         FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND (fleet_token IS NOT NULL OR fleet_token_enc IS NOT NULL))
+      `SELECT id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
+         FROM users WHERE fleet_id = $1
        UNION ALL
-       SELECT 'user_fleets', user_id, false, extract(epoch FROM created_at)::float8, fleet_id, fleet_token, fleet_token_enc
-         FROM user_fleets WHERE fleet_id = $1 OR fleet_id IS NULL`,
+       SELECT user_id, false, extract(epoch FROM created_at)::float8
+         FROM user_fleets WHERE fleet_id = $1`,
       [fleetId],
     );
-    const holders = rows.filter((r) => r.fleetId === fleetId
-      || readCred(`${r.table}.fleet_token` as CredColumn, r.userId, r.plain, r.sealed) === token);
-    return fleetOwner(holders) === userId ? null : NOT_OWNER;
+    return fleetOwner(rows) === userId ? null : NOT_OWNER;
   } catch {
     return LOOKUP_FAILED;
   }
 }
 
 /**
- * Saves the engine-verified fleet id on the account's rows that have none
- * (the held rows whose token matched). Best effort: the ownership query
- * already counts fleet-id-less rows by their token, so a missed write
- * changes nothing.
+ * At boot (credentials-at-rest D2): saves the engine-verified fleet id on
+ * every row saved without one, so the ownership check finds holders by fleet
+ * id alone. A token the engine rejects, or one that can't be decrypted,
+ * leaves its row as it is; a failed call is retried on the next boot.
+ * Returns how many rows got a fleet id.
  */
-async function recordFleetId(rows: { table: 'users' | 'user_fleets'; rowId: string }[], fleetId: string): Promise<void> {
+export async function recordLegacyFleetIds(): Promise<number> {
+  const { rows } = await db().query(
+    `SELECT 'users' AS "table", id AS "rowId", id AS "userId", fleet_token AS plain, fleet_token_enc AS sealed
+       FROM users WHERE fleet_id IS NULL AND (fleet_token IS NOT NULL OR fleet_token_enc IS NOT NULL)
+     UNION ALL
+     SELECT 'user_fleets', id, user_id, fleet_token, fleet_token_enc FROM user_fleets WHERE fleet_id IS NULL`,
+  );
+  let recorded = 0;
+  for (const r of rows) {
+    const token = readCred(`${r.table}.fleet_token` as CredColumn, r.userId, r.plain, r.sealed);
+    if (!token) continue;
+    try {
+      const login = await tokenLogin(token);
+      if (!login.fleetId) continue;
+      if (await recordFleetId([r], login.fleetId)) recorded++;
+    } catch {
+      // Rejected or unreachable: left as is.
+    }
+  }
+  return recorded;
+}
+
+/**
+ * Saves the engine-verified fleet id on rows that have none (rows whose
+ * token the engine just confirmed). Best effort: a row missed now stays
+ * fleet-id-less and isn't counted as a holder until a later call or boot
+ * records it, so a failure can only refuse, never grant. Returns whether
+ * every write went through.
+ */
+async function recordFleetId(rows: { table: 'users' | 'user_fleets'; rowId: string }[], fleetId: string): Promise<boolean> {
   try {
     for (const r of rows) {
       await db().query(`UPDATE ${r.table} SET fleet_id = $2 WHERE id = $1 AND fleet_id IS NULL`, [r.rowId, fleetId]);
     }
+    return true;
   } catch {
-    // Only an optimisation: the ownership query counts these rows by token anyway.
+    return false;
   }
 }

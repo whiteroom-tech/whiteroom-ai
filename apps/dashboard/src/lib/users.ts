@@ -11,8 +11,8 @@ export interface UserProvisioning {
   fleetId: string | null;
   fleetToken: string | null;
   byok: boolean;
-  /** A stored credential exists but couldn't be decrypted: never replace it with a new one. */
-  unreadable: boolean;
+  /** The stored API key exists but couldn't be decrypted: never mint a replacement (agents use the stored one). */
+  apiKeyUnreadable: boolean;
 }
 
 async function requireUserId(): Promise<string> {
@@ -35,7 +35,7 @@ export async function getUserProvisioning(): Promise<UserProvisioning> {
     fleetId: row?.fleet_id ?? null,
     fleetToken,
     byok: row?.byok ?? false,
-    unreadable: (!apiKey && !!row?.api_key_enc) || (!fleetToken && !!row?.fleet_token_enc),
+    apiKeyUnreadable: !apiKey && !!row?.api_key_enc,
   };
 }
 

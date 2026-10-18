@@ -32,6 +32,11 @@ export async function register() {
         const { sealed, cleared } = await sealStoredCreds();
         if (sealed) console.log(`[cred-seal] encrypted ${sealed} stored credentials`);
         if (cleared) console.log(`[cred-seal] cleared ${cleared} plain credentials`);
+        // Rows saved without a fleet id get it now, so the ownership check
+        // can find holders by fleet id instead of decrypting tokens.
+        const { recordLegacyFleetIds } = await import('@/lib/control-auth');
+        const recorded = await recordLegacyFleetIds();
+        if (recorded) console.log(`[cred-seal] recorded the fleet id on ${recorded} older rows`);
         return;
       } catch (err) {
         // Postgres errors carry a code; connection errors only a message,
