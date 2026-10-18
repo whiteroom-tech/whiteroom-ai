@@ -65,10 +65,11 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   const [unconfirmedKey, setUnconfirmedKey] = useState<string | null>(null);
 
   async function run(reissueCloudIdentityKeys: boolean) {
-    setBusy(true); setError('');
+    // Each try mints its own key: an earlier unconfirmed one is no longer the one to keep.
+    setBusy(true); setError(''); setUnconfirmedKey(null);
     try {
       const next = await attempt(kind, reissueCloudIdentityKeys);
-      if (next.step === 'done') { setCloudKeys(null); onDone(next.result); return; }
+      if (next.step === 'done') { setCloudKeys(null); setUnconfirmedKey(null); onDone(next.result); return; }
       if (next.step === 'consent') { setCloudKeys(next.keys); return; }
       setError(next.error);
       if (next.unconfirmedApiKey) setUnconfirmedKey(next.unconfirmedApiKey);

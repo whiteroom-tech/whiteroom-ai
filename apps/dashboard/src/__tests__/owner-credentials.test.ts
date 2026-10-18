@@ -131,6 +131,15 @@ describe('rotateApiKey when something after the engine fails', () => {
     expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('UPDATE'))).toHaveLength(3);
   });
 
+  it('an encryption key that won’t seal still hands back the new key, marked unsaved', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    mocks.query.mockImplementation(async (sql: string) => String(sql).startsWith('SELECT') ? { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] } : { rows: [], rowCount: 1 });
+    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', 'not-32-bytes');
+    const result = await run();
+    expect(result).toMatchObject({ ok: true, apiKey: expect.stringMatching(/^sk-wr-/), notSaved: true });
+    expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('UPDATE'))).toHaveLength(0);
+  });
+
   it('a cookie that fails to move doesn’t make a saved key look unsaved', async () => {
     fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
     mocks.cookie.mockRejectedValue(new Error('headers already sent'));

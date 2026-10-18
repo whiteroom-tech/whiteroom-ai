@@ -87,11 +87,12 @@ const keys = (v: unknown): CredentialKey[] => (Array.isArray(v) ? (v as Credenti
  * the key back as the only copy).
  */
 async function saveCredentials(userId: string, apiKey: string, token: string): Promise<boolean> {
-  const apiKeyEnc = sealCred('users.api_key', userId, apiKey);
-  const tokenEnc = sealCred('users.fleet_token', userId, token);
   let saved = false;
   for (let attempt = 0; attempt < 3 && !saved; attempt++) {
     try {
+      // Sealed inside the retry: a key that won't seal must still hand the new key back, never throw.
+      const apiKeyEnc = sealCred('users.api_key', userId, apiKey);
+      const tokenEnc = sealCred('users.fleet_token', userId, token);
       await db().query(
         `UPDATE users SET api_key = $2, api_key_enc = $3, fleet_token = $4, fleet_token_enc = $5, updated_at = now() WHERE id = $1`,
         [userId, plainUnlessSealed(apiKeyEnc, apiKey), apiKeyEnc, plainUnlessSealed(tokenEnc, token), tokenEnc],
