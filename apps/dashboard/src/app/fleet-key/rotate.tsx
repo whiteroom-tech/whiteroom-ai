@@ -15,6 +15,16 @@ import { replaceProxyUrls, rotateApiKey, type CredentialChange, type CredentialK
 
 export type RotationKind = 'api-key' | 'proxy-urls';
 
+/** What the dialog does with an answer: finish, ask for cloud-identity consent, or show the error. */
+export function nextStep(result: CredentialChange, consented: boolean):
+  | { step: 'done'; result: Extract<CredentialChange, { ok: true }> }
+  | { step: 'consent'; keys: CredentialKey[] }
+  | { step: 'error'; error: string } {
+  if (result.ok) return { step: 'done', result };
+  if (result.cloudIdentityKeys?.length && !consented) return { step: 'consent', keys: result.cloudIdentityKeys };
+  return { step: 'error', error: result.error };
+}
+
 const label = (k: CredentialKey) => `${PROVIDER_LABELS[k.provider] ?? k.provider} key ending ${k.keyHint}`;
 
 /** What stops working, for the confirmation. */
@@ -45,10 +55,10 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
     setBusy(true); setError('');
     try {
       const input = { disconnect: [], reissueCloudIdentityKeys };
-      const result = kind === 'api-key' ? await rotateApiKey(input) : await replaceProxyUrls(input);
-      if (result.ok) { setCloudKeys(null); onDone(result); return; }
-      if (result.cloudIdentityKeys?.length && !reissueCloudIdentityKeys) { setCloudKeys(result.cloudIdentityKeys); return; }
-      setError(result.error);
+      const next = nextStep(kind === 'api-key' ? await rotateApiKey(input) : await replaceProxyUrls(input), reissueCloudIdentityKeys);
+      if (next.step === 'done') { setCloudKeys(null); onDone(next.result); return; }
+      if (next.step === 'consent') { setCloudKeys(next.keys); return; }
+      setError(next.error);
     } catch {
       setError('Couldn’t reach the dashboard. Nothing was changed; try again.');
     } finally {
@@ -98,6 +108,7 @@ export function RotationResult({ result, onDismiss }: { result: Extract<Credenti
           {result.apiKey ? 'Your API key is rotated. ' : 'Your proxy URLs are replaced. '}
           These are shown once, so copy them now and update your agents.
         </span>
+        {result.notSaved && <strong>Your new key couldn’t be saved to your account, so this is the only copy. Copy it before you leave this page.</strong>}
         {result.apiKey && <CopyChip text={result.apiKey} display="New API key (hidden)" label="Copy the new API key" />}
         {result.proxyKeys.map((k) => k.wrKey && (
           <div key={k.wrKey.slice(0, 22)} style={{ display: 'grid', gap: 4 }}>
@@ -108,7 +119,8 @@ export function RotationResult({ result, onDismiss }: { result: Extract<Credenti
         ))}
         {result.proxyKeysLost && <span>The new proxy URLs couldn’t be shown. Replace the URLs again to get new ones.</span>}
         {result.disconnected.length > 0 && <span>Disconnected: {result.disconnected.map(label).join(', ')}.</span>}
-        <div><Button size={28} onClick={onDismiss}>I’ve copied them</Button></div>
+        {/* Unsaved, a reload would bring back the old, dead key: the banner stays. */}
+        {!result.notSaved && <div><Button size={28} onClick={onDismiss}>I’ve copied them</Button></div>}
       </div>
     </Banner>
   );

@@ -90,6 +90,73 @@ describe('rotateApiKey', () => {
   });
 });
 
+describe('rotateApiKey when something after the engine fails', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => {}); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  const run = async () => {
+    const p = rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false });
+    await vi.runAllTimersAsync();
+    return p;
+  };
+
+  it('a save that keeps failing still hands back the new key, marked as the only copy', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).startsWith('SELECT')) return { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] };
+      if (String(sql).startsWith('UPDATE')) throw new Error('db down');
+      return { rows: [], rowCount: 1 };
+    });
+    const result = await run();
+    expect(result).toMatchObject({ ok: true, apiKey: expect.stringMatching(/^sk-wr-/), proxyKeys: NEW_KEYS, notSaved: true });
+    expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('UPDATE'))).toHaveLength(3);
+  });
+
+  it('a save that fails once is retried and succeeds', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    let failures = 1;
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).startsWith('SELECT')) return { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] };
+      if (String(sql).startsWith('UPDATE') && failures-- > 0) throw new Error('blip');
+      return { rows: [], rowCount: 1 };
+    });
+    const result = await run();
+    expect(result).toMatchObject({ ok: true });
+    expect(result).not.toHaveProperty('notSaved');
+    expect(mocks.cookie).toHaveBeenCalledWith('wr_new');
+  });
+
+  it('link cleanup is retried, and giving up still reports the rotation', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).startsWith('SELECT')) return { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] };
+      if (String(sql).startsWith('DELETE')) throw new Error('db down');
+      return { rows: [], rowCount: 1 };
+    });
+    expect(await run()).toMatchObject({ ok: true });
+    expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('DELETE'))).toHaveLength(3);
+  });
+
+  it('a 200 without a token is recovered like a lost answer, and missing key lists read as empty', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ success: true })).mockResolvedValueOnce(Response.json({ success: true, fleetToken: 'wr_found' }));
+    mocks.query.mockImplementation(async (sql: string) => String(sql).startsWith('SELECT') ? { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] } : { rows: [], rowCount: 1 });
+    expect(await run()).toMatchObject({ ok: true, proxyKeys: [], disconnected: [], proxyKeysLost: true });
+    expect(mocks.cookie).toHaveBeenCalledWith('wr_found');
+  });
+});
+
+describe('who may rotate', () => {
+  it('no session, no fleet, or no service secret: nothing reaches the engine', async () => {
+    mocks.auth.mockResolvedValueOnce(null);
+    expect(await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false, error: expect.stringMatching(/Sign in/) });
+    mocks.query.mockResolvedValueOnce({ rows: [{ fleet_id: null, fleet_token: null, fleet_token_enc: null }] });
+    expect(await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false, error: expect.stringMatching(/no fleet/) });
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
+    expect(await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('replaceProxyUrls', () => {
   it('replaces the proxy URLs only: nothing saved, the session untouched', async () => {
     fetchMock.mockResolvedValue(Response.json({ success: true, proxyKeys: NEW_KEYS, disconnected: [] }));

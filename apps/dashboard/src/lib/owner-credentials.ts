@@ -26,7 +26,12 @@ export interface CredentialKey {
 }
 
 export type CredentialChange =
-  | { ok: true; apiKey?: string; proxyKeys: CredentialKey[]; disconnected: CredentialKey[]; proxyKeysLost?: boolean }
+  /**
+   * `proxyKeysLost`: the change happened but its new proxy URLs didn't reach us.
+   * `notSaved`: the change happened but the new key couldn't be saved to the
+   * account, so this answer is the only copy of it.
+   */
+  | { ok: true; apiKey?: string; proxyKeys: CredentialKey[]; disconnected: CredentialKey[]; proxyKeysLost?: boolean; notSaved?: boolean }
   /** `cloudIdentityKeys`: keys on the engine's cloud identity, which need their own consent to reissue. */
   | { ok: false; error: string; cloudIdentityKeys?: CredentialKey[] };
 
@@ -68,15 +73,53 @@ function refused(status: number, json: Record<string, unknown>): CredentialChang
   return { ok: false, error: typeof json.error === 'string' ? json.error : 'Couldn’t change the keys. Nothing was changed.' };
 }
 
-/** Saves the account's new API key and fleet token (encrypted), and points this browser's session at the token. */
-async function saveCredentials(userId: string, apiKey: string, token: string): Promise<void> {
+const keys = (v: unknown): CredentialKey[] => (Array.isArray(v) ? (v as CredentialKey[]) : []);
+
+/**
+ * Saves the account's new API key and fleet token (encrypted) and points this
+ * browser's session at the token. The engine has already switched, so a
+ * failed save is retried; false when it still failed (the caller then hands
+ * the key back as the only copy).
+ */
+async function saveCredentials(userId: string, apiKey: string, token: string): Promise<boolean> {
   const apiKeyEnc = sealCred('users.api_key', userId, apiKey);
   const tokenEnc = sealCred('users.fleet_token', userId, token);
-  await db().query(
-    `UPDATE users SET api_key = $2, api_key_enc = $3, fleet_token = $4, fleet_token_enc = $5, updated_at = now() WHERE id = $1`,
-    [userId, plainUnlessSealed(apiKeyEnc, apiKey), apiKeyEnc, plainUnlessSealed(tokenEnc, token), tokenEnc],
-  );
-  await setFleetAuthCookie(token);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await db().query(
+        `UPDATE users SET api_key = $2, api_key_enc = $3, fleet_token = $4, fleet_token_enc = $5, updated_at = now() WHERE id = $1`,
+        [userId, plainUnlessSealed(apiKeyEnc, apiKey), apiKeyEnc, plainUnlessSealed(tokenEnc, token), tokenEnc],
+      );
+      await setFleetAuthCookie(token);
+      return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  console.error('[owner-credentials] couldn’t save a rotated API key to its account');
+  return false;
+}
+
+/** The rotation happened at the engine: save it, drop other links, and answer with the key (the only copy if the save failed). */
+async function rotated(o: Owner, apiKey: string, token: string, json: Record<string, unknown>, proxyKeysLost = false): Promise<CredentialChange> {
+  const saved = await saveCredentials(o.userId, apiKey, token);
+  await dropOtherLinks(o.fleetId, o.userId);
+  return {
+    ok: true, apiKey, proxyKeys: keys(json.proxyKeys), disconnected: keys(json.disconnected),
+    ...(proxyKeysLost && { proxyKeysLost }), ...(!saved && { notSaved: true }),
+  };
+}
+
+/** After a rebind whose answer was lost or incomplete: the new key finds the fleet only if it happened. */
+async function recover(o: Owner, apiKey: string): Promise<CredentialChange | null> {
+  try {
+    const found = await engine(o, { action: 'find_fleet', api_key: apiKey });
+    const token = found.json.fleetToken;
+    if (found.status === 200 && typeof token === 'string') return rotated(o, apiKey, token, {}, true);
+  } catch {
+    // Unknown either way: the old key still works if nothing changed.
+  }
+  return null;
 }
 
 /**
@@ -119,23 +162,14 @@ export async function rotateApiKey(input: { disconnect: string[]; reissueCloudId
     // The answer was lost, so the change may or may not have happened. The
     // new key finds the fleet only if it did; then its token is recovered.
     // The new proxy URLs went with the answer: replacing them again issues new ones.
-    try {
-      const found = await engine(o, { action: 'find_fleet', api_key: apiKey });
-      const token = found.json.fleetToken;
-      if (found.status === 200 && typeof token === 'string') {
-        await saveCredentials(o.userId, apiKey, token);
-        await dropOtherLinks(o.fleetId, o.userId);
-        return { ok: true, apiKey, proxyKeys: [], disconnected: [], proxyKeysLost: true };
-      }
-    } catch {
-      // Unknown either way: the old key still works if nothing changed.
-    }
-    return { ok: false, error: 'Couldn’t reach WhiteRoom to finish rotating the key. If your old key still works, nothing changed; try again.' };
+    return (await recover(o, apiKey))
+      ?? { ok: false, error: 'Couldn’t reach WhiteRoom to finish rotating the key. If your old key still works, nothing changed; try again.' };
   }
   if (res.status !== 200) return refused(res.status, res.json);
-  await saveCredentials(o.userId, apiKey, String(res.json.fleetToken));
-  await dropOtherLinks(o.fleetId, o.userId);
-  return { ok: true, apiKey, proxyKeys: res.json.proxyKeys as CredentialKey[], disconnected: res.json.disconnected as CredentialKey[] };
+  const token = res.json.fleetToken;
+  if (typeof token === 'string') return rotated(o, apiKey, token, res.json);
+  // A 200 without a token shouldn't happen; recover it the same way as a lost answer.
+  return (await recover(o, apiKey)) ?? { ok: false, error: 'WhiteRoom answered without the new token. If your old key still works, nothing changed; try again.' };
 }
 
 /** Replaces the fleet's proxy URLs one for one (each except those in `disconnect`); the API key stays. */
@@ -149,7 +183,7 @@ export async function replaceProxyUrls(input: { disconnect: string[]; reissueClo
       reissue_cloud_identity_keys: input.reissueCloudIdentityKeys,
     });
     if (res.status !== 200) return refused(res.status, res.json);
-    return { ok: true, proxyKeys: res.json.proxyKeys as CredentialKey[], disconnected: res.json.disconnected as CredentialKey[] };
+    return { ok: true, proxyKeys: keys(res.json.proxyKeys), disconnected: keys(res.json.disconnected) };
   } catch {
     return { ok: false, error: 'Couldn’t reach WhiteRoom. Check the list below: if the URLs changed, replace them again to get new ones shown.' };
   }

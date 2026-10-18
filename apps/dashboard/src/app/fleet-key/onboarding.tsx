@@ -476,12 +476,13 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
           <Panel title="Your API key" actions={!previewKeys && !rotated ? <Button size={28} variant="danger" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
               {rotated && <RotationResult result={rotated} onDismiss={() => window.location.reload()} />}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {/* After a rotation the old key is dead: only the new one, in the banner, is offered. */}
+              {!rotated && <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <code className="wr-key-field">{showKey ? apiKey : maskKey(apiKey)}</code>
                 <Button onClick={() => setShowKey((v) => !v)} aria-pressed={showKey}>{showKey ? 'Hide' : 'Reveal'}</Button>
                 {/* Reveal first: copying a secret you can't see is easy to do by accident. */}
                 <CopyValueButton text={apiKey} what="your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
-              </div>
+              </div>}
               <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
                 Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet. If it leaks, rotate it.
               </p>
