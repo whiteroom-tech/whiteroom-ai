@@ -80,6 +80,8 @@ describe('rotateApiKey', () => {
     expect(result).toMatchObject({ proxyKeys: [], proxyKeysLost: true });
     const [, find] = sent();
     expect(find.body).toEqual({ action: 'find_fleet', api_key: result.apiKey, fleet_id: 'f1' });
+    // Sent without the old token, which the rotation may have revoked.
+    expect(find.headers.Authorization).toBeUndefined();
     expect(mocks.cookie).toHaveBeenCalledWith('wr_recovered');
   });
 
@@ -172,6 +174,14 @@ describe('rotateApiKey when something after the engine fails', () => {
     });
     expect(await run()).toMatchObject({ ok: true });
     expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('DELETE'))).toHaveLength(3);
+  });
+
+  it('a 200 without a token keeps the proxy URLs it did return', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ success: true, proxyKeys: NEW_KEYS, disconnected: [] })).mockResolvedValueOnce(Response.json({ success: true, fleetToken: 'wr_found' }));
+    mocks.query.mockImplementation(async (sql: string) => String(sql).startsWith('SELECT') ? { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] } : { rows: [], rowCount: 1 });
+    const result = await run();
+    expect(result).toMatchObject({ ok: true, proxyKeys: NEW_KEYS });
+    expect(result).not.toHaveProperty('proxyKeysLost');
   });
 
   it('a 200 without a token is recovered like a lost answer, and missing key lists read as empty', async () => {

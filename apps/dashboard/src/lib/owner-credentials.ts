@@ -57,7 +57,7 @@ async function owner(): Promise<Owner | { error: string }> {
   return { userId, fleetId: row.fleet_id, token };
 }
 
-async function engine(o: Owner, body: Record<string, unknown>, key = o.token): Promise<{ status: number; json: Record<string, unknown> }> {
+async function engine(o: Owner, body: Record<string, unknown>, key: string | undefined = o.token): Promise<{ status: number; json: Record<string, unknown> }> {
   const secret = process.env.WR_DASHBOARD_SERVICE_SECRET ?? '';
   const res = await fetch(`${PROXY_URL}/api/white-room`, {
     method: 'POST',
@@ -87,12 +87,18 @@ const keys = (v: unknown): CredentialKey[] => (Array.isArray(v) ? (v as Credenti
  * the key back as the only copy).
  */
 async function saveCredentials(userId: string, apiKey: string, token: string): Promise<boolean> {
+  let sealed: { apiKeyEnc: string | null; tokenEnc: string | null };
+  try {
+    // Once: a key that won't seal won't on a retry either, and must still hand the new key back, never throw.
+    sealed = { apiKeyEnc: sealCred('users.api_key', userId, apiKey), tokenEnc: sealCred('users.fleet_token', userId, token) };
+  } catch {
+    console.error('[owner-credentials] couldn’t encrypt a rotated API key');
+    return false;
+  }
+  const { apiKeyEnc, tokenEnc } = sealed;
   let saved = false;
   for (let attempt = 0; attempt < 3 && !saved; attempt++) {
     try {
-      // Sealed inside the retry: a key that won't seal must still hand the new key back, never throw.
-      const apiKeyEnc = sealCred('users.api_key', userId, apiKey);
-      const tokenEnc = sealCred('users.fleet_token', userId, token);
       await db().query(
         `UPDATE users SET api_key = $2, api_key_enc = $3, fleet_token = $4, fleet_token_enc = $5, updated_at = now() WHERE id = $1`,
         [userId, plainUnlessSealed(apiKeyEnc, apiKey), apiKeyEnc, plainUnlessSealed(tokenEnc, token), tokenEnc],
@@ -126,13 +132,15 @@ async function rotated(o: Owner, apiKey: string, token: string, json: Record<str
  * fleet only once it has happened. The engine may still be finishing it, so
  * this looks a few times before giving up.
  */
-async function recover(o: Owner, apiKey: string): Promise<CredentialChange | null> {
+async function recover(o: Owner, apiKey: string, answer: Record<string, unknown> = {}): Promise<CredentialChange | null> {
   for (const wait of [0, 2_000, 5_000]) {
     await new Promise((r) => setTimeout(r, wait));
     try {
-      const found = await engine(o, { action: 'find_fleet', api_key: apiKey });
+      // No credential: find_fleet takes none, and the old token may already be dead.
+      const found = await engine(o, { action: 'find_fleet', api_key: apiKey }, undefined);
       const token = found.json.fleetToken;
-      if (found.status === 200 && typeof token === 'string') return rotated(o, apiKey, token, {}, true);
+      // URLs the engine did return (a 200 that only lacked the token) are kept; otherwise they were lost.
+      if (found.status === 200 && typeof token === 'string') return rotated(o, apiKey, token, answer, !Array.isArray(answer.proxyKeys));
     } catch {
       // Not reachable this time; look again.
     }
@@ -192,8 +200,8 @@ export async function rotateApiKey(input: { disconnect: string[]; reissueCloudId
   if (res.status !== 200) return refused(res.status, res.json);
   const token = res.json.fleetToken;
   if (typeof token === 'string') return rotated(o, apiKey, token, res.json);
-  // A 200 without a token shouldn't happen; recover it the same way as a lost answer.
-  return (await recover(o, apiKey)) ?? unconfirmed(apiKey);
+  // A 200 without a token shouldn't happen; recover it the same way as a lost answer, keeping its URLs.
+  return (await recover(o, apiKey, res.json)) ?? unconfirmed(apiKey);
 }
 
 /** Replaces the fleet's proxy URLs one for one (each except those in `disconnect`); the API key stays. */
