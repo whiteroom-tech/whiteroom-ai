@@ -65,11 +65,10 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   const [unconfirmedKey, setUnconfirmedKey] = useState<string | null>(null);
 
   async function run(reissueCloudIdentityKeys: boolean) {
-    // Each try mints its own key: an earlier unconfirmed one is no longer the one to keep.
-    setBusy(true); setError(''); setUnconfirmedKey(null);
+    setBusy(true); setError('');
     try {
       const next = await attempt(kind, reissueCloudIdentityKeys);
-      if (next.step === 'done') { setCloudKeys(null); setUnconfirmedKey(null); onDone(next.result); return; }
+      if (next.step === 'done') { setCloudKeys(null); onDone(next.result); return; }
       if (next.step === 'consent') { setCloudKeys(next.keys); return; }
       setError(next.error);
       if (next.unconfirmedApiKey) setUnconfirmedKey(next.unconfirmedApiKey);
@@ -80,7 +79,10 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
     }
   }
 
-  const close = () => { setCloudKeys(null); setError(''); setUnconfirmedKey(null); onClose(); };
+  // An unconfirmed key is never cleared here: it may be the only copy of the
+  // fleet's key. It stays until the page reloads, and no retry is offered
+  // meanwhile (a retry would mint another key and could strand this one).
+  const close = () => { setCloudKeys(null); if (!unconfirmedKey) setError(''); onClose(); };
   const title = kind === 'api-key' ? 'Rotate your API key?' : 'Replace every proxy URL?';
 
   return (
@@ -93,10 +95,11 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
             {consequences(kind)}
             {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{error}</p>}
             {unconfirmedKey && <CopyChip text={unconfirmedKey} display="Possibly new API key (hidden)" label="Copy the possibly new API key" />}
+            {unconfirmedKey && <p style={{ margin: 0 }}>Copy it, then reload this page to see which key is current before trying again.</p>}
           </div>
         }
         confirmLabel={kind === 'api-key' ? 'Rotate API key' : 'Replace URLs'}
-        busy={busy}
+        busy={busy || !!unconfirmedKey}
         onConfirm={() => void run(false)}
         onCancel={close}
       />
