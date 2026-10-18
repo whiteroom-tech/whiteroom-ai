@@ -3,9 +3,10 @@ import 'server-only';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { db } from '@/lib/db';
 
-// Credentials at rest (spec Rev 3, PR D1): fleet tokens and sk-wr keys are
-// saved encrypted beside the plain value, so a copy of the database alone
-// can't be used once the plain columns are dropped (D2).
+// Credentials at rest (spec Rev 3): fleet tokens and sk-wr keys are saved
+// encrypted, so a copy of the database alone can't be used. D1 wrote the
+// plain value beside the envelope; D2 stops writing it and clears it once the
+// envelope is checked. Without a key (local dev) the plain value is kept.
 //
 // AES-256-GCM with WR_CRED_ENCRYPTION_KEY (32 bytes, base64). The AAD names
 // the column and user, so an envelope can't be moved to another row's column
@@ -33,6 +34,11 @@ export function sealCred(column: CredColumn, userId: string, value: string): str
   cipher.setAAD(Buffer.from(`${column}:${userId}`));
   const ct = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   return VERSION + Buffer.concat([iv, cipher.getAuthTag(), ct]).toString('base64');
+}
+
+/** The plain value to store beside an envelope: none once it's encrypted, the value itself without a key. */
+export function plainUnlessSealed(sealed: string | null, value: string | null): string | null {
+  return sealed ? null : value;
 }
 
 /** Decrypts a stored envelope; throws if it was tampered with, moved, or the key is wrong or missing. */
@@ -71,15 +77,28 @@ const SEALED_COLUMNS: [CredColumn, string][] = [
   ['user_fleets.fleet_token', 'user_id'],
 ];
 
+/** Whether user_fleets.fleet_token can hold NULL yet (migration 011); null when the check couldn't run. */
+export async function plainColumnsNullable(): Promise<boolean | null> {
+  try {
+    const { rows } = await db().query(
+      `SELECT is_nullable FROM information_schema.columns WHERE table_name = 'user_fleets' AND column_name = 'fleet_token'`,
+    );
+    return rows[0] ? rows[0].is_nullable === 'YES' : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Encrypts every plain value whose envelope is missing or stale (an older
- * revision changed the plain value). Run at boot (instrumentation.ts).
- * Idempotent, so concurrent instances are fine; an UPDATE only lands if the
- * row is still as read.
+ * revision changed the plain value), then clears the plain value once its
+ * envelope opens to it. Run at boot (instrumentation.ts). Idempotent, so
+ * concurrent instances are fine; an UPDATE only lands if the row is still as
+ * read.
  */
-export async function sealStoredCreds(): Promise<number> {
-  if (!credKey()) return 0;
-  let sealed = 0;
+export async function sealStoredCreds(): Promise<{ sealed: number; cleared: number }> {
+  if (!credKey()) return { sealed: 0, cleared: 0 };
+  let sealed = 0, cleared = 0;
   for (const [cred, userIdColumn] of SEALED_COLUMNS) {
     const [table, column] = cred.split('.');
     const { rows } = await db().query(
@@ -87,18 +106,27 @@ export async function sealStoredCreds(): Promise<number> {
        WHERE ${column} IS NOT NULL`,
     );
     for (const r of rows) {
-      if (r.sealed && readCred(cred, r.userId, null, r.sealed) === r.value) continue;
       try {
+        let envelope: string | null = r.sealed;
+        if (!envelope || readCred(cred, r.userId, null, envelope) !== r.value) {
+          envelope = sealCred(cred, r.userId, r.value);
+          const { rowCount } = await db().query(
+            `UPDATE ${table} SET ${column}_enc = $2 WHERE id = $1 AND ${column} = $3 AND ${column}_enc IS NOT DISTINCT FROM $4`,
+            [r.id, envelope, r.value, r.sealed],
+          );
+          if (!rowCount) continue;
+          sealed += rowCount;
+        }
         const { rowCount } = await db().query(
-          `UPDATE ${table} SET ${column}_enc = $2 WHERE id = $1 AND ${column} = $3 AND ${column}_enc IS NOT DISTINCT FROM $4`,
-          [r.id, sealCred(cred, r.userId, r.value), r.value, r.sealed],
+          `UPDATE ${table} SET ${column} = NULL WHERE id = $1 AND ${column} = $2 AND ${column}_enc = $3`,
+          [r.id, r.value, envelope],
         );
-        sealed += rowCount ?? 0;
+        cleared += rowCount ?? 0;
       } catch {
         // One row failing doesn't stop the others; the next boot retries it.
         console.error(`[cred-seal] couldn't encrypt a ${cred} row`);
       }
     }
   }
-  return sealed;
+  return { sealed, cleared };
 }

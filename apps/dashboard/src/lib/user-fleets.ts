@@ -1,7 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
-import { readCred, sealCred } from '@/lib/cred-seal';
+import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
@@ -95,9 +95,21 @@ export async function addUserFleet(
       };
     }
 
+    // The unique (user_id, fleet_token) constraint can't see encrypted
+    // tokens, so compare them here; the users row lock above serializes it.
+    const { rows: linked } = await client.query(
+      'SELECT fleet_token, fleet_token_enc FROM user_fleets WHERE user_id = $1',
+      [userId],
+    );
+    if (linked.some((r) => readCred('user_fleets.fleet_token', userId, r.fleet_token, r.fleet_token_enc) === fleetToken)) {
+      await client.query('ROLLBACK');
+      return { ok: false, error: 'Fleet already linked' };
+    }
+
+    const fleetTokenEnc = sealCred('user_fleets.fleet_token', userId, fleetToken);
     await client.query(
       `INSERT INTO user_fleets (user_id, fleet_token, fleet_id, label, fleet_token_enc) VALUES ($1, $2, $3, $4, $5)`,
-      [userId, fleetToken, fleetId, label, sealCred('user_fleets.fleet_token', userId, fleetToken)],
+      [userId, plainUnlessSealed(fleetTokenEnc, fleetToken), fleetId, label, fleetTokenEnc],
     );
     await enqueueEntitlementSync(client, userId, 'fleet_linked');
     await client.query('COMMIT');
