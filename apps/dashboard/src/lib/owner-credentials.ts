@@ -84,20 +84,25 @@ const keys = (v: unknown): CredentialKey[] => (Array.isArray(v) ? (v as Credenti
 async function saveCredentials(userId: string, apiKey: string, token: string): Promise<boolean> {
   const apiKeyEnc = sealCred('users.api_key', userId, apiKey);
   const tokenEnc = sealCred('users.fleet_token', userId, token);
-  for (let attempt = 0; attempt < 3; attempt++) {
+  let saved = false;
+  for (let attempt = 0; attempt < 3 && !saved; attempt++) {
     try {
       await db().query(
         `UPDATE users SET api_key = $2, api_key_enc = $3, fleet_token = $4, fleet_token_enc = $5, updated_at = now() WHERE id = $1`,
         [userId, plainUnlessSealed(apiKeyEnc, apiKey), apiKeyEnc, plainUnlessSealed(tokenEnc, token), tokenEnc],
       );
-      await setFleetAuthCookie(token);
-      return true;
+      saved = true;
     } catch {
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
     }
   }
-  console.error('[owner-credentials] couldn’t save a rotated API key to its account');
-  return false;
+  if (!saved) {
+    console.error('[owner-credentials] couldn’t save a rotated API key to its account');
+    return false;
+  }
+  // The account has the new token; a session that misses it re-reads it on the reload.
+  await setFleetAuthCookie(token).catch(() => console.error('[owner-credentials] couldn’t move the session to a rotated token'));
+  return true;
 }
 
 /** The rotation happened at the engine: save it, drop other links, and answer with the key (the only copy if the save failed). */
@@ -136,7 +141,7 @@ async function dropOtherLinks(fleetId: string, userId: string): Promise<void> {
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
     }
   }
-  console.error('[fleet-credentials] couldn’t remove other accounts’ links to a rotated fleet');
+  console.error('[owner-credentials] couldn’t remove other accounts’ links to a rotated fleet');
 }
 
 const disconnectList = (prefixes: string[]) => prefixes.filter((p) => /^sk-wr-[0-9a-f]{16}$/.test(p)).slice(0, 100);

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/owner-credentials', () => ({ rotateApiKey: vi.fn(), replaceProxyUrls: vi.fn() }));
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { nextStep, RotationResult } from '@/app/fleet-key/rotate';
+import { attempt, nextStep, RotationResult } from '@/app/fleet-key/rotate';
 
 const CLOUD = [{ prefix: 'sk-wr-dddddddddddddddd', provider: 'bedrock-sigv4', keyHint: 'none', cloudIdentity: true }];
 const KEY = { prefix: 'sk-wr-aaaaaaaaaaaaaaaa', provider: 'anthropic', keyHint: 'abcd', cloudIdentity: false, wrKey: 'sk-wr-' + 'a'.repeat(40) };
@@ -18,6 +18,27 @@ describe('nextStep', () => {
     // Consent already given: the refusal is shown, not asked again.
     expect(nextStep({ ok: false, error: 'confirm', cloudIdentityKeys: CLOUD }, true)).toEqual({ step: 'error', error: 'confirm' });
     expect(nextStep({ ok: false, error: 'Only this fleet’s owner…' }, false)).toEqual({ step: 'error', error: 'Only this fleet’s owner…' });
+  });
+});
+
+describe('the dialog’s flow', () => {
+  it('first try without consent; on cloud-identity keys, asks; the second try reissues them and finishes', async () => {
+    const done = { ok: true as const, apiKey: 'sk-wr-new', proxyKeys: [], disconnected: [] };
+    const rotateApiKey = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: 'confirm', cloudIdentityKeys: CLOUD })
+      .mockResolvedValueOnce(done);
+    const replaceProxyUrls = vi.fn();
+    expect(await attempt('api-key', false, { rotateApiKey, replaceProxyUrls })).toEqual({ step: 'consent', keys: CLOUD });
+    expect(await attempt('api-key', true, { rotateApiKey, replaceProxyUrls })).toEqual({ step: 'done', result: done });
+    expect(rotateApiKey.mock.calls.map(([i]) => i.reissueCloudIdentityKeys)).toEqual([false, true]);
+    expect(replaceProxyUrls).not.toHaveBeenCalled();
+  });
+
+  it('Replace URLs calls the replace action only', async () => {
+    const rotateApiKey = vi.fn();
+    const replaceProxyUrls = vi.fn().mockResolvedValue({ ok: false, error: 'restarting' });
+    expect(await attempt('proxy-urls', false, { rotateApiKey, replaceProxyUrls })).toEqual({ step: 'error', error: 'restarting' });
+    expect(rotateApiKey).not.toHaveBeenCalled();
   });
 });
 

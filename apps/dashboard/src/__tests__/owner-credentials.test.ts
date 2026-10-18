@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
   mocks.query.mockReset();
-  mocks.cookie.mockReset();
+  mocks.cookie.mockReset().mockResolvedValue(undefined);
   mocks.access.mockReset().mockResolvedValue(null);
   mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
   mocks.query.mockImplementation(async (sql: string) => {
@@ -111,6 +111,15 @@ describe('rotateApiKey when something after the engine fails', () => {
     expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('UPDATE'))).toHaveLength(3);
   });
 
+  it('a cookie that fails to move doesn’t make a saved key look unsaved', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    mocks.cookie.mockRejectedValue(new Error('headers already sent'));
+    const result = await run();
+    expect(result).toMatchObject({ ok: true });
+    expect(result).not.toHaveProperty('notSaved');
+    expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('UPDATE'))).toHaveLength(1);
+  });
+
   it('a save that fails once is retried and succeeds', async () => {
     fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
     let failures = 1;
@@ -154,6 +163,17 @@ describe('who may rotate', () => {
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
     expect(await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: false })).toMatchObject({ ok: false });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('disconnect list', () => {
+  it('passes only well-formed prefixes, at most 100', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, proxyKeys: [], disconnected: [] }));
+    const prefixes = Array.from({ length: 150 }, (_, i) => `sk-wr-${i.toString(16).padStart(16, '0')}`);
+    await replaceProxyUrls({ disconnect: [...prefixes, 'sk-wr-short', 'not-a-key'], reissueCloudIdentityKeys: false });
+    const sentList = sent()[0].body.disconnect as string[];
+    expect(sentList).toHaveLength(100);
+    expect(sentList.every((p) => /^sk-wr-[0-9a-f]{16}$/.test(p))).toBe(true);
   });
 });
 

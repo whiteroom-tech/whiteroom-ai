@@ -15,6 +15,17 @@ import { replaceProxyUrls, rotateApiKey, type CredentialChange, type CredentialK
 
 export type RotationKind = 'api-key' | 'proxy-urls';
 
+/** One confirmation: runs the change and says what the dialog does next. */
+export async function attempt(
+  kind: RotationKind,
+  reissueCloudIdentityKeys: boolean,
+  actions: { rotateApiKey: typeof rotateApiKey; replaceProxyUrls: typeof replaceProxyUrls } = { rotateApiKey, replaceProxyUrls },
+): Promise<ReturnType<typeof nextStep>> {
+  const input = { disconnect: [], reissueCloudIdentityKeys };
+  const result = kind === 'api-key' ? await actions.rotateApiKey(input) : await actions.replaceProxyUrls(input);
+  return nextStep(result, reissueCloudIdentityKeys);
+}
+
 /** What the dialog does with an answer: finish, ask for cloud-identity consent, or show the error. */
 export function nextStep(result: CredentialChange, consented: boolean):
   | { step: 'done'; result: Extract<CredentialChange, { ok: true }> }
@@ -54,8 +65,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   async function run(reissueCloudIdentityKeys: boolean) {
     setBusy(true); setError('');
     try {
-      const input = { disconnect: [], reissueCloudIdentityKeys };
-      const next = nextStep(kind === 'api-key' ? await rotateApiKey(input) : await replaceProxyUrls(input), reissueCloudIdentityKeys);
+      const next = await attempt(kind, reissueCloudIdentityKeys);
       if (next.step === 'done') { setCloudKeys(null); onDone(next.result); return; }
       if (next.step === 'consent') { setCloudKeys(next.keys); return; }
       setError(next.error);
