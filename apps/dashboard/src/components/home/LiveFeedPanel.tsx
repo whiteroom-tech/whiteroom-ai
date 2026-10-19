@@ -127,7 +127,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 12.5, color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
       {loading && rows.length === 0 && <LoadingLine />}
       {!loading && !error && shown.length === 0 && (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy, unless personal details are removed.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
       )}
       {pageRows.map((r) => {
         const canOpen = liveExpandable(r);

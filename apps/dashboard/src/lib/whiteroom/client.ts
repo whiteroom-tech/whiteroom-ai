@@ -752,6 +752,8 @@ export interface DataSettings {
   personal_data: 'keep' | 'exclude';
   /** Saved notes are deleted this long after each is written (engines from PR 6 on). */
   handover_max_age_hours?: number;
+  /** What carries from one job to the next (P0 #3a): explicit_run means only within a labeled run. */
+  handover_carry_forward_effective?: 'same_run' | 'explicit_run' | 'off';
 }
 /** The owner's goal for an agent (Agent detail › Goal). */
 export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }

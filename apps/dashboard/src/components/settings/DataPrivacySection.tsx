@@ -147,13 +147,20 @@ export function DataPrivacySection() {
             <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
           </div>
         )}
+        {carriesOnlyInLabeledRuns(settings) && (
+          <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>
+            Notes carry over only between calls with the same run label. <a href="https://whiteroom.tech/docs.html#runs" target="_blank" rel="noopener noreferrer">How to label runs</a>
+          </p>
+        )}
       </Row>
       <Row
         title="Live feed"
         text={settings.content_capture
           ? 'What your agents said and did, with credentials removed. Deleted automatically after a short time (the live feed shows how long), never part of the audit record.'
-          : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
-        control={<Toggle label="Live feed" checked={settings.content_capture} disabled={busy}
+          : liveFeedLocked(settings)
+            ? 'Live feed is off. It can’t be turned on while personal details are removed.'
+            : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
+        control={<Toggle label="Live feed" checked={settings.content_capture} disabled={busy || liveFeedLocked(settings)}
           onChange={(on) => change({ content_capture: on })} />}
       />
       <Row
@@ -193,6 +200,11 @@ export function DataPrivacySection() {
     </Panel>
   );
 }
+
+/** The engine refuses to turn the live feed on while personal details are removed (P0 #9). */
+export const liveFeedLocked = (s: DataSettings) => !s.content_capture && s.personal_data === 'exclude';
+/** Notes carry from one job to the next only within a labeled run (P0 #3a). */
+export const carriesOnlyInLabeledRuns = (s: DataSettings) => s.handover_carry_forward_effective === 'explicit_run';
 
 function Row({ title, text, control, last, children }: { title: string; text: string; control: React.ReactNode; last?: boolean; children?: React.ReactNode }) {
   return (
