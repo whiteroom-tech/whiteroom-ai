@@ -32,6 +32,9 @@ type FeedbackResult = 'done' | 'closed' | 'failed';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 
+/** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
+const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
+
 type ViewMode = 'index' | 'agent' | 'evidence';
 
 // --- Table sort ---
@@ -1444,6 +1447,9 @@ export default function PerformancePage() {
           : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
         {loading && !indexData && !agentData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
+        {view === 'index' && indexData && Date.now() < UNNAMED_CALLS_NOTE_UNTIL && (
+          <div style={{ marginBottom: 16 }}><Banner variant="info">Since Oct 19, these numbers include calls from agents without a name. Saved by WhiteRoom isn&rsquo;t affected.</Banner></div>
+        )}
         {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
