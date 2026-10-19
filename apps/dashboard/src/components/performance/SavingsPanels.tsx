@@ -6,6 +6,8 @@ import type { AgentTotals, DaySavings } from '@/lib/analytics-metrics';
 import { fmtEnergy, fmtTokens } from '@/lib/format';
 import { tallyWords, type GovernanceTally } from '@/lib/governance';
 import { HELP } from '@/lib/metric-definitions';
+import { AgentScoreWheel } from './AgentScoreWheel';
+import type { AgentScore } from '@/lib/whiteroom/types';
 
 const PLOT_H = 120;
 
@@ -123,11 +125,13 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
  * per agent for the page's range, most tokens first. Rule actions, flagged
  * runs and claim check join it with the governance engine (P2).
  */
-export function ByAgentTable({ rows, scope, ruleActions }: {
+export function ByAgentTable({ rows, scope, ruleActions, scores }: {
   rows: AgentTotals[];
   scope: string;
   /** Controls blocks (Enforce) and would-blocks (Watch only) per agent id, lower-cased. */
   ruleActions?: Record<string, GovernanceTally>;
+  /** Task success / cost diligence / speed, per agent id (absent on older engines, or while still loading). */
+  scores?: Record<string, AgentScore>;
 }) {
   return (
     <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
@@ -158,6 +162,13 @@ export function ByAgentTable({ rows, scope, ruleActions }: {
                     {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
                   </span>
                 );
+              },
+            },
+            {
+              key: 'score', header: 'Performance', width: '100px',
+              render: (r) => {
+                const s = scores?.[r.agent];
+                return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
               },
             },
           ]}

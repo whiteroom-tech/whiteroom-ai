@@ -42,6 +42,7 @@ import type {
   RecommendationBriefResult,
   RecommendationExportMarkdownResult,
   FleetHourlyResult,
+  AgentScoresResult,
   PerformanceCostForecastResult,
   SetBudgetResult,
   SetTokenBudgetResult,
@@ -482,6 +483,18 @@ export function performanceFleetHourly(
 ): Promise<FleetHourlyResult> {
   return apiCall<FleetHourlyResult>({
     action: 'performance_fleet_hourly',
+    fleet_id: fleetId,
+    hours_back: hoursBack,
+  }, key);
+}
+
+export function performanceAgentScores(
+  fleetId: string,
+  hoursBack?: number,
+  key?: string,
+): Promise<AgentScoresResult> {
+  return apiCall<AgentScoresResult>({
+    action: 'performance_agent_scores',
     fleet_id: fleetId,
     hours_back: hoursBack,
   }, key);
