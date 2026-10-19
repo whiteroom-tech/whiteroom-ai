@@ -464,6 +464,16 @@ export interface PerformanceCostForecastResult {
   /** burnRateUsdPerHour averages the hours with calls in this lookback. */
   burnLookbackHours?: number;
   burnActiveHours?: number;
+  /**
+   * Dollar and token remaining-tasks, tracked independently (absent on
+   * older engines, which only ever returned the combined remainingTasks
+   * above). A fleet can have both budgets set; one being unavailable
+   * (stale pricing, no task-cost model yet) doesn't hide the other.
+   */
+  dollarRemainingTasks?: number | null;
+  dollarRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
+  tokenRemainingTasks?: number | null;
+  tokenRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'available';
   error?: string;
 }
 
