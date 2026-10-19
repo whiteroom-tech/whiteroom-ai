@@ -446,8 +446,11 @@ export interface PerformanceCostForecastResult {
   budgetUsd: number | null;
   spendToDateUsd: number;
   burnRateUsdPerHour: number;
-  // Dollar-based normally; token-based (against tokenBudget) when
-  // costUnavailable — same field either way, since the card only shows one.
+  // Legacy combined figure, kept for engines that predate the independent
+  // dollarRemainingTasks/tokenRemainingTasks fields below: dollar-based
+  // normally, token-based (against tokenBudget) when costUnavailable. The
+  // card now reads this only as a fallback (see resolveTasksLeft) — prefer
+  // the independent fields when the engine sends them.
   remainingTasks: number | null;
   // true when recent activity used a model with no price-catalog entry —
   // burnRateUsdPerHour is $0 because it's unpriced, not because it's free.
@@ -455,7 +458,7 @@ export interface PerformanceCostForecastResult {
   costUnavailable: boolean;
   tokensPerHour: number | null;
   tokenBudget: number | null;
-  /** Why remainingTasks is null, so the card asks for the right thing (absent on older engines). */
+  /** Legacy: why remainingTasks is null. Superseded by dollarRemainingTasksReason/tokenRemainingTasksReason below; see resolveTasksLeft. */
   remainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
   /** The budget is daily: spend counts from local midnight in budgetTimeZone. */
   budgetPeriod?: 'day';

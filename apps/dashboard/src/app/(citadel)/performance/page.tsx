@@ -6,7 +6,7 @@ import { performanceIndex, performanceAgent, performanceEvidence, performanceFee
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
-import { burnCaption, remainingTasksNoteFor } from '@/lib/cost-tracking';
+import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
@@ -679,16 +679,16 @@ function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: 
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
         </div>
-        <TasksLeftCell
-          value={forecast.dollarRemainingTasks ?? null}
-          note={remainingTasksNoteFor(forecast.dollarRemainingTasksReason, 'dollar')}
-          label="tasks left in today’s budget"
-        />
-        <TasksLeftCell
-          value={forecast.tokenRemainingTasks ?? null}
-          note={remainingTasksNoteFor(forecast.tokenRemainingTasksReason, 'token')}
-          label="tasks left in today’s token budget"
-        />
+        {(() => {
+          const dollar = resolveTasksLeft(forecast, 'dollar');
+          const token = resolveTasksLeft(forecast, 'token');
+          return (
+            <>
+              <TasksLeftCell value={dollar.value} note={remainingTasksNoteFor(dollar.reason, 'dollar')} label="tasks left in today’s budget" />
+              <TasksLeftCell value={token.value} note={remainingTasksNoteFor(token.reason, 'token')} label="tasks left in today’s token budget" />
+            </>
+          );
+        })()}
       </div>
     </div>
   );
@@ -706,7 +706,7 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
   }
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: value <= 0 ? 'var(--bad)' : value < 5 ? 'var(--warn)' : 'var(--ok)' }}>
+      <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: tasksLeftColor(value) }}>
         {value}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>{label}</div>
