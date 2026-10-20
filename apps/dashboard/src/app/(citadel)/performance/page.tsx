@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceCostForecast, setBudgetUsd, setTokenBudget, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, performanceCostForecast, setBudgetUsd, setTokenBudget, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
@@ -19,7 +19,7 @@ import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AgentScore, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { countsFromRuleActions, governanceFromSummary, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
 import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
@@ -717,7 +717,7 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
 /** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
-function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, agentScores, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
   auditFailed: boolean;
@@ -727,6 +727,8 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
   byAgent: AgentTotals[] | null;
+  /** Task success / cost diligence / speed, per agent id, for the By-agent table's wheel column. */
+  agentScores: Record<string, AgentScore> | null;
   ruleActions?: Record<string, GovernanceTally>;
   /** "last 24 h", for panels that follow the range. */
   rangeLabel: string;
@@ -914,7 +916,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         <CostTrackingSection fleetId={fleetId} authKey={authKey} />
         {savingsDays && <SavingsChart days={savingsDays} />}
       </div>
-      {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} /></div>}
+      {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
       <div style={{ marginBottom: 24 }}><UnusualBehaviour fleetId={fleetId} authKey={authKey} /></div>
 
       <div className="wr-perf-row">
@@ -1254,6 +1256,7 @@ export default function PerformancePage() {
   const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(shown?.govCounts ?? null);
   const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(shown?.savingsDays ?? null);
   const [byAgent, setByAgent] = useState<AgentTotals[] | null>(shown?.byAgent ?? null);
+  const [agentScores, setAgentScores] = useState<Record<string, AgentScore> | null>(shown?.agentScores ?? null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
@@ -1275,11 +1278,13 @@ export default function PerformancePage() {
       // Totals the engine computes over the whole stored audit trail (Phase 1
       // spec H1): the rolling window for savings, rule counts and By agent,
       // and 7 calendar days for the chart.
-      const [idx, hourly, audit, week] = await Promise.all([
+      const [idx, hourly, audit, week, scores] = await Promise.all([
         performanceIndex(fleetId, hoursBack, authKey),
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
         auditSummary(fleetId, new Date(cutoff), authKey, hoursBack).catch(() => null),
         auditSummary(fleetId, weekStart, authKey).catch(() => null),
+        // The same hoursBack as the By-agent table's own rows (audit, above) — not week, which is fixed to 7 days for the chart.
+        performanceAgentScores(fleetId, hoursBack, authKey).catch(() => null),
       ]);
       if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
@@ -1296,6 +1301,7 @@ export default function PerformancePage() {
         govSavings: audit?.savingsBuckets ? savingsDollars(audit.savingsBuckets, audit.savings) : null,
         govCounts: fromAudit,
         byAgent: audit?.savingsBuckets ? agentTotalsFromBuckets(audit.savingsBuckets) : null,
+        agentScores: scores && !scores.error ? Object.fromEntries(scores.agents.map((a) => [a.agentId, a])) : null,
         auditFailed: !audit?.savingsBuckets,
         loadedAt: loadedNow,
       };
@@ -1306,6 +1312,7 @@ export default function PerformancePage() {
       setGovSavings(snapshot.govSavings);
       setGovCounts(snapshot.govCounts);
       setByAgent(snapshot.byAgent);
+      setAgentScores(snapshot.agentScores);
       setAuditFailed(snapshot.auditFailed);
       saveSnapshot(fleetId, hoursBack, snapshot);
       if (fromAudit) {
@@ -1335,6 +1342,7 @@ export default function PerformancePage() {
     setGovSavings(snap.govSavings);
     setGovCounts(snap.govCounts);
     setByAgent(snap.byAgent);
+    setAgentScores(snap.agentScores);
     setAuditFailed(snap.auditFailed);
     setLoadedAt(snap.loadedAt);
   };
@@ -1465,7 +1473,7 @@ export default function PerformancePage() {
         {view === 'index' && indexData && Date.now() < UNNAMED_CALLS_NOTE_UNTIL && (
           <div style={{ marginBottom: 16 }}><Banner variant="info">Since Oct 19, these numbers include calls from agents without a name. Saved by WhiteRoom isn&rsquo;t affected.</Banner></div>
         )}
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} ruleActions={ruleActions} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} agentScores={agentScores} ruleActions={ruleActions} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

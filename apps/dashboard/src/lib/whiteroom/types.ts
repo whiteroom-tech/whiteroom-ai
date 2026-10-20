@@ -286,6 +286,26 @@ export interface HourlyDataPoint {
   outputTokens: number;
 }
 
+export interface AgentScore {
+  agentId: string;
+  calls: number;
+  /** % of calls that finished cleanly (0-100). Null with no calls in the window. */
+  completeRate: number | null;
+  /** How the agent's task-type cost compares to its seed estimate (0-100). Null with no declared task type, or no completed task yet. */
+  costDiligence: number | null;
+  /** This agent's median latency vs. the fleet's (0-100, capped at 100). Null with too few calls for a median. */
+  speedScore: number | null;
+  /** Mean of whichever of the three above are available, out of 10. Null if none are. */
+  score: number | null;
+}
+
+export interface AgentScoresResult {
+  fleetId: string;
+  period: { start: string; end: string };
+  agents: AgentScore[];
+  error?: string;
+}
+
 export interface AgentPerformanceResult {
   fleetId: string;
   agentId: string;
