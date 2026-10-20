@@ -39,8 +39,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'Monitor',
     items: [
       { key: 'home', href: ROUTES.home, label: 'Home', tip: 'Does anything need you, and what is the fleet doing right now', also: ['/fleet'] },
-      { key: 'runs', href: ROUTES.runs, label: 'Runs', tip: 'Every stretch of work by every agent, and what happened in it' },
       { key: 'performance', href: ROUTES.performance, label: 'Performance', tip: 'Cost, savings, errors and unusual behaviour over time' },
+      { key: 'runs', href: ROUTES.runs, label: 'Runs', tip: 'Every stretch of work by every agent, and what happened in it' },
     ],
   },
   {
