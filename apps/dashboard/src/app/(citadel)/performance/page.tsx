@@ -1283,8 +1283,8 @@ export default function PerformancePage() {
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
         auditSummary(fleetId, new Date(cutoff), authKey, hoursBack).catch(() => null),
         auditSummary(fleetId, weekStart, authKey).catch(() => null),
-        // Same 7-day window as the By-agent table above, so its wheel column lines up with the rows it's on.
-        performanceAgentScores(fleetId, 24 * 7, authKey).catch(() => null),
+        // The same hoursBack as the By-agent table's own rows (audit, above) — not week, which is fixed to 7 days for the chart.
+        performanceAgentScores(fleetId, hoursBack, authKey).catch(() => null),
       ]);
       if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
