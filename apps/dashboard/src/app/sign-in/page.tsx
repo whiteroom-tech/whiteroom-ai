@@ -35,12 +35,18 @@ const LAST_EMAIL_KEY = 'wr_last_email';
  */
 function destination(): string {
   const raw = new URLSearchParams(window.location.search).get('callbackUrl');
-  const path = safeCallbackUrl(raw, defaultDestinationForHost(window.location.hostname));
+  let path = safeCallbackUrl(raw, defaultDestinationForHost(window.location.hostname));
   const host = window.location.hostname.toLowerCase().replace(/:\d+$/, '');
-  if (host === 'admin' || host.startsWith('admin.') || host === 'console' || host.startsWith('console.')) {
-    return `${window.location.origin}${path}`;
+  const dedicated = host === 'admin' || host.startsWith('admin.') || host === 'console' || host.startsWith('console.');
+  if (!dedicated) return path;
+  // Console is the enterprise login. A fleet path here would drop the company
+  // admin into the personal workspace on the app host.
+  if (host === 'console' || host.startsWith('console.')) {
+    if (path !== '/organization' && !path.startsWith('/organization/')) path = '/organization';
   }
-  return path;
+  const local = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local');
+  if (local) return `${window.location.origin}${path}`;
+  return `https://${window.location.host}${path}`;
 }
 
 /** What to suggest when the method someone just tried turns out to be the wrong one. */
@@ -74,6 +80,7 @@ export default function SignInPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [lastMethod, setLastMethod] = useState<Method | null>(null);
   const [returning, setReturning] = useState(false);
+  const [enterprise, setEnterprise] = useState(false);
   const consumedParams = useRef(false);
 
   // auth.ts points `pages.error` here, so a failed magic link arrives as
@@ -143,6 +150,8 @@ export default function SignInPage() {
 
     setLastMethod(remembered);
     setReturning(remembered !== null || wasSignedOut);
+    const host = window.location.hostname.toLowerCase();
+    setEnterprise(host === 'console' || host.startsWith('console.'));
 
     const rememberedEmail = safeGet(LAST_EMAIL_KEY);
     if (remembered === 'email' && rememberedEmail) setEmail(rememberedEmail);
@@ -193,10 +202,14 @@ export default function SignInPage() {
     }
   }
 
-  const heading = returning ? 'Welcome back' : 'Sign in to WhiteRoom';
-  const subheading = returning
-    ? 'Sign in to pick up where you left off.'
-    : 'New here? Signing in creates your account and provisions your fleet.';
+  const heading = enterprise
+    ? (returning ? 'Welcome back' : 'Sign in to your organization')
+    : (returning ? 'Welcome back' : 'Sign in to WhiteRoom');
+  const subheading = enterprise
+    ? 'This is the company console. Your team’s fleets stay in the workspace.'
+    : returning
+      ? 'Sign in to pick up where you left off.'
+      : 'New here? Signing in creates your account and provisions your fleet.';
 
   return (
     <ThemedShell className="min-h-screen font-sans flex flex-col">

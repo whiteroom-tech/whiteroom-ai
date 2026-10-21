@@ -4,7 +4,7 @@
  * or they 404 on app. when ADMIN_HOST / CONSOLE_HOST are set.
  */
 
-import { isAdminPath, isOrganizationPath } from '@/lib/callback-url';
+import { isAdminPath, isOrganizationPath, CONSOLE_DESTINATION } from '@/lib/callback-url';
 import { staffPublicPath } from '@/lib/staff-paths';
 
 function httpsOrigin(host: string | undefined): string | null {
@@ -13,6 +13,16 @@ function httpsOrigin(host: string | undefined): string | null {
   // Refuse anything that isn't a bare hostname (no scheme/path).
   if (h.includes('/') || h.includes('://') || h.includes(' ')) return null;
   return `https://${h}`;
+}
+
+function bareHost(host: string): string {
+  return host.toLowerCase().replace(/:\d+$/, '');
+}
+
+/** Console sign-in is the enterprise console, never the personal fleet app. */
+function consoleLanding(pathname: string, search = '', hash = ''): string {
+  const path = isOrganizationPath(pathname) ? pathname : CONSOLE_DESTINATION;
+  return `${path}${search}${hash}`;
 }
 
 /**
@@ -48,13 +58,18 @@ export function resolvePostLoginUrl(url: string, authBaseUrl: string): string {
     }
 
     // Already on admin/console — allow only our hosts. Strip a leftover /admin.
-    if (adminOrigin && target.origin === adminOrigin) {
+    // Match hostname, not origin: a callback that started on http:// (while the
+    // console certificate was still provisioning) must still return to https.
+    const targetHost = bareHost(target.host);
+    if (adminOrigin && targetHost === bareHost(process.env.ADMIN_HOST ?? '')) {
       if (isAdminPath(target.pathname)) {
         return `${adminOrigin}${staffPublicPath(target.pathname)}${target.search}${target.hash}`;
       }
-      return url;
+      return `${adminOrigin}${target.pathname}${target.search}${target.hash}`;
     }
-    if (consoleOrigin && target.origin === consoleOrigin) return url;
+    if (consoleOrigin && targetHost === bareHost(process.env.CONSOLE_HOST ?? '')) {
+      return `${consoleOrigin}${consoleLanding(target.pathname, target.search, target.hash)}`;
+    }
   } catch {
     // fall through
   }

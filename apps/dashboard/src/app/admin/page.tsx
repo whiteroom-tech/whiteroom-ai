@@ -45,7 +45,7 @@ export default async function AdminUsersPage({
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
             <thead>
               <tr>
-                {['Account', 'Plan', 'Subscription', 'Fleets', 'Joined'].map((h) => (
+                {['Account', 'Organization', 'Plan', 'Subscription', 'Fleets', 'Joined'].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -62,7 +62,7 @@ export default async function AdminUsersPage({
             <tbody>
               {result.users.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--tx3)', fontSize: 13.5 }}>
+                  <td colSpan={6} style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--tx3)', fontSize: 13.5 }}>
                     No accounts match that search.
                   </td>
                 </tr>
@@ -78,6 +78,15 @@ export default async function AdminUsersPage({
                       {u.role === 'admin' && <Pill tone="ho">admin</Pill>}
                       {!u.emailVerified && <Pill tone="warn">unverified</Pill>}
                     </div>
+                  </td>
+                  <td style={cell}>
+                    {u.organization ? (
+                      <Link href={`/organizations/${u.organization.id}`} style={{ color: 'var(--tx)', textDecoration: 'none', fontWeight: 600, fontSize: 13 }}>
+                        {u.organization.name}
+                      </Link>
+                    ) : (
+                      <span style={{ color: 'var(--tx3)', fontSize: 13 }}>—</span>
+                    )}
                   </td>
                   <td style={cell}>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{u.planName}</span>

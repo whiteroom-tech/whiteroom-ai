@@ -1,15 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), cookie: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), cookie: vi.fn(), host: null as string | null }));
 vi.mock('@/auth', () => ({ auth: mocks.auth }));
 vi.mock('@/lib/fleet-session', () => ({ getFleetAuthCookie: mocks.cookie }));
+vi.mock('next/headers', () => ({
+  headers: async () => ({ get: (name: string) => (name === 'x-forwarded-host' ? mocks.host : null) }),
+}));
 // redirect() throws in Next; mirror that so the page stops at the first call.
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`redirect:${to}`); } }));
 
 import Root from '@/app/page';
 
 describe('root redirect', () => {
-  beforeEach(() => { mocks.auth.mockReset(); mocks.cookie.mockReset(); });
+  beforeEach(() => {
+    mocks.auth.mockReset();
+    mocks.cookie.mockReset();
+    mocks.host = null;
+    vi.unstubAllEnvs();
+  });
+
+  it('sends the enterprise console to the organization, not the fleet app', async () => {
+    vi.stubEnv('CONSOLE_HOST', 'console.whiteroom.tech');
+    mocks.host = 'console.whiteroom.tech';
+    await expect(Root()).rejects.toThrow('redirect:/organization');
+  });
 
   it('sends a signed-out visitor to sign-in', async () => {
     mocks.auth.mockResolvedValue(null);

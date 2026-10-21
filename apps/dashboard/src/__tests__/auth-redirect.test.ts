@@ -41,6 +41,16 @@ describe('resolvePostLoginUrl', () => {
     expect(resolvePostLoginUrl('https://console.whiteroom.tech/organization', APP)).toBe(
       'https://console.whiteroom.tech/organization',
     );
+    // A console login must not fall through to the personal fleet app.
+    expect(resolvePostLoginUrl('https://console.whiteroom.tech/', APP)).toBe(
+      'https://console.whiteroom.tech/organization',
+    );
+    expect(resolvePostLoginUrl('https://console.whiteroom.tech/fleet-key', APP)).toBe(
+      'https://console.whiteroom.tech/organization',
+    );
+    expect(resolvePostLoginUrl('http://console.whiteroom.tech/home', APP)).toBe(
+      'https://console.whiteroom.tech/organization',
+    );
   });
 
   it('refuses foreign absolute URLs', () => {
