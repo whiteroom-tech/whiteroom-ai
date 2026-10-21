@@ -19,7 +19,7 @@ export function UserSearch({ initialQuery }: { initialQuery: string }) {
     const q = value.trim();
     // Dropping `page` is deliberate: keeping it would land a new search on
     // page 4 of results that may only have one page.
-    router.push(q ? `/admin?q=${encodeURIComponent(q)}` : '/admin');
+    router.push(q ? `/?q=${encodeURIComponent(q)}` : '/');
   }
 
   return (
@@ -53,7 +53,7 @@ export function UserSearch({ initialQuery }: { initialQuery: string }) {
       {initialQuery && (
         <button
           type="button"
-          onClick={() => { setValue(''); router.push('/admin'); }}
+          onClick={() => { setValue(''); router.push('/'); }}
           style={{
             fontSize: 13.5, fontWeight: 600, padding: '8px 16px', borderRadius: 7,
             background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)',

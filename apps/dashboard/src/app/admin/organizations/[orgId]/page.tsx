@@ -12,7 +12,7 @@ export default async function AdminOrganizationPage({ params }: { params: Promis
   if (!org) notFound();
 
   return (
-    <AdminShell title={org.name} breadcrumb={{ href: '/admin/organizations', label: 'Organizations' }}>
+    <AdminShell title={org.name} breadcrumb={{ href: '/organizations', label: 'Organizations' }}>
       <div style={{ display: 'grid', gap: 16 }}>
         <OrgSummary org={org} />
         <FleetsPanel fleets={org.fleets ?? []} windowDays={org.usageWindowDays} />

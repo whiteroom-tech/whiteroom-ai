@@ -3,7 +3,7 @@
 import { signIn } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
 import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
-import { DEFAULT_DESTINATION, safeCallbackUrl } from '@/lib/callback-url';
+import { defaultDestinationForHost, safeCallbackUrl } from '@/lib/callback-url';
 import { ThemedShell } from '@/components/ThemedShell';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
@@ -27,14 +27,20 @@ const LAST_EMAIL_KEY = 'wr_last_email';
  * Read at the moment of the click rather than held in state, so it cannot be
  * stale and cannot be missing because an effect had not run yet.
  *
- * Almost always /fleet-key (DEFAULT_DESTINATION). The exception is the admin host,
- * which serves the panel and nothing else: /fleet-key 404s there, so the admin gate sends
- * people here with ?callbackUrl=/admin and this is what honours it.
- * safeCallbackUrl() is what keeps that from being an open redirect.
+ * Almost always /fleet-key. Exceptions: admin.* → / (the staff dashboard),
+ * console.* → /organization (those hosts 404 Citadel routes). The host gate
+ * may also send ?callbackUrl=…; safeCallbackUrl() keeps that from being an
+ * open redirect. Dedicated hosts get an absolute URL so Auth.js, which
+ * finishes on the app host, sends the user back to the host they started on.
  */
 function destination(): string {
   const raw = new URLSearchParams(window.location.search).get('callbackUrl');
-  return safeCallbackUrl(raw, DEFAULT_DESTINATION);
+  const path = safeCallbackUrl(raw, defaultDestinationForHost(window.location.hostname));
+  const host = window.location.hostname.toLowerCase().replace(/:\d+$/, '');
+  if (host === 'admin' || host.startsWith('admin.') || host === 'console' || host.startsWith('console.')) {
+    return `${window.location.origin}${path}`;
+  }
+  return path;
 }
 
 /** What to suggest when the method someone just tried turns out to be the wrong one. */

@@ -70,7 +70,7 @@ export default async function AdminUsersPage({
               {result.users.map((u) => (
                 <tr key={u.id}>
                   <td style={cell}>
-                    <Link href={`/admin/${u.id}`} style={{ color: 'var(--tx)', textDecoration: 'none', fontWeight: 600, fontSize: 13.5 }}>
+                    <Link href={`/users/${u.id}`} style={{ color: 'var(--tx)', textDecoration: 'none', fontWeight: 600, fontSize: 13.5 }}>
                       {u.email ?? <span style={{ color: 'var(--tx3)' }}>no email</span>}
                     </Link>
                     <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -179,7 +179,7 @@ function PageLink({ label, page, query, disabled }: { label: string; page: numbe
     opacity: disabled ? 0.45 : 1,
     pointerEvents: disabled ? 'none' : undefined,
   };
-  const href = `/admin?${new URLSearchParams({ ...(query ? { q: query } : {}), page: String(page) })}`;
+  const href = `/?${new URLSearchParams({ ...(query ? { q: query } : {}), page: String(page) })}`;
   return (
     <Link href={href} style={style} aria-disabled={disabled}>
       {label}

@@ -5,6 +5,7 @@ import { PATH_HEADER } from '@/lib/callback-url';
 
 const ADMIN = 'admin.whiteroom.tech';
 const APP = 'app.whiteroom.tech';
+const CONSOLE = 'console.whiteroom.tech';
 
 /**
  * Builds a request as it arrives behind the load balancer: the host the user
@@ -33,7 +34,11 @@ function verdict(res: Response | undefined): 'pass' | 'notFound' | string {
   if (!res) return 'pass';
   if (res.status === 404) return 'notFound';
   const rewrite = res.headers.get('x-middleware-rewrite');
-  if (rewrite) return 'notFound';
+  if (rewrite) {
+    const path = new URL(rewrite, 'https://internal.example').pathname;
+    if (path === '/_admin_absent' || res.status === 404) return 'notFound';
+    return `rewrite:${path}`;
+  }
   const location = res.headers.get('location');
   if (location) return `redirect:${new URL(location).pathname}`;
   return 'pass';
@@ -41,6 +46,7 @@ function verdict(res: Response | undefined): 'pass' | 'notFound' | string {
 
 afterEach(() => {
   delete process.env.ADMIN_HOST;
+  delete process.env.CONSOLE_HOST;
 });
 
 describe('single-host mode (ADMIN_HOST unset)', () => {
@@ -172,15 +178,19 @@ describe('the app host', () => {
 });
 
 describe('the admin host', () => {
-  it('serves the panel', () => {
+  it('serves the panel at the public paths', () => {
     process.env.ADMIN_HOST = ADMIN;
-    expect(verdict(proxy(req(ADMIN, '/admin')))).toBe('pass');
-    expect(verdict(proxy(req(ADMIN, '/admin/u-1')))).toBe('pass');
+    expect(verdict(proxy(req(ADMIN, '/')))).toBe('rewrite:/admin');
+    expect(verdict(proxy(req(ADMIN, '/organizations')))).toBe('rewrite:/admin/organizations');
+    expect(verdict(proxy(req(ADMIN, '/analytics/u-1')))).toBe('rewrite:/admin/analytics/u-1');
+    expect(verdict(proxy(req(ADMIN, '/users/u-1')))).toBe('rewrite:/admin/u-1');
   });
 
-  it('sends the bare root to the panel', () => {
+  it('redirects the old /admin prefix off the address bar', () => {
     process.env.ADMIN_HOST = ADMIN;
-    expect(verdict(proxy(req(ADMIN, '/')))).toBe('redirect:/admin');
+    expect(verdict(proxy(req(ADMIN, '/admin')))).toBe('redirect:/');
+    expect(verdict(proxy(req(ADMIN, '/admin/organizations')))).toBe('redirect:/organizations');
+    expect(verdict(proxy(req(ADMIN, '/admin/u-1')))).toBe('redirect:/users/u-1');
   });
 
   // Sessions are host-only cookies, so an admin has to be able to sign in
@@ -211,8 +221,8 @@ describe('the requested path, forwarded to the app', () => {
 
   it('rides along on the admin host too', () => {
     process.env.ADMIN_HOST = ADMIN;
-    expect(forwardedPath(proxy(req(ADMIN, '/admin')))).toBe('/admin');
-    expect(forwardedPath(proxy(req(ADMIN, '/admin/u-1')))).toBe('/admin/u-1');
+    expect(forwardedPath(proxy(req(ADMIN, '/')))).toBe('/');
+    expect(forwardedPath(proxy(req(ADMIN, '/users/u-1')))).toBe('/users/u-1');
   });
 
   // The header is a normal request header, so anyone can send one. Overwriting
@@ -220,8 +230,8 @@ describe('the requested path, forwarded to the app', () => {
   it('overwrites a value the caller supplied', () => {
     process.env.ADMIN_HOST = ADMIN;
     const headers = new Headers({ 'x-forwarded-host': ADMIN, [PATH_HEADER]: 'https://evil.com' });
-    const r = new NextRequest('https://internal.run.app/admin/u-1', { headers });
-    expect(forwardedPath(proxy(r))).toBe('/admin/u-1');
+    const r = new NextRequest('https://internal.run.app/users/u-1', { headers });
+    expect(forwardedPath(proxy(r))).toBe('/users/u-1');
   });
 
   it('is absent on a response that never reaches the app', () => {
@@ -234,7 +244,7 @@ describe('the requested path, forwarded to the app', () => {
 describe('host matching', () => {
   it('is case-insensitive, as hostnames are', () => {
     process.env.ADMIN_HOST = ADMIN;
-    expect(verdict(proxy(req('ADMIN.WhiteRoom.TECH', '/admin')))).toBe('pass');
+    expect(verdict(proxy(req('ADMIN.WhiteRoom.TECH', '/')))).toBe('rewrite:/admin');
   });
 
   it('reads X-Forwarded-Host ahead of Host', () => {
@@ -242,13 +252,13 @@ describe('host matching', () => {
     // Cloud Run sits behind the load balancer, so the Host header is the
     // internal origin — trusting it would gate on the wrong name entirely.
     const headers = new Headers({ 'x-forwarded-host': ADMIN, host: 'internal.run.app' });
-    const r = new NextRequest('https://internal.run.app/admin', { headers });
-    expect(verdict(proxy(r))).toBe('pass');
+    const r = new NextRequest('https://internal.run.app/', { headers });
+    expect(verdict(proxy(r))).toBe('rewrite:/admin');
   });
 
   it('falls back to Host when there is no forwarded header', () => {
     process.env.ADMIN_HOST = ADMIN;
-    expect(verdict(proxy(req(ADMIN, '/admin', { forwarded: false })))).toBe('pass');
+    expect(verdict(proxy(req(ADMIN, '/', { forwarded: false })))).toBe('rewrite:/admin');
   });
 
   // A lookalike host must not be mistaken for the real one.
@@ -257,6 +267,41 @@ describe('host matching', () => {
     for (const host of ['admin.whiteroom.tech.evil.com', 'notadmin.whiteroom.tech', 'admin-whiteroom.tech']) {
       expect(verdict(proxy(req(host, '/admin')))).toBe('notFound');
     }
+  });
+});
+
+describe('the console host', () => {
+  it('serves the organization console and auth', () => {
+    process.env.CONSOLE_HOST = CONSOLE;
+    expect(verdict(proxy(req(CONSOLE, '/organization', { withSession: true })))).toBe('pass');
+    expect(verdict(proxy(req(CONSOLE, '/organization/people', { withSession: true })))).toBe('pass');
+    expect(verdict(proxy(req(CONSOLE, '/sign-in')))).toBe('pass');
+  });
+
+  it('sends the bare root to Organization', () => {
+    process.env.CONSOLE_HOST = CONSOLE;
+    expect(verdict(proxy(req(CONSOLE, '/')))).toBe('redirect:/organization');
+  });
+
+  it('404s Citadel and staff admin on the console host', () => {
+    process.env.CONSOLE_HOST = CONSOLE;
+    for (const path of ['/home', '/settings', '/fleet-key', '/admin']) {
+      expect(verdict(proxy(req(CONSOLE, path)))).toBe('notFound');
+    }
+  });
+
+  it('still serves Organization on the app host (members need invites)', () => {
+    process.env.CONSOLE_HOST = CONSOLE;
+    expect(verdict(proxy(req(APP, '/organization', { withSession: true })))).toBe('pass');
+  });
+
+  it('works alongside ADMIN_HOST', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    process.env.CONSOLE_HOST = CONSOLE;
+    expect(verdict(proxy(req(ADMIN, '/')))).toBe('rewrite:/admin');
+    expect(verdict(proxy(req(CONSOLE, '/organization', { withSession: true })))).toBe('pass');
+    expect(verdict(proxy(req(APP, '/admin')))).toBe('notFound');
+    expect(verdict(proxy(req(ADMIN, '/organization')))).toBe('notFound');
   });
 });
 

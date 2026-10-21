@@ -1,14 +1,25 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { PATH_HEADER } from '@/lib/callback-url';
+import { PATH_HEADER, isAdminPath } from '@/lib/callback-url';
 import { NONCE_HEADER, scriptPolicy } from '@/lib/csp';
 import { LEGACY_REDIRECTS, ROUTES, isUnder } from '@/lib/routes';
+import { staffInternalPath, staffPublicPath } from '@/lib/staff-paths';
 
 function adminHost(): string | undefined {
   return process.env.ADMIN_HOST?.toLowerCase().trim() || undefined;
 }
 
-const ADMIN_HOST_ALLOWED = ['/admin', '/api/auth', '/sign-in', '/auth', '/api/csp-report'];
+function consoleHost(): string | undefined {
+  return process.env.CONSOLE_HOST?.toLowerCase().trim() || undefined;
+}
+
+const AUTH_PATHS = ['/api/auth', '/sign-in', '/auth', '/api/csp-report'];
+
+/** WhiteRoom staff only — see ops/hosts.md. */
+const ADMIN_HOST_ALLOWED = ['/admin', ...AUTH_PATHS];
+
+/** Enterprise org console — people, fleets visibility, audit. */
+const CONSOLE_HOST_ALLOWED = [ROUTES.organization, ...AUTH_PATHS];
 
 const SESSION_PROTECTED = [
   ROUTES.home, ROUTES.runs, ROUTES.performance, ROUTES.controls, ROUTES.sandbox, ROUTES.fleetKey,
@@ -29,7 +40,7 @@ function notFound(request: NextRequest) {
  * and overwriting it here unconditionally is the whole reason anything
  * downstream may trust it.
  */
-function forward(request: NextRequest) {
+function withRequestHeaders(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.set(PATH_HEADER, request.nextUrl.pathname);
   // A fresh nonce per request: Next.js reads it from the request's CSP header
@@ -38,7 +49,22 @@ function forward(request: NextRequest) {
   const csp = scriptPolicy(nonce);
   headers.set(NONCE_HEADER, nonce);
   headers.set('content-security-policy', csp);
+  return { headers, csp };
+}
+
+function forward(request: NextRequest) {
+  const { headers, csp } = withRequestHeaders(request);
   const response = NextResponse.next({ request: { headers } });
+  response.headers.set('Content-Security-Policy-Report-Only', csp);
+  return response;
+}
+
+/** Serve an internal route while the browser URL stays on the public path. */
+function rewriteTo(request: NextRequest, pathname: string) {
+  const { headers, csp } = withRequestHeaders(request);
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  const response = NextResponse.rewrite(url, { request: { headers } });
   response.headers.set('Content-Security-Policy-Report-Only', csp);
   return response;
 }
@@ -54,28 +80,51 @@ function movedPermanently(url: URL) {
   return response;
 }
 
-export function proxy(request: NextRequest) {
-  const ADMIN_HOST = adminHost();
-  const { pathname, searchParams } = request.nextUrl;
+function requestHost(request: NextRequest): string {
   // Behind the load balancer the user's hostname arrives in x-forwarded-host
   // (Host is the internal run.app URL). This header is only trustworthy while
   // Cloud Run ingress is restricted to the load balancer; the host gate is
-  // routing/defense-in-depth — real admin authorization is requireAdmin().
-  const host = (
+  // routing/defense-in-depth — real authorization is requireAdmin() /
+  // canManage() on the server.
+  return (
     request.headers.get('x-forwarded-host') ||
     request.headers.get('host') ||
     ''
   ).toLowerCase();
+}
+
+export function proxy(request: NextRequest) {
+  const ADMIN_HOST = adminHost();
+  const CONSOLE_HOST = consoleHost();
+  const { pathname, searchParams } = request.nextUrl;
+  const host = requestHost(request);
 
   if (ADMIN_HOST) {
     if (host === ADMIN_HOST) {
-      if (pathname === '/') {
-        return NextResponse.redirect(new URL('/admin', request.url));
+      // Old /admin URLs bounce to the public path so the prefix does not stick.
+      if (isAdminPath(pathname)) {
+        const url = request.nextUrl.clone();
+        url.pathname = staffPublicPath(pathname);
+        return NextResponse.redirect(url);
       }
+      const internal = staffInternalPath(pathname);
+      if (internal) return rewriteTo(request, internal);
       if (!ADMIN_HOST_ALLOWED.some((p) => isUnder(pathname, p))) return notFound(request);
       return forward(request);
     }
     if (isUnder(pathname, '/admin')) return notFound(request);
+  }
+
+  if (CONSOLE_HOST) {
+    if (host === CONSOLE_HOST) {
+      if (pathname === '/') {
+        return NextResponse.redirect(new URL(ROUTES.organization, request.url));
+      }
+      if (!CONSOLE_HOST_ALLOWED.some((p) => isUnder(pathname, p))) return notFound(request);
+      return forward(request);
+    }
+    // Organization stays on the app host too: members need invites / leave,
+    // and dual-run is fine until sales wants console-only for managers.
   }
 
   if (pathname === '/fleet') {

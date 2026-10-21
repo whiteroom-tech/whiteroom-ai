@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { FONT_DISPLAY } from '@whiteroom/ui';
+import { staffPublicPath } from '@/lib/staff-paths';
 import { applyTheme, storedTheme } from '@/lib/theme';
 
 /**
@@ -26,7 +27,7 @@ import { applyTheme, storedTheme } from '@/lib/theme';
 /** Sections of the panel, in the order they are drawn. */
 const NAV = [
   {
-    href: '/admin',
+    href: '/',
     label: 'Users',
     icon: (
       <>
@@ -37,7 +38,7 @@ const NAV = [
     ),
   },
   {
-    href: '/admin/organizations',
+    href: '/organizations',
     label: 'Organizations',
     icon: (
       <>
@@ -53,7 +54,8 @@ const NAV = [
  * admin route, so matching per item would light Users up on every page.
  */
 function activeHref(pathname: string): string | undefined {
-  return NAV.filter((item) => pathname === item.href || pathname.startsWith(item.href + '/'))
+  const current = staffPublicPath(pathname);
+  return NAV.filter((item) => current === item.href || (item.href !== '/' && current.startsWith(item.href + '/')))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }
 

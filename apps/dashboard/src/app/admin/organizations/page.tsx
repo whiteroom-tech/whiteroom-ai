@@ -39,7 +39,7 @@ export default async function AdminOrganizationsPage() {
               {orgs.map((o) => (
                 <tr key={o.id}>
                   <td style={cell}>
-                    <Link href={`/admin/organizations/${o.id}`} style={{ color: 'var(--tx)', textDecoration: 'none', fontWeight: 600, fontSize: 13.5 }}>
+                    <Link href={`/organizations/${o.id}`} style={{ color: 'var(--tx)', textDecoration: 'none', fontWeight: 600, fontSize: 13.5 }}>
                       {o.name}
                     </Link>
                   </td>

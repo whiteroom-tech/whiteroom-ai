@@ -2,7 +2,8 @@ import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { isAdmin } from '@/lib/admin';
-import { isAdminPath, PATH_HEADER } from '@/lib/callback-url';
+import { PATH_HEADER } from '@/lib/callback-url';
+import { staffPublicPath } from '@/lib/staff-paths';
 
 // Nothing under /admin may be cached or statically rendered — every response
 // is scoped to the caller's role.
@@ -40,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // is the second lock: it holds even if the header never arrives, and it
     // keeps this redirect from becoming a way to bounce off the admin host.
     const asked = (await headers()).get(PATH_HEADER) ?? '';
-    const target = isAdminPath(asked) ? asked : '/admin';
+    const target = staffPublicPath(asked);
     redirect(`/sign-in?callbackUrl=${encodeURIComponent(target)}`);
   }
   if (!(await isAdmin())) notFound();
