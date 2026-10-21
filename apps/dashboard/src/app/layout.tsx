@@ -9,6 +9,13 @@ import { NONCE_HEADER } from '@/lib/csp';
 export const metadata: Metadata = {
   title: { default: 'WhiteRoom', template: '%s · WhiteRoom' },
   description: 'Agent governance dashboard',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
+  },
 };
 
 const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark'||t==='system')document.documentElement.setAttribute('data-wr-theme',t)}catch(e){}";
