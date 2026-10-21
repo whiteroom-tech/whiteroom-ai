@@ -24,7 +24,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
   const { user, fleets, signInMethods, audit, usageWindowDays } = detail;
 
   return (
-    <AdminShell title={user.email ?? user.id} breadcrumb={{ href: '/admin', label: 'Users' }}>
+    <AdminShell title={user.email ?? user.id} breadcrumb={{ href: '/', label: 'Users' }}>
       <div style={{ display: 'grid', gap: 16 }}>
         <Card title="Account">
           <Grid>

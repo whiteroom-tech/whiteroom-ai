@@ -26,7 +26,7 @@ export function CreateOrganizationForm() {
     setError(null);
     startTransition(async () => {
       const res = await adminCreateOrganization(name, owner);
-      if (res.ok) router.push(`/admin/organizations/${res.orgId}`);
+      if (res.ok) router.push(`/organizations/${res.orgId}`);
       else setError(res.error);
     });
   }

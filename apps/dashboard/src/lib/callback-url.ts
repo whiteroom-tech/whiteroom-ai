@@ -19,8 +19,14 @@ import { ROUTES } from '@/lib/routes';
  */
 export const PATH_HEADER = 'x-wr-path';
 
-/** The sign-in page's destination when nothing better is known. */
+/** The sign-in page's destination on the customer app host when nothing better is known. */
 export const DEFAULT_DESTINATION: string = ROUTES.fleetKey;
+
+/** Staff admin host default (ADMIN_HOST). The panel is served at `/` there. */
+export const ADMIN_DESTINATION = '/';
+
+/** Enterprise console host default (CONSOLE_HOST). */
+export const CONSOLE_DESTINATION: string = ROUTES.organization;
 
 /**
  * Accepts only a path on this origin, falling back when handed anything else.
@@ -44,4 +50,26 @@ export function safeCallbackUrl(raw: string | null | undefined, fallback = DEFAU
 /** Whether a path belongs to the admin panel. Mirrors proxy.ts's prefix rule. */
 export function isAdminPath(pathname: string): boolean {
   return pathname === '/admin' || pathname.startsWith('/admin/');
+}
+
+/** Whether a path belongs to the org console. */
+export function isOrganizationPath(pathname: string): boolean {
+  return pathname === ROUTES.organization || pathname.startsWith(ROUTES.organization + '/');
+}
+
+/**
+ * Default post-sign-in path for this browser host.
+ *
+ * Used when the URL has no callbackUrl. Admin and console hosts must not fall
+ * through to /fleet-key (those routes 404 there). Admin lands on `/`.
+ *
+ * Hostnames are matched by label prefix (`admin.` / `console.`) so this can
+ * run in the browser without baking env into the client bundle. Keep those
+ * labels when you pick CONSOLE_HOST / ADMIN_HOST.
+ */
+export function defaultDestinationForHost(hostname: string): string {
+  const bare = hostname.toLowerCase().replace(/:\d+$/, '');
+  if (bare === 'admin' || bare.startsWith('admin.')) return ADMIN_DESTINATION;
+  if (bare === 'console' || bare.startsWith('console.')) return CONSOLE_DESTINATION;
+  return DEFAULT_DESTINATION;
 }

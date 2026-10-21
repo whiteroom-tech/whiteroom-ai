@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_DESTINATION, isAdminPath, safeCallbackUrl } from '@/lib/callback-url';
+import {
+  ADMIN_DESTINATION,
+  CONSOLE_DESTINATION,
+  DEFAULT_DESTINATION,
+  defaultDestinationForHost,
+  isAdminPath,
+  isOrganizationPath,
+  safeCallbackUrl,
+} from '@/lib/callback-url';
 
 describe('safeCallbackUrl', () => {
   it('passes a plain path through', () => {
@@ -51,5 +59,34 @@ describe('isAdminPath', () => {
     expect(isAdminPath('/adminx')).toBe(false);
     expect(isAdminPath('/dashboard')).toBe(false);
     expect(isAdminPath('')).toBe(false);
+  });
+});
+
+describe('isOrganizationPath', () => {
+  it('accepts the console and its pages', () => {
+    expect(isOrganizationPath('/organization')).toBe(true);
+    expect(isOrganizationPath('/organization/people')).toBe(true);
+  });
+
+  it('rejects lookalikes', () => {
+    expect(isOrganizationPath('/organizations')).toBe(false);
+    expect(isOrganizationPath('/home')).toBe(false);
+  });
+});
+
+describe('defaultDestinationForHost', () => {
+  it('sends admin.* to the staff panel', () => {
+    expect(defaultDestinationForHost('admin.whiteroom.tech')).toBe(ADMIN_DESTINATION);
+    expect(defaultDestinationForHost('admin.localhost')).toBe(ADMIN_DESTINATION);
+  });
+
+  it('sends console.* to Organization', () => {
+    expect(defaultDestinationForHost('console.whiteroom.tech')).toBe(CONSOLE_DESTINATION);
+    expect(defaultDestinationForHost('console.localhost:3000')).toBe(CONSOLE_DESTINATION);
+  });
+
+  it('defaults the app host to Fleet key', () => {
+    expect(defaultDestinationForHost('app.whiteroom.tech')).toBe(DEFAULT_DESTINATION);
+    expect(defaultDestinationForHost('localhost')).toBe(DEFAULT_DESTINATION);
   });
 });

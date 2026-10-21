@@ -3,6 +3,8 @@ import Google from 'next-auth/providers/google';
 import Resend from 'next-auth/providers/resend';
 import PostgresAdapter from '@auth/pg-adapter';
 import { db } from '@/lib/db';
+import { authCookieOptions, csrfCookieName, sessionCookieName } from '@/lib/auth-cookies';
+import { resolvePostLoginUrl } from '@/lib/auth-redirect';
 import { magicLinkEmail } from '@/lib/magic-link-email';
 import { tooManyMagicLinks } from '@/lib/magic-link-limit';
 
@@ -93,17 +95,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // check is ever bypassed.
   session: { strategy: 'jwt', maxAge: 7 * 24 * 60 * 60 },
   cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production'
-        ? '__Secure-authjs.session-token'
-        : 'authjs.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax' as const,
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
+    // Domain=.whiteroom.tech (AUTH_COOKIE_DOMAIN) so OAuth started on admin.
+    // or console. can complete on app. (AUTH_URL) and the session still works
+    // on the host the user came from. See lib/auth-cookies.ts.
+    sessionToken: { name: sessionCookieName(), options: authCookieOptions() },
+    callbackUrl: { options: authCookieOptions() },
+    csrfToken: { name: csrfCookieName(), options: authCookieOptions() },
+    pkceCodeVerifier: { options: authCookieOptions() },
+    state: { options: authCookieOptions() },
+    nonce: { options: authCookieOptions() },
   },
   // Required off Vercel — Cloud Run sits behind a proxy that sets
   // X-Forwarded-* headers rather than terminating TLS itself.
@@ -113,6 +113,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // /sign-in reads ?error= and offers a new link instead.
   pages: { signIn: '/sign-in', error: '/sign-in' },
   callbacks: {
+    // OAuth always returns to AUTH_URL (app.). Send staff/org paths back to
+    // their hosts so they don't 404 under ADMIN_HOST / CONSOLE_HOST gating.
+    async redirect({ url, baseUrl }) {
+      return resolvePostLoginUrl(url, baseUrl);
+    },
     // Global sign-out for JWT sessions.
     //
     // There are no session rows to delete (strategy: 'jwt'), so "sign out
