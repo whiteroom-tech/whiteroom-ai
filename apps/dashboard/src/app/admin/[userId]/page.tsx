@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getUserDetail } from '@/lib/admin';
 import { PLANS } from '@/lib/plans';
@@ -31,6 +33,12 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
             <Field label="User ID" value={user.id} mono />
             <Field label="Name" value={user.name ?? '—'} />
             <Field label="Role" value={user.role} />
+            <Field
+              label="Organization"
+              value={user.organization
+                ? <Link href={`/organizations/${user.organization.id}`} style={{ color: 'var(--brand)', fontWeight: 600 }}>{user.organization.name}</Link>
+                : '—'}
+            />
             <Field label="Email verified" value={user.emailVerified ? 'Yes' : 'No'} />
             <Field label="Joined" value={user.createdAt.slice(0, 10)} mono />
             <Field label="Sign-in methods" value={signInMethods.join(', ')} />
@@ -156,7 +164,7 @@ function Grid({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Field({ label, value, mono: isMono }: { label: string; value: string; mono?: boolean }) {
+function Field({ label, value, mono: isMono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 4 }}>

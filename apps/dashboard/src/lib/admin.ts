@@ -139,6 +139,8 @@ export interface AdminUserRow {
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   fleetCount: number;
+  /** Active enterprise membership, when this account has one. */
+  organization: { id: string; name: string; role: string } | null;
 }
 
 export interface UserPage {
@@ -167,9 +169,17 @@ export async function listUsers(opts: { query?: string; page?: number } = {}): P
     db().query(
       `SELECT u.id, u.email, u.name, u.role, u.created_at::text, u."emailVerified",
               s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, u.trial_ends_at::text,
-              ${fleetCountSql('u')} AS fleet_count
+              ${fleetCountSql('u')} AS fleet_count,
+              org.org_id, org.org_name, org.org_role
        FROM users u
        LEFT JOIN subscriptions s ON s.user_id = u.id
+       LEFT JOIN LATERAL (
+         SELECT o.id AS org_id, o.name AS org_name, m.role AS org_role
+         FROM organization_members m
+         JOIN organizations o ON o.id = m.org_id
+         WHERE m.user_id = u.id AND m.status = 'active'
+         LIMIT 1
+       ) org ON true
        ${where}
        ORDER BY u.created_at DESC
        LIMIT ${PAGE_SIZE} OFFSET ${page * PAGE_SIZE}`,
@@ -210,6 +220,9 @@ function toAdminUserRow(r: Record<string, unknown>): AdminUserRow {
     currentPeriodEnd: (r.current_period_end as string) ?? null,
     cancelAtPeriodEnd: Boolean(r.cancel_at_period_end),
     fleetCount: (r.fleet_count as number) ?? 0,
+    organization: r.org_id
+      ? { id: r.org_id as string, name: r.org_name as string, role: r.org_role as string }
+      : null,
   };
 }
 
@@ -232,9 +245,17 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
   const { rows } = await db().query(
     `SELECT u.id, u.email, u.name, u.role, u.created_at::text, u."emailVerified", u.fleet_id,
             s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, u.trial_ends_at::text,
-            ${fleetCountSql('u')} AS fleet_count
+            ${fleetCountSql('u')} AS fleet_count,
+            org.org_id, org.org_name, org.org_role
      FROM users u
      LEFT JOIN subscriptions s ON s.user_id = u.id
+     LEFT JOIN LATERAL (
+       SELECT o.id AS org_id, o.name AS org_name, m.role AS org_role
+       FROM organization_members m
+       JOIN organizations o ON o.id = m.org_id
+       WHERE m.user_id = u.id AND m.status = 'active'
+       LIMIT 1
+     ) org ON true
      WHERE u.id = $1`,
     [userId],
   );

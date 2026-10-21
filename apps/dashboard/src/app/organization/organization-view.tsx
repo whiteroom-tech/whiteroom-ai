@@ -2,6 +2,7 @@
 
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { AppShell } from '@/components/AppShell';
+import { ConsoleShell } from '@/components/ConsoleShell';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
   acceptOrgInvitation,
@@ -36,12 +37,21 @@ function permissionsFor(role: OrgRole): RosterPermissions {
   return { canEdit: (m) => m.role !== 'owner', assignable: ['admin', 'member'] };
 }
 
-export function OrganizationView({ mine, viewerId }: { mine: MyOrganization; viewerId: string }) {
+export function OrganizationView({
+  mine,
+  viewerId,
+  consoleMode = false,
+}: {
+  mine: MyOrganization;
+  viewerId: string;
+  /** Dedicated console host. The fleet sidebar is the personal workspace. */
+  consoleMode?: boolean;
+}) {
   const { membership, org, invitations } = mine;
   const manager = membership ? canManage(membership.role) : false;
 
-  return (
-    <AppShell>
+  const inner = (
+    <>
       <PageHeader title="Organization" />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 24px 80px' }}>
@@ -89,8 +99,21 @@ export function OrganizationView({ mine, viewerId }: { mine: MyOrganization; vie
           </div>
         </div>
       </main>
-    </AppShell>
+    </>
   );
+
+  if (consoleMode) {
+    return (
+      <ConsoleShell
+        orgName={org?.name ?? membership?.orgName ?? null}
+        role={membership?.role ?? null}
+        invitations={invitations.length}
+      >
+        {inner}
+      </ConsoleShell>
+    );
+  }
+  return <AppShell>{inner}</AppShell>;
 }
 
 function InvitationCard({ invitation, alreadyMember }: { invitation: PendingInvitation; alreadyMember: boolean }) {
