@@ -142,7 +142,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
           caption="Tokens and savings by agent"
           rows={rows}
           rowKey={(r) => r.agent}
-          rowHeight={40}
+          rowHeight={44}
           columns={[
             {
               key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)',
@@ -165,7 +165,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
               },
             },
             {
-              key: 'score', header: 'Performance', width: '100px',
+              key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)',
               render: (r) => {
                 const s = scores?.[r.agent];
                 return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
