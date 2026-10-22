@@ -4,7 +4,7 @@
 // so it reads without hovering. A part with no data is a faint track, not gray.
 // No click handler — it's connected to the row it's already in.
 import { FONT_MONO } from '@whiteroom/ui';
-import { scoreColor, scoreWedges, wedgeSummary, wheelArcs } from '@/lib/agent-scores';
+import { scoreColor, scoreWedges, wedgeStroke, wedgeSummary, wheelArcs } from '@/lib/agent-scores';
 import type { AgentScore } from '@/lib/whiteroom/types';
 
 const SIZE = 32;
@@ -21,7 +21,7 @@ export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
       <span style={{ position: 'relative', width: SIZE, height: SIZE, flexShrink: 0 }}>
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden style={{ display: 'block' }}>
           {wedges.map((w, i) => (
-            <path key={w.label} d={arcs[i]} fill="none" strokeWidth={STROKE} strokeLinecap="round" stroke={w.value == null ? 'var(--track)' : w.color} />
+            <path key={w.label} d={arcs[i]} fill="none" strokeWidth={STROKE} strokeLinecap="round" stroke={wedgeStroke(w)} />
           ))}
         </svg>
         <span style={{
@@ -32,7 +32,7 @@ export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
       <span aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, whiteSpace: 'nowrap' }}>
         {wedges.map((w) => (
           <span key={w.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: w.value == null ? 'var(--track)' : w.color, boxShadow: w.value == null ? 'inset 0 0 0 1px var(--line2)' : undefined, flexShrink: 0 }} />
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: wedgeStroke(w), boxShadow: w.value == null ? 'inset 0 0 0 1px var(--line2)' : undefined, flexShrink: 0 }} />
             <span style={{ color: 'var(--tx2)' }}>{w.short}</span>
             <span style={{ fontFamily: FONT_MONO, color: w.value == null ? 'var(--tx3)' : 'var(--tx)' }}>{w.value == null ? '–' : w.value}</span>
           </span>

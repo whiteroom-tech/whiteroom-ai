@@ -52,6 +52,11 @@ export function wheelArcs(count: number, size: number, stroke: number, gapDeg = 
   });
 }
 
+/** A segment's stroke: its tier color, or the faint track when there's no data (gray would read as a score). */
+export function wedgeStroke(w: Pick<ScoreWedge, 'value' | 'color'>): string {
+  return w.value == null ? 'var(--track)' : w.color;
+}
+
 /** One line for the wheel's title attribute: what each wedge is, in order. */
 export function wedgeSummary(wedges: Pick<ScoreWedge, 'label' | 'value'>[]): string {
   return wedges.map((w) => `${w.label}: ${w.value == null ? 'no data' : `${w.value}/100`}`).join(' · ');
