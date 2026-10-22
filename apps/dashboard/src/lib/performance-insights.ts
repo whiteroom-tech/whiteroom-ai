@@ -3,7 +3,7 @@
  * the one-line rows and their detail, and the Recommendations list's labels.
  * Pure, so the wording can be tested without rendering.
  */
-import { localDay, UNUSUAL_SIGNALS } from '@/lib/runs';
+import { flaggedInWindow, UNUSUAL_SIGNALS } from '@/lib/runs';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { humanizeDetector, type DiagnosisSummary } from '@/lib/diagnosis/model';
 
@@ -165,10 +165,9 @@ export function pendingHealthRow(line: { busy: boolean; error: boolean } | null)
  */
 export function agentSignals(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 'flags'>[], days: string[]): Record<string, string> {
   const counts: Record<string, Record<string, number>> = {};
-  for (const r of runs) {
-    if (!r.flags?.length || !days.includes(localDay(Date.parse(r.startedAt)))) continue;
+  for (const { run: r } of flaggedInWindow(runs, days)) {
     const per = (counts[r.agentId] ??= {});
-    for (const s of new Set(r.flags.map((f) => f.signal))) per[s] = (per[s] ?? 0) + 1;
+    for (const s of new Set((r.flags ?? []).map((f) => f.signal))) per[s] = (per[s] ?? 0) + 1;
   }
   const label = (key: string) => {
     const t = UNUSUAL_SIGNALS.find((s) => s.key === key)?.label ?? key.replace(/_/g, ' ');

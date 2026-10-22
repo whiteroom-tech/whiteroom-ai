@@ -346,6 +346,14 @@ export const UNUSUAL_SIGNALS = [
   { key: 'workaround', label: 'A workaround after a block', measured: false },
 ] as const;
 
+/** Flagged runs that started on one of `days`, with that day's index: the one rule for "flagged this week". */
+export function flaggedInWindow<R extends Pick<RunSummary, 'startedAt' | 'flags'>>(runs: R[], days: string[]): Array<{ run: R; day: number }> {
+  return runs.flatMap((run) => {
+    const day = days.indexOf(localDay(Date.parse(run.startedAt)));
+    return run.flags?.length && day >= 0 ? [{ run, day }] : [];
+  });
+}
+
 /**
  * Flagged runs over `days` (oldest first), per agent per day, busiest agent
  * first. Which kinds they were is agentSignals() in performance-insights.
@@ -354,11 +362,9 @@ export function unusualSummary(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 
   byAgent: { agentId: string; perDay: number[]; total: number }[];
 } {
   const agents = new Map<string, number[]>();
-  for (const r of runs) {
-    const i = days.indexOf(localDay(Date.parse(r.startedAt)));
-    if (!r.flags?.length || i < 0) continue;
+  for (const { run: r, day } of flaggedInWindow(runs, days)) {
     const perDay = agents.get(r.agentId) ?? days.map(() => 0);
-    perDay[i]++;
+    perDay[day]++;
     agents.set(r.agentId, perDay);
   }
   const byAgent = [...agents].map(([agentId, perDay]) => ({ agentId, perDay, total: perDay.reduce((a, b) => a + b, 0) }))
