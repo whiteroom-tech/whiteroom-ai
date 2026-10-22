@@ -103,6 +103,12 @@ describe('cost, limitations, reasons, how-to', () => {
 
   it("if the engine's wording changes, its own text is shown, never a made-up 0", () => {
     expect(notMeasuredShort('few_watches', 'Needs more watches.')).toBe('needs more watches');
+    // Singular, and the usual target when the engine doesn't say "Needs N".
+    expect(notMeasuredShort('few_watches', 'Needs 5 watches; has 4')).toBe('needs 1 more shift');
+    expect(notMeasuredShort('short_history', 'Short history; has 13')).toBe('starts in about 1 day');
+    expect(notMeasuredShort('few_requests', 'The busiest had 60')).toBe('needs 40 more calls to one model in a day');
+    // Nothing left to count: the engine's own words, not a made-up "1 more".
+    expect(notMeasuredShort('few_results', 'Needs 20 tool results; has 20')).toBe('needs 20 tool results; has 20');
     expect(notMeasuredShort('few_requests', 'Traffic too low')).toBe('traffic too low');
     expect(notMeasuredShort('something_new', 'A new reason.')).toBe('a new reason');
   });
@@ -197,7 +203,7 @@ describe('diagnosis card summary', () => {
     expect(s.text).toBe('No problems found · 1 check waiting for more data');
     expect(diagnosisSummary(fleet({ reports: [{ ...r, clear: [], notMeasured: [] }] }))!.text).toBe('No problems found');
   });
-  it('What we checked starts open only with an open finding and three agents or fewer', () => {
+  it('the Health check row starts open only with an open finding and three agents or fewer', () => {
     expect(checksOpenByDefault(null)).toBe(false);
     expect(checksOpenByDefault(withChecks([]))).toBe(false);
     expect(checksOpenByDefault(withChecks([finding('review_tool_errors')]))).toBe(true);

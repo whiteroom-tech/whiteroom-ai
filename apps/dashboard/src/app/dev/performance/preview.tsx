@@ -46,9 +46,9 @@ const QUIET = diagnosis([]);
 const PROBLEM = diagnosis([HANDOVER_FINDING]);
 
 /** Agent health as on Performance, from sample flags and health-check results. */
-function Insights({ runs, health, openRecs }: { runs: RunSummary[]; health: FleetDiagnosis; openRecs: number }) {
+function Insights({ runs, health }: { runs: RunSummary[]; health: FleetDiagnosis }) {
   const flagged = useFlaggedRuns('acme-claims-prod', undefined, runs);
-  return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} openRecs={openRecs} onReview={() => {}} />;
+  return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onReview={() => {}} />;
 }
 
 // Recommendations: an older engine one, plus the health-check finding in a problem week.
@@ -123,8 +123,8 @@ export function PerformancePreview() {
           }}
         />
         {sample === 'quiet'
-          ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} openRecs={1} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
-          : <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="problem" runs={FLAGGED} health={PROBLEM} openRecs={2} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
+          ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
+          : <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="problem" runs={FLAGGED} health={PROBLEM} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
         </>}
       </div>
     </AppShell>

@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, latestOnly, listGivesOpenCount, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
-const base = { flaggedRuns: 0, flaggedAtLeast: false, flagsPending: false, problems: 0, problemAgent: null, openRecs: 0 };
+const base = { flaggedRuns: 0, flaggedAtLeast: false, flagsPending: false, problems: 0, problemAgent: null };
 
 describe('performance verdict', () => {
   it('stays hidden until the flags or the health check are known', () => {
-    expect(insightsVerdict({ ...base, flaggedRuns: null, problems: null, openRecs: 3 })).toBeNull();
+    expect(insightsVerdict({ ...base, flaggedRuns: null, problems: null })).toBeNull();
   });
-  it('says fine when nothing is flagged and nothing is wrong, even with recommendations to review', () => {
-    expect(insightsVerdict({ ...base, openRecs: 2 })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
+  it('says fine when nothing is flagged and nothing is wrong', () => {
+    expect(insightsVerdict(base)).toEqual({ tone: 'ok', title: 'Your agents look fine' });
     expect(insightsVerdict({ ...base, problems: null })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
   });
   it('never says fine while the flags are loading or failed to load', () => {
@@ -54,20 +54,6 @@ describe('unusual behaviour quiet state', () => {
 describe('recommendations list', () => {
   it('opens on Open', () => {
     expect(DEFAULT_REC_STATUS).toBe('open');
-  });
-  it('takes the open count from the list only on its first, unfiltered Open page', () => {
-    expect(listGivesOpenCount('open', '')).toBe(true);
-    expect(listGivesOpenCount('open', '  ')).toBe(true);
-    expect(listGivesOpenCount('open', 'lead')).toBe(false);
-    expect(listGivesOpenCount('open', '', 'cursor-2')).toBe(false);
-    expect(listGivesOpenCount('all', '')).toBe(false);
-  });
-  it('ignores an older response that lands after a newer request', () => {
-    const gate = latestOnly();
-    const first = gate.start();
-    const second = gate.start();
-    expect(gate.isLatest(first)).toBe(false);
-    expect(gate.isLatest(second)).toBe(true);
   });
   it('says what an empty list means for each status', () => {
     expect(recEmptyText('open', true)).toBe('Nothing to review right now.');

@@ -121,7 +121,7 @@ export function limitationText(detector: DiagnosisDetectorId, limitation: string
   return limitation;
 }
 
-/** "Needs more data" reasons as short clauses, for What we checked. Falls back to the engine's text. */
+/** "Needs more data" reasons as short clauses, for Agent health › Health check: what's still missing. Falls back to the engine's text. */
 export function notMeasuredShort(code: string, reason: string): string {
   const engineText = () => reason.charAt(0).toLowerCase() + reason.slice(1).replace(/\.$/, '');
   // A count read from the engine's reason; if its wording changed and the
@@ -130,10 +130,11 @@ export function notMeasuredShort(code: string, reason: string): string {
     const x = reason.match(re)?.[1];
     return x === undefined ? engineText() : build(x);
   };
-  // What's still missing, plainly: the engine's "Needs N" when it says, else the usual target.
+  // What's still missing, plainly: the engine's "Needs N" when it says, else
+  // the usual target. Nothing left to count (has >= needs): the engine's text.
   const left = (re: RegExp, target: number, build: (more: number) => string) => n(re, (x) => {
-    const need = Number(reason.match(/needs (\d+)/i)?.[1] ?? target);
-    return build(Math.max(1, need - Number(x)));
+    const more = Number(reason.match(/needs (\d+)/i)?.[1] ?? target) - Number(x);
+    return more > 0 ? build(more) : engineText();
   });
   switch (code) {
     case 'few_watches': return left(/has (\d+)/, 5, (m) => `needs ${m} more ${m === 1 ? 'shift' : 'shifts'}`);

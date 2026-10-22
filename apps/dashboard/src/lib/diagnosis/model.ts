@@ -114,7 +114,7 @@ export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
   return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];
 }
 
-/** What we checked starts open only with an open finding and a short list (three agents or fewer). */
+/** Agent health › Health check starts open only with an open finding and a short list (three agents or fewer). */
 export function checksOpenByDefault(d: FleetDiagnosis | null): boolean {
   return !!d && openFindingCount(d) > 0 && d.reports.length <= 3;
 }

@@ -21,8 +21,6 @@ export interface VerdictInput {
   problems: number | null;
   /** The agent with open findings, when exactly one has them. */
   problemAgent: string | null;
-  /** Open recommendations; null until counted. */
-  openRecs: number | null;
 }
 
 export interface Verdict {
@@ -64,20 +62,6 @@ export function untrackedSignals(): string[] {
 
 /** The list opens on what needs you. */
 export const DEFAULT_REC_STATUS = 'open';
-
-/** Whether a list response's total is also the fleet's open count (first page, Open, no agent filter). */
-export function listGivesOpenCount(status: string, agentQuery: string, cursor?: string): boolean {
-  return !cursor && status === 'open' && !agentQuery.trim();
-}
-
-/** Last request wins: an older response that lands late is ignored. */
-export function latestOnly() {
-  let latest = 0;
-  return {
-    start: () => ++latest,
-    isLatest: (id: number) => id === latest,
-  };
-}
 
 /** An older engine recommendation's title from its detector id: "review_cache_behavior" → "Cache behavior". */
 export function recTitle(detector: string): string {

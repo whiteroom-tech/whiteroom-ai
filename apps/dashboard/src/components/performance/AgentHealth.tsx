@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { FONT_MONO, Hint } from '@whiteroom/ui';
 import { HELP } from '@/lib/metric-definitions';
 import { WATCH_DEFINITION } from '@/lib/diagnosis/copy';
@@ -19,13 +19,12 @@ const TONE: Record<HealthRow['tone'], string> = { ok: 'var(--tx)', warn: 'var(--
  * line each for Unusual behaviour and the health check. A row unfolds for its
  * detail, and starts unfolded when it has a problem.
  */
-export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onReview }: {
+export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
   flagged: FlaggedRuns;
   diagnosis: FleetDiagnosis | null;
   /** The health check's status line (checked when, checking, failed); null when it's off. */
   line: StatusLine | null;
   onCheck: () => void;
-  openRecs: number | null;
   /** Jump to Recommendations, where each problem's fix is. */
   onReview: () => void;
 }) {
@@ -34,7 +33,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onRev
   const agents = agentsWithOpenFindings(diagnosis);
   const verdict = insightsVerdict({
     flaggedRuns, flaggedAtLeast: flagged.truncated, flagsPending: flagged.failed || flagged.loading,
-    problems: summary ? summary.openFindings : null, problemAgent: agents.length === 1 ? agents[0] : null, openRecs,
+    problems: summary ? summary.openFindings : null, problemAgent: agents.length === 1 ? agents[0] : null,
   });
   const unusual = unusualRow({ count: flaggedRuns, atLeast: flagged.truncated, failed: flagged.failed, loading: flagged.loading });
   // Before the first stored check, the status line is the row ("starts once it makes 50 calls…").
@@ -85,14 +84,20 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onRev
   );
 }
 
-/** One line; with detail, a disclosure that starts open when it has news. Keyed on that, so news that arrives later opens it. */
+/**
+ * One line; with detail, a disclosure that starts open when it has news. Once
+ * someone opens or closes it, that choice sticks until they change it, even
+ * if new data changes the default.
+ */
 function Row({ label, row, open, children }: { label: string; row: HealthRow; open: boolean; children?: ReactNode }) {
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const isOpen = chosen ?? open;
   const text = <span className="wr-health__text" style={{ color: TONE[row.tone], fontWeight: row.tone === 'warn' ? 600 : 400 }}>{row.text}</span>;
   if (!children) {
     return <div className="wr-health__row wr-health__row--plain"><span className="wr-health__label">{label}</span>{text}</div>;
   }
   return (
-    <details key={String(open)} open={open} className="wr-health__row">
+    <details open={isOpen} onToggle={(e) => { const now = e.currentTarget.open; if (now !== isOpen) setChosen(now); }} className="wr-health__row">
       <summary>
         <svg className="wr-health__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 6 15 12 9 18" /></svg>
         <span className="wr-health__label">{label}</span>

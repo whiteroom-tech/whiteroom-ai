@@ -7,7 +7,7 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
-import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS } from '@/lib/performance-insights';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -746,8 +746,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   // Open first: what needs you. The other statuses are one click away.
   const [recStatus, setRecStatus] = useState<string>(DEFAULT_REC_STATUS);
   const [showStatuses, setShowStatuses] = useState(false);
-  // Open recommendations for the verdict line, whatever the list is filtered to.
-  const [openTotal, setOpenTotal] = useState<number | null>(null);
   const [recAgent, setRecAgent] = useState('');
   const [recAgentQuery, setRecAgentQuery] = useState('');
   const [recs, setRecs] = useState<RecommendationDetail[]>([]);
@@ -759,8 +757,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   // request, so an out-of-order reply can't show the wrong list or store a
   // stale cursor for "Load more".
   const recReq = useRef(0);
-  // Same for the open count, which two requests can write.
-  const openReq = useRef(latestOnly());
 
   // Debounce the agent filter so we don't fire a request per keystroke.
   useEffect(() => {
@@ -771,8 +767,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const fetchRecs = useCallback(async (cursor?: string) => {
     const req = ++recReq.current;
     const stale = () => recReq.current !== req;
-    const writesOpen = listGivesOpenCount(recStatus, recAgentQuery, cursor);
-    const openId = writesOpen ? openReq.current.start() : 0;
     setRecLoading(true);
     try {
       const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: 15, includeSummaries: true };
@@ -786,7 +780,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-      if (writesOpen && openReq.current.isLatest(openId)) setOpenTotal(res.total);
     } catch {
       if (!stale()) setRecError('Failed to load recommendations.');
     } finally {
@@ -796,21 +789,11 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
 
-  // The verdict's "to review" count when the list shows something else.
-  const fetchOpenTotal = useCallback(async () => {
-    const id = openReq.current.start();
-    try {
-      const res = await performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey);
-      if (!res.error && openReq.current.isLatest(id)) setOpenTotal(res.total);
-    } catch { /* the count just stays as it was */ }
-  }, [fleetId, authKey]);
-  const listIsOpenCount = listGivesOpenCount(recStatus, recAgentQuery);
-  useEffect(() => { if (!listIsOpenCount) void fetchOpenTotal(); }, [listIsOpenCount, fetchOpenTotal]);
 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
   // its old status and buttons until a filter changes (audit F16).
-  // Agent Diagnosis: one read shared by the strip, the header line and What we checked.
+  // Agent Diagnosis: one read shared by Agent health and the Recommendations rows.
   const diagnosis = useDiagnosis(fleetId, authKey);
   const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
   // Card-level, so it survives the row leaving the Open filter.
@@ -820,10 +803,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
 
   const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
     const result = await onFeedback(recId, findingVersion, action, reason, recover);
-    if (result !== 'failed') {
-      void fetchRecs();
-      if (!listIsOpenCount) void fetchOpenTotal();
-    }
+    if (result !== 'failed') void fetchRecs();
     return result;
   };
   const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
@@ -840,10 +820,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   };
   const runCheck = async () => {
     setDiagnosisNotice(null);
-    if (await diagnosis.checkNow()) {
-      void fetchRecs();
-      if (!listIsOpenCount) void fetchOpenTotal();
-    }
+    if (await diagnosis.checkNow()) void fetchRecs();
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
   const seeFindings = () => {
@@ -951,7 +928,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
       {/* Health on the left, what to do about it on the right; stacked below 1100px. */}
       <div className="wr-perf-row" style={{ marginBottom: 0 }}>
-        <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} openRecs={openTotal} onReview={seeFindings} />
+        <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onReview={seeFindings} />
 
         <RecommendationsCard
           recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
