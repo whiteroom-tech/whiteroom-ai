@@ -7,7 +7,7 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
-import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount, recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, type RecRowAction } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount } from '@/lib/performance-insights';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -24,8 +24,9 @@ import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AgentScore, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { countsFromRuleActions, governanceFromSummary, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
 import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
-import { Badge, Btn, CARD, H3 } from './_components/primitives';
-import { DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
+import { Badge, CARD, H3 } from './_components/primitives';
+import { DiagnosisEvidence } from './_components/Diagnosis';
+import { RecommendationsCard } from './_components/Recommendations';
 import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 
@@ -250,7 +251,6 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
   );
 }
 
-const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
 
 function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, trendUnit, onClick, active }: {
   label: string; value: string; sub?: string; warn?: boolean;
@@ -719,28 +719,6 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
 /** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
-/** View evidence up front; the rest behind More, so each row has one clear action. */
-function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; busy: boolean; onEvidence: () => void; onFeedback: (f: ReturnType<typeof recFeedback>) => void }) {
-  const [more, setMore] = useState(false);
-  const buttons: Record<RecRowAction, React.ReactNode> = {
-    evidence: <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
-    toggle: (
-      <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
-        fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-        background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
-      }}>{more ? 'Less' : 'More'}</button>
-    ),
-    fixed: <Btn key="fixed" label="Mark as fixed" onClick={() => onFeedback(recFeedback('fixed'))} loading={busy} />,
-    snooze: <Btn key="snooze" label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback(recFeedback('snooze'))} loading={busy} />,
-    dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback(recFeedback('dismiss'))} loading={busy} />,
-  };
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-      {recRowActions(open, more).map((a) => buttons[a])}
-    </div>
-  );
-}
-
 function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, agentScores, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
@@ -973,91 +951,17 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
       <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} openRecs={openTotal} onReview={seeFindings} />
 
-      <div style={{ ...CARD, marginBottom: 0 }} id="recommendations">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <h3 style={H3} id="recommendations-heading" tabIndex={-1}>
-            Recommendations
-            {recTotal > 0 && <span style={{ marginLeft: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{recTotal}</span>{recCountSuffix(recStatus)}</span>}
-          </h3>
-          {/* One agent: nothing to filter by. */}
-          {(byAgent === null || byAgent.length > 1 || recAgent !== '') && <input aria-label="Filter by agent" value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
-        </div>
-        <div aria-live="polite" style={{ fontSize: 12.5, color: 'var(--tx2)', margin: diagnosisNotice ? '0 0 8px' : 0 }}>{diagnosisNotice}</div>
-        {showStatuses && <div role="group" aria-label="Show recommendations by status" style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
-          {REC_STATUSES.map(st => (
-            <button key={st} type="button" aria-pressed={recStatus === st} onClick={() => setRecStatus(st)} style={{
-              fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
-              background: recStatus === st ? 'var(--brand-dim)' : 'transparent',
-              color: recStatus === st ? 'var(--brand)' : 'var(--tx3)',
-              border: `1px solid ${recStatus === st ? 'var(--brand)' : 'var(--line)'}`,
-            }}>{recStatusLabel(st)}</button>
-          ))}
-        </div>}
-
-        {recs.length > 0 ? recs.map(rec => isDiagnosisRow(rec) ? (
-          <DiagnosisRow
-            key={rec.id}
-            rec={rec}
-            onSelectAgent={onSelectAgent}
-            onSelectEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
-            onFeedback={(action) => submitDiagnosisFeedback(rec, action)}
-            busy={feedbackLoading === rec.id}
-            error={feedbackError?.recId === rec.id ? feedbackError.message : null}
-          />
-        ) : (
-          <div key={rec.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                  <button onClick={() => onSelectAgent(rec.agentId)} style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{rec.agentId}</button>
-                  <Badge status={rec.status} />
-                  <Badge status={rec.verificationStatus} size="small" />
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--tx3)' }}>
-                  {rec.detector.replace(/_/g, ' ')} &middot; {fmtDay(rec.createdAt)}
-                  {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} action{rec.feedbackCount !== 1 ? 's' : ''}</>}
-                </div>
-              </div>
-              <RecActions
-                open={rec.status === 'open'}
-                busy={feedbackLoading === rec.id}
-                onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
-                onFeedback={(f) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, f.action, f.reason)}
-              />
-            </div>
-            {feedbackError?.recId === rec.id && (
-              <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 6, textAlign: 'right' }}>{feedbackError.message}</div>
-            )}
-            {rec.summary && <div style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 6, paddingLeft: 2, lineHeight: 1.5 }}>{rec.summary}</div>}
-          </div>
-        )) : (
-          <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : recEmptyText(recStatus, s.totalCalls > 0, !!recAgentQuery.trim())}
-          </div>
-        )}
-
-        {!showStatuses && !recError && (
-          <button type="button" className="wr-link" onClick={() => { setShowStatuses(true); setRecStatus('all'); }} style={{ background: 'none', border: 'none', padding: 0, marginTop: 12, minHeight: 24, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
-            Show closed and other statuses
-          </button>
-        )}
-
-        {recError && (
-          <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 12, marginTop: 8 }}>
-            {recError}
-          </div>
-        )}
-
-        {recCursor && (
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
-            <button onClick={() => fetchRecs(recCursor)} disabled={recLoading} style={{
-              fontSize: 12, fontWeight: 600, padding: '6px 16px', borderRadius: 6, cursor: recLoading ? 'wait' : 'pointer',
-              background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)', opacity: recLoading ? 0.5 : 1,
-            }}>{recLoading ? 'Loading…' : 'Load more'}</button>
-          </div>
-        )}
-
-      </div>
+      <RecommendationsCard
+        recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
+        showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setRecStatus('all'); }}
+        agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={byAgent === null || byAgent.length > 1 || recAgent !== ''}
+        filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
+        loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
+        onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
+        onFeedback={(rec, f) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, f.action, f.reason)}
+        onDiagnosisFeedback={submitDiagnosisFeedback}
+        feedbackLoading={feedbackLoading} feedbackError={feedbackError}
+      />
     </>
   );
 }

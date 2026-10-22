@@ -10,7 +10,8 @@ import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { statusLine } from '@/lib/diagnosis/model';
-import type { DiagnosisFinding, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
+import type { DiagnosisFinding, FleetDiagnosis, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
+import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
   runId: `${agentId}~${daysAgo}`, agentId, shift: 10 - daysAgo, startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), endedAt: new Date().toISOString(),
@@ -48,6 +49,39 @@ const PROBLEM = diagnosis([HANDOVER_FINDING]);
 function Insights({ runs, health, openRecs }: { runs: RunSummary[]; health: FleetDiagnosis; openRecs: number }) {
   const flagged = useFlaggedRuns('acme-claims-prod', undefined, runs);
   return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} openRecs={openRecs} onReview={() => {}} />;
+}
+
+// Recommendations: an older engine one, plus the health-check finding in a problem week.
+const rec = (p: Partial<RecommendationDetail>): RecommendationDetail => ({
+  id: 'pr_cache', detector: 'review_cache_behavior', agentId: 'lead-agent', source: 'engine', cohort: '', action: '', status: 'open',
+  verificationStatus: 'none', currentFindingId: 'pf_cache', feedbackCount: 0, createdAt: '2026-10-01T12:00:00Z', updatedAt: '2026-10-01T12:00:00Z',
+  summary: 'Cache read rate is 4458% of input tokens.', ...p,
+});
+const RECS_QUIET = [rec({})];
+const RECS_PROBLEM = [
+  rec({
+    id: 'pr_handover', detector: 'review_handover_churn', currentFindingId: 'pf_handover', createdAt: new Date().toISOString(), summary: null,
+    measures: { shortWatches: 3, totalWatches: 3, longestStreak: 3, medianCallsPerWatch: 1.5, limitMultiplier: 4 },
+    estWastedTokens: 115_797, estWastedCostMicros: 80_000, evidenceCount: 10, suggestedAction: { kind: 'howto', howtoId: 'handover_churn' },
+  }),
+  rec({}),
+];
+
+/** The Recommendations card as on Performance, with sample rows; buttons do nothing here. */
+function Recs({ recs }: { recs: RecommendationDetail[] }) {
+  const [status, setStatus] = useState('open');
+  const [showStatuses, setShowStatuses] = useState(false);
+  const shown = status === 'open' || status === 'all' ? recs : [];
+  return (
+    <RecommendationsCard
+      recs={shown} total={shown.length} status={status} onStatus={setStatus}
+      showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setStatus('all'); }}
+      agentFilter="" onAgentFilter={() => {}} showAgentFilter={false} filtered={false} hasCalls
+      loading={false} error={null} notice={null} hasMore={false} onMore={() => {}}
+      onSelectAgent={() => {}} onSelectEvidence={() => {}} onFeedback={() => {}} onDiagnosisFeedback={async () => true}
+      feedbackLoading={null} feedbackError={null}
+    />
+  );
 }
 
 // Sample week shaped like the redesign's screen 4: tasks most days, a
@@ -89,8 +123,8 @@ export function PerformancePreview() {
           }}
         />
         {sample === 'quiet'
-          ? <Insights key="quiet" runs={[]} health={QUIET} openRecs={1} />
-          : <Insights key="problem" runs={FLAGGED} health={PROBLEM} openRecs={2} />}
+          ? <><Insights key="quiet" runs={[]} health={QUIET} openRecs={1} /><Recs key="quiet-recs" recs={RECS_QUIET} /></>
+          : <><Insights key="problem" runs={FLAGGED} health={PROBLEM} openRecs={2} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></>}
         </>}
       </div>
     </AppShell>
