@@ -139,16 +139,17 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   const fine = d.reports.reduce((n, r) => n + r.clear.length, 0);
   const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
   const openFindings = openFindingCount(d);
+  // Quiet state, one line: what passed, then what's still waiting for data.
   const counts = [
-    fine > 0 ? `${fine} ${fine === 1 ? 'check looks' : 'checks look'} fine` : '',
-    needsData > 0 ? `${needsData} ${needsData === 1 ? 'needs' : 'need'} more data` : '',
+    fine > 0 ? `${fine} ${fine === 1 ? 'check' : 'checks'} passed` : 'No problems found',
+    needsData > 0 ? `${needsData} ${needsData === 1 ? 'starts' : 'start'} once there’s more data` : '',
   ].filter(Boolean).join(' · ');
   if (openFindings > 0) {
     const strip = attentionStrip(d)!;
     const lead = strip.names ? `${strip.lead} ${strip.names}` : strip.lead;
     return { tone: 'warn', text: `${lead} · ${openFindings} open ${openFindings === 1 ? 'finding' : 'findings'}`, fine, needsData, openFindings };
   }
-  return { tone: 'ok', text: counts ? `No problems found · ${counts}` : 'No problems found', fine, needsData, openFindings };
+  return { tone: 'ok', text: counts, fine, needsData, openFindings };
 }
 
 export interface CheckedSummary {

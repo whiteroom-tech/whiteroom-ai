@@ -182,7 +182,7 @@ describe('diagnosis card summary', () => {
   it('says all is well, with what was checked and what still needs data', () => {
     const s = diagnosisSummary(withChecks([]))!;
     expect(s.tone).toBe('ok');
-    expect(s.text).toBe(`No problems found · 3 checks look fine · ${s.needsData} ${s.needsData === 1 ? 'needs' : 'need'} more data`);
+    expect(s.text).toBe(`3 checks passed · ${s.needsData} ${s.needsData === 1 ? 'starts' : 'start'} once there’s more data`);
   });
   it('leads with who needs attention when a finding is open', () => {
     const s = diagnosisSummary(withChecks([finding('review_tool_errors')]))!;

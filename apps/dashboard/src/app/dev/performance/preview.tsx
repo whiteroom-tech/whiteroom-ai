@@ -4,8 +4,11 @@ import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
 import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
-import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
-import type { RunSummary } from '@/lib/whiteroom/types';
+import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
+import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
+import { DiagnosisCard } from '@/app/(citadel)/performance/_components/Diagnosis';
+import { diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
+import type { DiagnosisFinding, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
   runId: `${agentId}~${daysAgo}`, agentId, shift: 10 - daysAgo, startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), endedAt: new Date().toISOString(),
@@ -17,6 +20,42 @@ const FLAGGED = [
   flagged('lead-agent', 3, [{ signal: 'repeating_call', tool: 'search', calls: 5 }]),
   flagged('scout-agent', 1, [{ signal: 'error_streak', calls: 3 }]),
 ];
+
+// Health check results: one quiet agent, and one with an open finding.
+const report = (agentId: string, findings: DiagnosisFinding[]): FleetDiagnosis['reports'][number] => ({
+  schema: 'diagnosis.v1', agentId, window: { from: '', to: '', days: 7, calls: 180, watches: 12 }, findings,
+  clear: [{ detector: 'review_handover_churn', note: null }, { detector: 'review_tool_loops', note: null }, { detector: 'review_tool_errors', note: null }].filter((c) => !findings.some((f) => f.detector === c.detector)) as FleetDiagnosis['reports'][number]['clear'],
+  notMeasured: [
+    { detector: 'review_provider_failures', code: 'few_requests', reason: 'Busiest model had 60 calls in 24 hours' },
+    { detector: 'review_spend_outliers', code: 'short_history', reason: 'Needs 14 days of history; has 7' },
+    { detector: 'review_tool_silence', code: 'short_history', reason: 'Needs 14 days of history; has 8' },
+  ],
+});
+const HANDOVER_FINDING = {
+  recommendationId: 'pr_sample', findingId: 'pf_sample', findingVersion: 1, detector: 'review_handover_churn', detectorVersion: 1, status: 'open',
+  measures: {}, estWastedTokens: null, estWastedCostMicros: null, evidenceCallIds: [], coverage: 'complete', limitations: null, suggestedAction: null,
+} as unknown as DiagnosisFinding;
+const diagnosis = (findings: DiagnosisFinding[]): FleetDiagnosis => ({
+  checkedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), source: 'background', reports: [report('lead-agent', findings)],
+  waiting: [], skipped: [], truncated: false, readyAgents: 1, busiest: { agentId: 'lead-agent', calls7d: 180 }, minCalls: 50,
+});
+const QUIET = diagnosis([]);
+const PROBLEM = diagnosis([HANDOVER_FINDING]);
+
+/** Verdict, Unusual behaviour and Agent health check together, as on Performance. */
+function Insights({ runs, health, openRecs }: { runs: RunSummary[]; health: FleetDiagnosis; openRecs: number }) {
+  const flaggedRuns = useFlaggedRuns('acme-claims-prod', undefined, runs);
+  const summary = diagnosisSummary(health);
+  return (
+    <div>
+      <InsightsVerdict input={{ flaggedRuns: flaggedRunCount(flaggedRuns), problems: summary?.openFindings ?? null, problemAgent: summary?.openFindings ? 'lead-agent' : null, openRecs }} onReview={() => {}} />
+      <div className="wr-perf-row" style={{ marginBottom: 0 }}>
+        <UnusualBehaviour flagged={flaggedRuns} />
+        <DiagnosisCard data={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onSeeFindings={() => {}} />
+      </div>
+    </div>
+  );
+}
 
 // Sample week shaped like the redesign's screen 4: tasks most days, a
 // handover now and then, one quiet day.
@@ -44,7 +83,8 @@ export function PerformancePreview() {
           scope="last 24 h"
           ruleActions={{ 'lead-agent': { blocks: 2, wouldBlocks: 1, paused: 1 }, 'scout-agent': { blocks: 0, wouldBlocks: 3, toldYou: 2 } }}
         />
-        <UnusualBehaviour fleetId="acme-claims-prod" preview={FLAGGED} />
+        <Insights runs={[]} health={QUIET} openRecs={1} />
+        <Insights runs={FLAGGED} health={PROBLEM} openRecs={2} />
         <SavingsChart days={dailySavings([], 7, Date.now())} />
       </div>
     </AppShell>

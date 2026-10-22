@@ -13,7 +13,7 @@ import {
   TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
   findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
 } from '@/lib/diagnosis/copy';
-import { checkedSummary, diagnosisSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
+import { checkedSummary, diagnosisSummary, evidenceHeader, openFindingCount, type StatusLine } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
 import { ROUTES } from '@/lib/routes';
@@ -41,8 +41,10 @@ export function DiagnosisCard({ data, line, onCheck, onSeeFindings }: {
           display: 'flex', alignItems: 'center', gap: '8px 12px', flexWrap: 'wrap', marginTop: 10, fontSize: 13.5,
           color: warn ? 'var(--warn-tx)' : 'var(--tx)',
         }}>
-          <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: warn ? 'var(--warn)' : 'var(--ok)', flex: 'none' }} />
-          <span style={{ fontWeight: 600 }}>{summary.text}</span>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontWeight: 600, minWidth: 0 }}>
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: warn ? 'var(--warn)' : 'var(--ok)', flex: 'none', transform: 'translateY(-1px)' }} />
+            <span>{summary.text}</span>
+          </span>
           {warn && <button type="button" className="dx-link dx-strong" onClick={onSeeFindings}>See findings</button>}
         </div>
       )}
@@ -151,8 +153,10 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
 // -- §6.2.4 What we checked -------------------------------------------------
 
 export function WhatWeChecked({ data }: { data: FleetDiagnosis | null }) {
-  // Open by default for a few agents, where it's short enough to read at a glance.
-  const defaultOpen = (data?.reports.length ?? 0) <= 3;
+  // A quiet result is the one summary line; the per-check list opens on
+  // request. With an open finding, open it for a few agents, where it's short
+  // enough to read at a glance.
+  const defaultOpen = !!data && openFindingCount(data) > 0 && data.reports.length <= 3;
   const [open, setOpen] = useState(defaultOpen);
   if (!data || data.reports.length === 0) return null;
   const agents = data.reports.length;

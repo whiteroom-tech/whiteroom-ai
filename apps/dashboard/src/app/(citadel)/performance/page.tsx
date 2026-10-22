@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, performanceCostForecast, setBudgetUsd, setTokenBudget, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
-import { UnusualBehaviour } from '@/components/performance/UnusualBehaviour';
+import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
+import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -30,7 +31,7 @@ import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedba
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 type FeedbackResult = 'done' | 'closed' | 'failed';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
-import { statusLine } from '@/lib/diagnosis/model';
+import { attentionStrip, diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
@@ -717,6 +718,29 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
 /** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
+/** View evidence up front; the rest behind More, so each row has one clear action. */
+function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; busy: boolean; onEvidence: () => void; onFeedback: (action: 'dismiss' | 'snooze' | 'implemented') => void }) {
+  const [more, setMore] = useState(false);
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+      <Btn label="View evidence" onClick={onEvidence} loading={false} accent />
+      {open && (
+        <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
+          fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+          background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
+        }}>{more ? 'Less' : 'More'}</button>
+      )}
+      {open && more && (
+        <>
+          <Btn label="Mark as fixed" onClick={() => onFeedback('implemented')} loading={busy} />
+          <Btn label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback('snooze')} loading={busy} />
+          <Btn label="Dismiss" onClick={() => onFeedback('dismiss')} loading={busy} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, agentScores, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
@@ -741,7 +765,11 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const s = data.summary;
   // Rule decisions, from the same window and ledger as the other action counts.
   const blocked = govCounts?.blocks ?? s.blockedCount ?? 0;
-  const [recStatus, setRecStatus] = useState<string>('all');
+  // Open first: what needs you. The other statuses are one click away.
+  const [recStatus, setRecStatus] = useState<string>('open');
+  const [showStatuses, setShowStatuses] = useState(false);
+  // Open recommendations for the verdict line, whatever the list is filtered to.
+  const [openTotal, setOpenTotal] = useState<number | null>(null);
   const [recAgent, setRecAgent] = useState('');
   const [recAgentQuery, setRecAgentQuery] = useState('');
   const [recs, setRecs] = useState<RecommendationDetail[]>([]);
@@ -776,6 +804,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
+      if (!cursor && recStatus === 'open' && !opts.agentId) setOpenTotal(res.total);
     } catch {
       if (!stale()) setRecError('Failed to load recommendations.');
     } finally {
@@ -784,6 +813,16 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   }, [fleetId, authKey, recStatus, recAgentQuery]);
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
+
+  // The verdict's "to review" count when the list shows something else.
+  const fetchOpenTotal = useCallback(async () => {
+    try {
+      const res = await performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey);
+      if (!res.error) setOpenTotal(res.total);
+    } catch { /* the count just stays as it was */ }
+  }, [fleetId, authKey]);
+  const listIsOpenCount = recStatus === 'open' && !recAgentQuery.trim();
+  useEffect(() => { if (!listIsOpenCount) void fetchOpenTotal(); }, [listIsOpenCount, fetchOpenTotal]);
 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
@@ -798,7 +837,10 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
 
   const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
     const result = await onFeedback(recId, findingVersion, action, reason, recover);
-    if (result !== 'failed') void fetchRecs();
+    if (result !== 'failed') {
+      void fetchRecs();
+      if (!listIsOpenCount) void fetchOpenTotal();
+    }
     return result;
   };
   const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
@@ -813,7 +855,16 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
     }
     return result !== 'failed';
   };
-  const runCheck = async () => { setDiagnosisNotice(null); if (await diagnosis.checkNow()) void fetchRecs(); };
+  const runCheck = async () => {
+    setDiagnosisNotice(null);
+    if (await diagnosis.checkNow()) {
+      void fetchRecs();
+      if (!listIsOpenCount) void fetchOpenTotal();
+    }
+  };
+  const flagged = useFlaggedRuns(fleetId, authKey);
+  const healthSummary = diagnosisSummary(diagnosis.data);
+  const strip = attentionStrip(diagnosis.data);
   const seeFindings = () => {
     setDiagnosisNotice(null);
     setRecStatus('open');
@@ -917,27 +968,40 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         {savingsDays && <SavingsChart days={savingsDays} />}
       </div>
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
-      <div style={{ marginBottom: 24 }}><UnusualBehaviour fleetId={fleetId} authKey={authKey} /></div>
-
+      <InsightsVerdict
+        input={{
+          flaggedRuns: flaggedRunCount(flagged),
+          problems: healthSummary ? healthSummary.openFindings : null,
+          problemAgent: strip && !strip.names ? strip.lead.replace(/ needs attention$/, '') : null,
+          openRecs: openTotal,
+        }}
+        onReview={seeFindings}
+      />
       <div className="wr-perf-row">
-      <DiagnosisCard data={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onSeeFindings={seeFindings} />
+        <UnusualBehaviour flagged={flagged} />
+        <DiagnosisCard data={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onSeeFindings={seeFindings} />
+      </div>
 
       <div style={{ ...CARD, marginBottom: 0 }} id="recommendations">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <h3 style={H3} id="recommendations-heading" tabIndex={-1}>Recommendations{recTotal > 0 ? ` (${recTotal})` : ''}</h3>
-          <input value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />
+          <h3 style={H3} id="recommendations-heading" tabIndex={-1}>
+            Recommendations
+            {recTotal > 0 && <span style={{ marginLeft: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{recTotal}</span>{recStatus === 'open' ? ' open' : recStatus === 'all' ? '' : ` ${recStatus === 'reported_implemented' ? 'implemented' : recStatus}`}</span>}
+          </h3>
+          {/* One agent: nothing to filter by. */}
+          {(byAgent === null || byAgent.length > 1 || recAgent !== '') && <input aria-label="Filter by agent" value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
         </div>
         <div aria-live="polite" style={{ fontSize: 12.5, color: 'var(--tx2)', margin: diagnosisNotice ? '0 0 8px' : 0 }}>{diagnosisNotice}</div>
-        <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+        {showStatuses && <div role="group" aria-label="Show recommendations by status" style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
           {REC_STATUSES.map(st => (
-            <button key={st} onClick={() => setRecStatus(st)} style={{
+            <button key={st} type="button" aria-pressed={recStatus === st} onClick={() => setRecStatus(st)} style={{
               fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
               background: recStatus === st ? 'var(--brand-dim)' : 'transparent',
               color: recStatus === st ? 'var(--brand)' : 'var(--tx3)',
               border: `1px solid ${recStatus === st ? 'var(--brand)' : 'var(--line)'}`,
             }}>{st === 'reported_implemented' ? 'implemented' : st}</button>
           ))}
-        </div>
+        </div>}
 
         {recs.length > 0 ? recs.map(rec => isDiagnosisRow(rec) ? (
           <DiagnosisRow
@@ -963,16 +1027,12 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
                   {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} action{rec.feedbackCount !== 1 ? 's' : ''}</>}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Btn label="View evidence" onClick={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)} loading={false} />
-                {rec.status === 'open' && (
-                  <>
-                    <Btn label="Snooze 7 days" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'snooze')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Dismiss" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'dismiss', 'not_worth_it')} loading={feedbackLoading === rec.id} />
-                    <Btn label="Implemented" onClick={() => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, 'implemented')} loading={feedbackLoading === rec.id} accent />
-                  </>
-                )}
-              </div>
+              <RecActions
+                open={rec.status === 'open'}
+                busy={feedbackLoading === rec.id}
+                onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
+                onFeedback={(action) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action, action === 'dismiss' ? 'not_worth_it' : undefined)}
+              />
             </div>
             {feedbackError?.recId === rec.id && (
               <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 6, textAlign: 'right' }}>{feedbackError.message}</div>
@@ -981,8 +1041,14 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           </div>
         )) : (
           <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
+            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : recStatus === 'open' ? 'Nothing to review right now.' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
           </div>
+        )}
+
+        {!showStatuses && !recError && (
+          <button type="button" className="wr-link" onClick={() => { setShowStatuses(true); setRecStatus('all'); }} style={{ background: 'none', border: 'none', padding: 0, marginTop: 12, minHeight: 24, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+            Show closed and other statuses
+          </button>
         )}
 
         {recError && (
@@ -999,8 +1065,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
             }}>{recLoading ? 'Loading…' : 'Load more'}</button>
           </div>
         )}
-
-      </div>
 
       </div>
     </>
