@@ -18,6 +18,8 @@ export function scoreColor(score: number | null): string {
 
 export interface ScoreWedge {
   label: string;
+  /** One word, for the legend beside the wheel. */
+  short: string;
   value: number | null;
   color: string;
 }
@@ -25,16 +27,29 @@ export interface ScoreWedge {
 /** The wheel's three equal wedges, fixed order, each colored by its own 0-100 value. */
 export function scoreWedges(a: Pick<AgentScore, 'completeRate' | 'costDiligence' | 'speedScore'>): ScoreWedge[] {
   return [
-    { label: 'Task success', value: a.completeRate, color: tierColor(a.completeRate, 100) },
-    { label: 'Cost diligence', value: a.costDiligence, color: tierColor(a.costDiligence, 100) },
-    { label: 'Speed', value: a.speedScore, color: tierColor(a.speedScore, 100) },
+    { label: 'Task success', short: 'Tasks', value: a.completeRate, color: tierColor(a.completeRate, 100) },
+    { label: 'Cost diligence', short: 'Cost', value: a.costDiligence, color: tierColor(a.costDiligence, 100) },
+    { label: 'Speed', short: 'Speed', value: a.speedScore, color: tierColor(a.speedScore, 100) },
   ];
 }
 
-/** A flat conic-gradient of equal wedges — no gaps, the wheel is too small for them to read anyway. */
-export function wheelGradient(wedges: Pick<ScoreWedge, 'color'>[]): string {
-  const step = 360 / wedges.length;
-  return `conic-gradient(${wedges.map((w, i) => `${w.color} ${i * step}deg ${(i + 1) * step}deg`).join(', ')})`;
+/**
+ * The wheel as SVG ring segments: equal arcs in order, clockwise from the
+ * top, with a small gap between them so each reads as its own part.
+ */
+export function wheelArcs(count: number, size: number, stroke: number, gapDeg = 14): string[] {
+  const r = (size - stroke) / 2;
+  const c = size / 2;
+  const step = 360 / count;
+  const at = (deg: number) => {
+    const rad = ((deg - 90) * Math.PI) / 180;
+    return `${+(c + r * Math.cos(rad)).toFixed(2)} ${+(c + r * Math.sin(rad)).toFixed(2)}`;
+  };
+  return Array.from({ length: count }, (_, i) => {
+    const from = i * step + gapDeg / 2;
+    const to = (i + 1) * step - gapDeg / 2;
+    return `M ${at(from)} A ${r} ${r} 0 ${to - from > 180 ? 1 : 0} 1 ${at(to)}`;
+  });
 }
 
 /** One line for the wheel's title attribute: what each wedge is, in order. */

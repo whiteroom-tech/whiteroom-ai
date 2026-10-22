@@ -165,7 +165,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
               },
             },
             {
-              key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(190px, 220px)',
+              key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)',
               render: (r) => {
                 const s = scores?.[r.agent];
                 return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
