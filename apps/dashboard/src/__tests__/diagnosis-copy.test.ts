@@ -216,13 +216,17 @@ describe('diagnosis card summary', () => {
 });
 
 describe('health check rows', () => {
-  it('lists problems first, then passed checks, then ones waiting for data', () => {
+  it('lists problems first, then passed checks, then waiting, then snoozed or dismissed', () => {
     const rows = checkRows(fleet({ reports: [report('lead-agent', [finding('review_tool_errors'), finding('review_handover_churn', 'snoozed')])] }));
     expect(rows).toEqual([{ agentId: 'lead-agent', rows: [
       { tone: 'problem', title: 'A tool keeps failing' },
       { tone: 'fine', title: 'Repeating the same call' },
       { tone: 'waiting', title: 'Unusually expensive days', note: 'starts in about 8 days' },
+      { tone: 'set-aside', title: 'Handing over too often', note: 'snoozed' },
     ] }]);
+    // An agent whose only finding is dismissed stays in the list.
+    expect(checkRows(fleet({ reports: [{ ...report('triage', [finding('review_tool_errors', 'dismissed')]), clear: [], notMeasured: [] }] })))
+      .toEqual([{ agentId: 'triage', rows: [{ tone: 'set-aside', title: 'A tool keeps failing', note: 'dismissed' }] }]);
   });
 });
 

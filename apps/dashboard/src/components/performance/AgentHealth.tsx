@@ -112,6 +112,7 @@ const ICON: Record<CheckRow['tone'], { color: string; label: string; path: React
   problem: { color: 'var(--warn)', label: 'Problem', path: <><circle cx="12" cy="12" r="9" /><path d="M12 8v4" /><path d="M12 16h.01" /></> },
   fine: { color: 'var(--ok)', label: 'Passed', path: <polyline points="20 6 9 17 4 12" /> },
   waiting: { color: 'var(--tx2)', label: 'Waiting for data', path: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></> },
+  'set-aside': { color: 'var(--tx2)', label: 'Set aside', path: <><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></> },
 };
 
 /** Health check, unfolded: one short row per check, per agent. */
@@ -126,7 +127,7 @@ function CheckList({ data, onFix }: { data: FleetDiagnosis; onFix: () => void })
             {a.rows.map((r, i) => (
               <li key={`${r.tone}-${r.title}-${i}`} style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px', padding: '5px 0', fontSize: 13 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={ICON[r.tone].label} style={{ color: ICON[r.tone].color, flex: 'none', alignSelf: 'center' }}>{ICON[r.tone].path}</svg>
-                <span style={{ color: r.tone === 'problem' ? 'var(--warn-tx)' : 'var(--tx)', fontWeight: r.tone === 'problem' ? 600 : 400 }}>{r.title}</span>
+                <span style={{ color: r.tone === 'problem' ? 'var(--warn-tx)' : r.tone === 'set-aside' ? 'var(--tx2)' : 'var(--tx)', fontWeight: r.tone === 'problem' ? 600 : 400 }}>{r.title}</span>
                 {r.note && <span style={{ color: 'var(--tx2)', fontSize: 12.5 }}>{r.note}</span>}
                 {r.tone === 'problem' && <button type="button" className="dx-link dx-strong" onClick={onFix} style={{ fontSize: 12.5, minHeight: 24 }}>See the fix →</button>}
               </li>

@@ -164,15 +164,17 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
 }
 
 export interface CheckRow {
-  tone: 'problem' | 'fine' | 'waiting';
+  /** `set-aside`: a finding someone snoozed or dismissed, so the check is still accounted for. */
+  tone: 'problem' | 'fine' | 'waiting' | 'set-aside';
   title: string;
-  /** Waiting checks: what they still need ("7 of 14 days of history older than a week"). */
+  /** Waiting checks: what they still need ("starts in about 7 days"); set-aside ones: "snoozed" or "dismissed". */
   note?: string;
 }
 
 /**
  * Agent health › Health check, unfolded: one row per check per agent,
- * problems first, then passed, then waiting for data. Unknown detectors skipped.
+ * problems first, then passed, then waiting for data, then snoozed or dismissed.
+ * Unknown detectors skipped.
  */
 export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
   return d.reports.map((r) => ({
@@ -181,6 +183,7 @@ export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: Che
       ...r.findings.filter((f) => f.status === 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'problem', title: TITLES[f.detector as keyof typeof TITLES] })),
       ...r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c): CheckRow => ({ tone: 'fine', title: TITLES[c.detector] })),
       ...r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n): CheckRow => ({ tone: 'waiting', title: TITLES[n.detector], note: notMeasuredShort(n.code, n.reason) })),
+      ...r.findings.filter((f) => f.status !== 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'set-aside', title: TITLES[f.detector as keyof typeof TITLES], note: f.status === 'dismissed' ? 'dismissed' : 'snoozed' })),
     ],
   })).filter((a) => a.rows.length > 0);
 }
