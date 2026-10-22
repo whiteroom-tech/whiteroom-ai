@@ -114,6 +114,11 @@ export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
   return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];
 }
 
+/** What we checked starts open only with an open finding and a short list (three agents or fewer). */
+export function checksOpenByDefault(d: FleetDiagnosis | null): boolean {
+  return !!d && openFindingCount(d) > 0 && d.reports.length <= 3;
+}
+
 /** The attention strip (§6.2.1): null when nothing is open. */
 export function attentionStrip(d: FleetDiagnosis | null): { lead: string; names: string } | null {
   if (!d) return null;

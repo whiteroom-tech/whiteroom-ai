@@ -49,7 +49,7 @@ function Insights({ runs, health, openRecs }: { runs: RunSummary[]; health: Flee
   const agents = agentsWithOpenFindings(health);
   return (
     <div>
-      <InsightsVerdict input={{ flaggedRuns: flaggedRunCount(flaggedRuns), flagsFailed: flaggedRuns.failed, problems: summary?.openFindings ?? null, problemAgent: agents.length === 1 ? agents[0] : null, openRecs }} onReview={() => {}} />
+      <InsightsVerdict input={{ flaggedRuns: flaggedRunCount(flaggedRuns), flagsPending: flaggedRuns.failed || flaggedRuns.loading, problems: summary?.openFindings ?? null, problemAgent: agents.length === 1 ? agents[0] : null, openRecs }} onReview={() => {}} />
       <div className="wr-perf-row" style={{ marginBottom: 0 }}>
         <UnusualBehaviour flagged={flaggedRuns} />
         <DiagnosisCard data={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onSeeFindings={() => {}} />

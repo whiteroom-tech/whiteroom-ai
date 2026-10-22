@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, checksOpenByDefault, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -190,6 +190,19 @@ describe('diagnosis card summary', () => {
     const s = diagnosisSummary(withChecks([finding('review_tool_errors')]))!;
     expect(s).toMatchObject({ tone: 'warn', openFindings: 1 });
     expect(s.text).toBe('lead-agent needs attention · 1 open finding');
+  });
+  it('falls back to "No problems found" when nothing has passed yet', () => {
+    const r = report('lead-agent', []);
+    const s = diagnosisSummary(fleet({ reports: [{ ...r, clear: [] }] }))!;
+    expect(s.text).toBe(`No problems found · 1 starts once there’s more data`);
+    expect(diagnosisSummary(fleet({ reports: [{ ...r, clear: [], notMeasured: [] }] }))!.text).toBe('No problems found');
+  });
+  it('What we checked starts open only with an open finding and three agents or fewer', () => {
+    expect(checksOpenByDefault(null)).toBe(false);
+    expect(checksOpenByDefault(withChecks([]))).toBe(false);
+    expect(checksOpenByDefault(withChecks([finding('review_tool_errors')]))).toBe(true);
+    const many = fleet({ reports: ['a', 'b', 'c', 'd'].map((id) => report(id, [finding('review_tool_errors')])) });
+    expect(checksOpenByDefault(many)).toBe(false);
   });
   it('a snoozed finding is not an open one', () => {
     expect(diagnosisSummary(withChecks([finding('review_tool_errors', 'snoozed')]))!.tone).toBe('ok');

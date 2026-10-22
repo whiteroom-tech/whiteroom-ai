@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { insightsVerdict, quietUnusualLine, untrackedSignals } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, insightsVerdict, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
-const base = { flaggedRuns: 0, flagsFailed: false, problems: 0, problemAgent: null, openRecs: 0 };
+const base = { flaggedRuns: 0, flagsPending: false, problems: 0, problemAgent: null, openRecs: 0 };
 
 describe('performance verdict', () => {
   it('stays hidden until the flags or the health check are known', () => {
@@ -13,9 +13,9 @@ describe('performance verdict', () => {
     expect(insightsVerdict({ ...base, openRecs: 2 })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
     expect(insightsVerdict({ ...base, problems: null })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
   });
-  it('never says fine when the flags failed to load', () => {
-    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsFailed: true })).toBeNull();
-    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsFailed: true, problems: 1, problemAgent: 'lead-agent' })!.tone).toBe('warn');
+  it('never says fine while the flags are loading or failed to load', () => {
+    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsPending: true })).toBeNull();
+    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsPending: true, problems: 1, problemAgent: 'lead-agent' })!.tone).toBe('warn');
   });
   it('names the one agent with a problem', () => {
     expect(insightsVerdict({ ...base, problems: 1, problemAgent: 'lead-agent' })).toEqual({ tone: 'warn', title: 'lead-agent needs a look' });
@@ -38,5 +38,35 @@ describe('unusual behaviour quiet state', () => {
     const run = (startedAt: string) => ({ agentId: 'lead-agent', startedAt, flags: [{ signal: 'repeating_call' }] }) as never;
     expect(flaggedRunCount({ runs: null, truncated: false, failed: false, loading: true, days })).toBeNull();
     expect(flaggedRunCount({ runs: [run('2026-10-19T12:00:00'), run('2026-10-20T12:00:00'), run('2026-10-01T12:00:00')], truncated: false, failed: false, loading: false, days })).toBe(2);
+  });
+});
+
+describe('recommendations list', () => {
+  it('opens on Open', () => {
+    expect(DEFAULT_REC_STATUS).toBe('open');
+  });
+  it('takes the open count from the list only on its first, unfiltered Open page', () => {
+    expect(listGivesOpenCount('open', '')).toBe(true);
+    expect(listGivesOpenCount('open', '  ')).toBe(true);
+    expect(listGivesOpenCount('open', 'lead')).toBe(false);
+    expect(listGivesOpenCount('open', '', 'cursor-2')).toBe(false);
+    expect(listGivesOpenCount('all', '')).toBe(false);
+  });
+  it('ignores an older response that lands after a newer request', () => {
+    const gate = latestOnly();
+    const first = gate.start();
+    const second = gate.start();
+    expect(gate.isLatest(first)).toBe(false);
+    expect(gate.isLatest(second)).toBe(true);
+  });
+  it('says what an empty list means for each status', () => {
+    expect(recEmptyText('open', true)).toBe('Nothing to review right now.');
+    expect(recEmptyText('all', false)).toBe('No recommendations. Collection coverage: no data.');
+    expect(recEmptyText('reported_implemented', true)).toBe('No recommendations with status "implemented". Collection coverage: active.');
+  });
+  it('keeps Mark as fixed, Snooze and Dismiss behind More on open rows', () => {
+    expect(recRowActions(true, false)).toEqual(['View evidence', 'More']);
+    expect(recRowActions(true, true)).toEqual(['View evidence', 'Less', 'Mark as fixed', 'Snooze', 'Dismiss']);
+    expect(recRowActions(false, true)).toEqual(['View evidence']);
   });
 });

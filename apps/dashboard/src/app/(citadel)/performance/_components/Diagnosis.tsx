@@ -13,7 +13,7 @@ import {
   TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
   findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
 } from '@/lib/diagnosis/copy';
-import { checkedSummary, diagnosisSummary, evidenceHeader, openFindingCount, type StatusLine } from '@/lib/diagnosis/model';
+import { checkedSummary, checksOpenByDefault, diagnosisSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
 import { ROUTES } from '@/lib/routes';
@@ -153,10 +153,8 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
 // -- §6.2.4 What we checked -------------------------------------------------
 
 export function WhatWeChecked({ data }: { data: FleetDiagnosis | null }) {
-  // A quiet result is the one summary line; the per-check list opens on
-  // request. With an open finding, open it for a few agents, where it's short
-  // enough to read at a glance.
-  const defaultOpen = !!data && openFindingCount(data) > 0 && data.reports.length <= 3;
+  // A quiet result is the one summary line; the per-check list opens on request.
+  const defaultOpen = checksOpenByDefault(data);
   const [open, setOpen] = useState(defaultOpen);
   if (!data || data.reports.length === 0) return null;
   const agents = data.reports.length;

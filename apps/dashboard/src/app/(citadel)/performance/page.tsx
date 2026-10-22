@@ -7,6 +7,7 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
+import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount, recEmptyText, recRowActions } from '@/lib/performance-insights';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -721,22 +722,23 @@ const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 /** View evidence up front; the rest behind More, so each row has one clear action. */
 function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; busy: boolean; onEvidence: () => void; onFeedback: (action: 'dismiss' | 'snooze' | 'implemented') => void }) {
   const [more, setMore] = useState(false);
+  const toggle = (
+    <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
+      fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+      background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
+    }}>{more ? 'Less' : 'More'}</button>
+  );
+  const buttons: Record<string, React.ReactNode> = {
+    'View evidence': <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
+    More: toggle,
+    Less: toggle,
+    'Mark as fixed': <Btn key="fixed" label="Mark as fixed" onClick={() => onFeedback('implemented')} loading={busy} />,
+    Snooze: <Btn key="snooze" label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback('snooze')} loading={busy} />,
+    Dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback('dismiss')} loading={busy} />,
+  };
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-      <Btn label="View evidence" onClick={onEvidence} loading={false} accent />
-      {open && (
-        <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
-          fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-          background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
-        }}>{more ? 'Less' : 'More'}</button>
-      )}
-      {open && more && (
-        <>
-          <Btn label="Mark as fixed" onClick={() => onFeedback('implemented')} loading={busy} />
-          <Btn label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback('snooze')} loading={busy} />
-          <Btn label="Dismiss" onClick={() => onFeedback('dismiss')} loading={busy} />
-        </>
-      )}
+      {recRowActions(open, more).map((a) => buttons[a])}
     </div>
   );
 }
@@ -766,7 +768,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   // Rule decisions, from the same window and ledger as the other action counts.
   const blocked = govCounts?.blocks ?? s.blockedCount ?? 0;
   // Open first: what needs you. The other statuses are one click away.
-  const [recStatus, setRecStatus] = useState<string>('open');
+  const [recStatus, setRecStatus] = useState<string>(DEFAULT_REC_STATUS);
   const [showStatuses, setShowStatuses] = useState(false);
   // Open recommendations for the verdict line, whatever the list is filtered to.
   const [openTotal, setOpenTotal] = useState<number | null>(null);
@@ -782,7 +784,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   // stale cursor for "Load more".
   const recReq = useRef(0);
   // Same for the open count, which two requests can write.
-  const openReq = useRef(0);
+  const openReq = useRef(latestOnly());
 
   // Debounce the agent filter so we don't fire a request per keystroke.
   useEffect(() => {
@@ -793,8 +795,8 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const fetchRecs = useCallback(async (cursor?: string) => {
     const req = ++recReq.current;
     const stale = () => recReq.current !== req;
-    const writesOpen = !cursor && recStatus === 'open' && !recAgentQuery.trim();
-    const openId = writesOpen ? ++openReq.current : 0;
+    const writesOpen = listGivesOpenCount(recStatus, recAgentQuery, cursor);
+    const openId = writesOpen ? openReq.current.start() : 0;
     setRecLoading(true);
     try {
       const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: 15, includeSummaries: true };
@@ -808,7 +810,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-      if (writesOpen && openReq.current === openId) setOpenTotal(res.total);
+      if (writesOpen && openReq.current.isLatest(openId)) setOpenTotal(res.total);
     } catch {
       if (!stale()) setRecError('Failed to load recommendations.');
     } finally {
@@ -820,13 +822,13 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
 
   // The verdict's "to review" count when the list shows something else.
   const fetchOpenTotal = useCallback(async () => {
-    const id = ++openReq.current;
+    const id = openReq.current.start();
     try {
       const res = await performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey);
-      if (!res.error && openReq.current === id) setOpenTotal(res.total);
+      if (!res.error && openReq.current.isLatest(id)) setOpenTotal(res.total);
     } catch { /* the count just stays as it was */ }
   }, [fleetId, authKey]);
-  const listIsOpenCount = recStatus === 'open' && !recAgentQuery.trim();
+  const listIsOpenCount = listGivesOpenCount(recStatus, recAgentQuery);
   useEffect(() => { if (!listIsOpenCount) void fetchOpenTotal(); }, [listIsOpenCount, fetchOpenTotal]);
 
   // The list is owned here, not by the parent's index refresh, so reload it
@@ -976,7 +978,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       <InsightsVerdict
         input={{
           flaggedRuns: flaggedRunCount(flagged),
-          flagsFailed: flagged.failed,
+          flagsPending: flagged.failed || flagged.loading,
           problems: healthSummary ? healthSummary.openFindings : null,
           problemAgent: problemAgents.length === 1 ? problemAgents[0] : null,
           openRecs: openTotal,
@@ -1047,7 +1049,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           </div>
         )) : (
           <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : recStatus === 'open' ? 'Nothing to review right now.' : `No recommendations${recStatus !== 'all' ? ` with status "${recStatus}"` : ''}. Collection coverage: ${s.totalCalls > 0 ? 'active' : 'no data'}.`}
+            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : recEmptyText(recStatus, s.totalCalls > 0)}
           </div>
         )}
 
