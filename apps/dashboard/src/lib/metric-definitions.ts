@@ -41,6 +41,7 @@ export const HELP = {
   failedCalls: 'The share of model calls that came back with an error.',
   costTracking: 'How fast the fleet spends in the hours it is working (over the last 14 days), and how many more tasks today’s budget covers. The budget is daily: today’s spend counts from your midnight, and it resets each day.',
   byAgent: 'The same numbers, one row per agent.',
+  agentPerformance: 'One score out of 10, from three things shown as colored dots next to it, left to right: task success (how many calls finished cleanly), cost diligence (actual spend vs. what’s typical for the task), and speed (vs. the fleet’s own pace). Green is good, amber is worth a look, red needs attention, gray means not enough data yet.',
   agentHealthCheck: "An automatic review of each agent's recent work: cost, errors and habits.",
   recommendations: 'Changes that would save money or prevent problems, based on how your agents have been working.',
   historyKept: 'How long WhiteRoom keeps the record of what your agents did. Older records are deleted automatically.',
