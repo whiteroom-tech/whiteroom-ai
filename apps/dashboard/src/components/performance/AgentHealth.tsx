@@ -6,7 +6,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { WATCH_DEFINITION } from '@/lib/diagnosis/copy';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { agentsWithOpenFindings, checkRows, checksOpenByDefault, diagnosisSummary, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
-import { healthRow, insightsVerdict, rowOpen, toggleChoice, unusualRow, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
+import { healthRow, insightsVerdict, pendingHealthRow, rowOpen, toggleChoice, unusualRow, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
 // The two sources' own definitions, plus the one WhiteRoom word their detail uses.
@@ -36,8 +36,8 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
     problems: summary ? summary.openFindings : null, problemAgent: agents.length === 1 ? agents[0] : null,
   });
   const unusual = unusualRow({ count: flaggedRuns, atLeast: flagged.truncated, failed: flagged.failed, loading: flagged.loading });
-  // Before the first stored check, the status line is the row ("starts once it makes 50 calls…").
-  const health = healthRow(summary) ?? (line ? { tone: line.error ? 'warn' : 'muted', text: line.text } as HealthRow : null);
+  // Before the first stored check, the row says so briefly; the full status and its action are in the header.
+  const health = healthRow(summary) ?? pendingHealthRow(line);
   if (!unusual && !health) return null;
   const warn = verdict?.tone === 'warn';
 
@@ -45,7 +45,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
     <section aria-labelledby="agent-health-heading" className={`wr-health${warn ? ' wr-health--warn' : ''}`}>
       <div className="wr-health__head">
         <h3 id="agent-health-heading" style={{ margin: 0, fontSize: 14, fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h3>
-        {summary && line && (
+        {line && (
           <span aria-live="polite" className="wr-health__status" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: line.error ? 'var(--bad)' : 'var(--tx2)' }}>
             {line.busy && <span className="dx-spin" aria-hidden />}
             <span>{line.text}</span>

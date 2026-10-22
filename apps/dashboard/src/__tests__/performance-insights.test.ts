@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -95,6 +95,12 @@ describe('agent health rows', () => {
     expect(unusualRow(f)).toEqual({ tone: 'ok', text: 'Nothing unusual this week' });
     expect(unusualRow({ ...f, count: 1 })).toEqual({ tone: 'warn', text: '1 run flagged this week' });
     expect(unusualRow({ ...f, count: 1000, atLeast: true })!.text).toBe('1,000+ runs flagged this week');
+  });
+  it('health check before a stored result: short row; the header keeps the full status and its button', () => {
+    expect(pendingHealthRow(null)).toBeNull();
+    expect(pendingHealthRow({ busy: true, error: false })).toEqual({ tone: 'muted', text: 'Checking\u2026' });
+    expect(pendingHealthRow({ busy: false, error: true })).toEqual({ tone: 'warn', text: 'The last check didn\u2019t finish' });
+    expect(pendingHealthRow({ busy: false, error: false })).toEqual({ tone: 'muted', text: 'Not checked yet' });
   });
   it('health check: counts only, so the problem is named once (in the list)', () => {
     const ok = { tone: 'ok' as const, text: '3 checks passed', fine: 3, needsData: 0, openFindings: 0 };

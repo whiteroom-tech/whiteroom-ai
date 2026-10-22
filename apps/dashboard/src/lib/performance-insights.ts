@@ -153,6 +153,14 @@ export function healthRow(summary: DiagnosisSummary | null): HealthRow | null {
   return { tone: 'ok', text: summary.text };
 }
 
+/** The health check's row before there's a stored result: checking, failed, or not yet. Null when the check is off. */
+export function pendingHealthRow(line: { busy: boolean; error: boolean } | null): HealthRow | null {
+  if (!line) return null;
+  if (line.busy) return { tone: 'muted', text: 'Checking\u2026' };
+  if (line.error) return { tone: 'warn', text: 'The last check didn\u2019t finish' };
+  return { tone: 'muted', text: 'Not checked yet' };
+}
+
 /**
  * Per agent, which kinds of unusual behaviour its flagged runs in `days`
  * showed, most frequent first ("repeating the same call, failed calls in a row").
