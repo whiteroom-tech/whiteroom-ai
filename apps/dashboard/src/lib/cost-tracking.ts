@@ -63,3 +63,20 @@ export function tasksLeftColor(value: number | null): string {
   if (value < 5) return 'var(--warn)';
   return 'var(--ok)';
 }
+
+/**
+ * The plain line under Cost tracking when a daily budget has run out. Budgets
+ * only estimate tasks left; nothing stops spending, so it says agents are
+ * still running and where a real limit lives. Null while there's room.
+ */
+export function budgetNotice(f: Pick<PerformanceCostForecastResult, 'budgetUsd' | 'spentTodayUsd' | 'remainingTasks' | 'remainingTasksReason' | 'costUnavailable' | 'dollarRemainingTasks' | 'dollarRemainingTasksReason' | 'tokenRemainingTasks' | 'tokenRemainingTasksReason'>): string | null {
+  const dollar = resolveTasksLeft(f, 'dollar');
+  const token = resolveTasksLeft(f, 'token');
+  const dollarOut = f.budgetUsd != null && (
+    (f.spentTodayUsd != null && f.spentTodayUsd >= f.budgetUsd) || (dollar.reason === 'available' && dollar.value === 0)
+  );
+  const tokenOut = token.reason === 'available' && token.value === 0;
+  if (!dollarOut && !tokenOut) return null;
+  const which = dollarOut && tokenOut ? 'Today\u2019s $ and token budgets are' : dollarOut ? 'Today\u2019s $ budget is' : 'Today\u2019s token budget is';
+  return `${which} used up. Your agents are still running.`;
+}

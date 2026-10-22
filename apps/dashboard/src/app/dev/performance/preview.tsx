@@ -93,6 +93,9 @@ const FORECAST: PerformanceCostForecastResult = {
   burnLookbackHours: 24, burnActiveHours: 6, dollarRemainingTasks: 42, dollarRemainingTasksReason: 'available', tokenRemainingTasks: null, tokenRemainingTasksReason: 'budget_missing',
 };
 
+// The problem week has also spent past its $5 daily budget.
+const FORECAST_OVER: PerformanceCostForecastResult = { ...FORECAST, spentTodayUsd: 5.42, dollarRemainingTasks: 0, remainingTasks: 0 };
+
 // Sample week shaped like the redesign's screen 4: tasks most days, a
 // handover now and then, one quiet day.
 const day = (ago: number, hour: number) => {
@@ -129,7 +132,7 @@ export function PerformancePreview() {
           </div>
         )}
         {/* The card carries its own 24px bottom margin; the grid gap already spaces it here. */}
-        {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection fleetId="acme-claims-prod" preview={FORECAST} /></div>}
+        {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
         {sample === 'empty' ? <SavingsChart days={dailySavings([], 7, Date.now())} /> : <>
         <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
         <ByAgentTable

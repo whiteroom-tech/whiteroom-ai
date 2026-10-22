@@ -8,7 +8,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hint, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { performanceCostForecast, setBudgetUsd, setTokenBudget } from '@/lib/whiteroom/client';
 import type { PerformanceCostForecastResult, SetBudgetResult, SetTokenBudgetResult } from '@/lib/whiteroom/types';
-import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
+import { budgetNotice, burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
+import Link from 'next/link';
+import { ROUTES } from '@/lib/routes';
+import { fmtCost } from '@/lib/format';
 import { HELP } from '@/lib/metric-definitions';
 import { usePoll } from '@/hooks/usePoll';
 import { CARD, H3 } from './primitives';
@@ -143,15 +146,26 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
             which one is actually usable can change as pricing coverage does. */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2" title="Used to estimate tasks remaining. It does not stop spending — add a spend cap on the Controls page for that.">
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx2)', letterSpacing: 0.5 }}>BUDGET PER DAY</span>
+            <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>$</span>
             <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
           </div>
           <div className="flex items-center gap-2" title="For a model with no $/token price on file yet — tracks tasks left in tokens instead of dollars.">
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>TOKEN BUDGET</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx2)', letterSpacing: 0.5 }}>TOKENS PER DAY</span>
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         </div>
       </div>
+      {(() => {
+        const notice = budgetNotice(forecast);
+        return notice && (
+          <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 8px', margin: '0 0 14px', padding: '9px 12px', borderRadius: 6, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', fontSize: 13, color: 'var(--tx)' }}>
+            <span style={{ fontWeight: 600, color: 'var(--warn-tx)' }}>{notice}</span>
+            <span style={{ color: 'var(--tx2)' }}>A budget only estimates tasks left. To stop agents at a limit,</span>
+            <Link href={ROUTES.controls} className="wr-link" style={{ fontWeight: 600 }}>add a spend cap in Controls →</Link>
+          </div>
+        );
+      })()}
       {budgetSaveError && (
         <div role="alert" style={{ fontSize: 12, color: 'var(--bad)', margin: '-4px 0 12px' }}>{budgetSaveError}</div>
       )}
@@ -159,7 +173,8 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
-            ${forecast.burnRateUsdPerHour.toFixed(2)} / h
+            {/* Same money format as the Spend card, so a small rate isn't rounded to $0.01. */}
+            {fmtCost(Math.round(forecast.burnRateUsdPerHour * 1_000_000))} / h
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
         </div>
