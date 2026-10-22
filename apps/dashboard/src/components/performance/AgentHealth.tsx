@@ -5,8 +5,9 @@ import { FONT_MONO, Hint } from '@whiteroom/ui';
 import { HELP } from '@/lib/metric-definitions';
 import { WATCH_DEFINITION } from '@/lib/diagnosis/copy';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { agentsWithOpenFindings, checkRows, checksOpenByDefault, diagnosisSummary, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
-import { healthRow, insightsVerdict, pendingHealthRow, rowOpen, toggleChoice, unusualRow, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
+import { checkRows, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
+import { agentHealthView } from '@/lib/agent-health';
+import { rowOpen, toggleChoice, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
 // The two sources' own definitions, plus the one WhiteRoom word their detail uses.
@@ -28,17 +29,9 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
   /** Jump to Recommendations, where each problem's fix is. */
   onReview: () => void;
 }) {
-  const flaggedRuns = flaggedRunCount(flagged);
-  const summary = diagnosisSummary(diagnosis);
-  const agents = agentsWithOpenFindings(diagnosis);
-  const verdict = insightsVerdict({
-    flaggedRuns, flaggedAtLeast: flagged.truncated, flagsPending: flagged.failed || flagged.loading,
-    problems: summary ? summary.openFindings : null, problemAgent: agents.length === 1 ? agents[0] : null,
-  });
-  const unusual = unusualRow({ count: flaggedRuns, atLeast: flagged.truncated, failed: flagged.failed, loading: flagged.loading });
-  // Before the first stored check, the row says so briefly; the full status and its action are in the header.
-  const health = healthRow(summary) ?? pendingHealthRow(line);
-  if (!unusual && !health) return null;
+  const view = agentHealthView({ count: flaggedRunCount(flagged), truncated: flagged.truncated, failed: flagged.failed, loading: flagged.loading }, diagnosis, line);
+  if (!view) return null;
+  const { verdict, unusual, health } = view;
   const warn = verdict?.tone === 'warn';
 
   return (
@@ -70,12 +63,12 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
 
       <div className="wr-health__rows">
         {unusual && (
-          <Row label="Unusual behaviour" row={unusual} open={unusual.tone === 'warn'}>
-            {!!flaggedRuns && <UnusualDetails flagged={flagged} />}
+          <Row label="Unusual behaviour" row={unusual} open={view.unusualHasDetail}>
+            {view.unusualHasDetail && <UnusualDetails flagged={flagged} />}
           </Row>
         )}
         {health && (
-          <Row label="Health check" row={health} open={checksOpenByDefault(diagnosis)}>
+          <Row label="Health check" row={health} open={view.healthOpen}>
             {diagnosis && (diagnosis.reports.length > 0 || diagnosis.waiting.length > 0) && <CheckList data={diagnosis} onFix={onReview} />}
           </Row>
         )}

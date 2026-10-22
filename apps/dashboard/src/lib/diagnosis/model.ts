@@ -171,17 +171,17 @@ export interface CheckRow {
   note?: string;
 }
 
-/**
- * Agent health › Health check, unfolded: one row per check per agent,
- * problems first, then passed, then waiting for data, then snoozed or dismissed.
- * Unknown detectors skipped.
- */
 /** A non-open finding's status in the Health check list: "snoozed", "dismissed", "marked fixed", "stopped happening", or the engine's own word. */
 export function setAsideLabel(status: string): string {
   if (status === 'snoozed') return 'snoozed';
   return STATUS_LABEL[status] ?? status.replace(/_/g, ' ');
 }
 
+/**
+ * Agent health › Health check, unfolded: one row per check per agent,
+ * problems first, then passed, then waiting for data, then snoozed or dismissed.
+ * Unknown detectors skipped.
+ */
 export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
   return d.reports.map((r) => ({
     agentId: r.agentId,
