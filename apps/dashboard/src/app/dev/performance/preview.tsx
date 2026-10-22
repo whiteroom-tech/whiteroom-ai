@@ -43,6 +43,11 @@ export function PerformancePreview() {
           rows={agentTotals([...ENTRIES, { type: 'model_call', timestamp: day(0, 15), tokensUsed: 1_200 }], Date.now() - 24 * 3_600_000)}
           scope="last 24 h"
           ruleActions={{ 'lead-agent': { blocks: 2, wouldBlocks: 1, paused: 1 }, 'scout-agent': { blocks: 0, wouldBlocks: 3, toldYou: 2 } }}
+          scores={{
+            'lead-agent': { agentId: 'lead-agent', calls: 180, completeRate: 100, costDiligence: null, speedScore: 100, score: 10 },
+            'writer-agent': { agentId: 'writer-agent', calls: 90, completeRate: 92, costDiligence: 55, speedScore: 81, score: 8 },
+            'scout-agent': { agentId: 'scout-agent', calls: 40, completeRate: 25, costDiligence: 60, speedScore: 40, score: 4 },
+          }}
         />
         <UnusualBehaviour fleetId="acme-claims-prod" preview={FLAGGED} />
         <SavingsChart days={dailySavings([], 7, Date.now())} />
