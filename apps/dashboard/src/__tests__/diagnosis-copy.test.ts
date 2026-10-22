@@ -184,7 +184,7 @@ describe('diagnosis card summary', () => {
   it('says all is well, with what was checked and what still needs data', () => {
     const s = diagnosisSummary(withChecks([]))!;
     expect(s.tone).toBe('ok');
-    expect(s.text).toBe(`3 checks passed · ${s.needsData} ${s.needsData === 1 ? 'starts' : 'start'} once there’s more data`);
+    expect(s.text).toBe(`3 checks passed · ${s.needsData} waiting for more data`);
   });
   it('leads with who needs attention when a finding is open', () => {
     const s = diagnosisSummary(withChecks([finding('review_tool_errors')]))!;
@@ -194,7 +194,7 @@ describe('diagnosis card summary', () => {
   it('falls back to "No problems found" when nothing has passed yet', () => {
     const r = report('lead-agent', []);
     const s = diagnosisSummary(fleet({ reports: [{ ...r, clear: [] }] }))!;
-    expect(s.text).toBe(`No problems found · 1 starts once there’s more data`);
+    expect(s.text).toBe('No problems found · 1 check waiting for more data');
     expect(diagnosisSummary(fleet({ reports: [{ ...r, clear: [], notMeasured: [] }] }))!.text).toBe('No problems found');
   });
   it('What we checked starts open only with an open finding and three agents or fewer', () => {

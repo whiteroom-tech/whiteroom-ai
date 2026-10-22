@@ -8,6 +8,8 @@ import { UNUSUAL_SIGNALS } from '@/lib/runs';
 export interface VerdictInput {
   /** Flagged runs in the last 7 days; null when unknown (loading, failed, unsupported). */
   flaggedRuns: number | null;
+  /** The flag fetch hit its page cap: the count is a lower bound. */
+  flaggedAtLeast: boolean;
   /** The flags are still loading or couldn't be loaded: unknown, so never "fine". */
   flagsPending: boolean;
   /** Open health-check findings; null when the check is off or hasn't run. */
@@ -33,9 +35,14 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
   const problems = i.problems ?? 0;
   const flagged = i.flaggedRuns ?? 0;
   if (problems > 0) return { tone: 'warn', title: i.problemAgent ? `${i.problemAgent} needs a look` : 'Some agents need a look' };
-  if (flagged > 0) return { tone: 'warn', title: `${flagged} ${flagged === 1 ? 'run looked' : 'runs looked'} unusual` };
+  if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${flagged === 1 && !i.flaggedAtLeast ? 'run looked' : 'runs looked'} unusual` };
   if (i.flagsPending) return null;
   return { tone: 'ok', title: 'Your agents look fine' };
+}
+
+/** A count, with "+" when it's a lower bound. */
+export function fmtCount(n: number, atLeast = false): string {
+  return `${n.toLocaleString('en-US')}${atLeast ? '+' : ''}`;
 }
 
 const measured = UNUSUAL_SIGNALS.filter((s) => s.measured).length;

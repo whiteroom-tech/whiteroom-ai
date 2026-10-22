@@ -150,9 +150,10 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
   const openFindings = openFindingCount(d);
   // Quiet state, one line: what passed, then what's still waiting for data.
+  const checks = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`;
   const counts = [
-    fine > 0 ? `${fine} ${fine === 1 ? 'check' : 'checks'} passed` : 'No problems found',
-    needsData > 0 ? `${needsData} ${needsData === 1 ? 'starts' : 'start'} once there’s more data` : '',
+    fine > 0 ? `${checks(fine)} passed` : 'No problems found',
+    needsData > 0 ? `${fine > 0 ? needsData : checks(needsData)} waiting for more data` : '',
   ].filter(Boolean).join(' · ');
   if (openFindings > 0) {
     const strip = attentionStrip(d)!;

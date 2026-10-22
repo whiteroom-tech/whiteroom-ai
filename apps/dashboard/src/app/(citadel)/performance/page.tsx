@@ -978,6 +978,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       <InsightsVerdict
         input={{
           flaggedRuns: flaggedRunCount(flagged),
+          flaggedAtLeast: flagged.truncated,
           flagsPending: flagged.failed || flagged.loading,
           problems: healthSummary ? healthSummary.openFindings : null,
           problemAgent: problemAgents.length === 1 ? problemAgents[0] : null,

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REC_STATUS, insightsVerdict, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, fmtCount, insightsVerdict, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
-const base = { flaggedRuns: 0, flagsPending: false, problems: 0, problemAgent: null, openRecs: 0 };
+const base = { flaggedRuns: 0, flaggedAtLeast: false, flagsPending: false, problems: 0, problemAgent: null, openRecs: 0 };
 
 describe('performance verdict', () => {
   it('stays hidden until the flags or the health check are known', () => {
@@ -24,6 +24,11 @@ describe('performance verdict', () => {
   it('counts unusual runs when the health check is clear', () => {
     expect(insightsVerdict({ ...base, flaggedRuns: 1 })!.title).toBe('1 run looked unusual');
     expect(insightsVerdict({ ...base, flaggedRuns: 6, problems: null })!.title).toBe('6 runs looked unusual');
+  });
+  it('marks a capped count as a lower bound', () => {
+    expect(insightsVerdict({ ...base, flaggedRuns: 1000, flaggedAtLeast: true })!.title).toBe('1,000+ runs looked unusual');
+    expect(fmtCount(1000, true)).toBe('1,000+');
+    expect(fmtCount(7)).toBe('7');
   });
 });
 
