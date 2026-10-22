@@ -5,7 +5,7 @@
  */
 import { localDay, UNUSUAL_SIGNALS } from '@/lib/runs';
 import type { RunSummary } from '@/lib/whiteroom/types';
-import type { DiagnosisSummary } from '@/lib/diagnosis/model';
+import { humanizeDetector, type DiagnosisSummary } from '@/lib/diagnosis/model';
 
 export interface VerdictInput {
   /**
@@ -67,8 +67,7 @@ export const DEFAULT_REC_STATUS = 'open';
 
 /** An older engine recommendation's title from its detector id: "review_cache_behavior" → "Cache behavior". */
 export function recTitle(detector: string): string {
-  const t = detector.replace(/^review_/, '').replace(/_/g, ' ').trim();
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Recommendation';
+  return humanizeDetector(detector) || 'Recommendation';
 }
 
 /** A status as the list shows it. */

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, checkTitle, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -231,6 +231,8 @@ describe('health check rows', () => {
     expect(checkRows(fleet({ reports: [{ ...report('a', [unknown]), clear: [], notMeasured: [] }] }))[0].rows).toEqual([{ tone: 'problem', title: 'New thing' }]);
     expect(checkTitle('review_tool_errors')).toBe('A tool keeps failing');
     expect(checkTitle('')).toBe('A check');
+    expect(humanizeDetector('review_cache_behavior')).toBe('Cache behavior');
+    expect(humanizeDetector('')).toBe('');
     // An agent whose only finding is dismissed stays in the list.
     expect(checkRows(fleet({ reports: [{ ...report('triage', [finding('review_tool_errors', 'dismissed')]), clear: [], notMeasured: [] }] })))
       .toEqual([{ agentId: 'triage', rows: [{ tone: 'set-aside', title: 'A tool keeps failing', note: 'dismissed' }] }]);

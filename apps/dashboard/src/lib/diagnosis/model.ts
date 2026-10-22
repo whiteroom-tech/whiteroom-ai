@@ -174,8 +174,13 @@ export interface CheckRow {
 /** A check's title; a detector this dashboard doesn't know yet gets a readable one from its id ("review_new_thing" → "New thing"). */
 export function checkTitle(detector: string): string {
   if (isDiagnosisDetector(detector)) return TITLES[detector];
+  return humanizeDetector(detector) || 'A check';
+}
+
+/** A detector id as words: "review_cache_behavior" → "Cache behavior"; "" for an empty id. */
+export function humanizeDetector(detector: string): string {
   const t = detector.replace(/^review_/, '').replace(/_/g, ' ').trim();
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'A check';
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
 }
 
 /** A non-open finding's status in the Health check list: "snoozed", "dismissed", "marked fixed", "stopped happening", or the engine's own word. */

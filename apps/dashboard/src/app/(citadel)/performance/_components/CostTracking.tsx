@@ -23,15 +23,17 @@ function editing(ariaLabel: string): boolean {
 // shown here; a single "what's left" figure is what this card is for).
 /**
  * Where the card reads and saves. With `preview` (the dev preview's sample
- * fleet) nothing touches the network: reads return the sample, saves succeed
- * locally, so a made-up fleet id is never written to.
+ * fleet) nothing touches the network: reads return the sample with any budgets
+ * saved since, saves stay local, so a made-up fleet id is never written to.
  */
 export function costTrackingApi(preview?: PerformanceCostForecastResult) {
   if (preview) {
+    // Saved budgets live here for the page's life, so an edit stays put after the refresh that follows it.
+    let current = preview;
     return {
-      forecast: async (): Promise<PerformanceCostForecastResult> => preview,
-      saveBudgetUsd: async (fleetId: string, budgetUsd: number | null): Promise<SetBudgetResult> => ({ success: true, fleetId, budgetUsd }),
-      saveTokenBudget: async (fleetId: string, tokenBudget: number | null): Promise<SetTokenBudgetResult> => ({ success: true, fleetId, tokenBudget }),
+      forecast: async (): Promise<PerformanceCostForecastResult> => current,
+      saveBudgetUsd: async (fleetId: string, budgetUsd: number | null): Promise<SetBudgetResult> => { current = { ...current, budgetUsd }; return { success: true, fleetId, budgetUsd }; },
+      saveTokenBudget: async (fleetId: string, tokenBudget: number | null): Promise<SetTokenBudgetResult> => { current = { ...current, tokenBudget }; return { success: true, fleetId, tokenBudget }; },
     };
   }
   return {

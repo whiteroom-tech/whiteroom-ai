@@ -16,12 +16,14 @@ const sample = { fleetId: 'acme-claims-prod', budgetUsd: 5, spendToDateUsd: 1, b
 describe('cost tracking api', () => {
   it('with preview data: reads return the sample and saves never reach the API', async () => {
     const api = costTrackingApi(sample);
-    expect(await api.forecast('acme-claims-prod')).toBe(sample);
+    expect(await api.forecast('acme-claims-prod')).toEqual(sample);
     expect(await api.saveBudgetUsd('acme-claims-prod', 10)).toEqual({ success: true, fleetId: 'acme-claims-prod', budgetUsd: 10 });
     expect(await api.saveTokenBudget('acme-claims-prod', 5000)).toEqual({ success: true, fleetId: 'acme-claims-prod', tokenBudget: 5000 });
     expect(client.performanceCostForecast).not.toHaveBeenCalled();
     expect(client.setBudgetUsd).not.toHaveBeenCalled();
     expect(client.setTokenBudget).not.toHaveBeenCalled();
+    // The edit sticks: the next read has the saved budgets, not the original sample.
+    expect(await api.forecast('acme-claims-prod')).toMatchObject({ budgetUsd: 10, tokenBudget: 5000 });
   });
 
   it('without preview data: the real reads and saves', async () => {
