@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, openFindingLabels, checkRows, checksOpenByDefault, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, openFindingLabels, checkRows, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -221,22 +221,6 @@ describe('health check rows', () => {
   });
 });
 
-describe('what we checked', () => {
-  it('lists nothing-found agents, looks-fine and needs-more-data per agent, and waiting agents', () => {
-    const s = checkedSummary(fleet({
-      reports: [report('lead-agent', [finding('review_tool_errors')]), report('triage', [])],
-      waiting: [{ agentId: 'summarizer', calls7d: 41 }],
-    }));
-    expect(s.nothingFound).toEqual(['triage']);
-    expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: '6 of 14 days of history older than a week' }] });
-    expect(s.waiting).toEqual([{ agentId: 'summarizer', text: '41 of 50 calls. Checked automatically once it gets there.' }]);
-  });
-  it("an agent whose findings are only snoozed or dismissed isn't 'nothing found'", () => {
-    const s = checkedSummary(fleet({ reports: [report('lead-agent', [finding('review_tool_errors', 'snoozed')])] }));
-    expect(s.nothingFound).toEqual([]);
-  });
-});
-
 describe('refetch on focus', () => {
   it('at most every 5 minutes, and never while hidden', () => {
     expect(shouldRefetchOnFocus(null, NOW, false)).toBe(true);
@@ -318,10 +302,10 @@ describe('evidence headers', () => {
     const h = evidenceHeader('review_spend_outliers', [c({ reportedModel: 'm', attempts: [{ inputTokens: 10, outputTokens: 5 }] }), c({ reportedModel: 'm', attempts: [{ inputTokens: 900, outputTokens: 100 }] })], {});
     expect(h && h.kind === 'table' && h.rows.map((r) => r[2])).toEqual(['1,000', '15']);
   });
-  it('unknown detector ids never throw in What we checked', () => {
+  it('unknown detector ids never throw in the health check rows', () => {
     const d = fleet({ reports: [{ ...report('a', []), clear: [{ detector: 'review_new_thing' as DiagnosisDetectorId, note: null }] }] });
-    expect(() => checkedSummary(d)).not.toThrow();
-    expect(checkedSummary(d).perAgent[0].looksFine).toEqual([]);
+    expect(() => checkRows(d)).not.toThrow();
+    expect(checkRows(d)[0].rows.filter((r) => r.tone === 'fine')).toEqual([]);
   });
   it('other detectors keep the existing view', () => {
     expect(evidenceHeader('review_tool_bloat', [], {})).toBeNull();

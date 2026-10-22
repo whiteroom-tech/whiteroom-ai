@@ -3,7 +3,7 @@
  * state is testable without rendering.
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { isDiagnosisDetector, notMeasuredShort, titleLower, TITLES } from './copy';
+import { isDiagnosisDetector, notMeasuredShort, TITLES } from './copy';
 import { timeAgo } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
@@ -171,13 +171,6 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   return { tone: 'ok', text: counts, fine, needsData, openFindings };
 }
 
-export interface CheckedSummary {
-  agents: number;
-  nothingFound: string[];
-  perAgent: Array<{ agentId: string; looksFine: string[]; needsData: Array<{ title: string; text: string }> }>;
-  waiting: Array<{ agentId: string; text: string }>;
-}
-
 export interface CheckRow {
   tone: 'problem' | 'fine' | 'waiting';
   title: string;
@@ -198,26 +191,6 @@ export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: Che
       ...r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n): CheckRow => ({ tone: 'waiting', title: TITLES[n.detector], note: notMeasuredShort(n.code, n.reason) })),
     ],
   })).filter((a) => a.rows.length > 0);
-}
-
-/** What we checked (§6.2.4). */
-export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
-  const perAgent: CheckedSummary['perAgent'] = [];
-  const nothingFound: string[] = [];
-  for (const r of d.reports) {
-    // Only agents with no findings at all: a snoozed or dismissed one is still a finding.
-    if (r.findings.length === 0) nothingFound.push(r.agentId);
-    // Unknown detector ids (a newer engine) are skipped rather than mislabelled.
-    const looksFine = r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c) => titleLower(c.detector));
-    const needsData = r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n) => ({ title: titleLower(n.detector), text: notMeasuredShort(n.code, n.reason) }));
-    if (looksFine.length || needsData.length) perAgent.push({ agentId: r.agentId, looksFine, needsData });
-  }
-  return {
-    agents: d.reports.length,
-    nothingFound,
-    perAgent,
-    waiting: d.waiting.map((w) => ({ agentId: w.agentId, text: `${w.calls7d} of ${d.minCalls} calls. Checked automatically once it gets there.` })),
-  };
 }
 
 // -- §6.2.5 Evidence headers ------------------------------------------------

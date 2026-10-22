@@ -157,7 +157,7 @@
 .dx-link { background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; color: var(--tx2); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .dx-link:hover { color: var(--tx); }
 .dx-link.dx-strong { color: var(--brand); font-weight: 600; font-size: inherit; }
-.dx-link:focus-visible, .dx-main-btn:focus-visible, .dx-summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.dx-link:focus-visible, .dx-main-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .dx-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line2); border-top-color: var(--brand); border-radius: 50%; animation: dx-spin .9s linear infinite; flex: none; }
 @keyframes dx-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dx-spin { animation: none; } }

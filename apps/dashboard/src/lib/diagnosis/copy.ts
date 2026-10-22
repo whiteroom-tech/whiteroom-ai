@@ -29,12 +29,6 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_provider_failures: 'Model provider errors',
 };
 
-/** Lower-case form for "Looks fine: …" lists. */
-export const titleLower = (d: string) => {
-  const t = TITLES[d as DiagnosisDetectorId] ?? d.replace(/^review_/, '').replace(/_/g, ' ');
-  return t.charAt(0).toLowerCase() + t.slice(1);
-};
-
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
 export const SNOOZE_DAYS = 7;
 

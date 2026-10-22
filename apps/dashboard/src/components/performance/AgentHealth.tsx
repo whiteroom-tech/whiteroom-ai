@@ -2,12 +2,15 @@
 
 import type { ReactNode } from 'react';
 import { FONT_MONO, Hint } from '@whiteroom/ui';
+import { HELP } from '@/lib/metric-definitions';
+import { WATCH_DEFINITION } from '@/lib/diagnosis/copy';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { agentsWithOpenFindings, checkRows, checksOpenByDefault, diagnosisSummary, openFindingLabels, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
 import { healthRow, insightsVerdict, recsRowText, unusualRow, type HealthRow } from '@/lib/performance-insights';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
-const HINT = 'One place for how your agents are doing. Unusual behaviour flags odd runs from the last 7 days (it never blocks). The health check reviews each agent’s recent work: cost, errors and habits. A shift is one stretch of work before an agent hands over to a fresh context. Open a row for the detail.';
+// The two sources' own definitions, plus the one WhiteRoom word their detail uses.
+const HINT = `${HELP.unusualBehaviour} ${HELP.agentHealthCheck} ${WATCH_DEFINITION} Open a row for the detail.`;
 
 const TONE: Record<HealthRow['tone'], string> = { ok: 'var(--tx)', warn: 'var(--warn-tx)', muted: 'var(--tx2)' };
 
