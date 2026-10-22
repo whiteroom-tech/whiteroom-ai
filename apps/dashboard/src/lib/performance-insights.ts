@@ -35,7 +35,7 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
   const problems = i.problems ?? 0;
   const flagged = i.flaggedRuns ?? 0;
   if (problems > 0) return { tone: 'warn', title: i.problemAgent ? `${i.problemAgent} needs a look` : 'Some agents need a look' };
-  if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${flagged === 1 && !i.flaggedAtLeast ? 'run looked' : 'runs looked'} unusual` };
+  if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${plural(flagged, i.flaggedAtLeast, 'run looked', 'runs looked')} unusual` };
   if (i.flagsPending) return null;
   return { tone: 'ok', title: 'Your agents look fine' };
 }
@@ -43,6 +43,11 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
 /** A count, with "+" when it's a lower bound. */
 export function fmtCount(n: number, atLeast = false): string {
   return `${n.toLocaleString('en-US')}${atLeast ? '+' : ''}`;
+}
+
+/** Singular only for exactly one, never for a lower bound ("1+ runs"). */
+export function plural(n: number, atLeast: boolean, one: string, many: string): string {
+  return n === 1 && !atLeast ? one : many;
 }
 
 const measured = UNUSUAL_SIGNALS.filter((s) => s.measured).length;

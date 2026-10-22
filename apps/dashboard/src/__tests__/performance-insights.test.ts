@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REC_STATUS, fmtCount, insightsVerdict, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -29,6 +29,9 @@ describe('performance verdict', () => {
     expect(insightsVerdict({ ...base, flaggedRuns: 1000, flaggedAtLeast: true })!.title).toBe('1,000+ runs looked unusual');
     expect(fmtCount(1000, true)).toBe('1,000+');
     expect(fmtCount(7)).toBe('7');
+    expect(plural(1, false, 'run', 'runs')).toBe('run');
+    expect(plural(1, true, 'run', 'runs')).toBe('runs');
+    expect(plural(0, false, 'run', 'runs')).toBe('runs');
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { fmtCount, insightsVerdict, type VerdictInput } from '@/lib/performance-insights';
+import { fmtCount, insightsVerdict, plural, type VerdictInput } from '@/lib/performance-insights';
 
 /**
  * Performance › one line above Unusual behaviour, Agent health check and
@@ -27,11 +27,11 @@ export function InsightsVerdict({ input, onReview }: { input: VerdictInput; onRe
         </div>
       </div>
       <div className="wr-verdict-counts">
-        {input.flaggedRuns !== null && <span><b>{fmtCount(input.flaggedRuns, input.flaggedAtLeast)}</b>{input.flaggedRuns === 1 && !input.flaggedAtLeast ? 'flagged run' : 'flagged runs'} this week</span>}
-        {input.problems !== null && <span><b>{input.problems.toLocaleString('en-US')}</b>{input.problems === 1 ? 'open problem' : 'open problems'}</span>}
+        {input.flaggedRuns !== null && <span><b>{fmtCount(input.flaggedRuns, input.flaggedAtLeast)}</b>{plural(input.flaggedRuns, input.flaggedAtLeast, 'flagged run', 'flagged runs')} this week</span>}
+        {input.problems !== null && <span><b>{input.problems.toLocaleString('en-US')}</b>{plural(input.problems, false, 'open problem', 'open problems')}</span>}
         {!!input.openRecs && (
           <button type="button" className="wr-link" onClick={onReview} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, fontWeight: 600, minHeight: 24 }}>
-            <b>{input.openRecs.toLocaleString('en-US')}</b>open {input.openRecs === 1 ? 'recommendation' : 'recommendations'} →
+            <b>{input.openRecs.toLocaleString('en-US')}</b>open {plural(input.openRecs, false, 'recommendation', 'recommendations')} →
           </button>
         )}
       </div>
