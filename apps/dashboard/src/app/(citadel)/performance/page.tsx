@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, performanceCostForecast, setBudgetUsd, setTokenBudget, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
-import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
-import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
+import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
+import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount, recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, type RecRowAction } from '@/lib/performance-insights';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
@@ -25,14 +25,14 @@ import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenc
 import { countsFromRuleActions, governanceFromSummary, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
 import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { Badge, Btn, CARD, H3 } from './_components/primitives';
-import { DiagnosisCard, DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
+import { DiagnosisRow, DiagnosisEvidence, isDiagnosisRow } from './_components/Diagnosis';
 import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 type FeedbackResult = 'done' | 'closed' | 'failed';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
-import { agentsWithOpenFindings, diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
+import { statusLine } from '@/lib/diagnosis/model';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
@@ -868,8 +868,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
     }
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
-  const healthSummary = diagnosisSummary(diagnosis.data);
-  const problemAgents = agentsWithOpenFindings(diagnosis.data);
   const seeFindings = () => {
     setDiagnosisNotice(null);
     setRecStatus('open');
@@ -973,21 +971,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         {savingsDays && <SavingsChart days={savingsDays} />}
       </div>
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
-      <InsightsVerdict
-        input={{
-          flaggedRuns: flaggedRunCount(flagged),
-          flaggedAtLeast: flagged.truncated,
-          flagsPending: flagged.failed || flagged.loading,
-          problems: healthSummary ? healthSummary.openFindings : null,
-          problemAgent: problemAgents.length === 1 ? problemAgents[0] : null,
-          openRecs: openTotal,
-        }}
-        onReview={seeFindings}
-      />
-      <div className="wr-perf-row">
-        <UnusualBehaviour flagged={flagged} />
-        <DiagnosisCard data={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onSeeFindings={seeFindings} />
-      </div>
+      <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} openRecs={openTotal} onReview={seeFindings} />
 
       <div style={{ ...CARD, marginBottom: 0 }} id="recommendations">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -1048,7 +1032,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           </div>
         )) : (
           <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : recEmptyText(recStatus, s.totalCalls > 0)}
+            {recLoading ? 'Loading…' : recError ? 'Recommendations unavailable.' : recEmptyText(recStatus, s.totalCalls > 0, !!recAgentQuery.trim())}
           </div>
         )}
 

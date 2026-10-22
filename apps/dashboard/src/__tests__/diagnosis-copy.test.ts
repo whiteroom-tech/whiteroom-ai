@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, checksOpenByDefault, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, openFindingLabels, checkRows, checksOpenByDefault, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -161,6 +161,7 @@ describe('status line', () => {
 describe('attention strip', () => {
   it('hidden when nothing is open, including snoozed findings', () => {
     expect(agentsWithOpenFindings(null)).toEqual([]);
+    expect(openFindingLabels(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['A tool keeps failing · b']);
     expect(agentsWithOpenFindings(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['b']);
     expect(attentionStrip(null)).toBeNull();
     expect(attentionStrip(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')])] }))).toBeNull();
@@ -206,6 +207,17 @@ describe('diagnosis card summary', () => {
   });
   it('a snoozed finding is not an open one', () => {
     expect(diagnosisSummary(withChecks([finding('review_tool_errors', 'snoozed')]))!.tone).toBe('ok');
+  });
+});
+
+describe('health check rows', () => {
+  it('lists problems first, then passed checks, then ones waiting for data', () => {
+    const rows = checkRows(fleet({ reports: [report('lead-agent', [finding('review_tool_errors'), finding('review_handover_churn', 'snoozed')])] }));
+    expect(rows).toEqual([{ agentId: 'lead-agent', rows: [
+      { tone: 'problem', title: 'A tool keeps failing' },
+      { tone: 'fine', title: 'Repeating the same call' },
+      { tone: 'waiting', title: 'Unusually expensive days', note: '6 of 14 days of history older than a week' },
+    ] }]);
   });
 });
 

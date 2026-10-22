@@ -1,78 +1,21 @@
 'use client';
 
 /**
- * Agent Diagnosis on the Performance page. Its own card, under the metric
- * cards, says when agents were last checked, what's wrong or that nothing is,
- * and what each check found per agent. Findings are recommendations, so their
- * rows stay in the Recommendations card; "See findings" jumps there.
+ * Agent Diagnosis on the Performance page: its finding rows (in the
+ * Recommendations card) and the evidence header. What each check found is
+ * under Agent health › Health check.
  */
 import { useState } from 'react';
 import Link from 'next/link';
-import type { FleetDiagnosis, RecommendationDetail } from '@/lib/whiteroom/types';
+import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import {
-  TITLES, WATCH_DEFINITION, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
+  TITLES, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
   findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
 } from '@/lib/diagnosis/copy';
-import { checkedSummary, checksOpenByDefault, diagnosisSummary, evidenceHeader, type StatusLine } from '@/lib/diagnosis/model';
+import { evidenceHeader } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
 import { ROUTES } from '@/lib/routes';
-import { Hint } from '@whiteroom/ui';
-import { HELP } from '@/lib/metric-definitions';
-
-// -- The Agent Diagnosis card ---------------------------------------------
-
-export function DiagnosisCard({ data, line, onCheck, onSeeFindings }: {
-  data: FleetDiagnosis | null;
-  line: StatusLine | null;
-  onCheck: () => void;
-  onSeeFindings: () => void;
-}) {
-  const summary = diagnosisSummary(data);
-  // Hidden only when Diagnosis is off on the engine: no data and nothing running.
-  if (!data && !line) return null;
-  const warn = summary?.tone === 'warn';
-  return (
-    <section aria-labelledby="diagnosis-heading" style={{ ...CARD, marginBottom: 24, ...(warn ? { borderColor: 'var(--warn-line)' } : {}) }}>
-      <h3 id="diagnosis-heading" style={{ fontSize: 15, fontWeight: 700, margin: 0, display: 'inline-flex', alignItems: 'center' }}>Agent health check<Hint text={HELP.agentHealthCheck} /></h3>
-      <DiagnosisStatus line={line} onAction={onCheck} />
-      {summary && (
-        <div role="status" style={{
-          display: 'flex', alignItems: 'center', gap: '8px 12px', flexWrap: 'wrap', marginTop: 10, fontSize: 13.5,
-          color: warn ? 'var(--warn-tx)' : 'var(--tx)',
-        }}>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontWeight: 600, minWidth: 0 }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: warn ? 'var(--warn)' : 'var(--ok)', flex: 'none', transform: 'translateY(-1px)' }} />
-            <span>{summary.text}</span>
-          </span>
-          {warn && <button type="button" className="dx-link dx-strong" onClick={onSeeFindings}>See findings</button>}
-        </div>
-      )}
-      {/* Keyed on its default, so a finding that arrives after mount (first load, Check now) opens it. */}
-      <WhatWeChecked key={String(checksOpenByDefault(data))} data={data} />
-    </section>
-  );
-}
-
-// -- §6.2.2 Card header status line ---------------------------------------
-
-export function DiagnosisStatus({ line, onAction }: { line: StatusLine | null; onAction: () => void }) {
-  return (
-    <div aria-live="polite" style={{ minHeight: line ? undefined : 0 }}>
-      {line && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '6px 10px', flexWrap: 'wrap', margin: '10px 0 4px',
-          padding: '9px 12px', borderRadius: 8, background: 'var(--sunk)', fontSize: 13,
-          color: line.error ? 'var(--bad)' : 'var(--tx2)',
-        }}>
-          {line.busy && <span className="dx-spin" aria-hidden />}
-          <span>{line.text}</span>
-          {line.action && <button type="button" className="dx-link dx-strong" onClick={onAction}>{line.action.label}</button>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // -- §6.2.3 Diagnosis rows --------------------------------------------------
 
@@ -148,45 +91,6 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
       )}
       {error && <div role="alert" style={{ fontSize: 11.5, color: 'var(--bad)' }}>{error}</div>}
     </article>
-  );
-}
-
-// -- §6.2.4 What we checked -------------------------------------------------
-
-export function WhatWeChecked({ data }: { data: FleetDiagnosis | null }) {
-  // A quiet result is the one summary line; the per-check list opens on request.
-  const defaultOpen = checksOpenByDefault(data);
-  const [open, setOpen] = useState(defaultOpen);
-  if (!data || data.reports.length === 0) return null;
-  const agents = data.reports.length;
-  return (
-    <details open={defaultOpen} onToggle={(e) => setOpen(e.currentTarget.open)} style={{ paddingTop: 12 }}>
-      <summary className="dx-summary" style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--tx2)' }}>
-        What we checked · <span style={MONO}>{agents}</span> {agents === 1 ? 'agent' : 'agents'}
-      </summary>
-      {open && <CheckedDetails data={data} />}
-    </details>
-  );
-}
-
-function CheckedDetails({ data }: { data: FleetDiagnosis }) {
-  const s = checkedSummary(data);
-  const strong = { color: 'var(--tx)', fontWeight: 600 } as const;
-  return (
-    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: 'var(--tx2)', lineHeight: 1.5 }}>
-      {s.nothingFound.length > 0 && <div><b style={strong}>Nothing found:</b> <span style={MONO}>{s.nothingFound.join(', ')}</span></div>}
-      {s.perAgent.map((a) => (
-        <div key={a.agentId}>
-          <div style={{ ...MONO, ...strong }}>{a.agentId}</div>
-          <ul style={{ margin: '4px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {a.looksFine.length > 0 && <li><b style={strong}>Looks fine:</b> {a.looksFine.join(', ')}</li>}
-            {a.needsData.map((n) => <li key={n.title}><b style={strong}>Needs more data:</b> {n.title}, {n.text}</li>)}
-          </ul>
-        </div>
-      ))}
-      {s.waiting.map((w) => <div key={w.agentId}><b style={strong}>Not checked yet:</b> <span style={MONO}>{w.agentId}</span>, {w.text}</div>)}
-      <div style={{ fontSize: 12.5, borderTop: '1px dashed var(--line2)', paddingTop: 8 }}>{WATCH_DEFINITION}</div>
-    </div>
   );
 }
 

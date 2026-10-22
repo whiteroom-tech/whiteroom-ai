@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { healthRow, recsRowText, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -73,6 +73,8 @@ describe('recommendations list', () => {
   });
   it('says what an empty list means for each status', () => {
     expect(recEmptyText('open', true)).toBe('Nothing to review right now.');
+    expect(recEmptyText('open', true, true)).toBe('No open recommendations for this agent.');
+    expect(recEmptyText('open', false)).toBe('No open recommendations. Collection coverage: no data.');
     expect(recEmptyText('all', false)).toBe('No recommendations. Collection coverage: no data.');
     expect(recEmptyText('reported_implemented', true)).toBe('No recommendations with status "implemented". Collection coverage: active.');
   });
@@ -92,5 +94,34 @@ describe('recommendations list', () => {
     expect(recCountSuffix('open')).toBe(' open');
     expect(recCountSuffix('reported_implemented')).toBe(' implemented');
     expect(recCountSuffix('all')).toBe('');
+  });
+});
+
+describe('agent health rows', () => {
+  const f = { count: 0, atLeast: false, failed: false, loading: false };
+  it('unusual behaviour: loading, failed, hidden without flags, quiet, flagged', () => {
+    expect(unusualRow({ ...f, count: null, loading: true })).toEqual({ tone: 'muted', text: 'Loading\u2026' });
+    expect(unusualRow({ ...f, count: null, failed: true })!.tone).toBe('muted');
+    expect(unusualRow({ ...f, count: null })).toBeNull();
+    expect(unusualRow(f)).toEqual({ tone: 'ok', text: `Nothing unusual this week · ${quietUnusualLine()}` });
+    expect(unusualRow({ ...f, count: 1 })).toEqual({ tone: 'warn', text: '1 run flagged this week' });
+    expect(unusualRow({ ...f, count: 1000, atLeast: true })!.text).toBe('1,000+ runs flagged this week');
+  });
+  it('health check: names the problems, or passes the quiet summary through', () => {
+    const ok = { tone: 'ok' as const, text: '3 checks passed', fine: 3, needsData: 0, openFindings: 0 };
+    expect(healthRow(null, [])).toBeNull();
+    expect(healthRow(ok, [])).toEqual({ tone: 'ok', text: '3 checks passed' });
+    const warn = { ...ok, tone: 'warn' as const, openFindings: 3 };
+    expect(healthRow(warn, ['Handing over too often · lead-agent'])).toEqual({ tone: 'warn', text: 'Handing over too often · lead-agent' });
+    expect(healthRow(warn, ['a · x', 'b · y', 'c · z'])!.text).toBe('a · x, b · y +1 more');
+    expect(healthRow(warn, [])!.text).toBe('3 problems');
+  });
+  it('recommendations: what is waiting below', () => {
+    expect(recsRowText(null)).toBeNull();
+    expect(recsRowText(0)).toBe('Nothing to review');
+    expect(recsRowText(1)).toBe('1 open recommendation');
+    expect(recsRowText(4)).toBe('4 open recommendations');
+    expect(recsRowText(2, 1)).toBe('2 open recommendations, including the fix');
+    expect(recsRowText(3, 2)).toBe('3 open recommendations, including the fixes');
   });
 });

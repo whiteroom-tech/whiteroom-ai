@@ -4,10 +4,9 @@ import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
 import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
-import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
-import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
-import { DiagnosisCard } from '@/app/(citadel)/performance/_components/Diagnosis';
-import { agentsWithOpenFindings, diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
+import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
+import { AgentHealth } from '@/components/performance/AgentHealth';
+import { statusLine } from '@/lib/diagnosis/model';
 import type { DiagnosisFinding, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
@@ -42,20 +41,10 @@ const diagnosis = (findings: DiagnosisFinding[]): FleetDiagnosis => ({
 const QUIET = diagnosis([]);
 const PROBLEM = diagnosis([HANDOVER_FINDING]);
 
-/** Verdict, Unusual behaviour and Agent health check together, as on Performance. */
+/** Agent health as on Performance, from sample flags and health-check results. */
 function Insights({ runs, health, openRecs }: { runs: RunSummary[]; health: FleetDiagnosis; openRecs: number }) {
-  const flaggedRuns = useFlaggedRuns('acme-claims-prod', undefined, runs);
-  const summary = diagnosisSummary(health);
-  const agents = agentsWithOpenFindings(health);
-  return (
-    <div>
-      <InsightsVerdict input={{ flaggedRuns: flaggedRunCount(flaggedRuns), flaggedAtLeast: flaggedRuns.truncated, flagsPending: flaggedRuns.failed || flaggedRuns.loading, problems: summary?.openFindings ?? null, problemAgent: agents.length === 1 ? agents[0] : null, openRecs }} onReview={() => {}} />
-      <div className="wr-perf-row" style={{ marginBottom: 0 }}>
-        <UnusualBehaviour flagged={flaggedRuns} />
-        <DiagnosisCard data={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onSeeFindings={() => {}} />
-      </div>
-    </div>
-  );
+  const flagged = useFlaggedRuns('acme-claims-prod', undefined, runs);
+  return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} openRecs={openRecs} onReview={() => {}} />;
 }
 
 // Sample week shaped like the redesign's screen 4: tasks most days, a
@@ -77,7 +66,7 @@ export function PerformancePreview() {
   return (
     <AppShell>
       <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>} />
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start', gridAutoRows: 'max-content' }}>
         <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
         <ByAgentTable
           rows={agentTotals([...ENTRIES, { type: 'model_call', timestamp: day(0, 15), tokensUsed: 1_200 }], Date.now() - 24 * 3_600_000)}

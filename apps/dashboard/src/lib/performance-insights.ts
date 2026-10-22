@@ -4,6 +4,7 @@
  * so the wording can be tested without rendering.
  */
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
+import type { DiagnosisSummary } from '@/lib/diagnosis/model';
 
 export interface VerdictInput {
   /**
@@ -97,9 +98,11 @@ export function recCountSuffix(status: string): string {
   return status === 'all' ? '' : ` ${recStatusLabel(status)}`;
 }
 
-/** The empty list's line, by status. */
-export function recEmptyText(status: string, hasCalls: boolean): string {
-  if (status === 'open') return 'Nothing to review right now.';
+/** The empty list's line, by status. "Nothing to review" only when that's the whole, unfiltered picture. */
+export function recEmptyText(status: string, hasCalls: boolean, filtered = false): string {
+  if (status === 'open' && filtered) return 'No open recommendations for this agent.';
+  if (status === 'open' && hasCalls) return 'Nothing to review right now.';
+  if (status === 'open') return 'No open recommendations. Collection coverage: no data.';
   return `No recommendations${status !== 'all' ? ` with status "${recStatusLabel(status)}"` : ''}. Collection coverage: ${hasCalls ? 'active' : 'no data'}.`;
 }
 
@@ -120,4 +123,44 @@ export function recFeedback(action: Exclude<RecRowAction, 'evidence' | 'toggle'>
   if (action === 'fixed') return { action: 'implemented' };
   if (action === 'dismiss') return { action: 'dismiss', reason: 'not_worth_it' };
   return { action: 'snooze' };
+}
+
+// -- Agent health rows ----------------------------------------------------------
+
+/** One folded row of the Agent health card. `muted`: loading or unavailable. */
+export interface HealthRow {
+  tone: 'ok' | 'warn' | 'muted';
+  text: string;
+}
+
+/** Unusual behaviour's row; null on engines without run flags (the row hides). */
+export function unusualRow(f: { count: number | null; atLeast: boolean; failed: boolean; loading: boolean }): HealthRow | null {
+  if (f.loading) return { tone: 'muted', text: 'Loading\u2026' };
+  if (f.failed) return { tone: 'muted', text: 'Couldn\u2019t load flagged runs. Reload to try again.' };
+  if (f.count === null) return null;
+  if (f.count === 0) return { tone: 'ok', text: `Nothing unusual this week · ${quietUnusualLine()}` };
+  return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, f.atLeast, 'run', 'runs')} flagged this week` };
+}
+
+/** The health check's row from its summary and open findings ("Handing over too often · lead-agent"). */
+export function healthRow(summary: DiagnosisSummary | null, problems: string[]): HealthRow | null {
+  if (!summary) return null;
+  if (summary.openFindings > 0) {
+    const shown = problems.slice(0, 2).join(', ');
+    const more = problems.length > 2 ? ` +${problems.length - 2} more` : '';
+    return { tone: 'warn', text: shown ? `${shown}${more}` : `${summary.openFindings} ${plural(summary.openFindings, false, 'problem', 'problems')}` };
+  }
+  return { tone: 'ok', text: summary.text };
+}
+
+/**
+ * Recommendations' row: what's waiting in the card below. Null until counted.
+ * Health-check problems are recommendations too, so with problems it says the
+ * fix is in there rather than reading as more issues.
+ */
+export function recsRowText(openRecs: number | null, problems = 0): string | null {
+  if (openRecs === null) return null;
+  if (openRecs === 0) return 'Nothing to review';
+  const count = `${fmtCount(openRecs)} open ${plural(openRecs, false, 'recommendation', 'recommendations')}`;
+  return problems > 0 ? `${count}, including ${plural(problems, false, 'the fix', 'the fixes')}` : count;
 }

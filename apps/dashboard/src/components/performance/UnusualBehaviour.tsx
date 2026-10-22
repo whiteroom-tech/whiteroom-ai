@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Hint, Panel, FONT_MONO } from '@whiteroom/ui';
+import { FONT_MONO } from '@whiteroom/ui';
 import { listRuns } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
-import { HELP } from '@/lib/metric-definitions';
 import { addDays, collectRuns, dayLabel, ignoresFlagged, localDay, UNUSUAL_SIGNALS, unusualSummary } from '@/lib/runs';
-import { quietUnusualLine, untrackedSignals } from '@/lib/performance-insights';
+import { untrackedSignals } from '@/lib/performance-insights';
 import { ROUTES } from '@/lib/routes';
 
 const DAYS = 7;
@@ -70,72 +69,55 @@ function weekday(day: string): string {
   return new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short' });
 }
 
-const CHECK = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: 'var(--ok)', flex: 'none' }}><polyline points="20 6 9 17 4 12" /></svg>
-);
-
 /**
- * Performance › Unusual behaviour (README › Screen 4, P2.5): what the run
- * flags (P2.1) found in the last 7 days. Flags only; it never blocks. Hidden
- * on engines without flags. A quiet week is one line.
+ * Performance › Agent health › Unusual behaviour, unfolded (README › Screen 4,
+ * P2.5): what the run flags (P2.1) found in the last 7 days, per agent per
+ * day. Flags only; it never blocks.
  */
-export function UnusualBehaviour({ flagged }: { flagged: FlaggedRuns }) {
-  const { runs, truncated, failed, loading, days } = flagged;
-  const hint = `${HELP.unusualBehaviour} Repeats can only be seen in calls WhiteRoom could read, so streamed calls don’t count toward them.`;
-  const title = <>Unusual behaviour<Hint text={hint} /></>;
-
-  if (failed) return <Panel title="Unusual behaviour"><p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Couldn&rsquo;t load flagged runs. Reload to try again.</p></Panel>;
-  if (loading) return <Panel title={title}><p className="wr-quiet-line">Loading&hellip;</p></Panel>;
+export function UnusualDetails({ flagged }: { flagged: FlaggedRuns }) {
+  const { runs, truncated, days } = flagged;
   if (!runs) return null;
   const { bySignal, byAgent } = unusualSummary(runs, days);
   const max = Math.max(1, ...byAgent.flatMap((a) => a.perDay));
-  const neverBlocks = <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Alerts only, never blocks</span>;
-
-  if (byAgent.length === 0) {
-    return (
-      <Panel title={title} actions={neverBlocks}>
-        <p className="wr-quiet-line">
-          {CHECK}
-          <span style={{ color: 'var(--tx)' }}>Nothing unusual this week</span>
-          <span>{quietUnusualLine()}</span>
-        </p>
-      </Panel>
-    );
-  }
-
   const untracked = untrackedSignals();
+  const note = { margin: 0, fontSize: 12, color: 'var(--tx2)' } as const;
   return (
-    <Panel title={title} count="last 7 days" actions={neverBlocks}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        {UNUSUAL_SIGNALS.filter((s) => s.measured).map((s) => (
-          <span key={s.key} className="wr-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px', borderRadius: 6, border: '1px solid var(--line2)', fontSize: 12, color: bySignal[s.key] ? 'var(--tx)' : 'var(--tx2)' }}>
-            {s.label}
-            <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: bySignal[s.key] ? 'var(--warn)' : 'var(--tx2)' }}>{bySignal[s.key] ?? 0}</span>
-          </span>
-        ))}
-      </div>
-      <div style={{ display: 'grid', gap: 8 }}>
-        {byAgent.map((a) => (
-          <div key={a.agentId} style={{ display: 'grid', gridTemplateColumns: 'minmax(96px, 200px) 1fr auto', gap: 14, alignItems: 'center' }}>
-            <Link href={`${ROUTES.runs}?agent=${encodeURIComponent(a.agentId)}&show=flagged`} className="wr-link" style={{ fontFamily: FONT_MONO, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</Link>
-            <span role="img" style={{ display: 'grid', gridTemplateColumns: `repeat(${DAYS}, 1fr)`, gap: 3, height: 22, alignItems: 'end' }} aria-label={`Flagged runs per day for ${a.agentId}: ${a.perDay.map((n, i) => `${dayLabel(days[i])} ${n}`).join(', ')}`}>
-              {a.perDay.map((n, i) => (
-                <span key={days[i]} title={`${dayLabel(days[i])}: ${n} flagged`} style={{ justifySelf: 'center', width: 10, height: n ? `${Math.max(18, (n / max) * 100)}%` : 2, borderRadius: '2px 2px 0 0', background: n ? 'var(--warn)' : 'var(--line2)' }} />
-              ))}
-            </span>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{a.total}</span>
+    <div style={{ display: 'grid', gap: 12 }}>
+      {byAgent.length > 0 && (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {UNUSUAL_SIGNALS.filter((s) => s.measured).map((s) => (
+              <span key={s.key} className="wr-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px', borderRadius: 6, border: '1px solid var(--line2)', fontSize: 12, color: bySignal[s.key] ? 'var(--tx)' : 'var(--tx2)' }}>
+                {s.label}
+                <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: bySignal[s.key] ? 'var(--warn)' : 'var(--tx2)' }}>{bySignal[s.key] ?? 0}</span>
+              </span>
+            ))}
           </div>
-        ))}
-        <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'minmax(96px, 200px) 1fr auto', gap: 14, fontSize: 11, color: 'var(--tx2)' }}>
-          <span />
-          <span style={{ display: 'flex', justifyContent: 'space-between' }}><span>{weekday(days[0])}</span><span>today</span></span>
-          <span style={{ visibility: 'hidden', fontFamily: FONT_MONO, fontSize: 12 }}>{max}</span>
-        </div>
-      </div>
-      <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--tx2)' }}>
+          <div style={{ display: 'grid', gap: 8, maxWidth: 520 }}>
+            {byAgent.map((a) => (
+              <div key={a.agentId} style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 160px) minmax(0, 240px) 28px', gap: 12, alignItems: 'center' }}>
+                <Link href={`${ROUTES.runs}?agent=${encodeURIComponent(a.agentId)}&show=flagged`} className="wr-link" style={{ fontFamily: FONT_MONO, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</Link>
+                <span role="img" style={{ display: 'grid', gridTemplateColumns: `repeat(${DAYS}, 1fr)`, gap: 4, height: 22, maxWidth: 240, alignItems: 'end' }} aria-label={`Flagged runs per day for ${a.agentId}: ${a.perDay.map((n, i) => `${dayLabel(days[i])} ${n}`).join(', ')}`}>
+                  {a.perDay.map((n, i) => (
+                    <span key={days[i]} title={`${dayLabel(days[i])}: ${n} flagged`} style={{ justifySelf: 'center', width: '100%', maxWidth: 12, height: n ? `${Math.max(18, (n / max) * 100)}%` : 2, borderRadius: '2px 2px 0 0', background: n ? 'var(--warn)' : 'var(--line2)' }} />
+                  ))}
+                </span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', textAlign: 'right' }}>{a.total}</span>
+              </div>
+            ))}
+            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 160px) minmax(0, 240px) 28px', gap: 12, fontSize: 11, color: 'var(--tx2)' }}>
+              <span />
+              <span style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 240 }}><span>{weekday(days[0])}</span><span>today</span></span>
+              <span />
+            </div>
+          </div>
+        </>
+      )}
+      <p style={note}>
         {truncated && <>Showing the newest {runs.length.toLocaleString('en-US')} flagged runs. </>}
-        {untracked.length > 0 && <>Not tracked yet: {untracked.join(', ').toLowerCase()}.</>}
+        Alerts only, it never blocks.
+        {untracked.length > 0 && <> Not tracked yet: {untracked.join(', ').toLowerCase()}.</>}
       </p>
-    </Panel>
+    </div>
   );
 }

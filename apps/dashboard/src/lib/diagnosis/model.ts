@@ -3,7 +3,7 @@
  * state is testable without rendering.
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { isDiagnosisDetector, notMeasuredShort, titleLower } from './copy';
+import { isDiagnosisDetector, notMeasuredShort, titleLower, TITLES } from './copy';
 import { timeAgo } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
@@ -109,6 +109,14 @@ export function openFindingCount(d: FleetDiagnosis): number {
   return d.reports.reduce((n, r) => n + r.findings.filter((f) => f.status === 'open').length, 0);
 }
 
+/** Open findings as "Handing over too often · lead-agent", in report order; unknown detectors skipped. */
+export function openFindingLabels(d: FleetDiagnosis | null): string[] {
+  if (!d) return [];
+  return d.reports.flatMap((r) => r.findings
+    .filter((f) => f.status === 'open' && isDiagnosisDetector(f.detector))
+    .map((f) => `${TITLES[f.detector as keyof typeof TITLES]} · ${r.agentId}`));
+}
+
 /** Agents with an open finding, in report order. */
 export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
   return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];
@@ -168,6 +176,28 @@ export interface CheckedSummary {
   nothingFound: string[];
   perAgent: Array<{ agentId: string; looksFine: string[]; needsData: Array<{ title: string; text: string }> }>;
   waiting: Array<{ agentId: string; text: string }>;
+}
+
+export interface CheckRow {
+  tone: 'problem' | 'fine' | 'waiting';
+  title: string;
+  /** Waiting checks: what they still need ("7 of 14 days of history older than a week"). */
+  note?: string;
+}
+
+/**
+ * Agent health › Health check, unfolded: one row per check per agent,
+ * problems first, then passed, then waiting for data. Unknown detectors skipped.
+ */
+export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
+  return d.reports.map((r) => ({
+    agentId: r.agentId,
+    rows: [
+      ...r.findings.filter((f) => f.status === 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'problem', title: TITLES[f.detector as keyof typeof TITLES] })),
+      ...r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c): CheckRow => ({ tone: 'fine', title: TITLES[c.detector] })),
+      ...r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n): CheckRow => ({ tone: 'waiting', title: TITLES[n.detector], note: notMeasuredShort(n.code, n.reason) })),
+    ],
+  })).filter((a) => a.rows.length > 0);
 }
 
 /** What we checked (§6.2.4). */
