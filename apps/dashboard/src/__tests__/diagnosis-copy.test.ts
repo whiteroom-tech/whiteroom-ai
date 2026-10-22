@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, checkedSummary, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -84,12 +84,12 @@ describe('cost, limitations, reasons, how-to', () => {
   it('not-measured reasons read as short clauses, using the engine\'s numbers', () => {
     // The engine's exact wording (diagnosis/detectors.ts and run.ts).
     const cases: Array<[string, string, string]> = [
-      ['few_watches', 'Needs 5 watches with watch numbers; has 3', '3 of 5 shifts so far'],
-      ['short_history', 'Needs 14 days of history; has 6', '6 of 14 days of history older than a week'],
+      ['few_watches', 'Needs 5 watches with watch numbers; has 3', 'needs 2 more shifts'],
+      ['short_history', 'Needs 14 days of history; has 6', 'starts in about 8 days'],
       ['low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)', 'can only see 40% of its tool calls'],
-      ['few_results', 'Needs 20 tool results; has 7', '7 of 20 tool results so far'],
-      ['few_measured_calls', 'Needs 50 non-streamed calls this week; has 12', '12 of 50 fully recorded calls this week'],
-      ['few_requests', 'Needs 100 calls to one model in 24 hours; the busiest had 11', 'busiest model had 11 of the 100 calls needed in 24 hours'],
+      ['few_results', 'Needs 20 tool results; has 7', 'needs 13 more tool results'],
+      ['few_measured_calls', 'Needs 50 non-streamed calls this week; has 12', 'needs 38 more fully recorded calls this week'],
+      ['few_requests', 'Needs 100 calls to one model in 24 hours; the busiest had 11', 'needs 89 more calls to one model in a day'],
       ['hashing_off', 'Tool-call hashing is off on this engine', 'switched off on this engine'],
       ['detector_off', 'Provider checks are switched off on this engine', 'switched off on this engine'],
       ['openai_format', 'Tool errors are only counted for Anthropic-format tool results', 'only works with Anthropic-format tools'],
@@ -103,6 +103,12 @@ describe('cost, limitations, reasons, how-to', () => {
 
   it("if the engine's wording changes, its own text is shown, never a made-up 0", () => {
     expect(notMeasuredShort('few_watches', 'Needs more watches.')).toBe('needs more watches');
+    // Singular, and the usual target when the engine doesn't say "Needs N".
+    expect(notMeasuredShort('few_watches', 'Needs 5 watches; has 4')).toBe('needs 1 more shift');
+    expect(notMeasuredShort('short_history', 'Short history; has 13')).toBe('starts in about 1 day');
+    expect(notMeasuredShort('few_requests', 'The busiest had 60')).toBe('needs 40 more calls to one model in a day');
+    // Nothing left to count: the engine's own words, not a made-up "1 more".
+    expect(notMeasuredShort('few_results', 'Needs 20 tool results; has 20')).toBe('needs 20 tool results; has 20');
     expect(notMeasuredShort('few_requests', 'Traffic too low')).toBe('traffic too low');
     expect(notMeasuredShort('something_new', 'A new reason.')).toBe('a new reason');
   });
@@ -158,15 +164,10 @@ describe('status line', () => {
   });
 });
 
-describe('attention strip', () => {
-  it('hidden when nothing is open, including snoozed findings', () => {
-    expect(attentionStrip(null)).toBeNull();
-    expect(attentionStrip(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')])] }))).toBeNull();
-  });
-  it('one agent, or up to three names then "+k more"', () => {
-    expect(attentionStrip(fleet({ reports: [report('lead-agent', [finding('review_tool_errors')])] }))).toEqual({ lead: 'lead-agent needs attention', names: '' });
-    const five = ['a', 'b', 'c', 'd', 'e'].map((n) => report(n, [finding('review_tool_errors')]));
-    expect(attentionStrip(fleet({ reports: five }))).toEqual({ lead: '5 agents need attention:', names: 'a, b, c +2 more' });
+describe('agents with open findings', () => {
+  it('ignore snoozed findings', () => {
+    expect(agentsWithOpenFindings(null)).toEqual([]);
+    expect(agentsWithOpenFindings(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['b']);
   });
 });
 
@@ -182,31 +183,52 @@ describe('diagnosis card summary', () => {
   it('says all is well, with what was checked and what still needs data', () => {
     const s = diagnosisSummary(withChecks([]))!;
     expect(s.tone).toBe('ok');
-    expect(s.text).toBe(`No problems found · 3 checks look fine · ${s.needsData} ${s.needsData === 1 ? 'needs' : 'need'} more data`);
+    expect(s.text).toBe(`3 checks passed · ${s.needsData} waiting for more data`);
   });
-  it('leads with who needs attention when a finding is open', () => {
+  it('counts the problem when a finding is open; the problem itself is named in the list', () => {
     const s = diagnosisSummary(withChecks([finding('review_tool_errors')]))!;
     expect(s).toMatchObject({ tone: 'warn', openFindings: 1 });
-    expect(s.text).toBe('lead-agent needs attention · 1 open finding');
+    expect(s.text).toBe(`1 problem · 3 passed · ${s.needsData} waiting for more data`);
+  });
+  it('falls back to "No problems found" when nothing has passed yet', () => {
+    const r = report('lead-agent', []);
+    const s = diagnosisSummary(fleet({ reports: [{ ...r, clear: [] }] }))!;
+    expect(s.text).toBe('No problems found · 1 check waiting for more data');
+    expect(diagnosisSummary(fleet({ reports: [{ ...r, clear: [], notMeasured: [] }] }))!.text).toBe('No problems found');
+  });
+  it('the Health check row starts open only with an open finding and three agents or fewer', () => {
+    expect(checksOpenByDefault(null)).toBe(false);
+    expect(checksOpenByDefault(withChecks([]))).toBe(false);
+    expect(checksOpenByDefault(withChecks([finding('review_tool_errors')]))).toBe(true);
+    const many = fleet({ reports: ['a', 'b', 'c', 'd'].map((id) => report(id, [finding('review_tool_errors')])) });
+    expect(checksOpenByDefault(many)).toBe(false);
   });
   it('a snoozed finding is not an open one', () => {
     expect(diagnosisSummary(withChecks([finding('review_tool_errors', 'snoozed')]))!.tone).toBe('ok');
   });
 });
 
-describe('what we checked', () => {
-  it('lists nothing-found agents, looks-fine and needs-more-data per agent, and waiting agents', () => {
-    const s = checkedSummary(fleet({
-      reports: [report('lead-agent', [finding('review_tool_errors')]), report('triage', [])],
-      waiting: [{ agentId: 'summarizer', calls7d: 41 }],
-    }));
-    expect(s.nothingFound).toEqual(['triage']);
-    expect(s.perAgent[0]).toEqual({ agentId: 'lead-agent', looksFine: ['repeating the same call'], needsData: [{ title: 'unusually expensive days', text: '6 of 14 days of history older than a week' }] });
-    expect(s.waiting).toEqual([{ agentId: 'summarizer', text: '41 of 50 calls. Checked automatically once it gets there.' }]);
-  });
-  it("an agent whose findings are only snoozed or dismissed isn't 'nothing found'", () => {
-    const s = checkedSummary(fleet({ reports: [report('lead-agent', [finding('review_tool_errors', 'snoozed')])] }));
-    expect(s.nothingFound).toEqual([]);
+describe('health check rows', () => {
+  it('lists problems first, then passed checks, then waiting, then snoozed or dismissed', () => {
+    const rows = checkRows(fleet({ reports: [report('lead-agent', [finding('review_tool_errors'), finding('review_handover_churn', 'snoozed')])] }));
+    expect(rows).toEqual([{ agentId: 'lead-agent', rows: [
+      { tone: 'problem', title: 'A tool keeps failing' },
+      { tone: 'fine', title: 'Repeating the same call' },
+      { tone: 'waiting', title: 'Unusually expensive days', note: 'starts in about 8 days' },
+      { tone: 'set-aside', title: 'Handing over too often', note: 'snoozed' },
+    ] }]);
+    // Each set-aside status by its own name.
+    expect(['snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating'].map(setAsideLabel)).toEqual(['snoozed', 'dismissed', 'marked fixed', 'stopped happening', 'evaluating']);
+    // A problem from a detector this dashboard doesn't know is still listed, so the count matches the list.
+    const unknown = { ...finding('review_tool_errors'), detector: 'review_new_thing' as DiagnosisDetectorId };
+    expect(checkRows(fleet({ reports: [{ ...report('a', [unknown]), clear: [], notMeasured: [] }] }))[0].rows).toEqual([{ tone: 'problem', title: 'New thing' }]);
+    expect(checkTitle('review_tool_errors')).toBe('A tool keeps failing');
+    expect(checkTitle('')).toBe('A check');
+    expect(humanizeDetector('review_cache_behavior')).toBe('Cache behavior');
+    expect(humanizeDetector('')).toBe('');
+    // An agent whose only finding is dismissed stays in the list.
+    expect(checkRows(fleet({ reports: [{ ...report('triage', [finding('review_tool_errors', 'dismissed')]), clear: [], notMeasured: [] }] })))
+      .toEqual([{ agentId: 'triage', rows: [{ tone: 'set-aside', title: 'A tool keeps failing', note: 'dismissed' }] }]);
   });
 });
 
@@ -291,10 +313,11 @@ describe('evidence headers', () => {
     const h = evidenceHeader('review_spend_outliers', [c({ reportedModel: 'm', attempts: [{ inputTokens: 10, outputTokens: 5 }] }), c({ reportedModel: 'm', attempts: [{ inputTokens: 900, outputTokens: 100 }] })], {});
     expect(h && h.kind === 'table' && h.rows.map((r) => r[2])).toEqual(['1,000', '15']);
   });
-  it('unknown detector ids never throw in What we checked', () => {
+  it('unknown detector ids are listed by a readable title, so counts match the list', () => {
     const d = fleet({ reports: [{ ...report('a', []), clear: [{ detector: 'review_new_thing' as DiagnosisDetectorId, note: null }] }] });
-    expect(() => checkedSummary(d)).not.toThrow();
-    expect(checkedSummary(d).perAgent[0].looksFine).toEqual([]);
+    expect(() => checkRows(d)).not.toThrow();
+    expect(checkRows(d)[0].rows.filter((r) => r.tone === 'fine')).toEqual([{ tone: 'fine', title: 'New thing' }]);
+    expect(diagnosisSummary(d)!.fine).toBe(checkRows(d)[0].rows.filter((r) => r.tone === 'fine').length);
   });
   it('other detectors keep the existing view', () => {
     expect(evidenceHeader('review_tool_bloat', [], {})).toBeNull();

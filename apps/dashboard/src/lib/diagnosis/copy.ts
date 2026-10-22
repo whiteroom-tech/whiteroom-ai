@@ -29,12 +29,6 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_provider_failures: 'Model provider errors',
 };
 
-/** Lower-case form for "Looks fine: …" lists. */
-export const titleLower = (d: string) => {
-  const t = TITLES[d as DiagnosisDetectorId] ?? d.replace(/^review_/, '').replace(/_/g, ' ');
-  return t.charAt(0).toLowerCase() + t.slice(1);
-};
-
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
 export const SNOOZE_DAYS = 7;
 
@@ -127,7 +121,7 @@ export function limitationText(detector: DiagnosisDetectorId, limitation: string
   return limitation;
 }
 
-/** "Needs more data" reasons as short clauses, for What we checked. Falls back to the engine's text. */
+/** "Needs more data" reasons as short clauses, for Agent health › Health check: what's still missing. Falls back to the engine's text. */
 export function notMeasuredShort(code: string, reason: string): string {
   const engineText = () => reason.charAt(0).toLowerCase() + reason.slice(1).replace(/\.$/, '');
   // A count read from the engine's reason; if its wording changed and the
@@ -136,17 +130,23 @@ export function notMeasuredShort(code: string, reason: string): string {
     const x = reason.match(re)?.[1];
     return x === undefined ? engineText() : build(x);
   };
+  // What's still missing, plainly: the engine's "Needs N" when it says, else
+  // the usual target. Nothing left to count (has >= needs): the engine's text.
+  const left = (re: RegExp, target: number, build: (more: number) => string) => n(re, (x) => {
+    const more = Number(reason.match(/needs (\d+)/i)?.[1] ?? target) - Number(x);
+    return more > 0 ? build(more) : engineText();
+  });
   switch (code) {
-    case 'few_watches': return n(/has (\d+)/, (x) => `${x} of 5 shifts so far`);
-    case 'short_history': return n(/has (\d+)/, (x) => `${x} of 14 days of history older than a week`);
+    case 'few_watches': return left(/has (\d+)/, 5, (m) => `needs ${m} more ${m === 1 ? 'shift' : 'shifts'}`);
+    case 'short_history': return left(/has (\d+)/, 14, (m) => `starts in about ${m} ${m === 1 ? 'day' : 'days'}`);
     case 'low_coverage': return n(/for (\d+)%/, (x) => `can only see ${x}% of its tool calls`);
     case 'hashing_off':
     case 'detector_off': return 'switched off on this engine';
     case 'openai_format': return 'only works with Anthropic-format tools';
-    case 'few_results': return n(/has (\d+)/, (x) => `${x} of 20 tool results so far`);
+    case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${m === 1 ? 'result' : 'results'}`);
     case 'not_captured': return 'nothing recorded yet';
-    case 'few_measured_calls': return n(/has (\d+)/, (x) => `${x} of 50 fully recorded calls this week`);
-    case 'few_requests': return n(/had (\d+)/, (x) => `busiest model had ${x} of the 100 calls needed in 24 hours`);
+    case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${m === 1 ? 'call' : 'calls'} this week`);
+    case 'few_requests': return left(/had (\d+)/, 100, (m) => `needs ${m} more ${m === 1 ? 'call' : 'calls'} to one model in a day`);
     case 'thin_evidence': return 'too few calls show it yet';
     case 'first_check_pending': return 'first check runs overnight';
     case 'publish_failed': return 'couldn\u2019t be saved; checked again soon';

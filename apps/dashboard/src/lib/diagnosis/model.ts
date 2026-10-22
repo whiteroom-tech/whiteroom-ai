@@ -3,7 +3,7 @@
  * state is testable without rendering.
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { isDiagnosisDetector, notMeasuredShort, titleLower } from './copy';
+import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
 import { timeAgo } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
@@ -109,21 +109,21 @@ export function openFindingCount(d: FleetDiagnosis): number {
   return d.reports.reduce((n, r) => n + r.findings.filter((f) => f.status === 'open').length, 0);
 }
 
-/** The attention strip (§6.2.1): null when nothing is open. */
-export function attentionStrip(d: FleetDiagnosis | null): { lead: string; names: string } | null {
-  if (!d) return null;
-  const agents = d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId);
-  if (agents.length === 0) return null;
-  if (agents.length === 1) return { lead: `${agents[0]} needs attention`, names: '' };
-  const shown = agents.slice(0, 3).join(', ');
-  const more = agents.length > 3 ? ` +${agents.length - 3} more` : '';
-  return { lead: `${agents.length} agents need attention:`, names: `${shown}${more}` };
+/** Agents with an open finding, in report order. */
+export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
+  return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];
+}
+
+/** Agent health › Health check starts open only with an open finding and a short list (three agents or fewer). */
+export function checksOpenByDefault(d: FleetDiagnosis | null): boolean {
+  return !!d && openFindingCount(d) > 0 && d.reports.length <= 3;
 }
 
 /**
- * The Agent Diagnosis card's one-line summary, always visible: what needs
- * attention, or that everything checked looks fine and what still needs data.
- * Null until there's a stored check to summarise.
+ * Agent health › Health check's one line: counts only, so a problem is named
+ * once, in the list beside its fix ("1 problem · 2 passed · 3 waiting for more
+ * data", or "3 checks passed · 3 waiting for more data"). Null until there's
+ * a stored check to summarise.
  */
 export interface DiagnosisSummary {
   tone: 'warn' | 'ok';
@@ -139,43 +139,65 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   const fine = d.reports.reduce((n, r) => n + r.clear.length, 0);
   const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
   const openFindings = openFindingCount(d);
-  const counts = [
-    fine > 0 ? `${fine} ${fine === 1 ? 'check looks' : 'checks look'} fine` : '',
-    needsData > 0 ? `${needsData} ${needsData === 1 ? 'needs' : 'need'} more data` : '',
-  ].filter(Boolean).join(' · ');
+  const checks = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`;
   if (openFindings > 0) {
-    const strip = attentionStrip(d)!;
-    const lead = strip.names ? `${strip.lead} ${strip.names}` : strip.lead;
-    return { tone: 'warn', text: `${lead} · ${openFindings} open ${openFindings === 1 ? 'finding' : 'findings'}`, fine, needsData, openFindings };
+    const parts = [
+      `${openFindings} ${openFindings === 1 ? 'problem' : 'problems'}`,
+      fine > 0 ? `${fine} passed` : '',
+      needsData > 0 ? `${needsData} waiting for more data` : '',
+    ].filter(Boolean);
+    return { tone: 'warn', text: parts.join(' · '), fine, needsData, openFindings };
   }
-  return { tone: 'ok', text: counts ? `No problems found · ${counts}` : 'No problems found', fine, needsData, openFindings };
+  // Quiet: what passed, then what's still waiting for data.
+  const counts = [
+    fine > 0 ? `${checks(fine)} passed` : 'No problems found',
+    needsData > 0 ? `${fine > 0 ? needsData : checks(needsData)} waiting for more data` : '',
+  ].filter(Boolean).join(' · ');
+  return { tone: 'ok', text: counts, fine, needsData, openFindings };
 }
 
-export interface CheckedSummary {
-  agents: number;
-  nothingFound: string[];
-  perAgent: Array<{ agentId: string; looksFine: string[]; needsData: Array<{ title: string; text: string }> }>;
-  waiting: Array<{ agentId: string; text: string }>;
+export interface CheckRow {
+  /** `set-aside`: a finding that isn't open (snoozed, dismissed, marked fixed…), so the check is still accounted for. */
+  tone: 'problem' | 'fine' | 'waiting' | 'set-aside';
+  title: string;
+  /** Waiting checks: what they still need ("starts in about 7 days"); set-aside ones: their status (setAsideLabel). */
+  note?: string;
 }
 
-/** What we checked (§6.2.4). */
-export function checkedSummary(d: FleetDiagnosis): CheckedSummary {
-  const perAgent: CheckedSummary['perAgent'] = [];
-  const nothingFound: string[] = [];
-  for (const r of d.reports) {
-    // Only agents with no findings at all: a snoozed or dismissed one is still a finding.
-    if (r.findings.length === 0) nothingFound.push(r.agentId);
-    // Unknown detector ids (a newer engine) are skipped rather than mislabelled.
-    const looksFine = r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c) => titleLower(c.detector));
-    const needsData = r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n) => ({ title: titleLower(n.detector), text: notMeasuredShort(n.code, n.reason) }));
-    if (looksFine.length || needsData.length) perAgent.push({ agentId: r.agentId, looksFine, needsData });
-  }
-  return {
-    agents: d.reports.length,
-    nothingFound,
-    perAgent,
-    waiting: d.waiting.map((w) => ({ agentId: w.agentId, text: `${w.calls7d} of ${d.minCalls} calls. Checked automatically once it gets there.` })),
-  };
+/** A check's title; a detector this dashboard doesn't know yet gets a readable one from its id ("review_new_thing" → "New thing"). */
+export function checkTitle(detector: string): string {
+  if (isDiagnosisDetector(detector)) return TITLES[detector];
+  return humanizeDetector(detector) || 'A check';
+}
+
+/** A detector id as words: "review_cache_behavior" → "Cache behavior"; "" for an empty id. */
+export function humanizeDetector(detector: string): string {
+  const t = detector.replace(/^review_/, '').replace(/_/g, ' ').trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+}
+
+/** A non-open finding's status in the Health check list: "snoozed", "dismissed", "marked fixed", "stopped happening", or the engine's own word. */
+export function setAsideLabel(status: string): string {
+  if (status === 'snoozed') return 'snoozed';
+  return STATUS_LABEL[status] ?? status.replace(/_/g, ' ');
+}
+
+/**
+ * Agent health › Health check, unfolded: one row per check per agent,
+ * problems first, then passed, then waiting for data, then snoozed or dismissed.
+ * Every check is listed, even from a detector this dashboard doesn't know yet
+ * (by checkTitle), so the row's counts always match the list.
+ */
+export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
+  return d.reports.map((r) => ({
+    agentId: r.agentId,
+    rows: [
+      ...r.findings.filter((f) => f.status === 'open').map((f): CheckRow => ({ tone: 'problem', title: checkTitle(f.detector) })),
+      ...r.clear.map((c): CheckRow => ({ tone: 'fine', title: checkTitle(c.detector) })),
+      ...r.notMeasured.map((n): CheckRow => ({ tone: 'waiting', title: checkTitle(n.detector), note: notMeasuredShort(n.code, n.reason) })),
+      ...r.findings.filter((f) => f.status !== 'open').map((f): CheckRow => ({ tone: 'set-aside', title: checkTitle(f.detector), note: setAsideLabel(f.status) })),
+    ],
+  })).filter((a) => a.rows.length > 0);
 }
 
 // -- §6.2.5 Evidence headers ------------------------------------------------

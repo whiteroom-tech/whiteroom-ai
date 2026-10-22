@@ -63,3 +63,23 @@ export function tasksLeftColor(value: number | null): string {
   if (value < 5) return 'var(--warn)';
   return 'var(--ok)';
 }
+
+/**
+ * The plain line under Cost tracking when a daily budget has run out, or has
+ * too little left for another task. Budgets only track; nothing stops
+ * spending, so it says agents are still running. Null while there's room.
+ */
+export function budgetNotice(f: Pick<PerformanceCostForecastResult, 'budgetUsd' | 'spentTodayUsd' | 'remainingTasks' | 'remainingTasksReason' | 'costUnavailable' | 'dollarRemainingTasks' | 'dollarRemainingTasksReason' | 'tokenRemainingTasks' | 'tokenRemainingTasksReason'>): string | null {
+  const dollar = resolveTasksLeft(f, 'dollar');
+  const token = resolveTasksLeft(f, 'token');
+  const dollarSpent = f.budgetUsd != null && f.spentTodayUsd != null && f.spentTodayUsd >= f.budgetUsd;
+  const dollarShort = !dollarSpent && f.budgetUsd != null && dollar.reason === 'available' && dollar.value === 0;
+  // The engine doesn't send today's tokens, so the token side can only say "not enough for another task".
+  const tokenShort = token.reason === 'available' && token.value === 0;
+  const parts = [
+    dollarSpent ? 'Today\u2019s $ budget is used up.' : '',
+    dollarShort ? 'Not enough left in today\u2019s $ budget for another task.' : '',
+    tokenShort ? 'Not enough left in today\u2019s token budget for another task.' : '',
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(' ')} Your agents are still running.` : null;
+}
