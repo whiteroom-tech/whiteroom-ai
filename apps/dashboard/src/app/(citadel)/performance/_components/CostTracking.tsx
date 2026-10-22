@@ -156,13 +156,16 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
           </div>
         </div>
       </div>
+      {/* Always said: these numbers track spending, they don't limit it. */}
+      <p style={{ margin: '-4px 0 14px', fontSize: 12.5, color: 'var(--tx2)' }}>
+        Budgets are for tracking only. They don&rsquo;t stop your agents. To set a limit,{' '}
+        <Link href={ROUTES.controls} className="wr-link" style={{ fontWeight: 600 }}>add a spend cap in Controls →</Link>
+      </p>
       {(() => {
         const notice = budgetNotice(forecast);
         return notice && (
-          <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 8px', margin: '0 0 14px', padding: '9px 12px', borderRadius: 6, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', fontSize: 13, color: 'var(--tx)' }}>
-            <span style={{ fontWeight: 600, color: 'var(--warn-tx)' }}>{notice}</span>
-            <span style={{ color: 'var(--tx2)' }}>A budget only estimates tasks left. To stop agents at a limit,</span>
-            <Link href={ROUTES.controls} className="wr-link" style={{ fontWeight: 600 }}>add a spend cap in Controls →</Link>
+          <div role="status" style={{ margin: '0 0 14px', padding: '9px 12px', borderRadius: 6, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', fontSize: 13, fontWeight: 600, color: 'var(--warn-tx)' }}>
+            {notice}
           </div>
         );
       })()}

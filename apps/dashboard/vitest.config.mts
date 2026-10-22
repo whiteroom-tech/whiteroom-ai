@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 // loaded as CommonJS and Vite warns about the ESM syntax in it.
 export default defineConfig({
   resolve: {
+    // One React for the dashboard and packages/ui (which has no node_modules
+    // of its own): DOM tests (happy-dom) load the dev JSX runtime from there.
+    dedupe: ['react', 'react-dom'],
     alias: {
       // Mirrors the "@/*" path in tsconfig.json. Without it, any test that
       // pulls in a module importing through the alias fails at import time.

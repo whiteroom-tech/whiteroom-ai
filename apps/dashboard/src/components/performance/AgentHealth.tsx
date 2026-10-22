@@ -90,7 +90,7 @@ export function Row({ label, row, open, children }: { label: string; row: Health
     return <div className="wr-health__row wr-health__row--plain"><span className="wr-health__label">{label}</span>{text}</div>;
   }
   return (
-    <details open={isOpen} onToggle={(e) => setChosen((c) => toggleChoice(c, isOpen, e.currentTarget.open))} className="wr-health__row">
+    <details open={isOpen} onToggle={(e) => { const nowOpen = e.currentTarget.open; setChosen((c) => toggleChoice(c, isOpen, nowOpen)); }} className="wr-health__row">
       <summary>
         <svg className="wr-health__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 6 15 12 9 18" /></svg>
         <span className="wr-health__label">{label}</span>
