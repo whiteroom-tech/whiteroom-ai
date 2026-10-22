@@ -949,19 +949,22 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         {savingsDays && <SavingsChart days={savingsDays} />}
       </div>
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
-      <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} openRecs={openTotal} onReview={seeFindings} />
+      {/* Health on the left, what to do about it on the right; stacked below 1100px. */}
+      <div className="wr-perf-row" style={{ marginBottom: 0 }}>
+        <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} openRecs={openTotal} onReview={seeFindings} />
 
-      <RecommendationsCard
-        recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
-        showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setRecStatus('all'); }}
-        agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={byAgent === null || byAgent.length > 1 || recAgent !== ''}
-        filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
-        loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
-        onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
-        onFeedback={(rec, f) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, f.action, f.reason)}
-        onDiagnosisFeedback={submitDiagnosisFeedback}
-        feedbackLoading={feedbackLoading} feedbackError={feedbackError}
-      />
+        <RecommendationsCard
+          recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
+          showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setRecStatus('all'); }}
+          agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={byAgent === null || byAgent.length > 1 || recAgent !== ''}
+          filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
+          loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
+          onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
+          onFeedback={(rec, f) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, f.action, f.reason)}
+          onDiagnosisFeedback={submitDiagnosisFeedback}
+          feedbackLoading={feedbackLoading} feedbackError={feedbackError}
+        />
+      </div>
     </>
   );
 }

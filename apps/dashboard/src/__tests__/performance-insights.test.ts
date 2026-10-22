@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { healthRow, recsRowText, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, latestOnly, listGivesOpenCount, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -36,9 +36,7 @@ describe('performance verdict', () => {
 });
 
 describe('unusual behaviour quiet state', () => {
-  it('counts the patterns watched and the ones still to come', () => {
-    const measured = UNUSUAL_SIGNALS.filter((s) => s.measured).length;
-    expect(quietUnusualLine()).toBe(`watching ${measured} patterns, ${UNUSUAL_SIGNALS.length - measured} more coming`);
+  it('lists the signals not tracked yet', () => {
     expect(untrackedSignals()).toEqual(UNUSUAL_SIGNALS.filter((s) => !s.measured).map((s) => s.label));
   });
   it('flagged runs are counted only inside the window, and unknown while loading', () => {
@@ -88,6 +86,11 @@ describe('recommendations list', () => {
     expect(recFeedback('snooze')).toEqual({ action: 'snooze' });
     expect(recFeedback('dismiss')).toEqual({ action: 'dismiss', reason: 'not_worth_it' });
   });
+  it('titles older recommendations from their detector', () => {
+    expect(recTitle('review_cache_behavior')).toBe('Cache behavior');
+    expect(recTitle('compression_cost')).toBe('Compression cost');
+    expect(recTitle('')).toBe('Recommendation');
+  });
   it('labels statuses the same in the heading, the filters and the empty line', () => {
     expect(recStatusLabel('reported_implemented')).toBe('implemented');
     expect(recStatusLabel('snoozed')).toBe('snoozed');
@@ -103,25 +106,25 @@ describe('agent health rows', () => {
     expect(unusualRow({ ...f, count: null, loading: true })).toEqual({ tone: 'muted', text: 'Loading\u2026' });
     expect(unusualRow({ ...f, count: null, failed: true })!.tone).toBe('muted');
     expect(unusualRow({ ...f, count: null })).toBeNull();
-    expect(unusualRow(f)).toEqual({ tone: 'ok', text: `Nothing unusual this week · ${quietUnusualLine()}` });
+    expect(unusualRow(f)).toEqual({ tone: 'ok', text: 'Nothing unusual this week' });
     expect(unusualRow({ ...f, count: 1 })).toEqual({ tone: 'warn', text: '1 run flagged this week' });
     expect(unusualRow({ ...f, count: 1000, atLeast: true })!.text).toBe('1,000+ runs flagged this week');
   });
-  it('health check: names the problems, or passes the quiet summary through', () => {
+  it('health check: counts only, so the problem is named once (in the list)', () => {
     const ok = { tone: 'ok' as const, text: '3 checks passed', fine: 3, needsData: 0, openFindings: 0 };
-    expect(healthRow(null, [])).toBeNull();
-    expect(healthRow(ok, [])).toEqual({ tone: 'ok', text: '3 checks passed' });
-    const warn = { ...ok, tone: 'warn' as const, openFindings: 3 };
-    expect(healthRow(warn, ['Handing over too often · lead-agent'])).toEqual({ tone: 'warn', text: 'Handing over too often · lead-agent' });
-    expect(healthRow(warn, ['a · x', 'b · y', 'c · z'])!.text).toBe('a · x, b · y +1 more');
-    expect(healthRow(warn, [])!.text).toBe('3 problems');
+    expect(healthRow(null)).toBeNull();
+    expect(healthRow(ok)).toEqual({ tone: 'ok', text: '3 checks passed' });
+    expect(healthRow({ ...ok, tone: 'warn', openFindings: 1, needsData: 3 })).toEqual({ tone: 'warn', text: '1 problem · 3 passed · 3 waiting for more data' });
+    expect(healthRow({ ...ok, tone: 'warn', openFindings: 2, fine: 0 })!.text).toBe('2 problems');
   });
-  it('recommendations: what is waiting below', () => {
-    expect(recsRowText(null)).toBeNull();
-    expect(recsRowText(0)).toBe('Nothing to review');
-    expect(recsRowText(1)).toBe('1 open recommendation');
-    expect(recsRowText(4)).toBe('4 open recommendations');
-    expect(recsRowText(2, 1)).toBe('2 open recommendations, including the fix');
-    expect(recsRowText(3, 2)).toBe('3 open recommendations, including the fixes');
+  it('unusual behaviour: what kind each agent’s flagged runs were, most frequent first', () => {
+    const days = ['2026-10-20', '2026-10-21'];
+    const run = (agentId: string, startedAt: string, signals: string[]) => ({ agentId, startedAt, flags: signals.map((signal) => ({ signal })) }) as never;
+    expect(agentSignals([
+      run('lead-agent', '2026-10-20T12:00:00', ['repeating_call']),
+      run('lead-agent', '2026-10-21T12:00:00', ['repeating_call', 'error_streak']),
+      run('scout-agent', '2026-10-21T12:00:00', ['error_streak']),
+      run('old-agent', '2026-09-01T12:00:00', ['error_streak']),
+    ], days)).toEqual({ 'lead-agent': 'repeating the same call, failed calls in a row', 'scout-agent': 'failed calls in a row' });
   });
 });

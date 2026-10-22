@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { FONT_MONO } from '@whiteroom/ui';
 import { listRuns } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
-import { addDays, collectRuns, dayLabel, ignoresFlagged, localDay, UNUSUAL_SIGNALS, unusualSummary } from '@/lib/runs';
-import { untrackedSignals } from '@/lib/performance-insights';
+import { addDays, collectRuns, dayLabel, ignoresFlagged, localDay, unusualSummary } from '@/lib/runs';
+import { agentSignals } from '@/lib/performance-insights';
 import { ROUTES } from '@/lib/routes';
 
 const DAYS = 7;
@@ -71,32 +71,26 @@ function weekday(day: string): string {
 
 /**
  * Performance › Agent health › Unusual behaviour, unfolded (README › Screen 4,
- * P2.5): what the run flags (P2.1) found in the last 7 days, per agent per
- * day. Flags only; it never blocks.
+ * P2.5): per agent, flagged runs per day over the last 7 days and what kind
+ * they were. Flags only; it never blocks (said in the card's ⓘ).
  */
 export function UnusualDetails({ flagged }: { flagged: FlaggedRuns }) {
   const { runs, truncated, days } = flagged;
   if (!runs) return null;
-  const { bySignal, byAgent } = unusualSummary(runs, days);
+  const { byAgent } = unusualSummary(runs, days);
+  const kinds = agentSignals(runs, days);
   const max = Math.max(1, ...byAgent.flatMap((a) => a.perDay));
-  const untracked = untrackedSignals();
-  const note = { margin: 0, fontSize: 12, color: 'var(--tx2)' } as const;
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {byAgent.length > 0 && (
         <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {UNUSUAL_SIGNALS.filter((s) => s.measured).map((s) => (
-              <span key={s.key} className="wr-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px', borderRadius: 6, border: '1px solid var(--line2)', fontSize: 12, color: bySignal[s.key] ? 'var(--tx)' : 'var(--tx2)' }}>
-                {s.label}
-                <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: bySignal[s.key] ? 'var(--warn)' : 'var(--tx2)' }}>{bySignal[s.key] ?? 0}</span>
-              </span>
-            ))}
-          </div>
           <div style={{ display: 'grid', gap: 8, maxWidth: 520 }}>
             {byAgent.map((a) => (
               <div key={a.agentId} style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 160px) minmax(0, 240px) 28px', gap: 12, alignItems: 'center' }}>
-                <Link href={`${ROUTES.runs}?agent=${encodeURIComponent(a.agentId)}&show=flagged`} className="wr-link" style={{ fontFamily: FONT_MONO, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</Link>
+                <span style={{ minWidth: 0 }}>
+                  <Link href={`${ROUTES.runs}?agent=${encodeURIComponent(a.agentId)}&show=flagged`} className="wr-link" style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</Link>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)' }}>{kinds[a.agentId]}</span>
+                </span>
                 <span role="img" style={{ display: 'grid', gridTemplateColumns: `repeat(${DAYS}, 1fr)`, gap: 4, height: 22, maxWidth: 240, alignItems: 'end' }} aria-label={`Flagged runs per day for ${a.agentId}: ${a.perDay.map((n, i) => `${dayLabel(days[i])} ${n}`).join(', ')}`}>
                   {a.perDay.map((n, i) => (
                     <span key={days[i]} title={`${dayLabel(days[i])}: ${n} flagged`} style={{ justifySelf: 'center', width: '100%', maxWidth: 12, height: n ? `${Math.max(18, (n / max) * 100)}%` : 2, borderRadius: '2px 2px 0 0', background: n ? 'var(--warn)' : 'var(--line2)' }} />
@@ -113,11 +107,7 @@ export function UnusualDetails({ flagged }: { flagged: FlaggedRuns }) {
           </div>
         </>
       )}
-      <p style={note}>
-        {truncated && <>Showing the newest {runs.length.toLocaleString('en-US')} flagged runs. </>}
-        Alerts only, it never blocks. Streamed calls can&rsquo;t be checked for repeats.
-        {untracked.length > 0 && <> Not tracked yet: {untracked.join(', ').toLowerCase()}.</>}
-      </p>
+      {truncated && <p style={{ margin: 0, fontSize: 12, color: 'var(--tx2)' }}>Showing the newest {runs.length.toLocaleString('en-US')} flagged runs.</p>}
     </div>
   );
 }

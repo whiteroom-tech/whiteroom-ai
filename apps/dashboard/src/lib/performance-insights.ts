@@ -3,7 +3,8 @@
  * and Recommendations, plus the one-line quiet states of those cards. Pure,
  * so the wording can be tested without rendering.
  */
-import { UNUSUAL_SIGNALS } from '@/lib/runs';
+import { localDay, UNUSUAL_SIGNALS } from '@/lib/runs';
+import type { RunSummary } from '@/lib/whiteroom/types';
 import type { DiagnosisSummary } from '@/lib/diagnosis/model';
 
 export interface VerdictInput {
@@ -54,16 +55,6 @@ export function plural(n: number, atLeast: boolean, one: string, many: string): 
   return n === 1 && !atLeast ? one : many;
 }
 
-const measured = UNUSUAL_SIGNALS.filter((s) => s.measured).length;
-const unmeasured = UNUSUAL_SIGNALS.length - measured;
-
-/** Unusual behaviour on a quiet week, after "Nothing unusual this week". */
-export function quietUnusualLine(): string {
-  return unmeasured > 0
-    ? `watching ${measured} ${measured === 1 ? 'pattern' : 'patterns'}, ${unmeasured} more coming`
-    : `watching ${measured} ${measured === 1 ? 'pattern' : 'patterns'}`;
-}
-
 /** The signals Unusual behaviour can't see yet, for its "Not tracked yet" line. */
 export function untrackedSignals(): string[] {
   return UNUSUAL_SIGNALS.filter((s) => !s.measured).map((s) => s.label);
@@ -86,6 +77,12 @@ export function latestOnly() {
     start: () => ++latest,
     isLatest: (id: number) => id === latest,
   };
+}
+
+/** An older engine recommendation's title from its detector id: "review_cache_behavior" → "Cache behavior". */
+export function recTitle(detector: string): string {
+  const t = detector.replace(/^review_/, '').replace(/_/g, ' ').trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Recommendation';
 }
 
 /** A status as the list shows it. */
@@ -138,29 +135,45 @@ export function unusualRow(f: { count: number | null; atLeast: boolean; failed: 
   if (f.loading) return { tone: 'muted', text: 'Loading\u2026' };
   if (f.failed) return { tone: 'muted', text: 'Couldn\u2019t load flagged runs. Reload to try again.' };
   if (f.count === null) return null;
-  if (f.count === 0) return { tone: 'ok', text: `Nothing unusual this week · ${quietUnusualLine()}` };
+  if (f.count === 0) return { tone: 'ok', text: 'Nothing unusual this week' };
   return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, f.atLeast, 'run', 'runs')} flagged this week` };
 }
 
-/** The health check's row from its summary and open findings ("Handing over too often · lead-agent"). */
-export function healthRow(summary: DiagnosisSummary | null, problems: string[]): HealthRow | null {
+/**
+ * The health check's row. Counts only: the problem itself is named once, in
+ * the unfolded list, next to its fix.
+ */
+export function healthRow(summary: DiagnosisSummary | null): HealthRow | null {
   if (!summary) return null;
   if (summary.openFindings > 0) {
-    const shown = problems.slice(0, 2).join(', ');
-    const more = problems.length > 2 ? ` +${problems.length - 2} more` : '';
-    return { tone: 'warn', text: shown ? `${shown}${more}` : `${summary.openFindings} ${plural(summary.openFindings, false, 'problem', 'problems')}` };
+    const parts = [
+      `${summary.openFindings} ${plural(summary.openFindings, false, 'problem', 'problems')}`,
+      summary.fine > 0 ? `${summary.fine} passed` : '',
+      summary.needsData > 0 ? `${summary.needsData} waiting for more data` : '',
+    ].filter(Boolean);
+    return { tone: 'warn', text: parts.join(' · ') };
   }
   return { tone: 'ok', text: summary.text };
 }
 
 /**
- * Recommendations' row: what's waiting in the card below. Null until counted.
- * Health-check problems are recommendations too, so with problems it says the
- * fix is in there rather than reading as more issues.
+ * Per agent, which kinds of unusual behaviour its flagged runs in `days`
+ * showed, most frequent first ("repeating the same call, failed calls in a row").
  */
-export function recsRowText(openRecs: number | null, problems = 0): string | null {
-  if (openRecs === null) return null;
-  if (openRecs === 0) return 'Nothing to review';
-  const count = `${fmtCount(openRecs)} open ${plural(openRecs, false, 'recommendation', 'recommendations')}`;
-  return problems > 0 ? `${count}, including ${plural(problems, false, 'the fix', 'the fixes')}` : count;
+export function agentSignals(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 'flags'>[], days: string[]): Record<string, string> {
+  const counts: Record<string, Record<string, number>> = {};
+  for (const r of runs) {
+    if (!r.flags?.length || !days.includes(localDay(Date.parse(r.startedAt)))) continue;
+    const per = (counts[r.agentId] ??= {});
+    for (const s of new Set(r.flags.map((f) => f.signal))) per[s] = (per[s] ?? 0) + 1;
+  }
+  const label = (key: string) => {
+    const t = UNUSUAL_SIGNALS.find((s) => s.key === key)?.label ?? key.replace(/_/g, ' ');
+    return t.charAt(0).toLowerCase() + t.slice(1);
+  };
+  return Object.fromEntries(Object.entries(counts).map(([agent, per]) => [
+    agent,
+    Object.entries(per).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => label(k)).join(', '),
+  ]));
 }
+

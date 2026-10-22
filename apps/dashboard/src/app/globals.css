@@ -406,7 +406,7 @@ a.wr-btn { text-decoration: none; }
 .wr-health__row > summary::-webkit-details-marker { display: none; }
 .wr-health__row > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
 .wr-health__row--plain { padding-left: 22px; }
-.wr-health__chev { flex: none; width: 12px; color: var(--tx2); transition: transform .15s; align-self: center; }
+.wr-health__chev { flex: none; width: 14px; height: 14px; color: var(--tx2); transition: transform .15s; align-self: center; }
 .wr-health__row[open] .wr-health__chev { transform: rotate(90deg); }
 .wr-health__label { flex: 0 0 150px; font-weight: 600; color: var(--tx2); }
 .wr-health__text { flex: 1 1 240px; min-width: 0; }

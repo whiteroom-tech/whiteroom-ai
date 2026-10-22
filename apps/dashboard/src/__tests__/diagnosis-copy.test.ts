@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, openFindingLabels, checkRows, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -84,12 +84,12 @@ describe('cost, limitations, reasons, how-to', () => {
   it('not-measured reasons read as short clauses, using the engine\'s numbers', () => {
     // The engine's exact wording (diagnosis/detectors.ts and run.ts).
     const cases: Array<[string, string, string]> = [
-      ['few_watches', 'Needs 5 watches with watch numbers; has 3', '3 of 5 shifts so far'],
-      ['short_history', 'Needs 14 days of history; has 6', '6 of 14 days of history older than a week'],
+      ['few_watches', 'Needs 5 watches with watch numbers; has 3', 'needs 2 more shifts'],
+      ['short_history', 'Needs 14 days of history; has 6', 'starts in about 8 days'],
       ['low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)', 'can only see 40% of its tool calls'],
-      ['few_results', 'Needs 20 tool results; has 7', '7 of 20 tool results so far'],
-      ['few_measured_calls', 'Needs 50 non-streamed calls this week; has 12', '12 of 50 fully recorded calls this week'],
-      ['few_requests', 'Needs 100 calls to one model in 24 hours; the busiest had 11', 'busiest model had 11 of the 100 calls needed in 24 hours'],
+      ['few_results', 'Needs 20 tool results; has 7', 'needs 13 more tool results'],
+      ['few_measured_calls', 'Needs 50 non-streamed calls this week; has 12', 'needs 38 more fully recorded calls this week'],
+      ['few_requests', 'Needs 100 calls to one model in 24 hours; the busiest had 11', 'needs 89 more calls to one model in a day'],
       ['hashing_off', 'Tool-call hashing is off on this engine', 'switched off on this engine'],
       ['detector_off', 'Provider checks are switched off on this engine', 'switched off on this engine'],
       ['openai_format', 'Tool errors are only counted for Anthropic-format tool results', 'only works with Anthropic-format tools'],
@@ -161,7 +161,6 @@ describe('status line', () => {
 describe('attention strip', () => {
   it('hidden when nothing is open, including snoozed findings', () => {
     expect(agentsWithOpenFindings(null)).toEqual([]);
-    expect(openFindingLabels(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['A tool keeps failing · b']);
     expect(agentsWithOpenFindings(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['b']);
     expect(attentionStrip(null)).toBeNull();
     expect(attentionStrip(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')])] }))).toBeNull();
@@ -216,7 +215,7 @@ describe('health check rows', () => {
     expect(rows).toEqual([{ agentId: 'lead-agent', rows: [
       { tone: 'problem', title: 'A tool keeps failing' },
       { tone: 'fine', title: 'Repeating the same call' },
-      { tone: 'waiting', title: 'Unusually expensive days', note: '6 of 14 days of history older than a week' },
+      { tone: 'waiting', title: 'Unusually expensive days', note: 'starts in about 8 days' },
     ] }]);
   });
 });

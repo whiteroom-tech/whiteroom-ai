@@ -5,19 +5,19 @@ import { FONT_MONO, Hint } from '@whiteroom/ui';
 import { HELP } from '@/lib/metric-definitions';
 import { WATCH_DEFINITION } from '@/lib/diagnosis/copy';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { agentsWithOpenFindings, checkRows, checksOpenByDefault, diagnosisSummary, openFindingLabels, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
-import { healthRow, insightsVerdict, recsRowText, unusualRow, type HealthRow } from '@/lib/performance-insights';
+import { agentsWithOpenFindings, checkRows, checksOpenByDefault, diagnosisSummary, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
+import { healthRow, insightsVerdict, unusualRow, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
 // The two sources' own definitions, plus the one WhiteRoom word their detail uses.
-const HINT = `${HELP.unusualBehaviour} Streamed calls can\u2019t be checked for repeats. ${HELP.agentHealthCheck} ${WATCH_DEFINITION} Open a row for the detail.`;
+const HINT = `${HELP.unusualBehaviour} Streamed calls can\u2019t be checked for repeats. Not tracked yet: ${untrackedSignals().join(', ').toLowerCase()}. ${HELP.agentHealthCheck} ${WATCH_DEFINITION} Open a row for the detail.`;
 
 const TONE: Record<HealthRow['tone'], string> = { ok: 'var(--tx)', warn: 'var(--warn-tx)', muted: 'var(--tx2)' };
 
 /**
- * Performance › Agent health: one card for the verdict, Unusual behaviour,
- * the health check and what's waiting in Recommendations. Each is one line;
- * a row with detail unfolds, and a row with a problem starts unfolded.
+ * Performance › Agent health, beside Recommendations: the verdict, then one
+ * line each for Unusual behaviour and the health check. A row unfolds for its
+ * detail, and starts unfolded when it has a problem.
  */
 export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onReview }: {
   flagged: FlaggedRuns;
@@ -26,6 +26,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onRev
   line: StatusLine | null;
   onCheck: () => void;
   openRecs: number | null;
+  /** Jump to Recommendations, where each problem's fix is. */
   onReview: () => void;
 }) {
   const flaggedRuns = flaggedRunCount(flagged);
@@ -37,8 +38,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onRev
   });
   const unusual = unusualRow({ count: flaggedRuns, atLeast: flagged.truncated, failed: flagged.failed, loading: flagged.loading });
   // Before the first stored check, the status line is the row ("starts once it makes 50 calls…").
-  const health = healthRow(summary, openFindingLabels(diagnosis)) ?? (line ? { tone: line.error ? 'warn' : 'muted', text: line.text } as HealthRow : null);
-  const recs = recsRowText(openRecs, summary ? summary.openFindings : 0);
+  const health = healthRow(summary) ?? (line ? { tone: line.error ? 'warn' : 'muted', text: line.text } as HealthRow : null);
   if (!unusual && !health) return null;
   const warn = verdict?.tone === 'warn';
 
@@ -77,16 +77,8 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, openRecs, onRev
         )}
         {health && (
           <Row label="Health check" row={health} open={checksOpenByDefault(diagnosis)}>
-            {diagnosis && (diagnosis.reports.length > 0 || diagnosis.waiting.length > 0) && <CheckList data={diagnosis} />}
+            {diagnosis && (diagnosis.reports.length > 0 || diagnosis.waiting.length > 0) && <CheckList data={diagnosis} onFix={onReview} />}
           </Row>
-        )}
-        {recs && (
-          <div className="wr-health__row wr-health__row--plain">
-            <span className="wr-health__label">Recommendations</span>
-            {openRecs
-              ? <button type="button" className="dx-link dx-strong" onClick={onReview} style={{ minHeight: 24 }}>{recs} →</button>
-              : <span style={{ color: 'var(--tx2)' }}>{recs}</span>}
-          </div>
         )}
       </div>
     </section>
@@ -102,7 +94,7 @@ function Row({ label, row, open, children }: { label: string; row: HealthRow; op
   return (
     <details key={String(open)} open={open} className="wr-health__row">
       <summary>
-        <svg className="wr-health__chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 6 15 12 9 18" /></svg>
+        <svg className="wr-health__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 6 15 12 9 18" /></svg>
         <span className="wr-health__label">{label}</span>
         {text}
       </summary>
@@ -118,7 +110,7 @@ const ICON: Record<CheckRow['tone'], { color: string; label: string; path: React
 };
 
 /** Health check, unfolded: one short row per check, per agent. */
-function CheckList({ data }: { data: FleetDiagnosis }) {
+function CheckList({ data, onFix }: { data: FleetDiagnosis; onFix: () => void }) {
   const agents = checkRows(data);
   return (
     <div style={{ display: 'grid', gap: 12, maxWidth: 760 }}>
@@ -129,8 +121,9 @@ function CheckList({ data }: { data: FleetDiagnosis }) {
             {a.rows.map((r, i) => (
               <li key={`${r.tone}-${r.title}-${i}`} style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px', padding: '5px 0', fontSize: 13 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={ICON[r.tone].label} style={{ color: ICON[r.tone].color, flex: 'none', alignSelf: 'center' }}>{ICON[r.tone].path}</svg>
-                <span style={{ flex: '1 1 200px', color: r.tone === 'problem' ? 'var(--warn-tx)' : 'var(--tx)', fontWeight: r.tone === 'problem' ? 600 : 400 }}>{r.title}</span>
-                {r.note && <span style={{ flex: '0 1 auto', color: 'var(--tx2)', fontSize: 12.5 }}>{r.note}</span>}
+                <span style={{ color: r.tone === 'problem' ? 'var(--warn-tx)' : 'var(--tx)', fontWeight: r.tone === 'problem' ? 600 : 400 }}>{r.title}</span>
+                {r.note && <span style={{ color: 'var(--tx2)', fontSize: 12.5 }}>{r.note}</span>}
+                {r.tone === 'problem' && <button type="button" className="dx-link dx-strong" onClick={onFix} style={{ fontSize: 12.5, minHeight: 24 }}>See the fix →</button>}
               </li>
             ))}
           </ul>

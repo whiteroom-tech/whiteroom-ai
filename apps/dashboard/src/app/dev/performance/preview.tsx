@@ -123,8 +123,8 @@ export function PerformancePreview() {
           }}
         />
         {sample === 'quiet'
-          ? <><Insights key="quiet" runs={[]} health={QUIET} openRecs={1} /><Recs key="quiet-recs" recs={RECS_QUIET} /></>
-          : <><Insights key="problem" runs={FLAGGED} health={PROBLEM} openRecs={2} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></>}
+          ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} openRecs={1} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
+          : <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="problem" runs={FLAGGED} health={PROBLEM} openRecs={2} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
         </>}
       </div>
     </AppShell>

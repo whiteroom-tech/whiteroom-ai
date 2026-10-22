@@ -109,14 +109,6 @@ export function openFindingCount(d: FleetDiagnosis): number {
   return d.reports.reduce((n, r) => n + r.findings.filter((f) => f.status === 'open').length, 0);
 }
 
-/** Open findings as "Handing over too often · lead-agent", in report order; unknown detectors skipped. */
-export function openFindingLabels(d: FleetDiagnosis | null): string[] {
-  if (!d) return [];
-  return d.reports.flatMap((r) => r.findings
-    .filter((f) => f.status === 'open' && isDiagnosisDetector(f.detector))
-    .map((f) => `${TITLES[f.detector as keyof typeof TITLES]} · ${r.agentId}`));
-}
-
 /** Agents with an open finding, in report order. */
 export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
   return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];

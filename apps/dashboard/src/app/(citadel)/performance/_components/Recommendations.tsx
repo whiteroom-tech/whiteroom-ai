@@ -9,7 +9,7 @@ import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import { FONT_MONO } from '@whiteroom/ui';
 import { fmtDay } from '@/lib/format';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
-import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, type RecRowAction } from '@/lib/performance-insights';
+import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction } from '@/lib/performance-insights';
 import { Badge, Btn, CARD, H3 } from './primitives';
 import { DiagnosisRow, isDiagnosisRow } from './Diagnosis';
 
@@ -80,31 +80,26 @@ export function RecommendationsCard({
           error={feedbackError?.recId === rec.id ? feedbackError.message : null}
         />
       ) : (
-        <div key={rec.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                <button onClick={() => onSelectAgent(rec.agentId)} style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{rec.agentId}</button>
-                <Badge status={rec.status} />
-                <Badge status={rec.verificationStatus} size="small" />
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--tx3)' }}>
-                {rec.detector.replace(/_/g, ' ')} &middot; {fmtDay(rec.createdAt)}
-                {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} action{rec.feedbackCount !== 1 ? 's' : ''}</>}
-              </div>
-            </div>
-            <RecActions
-              open={rec.status === 'open'}
-              busy={feedbackLoading === rec.id}
-              onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
-              onFeedback={(f) => onFeedback(rec, f)}
-            />
+        <article key={rec.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>{recTitle(rec.detector)}</span>
+            <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{rec.agentId}</button>
+            <Badge status={rec.status} />
+            {rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
           </div>
-          {feedbackError?.recId === rec.id && (
-            <div style={{ fontSize: 11.5, color: 'var(--bad)', marginTop: 6, textAlign: 'right' }}>{feedbackError.message}</div>
-          )}
-          {rec.summary && <div style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 6, paddingLeft: 2, lineHeight: 1.5 }}>{rec.summary}</div>}
-        </div>
+          {rec.summary && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
+          <div style={{ fontSize: 12, color: 'var(--tx2)' }}>
+            Since {fmtDay(rec.createdAt)}
+            {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} action{rec.feedbackCount !== 1 ? 's' : ''}</>}
+          </div>
+          <RecActions
+            open={rec.status === 'open'}
+            busy={feedbackLoading === rec.id}
+            onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
+            onFeedback={(f) => onFeedback(rec, f)}
+          />
+          {feedbackError?.recId === rec.id && <div role="alert" style={{ fontSize: 11.5, color: 'var(--bad)' }}>{feedbackError.message}</div>}
+        </article>
       )) : (
         <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
           {loading ? 'Loading…' : error ? 'Recommendations unavailable.' : recEmptyText(status, hasCalls, filtered)}
@@ -153,7 +148,7 @@ function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; bus
     dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback(recFeedback('dismiss'))} loading={busy} />,
   };
   return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
       {recRowActions(open, more).map((a) => buttons[a])}
     </div>
   );
