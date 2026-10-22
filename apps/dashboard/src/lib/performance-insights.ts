@@ -17,6 +17,8 @@ export interface VerdictInput {
   flaggedAtLeast: boolean;
   /** The flags are still loading or couldn't be loaded: unknown, so never "fine". */
   flagsPending: boolean;
+  /** The health check is on but has no result yet (checking, failed, never run): never "fine". */
+  healthPending?: boolean;
   /** Open health-check findings; null when the check is off or hasn't run. */
   problems: number | null;
   /** The agent with open findings, when exactly one has them. */
@@ -39,7 +41,7 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
   const flagged = i.flaggedRuns ?? 0;
   if (problems > 0) return { tone: 'warn', title: i.problemAgent ? `${i.problemAgent} needs a look` : 'Some agents need a look' };
   if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${plural(flagged, i.flaggedAtLeast, 'run looked', 'runs looked')} unusual` };
-  if (i.flagsPending) return null;
+  if (i.flagsPending || i.healthPending) return null;
   return { tone: 'ok', title: 'Your agents look fine' };
 }
 

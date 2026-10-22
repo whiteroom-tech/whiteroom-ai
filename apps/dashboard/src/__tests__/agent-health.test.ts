@@ -1,6 +1,7 @@
 // Performance › Agent health: how the card's three sources become what it shows.
 import { describe, expect, it } from 'vitest';
 import { agentHealthView, type FlagState } from '@/lib/agent-health';
+import { flagFetch } from '@/components/performance/UnusualBehaviour';
 import type { DiagnosisFinding, FleetDiagnosis } from '@/lib/whiteroom/types';
 
 const quietFlags: FlagState = { count: 0, truncated: false, failed: false, loading: false };
@@ -51,10 +52,32 @@ describe('agent health card', () => {
     expect(agentHealthView({ ...quietFlags, count: null, failed: true }, fleet([report('a', [])]), line)!.verdict).toBeNull();
   });
 
+  it('never "fine" while the health check has no result yet; fine when it is switched off', () => {
+    expect(agentHealthView(quietFlags, fleet([], null), line)!.verdict).toBeNull();
+    expect(agentHealthView(quietFlags, null, { text: 'Couldn’t finish the check.', action: { label: 'Try again' }, busy: false, error: true })!.verdict).toBeNull();
+    expect(agentHealthView(quietFlags, null, null)!.verdict).toEqual({ tone: 'ok', title: 'Your agents look fine' });
+  });
+
   it('before the first stored check: a short row, the status line stays for the header', () => {
     const v = agentHealthView(quietFlags, fleet([], null), { ...line, text: 'First check runs within the hour' })!;
     expect(v.health).toEqual({ tone: 'muted', text: 'Not checked yet' });
     const failed = agentHealthView(quietFlags, null, { text: 'Couldn’t finish the check.', action: { label: 'Try again' }, busy: false, error: true })!;
     expect(failed.health).toEqual({ tone: 'warn', text: 'The last check didn’t finish' });
+  });
+});
+
+describe('flagged-runs fetch', () => {
+  const runs = [{ agentId: 'a', startedAt: '2026-10-22T10:00:00Z', flags: [{ signal: 'repeating_call' }] }] as never[];
+  const loading = flagFetch(undefined as never, { type: 'start' });
+  it('starts loading and clears the old result', () => {
+    expect(loading).toEqual({ runs: null, truncated: false, failed: false, loading: true });
+  });
+  it('always stops loading: with runs, on an engine without flags, or on failure', () => {
+    expect(flagFetch(loading, { type: 'done', got: { runs, truncated: true } })).toEqual({ runs, truncated: true, failed: false, loading: false });
+    expect(flagFetch(loading, { type: 'done', got: { unsupported: true } })).toEqual({ runs: null, truncated: false, failed: false, loading: false });
+    expect(flagFetch(loading, { type: 'failed' })).toEqual({ runs: null, truncated: false, failed: true, loading: false });
+  });
+  it('a refetch after a failure clears the failure', () => {
+    expect(flagFetch(flagFetch(loading, { type: 'failed' }), { type: 'start' }).failed).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer } from 'react';
 import Link from 'next/link';
 import { FONT_MONO } from '@whiteroom/ui';
 import { listRuns } from '@/lib/whiteroom/client';
@@ -22,39 +22,50 @@ export interface FlaggedRuns {
   days: string[];
 }
 
+type FlagFetchState = Omit<FlaggedRuns, 'days'>;
+const FLAGS_LOADING: FlagFetchState = { runs: null, truncated: false, failed: false, loading: true };
+
+/**
+ * The flagged-runs fetch as a reducer, so every transition is tested: a new
+ * fetch clears the old result; done shows runs, or nothing on an engine
+ * without flags (unsupported, or one that ignores the filter); failed says so.
+ * Loading always ends.
+ */
+export function flagFetch(
+  _prev: FlagFetchState,
+  a: { type: 'start' } | { type: 'failed' } | { type: 'done'; got: { unsupported: true } | { runs: RunSummary[]; truncated: boolean } },
+): FlagFetchState {
+  if (a.type === 'start') return FLAGS_LOADING;
+  if (a.type === 'failed') return { runs: null, truncated: false, failed: true, loading: false };
+  if ('unsupported' in a.got || ignoresFlagged(a.got.runs)) return { runs: null, truncated: false, failed: false, loading: false };
+  return { runs: a.got.runs, truncated: a.got.truncated, failed: false, loading: false };
+}
+
 /**
  * The last 7 days' flagged runs, shared by Unusual behaviour and the verdict
  * line above it. `preview` skips the fetch (dev previews).
  */
 export function useFlaggedRuns(fleetId: string, authKey?: string, preview?: RunSummary[]): FlaggedRuns {
-  const [runs, setRuns] = useState<RunSummary[] | null>(preview ?? null);
-  const [truncated, setTruncated] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(!preview);
+  const [state, dispatch] = useReducer(flagFetch, preview ? { runs: preview, truncated: false, failed: false, loading: false } : FLAGS_LOADING);
   const today = localDay();
   const days = Array.from({ length: DAYS }, (_, i) => addDays(today, i - DAYS + 1));
 
   useEffect(() => {
     if (preview) return;
     let live = true;
-    setRuns(null);
-    setFailed(false);
-    setLoading(true);
+    dispatch({ type: 'start' });
     collectRuns((cursor) => listRuns(fleetId, { fromDay: days[0], toDay: today, flagged: true, cursor, pageSize: 50 }, authKey), 20)
       .then(
-        (got) => {
-          if (!live) return;
-          if (!('unsupported' in got) && !ignoresFlagged(got.runs)) { setRuns(got.runs); setTruncated(got.truncated); }
-          setLoading(false);
-        },
-        () => { if (live) { setFailed(true); setLoading(false); } },
+        // A response for an older fleet/day (live false) is dropped.
+        (got) => { if (live) dispatch({ type: 'done', got: 'unsupported' in got ? { unsupported: true } : got }); },
+        () => { if (live) dispatch({ type: 'failed' }); },
       );
     return () => { live = false; };
     // days is derived from today
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fleetId, authKey, today, preview]);
 
-  return { runs, truncated, failed, loading, days };
+  return { ...state, days };
 }
 
 /** Flagged runs in the window; null when not known. */

@@ -33,6 +33,8 @@ export function agentHealthView(flags: FlagState, diagnosis: FleetDiagnosis | nu
   const verdict = insightsVerdict({
     flaggedRuns: flags.count, flaggedAtLeast: flags.truncated, flagsPending: flags.failed || flags.loading,
     problems: summary ? summary.openFindings : null, problemAgent: agents.length === 1 ? agents[0] : null,
+    // The check is on (it has a status line) but there's no result to stand on yet.
+    healthPending: !summary && !!line,
   });
   const unusual = unusualRow({ count: flags.count, atLeast: flags.truncated, failed: flags.failed, loading: flags.loading });
   // Before the first stored check, the row says so briefly; the full status and its action are in the header.
