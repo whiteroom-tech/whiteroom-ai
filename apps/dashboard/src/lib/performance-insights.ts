@@ -114,6 +114,19 @@ export interface HealthRow {
   text: string;
 }
 
+/** A fold-out row is open by the person's choice once they've made one, else by its default (open when it has news). */
+export function rowOpen(chosen: boolean | null, byDefault: boolean): boolean {
+  return chosen ?? byDefault;
+}
+
+/**
+ * The choice after a toggle event. Only a change from what was shown counts as
+ * the person's choice: the event also fires when the default flips the row.
+ */
+export function toggleChoice(chosen: boolean | null, shown: boolean, nowOpen: boolean): boolean | null {
+  return nowOpen === shown ? chosen : nowOpen;
+}
+
 /** Unusual behaviour's row; null on engines without run flags (the row hides). */
 export function unusualRow(f: { count: number | null; atLeast: boolean; failed: boolean; loading: boolean }): HealthRow | null {
   if (f.loading) return { tone: 'muted', text: 'Loading\u2026' };

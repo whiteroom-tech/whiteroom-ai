@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -112,5 +112,25 @@ describe('agent health rows', () => {
       run('scout-agent', '2026-10-21T12:00:00', ['error_streak']),
       run('old-agent', '2026-09-01T12:00:00', ['error_streak']),
     ], days)).toEqual({ 'lead-agent': 'repeating the same call, failed calls in a row', 'scout-agent': 'failed calls in a row' });
+  });
+});
+
+describe('fold-out rows', () => {
+  it('follow their default until someone opens or closes them', () => {
+    expect(rowOpen(null, true)).toBe(true);
+    expect(rowOpen(null, false)).toBe(false);
+  });
+  it('keep the person’s choice when new data flips the default', () => {
+    // Closed a row that opened for a problem…
+    const chosen = toggleChoice(null, true, false);
+    expect(chosen).toBe(false);
+    // …a refetch still has the problem, or a new one: it stays closed.
+    expect(rowOpen(chosen, true)).toBe(false);
+    // Opened a quiet row: it stays open when the default stays closed.
+    expect(rowOpen(toggleChoice(null, false, true), false)).toBe(true);
+  });
+  it('ignore the toggle event the default itself causes', () => {
+    expect(toggleChoice(null, true, true)).toBeNull();
+    expect(toggleChoice(false, false, false)).toBe(false);
   });
 });

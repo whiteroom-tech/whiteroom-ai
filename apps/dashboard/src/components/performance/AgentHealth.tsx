@@ -6,7 +6,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { WATCH_DEFINITION } from '@/lib/diagnosis/copy';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { agentsWithOpenFindings, checkRows, checksOpenByDefault, diagnosisSummary, type CheckRow, type StatusLine } from '@/lib/diagnosis/model';
-import { healthRow, insightsVerdict, unusualRow, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
+import { healthRow, insightsVerdict, rowOpen, toggleChoice, unusualRow, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
 // The two sources' own definitions, plus the one WhiteRoom word their detail uses.
@@ -44,7 +44,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
   return (
     <section aria-labelledby="agent-health-heading" className={`wr-health${warn ? ' wr-health--warn' : ''}`}>
       <div className="wr-health__head">
-        <h2 id="agent-health-heading" style={{ margin: 0, fontSize: 14, fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h2>
+        <h3 id="agent-health-heading" style={{ margin: 0, fontSize: 14, fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h3>
         {summary && line && (
           <span aria-live="polite" className="wr-health__status" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: line.error ? 'var(--bad)' : 'var(--tx2)' }}>
             {line.busy && <span className="dx-spin" aria-hidden />}
@@ -71,7 +71,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
       <div className="wr-health__rows">
         {unusual && (
           <Row label="Unusual behaviour" row={unusual} open={unusual.tone === 'warn'}>
-            {flagged.runs && <UnusualDetails flagged={flagged} />}
+            {!!flaggedRuns && <UnusualDetails flagged={flagged} />}
           </Row>
         )}
         {health && (
@@ -91,13 +91,13 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
  */
 function Row({ label, row, open, children }: { label: string; row: HealthRow; open: boolean; children?: ReactNode }) {
   const [chosen, setChosen] = useState<boolean | null>(null);
-  const isOpen = chosen ?? open;
+  const isOpen = rowOpen(chosen, open);
   const text = <span className="wr-health__text" style={{ color: TONE[row.tone], fontWeight: row.tone === 'warn' ? 600 : 400 }}>{row.text}</span>;
   if (!children) {
     return <div className="wr-health__row wr-health__row--plain"><span className="wr-health__label">{label}</span>{text}</div>;
   }
   return (
-    <details open={isOpen} onToggle={(e) => { const now = e.currentTarget.open; if (now !== isOpen) setChosen(now); }} className="wr-health__row">
+    <details open={isOpen} onToggle={(e) => setChosen((c) => toggleChoice(c, isOpen, e.currentTarget.open))} className="wr-health__row">
       <summary>
         <svg className="wr-health__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 6 15 12 9 18" /></svg>
         <span className="wr-health__label">{label}</span>

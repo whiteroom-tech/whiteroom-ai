@@ -47,7 +47,6 @@ export function RecommendationsCard({
   feedbackError: { recId: string; message: string } | null;
 }) {
   return (
-    <>
     <div style={{ ...CARD, marginBottom: 0 }} id="recommendations">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <h3 style={H3} id="recommendations-heading" tabIndex={-1}>
@@ -128,7 +127,6 @@ export function RecommendationsCard({
       )}
 
     </div>
-    </>
   );
 }
 

@@ -251,7 +251,6 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
   );
 }
 
-
 function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, trendUnit, onClick, active }: {
   label: string; value: string; sub?: string; warn?: boolean;
   sparklineData?: (number | null)[]; sparklineColor?: string;
@@ -788,7 +787,6 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   }, [fleetId, authKey, recStatus, recAgentQuery]);
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
-
 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
