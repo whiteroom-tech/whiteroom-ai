@@ -115,7 +115,7 @@ export function UnusualDetails({ flagged }: { flagged: FlaggedRuns }) {
       )}
       <p style={note}>
         {truncated && <>Showing the newest {runs.length.toLocaleString('en-US')} flagged runs. </>}
-        Alerts only, it never blocks.
+        Alerts only, it never blocks. Streamed calls can&rsquo;t be checked for repeats.
         {untracked.length > 0 && <> Not tracked yet: {untracked.join(', ').toLowerCase()}.</>}
       </p>
     </div>

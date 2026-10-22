@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+import { SegmentedControl } from '@whiteroom/ui';
+
 import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
@@ -62,11 +65,18 @@ const ENTRIES = [0, 1, 2, 4, 5, 6].flatMap((ago) => [
   { type: 'task_complete', timestamp: day(ago, 14), agentId: 'scout-agent', tokensUsed: 4_000 },
 ]);
 
+type Sample = 'quiet' | 'problem' | 'empty';
+
 export function PerformancePreview() {
+  // One sample at a time, so each card shows once, as on the real page.
+  const [sample, setSample] = useState<Sample>('quiet');
   return (
     <AppShell>
-      <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>} />
+      <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>}>
+        <SegmentedControl<Sample> label="Sample week" value={sample} onChange={setSample} options={[{ value: 'quiet', label: 'Quiet week' }, { value: 'problem', label: 'Has a problem', dot: 'warn' }, { value: 'empty', label: 'No data' }]} />
+      </PageHeader>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start', gridAutoRows: 'max-content' }}>
+        {sample === 'empty' ? <SavingsChart days={dailySavings([], 7, Date.now())} /> : <>
         <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
         <ByAgentTable
           rows={agentTotals([...ENTRIES, { type: 'model_call', timestamp: day(0, 15), tokensUsed: 1_200 }], Date.now() - 24 * 3_600_000)}
@@ -78,9 +88,10 @@ export function PerformancePreview() {
             'scout-agent': { agentId: 'scout-agent', calls: 40, completeRate: 25, costDiligence: 60, speedScore: 40, score: 4 },
           }}
         />
-        <Insights runs={[]} health={QUIET} openRecs={1} />
-        <Insights runs={FLAGGED} health={PROBLEM} openRecs={2} />
-        <SavingsChart days={dailySavings([], 7, Date.now())} />
+        {sample === 'quiet'
+          ? <Insights key="quiet" runs={[]} health={QUIET} openRecs={1} />
+          : <Insights key="problem" runs={FLAGGED} health={PROBLEM} openRecs={2} />}
+        </>}
       </div>
     </AppShell>
   );

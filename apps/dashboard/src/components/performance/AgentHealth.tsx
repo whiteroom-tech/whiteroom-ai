@@ -10,7 +10,7 @@ import { healthRow, insightsVerdict, recsRowText, unusualRow, type HealthRow } f
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
 // The two sources' own definitions, plus the one WhiteRoom word their detail uses.
-const HINT = `${HELP.unusualBehaviour} ${HELP.agentHealthCheck} ${WATCH_DEFINITION} Open a row for the detail.`;
+const HINT = `${HELP.unusualBehaviour} Streamed calls can\u2019t be checked for repeats. ${HELP.agentHealthCheck} ${WATCH_DEFINITION} Open a row for the detail.`;
 
 const TONE: Record<HealthRow['tone'], string> = { ok: 'var(--tx)', warn: 'var(--warn-tx)', muted: 'var(--tx2)' };
 
@@ -126,8 +126,8 @@ function CheckList({ data }: { data: FleetDiagnosis }) {
         <div key={a.agentId}>
           {agents.length > 1 && <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>{a.agentId}</div>}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {a.rows.map((r) => (
-              <li key={r.title} style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px', padding: '5px 0', fontSize: 13 }}>
+            {a.rows.map((r, i) => (
+              <li key={`${r.tone}-${r.title}-${i}`} style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px', padding: '5px 0', fontSize: 13 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={ICON[r.tone].label} style={{ color: ICON[r.tone].color, flex: 'none', alignSelf: 'center' }}>{ICON[r.tone].path}</svg>
                 <span style={{ flex: '1 1 200px', color: r.tone === 'problem' ? 'var(--warn-tx)' : 'var(--tx)', fontWeight: r.tone === 'problem' ? 600 : 400 }}>{r.title}</span>
                 {r.note && <span style={{ flex: '0 1 auto', color: 'var(--tx2)', fontSize: 12.5 }}>{r.note}</span>}
