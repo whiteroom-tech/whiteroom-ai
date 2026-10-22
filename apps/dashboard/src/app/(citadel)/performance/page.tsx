@@ -2,30 +2,29 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, performanceCostForecast, setBudgetUsd, setTokenBudget, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS } from '@/lib/performance-insights';
-import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { readSnapshot, saveSnapshot, updateSnapshot } from '@/lib/performance-snapshot';
-import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { fmtCost, fmtDay, fmtTime, fmtTokens, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { HELP } from '@/lib/metric-definitions';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AgentScore, PerformanceCostForecastResult, GovernanceRuleType } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, RecommendationDetail, RecommendationGetResult, DiagnosisDetectorId, FleetHourlyResult, FleetHourlyDataPoint, PerformanceModelSummary, AgentScore, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { countsFromRuleActions, governanceFromSummary, ruleActionsByAgent, RULE_LABELS, tallyTotal, tallyWords, type GovernanceCounts, type GovernanceTally } from '@/lib/governance';
-import { Banner, Hint, SegmentedControl, StatCard, TextInput, FONT_MONO } from '@whiteroom/ui';
+import { Banner, SegmentedControl, StatCard, FONT_MONO } from '@whiteroom/ui';
 import { Badge, CARD, H3 } from './_components/primitives';
 import { DiagnosisEvidence } from './_components/Diagnosis';
+import { CostTrackingSection } from './_components/CostTracking';
 import { RecommendationsCard } from './_components/Recommendations';
 import { ALREADY_CHANGED_NOTICE, isDiagnosisDetector, limitationText, MARKED_FIXED_TOAST, SNOOZE_DAYS, TITLES } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
@@ -559,162 +558,6 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
   return null;
 }
 
-/** True while the input identified by this aria-label has focus. */
-function editing(ariaLabel: string): boolean {
-  return typeof document !== 'undefined' && document.activeElement?.getAttribute('aria-label') === ariaLabel;
-}
-
-// The fleet's budget vs. spend to date. Backs onto performanceCostForecast
-// (which also carries a per-task-type $/task breakdown — deliberately not
-// shown here; a single "what's left" figure is what this card is for).
-function CostTrackingSection({ fleetId, authKey }: { fleetId: string; authKey?: string }) {
-  const [forecast, setForecast] = useState<PerformanceCostForecastResult | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [budgetDraft, setBudgetDraft] = useState('');
-  const [tokenBudgetDraft, setTokenBudgetDraft] = useState('');
-  // Set once the operator edits a draft; cleared on commit. While set (or while
-  // the input is focused), polls must not overwrite what they are typing.
-  const budgetDirty = useRef(false);
-  const tokenBudgetDirty = useRef(false);
-  // A failed save keeps the typed value (still dirty, so polls leave it
-  // alone and the next commit retries) but says plainly it wasn't saved.
-  const [budgetSaveError, setBudgetSaveError] = useState<string | null>(null);
-
-  const fetchForecast = useCallback(async (stale: () => boolean) => {
-    try {
-      const data = await performanceCostForecast(fleetId, undefined, authKey);
-      if (stale()) return;
-      if (data.error) { setLoadError(data.error); return; }
-      setLoadError(null);
-      setForecast(data);
-      if (!budgetDirty.current && !editing('Fleet budget in USD')) setBudgetDraft(data.budgetUsd != null ? String(data.budgetUsd) : '');
-      if (!tokenBudgetDirty.current && !editing('Fleet token budget')) setTokenBudgetDraft(data.tokenBudget != null ? String(data.tokenBudget) : '');
-    } catch {
-      if (!stale()) setLoadError('Could not reach the cost-tracking endpoint.');
-    }
-  }, [fleetId, authKey]);
-
-  const { refresh: refreshForecast } = usePoll(fetchForecast, { intervalMs: 60000 });
-
-  // usePoll fires on mount and on each tick with the latest fetchForecast, but
-  // its interval doesn't restart on identity change — refetch promptly if the
-  // fleet (or key) this card points at changes.
-  const forecastFirstRun = useRef(true);
-  useEffect(() => {
-    if (forecastFirstRun.current) { forecastFirstRun.current = false; return; }
-    refreshForecast();
-  }, [fetchForecast, refreshForecast]);
-
-  async function commitBudget(value: string) {
-    const trimmed = value.trim();
-    const n = trimmed === '' ? null : Number(trimmed);
-    if (n != null && !(n > 0)) { budgetDirty.current = false; setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
-    try {
-      const res = await setBudgetUsd(fleetId, n, authKey);
-      if (res.error || res.success === false) throw new Error(res.error);
-      budgetDirty.current = false;
-      setBudgetSaveError(null);
-      refreshForecast();
-    } catch {
-      const saved = forecast?.budgetUsd != null ? `$${forecast.budgetUsd}` : 'not set';
-      setBudgetSaveError(`Budget not saved — it is still ${saved}. Press Enter to retry.`);
-    }
-  }
-
-  async function commitTokenBudget(value: string) {
-    const trimmed = value.trim();
-    const n = trimmed === '' ? null : Number(trimmed);
-    if (n != null && !(n > 0)) { tokenBudgetDirty.current = false; setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
-    try {
-      const res = await setTokenBudget(fleetId, n, authKey);
-      if (res.error || res.success === false) throw new Error(res.error);
-      tokenBudgetDirty.current = false;
-      setBudgetSaveError(null);
-      refreshForecast();
-    } catch {
-      const saved = forecast?.tokenBudget != null ? `${forecast.tokenBudget.toLocaleString()} tokens` : 'not set';
-      setBudgetSaveError(`Token budget not saved — it is still ${saved}. Press Enter to retry.`);
-    }
-  }
-
-  if (loadError) {
-    return (
-      <div style={CARD}>
-        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
-        <div style={{ fontSize: 12, color: 'var(--bad)' }}>
-          Couldn&apos;t load cost tracking: {loadError}
-          {loadError === 'Unknown action.' && ' — the backend hasn’t been deployed with this feature yet.'}
-        </div>
-      </div>
-    );
-  }
-
-  if (!forecast) return null; // still loading the first response
-
-  return (
-    <div style={CARD}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
-        {/* Both budgets are always editable — dollar and token tasks-left are
-            tracked independently, so a fleet can set either or both, and
-            which one is actually usable can change as pricing coverage does. */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2" title="Used to estimate tasks remaining. It does not stop spending — add a spend cap on the Controls page for that.">
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>BUDGET</span>
-            <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
-          </div>
-          <div className="flex items-center gap-2" title="For a model with no $/token price on file yet — tracks tasks left in tokens instead of dollars.">
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', letterSpacing: 0.5 }}>TOKEN BUDGET</span>
-            <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
-          </div>
-        </div>
-      </div>
-      {budgetSaveError && (
-        <div role="alert" style={{ fontSize: 12, color: 'var(--bad)', margin: '-4px 0 12px' }}>{budgetSaveError}</div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
-            ${forecast.burnRateUsdPerHour.toFixed(2)} / h
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
-        </div>
-        {(() => {
-          const dollar = resolveTasksLeft(forecast, 'dollar');
-          const token = resolveTasksLeft(forecast, 'token');
-          return (
-            <>
-              <TasksLeftCell value={dollar.value} note={remainingTasksNoteFor(dollar.reason, 'dollar')} label="tasks left in today’s budget" />
-              <TasksLeftCell value={token.value} note={remainingTasksNoteFor(token.reason, 'token')} label="tasks left in today’s token budget" />
-            </>
-          );
-        })()}
-      </div>
-    </div>
-  );
-}
-
-/** One of the two tasks-left figures (dollar or token budget) — shares its render with the old combined field. */
-function TasksLeftCell({ value, note, label }: { value: number | null; note: string; label: string }) {
-  if (value == null) {
-    return (
-      <div>
-        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
-        <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>{note}</div>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: tasksLeftColor(value) }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>{label}</div>
-    </div>
-  );
-}
-
 /** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
@@ -919,10 +762,9 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         </section>
       )}
 
-      <div className="wr-perf-row wr-perf-row--cost">
-        <CostTrackingSection fleetId={fleetId} authKey={authKey} />
-        {savingsDays && <SavingsChart days={savingsDays} />}
-      </div>
+      {/* Each its own full row: Cost tracking (a card with its own bottom margin), then Savings. */}
+      <CostTrackingSection fleetId={fleetId} authKey={authKey} />
+      {savingsDays && <div style={{ marginBottom: 24 }}><SavingsChart days={savingsDays} /></div>}
       {byAgent && <div style={{ marginBottom: 24 }}><ByAgentTable rows={byAgent} scope={rangeLabel} ruleActions={ruleActions} scores={agentScores ?? undefined} /></div>}
       {/* Health on the left, what to do about it on the right; stacked below 1100px. */}
       <div className="wr-perf-row" style={{ marginBottom: 0 }}>

@@ -11,8 +11,9 @@ import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { statusLine } from '@/lib/diagnosis/model';
-import type { DiagnosisFinding, FleetDiagnosis, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
+import type { DiagnosisFinding, FleetDiagnosis, PerformanceCostForecastResult, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
+import { CostTrackingSection } from '@/app/(citadel)/performance/_components/CostTracking';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
   runId: `${agentId}~${daysAgo}`, agentId, shift: 10 - daysAgo, startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), endedAt: new Date().toISOString(),
@@ -85,6 +86,13 @@ function Recs({ recs }: { recs: RecommendationDetail[] }) {
   );
 }
 
+// Cost tracking: a daily dollar budget set, no token budget.
+const FORECAST: PerformanceCostForecastResult = {
+  fleetId: 'acme-claims-prod', budgetUsd: 5, spendToDateUsd: 0.91, spentTodayUsd: 0.13, burnRateUsdPerHour: 0.0054, remainingTasks: 42,
+  costUnavailable: false, tokensPerHour: 2_400, tokenBudget: null, budgetPeriod: 'day', budgetTimeZone: 'America/New_York',
+  burnLookbackHours: 24, burnActiveHours: 6, dollarRemainingTasks: 42, dollarRemainingTasksReason: 'available', tokenRemainingTasks: null, tokenRemainingTasksReason: 'budget_missing',
+};
+
 // Sample week shaped like the redesign's screen 4: tasks most days, a
 // handover now and then, one quiet day.
 const day = (ago: number, hour: number) => {
@@ -120,6 +128,8 @@ export function PerformancePreview() {
             <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value="59" sub="59 would act (Watch only)" />
           </div>
         )}
+        {/* The card carries its own 24px bottom margin; the grid gap already spaces it here. */}
+        {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection fleetId="acme-claims-prod" preview={FORECAST} /></div>}
         {sample === 'empty' ? <SavingsChart days={dailySavings([], 7, Date.now())} /> : <>
         <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
         <ByAgentTable

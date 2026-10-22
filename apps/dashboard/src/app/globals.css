@@ -391,7 +391,6 @@ a.wr-btn { text-decoration: none; }
 /* Performance (README › Performance) */
 .wr-perf-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .wr-perf-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; margin-bottom: 24px; }
-.wr-perf-row--cost { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
 .wr-perf-row > * { margin-bottom: 0 !important; min-width: 0; }
 /* Performance › Agent health: verdict + one folded row per source. */
 .wr-health { margin-bottom: 24px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
@@ -415,7 +414,7 @@ a.wr-btn { text-decoration: none; }
 @media (max-width: 720px) { .wr-health__label { flex-basis: auto; } .wr-health__status { margin-left: 0; } }
 @media (max-width: 1100px) {
   .wr-perf-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .wr-perf-row, .wr-perf-row--cost { grid-template-columns: minmax(0, 1fr); }
+  .wr-perf-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Fleet key (app/fleet-key/onboarding) */
