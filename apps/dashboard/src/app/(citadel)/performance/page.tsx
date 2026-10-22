@@ -31,7 +31,7 @@ import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedba
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 type FeedbackResult = 'done' | 'closed' | 'failed';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
-import { attentionStrip, diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
+import { agentsWithOpenFindings, diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
@@ -781,6 +781,8 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   // request, so an out-of-order reply can't show the wrong list or store a
   // stale cursor for "Load more".
   const recReq = useRef(0);
+  // Same for the open count, which two requests can write.
+  const openReq = useRef(0);
 
   // Debounce the agent filter so we don't fire a request per keystroke.
   useEffect(() => {
@@ -791,6 +793,8 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   const fetchRecs = useCallback(async (cursor?: string) => {
     const req = ++recReq.current;
     const stale = () => recReq.current !== req;
+    const writesOpen = !cursor && recStatus === 'open' && !recAgentQuery.trim();
+    const openId = writesOpen ? ++openReq.current : 0;
     setRecLoading(true);
     try {
       const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: 15, includeSummaries: true };
@@ -804,7 +808,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-      if (!cursor && recStatus === 'open' && !opts.agentId) setOpenTotal(res.total);
+      if (writesOpen && openReq.current === openId) setOpenTotal(res.total);
     } catch {
       if (!stale()) setRecError('Failed to load recommendations.');
     } finally {
@@ -816,9 +820,10 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
 
   // The verdict's "to review" count when the list shows something else.
   const fetchOpenTotal = useCallback(async () => {
+    const id = ++openReq.current;
     try {
       const res = await performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey);
-      if (!res.error) setOpenTotal(res.total);
+      if (!res.error && openReq.current === id) setOpenTotal(res.total);
     } catch { /* the count just stays as it was */ }
   }, [fleetId, authKey]);
   const listIsOpenCount = recStatus === 'open' && !recAgentQuery.trim();
@@ -864,7 +869,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
   const healthSummary = diagnosisSummary(diagnosis.data);
-  const strip = attentionStrip(diagnosis.data);
+  const problemAgents = agentsWithOpenFindings(diagnosis.data);
   const seeFindings = () => {
     setDiagnosisNotice(null);
     setRecStatus('open');
@@ -971,8 +976,9 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
       <InsightsVerdict
         input={{
           flaggedRuns: flaggedRunCount(flagged),
+          flagsFailed: flagged.failed,
           problems: healthSummary ? healthSummary.openFindings : null,
-          problemAgent: strip && !strip.names ? strip.lead.replace(/ needs attention$/, '') : null,
+          problemAgent: problemAgents.length === 1 ? problemAgents[0] : null,
           openRecs: openTotal,
         }}
         onReview={seeFindings}

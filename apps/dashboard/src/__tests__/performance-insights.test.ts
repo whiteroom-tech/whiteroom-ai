@@ -3,7 +3,7 @@ import { insightsVerdict, quietUnusualLine, untrackedSignals } from '@/lib/perfo
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
-const base = { flaggedRuns: 0, problems: 0, problemAgent: null, openRecs: 0 };
+const base = { flaggedRuns: 0, flagsFailed: false, problems: 0, problemAgent: null, openRecs: 0 };
 
 describe('performance verdict', () => {
   it('stays hidden until the flags or the health check are known', () => {
@@ -12,6 +12,10 @@ describe('performance verdict', () => {
   it('says fine when nothing is flagged and nothing is wrong, even with recommendations to review', () => {
     expect(insightsVerdict({ ...base, openRecs: 2 })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
     expect(insightsVerdict({ ...base, problems: null })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
+  });
+  it('never says fine when the flags failed to load', () => {
+    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsFailed: true })).toBeNull();
+    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsFailed: true, problems: 1, problemAgent: 'lead-agent' })!.tone).toBe('warn');
   });
   it('names the one agent with a problem', () => {
     expect(insightsVerdict({ ...base, problems: 1, problemAgent: 'lead-agent' })).toEqual({ tone: 'warn', title: 'lead-agent needs a look' });
@@ -32,7 +36,7 @@ describe('unusual behaviour quiet state', () => {
   it('flagged runs are counted only inside the window, and unknown while loading', () => {
     const days = ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'];
     const run = (startedAt: string) => ({ agentId: 'lead-agent', startedAt, flags: [{ signal: 'repeating_call' }] }) as never;
-    expect(flaggedRunCount({ runs: null, truncated: false, failed: false, days })).toBeNull();
-    expect(flaggedRunCount({ runs: [run('2026-10-19T12:00:00'), run('2026-10-20T12:00:00'), run('2026-10-01T12:00:00')], truncated: false, failed: false, days })).toBe(2);
+    expect(flaggedRunCount({ runs: null, truncated: false, failed: false, loading: true, days })).toBeNull();
+    expect(flaggedRunCount({ runs: [run('2026-10-19T12:00:00'), run('2026-10-20T12:00:00'), run('2026-10-01T12:00:00')], truncated: false, failed: false, loading: false, days })).toBe(2);
   });
 });

@@ -109,10 +109,15 @@ export function openFindingCount(d: FleetDiagnosis): number {
   return d.reports.reduce((n, r) => n + r.findings.filter((f) => f.status === 'open').length, 0);
 }
 
+/** Agents with an open finding, in report order. */
+export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
+  return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];
+}
+
 /** The attention strip (§6.2.1): null when nothing is open. */
 export function attentionStrip(d: FleetDiagnosis | null): { lead: string; names: string } | null {
   if (!d) return null;
-  const agents = d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId);
+  const agents = agentsWithOpenFindings(d);
   if (agents.length === 0) return null;
   if (agents.length === 1) return { lead: `${agents[0]} needs attention`, names: '' };
   const shown = agents.slice(0, 3).join(', ');

@@ -8,6 +8,8 @@ import { UNUSUAL_SIGNALS } from '@/lib/runs';
 export interface VerdictInput {
   /** Flagged runs in the last 7 days; null when unknown (loading, failed, unsupported). */
   flaggedRuns: number | null;
+  /** The flags couldn't be loaded: unknown, so never "fine". */
+  flagsFailed: boolean;
   /** Open health-check findings; null when the check is off or hasn't run. */
   problems: number | null;
   /** The agent with open findings, when exactly one has them. */
@@ -21,13 +23,17 @@ export interface Verdict {
   title: string;
 }
 
-/** Null when neither the flags nor the health check are known: never claim "fine" on no data. */
+/**
+ * Null when neither the flags nor the health check are known, or when the
+ * flags failed and nothing is wrong elsewhere: never claim "fine" on missing data.
+ */
 export function insightsVerdict(i: VerdictInput): Verdict | null {
   if (i.flaggedRuns === null && i.problems === null) return null;
   const problems = i.problems ?? 0;
   const flagged = i.flaggedRuns ?? 0;
   if (problems > 0) return { tone: 'warn', title: i.problemAgent ? `${i.problemAgent} needs a look` : 'Some agents need a look' };
   if (flagged > 0) return { tone: 'warn', title: `${flagged} ${flagged === 1 ? 'run looked' : 'runs looked'} unusual` };
+  if (i.flagsFailed) return null;
   return { tone: 'ok', title: 'Your agents look fine' };
 }
 

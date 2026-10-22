@@ -7,7 +7,7 @@ import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
 import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
 import { DiagnosisCard } from '@/app/(citadel)/performance/_components/Diagnosis';
-import { diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
+import { agentsWithOpenFindings, diagnosisSummary, statusLine } from '@/lib/diagnosis/model';
 import type { DiagnosisFinding, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
@@ -46,9 +46,10 @@ const PROBLEM = diagnosis([HANDOVER_FINDING]);
 function Insights({ runs, health, openRecs }: { runs: RunSummary[]; health: FleetDiagnosis; openRecs: number }) {
   const flaggedRuns = useFlaggedRuns('acme-claims-prod', undefined, runs);
   const summary = diagnosisSummary(health);
+  const agents = agentsWithOpenFindings(health);
   return (
     <div>
-      <InsightsVerdict input={{ flaggedRuns: flaggedRunCount(flaggedRuns), problems: summary?.openFindings ?? null, problemAgent: summary?.openFindings ? 'lead-agent' : null, openRecs }} onReview={() => {}} />
+      <InsightsVerdict input={{ flaggedRuns: flaggedRunCount(flaggedRuns), flagsFailed: flaggedRuns.failed, problems: summary?.openFindings ?? null, problemAgent: agents.length === 1 ? agents[0] : null, openRecs }} onReview={() => {}} />
       <div className="wr-perf-row" style={{ marginBottom: 0 }}>
         <UnusualBehaviour flagged={flaggedRuns} />
         <DiagnosisCard data={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onSeeFindings={() => {}} />

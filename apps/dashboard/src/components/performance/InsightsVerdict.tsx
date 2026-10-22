@@ -12,7 +12,7 @@ export function InsightsVerdict({ input, onReview }: { input: VerdictInput; onRe
   if (!v) return null;
   const warn = v.tone === 'warn';
   return (
-    <section aria-label="Agent summary, last 7 days" className={`wr-verdict${warn ? ' wr-verdict--warn' : ''}`}>
+    <section aria-label="Agent summary" className={`wr-verdict${warn ? ' wr-verdict--warn' : ''}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         <span aria-hidden style={{
           display: 'inline-flex', flex: 'none', width: 30, height: 30, borderRadius: '50%', alignItems: 'center', justifyContent: 'center',
@@ -24,15 +24,14 @@ export function InsightsVerdict({ input, onReview }: { input: VerdictInput; onRe
         </span>
         <div style={{ minWidth: 0 }}>
           <div role="status" style={{ fontSize: 15.5, fontWeight: 700, color: warn ? 'var(--warn-tx)' : 'var(--tx)' }}>{v.title}</div>
-          <div style={{ fontSize: 12.5, color: 'var(--tx2)', marginTop: 2 }}>Last 7 days</div>
         </div>
       </div>
       <div className="wr-verdict-counts">
-        {input.flaggedRuns !== null && <span><b>{input.flaggedRuns.toLocaleString('en-US')}</b>{input.flaggedRuns === 1 ? 'flagged run' : 'flagged runs'}</span>}
-        {input.problems !== null && <span><b>{input.problems.toLocaleString('en-US')}</b>{input.problems === 1 ? 'problem' : 'problems'}</span>}
+        {input.flaggedRuns !== null && <span><b>{input.flaggedRuns.toLocaleString('en-US')}</b>{input.flaggedRuns === 1 ? 'flagged run' : 'flagged runs'} this week</span>}
+        {input.problems !== null && <span><b>{input.problems.toLocaleString('en-US')}</b>{input.problems === 1 ? 'open problem' : 'open problems'}</span>}
         {!!input.openRecs && (
           <button type="button" className="wr-link" onClick={onReview} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, fontWeight: 600, minHeight: 24 }}>
-            <b>{input.openRecs.toLocaleString('en-US')}</b>to review →
+            <b>{input.openRecs.toLocaleString('en-US')}</b>open {input.openRecs === 1 ? 'recommendation' : 'recommendations'} →
           </button>
         )}
       </div>
