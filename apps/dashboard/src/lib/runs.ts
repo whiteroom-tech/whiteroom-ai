@@ -347,24 +347,21 @@ export const UNUSUAL_SIGNALS = [
 ] as const;
 
 /**
- * Flagged runs over `days` (oldest first): how many runs showed each signal,
- * and per agent, flagged runs per day, busiest agent first.
+ * Flagged runs over `days` (oldest first), per agent per day, busiest agent
+ * first. Which kinds they were is agentSignals() in performance-insights.
  */
 export function unusualSummary(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 'flags'>[], days: string[]): {
-  bySignal: Record<string, number>;
   byAgent: { agentId: string; perDay: number[]; total: number }[];
 } {
-  const bySignal: Record<string, number> = {};
   const agents = new Map<string, number[]>();
   for (const r of runs) {
     const i = days.indexOf(localDay(Date.parse(r.startedAt)));
     if (!r.flags?.length || i < 0) continue;
-    for (const s of new Set(r.flags.map((f) => f.signal))) bySignal[s] = (bySignal[s] ?? 0) + 1;
     const perDay = agents.get(r.agentId) ?? days.map(() => 0);
     perDay[i]++;
     agents.set(r.agentId, perDay);
   }
   const byAgent = [...agents].map(([agentId, perDay]) => ({ agentId, perDay, total: perDay.reduce((a, b) => a + b, 0) }))
     .sort((a, b) => b.total - a.total || a.agentId.localeCompare(b.agentId));
-  return { bySignal, byAgent };
+  return { byAgent };
 }
