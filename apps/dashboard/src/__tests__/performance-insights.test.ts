@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { showRecAgentFilter, pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -135,5 +135,17 @@ describe('fold-out rows', () => {
   it('ignore the toggle event the default itself causes', () => {
     expect(toggleChoice(null, true, true)).toBeNull();
     expect(toggleChoice(false, false, false)).toBe(false);
+  });
+});
+
+describe('recommendations agent filter', () => {
+  it('shows when the rows come from more than one agent, even if only one had traffic in the range', () => {
+    expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], [{ agent: 'a' }], '')).toBe(true);
+  });
+  it('hides with one agent everywhere; shows with traffic from several, unknown traffic, or a typed filter', () => {
+    expect(showRecAgentFilter([{ agentId: 'a' }], [{ agent: 'a' }], '')).toBe(false);
+    expect(showRecAgentFilter([], [{ agent: 'a' }, { agent: 'b' }], '')).toBe(true);
+    expect(showRecAgentFilter([], null, '')).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }], [{ agent: 'a' }], 'x')).toBe(true);
   });
 });

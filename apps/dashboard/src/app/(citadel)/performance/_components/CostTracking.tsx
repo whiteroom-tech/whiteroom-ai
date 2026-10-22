@@ -21,9 +21,6 @@ function editing(ariaLabel: string): boolean {
   return typeof document !== 'undefined' && document.activeElement?.getAttribute('aria-label') === ariaLabel;
 }
 
-// The fleet's budget vs. spend to date. Backs onto performanceCostForecast
-// (which also carries a per-task-type $/task breakdown — deliberately not
-// shown here; a single "what's left" figure is what this card is for).
 /**
  * Where the card reads and saves. With `preview` (the dev preview's sample
  * fleet) nothing touches the network: reads return the sample with any budgets
@@ -46,6 +43,9 @@ export function costTrackingApi(preview?: PerformanceCostForecastResult) {
   };
 }
 
+// The fleet's budget vs. spend to date. Backs onto performanceCostForecast
+// (which also carries a per-task-type $/task breakdown — deliberately not
+// shown here; a single "what's left" figure is what this card is for).
 export function CostTrackingSection({ fleetId, authKey, preview }: {
   fleetId: string;
   authKey?: string;

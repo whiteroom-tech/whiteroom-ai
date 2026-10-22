@@ -65,6 +65,15 @@ export function untrackedSignals(): string[] {
 /** The list opens on what needs you. */
 export const DEFAULT_REC_STATUS = 'open';
 
+/**
+ * Whether Recommendations offers an agent filter: when its rows (fleet-wide,
+ * not range-scoped) come from more than one agent, when the range's traffic
+ * does, when the traffic list couldn't load, or while a filter is typed.
+ */
+export function showRecAgentFilter(recs: { agentId: string }[], byAgent: { agent: string }[] | null, typed: string): boolean {
+  return typed !== '' || byAgent === null || byAgent.length > 1 || new Set(recs.map((r) => r.agentId)).size > 1;
+}
+
 /** An older engine recommendation's title from its detector id: "review_cache_behavior" → "Cache behavior". */
 export function recTitle(detector: string): string {
   return humanizeDetector(detector) || 'Recommendation';

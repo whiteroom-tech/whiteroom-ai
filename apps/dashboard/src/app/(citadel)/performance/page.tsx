@@ -7,7 +7,7 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
-import { DEFAULT_REC_STATUS } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { ByAgentTable, SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
@@ -773,7 +773,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         <RecommendationsCard
           recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
           showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setRecStatus('all'); }}
-          agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={byAgent === null || byAgent.length > 1 || recAgent !== ''}
+          agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={showRecAgentFilter(recs, byAgent, recAgent)}
           filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
           loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
           onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
