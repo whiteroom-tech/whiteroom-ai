@@ -77,6 +77,10 @@ describe('flagged-runs fetch', () => {
     expect(flagFetch(loading, { type: 'done', got: { unsupported: true } })).toEqual({ runs: null, truncated: false, failed: false, loading: false });
     expect(flagFetch(loading, { type: 'failed' })).toEqual({ runs: null, truncated: false, failed: true, loading: false });
   });
+  it('an older engine that ignores the flagged filter (no run has flags): treated as no flags, not as flagged runs', () => {
+    const unflagged = [{ agentId: 'a', startedAt: '2026-10-22T10:00:00Z' }, { agentId: 'b', startedAt: '2026-10-22T11:00:00Z' }] as never[];
+    expect(flagFetch(loading, { type: 'done', got: { runs: unflagged, truncated: false } })).toEqual({ runs: null, truncated: false, failed: false, loading: false });
+  });
   it('a refetch after a failure clears the failure', () => {
     expect(flagFetch(flagFetch(loading, { type: 'failed' }), { type: 'start' }).failed).toBe(false);
   });

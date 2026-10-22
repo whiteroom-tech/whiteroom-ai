@@ -4,10 +4,10 @@
  * Performance › Cost tracking: the fleet's burn rate and how many tasks its
  * daily budgets have left. Its own full-width row under the four numbers.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hint, TextInput, FONT_MONO } from '@whiteroom/ui';
 import { performanceCostForecast, setBudgetUsd, setTokenBudget } from '@/lib/whiteroom/client';
-import type { PerformanceCostForecastResult } from '@/lib/whiteroom/types';
+import type { PerformanceCostForecastResult, SetBudgetResult, SetTokenBudgetResult } from '@/lib/whiteroom/types';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { HELP } from '@/lib/metric-definitions';
 import { usePoll } from '@/hooks/usePoll';
@@ -21,6 +21,26 @@ function editing(ariaLabel: string): boolean {
 // The fleet's budget vs. spend to date. Backs onto performanceCostForecast
 // (which also carries a per-task-type $/task breakdown — deliberately not
 // shown here; a single "what's left" figure is what this card is for).
+/**
+ * Where the card reads and saves. With `preview` (the dev preview's sample
+ * fleet) nothing touches the network: reads return the sample, saves succeed
+ * locally, so a made-up fleet id is never written to.
+ */
+export function costTrackingApi(preview?: PerformanceCostForecastResult) {
+  if (preview) {
+    return {
+      forecast: async (): Promise<PerformanceCostForecastResult> => preview,
+      saveBudgetUsd: async (fleetId: string, budgetUsd: number | null): Promise<SetBudgetResult> => ({ success: true, fleetId, budgetUsd }),
+      saveTokenBudget: async (fleetId: string, tokenBudget: number | null): Promise<SetTokenBudgetResult> => ({ success: true, fleetId, tokenBudget }),
+    };
+  }
+  return {
+    forecast: (fleetId: string, authKey?: string) => performanceCostForecast(fleetId, undefined, authKey),
+    saveBudgetUsd: setBudgetUsd,
+    saveTokenBudget: setTokenBudget,
+  };
+}
+
 export function CostTrackingSection({ fleetId, authKey, preview }: {
   fleetId: string;
   authKey?: string;
@@ -39,10 +59,11 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   // alone and the next commit retries) but says plainly it wasn't saved.
   const [budgetSaveError, setBudgetSaveError] = useState<string | null>(null);
 
+  const api = useMemo(() => costTrackingApi(preview), [preview]);
+
   const fetchForecast = useCallback(async (stale: () => boolean) => {
-    if (preview) return;
     try {
-      const data = await performanceCostForecast(fleetId, undefined, authKey);
+      const data = await api.forecast(fleetId, authKey);
       if (stale()) return;
       if (data.error) { setLoadError(data.error); return; }
       setLoadError(null);
@@ -52,7 +73,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
     } catch {
       if (!stale()) setLoadError('Could not reach the cost-tracking endpoint.');
     }
-  }, [fleetId, authKey, preview]);
+  }, [fleetId, authKey, api]);
 
   const { refresh: refreshForecast } = usePoll(fetchForecast, { intervalMs: 60000 });
 
@@ -66,13 +87,11 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   }, [fetchForecast, refreshForecast]);
 
   async function commitBudget(value: string) {
-    // The dev preview keeps edits on screen only: no write for a sample fleet.
-    if (preview) { budgetDirty.current = false; return; }
     const trimmed = value.trim();
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { budgetDirty.current = false; setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
     try {
-      const res = await setBudgetUsd(fleetId, n, authKey);
+      const res = await api.saveBudgetUsd(fleetId, n, authKey);
       if (res.error || res.success === false) throw new Error(res.error);
       budgetDirty.current = false;
       setBudgetSaveError(null);
@@ -84,12 +103,11 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   }
 
   async function commitTokenBudget(value: string) {
-    if (preview) { tokenBudgetDirty.current = false; return; }
     const trimmed = value.trim();
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { tokenBudgetDirty.current = false; setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }
     try {
-      const res = await setTokenBudget(fleetId, n, authKey);
+      const res = await api.saveTokenBudget(fleetId, n, authKey);
       if (res.error || res.success === false) throw new Error(res.error);
       tokenBudgetDirty.current = false;
       setBudgetSaveError(null);
