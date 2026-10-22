@@ -3,7 +3,7 @@
  * state is testable without rendering.
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { isDiagnosisDetector, notMeasuredShort, TITLES } from './copy';
+import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
 import { timeAgo } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
@@ -164,10 +164,10 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
 }
 
 export interface CheckRow {
-  /** `set-aside`: a finding someone snoozed or dismissed, so the check is still accounted for. */
+  /** `set-aside`: a finding that isn't open (snoozed, dismissed, marked fixed…), so the check is still accounted for. */
   tone: 'problem' | 'fine' | 'waiting' | 'set-aside';
   title: string;
-  /** Waiting checks: what they still need ("starts in about 7 days"); set-aside ones: "snoozed" or "dismissed". */
+  /** Waiting checks: what they still need ("starts in about 7 days"); set-aside ones: their status (setAsideLabel). */
   note?: string;
 }
 
@@ -176,6 +176,12 @@ export interface CheckRow {
  * problems first, then passed, then waiting for data, then snoozed or dismissed.
  * Unknown detectors skipped.
  */
+/** A non-open finding's status in the Health check list: "snoozed", "dismissed", "marked fixed", "stopped happening", or the engine's own word. */
+export function setAsideLabel(status: string): string {
+  if (status === 'snoozed') return 'snoozed';
+  return STATUS_LABEL[status] ?? status.replace(/_/g, ' ');
+}
+
 export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
   return d.reports.map((r) => ({
     agentId: r.agentId,
@@ -183,7 +189,7 @@ export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: Che
       ...r.findings.filter((f) => f.status === 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'problem', title: TITLES[f.detector as keyof typeof TITLES] })),
       ...r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c): CheckRow => ({ tone: 'fine', title: TITLES[c.detector] })),
       ...r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n): CheckRow => ({ tone: 'waiting', title: TITLES[n.detector], note: notMeasuredShort(n.code, n.reason) })),
-      ...r.findings.filter((f) => f.status !== 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'set-aside', title: TITLES[f.detector as keyof typeof TITLES], note: f.status === 'dismissed' ? 'dismissed' : 'snoozed' })),
+      ...r.findings.filter((f) => f.status !== 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'set-aside', title: TITLES[f.detector as keyof typeof TITLES], note: setAsideLabel(f.status) })),
     ],
   })).filter((a) => a.rows.length > 0);
 }

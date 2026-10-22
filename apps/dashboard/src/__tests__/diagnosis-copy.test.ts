@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -224,6 +224,8 @@ describe('health check rows', () => {
       { tone: 'waiting', title: 'Unusually expensive days', note: 'starts in about 8 days' },
       { tone: 'set-aside', title: 'Handing over too often', note: 'snoozed' },
     ] }]);
+    // Each set-aside status by its own name.
+    expect(['snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating'].map(setAsideLabel)).toEqual(['snoozed', 'dismissed', 'marked fixed', 'stopped happening', 'evaluating']);
     // An agent whose only finding is dismissed stays in the list.
     expect(checkRows(fleet({ reports: [{ ...report('triage', [finding('review_tool_errors', 'dismissed')]), clear: [], notMeasured: [] }] })))
       .toEqual([{ agentId: 'triage', rows: [{ tone: 'set-aside', title: 'A tool keeps failing', note: 'dismissed' }] }]);
