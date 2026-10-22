@@ -102,12 +102,9 @@ describe('agent health rows', () => {
     expect(pendingHealthRow({ busy: false, error: true })).toEqual({ tone: 'warn', text: 'The last check didn\u2019t finish' });
     expect(pendingHealthRow({ busy: false, error: false })).toEqual({ tone: 'muted', text: 'Not checked yet' });
   });
-  it('health check: counts only, so the problem is named once (in the list)', () => {
-    const ok = { tone: 'ok' as const, text: '3 checks passed', fine: 3, needsData: 0, openFindings: 0 };
+  it('health check: the row is the summary line', () => {
     expect(healthRow(null)).toBeNull();
-    expect(healthRow(ok)).toEqual({ tone: 'ok', text: '3 checks passed' });
-    expect(healthRow({ ...ok, tone: 'warn', openFindings: 1, needsData: 3 })).toEqual({ tone: 'warn', text: '1 problem · 3 passed · 3 waiting for more data' });
-    expect(healthRow({ ...ok, tone: 'warn', openFindings: 2, fine: 0 })!.text).toBe('2 problems');
+    expect(healthRow({ tone: 'warn', text: '1 problem · 3 passed', fine: 3, needsData: 0, openFindings: 1 })).toEqual({ tone: 'warn', text: '1 problem · 3 passed' });
   });
   it('unusual behaviour: what kind each agent’s flagged runs were, most frequent first', () => {
     const days = ['2026-10-20', '2026-10-21'];

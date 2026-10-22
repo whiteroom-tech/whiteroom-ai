@@ -119,21 +119,11 @@ export function checksOpenByDefault(d: FleetDiagnosis | null): boolean {
   return !!d && openFindingCount(d) > 0 && d.reports.length <= 3;
 }
 
-/** The attention strip (§6.2.1): null when nothing is open. */
-export function attentionStrip(d: FleetDiagnosis | null): { lead: string; names: string } | null {
-  if (!d) return null;
-  const agents = agentsWithOpenFindings(d);
-  if (agents.length === 0) return null;
-  if (agents.length === 1) return { lead: `${agents[0]} needs attention`, names: '' };
-  const shown = agents.slice(0, 3).join(', ');
-  const more = agents.length > 3 ? ` +${agents.length - 3} more` : '';
-  return { lead: `${agents.length} agents need attention:`, names: `${shown}${more}` };
-}
-
 /**
- * The Agent Diagnosis card's one-line summary, always visible: what needs
- * attention, or that everything checked looks fine and what still needs data.
- * Null until there's a stored check to summarise.
+ * Agent health › Health check's one line: counts only, so a problem is named
+ * once, in the list beside its fix ("1 problem · 2 passed · 3 waiting for more
+ * data", or "3 checks passed · 3 waiting for more data"). Null until there's
+ * a stored check to summarise.
  */
 export interface DiagnosisSummary {
   tone: 'warn' | 'ok';
@@ -149,17 +139,20 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   const fine = d.reports.reduce((n, r) => n + r.clear.length, 0);
   const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
   const openFindings = openFindingCount(d);
-  // Quiet state, one line: what passed, then what's still waiting for data.
   const checks = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`;
+  if (openFindings > 0) {
+    const parts = [
+      `${openFindings} ${openFindings === 1 ? 'problem' : 'problems'}`,
+      fine > 0 ? `${fine} passed` : '',
+      needsData > 0 ? `${needsData} waiting for more data` : '',
+    ].filter(Boolean);
+    return { tone: 'warn', text: parts.join(' · '), fine, needsData, openFindings };
+  }
+  // Quiet: what passed, then what's still waiting for data.
   const counts = [
     fine > 0 ? `${checks(fine)} passed` : 'No problems found',
     needsData > 0 ? `${fine > 0 ? needsData : checks(needsData)} waiting for more data` : '',
   ].filter(Boolean).join(' · ');
-  if (openFindings > 0) {
-    const strip = attentionStrip(d)!;
-    const lead = strip.names ? `${strip.lead} ${strip.names}` : strip.lead;
-    return { tone: 'warn', text: `${lead} · ${openFindings} open ${openFindings === 1 ? 'finding' : 'findings'}`, fine, needsData, openFindings };
-  }
   return { tone: 'ok', text: counts, fine, needsData, openFindings };
 }
 

@@ -137,21 +137,9 @@ export function unusualRow(f: { count: number | null; atLeast: boolean; failed: 
   return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, f.atLeast, 'run', 'runs')} flagged this week` };
 }
 
-/**
- * The health check's row. Counts only: the problem itself is named once, in
- * the unfolded list, next to its fix.
- */
+/** The health check's row: its summary line (counts only; see diagnosisSummary). */
 export function healthRow(summary: DiagnosisSummary | null): HealthRow | null {
-  if (!summary) return null;
-  if (summary.openFindings > 0) {
-    const parts = [
-      `${summary.openFindings} ${plural(summary.openFindings, false, 'problem', 'problems')}`,
-      summary.fine > 0 ? `${summary.fine} passed` : '',
-      summary.needsData > 0 ? `${summary.needsData} waiting for more data` : '',
-    ].filter(Boolean);
-    return { tone: 'warn', text: parts.join(' · ') };
-  }
-  return { tone: 'ok', text: summary.text };
+  return summary ? { tone: summary.tone, text: summary.text } : null;
 }
 
 /** The health check's row before there's a stored result: checking, failed, or not yet. Null when the check is off. */

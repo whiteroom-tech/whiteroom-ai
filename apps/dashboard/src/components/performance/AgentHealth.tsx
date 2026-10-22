@@ -82,7 +82,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
  * someone opens or closes it, that choice sticks until they change it, even
  * if new data changes the default.
  */
-function Row({ label, row, open, children }: { label: string; row: HealthRow; open: boolean; children?: ReactNode }) {
+export function Row({ label, row, open, children }: { label: string; row: HealthRow; open: boolean; children?: ReactNode }) {
   const [chosen, setChosen] = useState<boolean | null>(null);
   const isOpen = rowOpen(chosen, open);
   const text = <span className="wr-health__text" style={{ color: TONE[row.tone], fontWeight: row.tone === 'warn' ? 600 : 400 }}>{row.text}</span>;

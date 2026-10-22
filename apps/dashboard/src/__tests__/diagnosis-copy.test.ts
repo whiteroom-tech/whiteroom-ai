@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -164,17 +164,10 @@ describe('status line', () => {
   });
 });
 
-describe('attention strip', () => {
-  it('hidden when nothing is open, including snoozed findings', () => {
+describe('agents with open findings', () => {
+  it('ignore snoozed findings', () => {
     expect(agentsWithOpenFindings(null)).toEqual([]);
     expect(agentsWithOpenFindings(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['b']);
-    expect(attentionStrip(null)).toBeNull();
-    expect(attentionStrip(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')])] }))).toBeNull();
-  });
-  it('one agent, or up to three names then "+k more"', () => {
-    expect(attentionStrip(fleet({ reports: [report('lead-agent', [finding('review_tool_errors')])] }))).toEqual({ lead: 'lead-agent needs attention', names: '' });
-    const five = ['a', 'b', 'c', 'd', 'e'].map((n) => report(n, [finding('review_tool_errors')]));
-    expect(attentionStrip(fleet({ reports: five }))).toEqual({ lead: '5 agents need attention:', names: 'a, b, c +2 more' });
   });
 });
 
@@ -192,10 +185,10 @@ describe('diagnosis card summary', () => {
     expect(s.tone).toBe('ok');
     expect(s.text).toBe(`3 checks passed · ${s.needsData} waiting for more data`);
   });
-  it('leads with who needs attention when a finding is open', () => {
+  it('counts the problem when a finding is open; the problem itself is named in the list', () => {
     const s = diagnosisSummary(withChecks([finding('review_tool_errors')]))!;
     expect(s).toMatchObject({ tone: 'warn', openFindings: 1 });
-    expect(s.text).toBe('lead-agent needs attention · 1 open finding');
+    expect(s.text).toBe(`1 problem · 3 passed · ${s.needsData} waiting for more data`);
   });
   it('falls back to "No problems found" when nothing has passed yet', () => {
     const r = report('lead-agent', []);
