@@ -24,7 +24,7 @@ function editing(ariaLabel: string): boolean {
 export function CostTrackingSection({ fleetId, authKey, preview }: {
   fleetId: string;
   authKey?: string;
-  /** Sample data for the dev preview: shown as is, never fetched. */
+  /** Sample data for the dev preview: shown as is, never fetched, and budget edits are never saved. */
   preview?: PerformanceCostForecastResult;
 }) {
   const [forecast, setForecast] = useState<PerformanceCostForecastResult | null>(preview ?? null);
@@ -66,6 +66,8 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   }, [fetchForecast, refreshForecast]);
 
   async function commitBudget(value: string) {
+    // The dev preview keeps edits on screen only: no write for a sample fleet.
+    if (preview) { budgetDirty.current = false; return; }
     const trimmed = value.trim();
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { budgetDirty.current = false; setBudgetDraft(forecast?.budgetUsd != null ? String(forecast.budgetUsd) : ''); return; }
@@ -82,6 +84,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   }
 
   async function commitTokenBudget(value: string) {
+    if (preview) { tokenBudgetDirty.current = false; return; }
     const trimmed = value.trim();
     const n = trimmed === '' ? null : Number(trimmed);
     if (n != null && !(n > 0)) { tokenBudgetDirty.current = false; setTokenBudgetDraft(forecast?.tokenBudget != null ? String(forecast.tokenBudget) : ''); return; }

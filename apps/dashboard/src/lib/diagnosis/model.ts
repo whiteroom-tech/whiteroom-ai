@@ -171,6 +171,13 @@ export interface CheckRow {
   note?: string;
 }
 
+/** A check's title; a detector this dashboard doesn't know yet gets a readable one from its id ("review_new_thing" → "New thing"). */
+export function checkTitle(detector: string): string {
+  if (isDiagnosisDetector(detector)) return TITLES[detector];
+  const t = detector.replace(/^review_/, '').replace(/_/g, ' ').trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'A check';
+}
+
 /** A non-open finding's status in the Health check list: "snoozed", "dismissed", "marked fixed", "stopped happening", or the engine's own word. */
 export function setAsideLabel(status: string): string {
   if (status === 'snoozed') return 'snoozed';
@@ -180,16 +187,18 @@ export function setAsideLabel(status: string): string {
 /**
  * Agent health › Health check, unfolded: one row per check per agent,
  * problems first, then passed, then waiting for data, then snoozed or dismissed.
- * Unknown detectors skipped.
+ * Findings from unknown detectors are listed by checkTitle(); unknown passed or
+ * waiting checks are skipped (nothing to act on).
  */
 export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
   return d.reports.map((r) => ({
     agentId: r.agentId,
     rows: [
-      ...r.findings.filter((f) => f.status === 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'problem', title: TITLES[f.detector as keyof typeof TITLES] })),
+      // Findings are listed even from a detector this dashboard doesn't know yet, so every counted problem shows.
+      ...r.findings.filter((f) => f.status === 'open').map((f): CheckRow => ({ tone: 'problem', title: checkTitle(f.detector) })),
       ...r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c): CheckRow => ({ tone: 'fine', title: TITLES[c.detector] })),
       ...r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n): CheckRow => ({ tone: 'waiting', title: TITLES[n.detector], note: notMeasuredShort(n.code, n.reason) })),
-      ...r.findings.filter((f) => f.status !== 'open' && isDiagnosisDetector(f.detector)).map((f): CheckRow => ({ tone: 'set-aside', title: TITLES[f.detector as keyof typeof TITLES], note: setAsideLabel(f.status) })),
+      ...r.findings.filter((f) => f.status !== 'open').map((f): CheckRow => ({ tone: 'set-aside', title: checkTitle(f.detector), note: setAsideLabel(f.status) })),
     ],
   })).filter((a) => a.rows.length > 0);
 }

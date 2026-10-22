@@ -1,7 +1,7 @@
 /**
- * Performance › the verdict line above Unusual behaviour, Agent health check
- * and Recommendations, plus the one-line quiet states of those cards. Pure,
- * so the wording can be tested without rendering.
+ * Performance › Agent health and Recommendations, side by side: the verdict,
+ * the one-line rows and their detail, and the Recommendations list's labels.
+ * Pure, so the wording can be tested without rendering.
  */
 import { localDay, UNUSUAL_SIGNALS } from '@/lib/runs';
 import type { RunSummary } from '@/lib/whiteroom/types';

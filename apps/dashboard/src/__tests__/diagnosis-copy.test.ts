@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, attentionStrip, agentsWithOpenFindings, checkRows, checkTitle, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -226,6 +226,11 @@ describe('health check rows', () => {
     ] }]);
     // Each set-aside status by its own name.
     expect(['snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating'].map(setAsideLabel)).toEqual(['snoozed', 'dismissed', 'marked fixed', 'stopped happening', 'evaluating']);
+    // A problem from a detector this dashboard doesn't know is still listed, so the count matches the list.
+    const unknown = { ...finding('review_tool_errors'), detector: 'review_new_thing' as DiagnosisDetectorId };
+    expect(checkRows(fleet({ reports: [{ ...report('a', [unknown]), clear: [], notMeasured: [] }] }))[0].rows).toEqual([{ tone: 'problem', title: 'New thing' }]);
+    expect(checkTitle('review_tool_errors')).toBe('A tool keeps failing');
+    expect(checkTitle('')).toBe('A check');
     // An agent whose only finding is dismissed stays in the list.
     expect(checkRows(fleet({ reports: [{ ...report('triage', [finding('review_tool_errors', 'dismissed')]), clear: [], notMeasured: [] }] })))
       .toEqual([{ agentId: 'triage', rows: [{ tone: 'set-aside', title: 'A tool keeps failing', note: 'dismissed' }] }]);
