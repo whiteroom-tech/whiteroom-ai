@@ -48,7 +48,8 @@ export function DiagnosisCard({ data, line, onCheck, onSeeFindings }: {
           {warn && <button type="button" className="dx-link dx-strong" onClick={onSeeFindings}>See findings</button>}
         </div>
       )}
-      <WhatWeChecked data={data} />
+      {/* Keyed on its default, so a finding that arrives after mount (first load, Check now) opens it. */}
+      <WhatWeChecked key={String(checksOpenByDefault(data))} data={data} />
     </section>
   );
 }

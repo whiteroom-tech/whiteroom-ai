@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, latestOnly, listGivesOpenCount, quietUnusualLine, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -45,6 +45,10 @@ describe('unusual behaviour quiet state', () => {
     const days = ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'];
     const run = (startedAt: string) => ({ agentId: 'lead-agent', startedAt, flags: [{ signal: 'repeating_call' }] }) as never;
     expect(flaggedRunCount({ runs: null, truncated: false, failed: false, loading: true, days })).toBeNull();
+    // An engine without run flags: unknown, and the verdict leans on the health check alone.
+    expect(flaggedRunCount({ runs: null, truncated: false, failed: false, loading: false, days })).toBeNull();
+    expect(insightsVerdict({ ...base, flaggedRuns: null })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
+    expect(flaggedRunCount({ runs: [], truncated: false, failed: false, loading: false, days })).toBe(0);
     expect(flaggedRunCount({ runs: [run('2026-10-19T12:00:00'), run('2026-10-20T12:00:00'), run('2026-10-01T12:00:00')], truncated: false, failed: false, loading: false, days })).toBe(2);
   });
 });
@@ -73,8 +77,20 @@ describe('recommendations list', () => {
     expect(recEmptyText('reported_implemented', true)).toBe('No recommendations with status "implemented". Collection coverage: active.');
   });
   it('keeps Mark as fixed, Snooze and Dismiss behind More on open rows', () => {
-    expect(recRowActions(true, false)).toEqual(['View evidence', 'More']);
-    expect(recRowActions(true, true)).toEqual(['View evidence', 'Less', 'Mark as fixed', 'Snooze', 'Dismiss']);
-    expect(recRowActions(false, true)).toEqual(['View evidence']);
+    expect(recRowActions(true, false)).toEqual(['evidence', 'toggle']);
+    expect(recRowActions(true, true)).toEqual(['evidence', 'toggle', 'fixed', 'snooze', 'dismiss']);
+    expect(recRowActions(false, true)).toEqual(['evidence']);
+  });
+  it('sends implemented for Mark as fixed, and a reason with Dismiss', () => {
+    expect(recFeedback('fixed')).toEqual({ action: 'implemented' });
+    expect(recFeedback('snooze')).toEqual({ action: 'snooze' });
+    expect(recFeedback('dismiss')).toEqual({ action: 'dismiss', reason: 'not_worth_it' });
+  });
+  it('labels statuses the same in the heading, the filters and the empty line', () => {
+    expect(recStatusLabel('reported_implemented')).toBe('implemented');
+    expect(recStatusLabel('snoozed')).toBe('snoozed');
+    expect(recCountSuffix('open')).toBe(' open');
+    expect(recCountSuffix('reported_implemented')).toBe(' implemented');
+    expect(recCountSuffix('all')).toBe('');
   });
 });

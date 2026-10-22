@@ -6,7 +6,10 @@
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
 export interface VerdictInput {
-  /** Flagged runs in the last 7 days; null when unknown (loading, failed, unsupported). */
+  /**
+   * Flagged runs in the last 7 days; null when unknown (loading, failed, or an
+   * engine without run flags, where the health check alone decides).
+   */
   flaggedRuns: number | null;
   /** The flag fetch hit its page cap: the count is a lower bound. */
   flaggedAtLeast: boolean;
@@ -84,15 +87,37 @@ export function latestOnly() {
   };
 }
 
+/** A status as the list shows it. */
+export function recStatusLabel(status: string): string {
+  return status === 'reported_implemented' ? 'implemented' : status;
+}
+
+/** The count beside the Recommendations heading: "3 open", "2 snoozed", or just "5" for all. */
+export function recCountSuffix(status: string): string {
+  return status === 'all' ? '' : ` ${recStatusLabel(status)}`;
+}
+
 /** The empty list's line, by status. */
 export function recEmptyText(status: string, hasCalls: boolean): string {
   if (status === 'open') return 'Nothing to review right now.';
-  const label = status === 'reported_implemented' ? 'implemented' : status;
-  return `No recommendations${status !== 'all' ? ` with status "${label}"` : ''}. Collection coverage: ${hasCalls ? 'active' : 'no data'}.`;
+  return `No recommendations${status !== 'all' ? ` with status "${recStatusLabel(status)}"` : ''}. Collection coverage: ${hasCalls ? 'active' : 'no data'}.`;
 }
 
-/** An older recommendation row's buttons: View evidence, then the rest only after More. */
-export function recRowActions(open: boolean, expanded: boolean): string[] {
-  if (!open) return ['View evidence'];
-  return expanded ? ['View evidence', 'Less', 'Mark as fixed', 'Snooze', 'Dismiss'] : ['View evidence', 'More'];
+export type RecRowAction = 'evidence' | 'toggle' | 'fixed' | 'snooze' | 'dismiss';
+
+/**
+ * Buttons on a recommendation row that isn't from the health check, in order:
+ * View evidence, then (open rows only) a More/Less toggle that reveals
+ * Mark as fixed, Snooze and Dismiss.
+ */
+export function recRowActions(open: boolean, expanded: boolean): RecRowAction[] {
+  if (!open) return ['evidence'];
+  return expanded ? ['evidence', 'toggle', 'fixed', 'snooze', 'dismiss'] : ['evidence', 'toggle'];
+}
+
+/** What each feedback button sends. Dismiss gives the one reason these rows offer. */
+export function recFeedback(action: Exclude<RecRowAction, 'evidence' | 'toggle'>): { action: 'implemented' | 'snooze' | 'dismiss'; reason?: string } {
+  if (action === 'fixed') return { action: 'implemented' };
+  if (action === 'dismiss') return { action: 'dismiss', reason: 'not_worth_it' };
+  return { action: 'snooze' };
 }

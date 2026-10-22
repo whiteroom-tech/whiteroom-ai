@@ -7,7 +7,7 @@ import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { UnusualBehaviour, flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { InsightsVerdict } from '@/components/performance/InsightsVerdict';
-import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount, recEmptyText, recRowActions } from '@/lib/performance-insights';
+import { DEFAULT_REC_STATUS, latestOnly, listGivesOpenCount, recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, type RecRowAction } from '@/lib/performance-insights';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import { savingsFigure } from '@/lib/metric-display';
 import { agentTotalsFromBuckets, cacheFigures, ownCachingMicros, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type CacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -720,21 +720,19 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
 /** View evidence up front; the rest behind More, so each row has one clear action. */
-function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; busy: boolean; onEvidence: () => void; onFeedback: (action: 'dismiss' | 'snooze' | 'implemented') => void }) {
+function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; busy: boolean; onEvidence: () => void; onFeedback: (f: ReturnType<typeof recFeedback>) => void }) {
   const [more, setMore] = useState(false);
-  const toggle = (
-    <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
-      fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-      background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
-    }}>{more ? 'Less' : 'More'}</button>
-  );
-  const buttons: Record<string, React.ReactNode> = {
-    'View evidence': <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
-    More: toggle,
-    Less: toggle,
-    'Mark as fixed': <Btn key="fixed" label="Mark as fixed" onClick={() => onFeedback('implemented')} loading={busy} />,
-    Snooze: <Btn key="snooze" label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback('snooze')} loading={busy} />,
-    Dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback('dismiss')} loading={busy} />,
+  const buttons: Record<RecRowAction, React.ReactNode> = {
+    evidence: <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
+    toggle: (
+      <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
+        fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+        background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
+      }}>{more ? 'Less' : 'More'}</button>
+    ),
+    fixed: <Btn key="fixed" label="Mark as fixed" onClick={() => onFeedback(recFeedback('fixed'))} loading={busy} />,
+    snooze: <Btn key="snooze" label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback(recFeedback('snooze'))} loading={busy} />,
+    dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback(recFeedback('dismiss'))} loading={busy} />,
   };
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -995,7 +993,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <h3 style={H3} id="recommendations-heading" tabIndex={-1}>
             Recommendations
-            {recTotal > 0 && <span style={{ marginLeft: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{recTotal}</span>{recStatus === 'open' ? ' open' : recStatus === 'all' ? '' : ` ${recStatus === 'reported_implemented' ? 'implemented' : recStatus}`}</span>}
+            {recTotal > 0 && <span style={{ marginLeft: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{recTotal}</span>{recCountSuffix(recStatus)}</span>}
           </h3>
           {/* One agent: nothing to filter by. */}
           {(byAgent === null || byAgent.length > 1 || recAgent !== '') && <input aria-label="Filter by agent" value={recAgent} onChange={e => setRecAgent(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
@@ -1008,7 +1006,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
               background: recStatus === st ? 'var(--brand-dim)' : 'transparent',
               color: recStatus === st ? 'var(--brand)' : 'var(--tx3)',
               border: `1px solid ${recStatus === st ? 'var(--brand)' : 'var(--line)'}`,
-            }}>{st === 'reported_implemented' ? 'implemented' : st}</button>
+            }}>{recStatusLabel(st)}</button>
           ))}
         </div>}
 
@@ -1040,7 +1038,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
                 open={rec.status === 'open'}
                 busy={feedbackLoading === rec.id}
                 onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
-                onFeedback={(action) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, action, action === 'dismiss' ? 'not_worth_it' : undefined)}
+                onFeedback={(f) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, f.action, f.reason)}
               />
             </div>
             {feedbackError?.recId === rec.id && (
