@@ -187,17 +187,16 @@ export function setAsideLabel(status: string): string {
 /**
  * Agent health › Health check, unfolded: one row per check per agent,
  * problems first, then passed, then waiting for data, then snoozed or dismissed.
- * Findings from unknown detectors are listed by checkTitle(); unknown passed or
- * waiting checks are skipped (nothing to act on).
+ * Every check is listed, even from a detector this dashboard doesn't know yet
+ * (by checkTitle), so the row's counts always match the list.
  */
 export function checkRows(d: FleetDiagnosis): Array<{ agentId: string; rows: CheckRow[] }> {
   return d.reports.map((r) => ({
     agentId: r.agentId,
     rows: [
-      // Findings are listed even from a detector this dashboard doesn't know yet, so every counted problem shows.
       ...r.findings.filter((f) => f.status === 'open').map((f): CheckRow => ({ tone: 'problem', title: checkTitle(f.detector) })),
-      ...r.clear.filter((c) => isDiagnosisDetector(c.detector)).map((c): CheckRow => ({ tone: 'fine', title: TITLES[c.detector] })),
-      ...r.notMeasured.filter((n) => isDiagnosisDetector(n.detector)).map((n): CheckRow => ({ tone: 'waiting', title: TITLES[n.detector], note: notMeasuredShort(n.code, n.reason) })),
+      ...r.clear.map((c): CheckRow => ({ tone: 'fine', title: checkTitle(c.detector) })),
+      ...r.notMeasured.map((n): CheckRow => ({ tone: 'waiting', title: checkTitle(n.detector), note: notMeasuredShort(n.code, n.reason) })),
       ...r.findings.filter((f) => f.status !== 'open').map((f): CheckRow => ({ tone: 'set-aside', title: checkTitle(f.detector), note: setAsideLabel(f.status) })),
     ],
   })).filter((a) => a.rows.length > 0);

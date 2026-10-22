@@ -318,10 +318,11 @@ describe('evidence headers', () => {
     const h = evidenceHeader('review_spend_outliers', [c({ reportedModel: 'm', attempts: [{ inputTokens: 10, outputTokens: 5 }] }), c({ reportedModel: 'm', attempts: [{ inputTokens: 900, outputTokens: 100 }] })], {});
     expect(h && h.kind === 'table' && h.rows.map((r) => r[2])).toEqual(['1,000', '15']);
   });
-  it('unknown detector ids never throw in the health check rows', () => {
+  it('unknown detector ids are listed by a readable title, so counts match the list', () => {
     const d = fleet({ reports: [{ ...report('a', []), clear: [{ detector: 'review_new_thing' as DiagnosisDetectorId, note: null }] }] });
     expect(() => checkRows(d)).not.toThrow();
-    expect(checkRows(d)[0].rows.filter((r) => r.tone === 'fine')).toEqual([]);
+    expect(checkRows(d)[0].rows.filter((r) => r.tone === 'fine')).toEqual([{ tone: 'fine', title: 'New thing' }]);
+    expect(diagnosisSummary(d)!.fine).toBe(checkRows(d)[0].rows.filter((r) => r.tone === 'fine').length);
   });
   it('other detectors keep the existing view', () => {
     expect(evidenceHeader('review_tool_bloat', [], {})).toBeNull();
