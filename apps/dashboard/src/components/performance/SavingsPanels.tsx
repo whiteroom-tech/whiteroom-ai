@@ -142,7 +142,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
           caption="Tokens and savings by agent"
           rows={rows}
           rowKey={(r) => r.agent}
-          rowHeight={44}
+          rowHeight={scores && Object.keys(scores).length ? 64 : 44}
           columns={[
             {
               key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)',

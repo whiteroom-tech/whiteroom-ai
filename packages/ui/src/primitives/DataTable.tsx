@@ -35,7 +35,8 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
   rowKey: (row: R) => string;
   onOpen?: (row: R) => void;
   selectedKey?: string;
-  rowHeight?: 40 | 42 | 44;
+  /** 64 fits a two-or-three-line cell, like the By agent score wheel. */
+  rowHeight?: 40 | 42 | 44 | 64;
   /** The table's accessible name (aria-label), e.g. "Runs". */
   caption: string;
   empty?: React.ReactNode;
