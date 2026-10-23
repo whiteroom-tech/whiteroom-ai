@@ -57,7 +57,7 @@ function Insights({ runs, health }: { runs: RunSummary[]; health: FleetDiagnosis
 const rec = (p: Partial<RecommendationDetail>): RecommendationDetail => ({
   id: 'pr_cache', detector: 'review_cache_behavior', agentId: 'lead-agent', source: 'engine', cohort: '', action: '', status: 'open',
   verificationStatus: 'none', currentFindingId: 'pf_cache', feedbackCount: 0, createdAt: '2026-10-01T12:00:00Z', updatedAt: '2026-10-01T12:00:00Z',
-  summary: 'Cache read rate is 4458% of input tokens.', ...p,
+  summary: "69% of this agent's input came from the cache.", ...p,
 });
 const RECS_QUIET = [rec({})];
 const RECS_PROBLEM = [

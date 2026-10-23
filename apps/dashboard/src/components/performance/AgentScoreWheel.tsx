@@ -1,23 +1,24 @@
 // A watch-face per agent row in the By-agent table (audit M12): three equal
 // ring segments (task success, cost diligence, speed) in their tier colors,
-// the 0-10 score in the center, and a one-line legend that names each part
-// so it reads without hovering. A part with no data is a faint track, not gray.
-// No click handler — it's connected to the row it's already in.
+// the 0-10 score in the center, and a small legend that names each part with
+// a bar and its value, so it reads without hovering. A part with no data is a
+// faint track, not gray. No click handler — it's connected to the row it's in.
 import { FONT_MONO } from '@whiteroom/ui';
 import { scoreColor, scoreWedges, wedgeStroke, wedgeSummary, wheelArcs } from '@/lib/agent-scores';
 import type { AgentScore } from '@/lib/whiteroom/types';
 
-const SIZE = 32;
-const STROKE = 4;
+const SIZE = 48;
+const STROKE = 5;
+const BAR = 56;
 
 export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
   if (agent.score == null) return <span style={{ color: 'var(--tx3)', fontSize: 12 }}>–</span>;
 
   const wedges = scoreWedges(agent);
-  const arcs = wheelArcs(wedges.length, SIZE, STROKE, 26);
+  const arcs = wheelArcs(wedges.length, SIZE, STROKE, 18);
   const summary = wedgeSummary(wedges);
   return (
-    <div role="img" aria-label={`Performance score ${agent.score} of 10 — ${summary}`} title={summary} style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    <div role="img" aria-label={`Performance score ${agent.score} of 10 — ${summary}`} title={summary} style={{ display: 'inline-flex', alignItems: 'center', gap: 14, verticalAlign: 'middle' }}>
       <span style={{ position: 'relative', width: SIZE, height: SIZE, flexShrink: 0 }}>
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden style={{ display: 'block' }}>
           {wedges.map((w, i) => (
@@ -26,15 +27,19 @@ export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
         </svg>
         <span style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: scoreColor(agent.score),
-        }}>{agent.score}</span>
+          fontFamily: FONT_MONO, fontWeight: 700, color: scoreColor(agent.score),
+        }}>
+          <span style={{ fontSize: agent.score >= 10 ? 16 : 18, lineHeight: 1 }}>{agent.score}</span>
+        </span>
       </span>
-      <span aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+      <span aria-hidden style={{ display: 'grid', gridTemplateColumns: `auto ${BAR}px auto`, alignItems: 'center', columnGap: 8, rowGap: 3, fontSize: 11.5, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
         {wedges.map((w) => (
-          <span key={w.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: wedgeStroke(w), boxShadow: w.value == null ? 'inset 0 0 0 1px var(--line2)' : undefined, flexShrink: 0 }} />
+          <span key={w.label} style={{ display: 'contents' }}>
             <span style={{ color: 'var(--tx2)' }}>{w.short}</span>
-            <span style={{ fontFamily: FONT_MONO, color: w.value == null ? 'var(--tx3)' : 'var(--tx)' }}>{w.value == null ? '–' : w.value}</span>
+            <span style={{ height: 4, borderRadius: 2, background: 'var(--track)', overflow: 'hidden' }}>
+              {w.value != null && <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, w.value))}%`, borderRadius: 2, background: w.color }} />}
+            </span>
+            <span style={{ fontFamily: FONT_MONO, textAlign: 'right', color: w.value == null ? 'var(--tx3)' : 'var(--tx)' }}>{w.value == null ? '–' : w.value}</span>
           </span>
         ))}
       </span>
