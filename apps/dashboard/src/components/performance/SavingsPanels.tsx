@@ -133,46 +133,61 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
   /** Task success / cost diligence / speed, per agent id (absent on older engines, or while still loading). */
   scores?: Record<string, AgentScore>;
 }) {
+  const name = (r: AgentTotals) => r.agent
+    ? <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agent}</span>
+    : <span style={{ color: 'var(--tx2)' }} title="Model calls recorded without an agent name">Unattributed</span>;
+  const saved = (r: AgentTotals) => (r.saved > 0 ? fmtTokens(r.saved) : '–');
+  const ruleWords = (r: AgentTotals) => (ruleActions?.[r.agent] ? tallyWords(ruleActions[r.agent]) : []);
+  const rules = (r: AgentTotals) => {
+    const words = ruleWords(r);
+    if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
+    return (
+      <span title="What Controls rules did for this agent (Enforce), and would have done (Watch only)">
+        {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
+      </span>
+    );
+  };
+  const score = (r: AgentTotals) => {
+    const s = scores?.[r.agent];
+    return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
+  };
+
   return (
     <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
       {rows.length === 0 ? (
         <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>No agent activity in this range.</p>
       ) : (
-        <DataTable<AgentTotals>
-          caption="Tokens and savings by agent"
-          rows={rows}
-          rowKey={(r) => r.agent}
-          rowHeight={scores && Object.keys(scores).length ? 64 : 44}
-          columns={[
-            {
-              key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)',
-              render: (r) => r.agent
-                ? <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agent}</span>
-                : <span style={{ color: 'var(--tx2)' }} title="Model calls recorded without an agent name">Unattributed</span>,
-            },
-            { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
-            { key: 'saved', header: 'Saved, est.', width: '120px', numeric: true, render: (r) => (r.saved > 0 ? fmtTokens(r.saved) : '–') },
-            {
-              key: 'rules', header: 'Rule actions', width: 'minmax(180px, 280px)', numeric: true,
-              render: (r) => {
-                const words = ruleActions?.[r.agent] ? tallyWords(ruleActions[r.agent]) : [];
-                if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
-                return (
-                  <span title="What Controls rules did for this agent (Enforce), and would have done (Watch only)">
-                    {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
-                  </span>
-                );
-              },
-            },
-            {
-              key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)',
-              render: (r) => {
-                const s = scores?.[r.agent];
-                return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
-              },
-            },
-          ]}
-        />
+        <>
+          <div className="wr-byagent-table">
+            <DataTable<AgentTotals>
+              caption="Tokens and savings by agent"
+              rows={rows}
+              rowKey={(r) => r.agent}
+              rowHeight={scores && Object.keys(scores).length ? 64 : 44}
+              columns={[
+                { key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)', render: name },
+                { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
+                { key: 'saved', header: 'Saved, est.', width: '120px', numeric: true, render: saved },
+                { key: 'rules', header: 'Rule actions', width: 'minmax(180px, 280px)', numeric: true, render: rules },
+                { key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)', render: score },
+              ]}
+            />
+          </div>
+          {/* Phones: one card per agent instead of a table that scrolls sideways. */}
+          <ul className="wr-byagent-cards" aria-label="Tokens and savings by agent">
+            {rows.map((r) => (
+              <li key={r.agent}>
+                <div className="wr-byagent-cards__name">{name(r)}</div>
+                <dl>
+                  <div><dt>Tokens</dt><dd>{fmtTokens(r.used)}</dd></div>
+                  <div><dt>Saved, est.</dt><dd>{saved(r)}</dd></div>
+                  {ruleWords(r).length > 0 && <div className="wr-byagent-cards__wide"><dt>Rule actions</dt><dd>{rules(r)}</dd></div>}
+                  {scores?.[r.agent] && <div className="wr-byagent-cards__wide"><dt>Performance<Hint text={HELP.agentPerformance} /></dt><dd>{score(r)}</dd></div>}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </Panel>
   );
