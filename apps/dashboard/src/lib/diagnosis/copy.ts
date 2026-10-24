@@ -32,7 +32,7 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
 export const SNOOZE_DAYS = 7;
 
-export const WATCH_DEFINITION = 'A shift is one stretch of work before an agent hands over to a fresh context.';
+export const WATCH_DEFINITION = 'A shift is one stretch of work. When an agent’s workspace fills up, it hands over to a fresh shift.';
 
 const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
 const has = (m: DiagnosisMeasures, k: string) => m[k] !== undefined && m[k] !== null && m[k] !== '';
@@ -55,45 +55,45 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       const repeatLed = Number(m.longestRepeatStreak) >= 2 && !(Number(m.longestStreak) >= 3);
       const parts = repeatLed
         ? [
-            t('Redid '), v(m.repeatedSharePct), t('% of its earlier tool calls, '),
-            ...count(m.longestRepeatStreak, 'shift', 'shifts'), t(' in a row. This often means each handover dropped what it had fetched, so it fetched it again. If so, return smaller results (page them, drop raw HTML, summarise first) or save progress as it goes.'),
+            t('Redid '), v(m.repeatedSharePct), t('% of the work it had already done, '),
+            ...count(m.longestRepeatStreak, 'shift', 'shifts'), t(' in a row. It likely lost track of what it had found when it handed over, so it did the work again. To fix: have its tools send back shorter answers, or have it save its progress as it goes.'),
           ]
         : [
             t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
-            ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. This often means tool results are too large for one shift. If so, return smaller results (page them, drop raw HTML, summarise first).'),
+            ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. Its tools likely send back too much at once, which fills its workspace fast. To fix: have its tools send back shorter answers.'),
           ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;
     }
     case 'review_tool_loops':
       return [
-        code(m.toolName), t(' repeated '), ...count(m.maxRepeats, 'time', 'times'), t(' in shift '), v(m.worstWatch), t(', and in '),
-        ...count(m.watchesAffected, 'shift', 'shifts'), t(' this week.'),
+        code(m.toolName), t(' ran with the same request '), ...count(m.maxRepeats, 'time', 'times'), t(' in shift '), v(m.worstWatch), t(', and this happened in '),
+        ...count(m.watchesAffected, 'shift', 'shifts'), t(' this week. The agent may be stuck going round in circles.'),
       ];
     case 'review_spend_outliers': {
       const one = Number(m.flaggedDays) === 1;
       return [
-        t('Used '), v(m.maxDayTokens), t(' tokens on '), v(m.maxDay), t(', '), v(m.maxDayRatio), t('× its usual busy day. '),
-        ...count(m.flaggedDays, 'day', 'days'), t(` this week ${one ? 'was' : 'were'} over 1.5×.`),
+        t('Used '), v(m.maxDayTokens), t(' tokens on '), v(m.maxDay), t(', '), v(m.maxDayRatio), t('× as much as a normal busy day. '),
+        ...count(m.flaggedDays, 'day', 'days'), t(` this week ${one ? 'was' : 'were'} over 1.5× normal.`),
       ];
     }
     case 'review_tool_errors':
       return [
-        code(m.toolName), t(' failed '), ...count(m.toolErrors, 'time', 'times'), t(' this week. '), v(m.errorRatePct), t('% of all tool results were errors ('),
-        v(m.totalErrors), t(' of '), v(m.totalResults), t('). Check that tool’s timeouts and inputs, or skip targets that keep failing.'),
+        code(m.toolName), t(' failed '), ...count(m.toolErrors, 'time', 'times'), t(' this week. '), v(m.errorRatePct), t('% of all the agent’s tool calls returned an error ('),
+        v(m.totalErrors), t(' of '), v(m.totalResults), t('). To fix: give the tool more time and one retry, or have the agent skip items that keep failing.'),
       ];
     case 'review_tool_silence': {
       const parts = [
-        code(m.toolName), t(' has barely been called since '), v(m.lastCalled), t(': '), v(m.recentCallsPerDay), t(' a day this week, down from '),
-        v(m.baselineCallsPerDay), t('. The agent is still busy ('), ...count(m.recentCalls, 'call', 'calls'), t('), so it may be working without finishing its task.'),
+        code(m.toolName), t(' has barely been used since '), v(m.lastCalled), t(': '), v(m.recentCallsPerDay), t(' a day this week, down from '),
+        v(m.baselineCallsPerDay), t('. The agent is still busy ('), ...count(m.recentCalls, 'call', 'calls'), t('), so it may be stuck and not finishing its work.'),
       ];
       if (Number(m.silentTools) > 1) parts.push(t(' '), v(m.silentTools), t(' tools went quiet at the same time.'));
       return parts;
     }
     case 'review_provider_failures': {
       const parts = has(m, 'failureRatePct')
-        ? [v(m.failureRatePct), t('% of calls to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t(').')]
-        : [t('Calls to the model provider are failing.')];
+        ? [v(m.failureRatePct), t('% of requests to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t('). This usually comes from the AI provider, not your agent.')]
+        : [t('Requests to the AI provider are failing. This usually comes from the provider, not your agent.')];
       if (Number(m.otherCohorts) > 0) {
         const one = Number(m.otherCohorts) === 1;
         parts.push(t(' '), ...count(m.otherCohorts, 'other model', 'other models'), t(` ${one ? 'is' : 'are'} also failing.`));
@@ -160,21 +160,22 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
   switch (howtoId) {
     case 'handover_churn':
       return [
-        'Return smaller tool results so one shift can hold several steps: page long lists, drop raw HTML, and summarise before returning.',
-        'Open the calls to see how many calls each shift held before it handed over.',
+        'Have the agent’s tools send back short answers, not everything at once: a few results at a time, plain text instead of whole web pages, a summary instead of a full document.',
+        'Or have the agent write down its progress after each step, so the next shift can pick up where the last one stopped.',
+        'Open the calls to see what was done twice.',
       ];
     case 'tool_errors':
       return [
-        `See which calls reported a ${tool} error. Check your agent’s logs for the cause.`,
-        'Common fixes: add a timeout and one retry, or skip targets that keep failing.',
+        `Open the calls to see when ${tool} failed. Your agent’s logs will show why.`,
+        'Common fixes: give the tool more time and let it try once more, or skip items that keep failing.',
       ];
     case 'tool_silence':
       return [
-        `Open the calls and check what the agent does instead of calling ${tool}.`,
-        'Common causes: an earlier step fails so the agent never reaches it, the task prompt changed, or the agent decides the work is already done.',
+        `Open the calls to see what the agent does instead of using ${tool}.`,
+        'Common causes: an earlier step fails so the agent never gets there, its instructions changed, or it thinks the work is already done.',
       ];
     case 'provider_failures':
-      return ['Open the calls to see which status codes came back. Retry with backoff, or route to another model while the provider recovers.'];
+      return ['Open the calls to see which errors came back. Usually the fix is to wait and try again, or switch to another model until the provider recovers.'];
     default:
       return [];
   }
