@@ -9,7 +9,7 @@ import { ThemedShell } from '@/components/ThemedShell';
 import { AppShell } from '@/components/AppShell';
 import { analytics, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
-import { createFallbackFleet, resyncFleetToken, saveProvisioning } from './provision';
+import { finishSignIn, resyncFleetToken } from './provision';
 
 function generateApiKey() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -88,40 +88,17 @@ export default function DashboardPage() {
         regError = err instanceof Error ? err.message : 'network error';
       }
 
-      // A new account whose email-derived id is already held by another key
-      // (an address differing only in punctuation, or an id claimed first)
-      // gets an unguessable id of its own instead of a dead end.
-      if (!registered && !provisioning.fleetId) {
-        const fallback = await createFallbackFleet(fleetId, apiKey);
-        if (fallback) {
-          ({ fleetId, fleetToken } = fallback);
-          registered = true;
-        }
-      }
-
-      // A stored fleet token authenticates even when the API key does not, so
-      // only treat this as fatal when the account has no working path at all.
-      if (!registered && !fleetToken) {
-        setProvisionError(`Fleet provisioning failed: ${regError}`);
+      // Fallback fleet, the save and its refusals: provision.ts.
+      const outcome = await finishSignIn({
+        apiKey, fleetId, fleetToken, registered, regError, isNew,
+        stored: { fleetId: provisioning.fleetId, fleetToken: provisioning.fleetToken },
+      });
+      if (outcome.kind === 'error') {
+        setProvisionError(outcome.error);
         setLoading(false);
         return;
       }
-
-      // Persist only once the engine has accepted the key — the previous code
-      // saved it unconditionally, which is how accounts ended up holding a key
-      // the engine had never seen. Also re-sync the fleet token, which drifts
-      // whenever a fleet is recreated.
-      if (registered && fleetToken && (isNew || fleetToken !== provisioning.fleetToken)) {
-        // A new account's fleet that turns out to belong to another account
-        // moves to a fallback fleet; an existing account keeps its fleet.
-        const saved = await saveProvisioning({ apiKey, fleetId, fleetToken }, !provisioning.fleetId);
-        if ('error' in saved) {
-          setProvisionError(saved.error);
-          setLoading(false);
-          return;
-        }
-        ({ fleetId, fleetToken } = saved);
-      }
+      ({ fleetId, fleetToken } = outcome);
 
       setProps({ name, email, apiKey, fleetId, fleetToken, isNew });
       setLoading(false);
@@ -162,14 +139,9 @@ export default function DashboardPage() {
           }
 
           if (fleetToken) {
-            // A refused save replaces the dashboard with the error, so the
-            // new token is never shown as if it had been saved.
             const resynced = await resyncFleetToken({ apiKey, fleetId, fleetToken });
-            if ('error' in resynced) {
-              setProvisionError(resynced.error);
-            } else {
-              setProps((prev) => prev ? { ...prev, fleetToken: resynced.fleetToken } : prev);
-            }
+            if (resynced.kind === 'error') setProvisionError(resynced.error);
+            else setProps((prev) => prev ? { ...prev, fleetToken: resynced.fleetToken } : prev);
           }
         }
       }

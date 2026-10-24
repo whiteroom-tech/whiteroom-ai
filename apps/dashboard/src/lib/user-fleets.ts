@@ -109,6 +109,10 @@ export async function addUserFleet(
 
     // Same per-fleet lock as provisioning, so a link and a provisioning of
     // one fleet can't interleave their ownership checks and writes.
+    // No lock without a fleet id (verifyFleetOwnership refuses one today; the
+    // guard keeps the type honest): a link with no fleet id is matched by
+    // token and can't be ranked against a provisioner until boot records its
+    // fleet id (recordLegacyFleetIds), so there is nothing to serialise on.
     if (fleetId) await lockFleetHolders(client, fleetId);
 
     const fleetTokenEnc = sealCred('user_fleets.fleet_token', userId, fleetToken);

@@ -37,7 +37,7 @@ vi.mock('@/lib/db', () => {
 const { upsertUserProvisioning } = await import('@/lib/users');
 const { fleetOwners } = await import('@/lib/control-auth');
 const { addUserFleet } = await import('@/lib/user-fleets');
-const { createFallbackFleet, resyncFleetToken, saveProvisioning } = await import('@/app/fleet-key/provision');
+const { createFallbackFleet, finishSignIn, resyncFleetToken, saveProvisioning } = await import('@/app/fleet-key/provision');
 const input = { fleetId: 'f1', fleetToken: 'wr_f1_token', apiKey: 'sk-wr-abcdefghijklmnop' };
 const row = (userId: string, provisioned: boolean, opts: { fleetId?: string | null; plain?: string; since?: number } = {}): Row => ({
   table: provisioned ? 'users' : 'user_fleets', userId, provisioned, since: opts.since ?? 1,
@@ -153,6 +153,13 @@ describe('saveProvisioning (fleet-key page)', () => {
     expect(a.upsertUserProvisioning).toHaveBeenCalledTimes(2);
   });
 
+  it('returns the original error when saving the fallback throws', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValueOnce(TAKEN).mockRejectedValueOnce(new Error('db down'));
+    a.createFleet.mockResolvedValue({ fleetToken: 'wr_fallback' });
+    expect(await saveProvisioning(input, true, a)).toEqual({ error: `Fleet provisioning failed: ${TAKEN.error}` });
+  });
+
   it('saves the fleet as is when it is free', async () => {
     const a = actions();
     a.upsertUserProvisioning.mockResolvedValue({ ok: true });
@@ -178,21 +185,88 @@ describe('createFallbackFleet', () => {
 describe('resyncFleetToken (fleet-key page re-sync)', () => {
   it('returns the new token only once it is saved', async () => {
     const save = vi.fn().mockResolvedValue({ ok: true });
-    expect(await resyncFleetToken(input, save)).toEqual({ fleetToken: input.fleetToken });
+    expect(await resyncFleetToken(input, save)).toEqual({ kind: 'ready', fleetId: 'f1', fleetToken: input.fleetToken });
   });
 
   it('turns a refusal into the error to show, with no token', async () => {
     const save = vi.fn().mockResolvedValue(TAKEN);
-    expect(await resyncFleetToken(input, save)).toEqual({ error: `Fleet provisioning failed: ${TAKEN.error}` });
+    expect(await resyncFleetToken(input, save)).toEqual({ kind: 'error', error: `Fleet provisioning failed: ${TAKEN.error}` });
+  });
+});
+
+describe('finishSignIn (fleet-key page sign-in)', () => {
+  const base = { apiKey: input.apiKey, fleetId: 'f1', fleetToken: 'wr_new', registered: true, regError: '', isNew: true, stored: { fleetId: null, fleetToken: null } };
+  const actions = () => ({ upsertUserProvisioning: vi.fn(), createFleet: vi.fn() });
+
+  it('saves a new account\'s fleet and shows it', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValue({ ok: true });
+    expect(await finishSignIn(base, a)).toEqual({ kind: 'ready', fleetId: 'f1', fleetToken: 'wr_new' });
+    expect(a.upsertUserProvisioning).toHaveBeenCalledWith({ apiKey: input.apiKey, fleetId: 'f1', fleetToken: 'wr_new' });
+  });
+
+  it('adopts the fallback fleet when the new account\'s fleet is taken', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValueOnce(TAKEN).mockResolvedValueOnce({ ok: true });
+    a.createFleet.mockResolvedValue({ fleetToken: 'wr_fallback' });
+    expect(await finishSignIn(base, a)).toEqual({ kind: 'ready', fleetId: expect.stringMatching(/^f1-/), fleetToken: 'wr_fallback' });
+  });
+
+  it('adopts a fallback fleet when the engine refused the new account\'s id', async () => {
+    const a = actions();
+    a.createFleet.mockResolvedValue({ fleetToken: 'wr_fallback' });
+    a.upsertUserProvisioning.mockResolvedValue({ ok: true });
+    const out = await finishSignIn({ ...base, fleetToken: null, registered: false, regError: 'HTTP 401' }, a);
+    expect(out).toEqual({ kind: 'ready', fleetId: expect.stringMatching(/^f1-/), fleetToken: 'wr_fallback' });
+  });
+
+  it('errors, showing no token, when there is no working fleet', async () => {
+    const a = actions();
+    a.createFleet.mockResolvedValue({ error: 'HTTP 401' });
+    expect(await finishSignIn({ ...base, fleetToken: null, registered: false, regError: 'HTTP 401' }, a))
+      .toEqual({ kind: 'error', error: 'Fleet provisioning failed: HTTP 401' });
+    expect(a.upsertUserProvisioning).not.toHaveBeenCalled();
+  });
+
+  it('errors on a refused save, so an unsaved token is never shown', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValue(TAKEN);
+    const out = await finishSignIn({ ...base, isNew: false, stored: { fleetId: 'f1', fleetToken: 'wr_old' } }, a);
+    expect(out).toEqual({ kind: 'error', error: `Fleet provisioning failed: ${TAKEN.error}` });
+    expect(a.createFleet).not.toHaveBeenCalled();
+  });
+
+  it('keeps an existing account on its stored token when the engine is unreachable, saving nothing', async () => {
+    const a = actions();
+    const out = await finishSignIn({ ...base, fleetToken: 'wr_old', registered: false, isNew: false, stored: { fleetId: 'f1', fleetToken: 'wr_old' } }, a);
+    expect(out).toEqual({ kind: 'ready', fleetId: 'f1', fleetToken: 'wr_old' });
+    expect(a.upsertUserProvisioning).not.toHaveBeenCalled();
+    expect(a.createFleet).not.toHaveBeenCalled();
+  });
+
+  it('saves nothing when the token is unchanged', async () => {
+    const a = actions();
+    const out = await finishSignIn({ ...base, fleetToken: 'wr_old', isNew: false, stored: { fleetId: 'f1', fleetToken: 'wr_old' } }, a);
+    expect(out).toEqual({ kind: 'ready', fleetId: 'f1', fleetToken: 'wr_old' });
+    expect(a.upsertUserProvisioning).not.toHaveBeenCalled();
   });
 });
 
 describe('addUserFleet', () => {
-  it('takes the same per-fleet lock before linking', async () => {
+  it('takes the same per-fleet lock after BEGIN and before linking', async () => {
     expect(await addUserFleet(input.fleetToken, 'f1', 'Fleet')).toEqual({ ok: true });
-    const lock = mocks.sql.find((s) => s.includes('pg_advisory_xact_lock'));
-    expect(lock).toBeDefined();
-    expect(mocks.sql.indexOf(lock!)).toBeLessThan(mocks.sql.findIndex((s) => s.includes('INSERT INTO user_fleets')));
+    const begin = mocks.sql.indexOf('BEGIN');
+    const lock = mocks.sql.findIndex((s) => s.includes('pg_advisory_xact_lock'));
+    const insert = mocks.sql.findIndex((s) => s.includes('INSERT INTO user_fleets'));
+    expect(begin).toBeGreaterThan(-1);
+    expect(lock).toBeGreaterThan(begin);
+    expect(insert).toBeGreaterThan(lock);
+  });
+
+  it('takes no lock for a link without a fleet id', async () => {
+    expect(await addUserFleet(input.fleetToken, null, 'Fleet')).toEqual({ ok: true });
+    expect(mocks.sql.some((s) => s.includes('pg_advisory_xact_lock'))).toBe(false);
+    expect(mocks.sql.some((s) => s.includes('INSERT INTO user_fleets'))).toBe(true);
   });
 });
 

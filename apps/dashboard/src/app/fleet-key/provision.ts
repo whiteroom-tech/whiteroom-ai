@@ -1,9 +1,29 @@
+// The fleet-key page's provisioning decisions, as plain functions returning
+// an outcome the page only copies into state, so they can be tested without
+// rendering the page.
 import { upsertUserProvisioning } from '@/lib/users';
 import { createFleet, fleetProvisioned } from '@/lib/whiteroom/client';
 
 export interface ProvisionedFleet {
   fleetId: string;
   fleetToken: string;
+}
+
+/** What the page shows: the fleet (with a token only once it's saved, or the one already stored), or an error. */
+export type ProvisionOutcome =
+  | { kind: 'ready'; fleetId: string; fleetToken: string | null }
+  | { kind: 'error'; error: string };
+
+export interface ProvisionActions {
+  upsertUserProvisioning: typeof upsertUserProvisioning;
+  createFleet: typeof createFleet;
+}
+
+const defaultActions: ProvisionActions = { upsertUserProvisioning, createFleet };
+
+/** The message the fleet-key page shows when provisioning fails. */
+export function provisioningError(reason: string): string {
+  return `Fleet provisioning failed: ${reason}`;
 }
 
 /**
@@ -26,25 +46,76 @@ export async function createFallbackFleet(
 /**
  * Saves the fleet as the account's own. A new account whose fleet already
  * belongs to another account (stale links to its email-derived id, say)
- * moves to a fallback fleet, as when the engine refuses the id.
+ * moves to a fallback fleet, as when the engine refuses the id. If the
+ * fallback can't be made or saved, the original refusal is returned.
+ *
+ * A fallback fleet created here but then not saved is left in the engine:
+ * the engine has no action that deletes a fleet (purge_fleet only clears its
+ * data), and an empty fleet nobody holds grants nothing. The next sign-in
+ * mints a new key and starts over.
  */
 export async function saveProvisioning(
-  input: { apiKey: string; fleetId: string; fleetToken: string },
+  input: ProvisionedFleet & { apiKey: string },
   canFallBack: boolean,
-  actions: { upsertUserProvisioning: typeof upsertUserProvisioning; createFleet: typeof createFleet } = { upsertUserProvisioning, createFleet },
+  actions: ProvisionActions = defaultActions,
 ): Promise<ProvisionedFleet | { error: string }> {
   const saved = await actions.upsertUserProvisioning(input);
   if (saved.ok) return { fleetId: input.fleetId, fleetToken: input.fleetToken };
   if (saved.code === 'fleet_taken' && canFallBack) {
     const fallback = await createFallbackFleet(input.fleetId, input.apiKey, actions.createFleet);
-    if (fallback && (await actions.upsertUserProvisioning({ apiKey: input.apiKey, ...fallback })).ok) return fallback;
+    if (fallback) {
+      try {
+        if ((await actions.upsertUserProvisioning({ apiKey: input.apiKey, ...fallback })).ok) return fallback;
+      } catch { /* report the original refusal */ }
+    }
   }
   return { error: provisioningError(saved.error) };
 }
 
-/** The message the fleet-key page shows when provisioning is refused. */
-export function provisioningError(reason: string): string {
-  return `Fleet provisioning failed: ${reason}`;
+/**
+ * After create_fleet on sign-in: falls back to a fresh fleet when the engine
+ * refused a new account's id, then saves the fleet when it is new or its
+ * token changed. Saves only with a token in hand, and returns a token only
+ * once it's saved (or the one already stored).
+ */
+export async function finishSignIn(
+  state: {
+    apiKey: string;
+    fleetId: string;
+    /** The token create_fleet returned, else the stored one. */
+    fleetToken: string | null;
+    /** Whether create_fleet returned a token. */
+    registered: boolean;
+    regError: string;
+    isNew: boolean;
+    stored: { fleetId: string | null; fleetToken: string | null };
+  },
+  actions: ProvisionActions = defaultActions,
+): Promise<ProvisionOutcome> {
+  let { fleetId, fleetToken, registered } = state;
+  const canFallBack = !state.stored.fleetId;
+
+  if (!registered && canFallBack) {
+    const fallback = await createFallbackFleet(fleetId, state.apiKey, actions.createFleet);
+    if (fallback) {
+      ({ fleetId, fleetToken } = fallback);
+      registered = true;
+    }
+  }
+
+  // A stored fleet token authenticates even when the API key does not, so
+  // this is fatal only when the account has no working path at all.
+  if (!registered && !fleetToken) return { kind: 'error', error: provisioningError(state.regError) };
+
+  // Persist only once the engine has accepted the key, and re-sync a token
+  // that drifted (a fleet is recreated, say).
+  if (registered && fleetToken && (state.isNew || fleetToken !== state.stored.fleetToken)) {
+    const saved = await saveProvisioning({ apiKey: state.apiKey, fleetId, fleetToken }, canFallBack, actions);
+    if ('error' in saved) return { kind: 'error', error: saved.error };
+    return { kind: 'ready', ...saved };
+  }
+  // Nothing new to save: the token is the one already stored.
+  return { kind: 'ready', fleetId, fleetToken };
 }
 
 /**
@@ -53,9 +124,11 @@ export function provisioningError(reason: string): string {
  * as saved.
  */
 export async function resyncFleetToken(
-  input: { apiKey: string; fleetId: string; fleetToken: string },
+  input: ProvisionedFleet & { apiKey: string },
   save: typeof upsertUserProvisioning = upsertUserProvisioning,
-): Promise<{ fleetToken: string } | { error: string }> {
+): Promise<ProvisionOutcome> {
   const saved = await save(input);
-  return saved.ok ? { fleetToken: input.fleetToken } : { error: provisioningError(saved.error) };
+  return saved.ok
+    ? { kind: 'ready', fleetId: input.fleetId, fleetToken: input.fleetToken }
+    : { kind: 'error', error: provisioningError(saved.error) };
 }
