@@ -55,11 +55,11 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       const repeatLed = Number(m.longestRepeatStreak) >= 2 && !(Number(m.longestStreak) >= 3);
       const parts = repeatLed
         ? [
-            t('Redid '), v(m.repeatedSharePct), t('% of the steps it had already done, '),
+            t('Redid '), v(m.repeatedSharePct), t('% of the work it had already done, '),
             ...count(m.longestRepeatStreak, 'shift', 'shifts'), t(' in a row. It likely lost track of what it had found when it handed over, so it did the work again. To fix: have its tools send back shorter answers, or have it save its progress as it goes.'),
           ]
         : [
-            t('Handed over after '), ...count(m.medianCallsPerWatch, 'step', 'steps'), t(' on average, '),
+            t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
             ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. Its tools likely send back too much at once, which fills its workspace fast. To fix: have its tools send back shorter answers.'),
           ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));

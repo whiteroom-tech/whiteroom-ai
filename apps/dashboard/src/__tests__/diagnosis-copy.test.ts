@@ -32,7 +32,7 @@ describe('finding sentences', () => {
 
   it('churn hedges the cause and mentions the raised limit only when raised', () => {
     const t = sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn));
-    expect(t).toContain('To fix:');
+    expect(t).toContain('likely');
     expect(t).toContain('4×');
     expect(sentenceText(findingSentence('review_handover_churn', { ...MEASURES.review_handover_churn, limitMultiplier: 1 }))).not.toContain('raised');
   });
@@ -40,7 +40,7 @@ describe('finding sentences', () => {
   it('churn from repeated work says so, printing only measured values', () => {
     const m = { ...MEASURES.review_handover_churn, shortWatches: 0, longestStreak: 0, medianCallsPerWatch: 7, repeatWatches: 3, longestRepeatStreak: 2, repeatedSharePct: 81, limitMultiplier: 1.5 };
     const t = sentenceText(findingSentence('review_handover_churn', m));
-    expect(t).toContain('Redid 81% of the steps it had already done, 2 shifts in a row.');
+    expect(t).toContain('Redid 81% of the work it had already done, 2 shifts in a row.');
     expect(t).toContain('1.5×');
     for (const n of numbersIn(t)) expect(measureValues(m)).toContain(n);
     // A short-shift streak still leads when both fired.
@@ -56,7 +56,7 @@ describe('finding sentences', () => {
 
   it('older churn findings without repeat measures read as before', () => {
     expect(MEASURES.review_handover_churn).not.toHaveProperty('longestRepeatStreak');
-    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Handed over after 1\.5 steps on average, 20 shifts in a row\./);
+    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Handed over after 1\.5 calls on average, 20 shifts in a row\./);
   });
 
   it('tool silence mentions several quiet tools only when there are several', () => {
@@ -119,7 +119,7 @@ describe('cost, limitations, reasons, how-to', () => {
       .toBe('search ran with the same request 1 time in shift 2, and this happened in 1 shift this week. The agent may be stuck going round in circles.');
     expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5× normal.');
     expect(text('review_tool_errors', { ...MEASURES.review_tool_errors, toolErrors: 1 })).toContain('failed 1 time this week');
-    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 step on average, 1 shift in a row');
+    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 call on average, 1 shift in a row');
     expect(text('review_tool_silence', { ...MEASURES.review_tool_silence, recentCalls: 1 })).toContain('(1 call)');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 1 })).toContain('1 other model is also failing.');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');
