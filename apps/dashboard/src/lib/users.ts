@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import { fleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
@@ -14,6 +15,8 @@ export interface UserProvisioning {
   /** The stored API key exists but couldn't be decrypted: never mint a replacement (agents use the stored one). */
   apiKeyUnreadable: boolean;
 }
+
+const FLEET_TAKEN = 'This fleet already belongs to another account.';
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -63,14 +66,30 @@ export async function upsertUserProvisioning(input: {
       [userId],
     );
     oldFleetId = current[0]?.fleet_id ?? null;
+    const fleetChanged = oldFleetId !== input.fleetId;
+
+    // An account may take on a fleet only when no other account holds it: a
+    // new fleet, or one only this account has linked. Holding the fleet's
+    // token isn't enough, since its agents hold it too. Re-saving the fleet
+    // already provisioned here changes no ownership, so it skips the check.
+    // The lock serialises provisioning of one fleet across accounts.
+    if (fleetChanged) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`provision-fleet:${input.fleetId}`]);
+      const holders = await fleetHolders(input.fleetId, input.fleetToken as string, client);
+      if (holders.some((h) => h.userId !== userId)) {
+        throw new Error(FLEET_TAKEN);
+      }
+    }
 
     const apiKeyEnc = sealCred('users.api_key', userId, input.apiKey);
     const fleetTokenEnc = input.fleetToken ? sealCred('users.fleet_token', userId, input.fleetToken) : null;
 
     await client.query(
-      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, fleet_provisioned_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
        ON CONFLICT (id) DO UPDATE SET
+         fleet_provisioned_at = CASE WHEN users.fleet_id IS DISTINCT FROM EXCLUDED.fleet_id
+                                     THEN now() ELSE users.fleet_provisioned_at END,
          email = EXCLUDED.email,
          name = EXCLUDED.name,
          api_key = EXCLUDED.api_key,
