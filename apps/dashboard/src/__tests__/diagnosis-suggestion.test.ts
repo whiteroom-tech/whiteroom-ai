@@ -24,7 +24,7 @@ describe('reading a suggestion', () => {
     const s = readSuggestion(result(loopRec()))!;
     expect(s.ruleType).toBe('loop_breaker');
     expect(s.suggested).toBe(5);
-    expect(s.sentence).toBe('search repeated 9 times in shift 3, and in 2 shifts this week.');
+    expect(s.sentence).toBe('search ran with the same request 9 times in shift 3, and this happened in 2 shifts this week. The agent may be stuck going round in circles.');
   });
 
   it("labels the amount from the suggested rule's scope and unit", () => {
@@ -42,7 +42,7 @@ describe('reading a suggestion', () => {
 
   it('prefers the finding measures over the recommendation copy', () => {
     const s = readSuggestion(result(loopRec(), { measures: { toolName: 'fetch', maxRepeats: 12, worstWatch: 4, watchesAffected: 3 } }))!;
-    expect(s.sentence).toContain('fetch repeated 12 times');
+    expect(s.sentence).toContain('fetch ran with the same request 12 times');
   });
 
   it('refuses anything that is not a Diagnosis rule suggestion with a usable amount', () => {
