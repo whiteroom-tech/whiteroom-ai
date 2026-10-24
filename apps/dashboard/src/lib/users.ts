@@ -1,7 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
-import { fleetHolders } from '@/lib/control-auth';
+import { fleetHolders, fleetOwner, lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
@@ -16,7 +16,10 @@ export interface UserProvisioning {
   apiKeyUnreadable: boolean;
 }
 
-const FLEET_TAKEN = 'This fleet already belongs to another account.';
+/** Why provisioning was refused, for callers to act on (no message matching). */
+export type ProvisioningResult =
+  | { ok: true }
+  | { ok: false; code: 'fleet_taken'; error: string };
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -46,7 +49,7 @@ export async function upsertUserProvisioning(input: {
   apiKey: string;
   fleetId: string;
   fleetToken: string | null;
-}): Promise<void> {
+}): Promise<ProvisioningResult> {
   const userId = await requireUserId();
   await verifyFleetOwnership(input?.fleetToken, input?.fleetId);
   if (typeof input.apiKey !== 'string' || !/^sk-wr-[a-zA-Z0-9_-]{16,128}$/.test(input.apiKey)) {
@@ -68,16 +71,18 @@ export async function upsertUserProvisioning(input: {
     oldFleetId = current[0]?.fleet_id ?? null;
     const fleetChanged = oldFleetId !== input.fleetId;
 
-    // An account may take on a fleet only when no other account holds it: a
-    // new fleet, or one only this account has linked. Holding the fleet's
+    // An account may take on a fleet only when it doesn't already belong to
+    // another account: a new fleet, or one whose owner (fleetOwner) is this
+    // account, counting its own linked or legacy rows. Holding the fleet's
     // token isn't enough, since its agents hold it too. Re-saving the fleet
     // already provisioned here changes no ownership, so it skips the check.
-    // The lock serialises provisioning of one fleet across accounts.
+    // The lock serialises this with linking (addUserFleet) for the fleet.
     if (fleetChanged) {
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`provision-fleet:${input.fleetId}`]);
-      const holders = await fleetHolders(input.fleetId, input.fleetToken as string, client);
-      if (holders.some((h) => h.userId !== userId)) {
-        throw new Error(FLEET_TAKEN);
+      await lockFleetHolders(client, input.fleetId);
+      const owner = fleetOwner(await fleetHolders(input.fleetId, input.fleetToken as string, client));
+      if (owner !== null && owner !== userId) {
+        await client.query('ROLLBACK');
+        return { ok: false, code: 'fleet_taken', error: 'This fleet already belongs to another account.' };
       }
     }
 
@@ -118,6 +123,7 @@ export async function upsertUserProvisioning(input: {
   if (oldFleetId && oldFleetId !== input.fleetId) {
     await releaseFleet(oldFleetId);
   }
+  return { ok: true };
 }
 
 export async function setByok(value: boolean): Promise<void> {

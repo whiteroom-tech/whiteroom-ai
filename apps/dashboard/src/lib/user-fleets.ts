@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import { lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync } from '@/lib/entitlements';
@@ -105,6 +106,10 @@ export async function addUserFleet(
       await client.query('ROLLBACK');
       return { ok: false, error: 'Fleet already linked' };
     }
+
+    // Same per-fleet lock as provisioning, so a link and a provisioning of
+    // one fleet can't interleave their ownership checks and writes.
+    if (fleetId) await lockFleetHolders(client, fleetId);
 
     const fleetTokenEnc = sealCred('user_fleets.fleet_token', userId, fleetToken);
     await client.query(

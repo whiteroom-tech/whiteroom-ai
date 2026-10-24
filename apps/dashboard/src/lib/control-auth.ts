@@ -137,6 +137,15 @@ export async function fleetHolders(fleetId: string, token: string, q: Queryable 
     .map((r) => ({ userId: r.userId, provisioned: r.provisioned, since: r.since }));
 }
 
+/**
+ * Serialises, per fleet, the writes that make an account a holder of it
+ * (provisioning and linking), so two accounts can't both pass the ownership
+ * check at once. Transaction-scoped: call inside BEGIN.
+ */
+export async function lockFleetHolders(q: Queryable, fleetId: string): Promise<void> {
+  await q.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`provision-fleet:${fleetId}`]);
+}
+
 /** Each fleet's owner (fleetOwner over every account holding it), in one query; absent when nobody holds it. */
 export async function fleetOwners(fleetIds: string[]): Promise<Map<string, string>> {
   if (fleetIds.length === 0) return new Map();
