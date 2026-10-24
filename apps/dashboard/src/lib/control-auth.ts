@@ -82,7 +82,11 @@ export interface FleetHolder {
   userId: string;
   /** The fleet is the account's own provisioned fleet (users.fleet_id). */
   provisioned: boolean;
-  /** When the account got the fleet, epoch seconds: users.created_at or user_fleets.created_at. */
+  /**
+   * When the account got the fleet, epoch seconds: users.fleet_provisioned_at
+   * (users.created_at for rows provisioned before it was recorded) or
+   * user_fleets.created_at.
+   */
   since: number;
 }
 
@@ -99,11 +103,54 @@ export function fleetOwner(holders: FleetHolder[]): string | null {
   return first?.userId ?? null;
 }
 
+/**
+ * A provisioned holder's `since`: when the account provisioned the fleet, not
+ * when the account was made, so an older account provisioning a fleet later
+ * can't rank ahead of the accounts that already held it. Rows provisioned
+ * before fleet_provisioned_at was recorded fall back to created_at.
+ */
+const PROVISIONED_SINCE = 'extract(epoch FROM COALESCE(fleet_provisioned_at, created_at))::float8';
+
+type Queryable = Pick<ReturnType<typeof db>, 'query'>;
+
+/**
+ * Every account holding the fleet: rows saved for it, plus rows with no fleet
+ * id that hold its token. A fleet token belongs to one fleet, so an old row's
+ * owner still counts before anyone who linked the fleet later. Tokens are
+ * encrypted, so fleet-id-less rows are matched here, not in SQL. Boot gives
+ * them their fleet id (recordLegacyFleetIds), so the ones left are only those
+ * the engine couldn't resolve: few, and fewer each boot.
+ */
+export async function fleetHolders(fleetId: string, token: string, q: Queryable = db()): Promise<FleetHolder[]> {
+  const { rows } = await q.query(
+    `SELECT 'users' AS "table", id AS "userId", true AS provisioned, ${PROVISIONED_SINCE} AS since,
+            fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed
+       FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND (fleet_token IS NOT NULL OR fleet_token_enc IS NOT NULL))
+     UNION ALL
+     SELECT 'user_fleets', user_id, false, extract(epoch FROM created_at)::float8, fleet_id, fleet_token, fleet_token_enc
+       FROM user_fleets WHERE fleet_id = $1 OR fleet_id IS NULL`,
+    [fleetId],
+  );
+  return rows
+    .filter((r) => r.fleetId === fleetId
+      || readCred(`${r.table}.fleet_token` as CredColumn, r.userId, r.plain, r.sealed) === token)
+    .map((r) => ({ userId: r.userId, provisioned: r.provisioned, since: r.since }));
+}
+
+/**
+ * Serialises, per fleet, the writes that make an account a holder of it
+ * (provisioning and linking), so two accounts can't both pass the ownership
+ * check at once. Transaction-scoped: call inside BEGIN.
+ */
+export async function lockFleetHolders(q: Queryable, fleetId: string): Promise<void> {
+  await q.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`provision-fleet:${fleetId}`]);
+}
+
 /** Each fleet's owner (fleetOwner over every account holding it), in one query; absent when nobody holds it. */
 export async function fleetOwners(fleetIds: string[]): Promise<Map<string, string>> {
   if (fleetIds.length === 0) return new Map();
   const { rows } = await db().query(
-    `SELECT fleet_id AS "fleetId", id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since
+    `SELECT fleet_id AS "fleetId", id AS "userId", true AS provisioned, ${PROVISIONED_SINCE} AS since
        FROM users WHERE fleet_id = ANY($1)
      UNION ALL
      SELECT fleet_id, user_id, false, extract(epoch FROM created_at)::float8
@@ -183,24 +230,7 @@ export async function controlAccessError(fleetId: string | null, token: string):
     await recordFleetId(held.filter((h) => h.fleetId === null), fleetId);
   }
   try {
-    // Holders are rows saved for this fleet, plus rows with no fleet id that
-    // hold this fleet's token: a fleet token belongs to one fleet, so an old
-    // row's owner still counts before anyone who linked the fleet later.
-    // Tokens are encrypted, so fleet-id-less rows are matched here, not in
-    // SQL. Boot gives them their fleet id (recordLegacyFleetIds), so the ones
-    // left are only those the engine couldn't resolve: few, and fewer each boot.
-    const { rows } = await db().query(
-      `SELECT 'users' AS "table", id AS "userId", true AS provisioned, extract(epoch FROM created_at)::float8 AS since,
-              fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed
-         FROM users WHERE fleet_id = $1 OR (fleet_id IS NULL AND (fleet_token IS NOT NULL OR fleet_token_enc IS NOT NULL))
-       UNION ALL
-       SELECT 'user_fleets', user_id, false, extract(epoch FROM created_at)::float8, fleet_id, fleet_token, fleet_token_enc
-         FROM user_fleets WHERE fleet_id = $1 OR fleet_id IS NULL`,
-      [fleetId],
-    );
-    const holders = rows.filter((r) => r.fleetId === fleetId
-      || readCred(`${r.table}.fleet_token` as CredColumn, r.userId, r.plain, r.sealed) === token);
-    return fleetOwner(holders) === userId ? null : NOT_OWNER;
+    return fleetOwner(await fleetHolders(fleetId, token)) === userId ? null : NOT_OWNER;
   } catch {
     return LOOKUP_FAILED;
   }

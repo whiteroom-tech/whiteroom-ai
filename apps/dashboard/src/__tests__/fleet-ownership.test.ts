@@ -51,6 +51,7 @@ describe('server-side fleet ownership', () => {
 
   it('rejects absent credentials without contacting the engine', async () => {
     await expect(verifyFleetOwnership(null, 'owned')).rejects.toThrow();
+    await expect(verifyFleetOwnership('test-token', null)).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

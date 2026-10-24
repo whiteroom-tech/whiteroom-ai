@@ -3,12 +3,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
+import { getUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { ThemedShell } from '@/components/ThemedShell';
 import { AppShell } from '@/components/AppShell';
 import { analytics, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
+import { finishSignIn, resyncFleetToken } from './provision';
 
 function generateApiKey() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -87,36 +88,17 @@ export default function DashboardPage() {
         regError = err instanceof Error ? err.message : 'network error';
       }
 
-      // A new account whose email-derived id is already held by another key
-      // (an address differing only in punctuation, or an id claimed first)
-      // gets an unguessable id of its own instead of a dead end.
-      if (!registered && !provisioning.fleetId) {
-        const fallbackId = `${fleetId}-${crypto.randomUUID().slice(0, 8)}`;
-        try {
-          const res = await createFleet(fallbackId, apiKey);
-          if (fleetProvisioned(res)) {
-            fleetId = fallbackId;
-            fleetToken = res.fleetToken;
-            registered = true;
-          }
-        } catch { /* keep the original error */ }
-      }
-
-      // A stored fleet token authenticates even when the API key does not, so
-      // only treat this as fatal when the account has no working path at all.
-      if (!registered && !fleetToken) {
-        setProvisionError(`Fleet provisioning failed: ${regError}`);
+      // Fallback fleet, the save and its refusals: provision.ts.
+      const outcome = await finishSignIn({
+        apiKey, fleetId, fleetToken, registered, regError, isNew,
+        stored: { fleetId: provisioning.fleetId, fleetToken: provisioning.fleetToken },
+      });
+      if (outcome.kind === 'error') {
+        setProvisionError(outcome.error);
         setLoading(false);
         return;
       }
-
-      // Persist only once the engine has accepted the key — the previous code
-      // saved it unconditionally, which is how accounts ended up holding a key
-      // the engine had never seen. Also re-sync the fleet token, which drifts
-      // whenever a fleet is recreated.
-      if (registered && (isNew || fleetToken !== provisioning.fleetToken)) {
-        await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
-      }
+      ({ fleetId, fleetToken } = outcome);
 
       setProps({ name, email, apiKey, fleetId, fleetToken, isNew });
       setLoading(false);
@@ -157,8 +139,9 @@ export default function DashboardPage() {
           }
 
           if (fleetToken) {
-            await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
-            setProps((prev) => prev ? { ...prev, fleetToken } : prev);
+            const resynced = await resyncFleetToken({ apiKey, fleetId, fleetToken });
+            if (resynced.kind === 'error') setProvisionError(resynced.error);
+            else setProps((prev) => prev ? { ...prev, fleetToken: resynced.fleetToken } : prev);
           }
         }
       }

@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import { fleetHolders, fleetOwner, lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
@@ -14,6 +15,11 @@ export interface UserProvisioning {
   /** The stored API key exists but couldn't be decrypted: never mint a replacement (agents use the stored one). */
   apiKeyUnreadable: boolean;
 }
+
+/** Why provisioning was refused, for callers to act on (no message matching). */
+export type ProvisioningResult =
+  | { ok: true }
+  | { ok: false; code: 'fleet_taken'; error: string };
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -43,7 +49,7 @@ export async function upsertUserProvisioning(input: {
   apiKey: string;
   fleetId: string;
   fleetToken: string | null;
-}): Promise<void> {
+}): Promise<ProvisioningResult> {
   const userId = await requireUserId();
   await verifyFleetOwnership(input?.fleetToken, input?.fleetId);
   if (typeof input.apiKey !== 'string' || !/^sk-wr-[a-zA-Z0-9_-]{16,128}$/.test(input.apiKey)) {
@@ -63,14 +69,32 @@ export async function upsertUserProvisioning(input: {
       [userId],
     );
     oldFleetId = current[0]?.fleet_id ?? null;
+    const fleetChanged = oldFleetId !== input.fleetId;
+
+    // An account may take on a fleet only when it doesn't already belong to
+    // another account: a new fleet, or one whose owner (fleetOwner) is this
+    // account, counting its own linked or legacy rows. Holding the fleet's
+    // token isn't enough, since its agents hold it too. Re-saving the fleet
+    // already provisioned here changes no ownership, so it skips the check.
+    // The lock serialises this with linking (addUserFleet) for the fleet.
+    if (fleetChanged) {
+      await lockFleetHolders(client, input.fleetId);
+      const owner = fleetOwner(await fleetHolders(input.fleetId, input.fleetToken as string, client));
+      if (owner !== null && owner !== userId) {
+        await client.query('ROLLBACK');
+        return { ok: false, code: 'fleet_taken', error: 'This fleet already belongs to another account.' };
+      }
+    }
 
     const apiKeyEnc = sealCred('users.api_key', userId, input.apiKey);
     const fleetTokenEnc = input.fleetToken ? sealCred('users.fleet_token', userId, input.fleetToken) : null;
 
     await client.query(
-      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, fleet_provisioned_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
        ON CONFLICT (id) DO UPDATE SET
+         fleet_provisioned_at = CASE WHEN users.fleet_id IS DISTINCT FROM EXCLUDED.fleet_id
+                                     THEN now() ELSE users.fleet_provisioned_at END,
          email = EXCLUDED.email,
          name = EXCLUDED.name,
          api_key = EXCLUDED.api_key,
@@ -99,6 +123,7 @@ export async function upsertUserProvisioning(input: {
   if (oldFleetId && oldFleetId !== input.fleetId) {
     await releaseFleet(oldFleetId);
   }
+  return { ok: true };
 }
 
 export async function setByok(value: boolean): Promise<void> {
