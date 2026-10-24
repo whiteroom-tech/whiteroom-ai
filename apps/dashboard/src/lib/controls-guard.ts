@@ -7,11 +7,13 @@ import type { GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, Govern
 
 /**
  * A rule in Enforce that can act, so the proxy refuses calls it can't tie to
- * an agent. An empty model allowlist or tool list acts on nothing. Mirrors the
- * engine's fleetHasEnforcingRule (concepts/governance.ts).
+ * an agent. An empty model allowlist or tool list acts on nothing, and Just
+ * tell me lets every call through. Mirrors the engine's fleetHasEnforcingRule
+ * (concepts/governance.ts).
  */
-export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'>): boolean {
+export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params' | 'response'>): boolean {
   if (rule.mode !== 'enforce') return false;
+  if (rule.response === 'notify') return false;
   if (rule.ruleType === 'model_allowlist' && (rule.params as ModelAllowlistParams).allowedModels.length === 0) return false;
   if (rule.ruleType === 'tool_list' && (rule.params as ToolListParams).blockedTools.length === 0) return false;
   return true;
