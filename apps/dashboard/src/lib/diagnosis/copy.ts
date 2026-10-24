@@ -79,7 +79,7 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
     }
     case 'review_tool_errors':
       return [
-        code(m.toolName), t(' failed '), ...count(m.toolErrors, 'time', 'times'), t(' this week. '), v(m.errorRatePct), t('% of all its tool steps returned an error ('),
+        code(m.toolName), t(' failed '), ...count(m.toolErrors, 'time', 'times'), t(' this week. '), v(m.errorRatePct), t('% of all the agent’s tool calls returned an error ('),
         v(m.totalErrors), t(' of '), v(m.totalResults), t('). To fix: give the tool more time and one retry, or have the agent skip items that keep failing.'),
       ];
     case 'review_tool_silence': {

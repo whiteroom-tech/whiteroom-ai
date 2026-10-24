@@ -125,6 +125,18 @@ describe('cost, limitations, reasons, how-to', () => {
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');
   });
 
+  it('plain-language copy for provider, silence and how-to text', () => {
+    const prov = sentenceText(findingSentence('review_provider_failures', MEASURES.review_provider_failures));
+    expect(prov).toContain('This usually comes from the AI provider, not your agent.');
+    expect(sentenceText(findingSentence('review_provider_failures', {}))).toBe('Requests to the AI provider are failing. This usually comes from the provider, not your agent.');
+    expect(sentenceText(findingSentence('review_tool_silence', MEASURES.review_tool_silence))).toContain('so it may be stuck and not finishing its work.');
+    expect(sentenceText(findingSentence('review_tool_errors', MEASURES.review_tool_errors))).toContain('of all the agent’s tool calls returned an error');
+    const churn = howtoParagraphs('handover_churn', {});
+    expect(churn).toHaveLength(3);
+    expect(churn.join(' ')).not.toMatch(/raw HTML|page long lists/);
+    expect(howtoParagraphs('provider_failures', {})[0]).not.toMatch(/backoff|status codes/);
+  });
+
   it('how-to text only claims what the evidence shows', () => {
     const all = ['handover_churn', 'tool_errors', 'tool_silence', 'provider_failures'].flatMap((h) => howtoParagraphs(h, { toolName: 'fetch_page' })).join(' ');
     expect(all).not.toMatch(/most text|which pages fail and how|reopens|checks whether the fix holds/i);
