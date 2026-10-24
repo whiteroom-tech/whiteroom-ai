@@ -39,5 +39,23 @@ export async function saveProvisioning(
     const fallback = await createFallbackFleet(input.fleetId, input.apiKey, actions.createFleet);
     if (fallback && (await actions.upsertUserProvisioning({ apiKey: input.apiKey, ...fallback })).ok) return fallback;
   }
-  return { error: saved.error };
+  return { error: provisioningError(saved.error) };
+}
+
+/** The message the fleet-key page shows when provisioning is refused. */
+export function provisioningError(reason: string): string {
+  return `Fleet provisioning failed: ${reason}`;
+}
+
+/**
+ * Saves a re-registered fleet's new token for an existing account. A refusal
+ * comes back as the error to show, never as a token the page would display
+ * as saved.
+ */
+export async function resyncFleetToken(
+  input: { apiKey: string; fleetId: string; fleetToken: string },
+  save: typeof upsertUserProvisioning = upsertUserProvisioning,
+): Promise<{ fleetToken: string } | { error: string }> {
+  const saved = await save(input);
+  return saved.ok ? { fleetToken: input.fleetToken } : { error: provisioningError(saved.error) };
 }

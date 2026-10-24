@@ -37,7 +37,7 @@ vi.mock('@/lib/db', () => {
 const { upsertUserProvisioning } = await import('@/lib/users');
 const { fleetOwners } = await import('@/lib/control-auth');
 const { addUserFleet } = await import('@/lib/user-fleets');
-const { saveProvisioning } = await import('@/app/fleet-key/provision');
+const { createFallbackFleet, resyncFleetToken, saveProvisioning } = await import('@/app/fleet-key/provision');
 const input = { fleetId: 'f1', fleetToken: 'wr_f1_token', apiKey: 'sk-wr-abcdefghijklmnop' };
 const row = (userId: string, provisioned: boolean, opts: { fleetId?: string | null; plain?: string; since?: number } = {}): Row => ({
   table: provisioned ? 'users' : 'user_fleets', userId, provisioned, since: opts.since ?? 1,
@@ -133,8 +133,24 @@ describe('saveProvisioning (fleet-key page)', () => {
   it('keeps an existing account on its fleet and reports the refusal', async () => {
     const a = actions();
     a.upsertUserProvisioning.mockResolvedValue(TAKEN);
-    expect(await saveProvisioning(input, false, a)).toEqual({ error: TAKEN.error });
+    expect(await saveProvisioning(input, false, a)).toEqual({ error: `Fleet provisioning failed: ${TAKEN.error}` });
     expect(a.createFleet).not.toHaveBeenCalled();
+  });
+
+  it('returns the original error when no fallback fleet can be made', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValue(TAKEN);
+    a.createFleet.mockResolvedValue({ error: 'HTTP 401' });
+    expect(await saveProvisioning(input, true, a)).toEqual({ error: `Fleet provisioning failed: ${TAKEN.error}` });
+    expect(a.upsertUserProvisioning).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the original error when the fallback fleet is refused too', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValue(TAKEN);
+    a.createFleet.mockResolvedValue({ fleetToken: 'wr_fallback' });
+    expect(await saveProvisioning(input, true, a)).toEqual({ error: `Fleet provisioning failed: ${TAKEN.error}` });
+    expect(a.upsertUserProvisioning).toHaveBeenCalledTimes(2);
   });
 
   it('saves the fleet as is when it is free', async () => {
@@ -142,6 +158,32 @@ describe('saveProvisioning (fleet-key page)', () => {
     a.upsertUserProvisioning.mockResolvedValue({ ok: true });
     expect(await saveProvisioning(input, true, a)).toEqual({ fleetId: 'f1', fleetToken: input.fleetToken });
     expect(a.createFleet).not.toHaveBeenCalled();
+  });
+});
+
+describe('createFallbackFleet', () => {
+  it('creates a suffixed fleet and returns its token', async () => {
+    const create = vi.fn().mockResolvedValue({ fleetToken: 'wr_fb' });
+    const fb = await createFallbackFleet('f1', input.apiKey, create);
+    expect(fb).toEqual({ fleetId: expect.stringMatching(/^f1-[0-9a-f]{8}$/), fleetToken: 'wr_fb' });
+    expect(create).toHaveBeenCalledWith(fb!.fleetId, input.apiKey);
+  });
+
+  it('returns null when the engine gives no token or the call fails', async () => {
+    expect(await createFallbackFleet('f1', input.apiKey, vi.fn().mockResolvedValue({ error: 'HTTP 401' }))).toBeNull();
+    expect(await createFallbackFleet('f1', input.apiKey, vi.fn().mockRejectedValue(new Error('network')))).toBeNull();
+  });
+});
+
+describe('resyncFleetToken (fleet-key page re-sync)', () => {
+  it('returns the new token only once it is saved', async () => {
+    const save = vi.fn().mockResolvedValue({ ok: true });
+    expect(await resyncFleetToken(input, save)).toEqual({ fleetToken: input.fleetToken });
+  });
+
+  it('turns a refusal into the error to show, with no token', async () => {
+    const save = vi.fn().mockResolvedValue(TAKEN);
+    expect(await resyncFleetToken(input, save)).toEqual({ error: `Fleet provisioning failed: ${TAKEN.error}` });
   });
 });
 

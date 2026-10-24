@@ -3,13 +3,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { getUserProvisioning, upsertUserProvisioning } from '@/lib/users';
+import { getUserProvisioning } from '@/lib/users';
 import { Onboarding } from './onboarding';
 import { ThemedShell } from '@/components/ThemedShell';
 import { AppShell } from '@/components/AppShell';
 import { analytics, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
-import { createFallbackFleet, saveProvisioning } from './provision';
+import { createFallbackFleet, resyncFleetToken, saveProvisioning } from './provision';
 
 function generateApiKey() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -116,7 +116,7 @@ export default function DashboardPage() {
         // moves to a fallback fleet; an existing account keeps its fleet.
         const saved = await saveProvisioning({ apiKey, fleetId, fleetToken }, !provisioning.fleetId);
         if ('error' in saved) {
-          setProvisionError(`Fleet provisioning failed: ${saved.error}`);
+          setProvisionError(saved.error);
           setLoading(false);
           return;
         }
@@ -162,8 +162,14 @@ export default function DashboardPage() {
           }
 
           if (fleetToken) {
-            const saved = await upsertUserProvisioning({ apiKey, fleetId, fleetToken });
-            if (saved.ok) setProps((prev) => prev ? { ...prev, fleetToken } : prev);
+            // A refused save replaces the dashboard with the error, so the
+            // new token is never shown as if it had been saved.
+            const resynced = await resyncFleetToken({ apiKey, fleetId, fleetToken });
+            if ('error' in resynced) {
+              setProvisionError(resynced.error);
+            } else {
+              setProps((prev) => prev ? { ...prev, fleetToken: resynced.fleetToken } : prev);
+            }
           }
         }
       }
