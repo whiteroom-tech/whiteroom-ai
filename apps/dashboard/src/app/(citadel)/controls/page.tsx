@@ -504,7 +504,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "keyword"}
         title={dialog?.kind === "keyword" ? `Let this rule ${keywordVerb(dialog.next.response)} on incoming data?` : ""}
-        body={dialog?.kind === "keyword" ? <>{sentenceText(dialog.next)} The agent can’t go on with that data in its run: it sends the same data again on every call. It applies to {dialog.next.appliesTo === "all" ? "every agent in this fleet" : dialog.next.appliesTo.join(", ")}, and takes effect now.{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
+        body={dialog?.kind === "keyword" ? <>{sentenceText(dialog.next)} The agent can’t go on with that data in its run: it sends the same data again on every call. {appliesNow(dialog.next.appliesTo)}{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
         confirmLabel={dialog?.kind === "keyword" && dialog.next.response === "pause" ? "Pause on incoming data" : "Block on incoming data"}
         confirmPhrase={dialog?.kind === "keyword" ? keywordPhrase(dialog.next.appliesTo, dialog.next.response) : "block"}
         busy={saving}
