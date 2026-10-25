@@ -40,12 +40,12 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
 
 export const sentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
 
-/** "All agents", or "Only " + the agents (more than two: "3 agents"). */
 /** Who a change covers, said in a confirm dialog. */
 export function appliesNow(scope: GovernanceScope): string {
   return `It applies to ${scope === 'all' ? 'every agent in this fleet' : scope.join(', ')}, and takes effect now.`;
 }
 
+/** "All agents", or "Only " + the agents (more than two: "3 agents"). */
 export function scopeLabel(scope: GovernanceScope): { lead: string; agents: string } {
   if (scope === 'all') return { lead: 'All agents', agents: '' };
   if (scope.length === 0) return { lead: 'No agents selected', agents: '' };
@@ -190,13 +190,13 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
 
 const hasNumber = (t: GovernanceRuleType) => t === 'spend_cap' || t === 'loop_breaker' || t === 'call_rate';
 
-/** The draft's params with the typed number in place, or an error to show. */
 /** A typed number: digits, commas and a decimal point only (not "0x10" or "1e3"); NaN otherwise. */
 export function typedNumber(text: string): number {
   const t = text.replace(/,/g, '').trim();
   return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
 }
 
+/** The draft's params with the typed number in place, or an error to show. */
 export function draftParams(d: RuleDraft): { params: GovernanceParams } | { error: string } {
   if (!hasNumber(d.ruleType)) return { params: d.params };
   const n = typedNumber(d.number);

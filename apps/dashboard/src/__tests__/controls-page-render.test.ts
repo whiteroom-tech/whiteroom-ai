@@ -35,7 +35,7 @@ vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import(
 const base = { fleetId: 'f1', version: 1, changedBy: 'test', changedAt: '2026-10-20T00:00:00Z' };
 const RULES: GovernanceRule[] = [
   { ...base, id: 'r1', ruleType: 'loop_breaker', mode: 'enforce', response: 'block', appliesTo: 'all', params: { threshold: 100, scope: 'run', ignoreTools: [] } },
-  { ...base, id: 'r2', ruleType: 'model_allowlist', mode: 'watch', response: 'block', appliesTo: ['market-researcher'], params: { allowedModels: ['claude-haiku-4-5-20251001'] } },
+  { ...base, id: 'r2', ruleType: 'model_allowlist', mode: 'watch', response: 'block', appliesTo: ['market-researcher'], params: { allowedModels: ['claude-haiku-4-5-20251001'] }, sourceRecommendationId: 'rec_old' },
   { ...base, id: 'r3', ruleType: 'spend_cap', mode: 'watch', response: 'block', appliesTo: 'all', params: { dailyCap: 190, scope: 'day', unit: 'dollars' } },
   { ...base, id: 'r4', ruleType: 'spend_cap', mode: 'watch', response: 'block', appliesTo: 'all', params: { dailyCap: 200, scope: 'day', unit: 'dollars' } },
   { ...base, id: 'r5', ruleType: 'call_rate', mode: 'enforce', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
@@ -312,6 +312,8 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
     expect(m.text()).toContain('Only allow these models:');
     expect(m.text()).toContain('Added Model allowlist in Watch.');
+    // The rule came from the suggestion, and says so.
+    expect(m.text()).toContain('From a Diagnosis suggestion');
     m.root.unmount();
   });
 
@@ -366,6 +368,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.text()).toContain('Saved. Spend cap is in Watch only.');
     expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
     expect(m.button('Save')!.disabled).toBe(true);
+    expect(m.text()).not.toContain('From a Diagnosis suggestion');
     m.root.unmount();
   });
 

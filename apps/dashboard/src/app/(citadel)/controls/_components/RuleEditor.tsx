@@ -12,6 +12,7 @@ import { RESPONSE_EFFECT, RULE_LABELS, responseOptions } from '@/lib/governance'
 import { canAct, watchSummary } from '@/lib/controls-guard';
 import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
+import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import { AGENT_NOTE, agentGets, changeResponse, changeUnit, draftParams, type RuleDraft } from '@/lib/controls-view';
 import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
@@ -60,6 +61,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{RULE_LABELS[rule.ruleType]}</h2>
         <Button variant="ghost" size={28} onClick={onClose}>Close</Button>
       </div>
+      {rule.sourceRecommendationId && (
+        <p style={{ margin: '-12px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>
+          From a Diagnosis suggestion · <Link href={ROUTES.performance} style={{ color: 'var(--brand)', fontWeight: 600 }}>see it in Performance</Link>
+        </p>
+      )}
 
       <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

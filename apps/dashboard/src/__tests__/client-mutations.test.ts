@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ControlDeniedError, controlFailure, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -78,5 +78,14 @@ describe('controlFailure', () => {
     const e = await pauseAgent('f', 'a', 'sk-key').catch((x) => x);
     expect(e).not.toBeInstanceOf(ControlDeniedError);
     expect(controlFailure(e)).toBe('sign-out');
+  });
+});
+
+describe('governance_update_rule', () => {
+  it('sends "Also send me an alert" as also_notify', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ rule: { id: 'r1' } }));
+    await governanceUpdateRule('f', 'r1', { response: 'block', alsoNotify: true }, 'sk-key');
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body).toMatchObject({ action: 'governance_update_rule', fleet_id: 'f', rule_id: 'r1', response: 'block', also_notify: true });
   });
 });
