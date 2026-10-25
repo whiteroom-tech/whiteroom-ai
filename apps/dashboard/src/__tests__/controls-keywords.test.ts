@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { agentGets, draftFrom, draftProblem, RULE_TEMPLATES, sentenceText } from '@/lib/controls-view';
-import { canAct, keywordBlockCheck, keywordPhrase } from '@/lib/controls-guard';
+import { agentGets, draftFrom, draftProblem, RULE_TEMPLATES, sendsAlert, sentenceText } from '@/lib/controls-view';
+import { canAct, keywordBlockCheck, keywordPhrase, keywordVerb } from '@/lib/controls-guard';
 import type { GovernanceHistoryEntry, GovernanceRule, KeywordParams } from '@/lib/whiteroom/types';
 
 const kw = (over: Partial<GovernanceRule> & { params?: KeywordParams } = {}): GovernanceRule => ({
@@ -39,7 +39,7 @@ describe('blocking incoming data needs a day in Watch and a typed confirmation',
   it('blocks before a day in Watch, asks after', () => {
     const r = keywordBlockCheck(kw(), { mode: 'enforce' }, added(3), NOW);
     expect(r).toMatchObject({ kind: 'blocked' });
-    expect((r as { reason: string }).reason).toMatch(/before it can block incoming data.*3 hours\.$/);
+    expect((r as { reason: string }).reason).toMatch(/before it can block calls on incoming data.*3 hours\.$/);
     expect(keywordBlockCheck(kw(), { mode: 'enforce' }, added(30), NOW)).toEqual({ kind: 'confirm' });
     expect(keywordBlockCheck(kw(), { mode: 'enforce', response: 'pause' }, added(30), NOW)).toEqual({ kind: 'confirm' });
   });
@@ -52,6 +52,32 @@ describe('blocking incoming data needs a day in Watch and a typed confirmation',
     expect(keywordBlockCheck(kw({ mode: 'enforce' }), { params: { keywords: ['x'], where: 'incoming', wholeWord: true } }, added(1), NOW)).toEqual({ kind: 'ok' });
   });
 
+  it('Pause on incoming data or a reply asks too, in its own words', () => {
+    const both = kw({ params: { keywords: ['a'], where: 'both', wholeWord: true } });
+    const r = keywordBlockCheck(both, { mode: 'enforce', response: 'pause' }, added(2), NOW);
+    expect((r as { reason: string }).reason).toMatch(/before it can pause agents on incoming data/);
+    expect(keywordBlockCheck(both, { mode: 'enforce', response: 'pause' }, added(30), NOW)).toEqual({ kind: 'confirm' });
+    expect(keywordVerb('pause')).toBe('pause agents');
+    expect(keywordVerb('block')).toBe('block calls');
+  });
+
+  it('moving an enforced Stop down to Block or Pause doesn’t ask again; Just tell me up to Block does', () => {
+    const stopping = kw({ mode: 'enforce', response: 'stop' });
+    expect(keywordBlockCheck(stopping, { response: 'block' }, added(1), NOW)).toEqual({ kind: 'ok' });
+    expect(keywordBlockCheck(stopping, { response: 'pause' }, added(1), NOW)).toEqual({ kind: 'ok' });
+    expect(keywordBlockCheck(kw({ mode: 'enforce', response: 'notify' }), { response: 'block' }, added(1), NOW).kind).toBe('blocked');
+  });
+
+  it('says when no one will be told: Pause, Stop and Block with an alert send one, in Enforce', () => {
+    const d = draftFrom(kw({ mode: 'enforce' }));
+    expect(sendsAlert(d)).toBe(false);
+    expect(sendsAlert({ ...d, alsoNotify: true })).toBe(true);
+    expect(sendsAlert({ ...d, response: 'pause' })).toBe(true);
+    expect(sendsAlert({ ...d, response: 'stop' })).toBe(true);
+    expect(sendsAlert({ ...d, response: 'notify' })).toBe(true);
+    expect(sendsAlert({ ...d, mode: 'watch', response: 'pause' })).toBe(false);
+  });
+
   it('switching a replies-only rule to incoming counts as starting to block incoming data', () => {
     const replies = kw({ mode: 'enforce', params: { keywords: ['a'], where: 'replies', wholeWord: true } });
     expect(keywordBlockCheck(replies, { params: { keywords: ['a'], where: 'both', wholeWord: true } }, added(1), NOW).kind).toBe('blocked');
@@ -59,6 +85,7 @@ describe('blocking incoming data needs a day in Watch and a typed confirmation',
 
   it('is confirmed by typing who it covers', () => {
     expect(keywordPhrase('all')).toBe('block all agents');
+    expect(keywordPhrase('all', 'pause')).toBe('pause all agents');
     expect(keywordPhrase(['lead-agent', 'writer'])).toBe('lead-agent, writer');
   });
 });

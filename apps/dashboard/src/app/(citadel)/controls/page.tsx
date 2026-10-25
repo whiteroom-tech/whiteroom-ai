@@ -25,7 +25,7 @@ import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tally
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
-import { canAct, keywordBlockCheck, keywordPhrase, stopCheck, stopPhrase } from "@/lib/controls-guard";
+import { canAct, keywordBlockCheck, keywordPhrase, keywordVerb, stopCheck, stopPhrase } from "@/lib/controls-guard";
 import { HELP } from "@/lib/metric-definitions";
 import { timeAgo } from "@/lib/format";
 import { localDay } from "@/lib/runs";
@@ -503,10 +503,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       />
       <ConfirmDialog
         open={dialog?.kind === "keyword"}
-        title="Let this rule block incoming data?"
+        title={dialog?.kind === "keyword" ? `Let this rule ${keywordVerb(dialog.next.response)} on incoming data?` : ""}
         body={dialog?.kind === "keyword" ? <>{sentenceText(dialog.next)} The agent can’t go on with that data in its run: it sends the same data again on every call. It applies to {dialog.next.appliesTo === "all" ? "every agent in this fleet" : dialog.next.appliesTo.join(", ")}, and takes effect now.{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
-        confirmLabel="Block incoming data"
-        confirmPhrase={dialog?.kind === "keyword" ? keywordPhrase(dialog.next.appliesTo) : "block"}
+        confirmLabel={dialog?.kind === "keyword" && dialog.next.response === "pause" ? "Pause on incoming data" : "Block on incoming data"}
+        confirmPhrase={dialog?.kind === "keyword" ? keywordPhrase(dialog.next.appliesTo, dialog.next.response) : "block"}
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "keyword" && draft) void commit(dialog.rule, draft); }}
         onCancel={() => setDialog(null)}

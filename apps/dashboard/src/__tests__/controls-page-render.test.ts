@@ -524,7 +524,7 @@ describe('Keywords in the editor', () => {
     await m.click(m.row('“Project Falcon”'));
     await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
     await m.click(m.button('Save'));
-    expect(m.text()).toContain('before it can block incoming data');
+    expect(m.text()).toContain('before it can block calls on incoming data');
     expect(api.update).not.toHaveBeenCalled();
     m.root.unmount();
   });
@@ -537,10 +537,10 @@ describe('Keywords in the editor', () => {
     await m.click(m.row('“Project Falcon”'));
     await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
     await m.click(m.button('Save'));
-    expect(m.text()).toContain('Let this rule block incoming data?');
+    expect(m.text()).toContain('Let this rule block calls on incoming data?');
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
     await type(dialog.querySelector('input') as HTMLInputElement, 'block all agents');
-    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Block incoming data'));
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Block on incoming data'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'enforce' }, 'k');
     m.root.unmount();
   });

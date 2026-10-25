@@ -248,6 +248,11 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
   return { ...d, number, params: { ...p, unit } };
 }
 
+/** Whether the rule, as drafted, sends an alert when it acts: Just tell me, Pause, Stop, or Block with an alert. */
+export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): boolean {
+  return d.mode === 'enforce' && (d.response !== 'block' || d.alsoNotify);
+}
+
 /** A new response; "Also send me an alert" only applies to Block, so it's cleared otherwise. */
 export function changeResponse(d: RuleDraft, response: GovernanceResponse): RuleDraft {
   return { ...d, response, alsoNotify: response === 'block' ? d.alsoNotify : false };

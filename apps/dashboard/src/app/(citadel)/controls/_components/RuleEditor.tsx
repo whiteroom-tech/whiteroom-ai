@@ -15,7 +15,7 @@ import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, agentGets, changeResponse, changeUnit, draftParams, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
 import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 const ACTS: Record<GovernanceRule['ruleType'], string> = {
@@ -73,7 +73,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     setKeyword('');
   };
   // Just tell me, Pause and Stop alert; Block does when asked to.
-  const alerts = draft.mode === 'enforce' && (draft.response !== 'block' || draft.alsoNotify);
+  const alerts = sendsAlert(draft);
   const seen = watching && wouldAct ? watchSummary({ response: rule.response }, wouldAct) : null;
 
   return (

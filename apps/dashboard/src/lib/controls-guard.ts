@@ -76,17 +76,23 @@ export function keywordBlockCheck(
   now: number = Date.now(),
 ): { kind: 'ok' } | { kind: 'confirm' } | { kind: 'blocked'; reason: string } {
   if (rule.ruleType !== 'keyword') return { kind: 'ok' };
-  const stopsIncoming = (r: { mode: string; response?: GovernanceResponse; params: GovernanceParams }) =>
-    r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && (r.response ?? 'block') !== 'stop' && (r.params as KeywordParams).where !== 'replies';
+  type R = { mode: string; response?: GovernanceResponse; params: GovernanceParams };
+  const onIncoming = (r: R) => r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && (r.params as KeywordParams).where !== 'replies';
   const next = { mode: change.mode ?? rule.mode, response: change.response ?? rule.response, params: change.params ?? rule.params };
-  if (!stopsIncoming(next) || stopsIncoming(rule)) return { kind: 'ok' };
-  const reason = stopBlockedReason(rule.id, history, rule.mode, now, 'block incoming data');
+  // Stop is stopCheck's; a rule already ending runs on incoming data (Stop too) was confirmed then.
+  if (!onIncoming(next) || next.response === 'stop' || onIncoming(rule)) return { kind: 'ok' };
+  const reason = stopBlockedReason(rule.id, history, rule.mode, now, `${keywordVerb(next.response)} on incoming data`);
   return reason ? { kind: 'blocked', reason } : { kind: 'confirm' };
 }
 
-/** What to type to let a Keywords rule block incoming data: the agents it covers, by name. */
-export function keywordPhrase(scope: GovernanceScope): string {
-  return scope === 'all' ? 'block all agents' : scope.join(', ');
+/** What a Keywords rule that acts on incoming data does: block the call, or pause the agent. */
+export function keywordVerb(response: GovernanceResponse | undefined): 'block calls' | 'pause agents' {
+  return response === 'pause' ? 'pause agents' : 'block calls';
+}
+
+/** What to type to let a Keywords rule act on incoming data: the agents it covers, by name. */
+export function keywordPhrase(scope: GovernanceScope, response?: GovernanceResponse): string {
+  return scope === 'all' ? `${response === 'pause' ? 'pause' : 'block'} all agents` : scope.join(', ');
 }
 
 /**
