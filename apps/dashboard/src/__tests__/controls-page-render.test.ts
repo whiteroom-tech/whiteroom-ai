@@ -53,11 +53,13 @@ const api = vi.hoisted(() => ({
   govV1: false,
   /** Models the fleet used lately, for the allowlist suggestion; null: no data. */
   models: null as string[] | null,
+  /** Holds governance_list until resolved, to see the page before it loads. */
+  listGate: null as Promise<void> | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  governanceList: async () => { api.lists++; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
+  governanceList: async () => { api.lists++; if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
@@ -86,7 +88,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.govV1 = false; api.models = null; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -343,7 +345,8 @@ describe('Controls page, suggestions, removing and filtering', () => {
 
   it('"Add in Watch" asks before throwing away an edit to the allowlist, then reopens it from the saved rule', async () => {
     api.models = ['gpt-4o'];
-    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' }; // a fleet-wide allowlist in Watch takes the models
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
     const m = await mount();
     await m.click(m.row('Only allow'));
     await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
@@ -361,9 +364,10 @@ describe('Controls page, suggestions, removing and filtering', () => {
 
   it('"Add in Watch" is busy until the list reloads, so a second click adds nothing, then says what it did', async () => {
     api.models = ['gpt-4o'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' }; // a fleet-wide allowlist in Watch takes the models
     let finish!: () => void;
     api.update.mockImplementation((_f: string, id: string, ch: Partial<GovernanceRule>) => new Promise((resolve) => {
-      const rule = { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } as GovernanceRule;
+      const rule = { ...api.saved[id], ...ch, version: 2 } as GovernanceRule;
       finish = () => { api.saved[id] = rule; resolve({ rule }); };
     }));
     const m = await mount();
@@ -376,6 +380,37 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(api.update).toHaveBeenCalledTimes(1);
     expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
     expect(m.button('Add in Watch')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('"Add in Watch" leaves an enforcing allowlist and one for some agents as they are, and adds a new rule', async () => {
+    api.models = ['gpt-4o'];
+    api.created.push({ ...base, id: 'r7', ruleType: 'model_allowlist', mode: 'enforce', response: 'block', appliesTo: 'all', params: { allowedModels: ['claude-sonnet-4-5'] } });
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => {
+      const rule = { ...base, id: 'r8', response: 'block', appliesTo: 'all', ...r } as GovernanceRule;
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add in Watch'));
+    expect(api.update).not.toHaveBeenCalled();
+    expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'model_allowlist', mode: 'watch', params: { allowedModels: ['gpt-4o'] } }), 'k');
+    expect(m.text()).toContain('Added a Model allowlist in Watch only.');
+    m.root.unmount();
+  });
+
+  it('?agent= holds before the agents load, so Add rule starts the rule for that agent', async () => {
+    nav.params = new URLSearchParams('agent=lead-agent');
+    let open!: () => void;
+    api.listGate = new Promise<void>((r) => { open = r; });
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => ({ rule: { ...base, id: 'n1', response: 'block', params: { maxCalls: 60 }, ...r } as GovernanceRule }));
+    const m = await mount();
+    expect((m.el.querySelector('select[aria-label="Agent"]') as HTMLSelectElement).value).toBe('lead-agent');
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Limit calls per minute')));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'call_rate', mode: 'watch', appliesTo: ['lead-agent'] }, 'k');
+    await act(async () => { open(); });
+    await flush();
     m.root.unmount();
   });
 

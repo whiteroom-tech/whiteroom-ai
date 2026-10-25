@@ -70,6 +70,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [govV1, setGovV1] = useState(false);
   const [actors, setActors] = useState<ControlActor[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [addingSuggestion, setAddingSuggestion] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<GovernanceSuggestions>({ noCaching: false, onlyModels: null });
@@ -83,7 +84,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [adding, setAdding] = useState<"closed" | "open" | "busy">("closed");
   const [offOpen, setOffOpen] = useState(false);
 
-  const agentFilter = agentParam && agents.includes(agentParam) ? agentParam : null;
+  // Trusted from the URL until the agents load, then only if it names one.
+  const agentFilter = agentParam && (!loaded || agents.includes(agentParam)) ? agentParam : null;
   const selected = selectedId ? rules.find((r) => r.id === selectedId) ?? null : null;
   // What's selected and being edited now, for a save that finishes later.
   const selectedRef = useRef(selectedId);
@@ -273,23 +275,26 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const addSuggestedAllowlist = async (models: string[]) => {
     if (saving) return;
     setSaving(true);
+    setAddingSuggestion(true);
     setError(null);
     setNotice(null);
     const description = "Added Model allowlist in Watch (suggested)";
-    const existing = rules.filter((r) => r.ruleType === "model_allowlist");
+    // Only a fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch):
+    // an enforcing one stays as it is, and one for some agents isn't widened. Otherwise, a new rule.
+    const target = rules.find((r) => r.ruleType === "model_allowlist" && r.mode !== "enforce" && r.appliesTo === "all");
     try {
-      if (existing.length === 0) {
+      if (!target) {
         await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
       } else {
-        const prev = (existing[0].params as ModelAllowlistParams).allowedModels;
-        await governanceUpdateRule(fleetId, existing[0].id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
+        const prev = (target.params as ModelAllowlistParams).allowedModels;
+        await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
       }
-      setNotice(existing.length ? "Added the models to your Model allowlist, in Watch only." : "Added a Model allowlist in Watch only.");
+      setNotice(target ? "Added the models to your Model allowlist, in Watch only." : "Added a Model allowlist in Watch only.");
     } catch (e) { handleError(e, "add the suggested allowlist"); }
     // Busy until the list reloads and the banner goes, so a second click can't add another rule.
-    try { await fetchData(); } finally { setSaving(false); }
+    try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
     // The rule's version moved: an open editor on it reopens from the saved rule.
-    if (existing[0] && selectedRef.current === existing[0].id) setDraft(null);
+    if (target && selectedRef.current === target.id) setDraft(null);
   };
 
   /** Shows one agent's rules (null: all); an open rule that isn't among them closes. */
@@ -356,7 +361,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           label="Agent"
           value={agentFilter ?? "all"}
           onChange={(v) => guard(() => changeAgent(v === "all" ? null : v))}
-          options={[{ value: "all", label: "All agents" }, ...agents.map((a) => ({ value: a, label: a }))]}
+          options={[{ value: "all", label: "All agents" }, ...(agentFilter && !agents.includes(agentFilter) ? [agentFilter] : []).concat(agents).map((a) => ({ value: a, label: a }))]}
         />
         <Button variant="primary" onClick={() => guard(() => setAdding("open"))}>Add rule</Button>
       </PageHeader>
@@ -388,7 +393,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             </Banner>
           )}
           {allowlistSuggestion && (
-            <Banner variant="info" actions={<Button size={28} busy={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>Add in Watch</Button>}>
+            <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>Add in Watch</Button>}>
               Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
             </Banner>
           )}
