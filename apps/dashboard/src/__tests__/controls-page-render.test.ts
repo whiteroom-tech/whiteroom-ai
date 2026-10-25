@@ -348,6 +348,26 @@ describe('Controls page, suggestions, removing and filtering', () => {
     m.root.unmount();
   });
 
+  it('"Add in Watch" is busy until the list reloads, so a second click adds nothing, then says what it did', async () => {
+    api.models = ['gpt-4o'];
+    let finish!: () => void;
+    api.update.mockImplementation((_f: string, id: string, ch: Partial<GovernanceRule>) => new Promise((resolve) => {
+      const rule = { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } as GovernanceRule;
+      finish = () => { api.saved[id] = rule; resolve({ rule }); };
+    }));
+    const m = await mount();
+    await m.click(m.button('Add in Watch'));
+    const busy = [...m.el.querySelectorAll('button')].find((b) => b.textContent?.includes('Adding…')) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    await act(async () => { busy.click(); });
+    await act(async () => { finish(); });
+    await flush();
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
+    expect(m.button('Add in Watch')).toBeUndefined();
+    m.root.unmount();
+  });
+
   it('while a save is in flight, the editor and the list wait; then the editor shows the saved rule', async () => {
     let finish!: () => void;
     api.update.mockImplementation((_f: string, id: string, ch: Partial<GovernanceRule>) => new Promise((resolve) => {

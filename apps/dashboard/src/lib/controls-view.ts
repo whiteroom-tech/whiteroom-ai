@@ -114,7 +114,8 @@ export function rowStat(rule: GovernanceRule, ctx: {
   /** The engine's rule_actions byRule (keyed by rule type). */
   byRuleType?: Record<string, RuleActionCounts>;
   onlyOfItsType: boolean;
-  wouldAct?: { byAgent: Record<string, number> } | null;
+  /** unversioned: the engine's count may include events from before the rule's last change. */
+  wouldAct?: { byAgent: Record<string, number>; unversioned?: boolean } | null;
   /** The agent being viewed, if any. */
   agent?: string | null;
 }): string {
@@ -127,6 +128,7 @@ export function rowStat(rule: GovernanceRule, ctx: {
   if (rule.mode === 'watch') {
     if (!ctx.wouldAct) return '';
     const n = ctx.agent ? ctx.wouldAct.byAgent[ctx.agent] ?? 0 : Object.values(ctx.wouldAct.byAgent).reduce((a, b) => a + b, 0);
+    if (ctx.wouldAct.unversioned) return n ? `Would have acted ${times(n)}, some maybe before its last change` : 'Hasn’t fired yet';
     return n ? `Would have ${TALLY_WORD[response]} ${times(n)}` : 'Hasn’t fired since its last change';
   }
   return '';

@@ -96,6 +96,9 @@ describe('row status lines', () => {
     expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: { a: 1 } } })).toBe('Would have blocked once');
     expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Hasn’t fired since its last change');
     expect(rowStat(r, { onlyOfItsType: true, wouldAct: null })).toBe('');
+    // Counts the engine can't pin to this version say so.
+    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: { a: 4 }, unversioned: true } })).toBe('Would have acted 4 times, some maybe before its last change');
+    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: {}, unversioned: true } })).toBe('Hasn’t fired yet');
   });
 });
 

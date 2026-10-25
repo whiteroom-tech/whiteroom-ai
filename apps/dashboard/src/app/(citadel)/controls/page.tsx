@@ -271,7 +271,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   };
 
   const addSuggestedAllowlist = async (models: string[]) => {
+    if (saving) return;
+    setSaving(true);
     setError(null);
+    setNotice(null);
     const description = "Added Model allowlist in Watch (suggested)";
     const existing = rules.filter((r) => r.ruleType === "model_allowlist");
     try {
@@ -281,9 +284,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const prev = (existing[0].params as ModelAllowlistParams).allowedModels;
         await governanceUpdateRule(fleetId, existing[0].id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
       }
+      setNotice(existing.length ? "Added the models to your Model allowlist, in Watch only." : "Added a Model allowlist in Watch only.");
     } catch (e) { handleError(e, "add the suggested allowlist"); }
+    // Busy until the list reloads and the banner goes, so a second click can't add another rule.
+    try { await fetchData(); } finally { setSaving(false); }
     // The rule's version moved: an open editor on it reopens from the saved rule.
-    void fetchData().then(() => { if (existing[0] && selectedRef.current === existing[0].id) setDraft(null); });
+    if (existing[0] && selectedRef.current === existing[0].id) setDraft(null);
   };
 
   /** Shows one agent's rules (null: all); an open rule that isn't among them closes. */
@@ -382,7 +388,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             </Banner>
           )}
           {allowlistSuggestion && (
-            <Banner variant="info" actions={<Button size={28} onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>Add in Watch</Button>}>
+            <Banner variant="info" actions={<Button size={28} busy={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>Add in Watch</Button>}>
               Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
             </Banner>
           )}
@@ -517,7 +523,7 @@ function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: 
     <>
       {sentenceText(next)} {appliesNow(next.appliesTo)}
       <span style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
-        <span style={tile}><span style={big}>{n === null ? "—" : n.toLocaleString()}</span>times it would have acted</span>
+        <span style={tile}><span style={big}>{n === null ? "—" : n.toLocaleString()}</span>{watched && wouldAct.unversioned ? "times it would have acted, some maybe before its last change" : "times it would have acted"}</span>
         <span style={tile}><span style={big}>{watched && wouldAct.since ? timeAgo(wouldAct.since).replace(/ ago$/, "") : "—"}</span>{watched ? "in Watch only, since its last change" : "Turn on Watch first to see what it would do"}</span>
       </span>
       {canAct(next) && <span style={{ display: "block", marginTop: 12 }}>{UNNAMED_CALLS_REFUSED}</span>}
