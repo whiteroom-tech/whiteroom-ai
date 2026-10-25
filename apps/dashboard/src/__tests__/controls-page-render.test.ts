@@ -165,6 +165,7 @@ describe('Controls page', () => {
     await m.click(m.row('100 times'));
     await m.click(m.button('Remove rule'));
     expect(m.text()).toContain('Remove the Loop breaker rule?');
+    expect(m.text()).toContain('It stops right away.');
     expect(api.remove).not.toHaveBeenCalled();
     const dialogs = [...m.el.querySelectorAll('dialog[open]')];
     await m.click([...dialogs.at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
@@ -316,8 +317,25 @@ describe('Controls page, review round 2', () => {
     expect(m.text()).toContain('Remove the Spend cap rule?');
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
     expect(dialog.textContent).toContain('$200');
+    // A cap in Watch isn't acting, so removing it stops only the watching.
+    expect(dialog.textContent).toContain('It stops watching right away.');
     await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r4', 'k');
+    m.root.unmount();
+  });
+
+  it('changing the Agent filter asks about unsaved edits, and closes a rule the new filter hides', async () => {
+    const m = await mount();
+    const agent = () => m.el.querySelector('select[aria-label="Agent"]') as HTMLSelectElement;
+    await m.click(m.row('Only allow'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await choose(agent(), 'lead-agent');
+    expect(m.text()).toContain('Discard your changes to Model allowlist?');
+    expect(nav.replace).not.toHaveBeenCalled();
+    await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(nav.replace).toHaveBeenCalledWith('/controls?agent=lead-agent');
+    // The allowlist covers market-researcher only, so its editor closes.
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeFalsy();
     m.root.unmount();
   });
 

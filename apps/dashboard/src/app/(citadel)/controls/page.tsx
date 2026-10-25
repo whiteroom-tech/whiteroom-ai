@@ -272,8 +272,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const addSuggestedAllowlist = async (models: string[]) => {
     setError(null);
     const description = "Added Model allowlist in Watch (suggested)";
+    const existing = rules.filter((r) => r.ruleType === "model_allowlist");
     try {
-      const existing = rules.filter((r) => r.ruleType === "model_allowlist");
       if (existing.length === 0) {
         await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
       } else {
@@ -281,7 +281,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         await governanceUpdateRule(fleetId, existing[0].id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
       }
     } catch (e) { handleError(e, "add the suggested allowlist"); }
-    void fetchData();
+    // The rule's version moved: an open editor on it reopens from the saved rule.
+    void fetchData().then(() => { if (existing[0] && selectedRef.current === existing[0].id) setDraft(null); });
+  };
+
+  /** Shows one agent's rules (null: all); an open rule that isn't among them closes. */
+  const changeAgent = (agent: string | null) => {
+    router.replace(withParams({ agent }));
+    const open = rules.find((r) => r.id === selectedRef.current);
+    if (open && !rulesFor([open], agent).length) { setSelectedId(null); setDraft(null); }
   };
 
   // ── What the page shows ─────────────────────────────────────────
@@ -343,7 +351,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             <SelectChip
               label="Agent"
               value={agentFilter ?? "all"}
-              onChange={(v) => router.replace(withParams({ agent: v === "all" ? null : v }))}
+              onChange={(v) => guard(() => changeAgent(v === "all" ? null : v))}
               options={[{ value: "all", label: "All agents" }, ...agents.map((a) => ({ value: a, label: a }))]}
             />
             <Button variant="primary" onClick={() => guard(() => setAdding("open"))}>Add rule</Button>
@@ -379,7 +387,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             </Banner>
           )}
           {allowlistSuggestion && (
-            <Banner variant="info" actions={<Button size={28} onClick={() => void addSuggestedAllowlist(allowlistSuggestion)}>Add in Watch</Button>}>
+            <Banner variant="info" actions={<Button size={28} onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>Add in Watch</Button>}>
               Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
             </Banner>
           )}
@@ -475,9 +483,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "remove"}
         title={dialog?.kind === "remove" ? `Remove the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
-        body={dialog?.kind === "remove" ? <>{sentenceText(dialog.rule)} It stops right away. Its history stays in the audit chain.</> : null}
+        body={dialog?.kind === "remove" ? <>{sentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops watching right away." : "It stops right away."} Its history stays in the audit chain.</> : null}
         confirmLabel="Remove rule"
         cancelLabel="Keep rule"
+        busy={saving}
         onConfirm={() => { if (dialog?.kind === "remove") void remove(dialog.rule); }}
         onCancel={() => setDialog(null)}
       />
