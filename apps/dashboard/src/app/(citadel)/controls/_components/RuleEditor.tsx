@@ -142,10 +142,10 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             </div>
             {keywords.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {keywords.map((k) => (
-                  <span key={k} className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 12 }}>
+                {keywords.map((k, i) => (
+                  <span key={`${i}:${k}`} className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 12 }}>
                     “{k}”
-                    <button type="button" aria-label={`Remove ${k}`} onClick={() => setParams({ keywords: keywords.filter((x) => x !== k) })} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
+                    <button type="button" aria-label={`Remove ${k}`} onClick={() => setParams({ keywords: keywords.filter((_, j) => j !== i) })} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
                   </span>
                 ))}
               </div>
