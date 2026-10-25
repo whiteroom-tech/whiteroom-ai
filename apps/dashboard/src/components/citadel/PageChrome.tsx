@@ -13,6 +13,7 @@ export function PageHeader({
   fleetId,
   fleetTitle = 'Fleet ID',
   badge,
+  split = false,
   children,
 }: {
   /** Page name, or a breadcrumb on detail pages. */
@@ -23,11 +24,16 @@ export function PageHeader({
   fleetTitle?: string;
   /** Live status or a status pill, after the fleet id. */
   badge?: React.ReactNode;
+  /**
+   * Split 2:1 like a page with a side column (Controls), so the actions end
+   * where the main column ends. The side part stays empty.
+   */
+  split?: boolean;
   /** Page-level actions, right-aligned. At most two buttons. */
   children?: React.ReactNode;
 }) {
-  return (
-    <header className="citadel-page-header" style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', padding: '0 24px', minWidth: 0 }}>
+  const content = (
+    <>
       <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: 'var(--tx)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, whiteSpace: 'nowrap' }}>
         {title}
       </h1>
@@ -38,7 +44,20 @@ export function PageHeader({
       )}
       {badge}
       {/* One group, so on a narrow screen the actions wrap together rather than one by one. */}
-      <div className="citadel-page-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>{children}</div>
+      <div className="citadel-page-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: split ? 8 : 12 }}>{children}</div>
+    </>
+  );
+  if (split) {
+    return (
+      <header className="citadel-page-header citadel-page-header--split" style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--line)', minWidth: 0 }}>
+        <div className="citadel-page-header__main">{content}</div>
+        <div className="citadel-page-header__side" aria-hidden="true" />
+      </header>
+    );
+  }
+  return (
+    <header className="citadel-page-header" style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', padding: '0 24px', minWidth: 0 }}>
+      {content}
     </header>
   );
 }

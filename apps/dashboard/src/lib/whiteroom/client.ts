@@ -622,7 +622,7 @@ export function diagnoseFleet(fleetId: string, opts: { force?: boolean } = {}, k
 export function governanceUpdateRule(
   fleetId: string,
   ruleId: string,
-  updates: { mode?: GovernanceMode; response?: GovernanceResponse; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  updates: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
   key?: string,
 ): Promise<{ rule: GovernanceRule }> {
   return apiCall<{ rule: GovernanceRule }>({
@@ -631,6 +631,7 @@ export function governanceUpdateRule(
     rule_id: ruleId,
     mode: updates.mode,
     response: updates.response,
+    also_notify: updates.alsoNotify,
     params: updates.params,
     applies_to: updates.appliesTo,
     description: updates.description,

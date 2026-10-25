@@ -667,6 +667,8 @@ export interface GovernanceRule {
   mode: GovernanceMode;
   /** Absent from older engines, where Enforce always blocks. */
   response?: GovernanceResponse;
+  /** With response block, also sends the fleet's alert (engine E2; absent from older engines). */
+  alsoNotify?: boolean;
   appliesTo: GovernanceScope;
   version: number;
   changedBy: string;
@@ -771,7 +773,11 @@ export interface AuditSummaryResult {
 }
 
 /** engine rule_would_act. */
-export interface RuleWouldActResult { fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean }
+export interface RuleWouldActResult {
+  fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean;
+  /** When the counted version was saved; null when it's no longer current; absent from older engines (E3). */
+  since?: string | null;
+}
 
 /** Settings › Audit integrity (engine audit_integrity, Phase 1 spec H2). */
 export interface AuditIntegrity {

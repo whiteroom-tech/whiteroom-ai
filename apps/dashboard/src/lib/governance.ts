@@ -203,7 +203,8 @@ export function responseOptions(govV1: boolean, current: GovernanceResponse): { 
 
 // ── Rule actions (P2.4) ─────────────────────────────────────────────
 
-const tally = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou });
+/** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). */
+export const tallyFromRuleActions = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou });
 
 /**
  * Counts from the engine's rule_actions, which last as long as the runs (the
@@ -221,7 +222,7 @@ export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: Go
         return [rt, c ? { blocks: c.blocked, wouldBlocks: c.wouldAct } : emptyTally()];
       })) as GovernanceCounts['byRule'])
     : fallbackByRule;
-  return { ...tally(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tally(c)])) };
+  return { ...tallyFromRuleActions(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tallyFromRuleActions(c)])) };
 }
 
 /** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would act (Watch only)". */
