@@ -1,0 +1,161 @@
+'use client';
+
+// The Controls editor's fields: chips with an add menu (models, tools,
+// agents), and the inline number. Same behaviour as before the redesign,
+// in the shared control style (sunk well, line2 border, 7px corners).
+
+import { useState } from 'react';
+import { FONT_MONO } from '@whiteroom/ui';
+import type { GovernanceScope } from '@/lib/whiteroom/types';
+
+const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, boxSizing: 'border-box' } as const;
+
+export type PickGroup = { label: string; options: { id: string; label: string }[] };
+
+/** Models people pick most, newest first; "Other…" takes any deployment name or model ID. */
+export const MODEL_GROUPS: PickGroup[] = [
+  { label: 'Anthropic', options: [
+    { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+    { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+    { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { id: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
+  ] },
+  { label: 'OpenAI', options: [
+    { id: 'gpt-4.1', label: 'GPT-4.1' }, { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' }, { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
+    { id: 'gpt-4o', label: 'GPT-4o' }, { id: 'gpt-4o-mini', label: 'GPT-4o Mini' }, { id: 'o3', label: 'o3' }, { id: 'o4-mini', label: 'o4-mini' },
+  ] },
+  { label: 'Google', options: [{ id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' }, { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' }] },
+  { label: 'AWS Bedrock', options: [
+    { id: 'anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5' },
+    { id: 'anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4' },
+    { id: 'amazon.nova-pro-v1:0', label: 'Nova Pro' }, { id: 'amazon.nova-lite-v1:0', label: 'Nova Lite' },
+  ] },
+  { label: 'Azure OpenAI', options: [{ id: 'azure/gpt-4.1', label: 'GPT-4.1 (via Azure)' }, { id: 'azure/gpt-4o', label: 'GPT-4o (via Azure)' }, { id: 'azure/gpt-4o-mini', label: 'GPT-4o Mini (via Azure)' }] },
+];
+
+export const TOOL_GROUPS: PickGroup[] = [
+  { label: 'File & code', tools: ['read_file', 'write_file', 'list_directory', 'search_files', 'edit_file'] },
+  { label: 'Web & API', tools: ['http_request', 'fetch_url', 'web_search', 'api_call'] },
+  { label: 'Execution', tools: ['run_command', 'execute_code', 'shell', 'bash'] },
+  { label: 'Memory & state', tools: ['get_memory', 'set_memory', 'read_context', 'save_state'] },
+].map((g) => ({ label: g.label, options: g.tools.map((t) => ({ id: t, label: t })) }));
+
+function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx)' }}>
+      {label}
+      <button type="button" onClick={onRemove} aria-label={`Remove ${label}`} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
+    </span>
+  );
+}
+
+/** Chosen values as chips, a grouped menu to add more, and "Other…" for one that isn't listed. */
+export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, placeholder }: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  groups: PickGroup[];
+  addLabel: string;
+  otherLabel: string;
+  placeholder: string;
+}) {
+  const [other, setOther] = useState<string | null>(null);
+  const labelOf = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id)?.label ?? id;
+  const add = (v: string) => { const t = v.trim().slice(0, 64); if (t && !values.includes(t)) onChange([...values, t]); };
+  const addOther = () => { if (other !== null) add(other); setOther(null); };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+        {values.map((v) => <Chip key={v} label={labelOf(v)} onRemove={() => onChange(values.filter((x) => x !== v))} />)}
+        <select
+          className="gov-field"
+          aria-label={addLabel}
+          value=""
+          onChange={(e) => { const v = e.target.value; if (v === '__other__') setOther(''); else if (v) add(v); }}
+          style={{ ...field, padding: '0 8px', color: 'var(--tx2)', cursor: 'pointer' }}
+        >
+          <option value="">{addLabel}</option>
+          {groups.map((g) => {
+            const left = g.options.filter((o) => !values.includes(o.id));
+            return left.length ? <optgroup key={g.label} label={g.label}>{left.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</optgroup> : null;
+          })}
+          <option value="__other__">{otherLabel}</option>
+        </select>
+      </div>
+      {other !== null && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            className="gov-field"
+            autoFocus
+            aria-label={otherLabel}
+            placeholder={placeholder}
+            value={other}
+            onChange={(e) => setOther(e.target.value.slice(0, 64))}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOther(); } if (e.key === 'Escape') setOther(null); }}
+            style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0, fontFamily: FONT_MONO }}
+          />
+          <button type="button" className="wr-btn wr-btn--secondary wr-btn--h32" onClick={addOther}>Add</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** All agents, or chosen ones; an empty choice applies to none, and Save says so. */
+export function ScopeField({ scope, agents, onChange }: { scope: GovernanceScope; agents: string[]; onChange: (s: GovernanceScope) => void }) {
+  const chosen = scope === 'all' ? [] : scope;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+      <select
+        className="gov-field"
+        aria-label="Which agents this rule applies to"
+        value={scope === 'all' ? 'all' : 'some'}
+        onChange={(e) => onChange(e.target.value === 'all' ? 'all' : [])}
+        style={{ ...field, padding: '0 8px', cursor: 'pointer' }}
+      >
+        <option value="all">All agents</option>
+        <option value="some">Specific agents</option>
+      </select>
+      {scope !== 'all' && (
+        <>
+          {chosen.map((a) => <Chip key={a} label={a} onRemove={() => onChange(chosen.filter((x) => x !== a))} />)}
+          <select
+            className="gov-field"
+            aria-label="Add an agent"
+            value=""
+            onChange={(e) => { const v = e.target.value; if (v && !chosen.includes(v)) onChange([...chosen, v]); }}
+            style={{ ...field, padding: '0 8px', color: 'var(--tx2)', cursor: 'pointer' }}
+          >
+            <option value="">+ add agent</option>
+            {agents.filter((a) => !chosen.includes(a)).map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A number typed in a sentence; kept as text until Save, so "1,0" isn't forced into 10. */
+export function NumberField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  return (
+    <input
+      className="gov-field"
+      type="text"
+      inputMode="decimal"
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value.slice(0, 16))}
+      style={{ ...field, width: 96, padding: '0 10px', fontFamily: FONT_MONO, textAlign: 'right' }}
+    />
+  );
+}
+
+/** A small select in a sentence (unit, period). */
+export function InlineSelect<V extends string>({ value, onChange, options, label }: { value: V; onChange: (v: V) => void; options: V[]; label: string }) {
+  return (
+    <select className="gov-field" aria-label={label} value={value} onChange={(e) => onChange(e.target.value as V)} style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
