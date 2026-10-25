@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useLinkedSection } from '@/hooks/useLinkedSection';
 import { AlertsSection } from '@/components/settings/AlertsSection';
 import { DataPrivacySection } from '@/components/settings/DataPrivacySection';
 import { SmallerHandoversSection } from '@/components/settings/SmallerHandoversSection';
@@ -82,6 +83,8 @@ export function SettingsView({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const sections = useRef<HTMLDivElement>(null);
+  useLinkedSection(sections);
   const [banner, setBanner] = useState<Notice>(
     billingResult === 'success'
       ? { tone: 'ok', text: 'Subscription active. It can take a moment for new limits to reach your fleets.' }
@@ -110,7 +113,7 @@ export function SettingsView({
     <AppShell>
       <PageHeader title="Settings" fleetId={account.email} fleetTitle="Signed in as" />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+        <div ref={sections} style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
 
           {banner && (
             <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined}>{banner.text}</Banner>
