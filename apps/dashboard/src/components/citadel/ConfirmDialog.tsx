@@ -58,7 +58,7 @@ export function ConfirmDialog({
             />
           </label>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+        <div className="wr-dialog-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onCancel} disabled={busy} style={dialogCancelStyle}>
             {cancelLabel}
           </button>

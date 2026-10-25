@@ -81,8 +81,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, flex: '1 0 auto' }}>
       <div className="gov-edhead" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{RULE_LABELS[rule.ruleType]}</h2>
-        <Button variant="ghost" size={28} onClick={onClose}>Close</Button>
+        {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
+        <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
+        <h2 className="gov-edhead__title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{RULE_LABELS[rule.ruleType]}</h2>
+        <span className={`gov-edhead__mode${draft.mode === 'enforce' ? ' is-on' : ''}`}>{MODES.find((m) => m.value === draft.mode)?.label}{dirty ? ' · unsaved' : ''}</span>
+        <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
       {rule.sourceRecommendationId && (
         <p style={{ margin: '-12px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>
@@ -182,7 +185,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="gov-eyebrow">Then</p>
-        <div style={{ alignSelf: 'flex-start' }}>
+        <div className="gov-fill" style={{ alignSelf: 'flex-start' }}>
           <SelectChip label="What the rule does" value={draft.response} onChange={(response) => onDraft(changeResponse(draft, response))} options={responseOptions(govV1, draft.response)} />
         </div>
         <p style={help}>
@@ -209,7 +212,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="gov-eyebrow">Mode</p>
-        <div style={{ alignSelf: 'flex-start' }}>
+        <div className="gov-fill" style={{ alignSelf: 'flex-start' }}>
           <SegmentedControl<GovernanceMode> label="Mode" value={draft.mode} onChange={(mode) => set({ mode })} options={MODES} />
         </div>
         <p style={{ ...help, display: 'inline-flex', alignItems: 'center' }}>
@@ -228,9 +231,13 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       {error && <Banner variant="error">{error}</Banner>}
 
-      <div className="gov-actbar" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-        <Button variant="primary" onClick={onSave} disabled={!dirty} busy={saving} busyLabel="Saving…">Save</Button>
-        <Button variant="secondary" onClick={onDiscard} disabled={!dirty || saving}>Discard changes</Button>
+      {/* On a phone Remove sits at the end of the rule, and the bar below shows only once something changed. */}
+      <div className="gov-remove-row">
+        <Button variant="danger" onClick={onRemove} disabled={saving}>Remove rule</Button>
+      </div>
+      <div className={`gov-actbar${dirty || saving ? ' is-dirty' : ''}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
+        <Button variant="primary" onClick={onSave} disabled={!dirty} busy={saving} busyLabel="Saving…" className="gov-actbar__save">Save</Button>
+        <Button variant="secondary" onClick={onDiscard} disabled={!dirty || saving} className="gov-actbar__discard">Discard changes</Button>
         <Button variant="danger" onClick={onRemove} disabled={saving} className="gov-remove" style={{ marginLeft: 'auto' }}>Remove rule</Button>
       </div>
 
