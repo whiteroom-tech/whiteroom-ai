@@ -187,6 +187,8 @@ export function draftParams(d: RuleDraft): { params: GovernanceParams } | { erro
   const n = Number(d.number.replace(/,/g, '').trim());
   if (d.ruleType === 'spend_cap') {
     if (!(n > 0) || !Number.isFinite(n)) return { error: 'Enter a number above 0.' };
+    // Dollars may have cents; tokens are whole.
+    if ((d.params as SpendCapParams).unit === 'tokens' && !Number.isInteger(n)) return { error: 'Enter a whole number of tokens.' };
     return { params: { ...(d.params as SpendCapParams), dailyCap: n } };
   }
   if (!Number.isInteger(n) || n < 1 || n > 10_000) return { error: 'Enter a whole number from 1 to 10,000.' };

@@ -121,6 +121,10 @@ describe('editing a rule', () => {
     const spend = draftFrom(rule({}));
     expect(draftProblem({ ...spend, number: '0' })).toBe('Enter a number above 0.');
     expect(draftProblem({ ...spend, number: 'abc' })).toBe('Enter a number above 0.');
+    expect(draftProblem({ ...spend, number: '12.50' })).toBeNull(); // dollars may have cents
+    const tokens = draftFrom(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' } }));
+    expect(draftProblem({ ...tokens, number: '1.5' })).toBe('Enter a whole number of tokens.');
+    expect(draftProblem({ ...tokens, number: '1,500' })).toBeNull();
     const loop = draftFrom(rule({ ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: [] } }));
     expect(draftProblem({ ...loop, number: '2.5' })).toBe('Enter a whole number from 1 to 10,000.');
     expect(draftProblem({ ...spend, appliesTo: [] })).toBe('Pick at least one agent, or choose All agents.');

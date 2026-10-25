@@ -182,7 +182,9 @@
 .gov-row.is-on { background: var(--brand-dim); }
 .gov-row:disabled { cursor: progress; }
 .gov-row:focus-visible, .gov-template:focus-visible, .gov-field:focus-visible, .gov-chip button:focus-visible, .gov-details summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.gov-template:hover:not(:disabled) { border-color: var(--line2) !important; }
+.gov-template { text-align: left; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; color: var(--tx); font: inherit; cursor: pointer; }
+.gov-template:hover:not(:disabled) { border-color: var(--line2); }
+.gov-template:disabled { cursor: progress; }
 .gov-details { border-top: 1px solid var(--line); padding-top: 14px; }
 .gov-details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--tx); }
 .gov-edhead, .gov-actbar { background: var(--card); }

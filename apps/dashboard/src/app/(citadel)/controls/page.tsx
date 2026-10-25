@@ -297,8 +297,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const s = ruleSentence(r);
     const scope = scopeLabel(r.appliesTo);
     const never = overlap?.never.id === r.id;
+    // In Watch neither cap acts, so the overlap is about what they would do.
     const stat = never
-      ? `Never acts: the ${money(overlap!.first.params as SpendCapParams)} cap acts first`
+      ? overlap!.never.mode === "watch"
+        ? `Would never act: the ${money(overlap!.first.params as SpendCapParams)} cap would act first`
+        : `Never acts: the ${money(overlap!.first.params as SpendCapParams)} cap acts first`
       : rowStat(r, { byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null });
     return (
       <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-current={r.id === selectedId || undefined}>
@@ -364,7 +367,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
           {overlap && (
             <Banner variant="warn" actions={<Button size={28} onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))}>Remove the {money(overlap.never.params as SpendCapParams)} cap</Button>}>
-              Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap will never act. The <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and always acts first.
+              {overlap.never.mode === "watch"
+                ? <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap would never act. Both are in Watch only, and the <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and would always act first.</>
+                : <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap will never act. The <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and always acts first.</>}
             </Banner>
           )}
 

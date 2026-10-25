@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { DialogFrame, dialogCancelStyle } from './DialogFrame';
 
 /**
  * In-app confirmation for destructive actions, replacing window.confirm.
@@ -32,27 +33,12 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const [typed, setTyped] = useState('');
-
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) { setTyped(''); d.showModal(); }
-    if (!open && d.open) d.close();
-  }, [open]);
 
   const ready = !busy && (!confirmPhrase || typed.trim().toLowerCase() === confirmPhrase.toLowerCase());
 
   return (
-    <dialog
-      ref={ref}
-      onCancel={(e) => { e.preventDefault(); if (!busy) onCancel(); }}
-      aria-labelledby="confirm-dialog-title"
-      className="wr-confirm-dialog"
-      // The global reset zeroes margins, which un-centers a modal <dialog>.
-      style={{ margin: 'auto', width: 'min(440px, calc(100vw - 32px))', padding: 0, borderRadius: 12, border: '1px solid var(--line2)', background: 'var(--card)', color: 'var(--tx)' }}
-    >
+    <DialogFrame open={open} busy={busy} onCancel={onCancel} onOpen={() => setTyped('')} labelledBy="confirm-dialog-title">
       <form
         method="dialog"
         onSubmit={(e) => { e.preventDefault(); if (ready) onConfirm(); }}
@@ -73,7 +59,7 @@ export function ConfirmDialog({
           </label>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={onCancel} disabled={busy} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' }}>
+          <button type="button" onClick={onCancel} disabled={busy} style={dialogCancelStyle}>
             {cancelLabel}
           </button>
           <button type="submit" disabled={!ready} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'transparent', color: ready ? 'var(--on-brand)' : 'var(--tx2)', border: `1px solid ${ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'var(--line2)'}`, cursor: ready ? 'pointer' : 'not-allowed' }}>
@@ -81,6 +67,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </form>
-    </dialog>
+    </DialogFrame>
   );
 }

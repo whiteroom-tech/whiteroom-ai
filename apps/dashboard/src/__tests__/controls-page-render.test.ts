@@ -112,8 +112,8 @@ describe('Controls page', () => {
     expect(m.text()).toMatch(/Rule actions\s*7/);
     // The one Loop breaker gets its own count; the $200 cap never acts.
     expect(m.row('100 times').textContent).toContain('2 blocked · last 7 days');
-    expect(m.row('$200').textContent).toContain('Never acts: the $190 cap acts first');
-    expect(m.text()).toContain('Your $200 cap will never act.');
+    expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');
+    expect(m.text()).toContain('Your $200 cap would never act. Both are in Watch only');
     expect(m.text()).toContain('Pick a rule to change it');
     m.root.unmount();
   });
