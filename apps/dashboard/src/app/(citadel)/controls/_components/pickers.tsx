@@ -106,30 +106,25 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
 export function ScopeField({ scope, agents, onChange }: { scope: GovernanceScope; agents: string[]; onChange: (s: GovernanceScope) => void }) {
   const chosen = scope === 'all' ? [] : scope;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <select
         className="gov-field"
         aria-label="Which agents this rule applies to"
         value={scope === 'all' ? 'all' : 'some'}
         onChange={(e) => onChange(e.target.value === 'all' ? 'all' : [])}
-        style={{ ...field, padding: '0 8px', cursor: 'pointer' }}
+        style={{ ...field, padding: '0 8px', cursor: 'pointer', alignSelf: 'flex-start' }}
       >
         <option value="all">All agents</option>
         <option value="some">Specific agents</option>
       </select>
       {scope !== 'all' && (
         <>
-          {chosen.map((a) => <Chip key={a} label={a} onRemove={() => onChange(chosen.filter((x) => x !== a))} />)}
-          <select
-            className="gov-field"
-            aria-label="Add an agent"
-            value=""
-            onChange={(e) => { const v = e.target.value; if (v && !chosen.includes(v)) onChange([...chosen, v]); }}
-            style={{ ...field, padding: '0 8px', color: 'var(--tx2)', cursor: 'pointer' }}
-          >
-            <option value="">+ add agent</option>
-            {agents.filter((a) => !chosen.includes(a)).map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
+          {/* Agents the fleet has seen, or any name typed in: a rule can cover an agent before its first call. */}
+          <GroupPicker values={chosen} onChange={onChange} groups={agents.length ? [{ label: 'Agents', options: agents.map((a) => ({ id: a, label: a })) }] : []}
+            addLabel="+ add agent" otherLabel="Other (type an agent name)…" placeholder="agent name" />
+          {agents.length === 0 && (
+            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--tx2)' }}>No agents have made a call yet. Pick Other to type an agent’s name.</p>
+          )}
         </>
       )}
     </div>
