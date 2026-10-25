@@ -66,9 +66,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
   // How many keywords the engine hid (no dashboard secret on the read), if it did.
   const hiddenKeywords = rule.ruleType === 'keyword' && !(rule.params as KeywordParams).keywords.length ? (rule.params as KeywordParams).keywordCount : undefined;
+  const typed = keyword.trim();
+  // A keyword already in the list, in any case: said under the field, and the text stays.
+  const repeat = !!typed && keywords.some((x) => x.toLowerCase() === typed.toLowerCase());
   const addKeyword = () => {
-    const k = keyword.trim();
-    if (k && keywordFits(keywords) && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
+    if (!typed || repeat || !keywordFits(keywords)) return;
+    setParams({ keywords: [...keywords, typed] });
     setKeyword('');
   };
   // Just tell me, Pause and Stop alert; Block does when asked to.
@@ -156,8 +159,9 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               <input className="gov-field" aria-label="Keyword or phrase" placeholder="Type a word or phrase" value={keyword} maxLength={KEYWORD_MAX_CHARS}
                 onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
                 style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
-              <Button onClick={addKeyword} disabled={!keyword.trim() || !keywordFits(keywords)}>Add</Button>
+              <Button onClick={addKeyword} disabled={!typed || repeat || !keywordFits(keywords)}>Add</Button>
             </div>
+            {repeat && <p style={help}>That keyword is already in the list.</p>}
             {!keywordFits(keywords) && <p style={help}>A rule holds up to {KEYWORD_MAX} keywords. Remove one to add another.</p>}
             </>}
             <p style={help}>Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.</p>

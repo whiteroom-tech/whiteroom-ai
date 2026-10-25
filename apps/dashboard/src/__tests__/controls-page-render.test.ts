@@ -513,9 +513,13 @@ describe('Keywords in the editor', () => {
     await type(input, '   ');
     expect(m.button('Add')!.disabled).toBe(true);
     await type(input, 'project FALCON');
-    await m.click(m.button('Add'));
+    expect(m.button('Add')!.disabled).toBe(true);
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush();
     expect(m.el.querySelectorAll('button[aria-label^="Remove "]').length).toBe(1);
-    expect(input.value).toBe('');
+    // The text stays, and says why it wasn't added.
+    expect(input.value).toBe('project FALCON');
+    expect(m.text()).toContain('That keyword is already in the list.');
     await m.click(m.button('Save'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true }, ifVersion: 1 }, 'k');
     m.root.unmount();
