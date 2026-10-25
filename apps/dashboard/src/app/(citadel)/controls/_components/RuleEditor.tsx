@@ -3,10 +3,11 @@
 // The selected rule, as four steps (When · Then · Applies to · Mode) and a
 // Save button: nothing reaches the engine until Save (Controls spec Rev 1, D1).
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl, SelectChip } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceMode, GovernanceRule, LoopBreakerParams, ModelAllowlistParams, RuleWouldActResult, SpendCapParams, ToolListParams,
+  GovernanceHistoryEntry, GovernanceMode, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleWouldActResult, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_EFFECT, RULE_LABELS, responseOptions } from '@/lib/governance';
 import { canAct, watchSummary } from '@/lib/controls-guard';
@@ -20,7 +21,16 @@ import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_
 const ACTS: Record<GovernanceRule['ruleType'], string> = {
   spend_cap: 'Acts before the next call.', loop_breaker: 'Acts on the Nth call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call.', call_rate: 'Acts on the call over the limit.',
+  keyword: 'Acts before the call reaches the model.',
 };
+const KEYWORD_ACTS: Record<KeywordWhere, string> = {
+  incoming: 'Acts before the call reaches the model.',
+  replies: 'Acts on the reply before the agent gets it.',
+  both: 'Acts before the call reaches the model, and on the reply before the agent gets it.',
+};
+const WHERE_OPTIONS: { value: KeywordWhere; label: string }[] = [
+  { value: 'incoming', label: 'Incoming data' }, { value: 'replies', label: 'A model reply' }, { value: 'both', label: 'Incoming data or a reply' },
+];
 const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
   { value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: 'warn' },
 ];
@@ -28,12 +38,14 @@ const eyebrow = { margin: 0, fontFamily: FONT_MONO, fontSize: 10, fontWeight: 60
 const help = { margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 13.5 } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, history, actors, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
   agents: string[];
   govV1: boolean;
+  /** Whether the fleet has somewhere to send alerts (Slack); null while unknown. */
+  alertChannel: boolean | null;
   /** Watch counts for the saved version, when loaded. */
   wouldAct: RuleWouldActResult | null;
   /** This rule's own history, newest first. */
@@ -53,6 +65,15 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
   const parsed = draftParams(draft);
   const asRule = { ...rule, mode: draft.mode, response: draft.response, params: 'params' in parsed ? parsed.params : p };
   const watching = rule.mode === 'watch' && draft.mode === 'watch';
+  const [keyword, setKeyword] = useState('');
+  const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
+  const addKeyword = () => {
+    const k = keyword.trim().slice(0, 100);
+    if (k && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
+    setKeyword('');
+  };
+  // Just tell me, Pause and Stop alert; Block does when asked to.
+  const alerts = draft.mode === 'enforce' && (draft.response !== 'block' || draft.alsoNotify);
   const seen = watching && wouldAct ? watchSummary({ response: rule.response }, wouldAct) : null;
 
   return (
@@ -112,6 +133,37 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
               addLabel="+ add model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
           </>
         )}
+        {rule.ruleType === 'keyword' && (
+          <>
+            <div style={sentenceRow}>
+              <select className="gov-field" aria-label="Where to look" value={(p as KeywordParams).where} onChange={(e) => setParams({ where: e.target.value as KeywordWhere })}
+                style={{ background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, padding: '0 8px', cursor: 'pointer' }}>
+                {WHERE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              contains any of:
+            </div>
+            {keywords.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {keywords.map((k) => (
+                  <span key={k} className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 12 }}>
+                    “{k}”
+                    <button type="button" aria-label={`Remove ${k}`} onClick={() => setParams({ keywords: keywords.filter((x) => x !== k) })} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="gov-field" aria-label="Keyword or phrase" placeholder="Type a word or phrase" value={keyword} maxLength={100}
+                onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
+                style={{ background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
+              <Button onClick={addKeyword} disabled={!keyword.trim()}>Add</Button>
+            </div>
+            <p style={help}>Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.</p>
+            {(p as KeywordParams).where !== 'incoming' && (
+              <p style={help}>To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.</p>
+            )}
+          </>
+        )}
         {rule.ruleType === 'tool_list' && (
           <>
             <span style={{ fontSize: 13.5 }}>When an agent is about to run any of these tools:</span>
@@ -131,6 +183,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
           {RESPONSE_EFFECT[draft.response]}
           {draft.response === 'block' && draft.alsoNotify && ' You also get a Slack message (Settings › Alerts) with a link to the run.'}
         </p>
+        {alerts && alertChannel === false && (
+          <p style={{ ...help, color: 'var(--warn-tx)' }}>
+            No alert channel is connected, so no one will be told. <Link href="/settings#alerts" style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
+          </p>
+        )}
         {draft.response === 'block' && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
             <input type="checkbox" checked={draft.alsoNotify} onChange={(e) => set({ alsoNotify: e.target.checked })} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
@@ -151,7 +208,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
           <SegmentedControl<GovernanceMode> label="Mode" value={draft.mode} onChange={(mode) => set({ mode })} options={MODES} />
         </div>
         <p style={{ ...help, display: 'inline-flex', alignItems: 'center' }}>
-          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Watch only. Counting, never acting.' : ACTS[rule.ruleType]}
+          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Watch only. Counting, never acting.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : ACTS[rule.ruleType]}
           {canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}
         </p>
         {watching && wouldAct && (

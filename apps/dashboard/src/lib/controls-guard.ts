@@ -3,7 +3,7 @@
 // for a day, and turning that on means typing who it applies to. Plus the
 // per-rule "Watching: would have…" line from the engine's Watch events.
 
-import type { GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceScope, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
+import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
 
 /**
  * A rule in Enforce that can act, so the proxy refuses calls it can't tie to
@@ -16,6 +16,7 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
   if (rule.response === 'notify') return false;
   if (rule.ruleType === 'model_allowlist' && (rule.params as ModelAllowlistParams).allowedModels.length === 0) return false;
   if (rule.ruleType === 'tool_list' && (rule.params as ToolListParams).blockedTools.length === 0) return false;
+  if (rule.ruleType === 'keyword' && (rule.params as KeywordParams).keywords.length === 0) return false;
   return true;
 }
 
@@ -55,11 +56,37 @@ export function longestWatchHours(ruleId: string, history: GovernanceHistoryEntr
 }
 
 /** Why Stop can't be turned on yet, or null when it can. */
-export function stopBlockedReason(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number = Date.now()): string | null {
+export function stopBlockedReason(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number = Date.now(), what = 'stop agents'): string | null {
   const h = longestWatchHours(ruleId, history, currentMode, now);
   if (h >= STOP_WATCH_HOURS) return null;
   const ran = h < 1 ? 'less than an hour' : `${Math.floor(h)} ${Math.floor(h) === 1 ? 'hour' : 'hours'}`;
-  return `Run this rule in Watch for ${STOP_WATCH_HOURS} hours before it can stop agents, so you can see what it would have done. It has run in Watch for ${ran}.`;
+  return `Run this rule in Watch for ${STOP_WATCH_HOURS} hours before it can ${what}, so you can see what it would have done. It has run in Watch for ${ran}.`;
+}
+
+/**
+ * A Keywords rule that stops incoming data (Block, Pause or Stop on
+ * "incoming" or "both") ends the run: the agent re-sends the same data each
+ * call. So, like Stop, it needs a day in Watch and a typed confirmation
+ * (Controls spec Rev 1, decision 3). Stop itself is stopCheck's.
+ */
+export function keywordBlockCheck(
+  rule: { id: string; ruleType: string; mode: string; response?: GovernanceResponse; params: GovernanceParams },
+  change: { mode?: string; response?: GovernanceResponse; params?: GovernanceParams },
+  history: GovernanceHistoryEntry[],
+  now: number = Date.now(),
+): { kind: 'ok' } | { kind: 'confirm' } | { kind: 'blocked'; reason: string } {
+  if (rule.ruleType !== 'keyword') return { kind: 'ok' };
+  const stopsIncoming = (r: { mode: string; response?: GovernanceResponse; params: GovernanceParams }) =>
+    r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && (r.response ?? 'block') !== 'stop' && (r.params as KeywordParams).where !== 'replies';
+  const next = { mode: change.mode ?? rule.mode, response: change.response ?? rule.response, params: change.params ?? rule.params };
+  if (!stopsIncoming(next) || stopsIncoming(rule)) return { kind: 'ok' };
+  const reason = stopBlockedReason(rule.id, history, rule.mode, now, 'block incoming data');
+  return reason ? { kind: 'blocked', reason } : { kind: 'confirm' };
+}
+
+/** What to type to let a Keywords rule block incoming data: the agents it covers, by name. */
+export function keywordPhrase(scope: GovernanceScope): string {
+  return scope === 'all' ? 'block all agents' : scope.join(', ');
 }
 
 /**

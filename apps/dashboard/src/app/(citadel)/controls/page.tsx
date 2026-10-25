@@ -15,7 +15,7 @@ import { RuleEditor } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
-  controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
+  alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
   performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
@@ -25,7 +25,7 @@ import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tally
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
-import { canAct, stopCheck, stopPhrase } from "@/lib/controls-guard";
+import { canAct, keywordBlockCheck, keywordPhrase, stopCheck, stopPhrase } from "@/lib/controls-guard";
 import { HELP } from "@/lib/metric-definitions";
 import { timeAgo } from "@/lib/format";
 import { localDay } from "@/lib/runs";
@@ -55,6 +55,7 @@ export default function ControlsPage() {
 type Dialog =
   | { kind: "enforce"; rule: GovernanceRule; next: GovernanceRule }
   | { kind: "stop"; rule: GovernanceRule; next: GovernanceRule }
+  | { kind: "keyword"; rule: GovernanceRule; next: GovernanceRule }
   | { kind: "remove"; rule: GovernanceRule }
   | { kind: "discard"; label: string; then: () => void };
 
@@ -83,6 +84,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [adding, setAdding] = useState<"closed" | "open" | "busy">("closed");
   const [offOpen, setOffOpen] = useState(false);
+  /** Whether alerts have somewhere to go (Slack); null while unknown or unreadable. */
+  const [alertChannel, setAlertChannel] = useState<boolean | null>(null);
 
   // Trusted from the URL until the agents load, then only if it names one.
   const agentFilter = agentParam && (!loaded || agents.includes(agentParam)) ? agentParam : null;
@@ -140,6 +143,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       .then((d) => { if (!cancelled && !("unsupported" in d)) setActions(d); }, () => {});
     return () => { cancelled = true; };
   }, [fleetId, authKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // null: an engine without alerts, so nothing to say either way.
+    alertsGet(fleetId).then((a) => { if (!cancelled && a) setAlertChannel(!!a.slack); }, () => {});
+    return () => { cancelled = true; };
+  }, [fleetId]);
 
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
@@ -212,6 +222,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const stop = stopCheck(selected, { mode: draft.mode, response: draft.response }, history);
     if (stop.kind === "blocked") { setError(stop.reason); return; }
     if (stop.kind === "confirm") { setDialog({ kind: "stop", rule: selected, next }); return; }
+    // A Keywords rule that stops incoming data ends the run: the same day in Watch and typed confirmation.
+    const kw = keywordBlockCheck(selected, { mode: draft.mode, response: draft.response, params: next.params }, history);
+    if (kw.kind === "blocked") { setError(kw.reason); return; }
+    if (kw.kind === "confirm") { setDialog({ kind: "keyword", rule: selected, next }); return; }
     if (draft.mode === "enforce" && selected.mode !== "enforce") { setDialog({ kind: "enforce", rule: selected, next }); return; }
     void commit(selected, draft);
   };
@@ -431,6 +445,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               onDraft={(d) => { setDraft(d); setError(null); }}
               agents={agents}
               govV1={govV1}
+              alertChannel={alertChannel}
               wouldAct={wouldActs[`${selected.id}@${selected.version}`] ?? null}
               history={history.filter((h) => h.ruleId === selected.id)}
               actors={actors}
@@ -484,6 +499,16 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         confirmPhrase={dialog?.kind === "stop" ? stopPhrase(dialog.next.appliesTo) : "stop"}
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "stop" && draft) void commit(dialog.rule, draft); }}
+        onCancel={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === "keyword"}
+        title="Let this rule block incoming data?"
+        body={dialog?.kind === "keyword" ? <>{sentenceText(dialog.next)} The agent can’t go on with that data in its run: it sends the same data again on every call. It applies to {dialog.next.appliesTo === "all" ? "every agent in this fleet" : dialog.next.appliesTo.join(", ")}, and takes effect now.{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
+        confirmLabel="Block incoming data"
+        confirmPhrase={dialog?.kind === "keyword" ? keywordPhrase(dialog.next.appliesTo) : "block"}
+        busy={saving}
+        onConfirm={() => { if (dialog?.kind === "keyword" && draft) void commit(dialog.rule, draft); }}
         onCancel={() => setDialog(null)}
       />
       <ConfirmDialog

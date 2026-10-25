@@ -643,7 +643,7 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
@@ -657,7 +657,10 @@ export interface ModelAllowlistParams { allowedModels: string[] }
 export interface ToolListParams { blockedTools: string[] }
 /** More than maxCalls model calls in any 60 seconds. */
 export interface CallRateParams { maxCalls: number }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams;
+/** Keywords rule (engine E4): words to find in what a call sends ("incoming"), the model's reply, or both. */
+export type KeywordWhere = 'incoming' | 'replies' | 'both';
+export interface KeywordParams { keywords: string[]; where: KeywordWhere; wholeWord: boolean }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams;
 
 export interface GovernanceRule {
   id: string;

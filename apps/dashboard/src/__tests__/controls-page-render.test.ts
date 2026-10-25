@@ -55,12 +55,15 @@ const api = vi.hoisted(() => ({
   models: null as string[] | null,
   /** Holds governance_list until resolved, to see the page before it loads. */
   listGate: null as Promise<void> | null,
+  /** What Settings › Alerts has: a Slack webhook, or none. */
+  slack: null as { ending: string } | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   governanceList: async () => { api.lists++; if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
+  alertsGet: async () => ({ slack: api.slack }),
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
   performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
@@ -88,7 +91,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.slack = null; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -473,6 +476,80 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.text()).toMatch(/Couldn’t remove the rule/);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
     expect(m.row('100 times')).toBeTruthy();
+    m.root.unmount();
+  });
+});
+
+describe('Keywords in the editor', () => {
+  const keywordRule = (over: Partial<GovernanceRule> = {}): GovernanceRule => ({
+    ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all',
+    params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true }, ...over,
+  });
+
+  it('adds a keyword with Enter and saves the list', async () => {
+    api.created.push(keywordRule());
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    const input = m.el.querySelector('input[aria-label="Keyword or phrase"]') as HTMLInputElement;
+    await type(input, 'Orion');
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush();
+    expect(m.text()).toContain('“Orion”');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true } }, 'k');
+    m.root.unmount();
+  });
+
+  it('says when an alerting rule has nowhere to send alerts', async () => {
+    api.created.push(keywordRule());
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    expect(m.text()).toContain('No alert channel is connected');
+    m.root.unmount();
+
+    api.slack = { ending: 'mnop' };
+    const n = await mount();
+    await n.click(n.row('“Project Falcon”'));
+    await n.click([...n.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    expect(n.text()).not.toContain('No alert channel is connected');
+    n.root.unmount();
+  });
+
+  it('blocking incoming data needs a day in Watch first', async () => {
+    api.created.push(keywordRule({ response: 'block' }));
+    api.history = [{ id: 'h1', ruleId: 'k1', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'test', time: new Date(Date.now() - 60_000).toISOString() }];
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('before it can block incoming data');
+    expect(api.update).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('after a day, blocking incoming data is confirmed by typing who it covers', async () => {
+    api.created.push(keywordRule({ response: 'block' }));
+    api.history = [{ id: 'h1', ruleId: 'k1', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'test', time: new Date(Date.now() - 2 * 86_400_000).toISOString() }];
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule({ response: 'block' }), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Let this rule block incoming data?');
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    await type(dialog.querySelector('input') as HTMLInputElement, 'block all agents');
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Block incoming data'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'enforce' }, 'k');
+    m.root.unmount();
+  });
+
+  it('Add a rule offers Flag keywords, marked New', async () => {
+    const m = await mount();
+    const option = [...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Flag keywords'));
+    expect(option?.textContent).toContain('Keywords');
+    expect(option?.querySelector('.wr-tag')?.textContent).toBe('New');
     m.root.unmount();
   });
 });
