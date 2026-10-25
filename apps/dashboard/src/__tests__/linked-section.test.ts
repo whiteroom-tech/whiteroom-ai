@@ -26,9 +26,13 @@ describe('useLinkedSection', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     onResize();
     expect(scroll).toHaveBeenCalledTimes(2);
-    window.dispatchEvent(new Event('wheel'));
+    // Typing (Tab, a letter) doesn't stop it; a press, like a scrollbar drag, does.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
     onResize();
-    expect(scroll).toHaveBeenCalledTimes(2);
+    expect(scroll).toHaveBeenCalledTimes(3);
+    window.dispatchEvent(new Event('pointerdown'));
+    onResize();
+    expect(scroll).toHaveBeenCalledTimes(3);
     root.unmount();
     vi.unstubAllGlobals();
     window.location.hash = '';
