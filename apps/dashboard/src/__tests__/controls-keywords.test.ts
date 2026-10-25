@@ -31,11 +31,9 @@ describe('Keywords in plain words', () => {
     expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'incoming', wholeWord: true } }))).toBe('When incoming data contains “Orion”, block the call.');
   });
 
-  it('one more keyword fits only within 200 and 4,000 characters in all', () => {
-    expect(keywordFits(['a'.repeat(100)], 'b')).toBe(true);
-    expect(keywordFits(Array.from({ length: 40 }, () => 'a'.repeat(100)), 'b')).toBe(false);
-    expect(keywordFits(Array.from({ length: 39 }, () => 'a'.repeat(100)), 'b'.repeat(100))).toBe(true);
-    expect(keywordFits(Array.from({ length: 200 }, (_, i) => `k${i}`), 'x')).toBe(false);
+  it('a rule holds up to 50 keywords', () => {
+    expect(keywordFits(Array.from({ length: 49 }, (_, i) => `k${i}`))).toBe(true);
+    expect(keywordFits(Array.from({ length: 50 }, (_, i) => `k${i}`))).toBe(false);
   });
 
   it('what the agent gets never names the keyword', () => {

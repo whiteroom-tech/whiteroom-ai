@@ -10,19 +10,18 @@ import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
-/** The engine's limits on a Keywords rule's list (it counts characters after normalizing). */
-export const KEYWORD_MAX = 200;
-export const KEYWORD_MAX_CHARS = 100;
-export const KEYWORD_MAX_TOTAL_CHARS = 4_000;
+/** The engine's limits on a Keywords rule's list: 50 keywords of up to 50 characters. */
+export const KEYWORD_MAX = 50;
+export const KEYWORD_MAX_CHARS = 50;
 
 /** How many keywords a rule has, counting a list the engine hid (keywordCount). */
 export function keywordTotal(p: KeywordParams): number {
   return p.keywords.length || (p.keywordCount ?? 0);
 }
 
-/** Whether one more keyword fits the engine's limits: 200 of them, 4,000 characters in all. */
-export function keywordFits(keywords: readonly string[], next: string): boolean {
-  return keywords.length < KEYWORD_MAX && keywords.reduce((n, k) => n + k.length, 0) + next.length <= KEYWORD_MAX_TOTAL_CHARS;
+/** Whether one more keyword fits: a rule holds at most KEYWORD_MAX. */
+export function keywordFits(keywords: readonly string[]): boolean {
+  return keywords.length < KEYWORD_MAX;
 }
 
 /** Where a Keywords rule looks, as it reads in a sentence. */
