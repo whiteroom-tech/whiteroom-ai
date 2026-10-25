@@ -303,6 +303,18 @@ describe('Controls page, editing', () => {
     m.root.unmount();
   });
 
+  it('a save the engine refuses says why, so the person knows what to change', async () => {
+    const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
+    api.update.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 400', 400, 'keywords entries must be 1-50 characters.'));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Couldn’t save the rule. Keywords entries must be 1-50 characters.');
+    expect(m.text()).not.toContain('may not have been saved');
+    m.root.unmount();
+  });
+
   it('a failed save says so, keeps the edit, and reloads the rules', async () => {
     api.update.mockRejectedValue(new Error('network down'));
     const m = await mount();

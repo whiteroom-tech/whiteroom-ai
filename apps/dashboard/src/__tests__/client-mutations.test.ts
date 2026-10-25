@@ -89,6 +89,13 @@ describe('governance_update_rule', () => {
     expect(body).toMatchObject({ action: 'governance_update_rule', fleet_id: 'f', rule_id: 'r1', response: 'block', also_notify: true });
   });
 
+  it('keeps the engine\'s reason for a refused change, but not for a server error', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'That looks like a key or password.' }, 400));
+    await expect(governanceUpdateRule('f', 'r1', { mode: 'enforce' }, 'sk-key')).rejects.toMatchObject({ status: 400, reason: 'That looks like a key or password.' });
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'stack trace…' }, 500));
+    await expect(governanceUpdateRule('f', 'r1', { mode: 'enforce' }, 'sk-key')).rejects.toMatchObject({ status: 500, reason: undefined });
+  });
+
   it('sends the version the edit was made on as if_version, and a 409 keeps its status', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: 'Rule was changed elsewhere.' }, 409));
     await expect(governanceUpdateRule('f', 'r1', { mode: 'enforce', ifVersion: 3 }, 'sk-key')).rejects.toMatchObject({ status: 409 });

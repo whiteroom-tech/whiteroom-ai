@@ -66,11 +66,14 @@ export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whi
  */
 export class WhiteRoomApiError extends Error {
   readonly status?: number;
+  /** The engine's own reason for refusing a request it understood (400, 409, 422), to show people as is. */
+  readonly reason?: string;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, reason?: string) {
     super(message);
     this.name = 'WhiteRoomApiError';
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -200,6 +203,12 @@ async function apiCall<T>(
     if (res.status === 403) {
       const denied = await res.json().catch(() => null);
       if (denied?.code === CONTROL_DENIED && typeof denied.error === 'string') throw new ControlDeniedError(denied.error);
+    }
+    // A request the engine understood and refused says why ("That looks like a key or password…").
+    if (res.status === 400 || res.status === 409 || res.status === 422) {
+      const refused = await res.json().catch(() => null);
+      const reason = typeof refused?.error === 'string' && refused.error.length <= 300 ? refused.error : undefined;
+      throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status, reason);
     }
     throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
   }
