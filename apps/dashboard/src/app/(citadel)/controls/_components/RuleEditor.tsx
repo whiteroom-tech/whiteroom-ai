@@ -13,7 +13,7 @@ import { canAct, watchSummary } from '@/lib/controls-guard';
 import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, agentGets, draftParams, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, agentGets, changeResponse, changeUnit, draftParams, type RuleDraft } from '@/lib/controls-view';
 import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 const ACTS: Record<GovernanceRule['ruleType'], string> = {
@@ -61,6 +61,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
         <Button variant="ghost" size={28} onClick={onClose}>Close</Button>
       </div>
 
+      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={eyebrow}>When</p>
         {rule.ruleType === 'spend_cap' && (
@@ -68,7 +69,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
             <div style={sentenceRow}>
               An agent spends more than
               <NumberField label="Spend limit" value={draft.number} onChange={(v) => set({ number: v })} />
-              <InlineSelect label="Limit unit" value={(p as SpendCapParams).unit} options={['dollars', 'tokens'] as const} onChange={(unit) => setParams({ unit })} />
+              <InlineSelect label="Limit unit" value={(p as SpendCapParams).unit} options={['dollars', 'tokens'] as const} onChange={(unit) => onDraft(changeUnit(draft, unit))} />
               in a
               <InlineSelect label="Limit period" value={(p as SpendCapParams).scope} options={['day', 'run'] as const} onChange={(scope) => setParams({ scope })} />
             </div>
@@ -118,9 +119,18 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={eyebrow}>Then</p>
         <div style={{ alignSelf: 'flex-start' }}>
-          <SelectChip label="What the rule does" value={draft.response} onChange={(response) => set({ response })} options={responseOptions(govV1, draft.response)} />
+          <SelectChip label="What the rule does" value={draft.response} onChange={(response) => onDraft(changeResponse(draft, response))} options={responseOptions(govV1, draft.response)} />
         </div>
-        <p style={help}>{RESPONSE_EFFECT[draft.response]}</p>
+        <p style={help}>
+          {RESPONSE_EFFECT[draft.response]}
+          {draft.response === 'block' && draft.alsoNotify && ' You also get a Slack message (Settings › Alerts) with a link to the run.'}
+        </p>
+        {draft.response === 'block' && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
+            <input type="checkbox" checked={draft.alsoNotify} onChange={(e) => set({ alsoNotify: e.target.checked })} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
+            Also send me an alert
+          </label>
+        )}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -145,6 +155,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
           </p>
         )}
       </section>
+
+      </fieldset>
 
       {error && <Banner variant="error">{error}</Banner>}
 

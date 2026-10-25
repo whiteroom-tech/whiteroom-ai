@@ -37,10 +37,16 @@ const api = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(async () => ({ success: true })),
   create: vi.fn(),
+  lists: 0,
+  /** Rules the mocked engine created, listed after RULES. */
+  created: [] as GovernanceRule[],
+  govV1: false,
+  history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  governanceList: async () => ({ fleetId: 'f1', rules: RULES, history: [], agents: ['lead-agent', 'market-researcher'], govV1: false }),
+  governanceList: async () => { api.lists++; return { fleetId: 'f1', rules: [...RULES, ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
+  performanceRecommendationGet: () => new Promise(() => {}),
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
   performanceIndex: async () => { throw new Error('no store'); },
@@ -66,7 +72,25 @@ async function mount() {
   return { el, root, text, button, row, click };
 }
 
-beforeEach(() => { nav.params = new URLSearchParams(); nav.replace.mockClear(); api.update.mockReset(); api.remove.mockClear(); document.body.innerHTML = ''; });
+beforeEach(() => {
+  nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.lists = 0; api.govV1 = false; api.history = [];
+  document.body.innerHTML = '';
+});
+const type = async (input: HTMLInputElement, value: string) => {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+};
+const choose = async (select: HTMLSelectElement, value: string) => {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+};
 
 describe('Controls page', () => {
   it('reads each rule as a sentence, grouped by what it does now, with the cards and the overlap', async () => {
@@ -137,6 +161,129 @@ describe('Controls page', () => {
     const dialogs = [...m.el.querySelectorAll('dialog[open]')];
     await m.click([...dialogs.at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r1', 'k');
+    m.root.unmount();
+  });
+});
+
+describe('Controls page, more paths', () => {
+  it('switching a spend cap between dollars and tokens converts the limit', async () => {
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await choose(m.el.querySelector('select[aria-label="Limit unit"]') as HTMLSelectElement, 'tokens');
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('63333333');
+    m.root.unmount();
+  });
+
+  it('retyping the same value isn’t a change', async () => {
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '190.0');
+    expect(m.button('Save')!.disabled).toBe(true);
+    m.root.unmount();
+  });
+
+  it('"Also send me an alert" shows for Block, is saved, and clears for other responses', async () => {
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    const box = () => [...m.el.querySelectorAll('label')].find((l) => l.textContent?.includes('Also send me an alert'))?.querySelector('input') as HTMLInputElement | undefined;
+    await m.click(box());
+    expect(m.text()).toContain('You also get a Slack message');
+    await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'notify');
+    expect(box()).toBeUndefined();
+    await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'block');
+    expect(box()!.checked).toBe(false);
+    await m.click(box());
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { alsoNotify: true }, 'k');
+    m.root.unmount();
+  });
+
+  it('Stop needs a day in Watch first', async () => {
+    api.govV1 = true;
+    api.history = [{ id: 'h1', ruleId: 'r2', ruleType: 'model_allowlist', description: 'Added new Model allowlist rule', by: 'test', time: new Date(Date.now() - 60_000).toISOString() }];
+    const m = await mount();
+    await m.click(m.row('Only allow'));
+    await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'stop');
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Run this rule in Watch for 24 hours before it can stop agents');
+    expect(api.update).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('after a day in Watch, Stop is confirmed by typing who it covers', async () => {
+    api.govV1 = true;
+    api.history = [{ id: 'h1', ruleId: 'r2', ruleType: 'model_allowlist', description: 'Added new Model allowlist rule', by: 'test', time: new Date(Date.now() - 2 * 86_400_000).toISOString() }];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('Only allow'));
+    await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'stop');
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Let this rule stop agents?');
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    const confirm = [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Stop the agent') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    await type(dialog.querySelector('input') as HTMLInputElement, 'market-researcher');
+    expect(confirm.disabled).toBe(false);
+    await m.click(confirm);
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', response: 'stop' }, 'k');
+    m.root.unmount();
+  });
+
+  it('Add rule starts the rule in Watch, for the agent being viewed', async () => {
+    nav.params = new URLSearchParams('agent=lead-agent');
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; appliesTo?: GovernanceRule['appliesTo'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: 'block', appliesTo: r.appliesTo ?? 'all', params: { maxCalls: 60 } };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Limit calls per minute')));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'call_rate', mode: 'watch', appliesTo: ['lead-agent'] }, 'k');
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    m.root.unmount();
+  });
+
+  it('a failed save says so, keeps the edit, and reloads the rules', async () => {
+    api.update.mockRejectedValue(new Error('network down'));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    const before = api.lists;
+    await m.click(m.button('Save'));
+    expect(m.text()).toMatch(/Couldn’t save the rule/);
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
+    expect(api.lists).toBeGreaterThan(before);
+    m.root.unmount();
+  });
+
+  it('a link elsewhere asks before throwing away an edit, and goes there on Discard', async () => {
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    const a = document.createElement('a');
+    a.href = '/runs';
+    a.textContent = 'Runs';
+    document.body.appendChild(a);
+    await m.click(a);
+    expect(m.text()).toContain('Discard your changes to Spend cap?');
+    expect(nav.push).not.toHaveBeenCalled();
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(nav.push).toHaveBeenCalledWith('/runs');
+    m.root.unmount();
+  });
+
+  it('a Diagnosis suggestion (?rec=) takes the right column; picking a rule closes it', async () => {
+    nav.params = new URLSearchParams('rec=rec_123');
+    const m = await mount();
+    expect(m.text()).toContain('Loading the suggestion');
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeNull();
+    await m.click(m.row('100 times'));
+    expect(nav.replace).toHaveBeenCalledWith('/controls');
     m.root.unmount();
   });
 });

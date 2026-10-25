@@ -180,6 +180,7 @@
 .gov-row:first-child { border-top: 0; }
 .gov-row:hover { background: var(--sunk); }
 .gov-row.is-on { background: var(--brand-dim); }
+.gov-row:disabled { cursor: progress; }
 .gov-row:focus-visible, .gov-template:focus-visible, .gov-field:focus-visible, .gov-chip button:focus-visible, .gov-details summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .gov-template:hover:not(:disabled) { border-color: var(--line2) !important; }
 .gov-details { border-top: 1px solid var(--line); padding-top: 14px; }

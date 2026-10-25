@@ -6,7 +6,7 @@ import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
   GovernanceScope, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
-import { RULE_LABELS } from '@/lib/governance';
+import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
@@ -105,7 +105,8 @@ const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
  * have done since its last change.
  */
 export function rowStat(rule: GovernanceRule, ctx: {
-  byRuleType?: Partial<Record<GovernanceRuleType, RuleActionCounts>>;
+  /** The engine's rule_actions byRule (keyed by rule type). */
+  byRuleType?: Record<string, RuleActionCounts>;
   onlyOfItsType: boolean;
   wouldAct?: { byAgent: Record<string, number> } | null;
 }): string {
@@ -194,9 +195,28 @@ export function draftParams(d: RuleDraft): { params: GovernanceParams } | { erro
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Whether the draft differs from the saved rule: what "Unsaved changes" and the Discard guard ask. */
+/**
+ * Whether the draft differs from the saved rule: what enables Save and arms
+ * the Discard guard. Compares values, so "1,500" over 1500 isn't a change; a
+ * number that doesn't read yet counts as one when its text differs.
+ */
 export function isDirty(d: RuleDraft, rule: GovernanceRule): boolean {
-  return !same(d, draftFrom(rule));
+  if ('error' in draftParams(d)) return d.number.trim() !== numberOf(rule);
+  return draftChanges(d, rule) !== null;
+}
+
+/** A spend cap's unit changed: the typed limit converts at the blended rate, so $190 doesn't become 190 tokens. */
+export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft {
+  const p = d.params as SpendCapParams;
+  if (p.unit === unit) return d;
+  const n = Number(d.number.replace(/,/g, '').trim());
+  const number = n > 0 && Number.isFinite(n) ? String(convertSpendCap(n, unit)) : d.number;
+  return { ...d, number, params: { ...p, unit } };
+}
+
+/** A new response; "Also send me an alert" only applies to Block, so it's cleared otherwise. */
+export function changeResponse(d: RuleDraft, response: GovernanceResponse): RuleDraft {
+  return { ...d, response, alsoNotify: response === 'block' ? d.alsoNotify : false };
 }
 
 /** What Save sends, from a valid draft: only what changed. Null when nothing did. */

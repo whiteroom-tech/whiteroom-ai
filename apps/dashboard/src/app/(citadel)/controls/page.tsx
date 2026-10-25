@@ -6,6 +6,7 @@
 // dashboard's own words, so it reads like the other tabs.
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Banner, Button, FONT_DISPLAY, FONT_MONO, Panel, SelectChip, StatCard } from "@whiteroom/ui";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
@@ -19,7 +20,7 @@ import {
 import type {
   GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, countsFromRuleActions, governanceFromSummary, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
@@ -83,6 +84,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   const agentFilter = agentParam && agents.includes(agentParam) ? agentParam : null;
   const selected = selectedId ? rules.find((r) => r.id === selectedId) ?? null : null;
+  // What's selected and being edited now, for a save that finishes later.
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
   const dirty = !!(selected && draft && isDirty(draft, selected));
 
   // Only the newest load may set names or counts: an older one finishing last would undo it.
@@ -170,7 +174,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   }, [dirty, selected, router]);
 
   const openRule = (id: string | null) => {
-    if (id === selectedId) return;
+    if (id === selectedId || saving) return;
     guard(() => {
       if (suggestionRec) router.replace(withParams({ rec: null }));
       setError(null);
@@ -211,10 +215,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setSaving(true);
     setError(null);
     setNotice(null);
+    const sent = JSON.stringify(d);
     try {
       const { rule: saved } = await governanceUpdateRule(fleetId, rule.id, changes, authKey);
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
-      if (selectedId === saved.id) setDraft(draftFrom(saved));
+      // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
+      if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
       const how = saved.mode === "enforce" ? "now enforces" : saved.mode === "watch" ? "is in Watch only" : "is off";
       setNotice(`Saved. ${RULE_LABELS[saved.ruleType]} ${how}.`);
       void fetchData();
@@ -226,16 +232,20 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     }
   };
 
+  // Not optimistic: a failed delete keeps the rule, and the person's place, as they were.
+  // Any rule can go, the last of its type too: Add rule brings a type back.
   const remove = async (rule: GovernanceRule) => {
     setDialog(null);
     setError(null);
-    setRules((rs) => rs.filter((r) => r.id !== rule.id));
-    if (selectedId === rule.id) { setSelectedId(null); setDraft(null); }
+    setSaving(true);
     try {
       await governanceDeleteRule(fleetId, rule.id, authKey);
+      setRules((rs) => rs.filter((r) => r.id !== rule.id));
+      if (selectedRef.current === rule.id) { setSelectedId(null); setDraft(null); }
       setNotice(`Removed the ${RULE_LABELS[rule.ruleType]} rule.`);
       void fetchData();
     } catch (e) { handleError(e, "remove the rule"); void fetchData(); }
+    finally { setSaving(false); }
   };
 
   const add = async (ruleType: GovernanceRuleType) => {
@@ -273,7 +283,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const shown = useMemo(() => rulesFor(rules, agentFilter), [rules, agentFilter]);
   const enforcing = byMode(shown, "enforce"), watching = byMode(shown, "watch"), off = byMode(shown, "off");
   const overlap = spendOverlap(shown);
-  const counts = actions ? countsFromRuleActions(actions, governanceFromSummary({ blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} }).byRule) : null;
+  const counts = actions ? tallyFromRuleActions(actions.totals) : null;
   const allowlistSuggestion = suggestions.onlyModels && !rules.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
   const typeCount = (t: GovernanceRuleType) => rules.filter((r) => r.ruleType === t).length;
@@ -284,9 +294,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const never = overlap?.never.id === r.id;
     const stat = never
       ? `Never acts: the ${money(overlap!.first.params as SpendCapParams)} cap acts first`
-      : rowStat(r, { byRuleType: actions?.byRule as never, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null });
+      : rowStat(r, { byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null });
     return (
-      <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} aria-current={r.id === selectedId || undefined}>
+      <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-current={r.id === selectedId || undefined}>
         <span style={{ minWidth: 0, flex: "1 1 320px" }}>
           <span style={{ display: "block", fontSize: 12.5, color: "var(--tx2)", marginBottom: 2 }}>{RULE_LABELS[r.ruleType]}</span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
@@ -422,7 +432,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                     <span style={{ color: "var(--tx2)", flex: "none" }}>{timeAgo(h.time)}</span>
                   </div>
                 ))}
-                <a href="/settings#audit-integrity" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</a>
+                <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
               </div>
             )}
           </aside>
