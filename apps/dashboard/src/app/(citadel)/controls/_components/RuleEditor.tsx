@@ -64,6 +64,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const watching = rule.mode === 'watch' && draft.mode === 'watch';
   const [keyword, setKeyword] = useState('');
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
+  // How many keywords the engine hid (no dashboard secret on the read), if it did.
+  const hiddenKeywords = rule.ruleType === 'keyword' && !(rule.params as KeywordParams).keywords.length ? (rule.params as KeywordParams).keywordCount : undefined;
   const addKeyword = () => {
     const k = keyword.trim();
     if (k && keywords.length < KEYWORD_MAX && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
@@ -134,11 +136,15 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           <>
             <div style={sentenceRow}>
               <select className="gov-field" aria-label="Where to look" value={(p as KeywordParams).where} onChange={(e) => setParams({ where: e.target.value as KeywordWhere })}
-                style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
+                disabled={hiddenKeywords !== undefined} style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
                 {WHERE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               contains any of:
             </div>
+            {hiddenKeywords !== undefined ? (
+              // The engine sent only the count: the list can't be changed from here, the rest of the rule can.
+              <p style={{ ...help, color: 'var(--tx)' }}>{hiddenKeywords === 1 ? '1 keyword is' : `${hiddenKeywords} keywords are`} hidden here. Reload the page to see and change them.</p>
+            ) : <>
             {keywords.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {keywords.map((k, i) => (
@@ -152,6 +158,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
                 style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
               <Button onClick={addKeyword} disabled={!keyword.trim() || keywords.length >= KEYWORD_MAX}>Add</Button>
             </div>
+            </>}
             <p style={help}>Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.</p>
             {(p as KeywordParams).where !== 'incoming' && (
               <p style={help}>To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.</p>

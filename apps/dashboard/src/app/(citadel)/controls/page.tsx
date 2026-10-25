@@ -147,6 +147,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   useEffect(() => {
     let cancelled = false;
     // null: an engine without alerts, so nothing to say either way.
+    setAlertChannel(null);
     alertsGet(fleetId).then((a) => { if (!cancelled && a) setAlertChannel(!!a.slack || !!a.teams); }, () => {});
     return () => { cancelled = true; };
   }, [fleetId]);
@@ -248,9 +249,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setNotice(`Saved. ${RULE_LABELS[saved.ruleType]} ${how}.`);
       void fetchData();
     } catch (e) {
-      if (e instanceof WhiteRoomApiError && e.status === 409) setError("This rule changed somewhere else, so your edit wasn’t saved. It’s been reloaded: check it and save again.");
-      else handleError(e, "save the rule");
-      void fetchData();
+      if (e instanceof WhiteRoomApiError && e.status === 409) {
+        // The edit was made on the old rule: it goes, so the next Save can't overwrite the other change.
+        setError("This rule changed somewhere else, so your edit wasn’t saved. It’s been reloaded: make your change again.");
+        void fetchData().then((ok) => { if (ok && selectedRef.current === rule.id) setDraft(null); });
+      } else {
+        handleError(e, "save the rule");
+        void fetchData();
+      }
     } finally {
       setSaving(false);
     }

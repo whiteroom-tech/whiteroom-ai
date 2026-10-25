@@ -21,7 +21,8 @@ describe('Keywords in plain words', () => {
   it('a list the engine hid (no dashboard secret) reads as a count and can’t be saved', () => {
     const hidden = kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 3 } });
     expect(ruleSentenceText(hidden)).toBe('When incoming data contains any of 3 hidden keywords, block the call.');
-    expect(draftProblem(draftFrom(hidden))).toBe('Sign in with your WhiteRoom account to see and change these keywords.');
+    // Only the list is out of reach: the rule can still go to Watch or Off.
+    expect(draftProblem({ ...draftFrom(hidden), mode: 'off' })).toBeNull();
     expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'incoming', wholeWord: true } }))).toBe('When incoming data contains “Orion”, block the call.');
   });
 

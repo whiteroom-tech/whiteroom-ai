@@ -282,6 +282,9 @@ describe('Controls page, editing', () => {
     await m.click(m.button('Save'));
     expect(m.text()).toContain('This rule changed somewhere else, so your edit wasn’t saved.');
     expect(api.lists).toBeGreaterThan(before);
+    // The stale edit is gone, so a second Save can't overwrite the other change.
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
+    expect(m.button('Save')!.disabled).toBe(true);
     m.root.unmount();
   });
 
@@ -515,6 +518,20 @@ describe('Keywords in the editor', () => {
     expect(input.value).toBe('');
     await m.click(m.button('Save'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('a list the engine hid can’t be edited here, but the rule can still be turned off', async () => {
+    api.created.push(keywordRule({ mode: 'watch', params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 3 } }));
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('3 hidden keywords'));
+    expect(m.text()).toContain('3 keywords are hidden here. Reload the page to see and change them.');
+    expect(m.el.querySelector('input[aria-label="Keyword or phrase"]')).toBeNull();
+    expect((m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement).disabled).toBe(true);
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === 'Off'));
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'off', ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 

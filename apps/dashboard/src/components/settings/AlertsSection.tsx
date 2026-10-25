@@ -38,7 +38,7 @@ export function AlertsSection() {
         A message in {channels.length > 1 ? 'Slack or Microsoft Teams' : 'Slack'} when a rule says Just tell me, pauses or stops an agent, or blocks a call and you asked to be told. Each alert links to the run. For fleet {fleetId}.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {channels.map((c) => <ChannelRow key={c} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} />)}
+        {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} />)}
       </div>
     </Panel>
   );

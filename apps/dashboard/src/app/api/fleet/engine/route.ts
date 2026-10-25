@@ -89,7 +89,10 @@ export async function POST(req: Request) {
     // anyone else (a fleet cookie alone, another account) gets their counts.
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
     const readFleet = secretReadFleet(body);
-    if (userId && secret && readFleet && await holdsFleet(userId, readFleet).catch(() => false)) headers[CONTROL_SECRET_HEADER] = secret;
+    const holds = userId && secret && readFleet
+      ? await holdsFleet(userId, readFleet).catch((e: unknown) => { console.error(`[bff] fleet access lookup failed; keyword lists sent hidden: ${(e as Error).message}`); return false; })
+      : false;
+    if (holds && secret) headers[CONTROL_SECRET_HEADER] = secret;
   }
 
   let upstream: Response;

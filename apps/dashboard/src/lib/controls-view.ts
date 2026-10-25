@@ -286,7 +286,6 @@ export function draftProblem(d: RuleDraft): string | null {
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you enforce this rule.';
   if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you enforce this rule.';
-  if (d.ruleType === 'keyword' && (d.params as KeywordParams).keywordCount) return 'Sign in with your WhiteRoom account to see and change these keywords.';
   if (d.mode === 'enforce' && d.ruleType === 'keyword' && (p.params as KeywordParams).keywords.length === 0) return 'Pick at least one keyword before you enforce this rule.';
   return null;
 }
