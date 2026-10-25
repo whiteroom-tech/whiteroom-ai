@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  agentGets, appliesNow, byMode, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, sentenceText, spendOverlap,
+  agentGets, appliesNow, byMode, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
 } from '@/lib/controls-view';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -13,16 +13,16 @@ const rule = (over: Partial<GovernanceRule>): GovernanceRule => ({
 describe('rule sentences', () => {
   it('reads each rule type as one sentence, with the values apart', () => {
     expect(ruleSentence(rule({}))).toEqual({ pre: 'When an agent spends more than ', val: '$190', post: ' in a day, block the call.' });
-    expect(sentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, tell me.');
-    expect(sentenceText(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('When an agent makes the same call 100 times in a run, block the call.');
-    expect(sentenceText(rule({ ruleType: 'call_rate', params: { maxCalls: 60 }, response: 'pause' }))).toBe('When an agent makes more than 60 calls in a minute, pause the agent.');
-    expect(sentenceText(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Only allow claude-haiku-4-5. For any other model, block the call.');
-    expect(sentenceText(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }))).toBe('No tools picked yet.');
+    expect(ruleSentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, tell me.');
+    expect(ruleSentenceText(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('When an agent makes the same call 100 times in a run, block the call.');
+    expect(ruleSentenceText(rule({ ruleType: 'call_rate', params: { maxCalls: 60 }, response: 'pause' }))).toBe('When an agent makes more than 60 calls in a minute, pause the agent.');
+    expect(ruleSentenceText(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Only allow claude-haiku-4-5. For any other model, block the call.');
+    expect(ruleSentenceText(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }))).toBe('No tools picked yet.');
   });
 
   it('says "and tell me" when Block also alerts', () => {
-    expect(sentenceText(rule({ alsoNotify: true }))).toBe('When an agent spends more than $190 in a day, block the call and tell me.');
-    expect(sentenceText(rule({ alsoNotify: true, response: 'stop' }))).toMatch(/stop the agent\.$/);
+    expect(ruleSentenceText(rule({ alsoNotify: true }))).toBe('When an agent spends more than $190 in a day, block the call and tell me.');
+    expect(ruleSentenceText(rule({ alsoNotify: true, response: 'stop' }))).toMatch(/stop the agent\.$/);
   });
 
   it('names who a rule covers', () => {
@@ -178,7 +178,7 @@ describe('typed numbers, units and responses', () => {
   });
 
   it('says who a confirmed change covers', () => {
-    expect(appliesNow('all')).toBe('It applies to every agent in this fleet, and takes effect now.');
+    expect(appliesNow('all')).toBe('It applies to all agents in this fleet, and takes effect now.');
     expect(appliesNow(['a', 'b'])).toBe('It applies to a, b, and takes effect now.');
   });
 });

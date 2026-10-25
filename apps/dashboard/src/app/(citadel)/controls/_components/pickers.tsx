@@ -1,14 +1,14 @@
 'use client';
 
 // The Controls editor's fields: chips with an add menu (models, tools,
-// agents), and the inline number. Same behaviour as before the redesign,
-// in the shared control style (sunk well, line2 border, 7px corners).
+// agents), and the inline number, in the shared control style (sunk well,
+// line2 border, 7px corners).
 
 import { useState } from 'react';
 import { FONT_MONO } from '@whiteroom/ui';
 import type { GovernanceScope } from '@/lib/whiteroom/types';
 
-const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, boxSizing: 'border-box' } as const;
+export const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, boxSizing: 'border-box' } as const;
 
 export type PickGroup = { label: string; options: { id: string; label: string }[] };
 
@@ -42,11 +42,11 @@ export const TOOL_GROUPS: PickGroup[] = [
   { label: 'Memory & state', tools: ['get_memory', 'set_memory', 'read_context', 'save_state'] },
 ].map((g) => ({ label: g.label, options: g.tools.map((t) => ({ id: t, label: t })) }));
 
-function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { label: string; onRemove: () => void; removeLabel?: string }) {
   return (
     <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx)' }}>
       {label}
-      <button type="button" onClick={onRemove} aria-label={`Remove ${label}`} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
+      <button type="button" onClick={onRemove} aria-label={removeLabel} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
     </span>
   );
 }

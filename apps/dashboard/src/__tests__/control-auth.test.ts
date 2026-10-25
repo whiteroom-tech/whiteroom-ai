@@ -49,7 +49,7 @@ function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: 
 describe('controlActionOf', () => {
   it('picks out exactly the dashboard-only actions', () => {
     expect([...DASHBOARD_ONLY_ACTIONS].sort()).toEqual(
-      ['agent_new_run', 'alerts_get', 'alerts_set_slack', 'alerts_test', 'compression_mode_set', 'compression_preview', 'delete_bedrock_role', 'fleet_data_settings_get', 'fleet_data_settings_set', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'rebind_fleet_key', 'resume_agent', 'rotate_proxy_keys', 'stop_agent', 'store_bedrock_role'],
+      ['agent_new_run', 'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test', 'compression_mode_set', 'compression_preview', 'delete_bedrock_role', 'fleet_data_settings_get', 'fleet_data_settings_set', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'rebind_fleet_key', 'resume_agent', 'rotate_proxy_keys', 'stop_agent', 'store_bedrock_role'],
     );
     // A key on the engine's cloud identity is the owner's to mint; any other key isn't a control action.
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'bedrock-sigv4' }))).toEqual({ action: 'store_key', fleetId: 'f1' });

@@ -186,6 +186,7 @@
 .gov-template { text-align: left; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; color: var(--tx); font: inherit; cursor: pointer; }
 .gov-template:hover:not(:disabled) { border-color: var(--line2); }
 .gov-template:disabled { cursor: progress; }
+.gov-eyebrow { margin: 0; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--tx2); }
 .gov-details { border-top: 1px solid var(--line); padding-top: 14px; }
 .gov-details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--tx); }
 .gov-edhead, .gov-actbar { background: var(--card); }
@@ -194,7 +195,7 @@
   .citadel-page-header__side { display: none; }
   .gov-columns { flex-direction: column; overflow: visible; }
   .gov-list { overflow: visible; padding: 16px; gap: 16px; }
-  /* A Diagnosis suggestion draft goes first, as before; with nothing open the side has nothing to show. */
+  /* A Diagnosis suggestion draft goes first; with nothing open the side has nothing to show. */
   .gov-columns > .gov-panel { order: -1; border-left: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .gov-columns > .gov-panel.is-empty { display: none; }
   .gov-columns > .gov-panel.is-sheet { position: fixed; inset: var(--wr-menu-h, 44px) 0 0 0; z-index: 20; overflow-y: auto; border-bottom: 0; padding: 0 16px; }

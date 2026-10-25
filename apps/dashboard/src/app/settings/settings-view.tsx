@@ -120,7 +120,7 @@ export function SettingsView({
           <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
           <DataPrivacySection />
           <SmallerHandoversSection />
-          <AlertsSection />
+          <div id="alerts"><AlertsSection /></div>
           <div id="audit-integrity"><AuditIntegritySection /></div>
           <EmailSection account={account} pending={pending} run={run} />
           <MethodsSection account={account} pending={pending} run={run} />

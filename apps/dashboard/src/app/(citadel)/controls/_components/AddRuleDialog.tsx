@@ -3,6 +3,7 @@
 // "Add a rule": what to control, by goal, each naming its rule. Shares the
 // dialog frame with ConfirmDialog; new rules start in Watch only.
 
+import { Tag } from '@whiteroom/ui';
 import type { GovernanceRuleType } from '@/lib/whiteroom/types';
 import { RULE_LABELS } from '@/lib/governance';
 import { RULE_TEMPLATES } from '@/lib/controls-view';
@@ -23,7 +24,7 @@ export function AddRuleDialog({ open, busy, onPick, onCancel }: {
           {RULE_TEMPLATES.map((t) => (
             <button key={t.type} type="button" disabled={busy} onClick={() => onPick(t.type)} className="gov-template">
               <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 14, fontWeight: 600 }}>
-                {t.title}<span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--tx2)' }}>{RULE_LABELS[t.type]}</span>
+                {t.title}<span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--tx2)' }}>{RULE_LABELS[t.type]}</span>{t.isNew && <Tag tone="brand">New</Tag>}
               </span>
               <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>{t.desc}</span>
             </button>

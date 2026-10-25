@@ -10,11 +10,7 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// <dialog> in happy-dom: open/close is enough for these tests.
-if (!HTMLDialogElement.prototype.showModal) {
-  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) { this.setAttribute('open', ''); };
-  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) { this.removeAttribute('open'); };
-}
+import './support/dialog';
 
 const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(), push: vi.fn() }));
 vi.mock('next/navigation', () => ({
@@ -55,12 +51,15 @@ const api = vi.hoisted(() => ({
   models: null as string[] | null,
   /** Holds governance_list until resolved, to see the page before it loads. */
   listGate: null as Promise<void> | null,
+  /** What Settings › Alerts has; null: an engine without alerts. */
+  alerts: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null } | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   governanceList: async () => { api.lists++; if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
+  alertsGet: async () => api.alerts,
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
   performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
@@ -88,7 +87,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -144,7 +143,7 @@ describe('Controls page', () => {
     expect(m.text()).toContain('Enforce the Model allowlist rule?');
     expect(api.update).not.toHaveBeenCalled();
     await m.click(m.button('Enforce rule'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce' }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', ifVersion: 1 }, 'k');
     expect(m.text()).toContain('Saved. Model allowlist now enforces.');
     m.root.unmount();
   });
@@ -203,14 +202,14 @@ describe('Controls page, editing', () => {
     await m.click(m.row('$190'));
     const box = () => [...m.el.querySelectorAll('label')].find((l) => l.textContent?.includes('Also send me an alert'))?.querySelector('input') as HTMLInputElement | undefined;
     await m.click(box());
-    expect(m.text()).toContain('You also get a Slack message');
+    expect(m.text()).toContain('You also get an alert in your alert channel');
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'notify');
     expect(box()).toBeUndefined();
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'block');
     expect(box()!.checked).toBe(false);
     await m.click(box());
     await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { alsoNotify: true }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { alsoNotify: true, ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 
@@ -243,7 +242,7 @@ describe('Controls page, editing', () => {
     await type(dialog.querySelector('input') as HTMLInputElement, 'market-researcher');
     expect(confirm.disabled).toBe(false);
     await m.click(confirm);
-    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', response: 'stop' }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', response: 'stop', ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 
@@ -270,6 +269,22 @@ describe('Controls page, editing', () => {
     expect(m.el.querySelector('dialog[open] #add-rule-title')).toBeNull();
     expect(m.text()).toMatch(/Couldn’t add the rule/);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeFalsy();
+    m.root.unmount();
+  });
+
+  it('a save the engine refuses because the rule changed elsewhere says so and reloads', async () => {
+    const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
+    api.update.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 409', 409));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    const before = api.lists;
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('This rule changed somewhere else, so your edit wasn’t saved.');
+    expect(api.lists).toBeGreaterThan(before);
+    // The stale edit is gone, so a second Save can't overwrite the other change.
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
+    expect(m.button('Save')!.disabled).toBe(true);
     m.root.unmount();
   });
 
@@ -424,7 +439,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     await m.click(m.row('$190'));
     await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
     await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { params: { dailyCap: 150, scope: 'day', unit: 'dollars' } }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { params: { dailyCap: 150, scope: 'day', unit: 'dollars' }, ifVersion: 1 }, 'k');
     expect((m.el.querySelector('aside[aria-label="Edit rule"] fieldset') as HTMLFieldSetElement).disabled).toBe(true);
     // Picking another rule mid-save does nothing.
     await m.click(m.row('100 times'));
@@ -443,8 +458,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     const m = await mount();
     const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.includes('Rule actions'))!;
     // The mocked engine's 2 blocks are fleet-wide, none of them lead-agent's.
-    expect(card.textContent).toContain('0');
-    expect(card.textContent).not.toContain('2 blocked');
+    expect(card.textContent).toMatch(/^Rule actions\S*0no rule stepped in$/);
     m.root.unmount();
   });
 
@@ -473,6 +487,126 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.text()).toMatch(/Couldn’t remove the rule/);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
     expect(m.row('100 times')).toBeTruthy();
+    m.root.unmount();
+  });
+});
+
+describe('Keywords in the editor', () => {
+  const keywordRule = (over: Partial<GovernanceRule> = {}): GovernanceRule => ({
+    ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all',
+    params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true }, ...over,
+  });
+
+  it('changes where it looks, removes a keyword, and won’t add a blank or a repeat in any case', async () => {
+    api.created.push(keywordRule({ params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true } }));
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    const where = m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement;
+    expect([...where.options].map((o) => o.textContent)).toEqual(['Incoming data', 'A model reply', 'Incoming data or a reply']);
+    expect(m.text()).not.toContain('Replies on Bedrock can’t be checked yet.');
+    await choose(where, 'both');
+    expect(m.text()).toContain('Replies on Bedrock can’t be checked yet.');
+    await m.click(m.el.querySelector('button[aria-label="Remove Orion"]')!);
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')!.textContent).not.toContain('“Orion”');
+    const input = m.el.querySelector('input[aria-label="Keyword or phrase"]') as HTMLInputElement;
+    await type(input, '   ');
+    expect(m.button('Add')!.disabled).toBe(true);
+    await type(input, 'project FALCON');
+    expect(m.button('Add')!.disabled).toBe(true);
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush();
+    expect(m.el.querySelectorAll('button[aria-label^="Remove "]').length).toBe(1);
+    // The text stays, and says why it wasn't added.
+    expect(input.value).toBe('project FALCON');
+    expect(m.text()).toContain('That keyword is already in the list.');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('a list the engine hid can’t be edited here, but the rule can still be turned off', async () => {
+    api.created.push(keywordRule({ mode: 'watch', params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 3 } }));
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('3 hidden keywords'));
+    expect(m.text()).toContain('3 keywords are hidden here. Reload the page to see and change them.');
+    expect(m.el.querySelector('input[aria-label="Keyword or phrase"]')).toBeNull();
+    expect((m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement).disabled).toBe(true);
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === 'Off'));
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'off', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('adds a keyword with Enter and saves the list', async () => {
+    api.created.push(keywordRule());
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    const input = m.el.querySelector('input[aria-label="Keyword or phrase"]') as HTMLInputElement;
+    await type(input, 'Orion');
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush();
+    expect(m.text()).toContain('“Orion”');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('says when an alerting rule has nowhere to send alerts: not with Slack or Teams, nor on an engine without alerts', async () => {
+    const warns = async () => {
+      const m = await mount();
+      await m.click(m.row('“Project Falcon”'));
+      await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+      const said = m.text().includes('No alert channel is connected');
+      m.root.unmount();
+      return said;
+    };
+    api.created.push(keywordRule());
+    expect(await warns()).toBe(true);
+    api.alerts = { slack: { ending: 'mnop' }, teams: null };
+    expect(await warns()).toBe(false);
+    api.alerts = { slack: null, teams: { ending: '2345' } };
+    expect(await warns()).toBe(false);
+    // An engine without alerts: nothing to say either way.
+    api.alerts = null;
+    expect(await warns()).toBe(false);
+  });
+
+  it('blocking incoming data needs a day in Watch first', async () => {
+    api.created.push(keywordRule({ response: 'block' }));
+    api.history = [{ id: 'h1', ruleId: 'k1', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'test', time: new Date(Date.now() - 60_000).toISOString() }];
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('before it can block calls on incoming data');
+    expect(api.update).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('after a day, blocking incoming data is confirmed by typing who it covers', async () => {
+    api.created.push(keywordRule({ response: 'block' }));
+    api.history = [{ id: 'h1', ruleId: 'k1', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'test', time: new Date(Date.now() - 2 * 86_400_000).toISOString() }];
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule({ response: 'block' }), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Let this rule block calls on incoming data?');
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    await type(dialog.querySelector('input') as HTMLInputElement, 'block all agents');
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Block on incoming data'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'enforce', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('Add a rule offers Flag keywords, marked New', async () => {
+    const m = await mount();
+    const option = [...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Flag keywords'));
+    expect(option?.textContent).toContain('Keywords');
+    expect(option?.querySelector('.wr-tag')?.textContent).toBe('New');
     m.root.unmount();
   });
 });

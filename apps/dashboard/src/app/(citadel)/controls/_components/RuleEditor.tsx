@@ -3,10 +3,11 @@
 // The selected rule, as four steps (When · Then · Applies to · Mode) and a
 // Save button: nothing reaches the engine until Save (Controls spec Rev 1, D1).
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl, SelectChip } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceMode, GovernanceRule, LoopBreakerParams, ModelAllowlistParams, RuleWouldActResult, SpendCapParams, ToolListParams,
+  GovernanceHistoryEntry, GovernanceMode, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleWouldActResult, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_EFFECT, RULE_LABELS, responseOptions } from '@/lib/governance';
 import { canAct, watchSummary } from '@/lib/controls-guard';
@@ -14,26 +15,34 @@ import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, agentGets, changeResponse, changeUnit, draftParams, type RuleDraft } from '@/lib/controls-view';
-import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
+import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
-const ACTS: Record<GovernanceRule['ruleType'], string> = {
+/** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS). */
+const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword'>, string> = {
   spend_cap: 'Acts before the next call.', loop_breaker: 'Acts on the Nth call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call.', call_rate: 'Acts on the call over the limit.',
 };
+const KEYWORD_ACTS: Record<KeywordWhere, string> = {
+  incoming: 'Acts before the call reaches the model.',
+  replies: 'Acts on the reply before the agent gets it.',
+  both: 'Acts before the call reaches the model, and on the reply before the agent gets it.',
+};
+const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
 const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
   { value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: 'warn' },
 ];
-const eyebrow = { margin: 0, fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--tx2)' } as const;
 const help = { margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 13.5 } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, history, actors, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
   agents: string[];
   govV1: boolean;
+  /** Whether the fleet has somewhere to send alerts (Slack or Teams); null while unknown. */
+  alertChannel: boolean | null;
   /** Watch counts for the saved version, when loaded. */
   wouldAct: RuleWouldActResult | null;
   /** This rule's own history, newest first. */
@@ -53,6 +62,20 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
   const parsed = draftParams(draft);
   const asRule = { ...rule, mode: draft.mode, response: draft.response, params: 'params' in parsed ? parsed.params : p };
   const watching = rule.mode === 'watch' && draft.mode === 'watch';
+  const [keyword, setKeyword] = useState('');
+  const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
+  // How many keywords the engine hid (no dashboard secret on the read), if it did.
+  const hiddenKeywords = rule.ruleType === 'keyword' && !(rule.params as KeywordParams).keywords.length ? (rule.params as KeywordParams).keywordCount : undefined;
+  const typed = keyword.trim();
+  // A keyword already in the list, in any case: said under the field, and the text stays.
+  const repeat = !!typed && keywords.some((x) => x.toLowerCase() === typed.toLowerCase());
+  const addKeyword = () => {
+    if (!typed || repeat || !keywordFits(keywords)) return;
+    setParams({ keywords: [...keywords, typed] });
+    setKeyword('');
+  };
+  // Just tell me, Pause and Stop alert; Block does when asked to.
+  const alerts = sendsAlert(draft);
   const seen = watching && wouldAct ? watchSummary({ response: rule.response }, wouldAct) : null;
 
   return (
@@ -69,7 +92,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
 
       <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>When</p>
+        <p className="gov-eyebrow">When</p>
         {rule.ruleType === 'spend_cap' && (
           <>
             <div style={sentenceRow}>
@@ -112,6 +135,41 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
               addLabel="+ add model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
           </>
         )}
+        {rule.ruleType === 'keyword' && (
+          <>
+            <div style={sentenceRow}>
+              <select className="gov-field" aria-label="Where to look" value={(p as KeywordParams).where} onChange={(e) => setParams({ where: e.target.value as KeywordWhere })}
+                disabled={hiddenKeywords !== undefined} style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
+                {WHERE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              contains any of:
+            </div>
+            {hiddenKeywords !== undefined ? (
+              // The engine sent only the count: the list can't be changed from here, the rest of the rule can.
+              <p style={{ ...help, color: 'var(--tx)' }}>{hiddenKeywords === 1 ? '1 keyword is' : `${hiddenKeywords} keywords are`} hidden here. Reload the page to see and change them.</p>
+            ) : <>
+            {keywords.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {keywords.map((k, i) => (
+                  <Chip key={`${i}:${k}`} label={`“${k}”`} removeLabel={`Remove ${k}`} onRemove={() => setParams({ keywords: keywords.filter((_, j) => j !== i) })} />
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="gov-field" aria-label="Keyword or phrase" placeholder="Type a word or phrase" value={keyword} maxLength={KEYWORD_MAX_CHARS}
+                onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
+                style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
+              <Button onClick={addKeyword} disabled={!typed || repeat || !keywordFits(keywords)}>Add</Button>
+            </div>
+            {repeat && <p style={help}>That keyword is already in the list.</p>}
+            {!keywordFits(keywords) && <p style={help}>A rule holds up to {KEYWORD_MAX} keywords. Remove one to add another.</p>}
+            </>}
+            <p style={help}>Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.</p>
+            {(p as KeywordParams).where !== 'incoming' && (
+              <p style={help}>To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.</p>
+            )}
+          </>
+        )}
         {rule.ruleType === 'tool_list' && (
           <>
             <span style={{ fontSize: 13.5 }}>When an agent is about to run any of these tools:</span>
@@ -123,14 +181,19 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>Then</p>
+        <p className="gov-eyebrow">Then</p>
         <div style={{ alignSelf: 'flex-start' }}>
           <SelectChip label="What the rule does" value={draft.response} onChange={(response) => onDraft(changeResponse(draft, response))} options={responseOptions(govV1, draft.response)} />
         </div>
         <p style={help}>
           {RESPONSE_EFFECT[draft.response]}
-          {draft.response === 'block' && draft.alsoNotify && ' You also get a Slack message (Settings › Alerts) with a link to the run.'}
+          {draft.response === 'block' && draft.alsoNotify && ' You also get an alert in your alert channel (Settings › Alerts) with a link to the run.'}
         </p>
+        {alerts && alertChannel === false && (
+          <p style={{ ...help, color: 'var(--warn-tx)' }}>
+            No alert channel is connected, so no one will be told. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
+          </p>
+        )}
         {draft.response === 'block' && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
             <input type="checkbox" checked={draft.alsoNotify} onChange={(e) => set({ alsoNotify: e.target.checked })} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
@@ -140,18 +203,17 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>Applies to</p>
+        <p className="gov-eyebrow">Applies to</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
-        {draft.appliesTo === 'all' && <p style={help}>Applies to all agents in this fleet.</p>}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>Mode</p>
+        <p className="gov-eyebrow">Mode</p>
         <div style={{ alignSelf: 'flex-start' }}>
           <SegmentedControl<GovernanceMode> label="Mode" value={draft.mode} onChange={(mode) => set({ mode })} options={MODES} />
         </div>
         <p style={{ ...help, display: 'inline-flex', alignItems: 'center' }}>
-          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Watch only. Counting, never acting.' : ACTS[rule.ruleType]}
+          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Watch only. Counting, never acting.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : ACTS[rule.ruleType]}
           {canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}
         </p>
         {watching && wouldAct && (
@@ -190,7 +252,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, wouldAct, hist
               <span style={{ color: 'var(--tx2)', flex: 'none' }}>{timeAgo(h.time)} · {historyWho(h, actors)}</span>
             </div>
           ))}
-          <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
+          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
         </div>
       </details>
     </div>

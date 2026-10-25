@@ -4,11 +4,28 @@
 
 import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  GovernanceScope, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
+  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 
 // ── Sentences ───────────────────────────────────────────────────────
+
+/** The engine's limits on a Keywords rule's list: 50 keywords of up to 50 characters. */
+export const KEYWORD_MAX = 50;
+export const KEYWORD_MAX_CHARS = 50;
+
+/** How many keywords a rule has, counting a list the engine hid (keywordCount). */
+export function keywordTotal(p: KeywordParams): number {
+  return p.keywords.length || (p.keywordCount ?? 0);
+}
+
+/** Whether one more keyword fits: a rule holds at most KEYWORD_MAX. */
+export function keywordFits(keywords: readonly string[]): boolean {
+  return keywords.length < KEYWORD_MAX;
+}
+
+/** Where a Keywords rule looks, as it reads in a sentence. */
+export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };
 
 const VERB: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
 
@@ -30,6 +47,18 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   if (rule.ruleType === 'call_rate') {
     return { pre: 'When an agent makes more than ', val: fmt((rule.params as CallRateParams).maxCalls), post: ` calls in a minute, ${v}.` };
   }
+  if (rule.ruleType === 'keyword') {
+    const p = rule.params as KeywordParams;
+    // Without the dashboard's secret the engine sends only how many there are.
+    if (!p.keywords.length && p.keywordCount) {
+      return p.keywordCount === 1
+        ? { pre: `When ${KEYWORD_WHERE[p.where]} contains `, val: 'a hidden keyword', post: `, ${v}.` }
+        : { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
+    }
+    return p.keywords.length
+      ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
+      : { pre: 'No keywords picked yet.', val: '', post: '' };
+  }
   if (rule.ruleType === 'tool_list') {
     const tools = (rule.params as ToolListParams).blockedTools;
     return tools.length ? { pre: 'When an agent is about to run ', val: tools.join(', '), post: `, ${v}.` } : { pre: 'No tools picked yet.', val: '', post: '' };
@@ -38,11 +67,11 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   return models.length ? { pre: 'Only allow ', val: models.join(', '), post: `. For any other model, ${v}.` } : { pre: 'No models picked yet.', val: '', post: '' };
 }
 
-export const sentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
+export const ruleSentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
 
 /** Who a change covers, said in a confirm dialog. */
 export function appliesNow(scope: GovernanceScope): string {
-  return `It applies to ${scope === 'all' ? 'every agent in this fleet' : scope.join(', ')}, and takes effect now.`;
+  return `It applies to ${scope === 'all' ? 'all agents in this fleet' : scope.join(', ')}, and takes effect now.`;
 }
 
 /** "All agents", or "Only " + the agents (more than two: "3 agents"). */
@@ -138,6 +167,7 @@ export function rowStat(rule: GovernanceRule, ctx: {
 
 const REASON: Record<GovernanceRuleType, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
+  keyword: 'keyword_found',
 };
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Just tell me. */
@@ -147,7 +177,7 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it'
     : rule.ruleType === 'call_rate' ? 'once the last minute is back under the limit'
-    : rule.ruleType === 'model_allowlist' || rule.ruleType === 'tool_list' ? 'never'
+    : rule.ruleType === 'model_allowlist' || rule.ruleType === 'tool_list' || rule.ruleType === 'keyword' ? 'never'
     : (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
   return `403 governance_block\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
 }
@@ -158,6 +188,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   model_allowlist: 'Stops before the call. The agent must switch to an allowed model.',
   call_rate: 'Stops the call that goes over the limit. Refused calls count too, so an agent that keeps retrying stays over until it slows down.',
   tool_list: 'Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent.',
+  keyword: 'Stops the call before the model sees it, or the reply before the agent does. The agent isn’t told which keyword matched.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -237,6 +268,11 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
   return { ...d, number, params: { ...p, unit } };
 }
 
+/** Whether the rule, as drafted, sends an alert when it acts: Just tell me, Pause, Stop, or Block with an alert. */
+export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): boolean {
+  return d.mode === 'enforce' && (d.response !== 'block' || d.alsoNotify);
+}
+
 /** A new response; "Also send me an alert" only applies to Block, so it's cleared otherwise. */
 export function changeResponse(d: RuleDraft, response: GovernanceResponse): RuleDraft {
   return { ...d, response, alsoNotify: response === 'block' ? d.alsoNotify : false };
@@ -264,16 +300,18 @@ export function draftProblem(d: RuleDraft): string | null {
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you enforce this rule.';
   if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you enforce this rule.';
+  if (d.mode === 'enforce' && d.ruleType === 'keyword' && keywordTotal(p.params as KeywordParams) === 0) return 'Pick at least one keyword before you enforce this rule.';
   return null;
 }
 
 // ── Add a rule ──────────────────────────────────────────────────────
 
 /** "Add a rule" choices, by goal, each naming its rule. */
-export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string }[] = [
+export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string; isNew?: boolean }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'call_rate', title: 'Limit calls per minute', desc: 'Slow down an agent that makes too many calls at once.' },
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
+  { type: 'keyword', title: 'Flag keywords', desc: 'Get told, or block the call, when words you pick show up.', isNew: true },
 ];

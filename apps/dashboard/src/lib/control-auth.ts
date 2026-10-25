@@ -16,7 +16,7 @@ import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'pause_agent', 'resume_agent', 'stop_agent',
-  'alerts_get', 'alerts_set_slack', 'alerts_test',
+  'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test',
   'fleet_data_settings_get', 'fleet_data_settings_set',
   'goal_get', 'goal_set_owner', 'agent_new_run',
   'compression_mode_set', 'compression_preview',
@@ -31,6 +31,24 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
  * control action too. Keep in step with the engine's CLOUD_IDENTITY_PROVIDERS.
  */
 export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-entra', 'bedrock-sigv4']);
+
+/**
+ * Reads the engine answers in full only with the dashboard's service secret,
+ * sent for a signed-in account that holds the fleet (not only its owner):
+ * governance_list hides Keywords lists from a bare fleet key, which every
+ * agent holds.
+ */
+export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list']);
+
+/** The fleet a BFF body reads, when it's one of SECRET_READ_ACTIONS; else null. */
+export function secretReadFleet(body: string): string | null {
+  try {
+    const { action, fleet_id } = (JSON.parse(body) ?? {}) as { action?: unknown; fleet_id?: unknown };
+    return typeof action === 'string' && SECRET_READ_ACTIONS.has(action) && typeof fleet_id === 'string' && fleet_id ? fleet_id : null;
+  } catch {
+    return null;
+  }
+}
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
 /** The signed-in account behind a control action, sent with the secret so the engine records who acted. */
@@ -152,22 +170,37 @@ const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check you
  * Returns the refusal, or null when the call may go ahead. Any failed lookup
  * refuses, so the check fails closed.
  */
+type HeldRow = HeldCredential & { table: 'users' | 'user_fleets'; rowId: string };
+
+/** The account's stored fleet credentials that are this token. */
+async function heldCredentials(userId: string, token: string): Promise<HeldRow[]> {
+  // Tokens are stored encrypted (cred-seal.ts), so they're compared here, not in SQL.
+  const { rows } = await db().query(
+    `SELECT 'users' AS "table", id AS "rowId", fleet_token AS plain, fleet_token_enc AS sealed, fleet_id AS "fleetId" FROM users WHERE id = $1
+     UNION ALL
+     SELECT 'user_fleets', id, fleet_token, fleet_token_enc, fleet_id FROM user_fleets WHERE user_id = $1`,
+    [userId],
+  );
+  return rows.map((r) => ({ ...r, token: readCred(`${r.table}.fleet_token` as CredColumn, userId, r.plain, r.sealed) ?? '' }))
+    .filter((h) => h.token === token);
+}
+
+/**
+ * Whether the account holds this token as its credential for this fleet:
+ * the request's key and the fleet it names belong together, and to them.
+ */
+export async function holdsFleetToken(userId: string, fleetId: string, token: string): Promise<boolean> {
+  return credentialGrant(await heldCredentials(userId, token), fleetId, token) === 'linked';
+}
+
 export async function controlAccessError(fleetId: string | null, token: string): Promise<ControlDenial | null> {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change this fleet’s controls or settings.' };
   if (!fleetId) return { status: 400, error: 'fleet_id is required.' };
-  let held: (HeldCredential & { table: 'users' | 'user_fleets'; rowId: string })[];
+  let held: HeldRow[];
   try {
-    // Tokens are stored encrypted (cred-seal.ts), so they're compared here, not in SQL.
-    const { rows } = await db().query(
-      `SELECT 'users' AS "table", id AS "rowId", fleet_token AS plain, fleet_token_enc AS sealed, fleet_id AS "fleetId" FROM users WHERE id = $1
-       UNION ALL
-       SELECT 'user_fleets', id, fleet_token, fleet_token_enc, fleet_id FROM user_fleets WHERE user_id = $1`,
-      [userId],
-    );
-    held = rows.map((r) => ({ ...r, token: readCred(`${r.table}.fleet_token` as CredColumn, userId, r.plain, r.sealed) ?? '' }))
-      .filter((h) => h.token === token);
+    held = await heldCredentials(userId, token);
   } catch {
     return LOOKUP_FAILED;
   }

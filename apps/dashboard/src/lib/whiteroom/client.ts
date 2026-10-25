@@ -622,13 +622,15 @@ export function diagnoseFleet(fleetId: string, opts: { force?: boolean } = {}, k
 export function governanceUpdateRule(
   fleetId: string,
   ruleId: string,
-  updates: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  updates: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string; ifVersion?: number },
   key?: string,
 ): Promise<{ rule: GovernanceRule }> {
   return apiCall<{ rule: GovernanceRule }>({
     action: 'governance_update_rule',
     fleet_id: fleetId,
     rule_id: ruleId,
+    // The engine refuses (409) if the rule changed since this version was read.
+    if_version: updates.ifVersion,
     mode: updates.mode,
     response: updates.response,
     also_notify: updates.alsoNotify,
@@ -735,7 +737,9 @@ export function getRunEvents(
 
 // -- Alerts (P2.7) --
 
-export interface AlertsStatus { slack: { ending: string } | null }
+/** Where rule alerts go. `teams` is absent from engines without Teams alerts (engine E5). */
+export interface AlertsStatus { slack: { ending: string } | null; teams?: { ending: string } | null }
+export type AlertChannel = 'slack' | 'teams';
 
 /**
  * Alerts actions. The engine answers a refused change with 400 and a plain
@@ -757,7 +761,8 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
 // Dashboard-only like the other two (engine #93): agent keys can't read it.
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
-export const alertsTest = (fleetId: string) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId });
+export const alertsSetTeams = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_teams', fleet_id: fleetId, teams_url: url });
+export const alertsTest = (fleetId: string, channel: AlertChannel) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId, channel });
 
 /** What WhiteRoom keeps for a fleet (Settings › Data and privacy). */
 export interface DataSettings {

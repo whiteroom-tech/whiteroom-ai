@@ -73,6 +73,43 @@ describe('engine route records accepted control changes', () => {
     expect(inserts()).toHaveLength(0);
   });
 
+  it('sends the service secret with governance_list only when the session\'s key is the account\'s own for that fleet', async () => {
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'svc-secret');
+    // u1 holds f1 with the session's key (wr_tok), and f3 with another key.
+    const rows = [
+      { table: 'user_fleets', rowId: 'l1', plain: 'wr_tok', sealed: null, fleetId: 'f1' },
+      { table: 'user_fleets', rowId: 'l3', plain: 'wr_other', sealed: null, fleetId: 'f3' },
+    ];
+    mocks.query.mockImplementation(async (sql: string, args: unknown[]) => ({ rows: /FROM user_fleets WHERE user_id/.test(sql) && args[0] === 'u1' ? rows : [] }));
+    const sentSecret = async (b: Record<string, unknown>) => {
+      const f = vi.fn().mockResolvedValue(new Response('{"rules":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+      vi.stubGlobal('fetch', f);
+      await call(b);
+      return (f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret'];
+    };
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBe('svc-secret');
+    expect(mocks.access).not.toHaveBeenCalled();
+    // A fleet the account doesn't hold (a fleet key pasted into another account's session): counts only.
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f2' })).toBeUndefined();
+    // A fleet the account holds, but the session carries a different key: no secret.
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f3' })).toBeUndefined();
+    expect(await sentSecret({ action: 'governance_list' })).toBeUndefined();
+    // A fleet cookie alone.
+    mocks.auth.mockResolvedValue(null);
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBeUndefined();
+    // Other reads never carry it.
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    expect(await sentSecret({ action: 'fleet_report', fleet_id: 'f1' })).toBeUndefined();
+    // The lookup fails: the read still goes, without the secret (the lists come back hidden), and it's logged.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.query.mockRejectedValue(new Error('db down'));
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBeUndefined();
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('fleet access lookup failed'));
+    err.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
   it('still answers success when finding the person fails after the change', async () => {
     engine(200);
     mocks.auth.mockRejectedValue(new Error('session store down'));

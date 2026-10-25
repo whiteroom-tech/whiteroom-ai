@@ -23,6 +23,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   model_allowlist: 'Model allowlist',
   tool_list: 'Tool list',
   call_rate: 'Call rate',
+  keyword: 'Keywords',
 };
 
 export const REASON_LABELS: Record<string, string> = {
@@ -31,6 +32,7 @@ export const REASON_LABELS: Record<string, string> = {
   model_not_allowed: 'model not allowed',
   tool_not_allowed: 'tool not allowed',
   rate_exceeded: 'too many calls',
+  keyword_found: 'keyword found',
 };
 
 /** Blended rate the engine applies to dollar spend caps: $0.003 per 1K tokens. */
@@ -91,6 +93,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       model_allowlist: g.byRule.model_allowlist ?? emptyTally(),
       tool_list: g.byRule.tool_list ?? emptyTally(),
       call_rate: g.byRule.call_rate ?? emptyTally(),
+      keyword: g.byRule.keyword ?? emptyTally(),
     },
   };
 }
@@ -101,7 +104,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;
@@ -188,7 +191,7 @@ export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
 
 /** What each response does, under the select (README › Screen 5). */
 export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
-  notify: 'You get a Slack message (Settings › Alerts) with a link to the run, and it shows in Rule actions. The agent keeps going.',
+  notify: 'You get an alert in your alert channel (Settings › Alerts) with a link to the run, and it shows in Rule actions. The agent keeps going.',
   block: 'That one call fails with a plain reason. The agent keeps going.',
   pause: 'Its current run ends. It can’t make calls until someone resumes it, even after a restart.',
   stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',
