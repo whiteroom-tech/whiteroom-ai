@@ -153,7 +153,8 @@ describe('typed numbers, units and responses', () => {
   it('reads digits, commas and a decimal point only', () => {
     expect(typedNumber('1,500')).toBe(1500);
     expect(typedNumber(' 2.50 ')).toBe(2.5);
-    for (const bad of ['0x10', '1e3', '-5', '', '1.', '.5', 'Infinity', '12abc']) expect(typedNumber(bad), bad).toBeNaN();
+    expect(typedNumber('1,000,000.25')).toBe(1000000.25);
+    for (const bad of ['0x10', '1e3', '-5', '', '1.', '.5', 'Infinity', '12abc', '1,5', '1,0', '15,00', ',100', '1,000,']) expect(typedNumber(bad), bad).toBeNaN();
     const cap = draftFrom(rule({}));
     expect(draftParams({ ...cap, number: '1e3' })).toEqual({ error: 'Enter a number above 0.' });
     const loop = draftFrom(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }));

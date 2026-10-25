@@ -192,10 +192,14 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
 
 const hasNumber = (t: GovernanceRuleType) => t === 'spend_cap' || t === 'loop_breaker' || t === 'call_rate';
 
-/** A typed number: digits, commas and a decimal point only (not "0x10" or "1e3"); NaN otherwise. */
+/**
+ * A typed number: digits and a decimal point, with commas only between
+ * thousands ("1,500"), so "1,5" isn't read as 15 and "0x10" or "1e3" aren't
+ * numbers at all; NaN otherwise.
+ */
 export function typedNumber(text: string): number {
-  const t = text.replace(/,/g, '').trim();
-  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+  const t = text.trim();
+  return /^(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/.test(t) ? Number(t.replace(/,/g, '')) : NaN;
 }
 
 /** The draft's params with the typed number in place, or an error to show. */

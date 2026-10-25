@@ -260,6 +260,17 @@ describe('Controls page, editing', () => {
     m.root.unmount();
   });
 
+  it('a rule that can’t be added closes the dialog and says so', async () => {
+    api.create.mockRejectedValueOnce(new Error('network down'));
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Limit calls per minute')));
+    expect(m.el.querySelector('dialog[open] #add-rule-title')).toBeNull();
+    expect(m.text()).toMatch(/Couldn’t add the rule/);
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeFalsy();
+    m.root.unmount();
+  });
+
   it('a failed save says so, keeps the edit, and reloads the rules', async () => {
     api.update.mockRejectedValue(new Error('network down'));
     const m = await mount();
