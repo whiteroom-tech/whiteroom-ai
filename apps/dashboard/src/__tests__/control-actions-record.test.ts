@@ -73,26 +73,28 @@ describe('engine route records accepted control changes', () => {
     expect(inserts()).toHaveLength(0);
   });
 
-  it('sends the service secret with governance_list only for a signed-in account, without the owner check', async () => {
+  it('sends the service secret with governance_list only for a signed-in account that holds the fleet', async () => {
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'svc-secret');
-    const sentSecret = async () => {
+    // u1 holds f1 and nothing else.
+    mocks.query.mockImplementation(async (sql: string, args: unknown[]) => ({ rows: /FROM user_fleets WHERE user_id/.test(sql) && args[0] === 'u1' && args[1] === 'f1' ? [{}] : [] }));
+    const sentSecret = async (b: Record<string, unknown>) => {
       const f = vi.fn().mockResolvedValue(new Response('{"rules":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
       vi.stubGlobal('fetch', f);
-      await call({ action: 'governance_list', fleet_id: 'f1' });
+      await call(b);
       return (f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret'];
     };
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    expect(await sentSecret()).toBe('svc-secret');
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBe('svc-secret');
     expect(mocks.access).not.toHaveBeenCalled();
-    // A fleet cookie alone: the engine sends the Keywords lists' counts only.
+    // A fleet the account doesn't hold (a fleet key pasted into another account's session): counts only.
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f2' })).toBeUndefined();
+    expect(await sentSecret({ action: 'governance_list' })).toBeUndefined();
+    // A fleet cookie alone.
     mocks.auth.mockResolvedValue(null);
-    expect(await sentSecret()).toBeUndefined();
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBeUndefined();
     // Other reads never carry it.
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    const f = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
-    vi.stubGlobal('fetch', f);
-    await call({ action: 'fleet_report', fleet_id: 'f1' });
-    expect((f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret']).toBeUndefined();
+    expect(await sentSecret({ action: 'fleet_report', fleet_id: 'f1' })).toBeUndefined();
     vi.unstubAllEnvs();
   });
 

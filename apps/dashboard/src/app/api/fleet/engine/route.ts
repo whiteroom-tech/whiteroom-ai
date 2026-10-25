@@ -21,9 +21,9 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, isSecretRead } from '@/lib/control-auth';
+import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, secretReadFleet } from '@/lib/control-auth';
 import { rateLimitHeaders } from '@/lib/rate-limit-headers';
-import { recordControlAction } from '@/lib/control-actions';
+import { holdsFleet, recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -85,9 +85,11 @@ export async function POST(req: Request) {
     // only a fleet cookie isn't named: the cookie is unchecked here, so naming it would let anyone mint buckets.
     const userId = await auth().then((s) => s?.user?.id ?? null, () => null);
     Object.assign(headers, rateLimitHeaders(userId));
-    // A signed-in account reads Keywords lists in full; a fleet cookie alone gets their counts.
+    // A signed-in account that holds the fleet reads Keywords lists in full;
+    // anyone else (a fleet cookie alone, another account) gets their counts.
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
-    if (userId && secret && isSecretRead(body)) headers[CONTROL_SECRET_HEADER] = secret;
+    const readFleet = secretReadFleet(body);
+    if (userId && secret && readFleet && await holdsFleet(userId, readFleet).catch(() => false)) headers[CONTROL_SECRET_HEADER] = secret;
   }
 
   let upstream: Response;

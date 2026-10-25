@@ -34,18 +34,19 @@ export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-e
 
 /**
  * Reads the engine answers in full only with the dashboard's service secret,
- * sent for any signed-in account (not only the owner): governance_list hides
- * Keywords lists from a bare fleet key, which every agent holds.
+ * sent for a signed-in account that holds the fleet (not only its owner):
+ * governance_list hides Keywords lists from a bare fleet key, which every
+ * agent holds.
  */
 export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list']);
 
-/** Whether a BFF body is one of SECRET_READ_ACTIONS. */
-export function isSecretRead(body: string): boolean {
+/** The fleet a BFF body reads, when it's one of SECRET_READ_ACTIONS; else null. */
+export function secretReadFleet(body: string): string | null {
   try {
-    const action = (JSON.parse(body) as { action?: unknown } | null)?.action;
-    return typeof action === 'string' && SECRET_READ_ACTIONS.has(action);
+    const { action, fleet_id } = (JSON.parse(body) ?? {}) as { action?: unknown; fleet_id?: unknown };
+    return typeof action === 'string' && SECRET_READ_ACTIONS.has(action) && typeof fleet_id === 'string' && fleet_id ? fleet_id : null;
   } catch {
-    return false;
+    return null;
   }
 }
 

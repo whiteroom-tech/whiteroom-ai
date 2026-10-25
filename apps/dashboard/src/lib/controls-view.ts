@@ -10,11 +10,11 @@ import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
-/** Where a Keywords rule looks, as it reads in a sentence. */
 /** The engine's limits on a Keywords rule's list (it counts after normalizing, and 4,000 characters in all). */
 export const KEYWORD_MAX = 200;
 export const KEYWORD_MAX_CHARS = 100;
 
+/** Where a Keywords rule looks, as it reads in a sentence. */
 export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };
 
 const VERB: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
