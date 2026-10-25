@@ -206,7 +206,7 @@ describe('Controls page, editing', () => {
     await m.click(m.row('$190'));
     const box = () => [...m.el.querySelectorAll('label')].find((l) => l.textContent?.includes('Also send me an alert'))?.querySelector('input') as HTMLInputElement | undefined;
     await m.click(box());
-    expect(m.text()).toContain('You also get a Slack message');
+    expect(m.text()).toContain('You also get an alert in Slack or Teams');
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'notify');
     expect(box()).toBeUndefined();
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'block');

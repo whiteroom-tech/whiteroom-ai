@@ -84,7 +84,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [adding, setAdding] = useState<"closed" | "open" | "busy">("closed");
   const [offOpen, setOffOpen] = useState(false);
-  /** Whether alerts have somewhere to go (Slack); null while unknown or unreadable. */
+  /** Whether alerts have somewhere to go (Slack or Teams); null while unknown or unreadable. */
   const [alertChannel, setAlertChannel] = useState<boolean | null>(null);
 
   // Trusted from the URL until the agents load, then only if it names one.
@@ -147,7 +147,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   useEffect(() => {
     let cancelled = false;
     // null: an engine without alerts, so nothing to say either way.
-    alertsGet(fleetId).then((a) => { if (!cancelled && a) setAlertChannel(!!a.slack); }, () => {});
+    alertsGet(fleetId).then((a) => { if (!cancelled && a) setAlertChannel(!!a.slack || !!a.teams); }, () => {});
     return () => { cancelled = true; };
   }, [fleetId]);
 

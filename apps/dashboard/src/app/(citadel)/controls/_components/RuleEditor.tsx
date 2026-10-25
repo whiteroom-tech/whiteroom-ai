@@ -44,7 +44,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   onDraft: (d: RuleDraft) => void;
   agents: string[];
   govV1: boolean;
-  /** Whether the fleet has somewhere to send alerts (Slack); null while unknown. */
+  /** Whether the fleet has somewhere to send alerts (Slack or Teams); null while unknown. */
   alertChannel: boolean | null;
   /** Watch counts for the saved version, when loaded. */
   wouldAct: RuleWouldActResult | null;
@@ -181,7 +181,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         </div>
         <p style={help}>
           {RESPONSE_EFFECT[draft.response]}
-          {draft.response === 'block' && draft.alsoNotify && ' You also get a Slack message (Settings › Alerts) with a link to the run.'}
+          {draft.response === 'block' && draft.alsoNotify && ' You also get an alert in Slack or Teams (Settings › Alerts) with a link to the run.'}
         </p>
         {alerts && alertChannel === false && (
           <p style={{ ...help, color: 'var(--warn-tx)' }}>
