@@ -165,6 +165,21 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
+  it('on a phone, ‹ Controls shows the mode, and asks before leaving an unsaved change', async () => {
+    const m = await mount();
+    await m.click(m.row('Only allow'));
+    const pill = () => m.el.querySelector('.gov-edhead__mode')!.textContent;
+    expect(pill()).toBe('Watch only');
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    expect(pill()).toBe('Enforce · unsaved');
+    expect(m.el.querySelector('.gov-actbar')!.classList.contains('is-dirty')).toBe(true);
+    await m.click(m.button('‹ Controls'));
+    expect(m.text()).toContain('Discard your changes to Model allowlist?');
+    await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeFalsy();
+    m.root.unmount();
+  });
+
   it('Remove asks first, then deletes', async () => {
     const m = await mount();
     await m.click(m.row('100 times'));

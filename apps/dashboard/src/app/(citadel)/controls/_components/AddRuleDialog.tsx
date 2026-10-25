@@ -30,7 +30,7 @@ export function AddRuleDialog({ open, busy, onPick, onCancel }: {
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+        <div className="wr-dialog-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
           <button type="button" onClick={onCancel} disabled={busy} style={dialogCancelStyle}>Cancel</button>
         </div>
       </div>
