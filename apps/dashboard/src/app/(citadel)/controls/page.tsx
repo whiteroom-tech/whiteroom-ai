@@ -107,6 +107,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const failure = controlFailure(e);
     if (failure === "sign-out") { onAuthError(); return; }
     if (failure === "refused") { setError((e as Error).message); return; }
+    // The engine said why: show that, so the person knows what to change.
+    if (e instanceof WhiteRoomApiError && e.reason) { setError(`Couldn’t ${what}. ${e.reason[0].toUpperCase()}${e.reason.slice(1)}`); return; }
     setError(`Couldn’t ${what}. Your last change may not have been saved — refreshed from the server.`);
   }, [onAuthError]);
 
