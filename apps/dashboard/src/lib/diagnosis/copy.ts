@@ -32,7 +32,7 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
 export const SNOOZE_DAYS = 7;
 
-export const WATCH_DEFINITION = 'A shift is one stretch of work. When an agent’s workspace fills up, it hands over to a fresh shift.';
+export const WATCH_DEFINITION = 'A shift is one stretch of work. When it gets too long or too full, the agent hands over to a fresh shift.';
 
 const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
 const has = (m: DiagnosisMeasures, k: string) => m[k] !== undefined && m[k] !== null && m[k] !== '';
@@ -46,21 +46,21 @@ const code = (x: unknown): SentencePart => ({ value: String(x ?? ''), code: true
 /** "1 shift" / "3 shifts": the number as a value, the noun agreeing with it. */
 const count = (x: unknown, one: string, many: string): SentencePart[] => [v(x), t(` ${Number(x) === 1 ? one : many}`)];
 
+/** Two engine rules feed the churn finding: short shifts, or shifts that redid earlier work. Older findings carry no repeat measures. */
+const churnRepeatLed = (m: DiagnosisMeasures) => Number(m.longestRepeatStreak) >= 2 && !(Number(m.longestStreak) >= 3);
+
 /** The finding sentence, as parts so the row can style values. */
 export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasures): SentencePart[] {
   switch (detector) {
     case 'review_handover_churn': {
-      // Two engine rules feed this finding: short shifts, or shifts that redid
-      // earlier work. Older findings carry no repeat measures.
-      const repeatLed = Number(m.longestRepeatStreak) >= 2 && !(Number(m.longestStreak) >= 3);
-      const parts = repeatLed
+      const parts = churnRepeatLed(m)
         ? [
             t('Redid '), v(m.repeatedSharePct), t('% of the work it had already done, '),
             ...count(m.longestRepeatStreak, 'shift', 'shifts'), t(' in a row. It likely lost track of what it had found when it handed over, so it did the work again. To fix: have its tools send back shorter answers, or have it save its progress as it goes.'),
           ]
         : [
             t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
-            ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. Its tools likely send back too much at once, which fills its workspace fast. To fix: have its tools send back shorter answers.'),
+            ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. Its tools likely send back too much at once, which fills each shift fast. To fix: have its tools send back shorter answers.'),
           ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;
@@ -68,7 +68,7 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
     case 'review_tool_loops':
       return [
         code(m.toolName), t(' ran with the same request '), ...count(m.maxRepeats, 'time', 'times'), t(' in shift '), v(m.worstWatch), t(', and this happened in '),
-        ...count(m.watchesAffected, 'shift', 'shifts'), t(' this week. The agent may be stuck going round in circles.'),
+        ...count(m.watchesAffected, 'shift', 'shifts'), t(' this week. The agent may be stuck in a loop.'),
       ];
     case 'review_spend_outliers': {
       const one = Number(m.flaggedDays) === 1;
@@ -80,7 +80,7 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
     case 'review_tool_errors':
       return [
         code(m.toolName), t(' failed '), ...count(m.toolErrors, 'time', 'times'), t(' this week. '), v(m.errorRatePct), t('% of all the agent’s tool calls returned an error ('),
-        v(m.totalErrors), t(' of '), v(m.totalResults), t('). To fix: give the tool more time and one retry, or have the agent skip items that keep failing.'),
+        v(m.totalErrors), t(' of '), v(m.totalResults), t(').'),
       ];
     case 'review_tool_silence': {
       const parts = [
@@ -92,8 +92,8 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
     }
     case 'review_provider_failures': {
       const parts = has(m, 'failureRatePct')
-        ? [v(m.failureRatePct), t('% of requests to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t('). This usually comes from the AI provider, not your agent.')]
-        : [t('Requests to the AI provider are failing. This usually comes from the provider, not your agent.')];
+        ? [v(m.failureRatePct), t('% of calls to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t('). This usually comes from the AI provider, not your agent.')]
+        : [t('Calls to the AI provider are failing. This usually comes from the provider, not your agent.')];
       if (Number(m.otherCohorts) > 0) {
         const one = Number(m.otherCohorts) === 1;
         parts.push(t(' '), ...count(m.otherCohorts, 'other model', 'other models'), t(` ${one ? 'is' : 'are'} also failing.`));
@@ -162,12 +162,12 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
       return [
         'Have the agent’s tools send back short answers, not everything at once: a few results at a time, plain text instead of whole web pages, a summary instead of a full document.',
         'Or have the agent write down its progress after each step, so the next shift can pick up where the last one stopped.',
-        'Open the calls to see what was done twice.',
+        churnRepeatLed(m) ? 'Open the calls to see what was done twice.' : 'Open the calls to see what each shift did before it handed over.',
       ];
     case 'tool_errors':
       return [
         `Open the calls to see when ${tool} failed. Your agent’s logs will show why.`,
-        'Common fixes: give the tool more time and let it try once more, or skip items that keep failing.',
+        'Common fixes: give the tool more time and let it try once more, check what the agent sends it, or skip items that keep failing.',
       ];
     case 'tool_silence':
       return [

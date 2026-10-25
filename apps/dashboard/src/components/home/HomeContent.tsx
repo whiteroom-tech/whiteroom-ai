@@ -12,7 +12,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, clock, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, sortAgents, stateSummary, todayTotals, usd,
+  afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
@@ -177,6 +177,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
 }) {
   const router = useRouter();
   const sorted = sortAgents(agents);
+  const nameNote = inferredNameNote(agents);
   const working = agents.filter((a) => agentState(a) === 'working').length;
   const compression = report.energySavings.compressionRatio ?? 0;
   const saved = savedByWhiteRoom(report.energySavings);
@@ -213,6 +214,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           bodyPadding={view === 'cards' ? '16px 18px' : 0}
           actions={<SegmentedControl<AgentsView> label="Agents view" value={view} onChange={onViewChange} size={24} options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]} />}
         >
+          {nameNote && <p style={{ margin: view === 'cards' ? '0 0 12px' : '12px 18px', fontSize: 13, color: 'var(--tx2)' }}>{nameNote}</p>}
           {agents.length === 0 ? (
             <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No agents connected yet. They appear here on their first call through WhiteRoom.</p>
           ) : view === 'cards' ? (

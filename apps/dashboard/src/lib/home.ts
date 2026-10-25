@@ -19,6 +19,13 @@ const STATE_OF: Record<string, AgentState> = {
   disconnected: 'disconnected',
 };
 
+/** Home's note when some agents were named from their prompt: agents sharing a prompt count as one. Null when none were. */
+export function inferredNameNote(agents: Pick<AgentInfo, 'nameInferred'>[]): string | null {
+  const n = agents.filter((a) => a.nameInferred).length;
+  if (n === 0) return null;
+  return `${n === 1 ? '1 agent has' : `${n} agents have`} no name set, so WhiteRoom named ${n === 1 ? 'it' : 'them'} from ${n === 1 ? 'its' : 'their'} instructions. Agents with the same instructions count as one. Give each agent its own name with the x-whiteroom-agent header.`;
+}
+
 export function agentState(a: Pick<AgentInfo, 'status' | 'minutesRemaining' | 'hold'> & { stale?: boolean; disconnected?: boolean }): AgentState {
   if (a.hold) return a.hold.state;
   return STATE_OF[deriveDisplayStatus(a.status, a.stale, a.minutesRemaining, a.disconnected)] ?? 'idle';

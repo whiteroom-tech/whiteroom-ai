@@ -19,6 +19,8 @@ export interface AgentInfo {
   /** Whether this fleet has Pause/Stop as holds (Gov v1). The engine's check_watch returns it with `hold` (engine #90). */
   govV1?: boolean;
   taskType?: string | null;
+  /** The agent's last call had no x-whiteroom-agent, so its name came from its system prompt. */
+  nameInferred?: boolean;
   watchNumber?: number;
   minutesWorked?: number;
   minutesRemaining?: number;

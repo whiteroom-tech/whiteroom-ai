@@ -116,7 +116,7 @@ describe('cost, limitations, reasons, how-to', () => {
   it('counts of one read in the singular', () => {
     const text = (d: DiagnosisDetectorId, m: DiagnosisMeasures) => sentenceText(findingSentence(d, m));
     expect(text('review_tool_loops', { toolName: 'search', maxRepeats: 1, worstWatch: 2, watchesAffected: 1 }))
-      .toBe('search ran with the same request 1 time in shift 2, and this happened in 1 shift this week. The agent may be stuck going round in circles.');
+      .toBe('search ran with the same request 1 time in shift 2, and this happened in 1 shift this week. The agent may be stuck in a loop.');
     expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5× normal.');
     expect(text('review_tool_errors', { ...MEASURES.review_tool_errors, toolErrors: 1 })).toContain('failed 1 time this week');
     expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 call on average, 1 shift in a row');
@@ -125,10 +125,17 @@ describe('cost, limitations, reasons, how-to', () => {
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');
   });
 
+  it('the churn how-to only says work was done twice when it was', () => {
+    const repeat = { longestRepeatStreak: 3, repeatedSharePct: 70, longestStreak: 1 };
+    const short = { medianCallsPerWatch: 2, longestStreak: 4 };
+    expect(howtoParagraphs('handover_churn', repeat).at(-1)).toBe('Open the calls to see what was done twice.');
+    expect(howtoParagraphs('handover_churn', short).at(-1)).toBe('Open the calls to see what each shift did before it handed over.');
+  });
+
   it('plain-language copy for provider, silence and how-to text', () => {
     const prov = sentenceText(findingSentence('review_provider_failures', MEASURES.review_provider_failures));
     expect(prov).toContain('This usually comes from the AI provider, not your agent.');
-    expect(sentenceText(findingSentence('review_provider_failures', {}))).toBe('Requests to the AI provider are failing. This usually comes from the provider, not your agent.');
+    expect(sentenceText(findingSentence('review_provider_failures', {}))).toBe('Calls to the AI provider are failing. This usually comes from the provider, not your agent.');
     expect(sentenceText(findingSentence('review_tool_silence', MEASURES.review_tool_silence))).toContain('so it may be stuck and not finishing its work.');
     expect(sentenceText(findingSentence('review_tool_errors', MEASURES.review_tool_errors))).toContain('of all the agent’s tool calls returned an error');
     const churn = howtoParagraphs('handover_churn', {});
