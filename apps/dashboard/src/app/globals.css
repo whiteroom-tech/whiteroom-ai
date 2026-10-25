@@ -236,6 +236,7 @@
   /* Header: the agent filter takes the row, Add rule beside it. */
   .citadel-page-header--split .citadel-page-actions { flex: 1 1 100%; margin-left: 0 !important; }
   .citadel-page-header--split .citadel-page-actions > :first-child { flex: 1; min-width: 0; }
+  .citadel-page-header--split .citadel-page-actions > .wr-select select { width: 100%; }
 }
 
 /* ── Primitives (@whiteroom/ui/src/primitives) ─────────────────────────────
