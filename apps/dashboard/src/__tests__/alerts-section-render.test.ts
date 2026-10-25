@@ -62,6 +62,32 @@ describe('Settings › Alerts', () => {
     m.root.unmount();
   });
 
+  it('removes Teams and leaves Slack connected', async () => {
+    api.status = { slack: { ending: 'mnop' }, teams: { ending: '2345' } };
+    api.setTeams.mockImplementation(async () => ({ slack: { ending: 'mnop' }, teams: null }));
+    const m = await mount();
+    const teamsRow = () => [...m.el.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Remove');
+    expect(teamsRow()).toHaveLength(2);
+    await act(async () => { teamsRow()[1].click(); });
+    await flush();
+    expect(api.setTeams).toHaveBeenCalledWith('f1', null);
+    expect(m.text()).toContain('Microsoft Teams alerts are off.');
+    expect(m.text()).toContain('Webhook ending …mnop');
+    expect(m.button('Connect Teams')).toBeTruthy();
+    m.root.unmount();
+  });
+
+  it('says so when a channel refuses the test message', async () => {
+    api.status = { slack: null, teams: { ending: '2345' } };
+    api.test.mockResolvedValueOnce({ success: false });
+    const m = await mount();
+    await act(async () => { m.button('Send a test')!.click(); });
+    await flush();
+    expect(api.test).toHaveBeenCalledWith('f1', 'teams');
+    expect(m.text()).toContain('Microsoft Teams didn’t accept the test message.');
+    m.root.unmount();
+  });
+
   it('shows only Slack on an engine without Teams alerts', async () => {
     api.status = { slack: { ending: 'mnop' } };
     const m = await mount();

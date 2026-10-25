@@ -5,9 +5,9 @@ import { Button, Panel, FONT_MONO } from '@whiteroom/ui';
 import { alertsGet, alertsSetSlack, alertsSetTeams, alertsTest, type AlertChannel, type AlertsStatus } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 
-const CHANNELS: Record<AlertChannel, { name: string; label: string; placeholder: string; set: typeof alertsSetSlack }> = {
-  slack: { name: 'Slack', label: 'Slack incoming webhook URL', placeholder: 'https://hooks.slack.com/services/…', set: alertsSetSlack },
-  teams: { name: 'Microsoft Teams', label: 'Microsoft Teams webhook URL', placeholder: 'https://…logic.azure.com/workflows/…', set: alertsSetTeams },
+const CHANNELS: Record<AlertChannel, { name: string; short: string; label: string; placeholder: string; set: typeof alertsSetSlack }> = {
+  slack: { name: 'Slack', short: 'Slack', label: 'Slack incoming webhook URL', placeholder: 'https://hooks.slack.com/services/…', set: alertsSetSlack },
+  teams: { name: 'Microsoft Teams', short: 'Teams', label: 'Microsoft Teams webhook URL', placeholder: 'https://…logic.azure.com/workflows/…', set: alertsSetTeams },
 };
 
 /**
@@ -83,7 +83,7 @@ function ChannelRow({ fleetId, channel, ending, onStatus }: { fleetId: string; c
             aria-label={c.label} placeholder={c.placeholder}
             value={url} onChange={(e) => setUrl(e.target.value)}
           />
-          <Button type="submit" variant="primary" busy={busy === 'save'} busyLabel="Checking…">Connect {channel === 'slack' ? 'Slack' : 'Teams'}</Button>
+          <Button type="submit" variant="primary" busy={busy === 'save'} busyLabel="Checking…">Connect {c.short}</Button>
         </form>
       )}
       {note && <p role="status" style={{ margin: 0, fontSize: 12.5, color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
