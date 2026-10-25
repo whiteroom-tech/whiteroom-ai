@@ -55,15 +55,15 @@ const api = vi.hoisted(() => ({
   models: null as string[] | null,
   /** Holds governance_list until resolved, to see the page before it loads. */
   listGate: null as Promise<void> | null,
-  /** What Settings › Alerts has: a Slack webhook, or none. */
-  slack: null as { ending: string } | null,
+  /** What Settings › Alerts has; null: an engine without alerts. */
+  alerts: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null } | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   governanceList: async () => { api.lists++; if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
-  alertsGet: async () => ({ slack: api.slack }),
+  alertsGet: async () => api.alerts,
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
   performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
@@ -91,7 +91,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.slack = null; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -501,20 +501,24 @@ describe('Keywords in the editor', () => {
     m.root.unmount();
   });
 
-  it('says when an alerting rule has nowhere to send alerts', async () => {
+  it('says when an alerting rule has nowhere to send alerts: not with Slack or Teams, nor on an engine without alerts', async () => {
+    const warns = async () => {
+      const m = await mount();
+      await m.click(m.row('“Project Falcon”'));
+      await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+      const said = m.text().includes('No alert channel is connected');
+      m.root.unmount();
+      return said;
+    };
     api.created.push(keywordRule());
-    const m = await mount();
-    await m.click(m.row('“Project Falcon”'));
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
-    expect(m.text()).toContain('No alert channel is connected');
-    m.root.unmount();
-
-    api.slack = { ending: 'mnop' };
-    const n = await mount();
-    await n.click(n.row('“Project Falcon”'));
-    await n.click([...n.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
-    expect(n.text()).not.toContain('No alert channel is connected');
-    n.root.unmount();
+    expect(await warns()).toBe(true);
+    api.alerts = { slack: { ending: 'mnop' }, teams: null };
+    expect(await warns()).toBe(false);
+    api.alerts = { slack: null, teams: { ending: '2345' } };
+    expect(await warns()).toBe(false);
+    // An engine without alerts: nothing to say either way.
+    api.alerts = null;
+    expect(await warns()).toBe(false);
   });
 
   it('blocking incoming data needs a day in Watch first', async () => {
