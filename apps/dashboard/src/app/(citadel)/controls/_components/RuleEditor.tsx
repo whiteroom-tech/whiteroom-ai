@@ -15,8 +15,8 @@ import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_WHERE, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
-import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
+import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword'>, string> = {
@@ -32,7 +32,6 @@ const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value)
 const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
   { value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: 'warn' },
 ];
-const eyebrow = { margin: 0, fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--tx2)' } as const;
 const help = { margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 13.5 } as const;
 
@@ -66,8 +65,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const [keyword, setKeyword] = useState('');
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
   const addKeyword = () => {
-    const k = keyword.trim().slice(0, 100);
-    if (k && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
+    const k = keyword.trim();
+    if (k && keywords.length < KEYWORD_MAX && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
     setKeyword('');
   };
   // Just tell me, Pause and Stop alert; Block does when asked to.
@@ -88,7 +87,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>When</p>
+        <p className="gov-eyebrow">When</p>
         {rule.ruleType === 'spend_cap' && (
           <>
             <div style={sentenceRow}>
@@ -135,7 +134,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           <>
             <div style={sentenceRow}>
               <select className="gov-field" aria-label="Where to look" value={(p as KeywordParams).where} onChange={(e) => setParams({ where: e.target.value as KeywordWhere })}
-                style={{ background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, padding: '0 8px', cursor: 'pointer' }}>
+                style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
                 {WHERE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               contains any of:
@@ -143,18 +142,15 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             {keywords.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {keywords.map((k, i) => (
-                  <span key={`${i}:${k}`} className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 12 }}>
-                    “{k}”
-                    <button type="button" aria-label={`Remove ${k}`} onClick={() => setParams({ keywords: keywords.filter((_, j) => j !== i) })} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 14 }}>&times;</button>
-                  </span>
+                  <Chip key={`${i}:${k}`} label={`“${k}”`} removeLabel={`Remove ${k}`} onRemove={() => setParams({ keywords: keywords.filter((_, j) => j !== i) })} />
                 ))}
               </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
-              <input className="gov-field" aria-label="Keyword or phrase" placeholder="Type a word or phrase" value={keyword} maxLength={100}
+              <input className="gov-field" aria-label="Keyword or phrase" placeholder="Type a word or phrase" value={keyword} maxLength={KEYWORD_MAX_CHARS}
                 onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
-                style={{ background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 13, height: 30, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
-              <Button onClick={addKeyword} disabled={!keyword.trim()}>Add</Button>
+                style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
+              <Button onClick={addKeyword} disabled={!keyword.trim() || keywords.length >= KEYWORD_MAX}>Add</Button>
             </div>
             <p style={help}>Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.</p>
             {(p as KeywordParams).where !== 'incoming' && (
@@ -173,17 +169,17 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>Then</p>
+        <p className="gov-eyebrow">Then</p>
         <div style={{ alignSelf: 'flex-start' }}>
           <SelectChip label="What the rule does" value={draft.response} onChange={(response) => onDraft(changeResponse(draft, response))} options={responseOptions(govV1, draft.response)} />
         </div>
         <p style={help}>
           {RESPONSE_EFFECT[draft.response]}
-          {draft.response === 'block' && draft.alsoNotify && ' You also get an alert in Slack or Teams (Settings › Alerts) with a link to the run.'}
+          {draft.response === 'block' && draft.alsoNotify && ' You also get an alert in your alert channel (Settings › Alerts) with a link to the run.'}
         </p>
         {alerts && alertChannel === false && (
           <p style={{ ...help, color: 'var(--warn-tx)' }}>
-            No alert channel is connected, so no one will be told. <Link href="/settings#alerts" style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
+            No alert channel is connected, so no one will be told. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
           </p>
         )}
         {draft.response === 'block' && (
@@ -195,13 +191,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>Applies to</p>
+        <p className="gov-eyebrow">Applies to</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
-        {draft.appliesTo === 'all' && <p style={help}>Applies to all agents in this fleet.</p>}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={eyebrow}>Mode</p>
+        <p className="gov-eyebrow">Mode</p>
         <div style={{ alignSelf: 'flex-start' }}>
           <SegmentedControl<GovernanceMode> label="Mode" value={draft.mode} onChange={(mode) => set({ mode })} options={MODES} />
         </div>
@@ -245,7 +240,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               <span style={{ color: 'var(--tx2)', flex: 'none' }}>{timeAgo(h.time)} · {historyWho(h, actors)}</span>
             </div>
           ))}
-          <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
+          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
         </div>
       </details>
     </div>

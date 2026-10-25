@@ -10,11 +10,7 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// <dialog> in happy-dom: open/close is enough for these tests.
-if (!HTMLDialogElement.prototype.showModal) {
-  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) { this.setAttribute('open', ''); };
-  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) { this.removeAttribute('open'); };
-}
+import './support/dialog';
 
 const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(), push: vi.fn() }));
 vi.mock('next/navigation', () => ({
@@ -147,7 +143,7 @@ describe('Controls page', () => {
     expect(m.text()).toContain('Enforce the Model allowlist rule?');
     expect(api.update).not.toHaveBeenCalled();
     await m.click(m.button('Enforce rule'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce' }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', ifVersion: 1 }, 'k');
     expect(m.text()).toContain('Saved. Model allowlist now enforces.');
     m.root.unmount();
   });
@@ -206,14 +202,14 @@ describe('Controls page, editing', () => {
     await m.click(m.row('$190'));
     const box = () => [...m.el.querySelectorAll('label')].find((l) => l.textContent?.includes('Also send me an alert'))?.querySelector('input') as HTMLInputElement | undefined;
     await m.click(box());
-    expect(m.text()).toContain('You also get an alert in Slack or Teams');
+    expect(m.text()).toContain('You also get an alert in your alert channel');
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'notify');
     expect(box()).toBeUndefined();
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'block');
     expect(box()!.checked).toBe(false);
     await m.click(box());
     await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { alsoNotify: true }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { alsoNotify: true, ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 
@@ -246,7 +242,7 @@ describe('Controls page, editing', () => {
     await type(dialog.querySelector('input') as HTMLInputElement, 'market-researcher');
     expect(confirm.disabled).toBe(false);
     await m.click(confirm);
-    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', response: 'stop' }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', response: 'stop', ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 
@@ -273,6 +269,19 @@ describe('Controls page, editing', () => {
     expect(m.el.querySelector('dialog[open] #add-rule-title')).toBeNull();
     expect(m.text()).toMatch(/Couldn’t add the rule/);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeFalsy();
+    m.root.unmount();
+  });
+
+  it('a save the engine refuses because the rule changed elsewhere says so and reloads', async () => {
+    const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
+    api.update.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 409', 409));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    const before = api.lists;
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('This rule changed somewhere else, so your edit wasn’t saved.');
+    expect(api.lists).toBeGreaterThan(before);
     m.root.unmount();
   });
 
@@ -427,7 +436,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     await m.click(m.row('$190'));
     await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
     await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { params: { dailyCap: 150, scope: 'day', unit: 'dollars' } }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { params: { dailyCap: 150, scope: 'day', unit: 'dollars' }, ifVersion: 1 }, 'k');
     expect((m.el.querySelector('aside[aria-label="Edit rule"] fieldset') as HTMLFieldSetElement).disabled).toBe(true);
     // Picking another rule mid-save does nothing.
     await m.click(m.row('100 times'));
@@ -446,8 +455,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     const m = await mount();
     const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.includes('Rule actions'))!;
     // The mocked engine's 2 blocks are fleet-wide, none of them lead-agent's.
-    expect(card.textContent).toContain('0');
-    expect(card.textContent).not.toContain('2 blocked');
+    expect(card.textContent).toMatch(/^Rule actions\S*0no rule stepped in$/);
     m.root.unmount();
   });
 
@@ -506,7 +514,7 @@ describe('Keywords in the editor', () => {
     expect(m.el.querySelectorAll('button[aria-label^="Remove "]').length).toBe(1);
     expect(input.value).toBe('');
     await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true } }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true }, ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 
@@ -521,7 +529,7 @@ describe('Keywords in the editor', () => {
     await flush();
     expect(m.text()).toContain('“Orion”');
     await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true } }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true }, ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 
@@ -569,7 +577,7 @@ describe('Keywords in the editor', () => {
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
     await type(dialog.querySelector('input') as HTMLInputElement, 'block all agents');
     await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Block on incoming data'));
-    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'enforce' }, 'k');
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'enforce', ifVersion: 1 }, 'k');
     m.root.unmount();
   });
 

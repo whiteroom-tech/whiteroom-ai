@@ -622,13 +622,15 @@ export function diagnoseFleet(fleetId: string, opts: { force?: boolean } = {}, k
 export function governanceUpdateRule(
   fleetId: string,
   ruleId: string,
-  updates: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  updates: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string; ifVersion?: number },
   key?: string,
 ): Promise<{ rule: GovernanceRule }> {
   return apiCall<{ rule: GovernanceRule }>({
     action: 'governance_update_rule',
     fleet_id: fleetId,
     rule_id: ruleId,
+    // The engine refuses (409) if the rule changed since this version was read.
+    if_version: updates.ifVersion,
     mode: updates.mode,
     response: updates.response,
     also_notify: updates.alsoNotify,
@@ -760,7 +762,7 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
 export const alertsSetTeams = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_teams', fleet_id: fleetId, teams_url: url });
-export const alertsTest = (fleetId: string, channel: AlertChannel = 'slack') => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId, channel });
+export const alertsTest = (fleetId: string, channel: AlertChannel) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId, channel });
 
 /** What WhiteRoom keeps for a fleet (Settings › Data and privacy). */
 export interface DataSettings {

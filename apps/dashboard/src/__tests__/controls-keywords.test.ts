@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agentGets, draftFrom, draftProblem, RULE_TEMPLATES, sendsAlert, sentenceText } from '@/lib/controls-view';
+import { agentGets, draftFrom, draftProblem, RULE_TEMPLATES, sendsAlert, ruleSentenceText } from '@/lib/controls-view';
 import { canAct, keywordBlockCheck, keywordPhrase, keywordVerb } from '@/lib/controls-guard';
 import type { GovernanceHistoryEntry, GovernanceRule, KeywordParams } from '@/lib/whiteroom/types';
 
@@ -12,10 +12,17 @@ const added = (hoursAgo: number): GovernanceHistoryEntry[] => [{ id: 'h', ruleId
 
 describe('Keywords in plain words', () => {
   it('reads as one sentence, for each place it looks', () => {
-    expect(sentenceText(kw())).toBe('When incoming data contains “Project Falcon”, “SSN”, block the call.');
-    expect(sentenceText(kw({ response: 'notify', params: { keywords: ['Orion'], where: 'replies', wholeWord: true } }))).toBe('When a model reply contains “Orion”, tell me.');
-    expect(sentenceText(kw({ params: { keywords: ['Orion'], where: 'both', wholeWord: true } }))).toMatch(/^When incoming data or a reply contains/);
-    expect(sentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true } }))).toBe('No keywords picked yet.');
+    expect(ruleSentenceText(kw())).toBe('When incoming data contains any of “Project Falcon”, “SSN”, block the call.');
+    expect(ruleSentenceText(kw({ response: 'notify', params: { keywords: ['Orion'], where: 'replies', wholeWord: true } }))).toBe('When a model reply contains “Orion”, tell me.');
+    expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'both', wholeWord: true } }))).toMatch(/^When incoming data or a reply contains/);
+    expect(ruleSentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true } }))).toBe('No keywords picked yet.');
+  });
+
+  it('a list the engine hid (no dashboard secret) reads as a count and can’t be saved', () => {
+    const hidden = kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 3 } });
+    expect(ruleSentenceText(hidden)).toBe('When incoming data contains any of 3 hidden keywords, block the call.');
+    expect(draftProblem(draftFrom(hidden))).toBe('Sign in with your WhiteRoom account to see and change these keywords.');
+    expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'incoming', wholeWord: true } }))).toBe('When incoming data contains “Orion”, block the call.');
   });
 
   it('what the agent gets never names the keyword', () => {

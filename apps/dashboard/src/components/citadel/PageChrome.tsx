@@ -47,17 +47,12 @@ export function PageHeader({
       <div className="citadel-page-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: split ? 8 : 12 }}>{children}</div>
     </>
   );
-  if (split) {
-    return (
-      <header className="citadel-page-header citadel-page-header--split" style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--line)', minWidth: 0 }}>
-        <div className="citadel-page-header__main">{content}</div>
-        <div className="citadel-page-header__side" aria-hidden="true" />
-      </header>
-    );
-  }
   return (
-    <header className="citadel-page-header" style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)', padding: '0 24px', minWidth: 0 }}>
-      {content}
+    <header
+      className={split ? 'citadel-page-header citadel-page-header--split' : 'citadel-page-header'}
+      style={{ height: 56, flexShrink: 0, display: 'flex', borderBottom: '1px solid var(--line)', minWidth: 0, ...(split ? { alignItems: 'stretch' } : { alignItems: 'center', gap: 12, padding: '0 24px' }) }}
+    >
+      {split ? <><div className="citadel-page-header__main">{content}</div><div className="citadel-page-header__side" aria-hidden="true" /></> : content}
     </header>
   );
 }

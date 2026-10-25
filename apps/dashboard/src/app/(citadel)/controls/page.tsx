@@ -15,7 +15,7 @@ import { RuleEditor } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
-  alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
+  WhiteRoomApiError, alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
   performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
@@ -32,7 +32,7 @@ import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, sentenceText, spendOverlap,
+  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
   type RuleDraft,
 } from "@/lib/controls-view";
 
@@ -239,7 +239,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setNotice(null);
     const sent = JSON.stringify(d);
     try {
-      const { rule: saved } = await governanceUpdateRule(fleetId, rule.id, changes, authKey);
+      // Only over the version the checks above were made on: another tab's change wins, and this one asks again.
+      const { rule: saved } = await governanceUpdateRule(fleetId, rule.id, { ...changes, ifVersion: rule.version }, authKey);
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
@@ -247,7 +248,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setNotice(`Saved. ${RULE_LABELS[saved.ruleType]} ${how}.`);
       void fetchData();
     } catch (e) {
-      handleError(e, "save the rule");
+      if (e instanceof WhiteRoomApiError && e.status === 409) setError("This rule changed somewhere else, so your edit wasn’t saved. It’s been reloaded: check it and save again.");
+      else handleError(e, "save the rule");
       void fetchData();
     } finally {
       setSaving(false);
@@ -464,14 +466,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: "var(--tx2)" }}>Or use Add rule. New rules start in Watch only, so nothing is blocked until you say so.</p>
             {recent.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <p style={{ margin: "6px 0 0", fontFamily: FONT_MONO, fontSize: 10, fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--tx2)" }}>Recent changes</p>
+                <p className="gov-eyebrow" style={{ marginTop: 6 }}>Recent changes</p>
                 {recent.map((h) => (
                   <div key={h.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5 }}>
                     <span>{RULE_LABELS[h.ruleType]} · {h.description}</span>
                     <span style={{ color: "var(--tx2)", flex: "none" }}>{timeAgo(h.time)}</span>
                   </div>
                 ))}
-                <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
+                <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
               </div>
             )}
           </aside>
@@ -504,7 +506,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "keyword"}
         title={dialog?.kind === "keyword" ? `Let this rule ${keywordVerb(dialog.next.response)} on incoming data?` : ""}
-        body={dialog?.kind === "keyword" ? <>{sentenceText(dialog.next)} The agent can’t go on with that data in its run: it sends the same data again on every call. {appliesNow(dialog.next.appliesTo)}{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
+        body={dialog?.kind === "keyword" ? <>{ruleSentenceText(dialog.next)} The agent can’t go on with that data in its run: it sends the same data again on every call. {appliesNow(dialog.next.appliesTo)}{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
         confirmLabel={dialog?.kind === "keyword" && dialog.next.response === "pause" ? "Pause on incoming data" : "Block on incoming data"}
         confirmPhrase={dialog?.kind === "keyword" ? keywordPhrase(dialog.next.appliesTo, dialog.next.response) : "block"}
         busy={saving}
@@ -514,7 +516,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "remove"}
         title={dialog?.kind === "remove" ? `Remove the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
-        body={dialog?.kind === "remove" ? <>{sentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops watching right away." : "It stops right away."} Its history stays in the audit chain.</> : null}
+        body={dialog?.kind === "remove" ? <>{ruleSentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops watching right away." : "It stops right away."} Its history stays in the audit chain.</> : null}
         confirmLabel="Remove rule"
         cancelLabel="Keep rule"
         busy={saving}
@@ -551,7 +553,7 @@ function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: 
   const big = { display: "block", fontFamily: FONT_MONO, fontSize: 24, fontWeight: 700, color: "var(--tx)" } as const;
   return (
     <>
-      {sentenceText(next)} {appliesNow(next.appliesTo)}
+      {ruleSentenceText(next)} {appliesNow(next.appliesTo)}
       <span style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
         <span style={tile}><span style={big}>{n === null ? "—" : n.toLocaleString()}</span>{watched && wouldAct.unversioned ? "times it would have acted, some maybe before its last change" : "times it would have acted"}</span>
         <span style={tile}><span style={big}>{watched && wouldAct.since ? timeAgo(wouldAct.since).replace(/ ago$/, "") : "—"}</span>{watched ? "in Watch only, since its last change" : "Turn on Watch first to see what it would do"}</span>

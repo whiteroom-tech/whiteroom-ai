@@ -16,7 +16,7 @@ import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'pause_agent', 'resume_agent', 'stop_agent',
-  'alerts_get', 'alerts_set_slack', 'alerts_test',
+  'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test',
   'fleet_data_settings_get', 'fleet_data_settings_set',
   'goal_get', 'goal_set_owner', 'agent_new_run',
   'compression_mode_set', 'compression_preview',
@@ -31,6 +31,23 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
  * control action too. Keep in step with the engine's CLOUD_IDENTITY_PROVIDERS.
  */
 export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-entra', 'bedrock-sigv4']);
+
+/**
+ * Reads the engine answers in full only with the dashboard's service secret,
+ * sent for any signed-in account (not only the owner): governance_list hides
+ * Keywords lists from a bare fleet key, which every agent holds.
+ */
+export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list']);
+
+/** Whether a BFF body is one of SECRET_READ_ACTIONS. */
+export function isSecretRead(body: string): boolean {
+  try {
+    const action = (JSON.parse(body) as { action?: unknown } | null)?.action;
+    return typeof action === 'string' && SECRET_READ_ACTIONS.has(action);
+  } catch {
+    return false;
+  }
+}
 
 export const CONTROL_SECRET_HEADER = 'x-wr-dashboard-secret';
 /** The signed-in account behind a control action, sent with the secret so the engine records who acted. */

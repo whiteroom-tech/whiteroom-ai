@@ -659,7 +659,11 @@ export interface ToolListParams { blockedTools: string[] }
 export interface CallRateParams { maxCalls: number }
 /** Keywords rule (engine E4): words to find in what a call sends ("incoming"), the model's reply, or both. */
 export type KeywordWhere = 'incoming' | 'replies' | 'both';
-export interface KeywordParams { keywords: string[]; where: KeywordWhere; wholeWord: boolean }
+export interface KeywordParams {
+  keywords: string[]; where: KeywordWhere; wholeWord: boolean;
+  /** Sent instead of the list to a caller without the dashboard's secret (keywords is then empty). */
+  keywordCount?: number;
+}
 export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams;
 
 export interface GovernanceRule {

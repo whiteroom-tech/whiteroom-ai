@@ -11,6 +11,10 @@ import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 // ── Sentences ───────────────────────────────────────────────────────
 
 /** Where a Keywords rule looks, as it reads in a sentence. */
+/** The engine's limits on a Keywords rule's list (it counts after normalizing, and 4,000 characters in all). */
+export const KEYWORD_MAX = 200;
+export const KEYWORD_MAX_CHARS = 100;
+
 export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };
 
 const VERB: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
@@ -35,8 +39,10 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   }
   if (rule.ruleType === 'keyword') {
     const p = rule.params as KeywordParams;
+    // Without the dashboard's secret the engine sends only how many there are.
+    if (!p.keywords.length && p.keywordCount) return { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
     return p.keywords.length
-      ? { pre: `When ${KEYWORD_WHERE[p.where]} contains `, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
+      ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
       : { pre: 'No keywords picked yet.', val: '', post: '' };
   }
   if (rule.ruleType === 'tool_list') {
@@ -47,11 +53,11 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   return models.length ? { pre: 'Only allow ', val: models.join(', '), post: `. For any other model, ${v}.` } : { pre: 'No models picked yet.', val: '', post: '' };
 }
 
-export const sentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
+export const ruleSentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
 
 /** Who a change covers, said in a confirm dialog. */
 export function appliesNow(scope: GovernanceScope): string {
-  return `It applies to ${scope === 'all' ? 'every agent in this fleet' : scope.join(', ')}, and takes effect now.`;
+  return `It applies to ${scope === 'all' ? 'all agents in this fleet' : scope.join(', ')}, and takes effect now.`;
 }
 
 /** "All agents", or "Only " + the agents (more than two: "3 agents"). */
@@ -280,6 +286,7 @@ export function draftProblem(d: RuleDraft): string | null {
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you enforce this rule.';
   if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you enforce this rule.';
+  if (d.ruleType === 'keyword' && (d.params as KeywordParams).keywordCount) return 'Sign in with your WhiteRoom account to see and change these keywords.';
   if (d.mode === 'enforce' && d.ruleType === 'keyword' && (p.params as KeywordParams).keywords.length === 0) return 'Pick at least one keyword before you enforce this rule.';
   return null;
 }

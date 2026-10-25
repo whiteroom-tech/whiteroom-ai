@@ -73,6 +73,29 @@ describe('engine route records accepted control changes', () => {
     expect(inserts()).toHaveLength(0);
   });
 
+  it('sends the service secret with governance_list only for a signed-in account, without the owner check', async () => {
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'svc-secret');
+    const sentSecret = async () => {
+      const f = vi.fn().mockResolvedValue(new Response('{"rules":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+      vi.stubGlobal('fetch', f);
+      await call({ action: 'governance_list', fleet_id: 'f1' });
+      return (f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret'];
+    };
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    expect(await sentSecret()).toBe('svc-secret');
+    expect(mocks.access).not.toHaveBeenCalled();
+    // A fleet cookie alone: the engine sends the Keywords lists' counts only.
+    mocks.auth.mockResolvedValue(null);
+    expect(await sentSecret()).toBeUndefined();
+    // Other reads never carry it.
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    const f = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', f);
+    await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect((f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret']).toBeUndefined();
+    vi.unstubAllEnvs();
+  });
+
   it('still answers success when finding the person fails after the change', async () => {
     engine(200);
     mocks.auth.mockRejectedValue(new Error('session store down'));
