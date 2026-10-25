@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client';
 const api = vi.hoisted(() => ({
   status: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null },
   setTeams: vi.fn(),
+  setSlack: vi.fn(),
   test: vi.fn(async () => ({ success: true })),
 }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1' }) }));
@@ -18,6 +19,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   alertsGet: async () => api.status,
   alertsSetTeams: api.setTeams,
+  alertsSetSlack: api.setSlack,
   alertsTest: api.test,
 }));
 const { AlertsSection } = await import('@/components/settings/AlertsSection');
@@ -32,7 +34,7 @@ async function mount() {
   const button = (label: string) => [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
   return { el, root, text: () => el.textContent ?? '', button };
 }
-beforeEach(() => { api.status = { slack: null, teams: null }; api.setTeams.mockReset(); api.test.mockClear(); document.body.innerHTML = ''; });
+beforeEach(() => { api.status = { slack: null, teams: null }; api.setTeams.mockReset(); api.setSlack.mockReset(); api.test.mockClear(); document.body.innerHTML = ''; });
 
 describe('Settings › Alerts', () => {
   it('offers Slack and Microsoft Teams, each on its own', async () => {
@@ -59,6 +61,30 @@ describe('Settings › Alerts', () => {
     await act(async () => { m.button('Send a test')!.click(); });
     await flush();
     expect(api.test).toHaveBeenCalledWith('f1', 'teams');
+    m.root.unmount();
+  });
+
+  it('connects, tests and removes Slack on its own channel', async () => {
+    const SLACK = 'https://hooks.slack.com/services/T000/B000/abcdefghijklmnop';
+    api.setSlack.mockImplementation(async (_f: string, url: string | null) => ({ slack: url ? { ending: 'mnop' } : null, teams: null }));
+    const m = await mount();
+    const input = m.el.querySelector('input[aria-label="Slack incoming webhook URL"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, SLACK);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { input.form!.requestSubmit(); });
+    await flush();
+    expect(api.setSlack).toHaveBeenCalledWith('f1', SLACK);
+    expect(api.setTeams).not.toHaveBeenCalled();
+    expect(m.text()).toContain('Webhook ending …mnop');
+    await act(async () => { m.button('Send a test')!.click(); });
+    await flush();
+    expect(api.test).toHaveBeenCalledWith('f1', 'slack');
+    await act(async () => { m.button('Remove')!.click(); });
+    await flush();
+    expect(api.setSlack).toHaveBeenLastCalledWith('f1', null);
+    expect(m.text()).toContain('Slack alerts are off.');
     m.root.unmount();
   });
 

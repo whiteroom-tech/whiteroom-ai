@@ -170,22 +170,37 @@ const LOOKUP_FAILED: ControlDenial = { status: 503, error: 'Couldn’t check you
  * Returns the refusal, or null when the call may go ahead. Any failed lookup
  * refuses, so the check fails closed.
  */
+type HeldRow = HeldCredential & { table: 'users' | 'user_fleets'; rowId: string };
+
+/** The account's stored fleet credentials that are this token. */
+async function heldCredentials(userId: string, token: string): Promise<HeldRow[]> {
+  // Tokens are stored encrypted (cred-seal.ts), so they're compared here, not in SQL.
+  const { rows } = await db().query(
+    `SELECT 'users' AS "table", id AS "rowId", fleet_token AS plain, fleet_token_enc AS sealed, fleet_id AS "fleetId" FROM users WHERE id = $1
+     UNION ALL
+     SELECT 'user_fleets', id, fleet_token, fleet_token_enc, fleet_id FROM user_fleets WHERE user_id = $1`,
+    [userId],
+  );
+  return rows.map((r) => ({ ...r, token: readCred(`${r.table}.fleet_token` as CredColumn, userId, r.plain, r.sealed) ?? '' }))
+    .filter((h) => h.token === token);
+}
+
+/**
+ * Whether the account holds this token as its credential for this fleet:
+ * the request's key and the fleet it names belong together, and to them.
+ */
+export async function holdsFleetToken(userId: string, fleetId: string, token: string): Promise<boolean> {
+  return credentialGrant(await heldCredentials(userId, token), fleetId, token) === 'linked';
+}
+
 export async function controlAccessError(fleetId: string | null, token: string): Promise<ControlDenial | null> {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change this fleet’s controls or settings.' };
   if (!fleetId) return { status: 400, error: 'fleet_id is required.' };
-  let held: (HeldCredential & { table: 'users' | 'user_fleets'; rowId: string })[];
+  let held: HeldRow[];
   try {
-    // Tokens are stored encrypted (cred-seal.ts), so they're compared here, not in SQL.
-    const { rows } = await db().query(
-      `SELECT 'users' AS "table", id AS "rowId", fleet_token AS plain, fleet_token_enc AS sealed, fleet_id AS "fleetId" FROM users WHERE id = $1
-       UNION ALL
-       SELECT 'user_fleets', id, fleet_token, fleet_token_enc, fleet_id FROM user_fleets WHERE user_id = $1`,
-      [userId],
-    );
-    held = rows.map((r) => ({ ...r, token: readCred(`${r.table}.fleet_token` as CredColumn, userId, r.plain, r.sealed) ?? '' }))
-      .filter((h) => h.token === token);
+    held = await heldCredentials(userId, token);
   } catch {
     return LOOKUP_FAILED;
   }

@@ -50,7 +50,11 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   if (rule.ruleType === 'keyword') {
     const p = rule.params as KeywordParams;
     // Without the dashboard's secret the engine sends only how many there are.
-    if (!p.keywords.length && p.keywordCount) return { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
+    if (!p.keywords.length && p.keywordCount) {
+      return p.keywordCount === 1
+        ? { pre: `When ${KEYWORD_WHERE[p.where]} contains `, val: 'a hidden keyword', post: `, ${v}.` }
+        : { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
+    }
     return p.keywords.length
       ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
       : { pre: 'No keywords picked yet.', val: '', post: '' };

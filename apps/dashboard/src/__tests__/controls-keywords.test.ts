@@ -21,6 +21,7 @@ describe('Keywords in plain words', () => {
   it('a list the engine hid (no dashboard secret) reads as a count and can’t be saved', () => {
     const hidden = kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 3 } });
     expect(ruleSentenceText(hidden)).toBe('When incoming data contains any of 3 hidden keywords, block the call.');
+    expect(ruleSentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 1 } }))).toBe('When incoming data contains a hidden keyword, block the call.');
     // Only the list is out of reach: the rule can still go to Watch or Off.
     expect(draftProblem({ ...draftFrom(hidden), mode: 'off' })).toBeNull();
     // A hidden list isn't an empty one: it can be enforced, and an enforcing one still acts.

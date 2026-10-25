@@ -21,9 +21,9 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, secretReadFleet } from '@/lib/control-auth';
+import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, holdsFleetToken, secretReadFleet } from '@/lib/control-auth';
 import { rateLimitHeaders } from '@/lib/rate-limit-headers';
-import { holdsFleet, recordControlAction } from '@/lib/control-actions';
+import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
     const readFleet = secretReadFleet(body);
     const holds = userId && secret && readFleet
-      ? await holdsFleet(userId, readFleet).catch((e: unknown) => { console.error(`[bff] fleet access lookup failed; keyword lists sent hidden: ${(e as Error).message}`); return false; })
+      ? await holdsFleetToken(userId, readFleet, token).catch((e: unknown) => { console.error(`[bff] fleet access lookup failed; keyword lists sent hidden: ${(e as Error).message}`); return false; })
       : false;
     if (holds && secret) headers[CONTROL_SECRET_HEADER] = secret;
   }
