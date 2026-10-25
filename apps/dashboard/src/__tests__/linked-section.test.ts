@@ -37,6 +37,12 @@ describe('useLinkedSection', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
     onResize();
     expect(scroll).toHaveBeenCalledTimes(3);
+    // A space typed into a field doesn't scroll, so it doesn't stop it either.
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    onResize();
+    expect(scroll).toHaveBeenCalledTimes(4);
     root.unmount();
   });
 

@@ -18,7 +18,8 @@ export function useLinkedSection(container: React.RefObject<HTMLDivElement | nul
     const go = () => document.getElementById(id)?.scrollIntoView({ block: 'start' });
     const observer = new ResizeObserver(go);
     // Any press (a scrollbar drag, a click) or a scroll gesture or key means the person has taken over.
-    const onKey = (e: KeyboardEvent) => { if (SCROLL_KEYS.has(e.key)) stop(); };
+    // Keys typed into a field (a space in a name) don't scroll the page.
+    const onKey = (e: KeyboardEvent) => { if (SCROLL_KEYS.has(e.key) && !(e.target as Element | null)?.closest?.('input, textarea, select, [contenteditable]')) stop(); };
     const stop = () => {
       observer.disconnect();
       clearTimeout(timer);
