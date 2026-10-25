@@ -3,6 +3,7 @@
 // for a day, and turning that on means typing who it applies to. Plus the
 // per-rule "Watching: would have…" line from the engine's Watch events.
 
+import { keywordTotal } from '@/lib/controls-view';
 import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
 
 /**
@@ -16,7 +17,7 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
   if (rule.response === 'notify') return false;
   if (rule.ruleType === 'model_allowlist' && (rule.params as ModelAllowlistParams).allowedModels.length === 0) return false;
   if (rule.ruleType === 'tool_list' && (rule.params as ToolListParams).blockedTools.length === 0) return false;
-  if (rule.ruleType === 'keyword' && (rule.params as KeywordParams).keywords.length === 0) return false;
+  if (rule.ruleType === 'keyword' && keywordTotal(rule.params as KeywordParams) === 0) return false;
   return true;
 }
 

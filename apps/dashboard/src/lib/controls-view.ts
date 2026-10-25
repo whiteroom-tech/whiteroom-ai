@@ -12,6 +12,11 @@ import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 
 /** The engine's limits on a Keywords rule's list (it counts after normalizing, and 4,000 characters in all). */
 export const KEYWORD_MAX = 200;
+
+/** How many keywords a rule has, counting a list the engine hid (keywordCount). */
+export function keywordTotal(p: KeywordParams): number {
+  return p.keywords.length || (p.keywordCount ?? 0);
+}
 export const KEYWORD_MAX_CHARS = 100;
 
 /** Where a Keywords rule looks, as it reads in a sentence. */
@@ -286,7 +291,7 @@ export function draftProblem(d: RuleDraft): string | null {
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you enforce this rule.';
   if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you enforce this rule.';
-  if (d.mode === 'enforce' && d.ruleType === 'keyword' && (p.params as KeywordParams).keywords.length === 0) return 'Pick at least one keyword before you enforce this rule.';
+  if (d.mode === 'enforce' && d.ruleType === 'keyword' && keywordTotal(p.params as KeywordParams) === 0) return 'Pick at least one keyword before you enforce this rule.';
   return null;
 }
 
