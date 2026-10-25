@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  agentGets, byMode, draftChanges, draftFrom, draftProblem, isDirty, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, sentenceText, spendOverlap,
+  agentGets, appliesNow, byMode, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, sentenceText, spendOverlap,
 } from '@/lib/controls-view';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -82,6 +82,14 @@ describe('row status lines', () => {
     expect(rowStat(r, { onlyOfItsType: true })).toBe('');
   });
 
+  it('viewing one agent: that agent’s would-acts, and an Enforce count only for a rule that covers just them', () => {
+    const w = rule({ mode: 'watch' });
+    expect(rowStat(w, { onlyOfItsType: true, wouldAct: { byAgent: { a: 2, b: 3 } }, agent: 'b' })).toBe('Would have blocked 3 times');
+    expect(rowStat(w, { onlyOfItsType: true, wouldAct: { byAgent: { a: 2 } }, agent: 'b' })).toBe('Hasn’t fired since its last change');
+    expect(rowStat(rule({ mode: 'enforce' }), { byRuleType: counts, onlyOfItsType: true, agent: 'b' })).toBe('');
+    expect(rowStat(rule({ mode: 'enforce', appliesTo: ['b'] }), { byRuleType: counts, onlyOfItsType: true, agent: 'b' })).toBe('3 blocked · last 7 days');
+  });
+
   it('Watch: what it would have done since its last change', () => {
     const r = rule({ mode: 'watch' });
     expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: { a: 2, b: 3 } } })).toBe('Would have blocked 5 times');
@@ -135,5 +143,38 @@ describe('editing a rule', () => {
     expect(draftProblem({ ...tools, mode: 'enforce' })).toBe('Pick at least one tool before you enforce this rule.');
     expect(draftProblem({ ...tools, mode: 'enforce', params: { blockedTools: ['shell'] } })).toBeNull();
     expect(draftChanges({ ...spend, number: '0' }, rule({}))).toBeNull();
+  });
+});
+
+describe('typed numbers, units and responses', () => {
+  it('reads digits, commas and a decimal point only', () => {
+    expect(typedNumber('1,500')).toBe(1500);
+    expect(typedNumber(' 2.50 ')).toBe(2.5);
+    for (const bad of ['0x10', '1e3', '-5', '', '1.', '.5', 'Infinity', '12abc']) expect(typedNumber(bad), bad).toBeNaN();
+    const cap = draftFrom(rule({}));
+    expect(draftParams({ ...cap, number: '1e3' })).toEqual({ error: 'Enter a number above 0.' });
+    const loop = draftFrom(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }));
+    expect(draftParams({ ...loop, number: '0x10' })).toEqual({ error: 'Enter a whole number from 1 to 10,000.' });
+  });
+
+  it('switching units converts the typed limit, and back; text that isn’t a number stays as typed', () => {
+    const d = draftFrom(rule({}));
+    const tokens = changeUnit(d, 'tokens');
+    expect((tokens.params as { unit: string }).unit).toBe('tokens');
+    expect(Number(tokens.number)).toBeGreaterThan(190);
+    expect(Number.isInteger(Number(tokens.number))).toBe(true);
+    expect(changeUnit(tokens, 'tokens')).toBe(tokens);
+    expect(changeUnit({ ...d, number: '1e3' }, 'tokens').number).toBe('1e3');
+  });
+
+  it('a new response clears "Also send me an alert" unless it’s Block', () => {
+    const d = { ...draftFrom(rule({})), alsoNotify: true };
+    expect(changeResponse(d, 'pause')).toMatchObject({ response: 'pause', alsoNotify: false });
+    expect(changeResponse(d, 'block')).toMatchObject({ response: 'block', alsoNotify: true });
+  });
+
+  it('says who a confirmed change covers', () => {
+    expect(appliesNow('all')).toBe('It applies to every agent in this fleet, and takes effect now.');
+    expect(appliesNow(['a', 'b'])).toBe('It applies to a, b, and takes effect now.');
   });
 });

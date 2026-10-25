@@ -41,6 +41,11 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
 export const sentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
 
 /** "All agents", or "Only " + the agents (more than two: "3 agents"). */
+/** Who a change covers, said in a confirm dialog. */
+export function appliesNow(scope: GovernanceScope): string {
+  return `It applies to ${scope === 'all' ? 'every agent in this fleet' : scope.join(', ')}, and takes effect now.`;
+}
+
 export function scopeLabel(scope: GovernanceScope): { lead: string; agents: string } {
   if (scope === 'all') return { lead: 'All agents', agents: '' };
   if (scope.length === 0) return { lead: 'No agents selected', agents: '' };
@@ -102,22 +107,26 @@ const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
  * The row's status line. Enforce: what it did in the last 7 days, from the
  * engine's counts per rule type, so only when this is the fleet's one rule
  * of its type (two spend caps would share the count). Watch: what it would
- * have done since its last change.
+ * have done since its last change. Viewing one agent, the counts are that
+ * agent's: an Enforce count shows only for a rule that covers just them.
  */
 export function rowStat(rule: GovernanceRule, ctx: {
   /** The engine's rule_actions byRule (keyed by rule type). */
   byRuleType?: Record<string, RuleActionCounts>;
   onlyOfItsType: boolean;
   wouldAct?: { byAgent: Record<string, number> } | null;
+  /** The agent being viewed, if any. */
+  agent?: string | null;
 }): string {
   const response = rule.response ?? 'block';
   if (rule.mode === 'enforce') {
-    const c = ctx.onlyOfItsType ? ctx.byRuleType?.[rule.ruleType] : undefined;
+    const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
+    const c = ctx.onlyOfItsType && justThem ? ctx.byRuleType?.[rule.ruleType] : undefined;
     return c ? `${fmt(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
   }
   if (rule.mode === 'watch') {
     if (!ctx.wouldAct) return '';
-    const n = Object.values(ctx.wouldAct.byAgent).reduce((a, b) => a + b, 0);
+    const n = ctx.agent ? ctx.wouldAct.byAgent[ctx.agent] ?? 0 : Object.values(ctx.wouldAct.byAgent).reduce((a, b) => a + b, 0);
     return n ? `Would have ${TALLY_WORD[response]} ${times(n)}` : 'Hasn’t fired since its last change';
   }
   return '';
@@ -182,9 +191,15 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
 const hasNumber = (t: GovernanceRuleType) => t === 'spend_cap' || t === 'loop_breaker' || t === 'call_rate';
 
 /** The draft's params with the typed number in place, or an error to show. */
+/** A typed number: digits, commas and a decimal point only (not "0x10" or "1e3"); NaN otherwise. */
+export function typedNumber(text: string): number {
+  const t = text.replace(/,/g, '').trim();
+  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+}
+
 export function draftParams(d: RuleDraft): { params: GovernanceParams } | { error: string } {
   if (!hasNumber(d.ruleType)) return { params: d.params };
-  const n = Number(d.number.replace(/,/g, '').trim());
+  const n = typedNumber(d.number);
   if (d.ruleType === 'spend_cap') {
     if (!(n > 0) || !Number.isFinite(n)) return { error: 'Enter a number above 0.' };
     // Dollars may have cents; tokens are whole.
@@ -211,7 +226,7 @@ export function isDirty(d: RuleDraft, rule: GovernanceRule): boolean {
 export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft {
   const p = d.params as SpendCapParams;
   if (p.unit === unit) return d;
-  const n = Number(d.number.replace(/,/g, '').trim());
+  const n = typedNumber(d.number);
   const number = n > 0 && Number.isFinite(n) ? String(convertSpendCap(n, unit)) : d.number;
   return { ...d, number, params: { ...p, unit } };
 }

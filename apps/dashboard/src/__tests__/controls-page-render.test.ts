@@ -46,19 +46,23 @@ const api = vi.hoisted(() => ({
   remove: vi.fn(async () => ({ success: true })),
   create: vi.fn(),
   lists: 0,
+  /** Rules the mocked engine saved, listed in place of RULES' own. */
+  saved: {} as Record<string, GovernanceRule>,
   /** Rules the mocked engine created, listed after RULES. */
   created: [] as GovernanceRule[],
   govV1: false,
+  /** Models the fleet used lately, for the allowlist suggestion; null: no data. */
+  models: null as string[] | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  governanceList: async () => { api.lists++; return { fleetId: 'f1', rules: [...RULES, ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
+  governanceList: async () => { api.lists++; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
-  performanceIndex: async () => { throw new Error('no store'); },
-  performanceFleetHourly: async () => { throw new Error('no store'); },
+  performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
+  performanceFleetHourly: async () => { if (!api.models) throw new Error('no store'); return { hourly: [] }; },
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
@@ -82,7 +86,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.lists = 0; api.govV1 = false; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.govV1 = false; api.models = null; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -174,7 +178,7 @@ describe('Controls page', () => {
   });
 });
 
-describe('Controls page, more paths', () => {
+describe('Controls page, editing', () => {
   it('switching a spend cap between dollars and tokens converts the limit', async () => {
     const m = await mount();
     await m.click(m.row('$190'));
@@ -297,7 +301,7 @@ describe('Controls page, more paths', () => {
   });
 });
 
-describe('Controls page, review round 2', () => {
+describe('Controls page, suggestions, removing and filtering', () => {
   it('finishing a Diagnosis suggestion opens the new rule in the editor', async () => {
     nav.params = new URLSearchParams('rec=rec_123');
     const m = await mount();
@@ -321,6 +325,57 @@ describe('Controls page, review round 2', () => {
     expect(dialog.textContent).toContain('It stops watching right away.');
     await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r4', 'k');
+    m.root.unmount();
+  });
+
+  it('"Add in Watch" asks before throwing away an edit to the allowlist, then reopens it from the saved rule', async () => {
+    api.models = ['gpt-4o'];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('Only allow'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    expect(m.button('Save')!.disabled).toBe(false);
+    await m.click(m.button('Add in Watch'));
+    expect(m.text()).toContain('Discard your changes to Model allowlist?');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['gpt-4o', 'claude-haiku-4-5-20251001'] } }), 'k');
+    // The editor is open on the rule as saved: nothing to save.
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    expect(m.button('Save')!.disabled).toBe(true);
+    m.root.unmount();
+  });
+
+  it('while a save is in flight, the editor and the list wait; then the editor shows the saved rule', async () => {
+    let finish!: () => void;
+    api.update.mockImplementation((_f: string, id: string, ch: Partial<GovernanceRule>) => new Promise((resolve) => {
+      const rule = { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 };
+      finish = () => { api.saved[id] = rule; resolve({ rule }); };
+    }));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { params: { dailyCap: 150, scope: 'day', unit: 'dollars' } }, 'k');
+    expect((m.el.querySelector('aside[aria-label="Edit rule"] fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+    // Picking another rule mid-save does nothing.
+    await m.click(m.row('100 times'));
+    expect(m.el.querySelector('input[aria-label="Spend limit"]')).toBeTruthy();
+    await act(async () => { finish(); });
+    await flush();
+    expect(m.text()).toContain('Saved. Spend cap is in Watch only.');
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
+    expect(m.button('Save')!.disabled).toBe(true);
+    m.root.unmount();
+  });
+
+  it('viewing one agent, Rule actions counts that agent’s', async () => {
+    nav.params = new URLSearchParams('agent=lead-agent');
+    const m = await mount();
+    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.includes('Rule actions'))!;
+    // The mocked engine's 2 blocks are fleet-wide, none of them lead-agent's.
+    expect(card.textContent).toContain('0');
+    expect(card.textContent).not.toContain('2 blocked');
     m.root.unmount();
   });
 

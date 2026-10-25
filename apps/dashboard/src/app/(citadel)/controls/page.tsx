@@ -8,7 +8,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Banner, Button, FONT_DISPLAY, FONT_MONO, Panel, SelectChip, StatCard } from "@whiteroom/ui";
+import { Banner, Button, FONT_MONO, Panel, SelectChip, StatCard } from "@whiteroom/ui";
+import { PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
@@ -18,7 +19,7 @@ import {
   performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
-  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionsResult, RuleWouldActResult, SpendCapParams,
+  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -31,7 +32,7 @@ import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  byMode, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, sentenceText, spendOverlap,
+  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, sentenceText, spendOverlap,
   type RuleDraft,
 } from "@/lib/controls-view";
 
@@ -296,7 +297,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const shown = useMemo(() => rulesFor(rules, agentFilter), [rules, agentFilter]);
   const enforcing = byMode(shown, "enforce"), watching = byMode(shown, "watch"), off = byMode(shown, "off");
   const overlap = spendOverlap(shown);
-  const counts = actions ? tallyFromRuleActions(actions.totals) : null;
+  // Viewing one agent: that agent's rule actions, to match the rules shown.
+  const counts = actions ? tallyFromRuleActions(agentFilter ? actions.byAgent[agentFilter] ?? NO_ACTIONS : actions.totals) : null;
   const allowlistSuggestion = suggestions.onlyModels && !rules.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
   const typeCount = (t: GovernanceRuleType) => rules.filter((r) => r.ruleType === t).length;
@@ -310,7 +312,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       ? overlap!.never.mode === "watch"
         ? `Would never act: the ${money(overlap!.first.params as SpendCapParams)} cap would act first`
         : `Never acts: the ${money(overlap!.first.params as SpendCapParams)} cap acts first`
-      : rowStat(r, { byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null });
+      : rowStat(r, { byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null, agent: agentFilter });
     return (
       <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-current={r.id === selectedId || undefined}>
         <span style={{ minWidth: 0, flex: "1 1 320px" }}>
@@ -343,22 +345,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   return (
     <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, flex: 1 }}>
       {/* Split like the columns below, so the actions end where the rule list ends. */}
-      <header className="citadel-page-header gov-head" style={{ height: 56, flexShrink: 0, display: "flex", alignItems: "stretch", borderBottom: "1px solid var(--line)", minWidth: 0 }}>
-        <div className="gov-head__main">
-          <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: "var(--tx)", margin: 0, whiteSpace: "nowrap" }}>Controls</h1>
-          <span className="citadel-page-fleet" title="Fleet ID" style={{ fontFamily: FONT_MONO, fontSize: 12, color: "var(--tx2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>/ {fleetId}</span>
-          <div className="citadel-page-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <SelectChip
-              label="Agent"
-              value={agentFilter ?? "all"}
-              onChange={(v) => guard(() => changeAgent(v === "all" ? null : v))}
-              options={[{ value: "all", label: "All agents" }, ...agents.map((a) => ({ value: a, label: a }))]}
-            />
-            <Button variant="primary" onClick={() => guard(() => setAdding("open"))}>Add rule</Button>
-          </div>
-        </div>
-        <div className="gov-head__side" aria-hidden="true" />
-      </header>
+      <PageHeader title="Controls" fleetId={fleetId} split>
+        <SelectChip
+          label="Agent"
+          value={agentFilter ?? "all"}
+          onChange={(v) => guard(() => changeAgent(v === "all" ? null : v))}
+          options={[{ value: "all", label: "All agents" }, ...agents.map((a) => ({ value: a, label: a }))]}
+        />
+        <Button variant="primary" onClick={() => guard(() => setAdding("open"))}>Add rule</Button>
+      </PageHeader>
 
       <div className="gov-columns">
         <main className="gov-list">
@@ -473,7 +468,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "stop"}
         title="Let this rule stop agents?"
-        body={dialog?.kind === "stop" ? <>{RESPONSE_EFFECT.stop} It applies to {dialog.next.appliesTo === "all" ? "every agent in this fleet" : dialog.next.appliesTo.join(", ")}, and takes effect now.<span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></> : null}
+        body={dialog?.kind === "stop" ? <>{RESPONSE_EFFECT.stop} {appliesNow(dialog.next.appliesTo)}<span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></> : null}
         confirmLabel={RESPONSE_LABEL.stop}
         confirmPhrase={dialog?.kind === "stop" ? stopPhrase(dialog.next.appliesTo) : "stop"}
         busy={saving}
@@ -510,6 +505,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   );
 }
 
+const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
+
 /** What enforcing would have done, from the rule's time in Watch; and the fleet-wide side effect, when there is one. */
 function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: GovernanceRule; wouldAct: RuleWouldActResult | null }) {
   const watched = rule.mode === "watch" && wouldAct;
@@ -518,7 +515,7 @@ function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: 
   const big = { display: "block", fontFamily: FONT_MONO, fontSize: 24, fontWeight: 700, color: "var(--tx)" } as const;
   return (
     <>
-      {sentenceText(next)} It applies to {next.appliesTo === "all" ? "every agent in this fleet" : next.appliesTo.join(", ")}, and takes effect now.
+      {sentenceText(next)} {appliesNow(next.appliesTo)}
       <span style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
         <span style={tile}><span style={big}>{n === null ? "—" : n.toLocaleString()}</span>times it would have acted</span>
         <span style={tile}><span style={big}>{watched && wouldAct.since ? timeAgo(wouldAct.since).replace(/ ago$/, "") : "—"}</span>{watched ? "in Watch only, since its last change" : "Turn on Watch first to see what it would do"}</span>
