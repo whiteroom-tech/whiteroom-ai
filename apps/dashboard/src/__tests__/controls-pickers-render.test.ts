@@ -73,12 +73,12 @@ describe('ScopeField', () => {
   it('switches between All agents and chosen agents, adds and removes one', async () => {
     const onChange = vi.fn();
     const { el, root } = await mount(h(ScopeField, { scope: 'all', agents: ['a1', 'a2'], onChange }));
-    expect(el.querySelector('select[aria-label="+ add agent"]')).toBeNull();
+    expect(el.querySelector('select[aria-label="Add an agent"]')).toBeNull();
     await choose(el.querySelector('select[aria-label="Which agents this rule applies to"]')!, 'some');
     expect(onChange).toHaveBeenLastCalledWith([]);
     await act(async () => { root.render(h(ScopeField, { scope: ['a1'], agents: ['a1', 'a2'], onChange })); });
-    expect([...el.querySelectorAll('select[aria-label="+ add agent"] option')].map((o) => o.textContent)).toEqual(['+ add agent', 'a2', 'Other (type an agent name)…']);
-    await choose(el.querySelector('select[aria-label="+ add agent"]')!, 'a2');
+    expect([...el.querySelectorAll('select[aria-label="Add an agent"] option')].map((o) => o.textContent)).toEqual(['+ add agent', 'a2', 'Other (type an agent name)…']);
+    await choose(el.querySelector('select[aria-label="Add an agent"]')!, 'a2');
     expect(onChange).toHaveBeenLastCalledWith(['a1', 'a2']);
     await act(async () => { (el.querySelector('button[aria-label="Remove a1"]') as HTMLButtonElement).click(); });
     expect(onChange).toHaveBeenLastCalledWith([]);
@@ -88,12 +88,31 @@ describe('ScopeField', () => {
   });
 });
 
+describe('ScopeField, typing a name', () => {
+  it('takes a name not in the list beside known agents, but not one already chosen', async () => {
+    const onChange = vi.fn();
+    const { el, root } = await mount(h(ScopeField, { scope: ['a1'], agents: ['a1', 'a2'], onChange }));
+    expect(el.textContent).not.toContain('No agents have made a call yet');
+    const other = async (text: string) => {
+      await choose(el.querySelector('select[aria-label="Add an agent"]')!, '__other__');
+      await type(el.querySelector('input[aria-label="Other (type an agent name)…"]') as HTMLInputElement, text);
+      await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'Add') as HTMLButtonElement).click(); });
+    };
+    await other('night-batch');
+    expect(onChange).toHaveBeenLastCalledWith(['a1', 'night-batch']);
+    onChange.mockClear();
+    await other('a1');
+    expect(onChange).not.toHaveBeenCalled();
+    root.unmount();
+  });
+});
+
 describe('ScopeField with no agents yet', () => {
   it('says so, and takes a typed agent name', async () => {
     const onChange = vi.fn();
     const { el, root } = await mount(h(ScopeField, { scope: [], agents: [], onChange }));
     expect(el.textContent).toContain('No agents have made a call yet. Pick Other to type an agent’s name.');
-    await choose(el.querySelector('select[aria-label="+ add agent"]')!, '__other__');
+    await choose(el.querySelector('select[aria-label="Add an agent"]')!, '__other__');
     await type(el.querySelector('input[aria-label="Other (type an agent name)…"]') as HTMLInputElement, ' keyword-test ');
     await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'Add') as HTMLButtonElement).click(); });
     expect(onChange).toHaveBeenLastCalledWith(['keyword-test']);
