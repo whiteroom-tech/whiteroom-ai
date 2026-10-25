@@ -15,7 +15,7 @@ import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_MAX_TOTAL_CHARS, KEYWORD_WHERE, keywordFits, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS). */
@@ -68,7 +68,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const hiddenKeywords = rule.ruleType === 'keyword' && !(rule.params as KeywordParams).keywords.length ? (rule.params as KeywordParams).keywordCount : undefined;
   const addKeyword = () => {
     const k = keyword.trim();
-    if (k && keywords.length < KEYWORD_MAX && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
+    if (k && keywordFits(keywords, k) && !keywords.some((x) => x.toLowerCase() === k.toLowerCase())) setParams({ keywords: [...keywords, k] });
     setKeyword('');
   };
   // Just tell me, Pause and Stop alert; Block does when asked to.
@@ -156,8 +156,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               <input className="gov-field" aria-label="Keyword or phrase" placeholder="Type a word or phrase" value={keyword} maxLength={KEYWORD_MAX_CHARS}
                 onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
                 style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
-              <Button onClick={addKeyword} disabled={!keyword.trim() || keywords.length >= KEYWORD_MAX}>Add</Button>
+              <Button onClick={addKeyword} disabled={!keyword.trim() || !keywordFits(keywords, keyword.trim())}>Add</Button>
             </div>
+            {keyword.trim() && !keywordFits(keywords, keyword.trim()) && (
+              <p style={help}>That’s the most this rule can hold: {KEYWORD_MAX} keywords, {KEYWORD_MAX_TOTAL_CHARS.toLocaleString('en-US')} characters in all. Remove one to add another.</p>
+            )}
             </>}
             <p style={help}>Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.</p>
             {(p as KeywordParams).where !== 'incoming' && (

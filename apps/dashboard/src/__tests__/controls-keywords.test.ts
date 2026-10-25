@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agentGets, draftFrom, draftProblem, RULE_TEMPLATES, sendsAlert, ruleSentenceText } from '@/lib/controls-view';
+import { agentGets, draftFrom, draftProblem, keywordFits, RULE_TEMPLATES, sendsAlert, ruleSentenceText } from '@/lib/controls-view';
 import { canAct, keywordBlockCheck, keywordPhrase, keywordVerb } from '@/lib/controls-guard';
 import type { GovernanceHistoryEntry, GovernanceRule, KeywordParams } from '@/lib/whiteroom/types';
 
@@ -29,6 +29,13 @@ describe('Keywords in plain words', () => {
     expect(canAct({ ...hidden, mode: 'enforce' })).toBe(true);
     expect(canAct(kw({ mode: 'enforce', params: { keywords: [], where: 'incoming', wholeWord: true } }))).toBe(false);
     expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'incoming', wholeWord: true } }))).toBe('When incoming data contains “Orion”, block the call.');
+  });
+
+  it('one more keyword fits only within 200 and 4,000 characters in all', () => {
+    expect(keywordFits(['a'.repeat(100)], 'b')).toBe(true);
+    expect(keywordFits(Array.from({ length: 40 }, () => 'a'.repeat(100)), 'b')).toBe(false);
+    expect(keywordFits(Array.from({ length: 39 }, () => 'a'.repeat(100)), 'b'.repeat(100))).toBe(true);
+    expect(keywordFits(Array.from({ length: 200 }, (_, i) => `k${i}`), 'x')).toBe(false);
   });
 
   it('what the agent gets never names the keyword', () => {

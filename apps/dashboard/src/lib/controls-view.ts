@@ -10,14 +10,20 @@ import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
-/** The engine's limits on a Keywords rule's list (it counts after normalizing, and 4,000 characters in all). */
+/** The engine's limits on a Keywords rule's list (it counts characters after normalizing). */
 export const KEYWORD_MAX = 200;
+export const KEYWORD_MAX_CHARS = 100;
+export const KEYWORD_MAX_TOTAL_CHARS = 4_000;
 
 /** How many keywords a rule has, counting a list the engine hid (keywordCount). */
 export function keywordTotal(p: KeywordParams): number {
   return p.keywords.length || (p.keywordCount ?? 0);
 }
-export const KEYWORD_MAX_CHARS = 100;
+
+/** Whether one more keyword fits the engine's limits: 200 of them, 4,000 characters in all. */
+export function keywordFits(keywords: readonly string[], next: string): boolean {
+  return keywords.length < KEYWORD_MAX && keywords.reduce((n, k) => n + k.length, 0) + next.length <= KEYWORD_MAX_TOTAL_CHARS;
+}
 
 /** Where a Keywords rule looks, as it reads in a sentence. */
 export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };

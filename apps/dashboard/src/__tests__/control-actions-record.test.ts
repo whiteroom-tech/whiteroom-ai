@@ -95,6 +95,12 @@ describe('engine route records accepted control changes', () => {
     // Other reads never carry it.
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     expect(await sentSecret({ action: 'fleet_report', fleet_id: 'f1' })).toBeUndefined();
+    // The lookup fails: the read still goes, without the secret (the lists come back hidden), and it's logged.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.query.mockRejectedValue(new Error('db down'));
+    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBeUndefined();
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('fleet access lookup failed'));
+    err.mockRestore();
     vi.unstubAllEnvs();
   });
 
