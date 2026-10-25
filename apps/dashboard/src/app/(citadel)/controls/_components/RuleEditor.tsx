@@ -15,22 +15,20 @@ import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, KEYWORD_WHERE, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
 import { GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
-const ACTS: Record<GovernanceRule['ruleType'], string> = {
+/** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS). */
+const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword'>, string> = {
   spend_cap: 'Acts before the next call.', loop_breaker: 'Acts on the Nth call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call.', call_rate: 'Acts on the call over the limit.',
-  keyword: 'Acts before the call reaches the model.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',
   replies: 'Acts on the reply before the agent gets it.',
   both: 'Acts before the call reaches the model, and on the reply before the agent gets it.',
 };
-const WHERE_OPTIONS: { value: KeywordWhere; label: string }[] = [
-  { value: 'incoming', label: 'Incoming data' }, { value: 'replies', label: 'A model reply' }, { value: 'both', label: 'Incoming data or a reply' },
-];
+const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
 const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
   { value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: 'warn' },
 ];

@@ -486,6 +486,30 @@ describe('Keywords in the editor', () => {
     params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true }, ...over,
   });
 
+  it('changes where it looks, removes a keyword, and won’t add a blank or a repeat in any case', async () => {
+    api.created.push(keywordRule({ params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true } }));
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    const where = m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement;
+    expect([...where.options].map((o) => o.textContent)).toEqual(['Incoming data', 'A model reply', 'Incoming data or a reply']);
+    expect(m.text()).not.toContain('Replies on Bedrock can’t be checked yet.');
+    await choose(where, 'both');
+    expect(m.text()).toContain('Replies on Bedrock can’t be checked yet.');
+    await m.click(m.el.querySelector('button[aria-label="Remove Orion"]')!);
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')!.textContent).not.toContain('“Orion”');
+    const input = m.el.querySelector('input[aria-label="Keyword or phrase"]') as HTMLInputElement;
+    await type(input, '   ');
+    expect(m.button('Add')!.disabled).toBe(true);
+    await type(input, 'project FALCON');
+    await m.click(m.button('Add'));
+    expect(m.el.querySelectorAll('button[aria-label^="Remove "]').length).toBe(1);
+    expect(input.value).toBe('');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true } }, 'k');
+    m.root.unmount();
+  });
+
   it('adds a keyword with Enter and saves the list', async () => {
     api.created.push(keywordRule());
     api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
