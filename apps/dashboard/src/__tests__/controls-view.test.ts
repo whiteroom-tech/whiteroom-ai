@@ -127,6 +127,9 @@ describe('editing a rule', () => {
     const models = draftFrom(rule({ ruleType: 'model_allowlist', params: { allowedModels: [] } }));
     expect(draftProblem({ ...models, mode: 'enforce' })).toBe('Pick at least one model before you enforce this rule.');
     expect(draftProblem(models)).toBeNull();
+    const tools = draftFrom(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }));
+    expect(draftProblem({ ...tools, mode: 'enforce' })).toBe('Pick at least one tool before you enforce this rule.');
+    expect(draftProblem({ ...tools, mode: 'enforce', params: { blockedTools: ['shell'] } })).toBeNull();
     expect(draftChanges({ ...spend, number: '0' }, rule({}))).toBeNull();
   });
 });

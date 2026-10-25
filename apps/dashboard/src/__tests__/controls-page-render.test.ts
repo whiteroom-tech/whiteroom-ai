@@ -22,6 +22,14 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => nav.params,
 }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
+// The Diagnosis suggestion draft, stood in for: it finishes by calling onDone, as the real one does.
+vi.mock('@/app/(citadel)/controls/_components/SuggestionDraft', async () => {
+  const { createElement } = await import('react');
+  return {
+    SuggestionDraft: ({ onDone }: { onDone: (ruleId: string, message: string) => void }) =>
+      createElement('section', { 'aria-label': 'Suggestion draft' }, 'Suggestion draft', createElement('button', { type: 'button', onClick: () => onDone('r2', 'Added Model allowlist in Watch.') }, 'Finish suggestion')),
+  };
+});
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
 
 const base = { fleetId: 'f1', version: 1, changedBy: 'test', changedAt: '2026-10-20T00:00:00Z' };
@@ -280,10 +288,49 @@ describe('Controls page, more paths', () => {
   it('a Diagnosis suggestion (?rec=) takes the right column; picking a rule closes it', async () => {
     nav.params = new URLSearchParams('rec=rec_123');
     const m = await mount();
-    expect(m.text()).toContain('Loading the suggestion');
+    expect(m.text()).toContain('Suggestion draft');
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeNull();
     await m.click(m.row('100 times'));
     expect(nav.replace).toHaveBeenCalledWith('/controls');
+    m.root.unmount();
+  });
+});
+
+describe('Controls page, review round 2', () => {
+  it('finishing a Diagnosis suggestion opens the new rule in the editor', async () => {
+    nav.params = new URLSearchParams('rec=rec_123');
+    const m = await mount();
+    await m.click(m.button('Finish suggestion'));
+    nav.params = new URLSearchParams(); // the page replaced ?rec= away
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    expect(m.text()).toContain('Only allow these models:');
+    expect(m.text()).toContain('Added Model allowlist in Watch.');
+    m.root.unmount();
+  });
+
+  it('the overlap banner removes the cap that never acts, after asking', async () => {
+    const m = await mount();
+    await m.click(m.button('Remove the $200 cap'));
+    expect(m.text()).toContain('Remove the Spend cap rule?');
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    expect(dialog.textContent).toContain('$200');
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
+    expect(api.remove).toHaveBeenCalledWith('f1', 'r4', 'k');
+    m.root.unmount();
+  });
+
+  it('a failed remove keeps the rule and the editor open, and says so', async () => {
+    api.remove.mockRejectedValueOnce(new Error('network down'));
+    const m = await mount();
+    await m.click(m.row('100 times'));
+    await m.click(m.button('Remove rule'));
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
+    expect(m.text()).toMatch(/Couldn’t remove the rule/);
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    expect(m.row('100 times')).toBeTruthy();
     m.root.unmount();
   });
 });

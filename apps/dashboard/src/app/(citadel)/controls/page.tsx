@@ -173,8 +173,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     return () => { window.removeEventListener("beforeunload", onUnload); document.removeEventListener("click", onClick, true); };
   }, [dirty, selected, router]);
 
+  // A rule selected without a draft (a Diagnosis suggestion just added it, say) opens in the editor too.
+  useEffect(() => {
+    if (selected && !draft) setDraft(draftFrom(selected));
+  }, [selected, draft]);
+
   const openRule = (id: string | null) => {
-    if (id === selectedId || saving) return;
+    if ((id === selectedId && (id === null || draft)) || saving) return;
     guard(() => {
       if (suggestionRec) router.replace(withParams({ rec: null }));
       setError(null);
