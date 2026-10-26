@@ -29,14 +29,16 @@ vi.mock('@/components/citadel/PageChrome', async () => {
 });
 
 import { AgentDetail } from '@/components/agent/AgentDetail';
+import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import type { AgentInfo } from '@/lib/whiteroom/types';
 
 const flush = async () => { for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); }); };
 
-async function mount() {
+async function mount(extra: Partial<Parameters<typeof AgentDetail>[0]> = {}) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => { root.render(h(AgentDetail, { fleetId: 'f1', authKey: 'k', agentId: 'scout', from: 'home' })); });
+  await act(async () => { root.render(h(AgentDetail, { fleetId: 'f1', authKey: 'k', agentId: 'scout', from: 'home', ...extra })); });
   await flush();
   const button = (label: string) => [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
   const click = async (b: Element | undefined) => { expect(b, 'button').toBeTruthy(); await act(async () => { (b as HTMLElement).click(); }); await flush(); };
@@ -49,7 +51,12 @@ async function mount() {
     });
     await flush();
   };
-  return { el, root, button, click, dialog, typeName };
+  const confirmRemove = async () => {
+    await click(button('Remove…'));
+    await typeName('scout');
+    await click([...dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Remove agent'));
+  };
+  return { el, root, button, click, dialog, typeName, confirmRemove };
 }
 
 beforeEach(() => { nav.push.mockClear(); api.remove.mockReset(); document.body.innerHTML = ''; });
@@ -82,6 +89,44 @@ describe('Agent detail: Remove', () => {
     await m.click(m.button('Try again'));
     expect(api.remove).toHaveBeenCalledTimes(2);
     expect(nav.push).toHaveBeenCalledWith('/home');
+    m.root.unmount();
+  });
+
+  it('a refusal shows the engine’s reason, with no retry', async () => {
+    api.remove.mockRejectedValueOnce(new ControlDeniedError('Only the fleet’s owner can do that.'));
+    const m = await mount();
+    await m.confirmRemove();
+    expect(m.el.textContent).toContain('Only the fleet’s owner can do that.');
+    expect(m.button('Try again')).toBeUndefined();
+    expect(nav.push).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('an expired session signs out instead of showing an error', async () => {
+    api.remove.mockRejectedValueOnce(new WhiteRoomApiError('Unauthorized', 401));
+    const onAuthError = vi.fn();
+    const m = await mount({ onAuthError });
+    await m.confirmRemove();
+    expect(onAuthError).toHaveBeenCalledWith('Session expired. Please sign in again.');
+    expect(m.el.textContent).not.toContain('Couldn’t remove');
+    m.root.unmount();
+  });
+
+  it('Cancel closes the dialog and removes nothing', async () => {
+    const m = await mount();
+    await m.click(m.button('Remove…'));
+    await m.click([...m.dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Cancel'));
+    expect(m.dialog()).toBeUndefined();
+    expect(api.remove).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('the preview removes nothing', async () => {
+    const agent = { agentId: 'scout', status: 'idle', watchNumber: 1 } as AgentInfo;
+    const m = await mount({ preview: { agent, handover: null, entries: [] } });
+    await m.confirmRemove();
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(nav.push).not.toHaveBeenCalled();
     m.root.unmount();
   });
 });
