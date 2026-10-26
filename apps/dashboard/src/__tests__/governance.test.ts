@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countsFromRuleActions, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
+import { blockedByPhrase, countsFromRuleActions, ruleLabel, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
   convertSpendCap,
   computeSuggestions,
   governanceCounts,
@@ -134,6 +134,16 @@ describe('activity feed governance rows', () => {
     const m = eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'model_allowlist', reason: 'model_not_allowed', model: 'gpt-4o' }), NOW);
     expect(m.code).toBe('W/B');
     expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed) (Watch only)');
+    expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule (Watch only)');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found', occurrences: 3 })).said).toBe('was blocked by the Keywords rule ×3');
+    // The Home chip says the same.
+    expect(blockedByPhrase('keyword', 'keyword_found', false)).toBe('the Keywords rule');
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', false)).toBe('Spend cap (budget exceeded)');
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', true)).toBe('the spend cap (budget exceeded)');
+    expect(blockedByPhrase('spend_cap', 'something_new', true)).toBe('the spend cap');
+    expect(blockedByPhrase(undefined, undefined, false)).toBe(ruleLabel(undefined));
+    expect(blockedByPhrase('mystery', undefined, true)).toBe(`the ${ruleLabel('mystery').toLowerCase()}`);
     expect(technicalLine(m)).toContain('model gpt-4o');
   });
 

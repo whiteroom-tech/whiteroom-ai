@@ -35,6 +35,20 @@ export const REASON_LABELS: Record<string, string> = {
   keyword_found: 'keyword found',
 };
 
+/**
+ * What stepped in, said after "blocked by": the rule and, when it adds
+ * something, why. `lower` for mid-sentence ("blocked by the spend cap
+ * (budget exceeded)"), else a label ("Spend cap (budget exceeded)"). The
+ * Keywords rule is named as a rule ("the Keywords rule"): its reason only
+ * repeated it.
+ */
+export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boolean): string {
+  if (ruleType === 'keyword') return 'the Keywords rule';
+  const label = ruleLabel(ruleType);
+  const why = REASON_LABELS[String(reason ?? '')];
+  return `${lower ? `the ${label.toLowerCase()}` : label}${why ? ` (${why})` : ''}`;
+}
+
 /** Blended rate the engine applies to dollar spend caps: $0.003 per 1K tokens. */
 export const BLENDED_USD_PER_TOKEN = 0.003 / 1000;
 

@@ -9,7 +9,7 @@ import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
-import { REASON_LABELS, recentBlocksByAgent, ruleLabel } from '@/lib/governance';
+import { blockedByPhrase, recentBlocksByAgent } from '@/lib/governance';
 import { ROUTES } from '@/lib/routes';
 import {
   afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, sortAgents, stateSummary, todayTotals, usd,
@@ -233,7 +233,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                         <div>
                           <span className="wr-chip-warn">
                             <Icon name="alert" size={12} strokeWidth={2.2} />
-                            Blocked by {ruleLabel(block.ruleType)}{REASON_LABELS[String(block.reason)] ? ` (${REASON_LABELS[String(block.reason)]})` : ''} at {clock(block.timestamp)}
+                            Blocked by {blockedByPhrase(block.ruleType, block.reason, false)} at {clock(block.timestamp)}
                           </span>
                         </div>
                       )}
