@@ -134,6 +134,8 @@ describe('activity feed governance rows', () => {
     const m = eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'model_allowlist', reason: 'model_not_allowed', model: 'gpt-4o' }), NOW);
     expect(m.code).toBe('W/B');
     expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed) (Watch only)');
+    expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule (Watch only)');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
     expect(technicalLine(m)).toContain('model gpt-4o');
   });
 

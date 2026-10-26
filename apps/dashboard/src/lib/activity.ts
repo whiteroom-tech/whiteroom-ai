@@ -186,7 +186,10 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
 function governancePhrase(e: AuditEntry): string {
   const reason = REASON_LABELS[String(e.reason ?? '')];
   const n = occurrences(e);
-  return `${ruleLabel(e.ruleType).toLowerCase()}${reason ? ` (${reason})` : ''}${n > 1 ? ` ×${n}` : ''}`;
+  const times = n > 1 ? ` ×${n}` : '';
+  // "the keywords (keyword found)" read oddly: the Keywords rule is named as a rule, and its reason says nothing more.
+  if (e.ruleType === 'keyword') return `Keywords rule${times}`;
+  return `${ruleLabel(e.ruleType).toLowerCase()}${reason ? ` (${reason})` : ''}${times}`;
 }
 
 /** Unknown or absent types degrade to readable prose rather than throwing. */
