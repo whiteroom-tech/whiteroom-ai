@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Banner, Button, Hint, Panel, StatusPill, Tag, TextInput, FONT_MONO, type AgentState } from '@whiteroom/ui';
-import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, resumeAgent, stopAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { fmtTime, fmtTokens } from '@/lib/format';
@@ -23,7 +24,7 @@ import {
   breakEndsAt, canResume, canStartBreak, handoverLines, notesAreLong, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftSummary,
 } from '@/lib/agent-detail';
 
-type Pending = 'pausing' | 'stopping' | 'resuming' | null;
+type Pending = 'pausing' | 'stopping' | 'resuming' | 'removing' | null;
 
 /**
  * Agent detail (redesign screen 3): one agent's shift, handover notes, task
@@ -55,6 +56,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [actionError, setActionError] = useState<{ text: string; retry?: () => void } | null>(null);
   const [confirmBreak, setConfirmBreak] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const router = useRouter();
   const [actors, setActors] = useState<ControlActor[]>([]);
   // Who set the hold: looked up once per hold, not on every poll.
   const holdAt = agent?.hold?.at;
@@ -148,7 +151,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   // tick, not a refresh: a refresh would cancel a request still in flight,
   // so a slow engine would never confirm.
   useEffect(() => {
-    if (!pending) return;
+    // Removing ends on Home; there's no status to wait for.
+    if (!pending || pending === 'removing') return;
     const id = setInterval(tick, 2000);
     const giveUp = setTimeout(() => {
       setPending(null);
@@ -190,6 +194,24 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       setActionError(failure === 'refused'
         ? { text: (e as Error).message }
         : { text: `Couldn’t stop ${agentId}. ${e instanceof Error ? e.message : ''} Nothing changed.`, retry: stop });
+    }
+  }
+
+  async function remove() {
+    setConfirmRemove(false);
+    if (preview) return;
+    setActionError(null);
+    setPending('removing');
+    try {
+      await removeAgent(fleetId, agentId, authKey);
+      router.push(ROUTES.home);
+    } catch (e) {
+      setPending(null);
+      const failure = controlFailure(e);
+      if (failure === 'sign-out') { onAuthError?.('Session expired. Please sign in again.'); return; }
+      setActionError(failure === 'refused'
+        ? { text: (e as Error).message }
+        : { text: `Couldn’t remove ${agentId}. ${e instanceof Error ? e.message : ''} Nothing changed.`, retry: remove });
     }
   }
 
@@ -257,7 +279,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     );
   }
 
-  const state: AgentState | null = agent ? (pending ?? agentState(agent)) : null;
+  const state: AgentState | null = agent ? (pending && pending !== 'removing' ? pending : agentState(agent)) : null;
   // Gov v1 fleets hold the agent (Pause, Stop); others give it a break.
   const v1 = !!agent?.govV1;
   const breakGate = !agent ? { allowed: false } : v1 ? (agent.hold ? { allowed: false, why: `It’s already ${agent.hold.state}.` } : { allowed: true }) : canStartBreak(agent);
@@ -286,6 +308,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         <Button variant="primary" disabled={!resumeGate.allowed || !!pending} title={resumeGate.why} onClick={resume} busy={pending === 'resuming'} busyLabel="Resuming…">Resume</Button>
         <Button disabled={!breakGate.allowed || !!pending} title={breakGate.why} onClick={() => setConfirmBreak(true)} busy={pending === 'pausing'} busyLabel="Pausing…">{v1 ? 'Pause' : 'Start a break'}</Button>
         {v1 && <Button disabled={!stopGate || !!pending} onClick={() => setConfirmStop(true)} busy={pending === 'stopping'} busyLabel="Stopping…">Stop&hellip;</Button>}
+        <Button variant="ghost" disabled={!agent || !!pending} onClick={() => setConfirmRemove(true)} busy={pending === 'removing'} busyLabel="Removing…">Remove&hellip;</Button>
       </PageHeader>
 
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -424,6 +447,15 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         confirmPhrase={agentId}
         onConfirm={stop}
         onCancel={() => setConfirmStop(false)}
+      />
+      <ConfirmDialog
+        open={confirmRemove}
+        title={`Remove ${agentId}?`}
+        body={<>It leaves this fleet’s agent lists. Its audit trail, rule history and rule actions stay.<span style={{ display: 'block', marginTop: 8 }}>If it makes another call through WhiteRoom, it comes back. To keep it from working, stop it instead.</span></>}
+        confirmLabel="Remove agent"
+        confirmPhrase={agentId}
+        onConfirm={remove}
+        onCancel={() => setConfirmRemove(false)}
       />
     </>
   );

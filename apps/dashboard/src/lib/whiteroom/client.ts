@@ -450,6 +450,11 @@ export async function stopAgent(fleetId: string, agentId: string, key?: string):
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'stop_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
+/** Removes the agent from the fleet. Its audit trail, rule history and rule actions stay; a new call brings it back. */
+export async function removeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'deregister_agent', fleet_id: fleetId, agent_id: agentId }, key));
+}
+
 export async function resumeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'resume_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }

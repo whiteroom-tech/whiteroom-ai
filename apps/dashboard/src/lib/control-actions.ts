@@ -5,7 +5,7 @@ import type { ControlActor } from '@/lib/control-actors';
 
 /** The control actions a page names a person for: holds, rule changes and owner goals. */
 const RECORDED = new Set([
-  'pause_agent', 'stop_agent',
+  'pause_agent', 'stop_agent', 'deregister_agent',
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'goal_set_owner',
 ]);
