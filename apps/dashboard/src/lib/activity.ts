@@ -12,7 +12,7 @@
 // TONE_BG below use this app's own theme tokens from app/globals.css instead.
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
-import { REASON_LABELS, occurrences, ruleLabel } from '@/lib/governance';
+import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 
@@ -78,8 +78,8 @@ const EVENT_COPY: Record<string, EventCopy> = {
   register: { icon: '➕', tone: 'idle', code: 'REG', say: () => 'joined the fleet' },
   agent_paused: { icon: '⏸', tone: 'rest', code: 'PAU', say: () => 'was paused' },
   agent_resumed: { icon: '▶', tone: 'start', code: 'RES', say: () => 'was resumed' },
-  governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by the ${governancePhrase(e)}` },
-  governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by the ${governancePhrase(e)} (Watch only)` },
+  governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by ${governancePhrase(e)}` },
+  governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by ${governancePhrase(e)} (Watch only)` },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
   // Calls WhiteRoom couldn't tie to an agent while the fleet has Pause/Stop or
   // an Enforce rule on. Fleet-level: there's no agent to name.
@@ -184,12 +184,9 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
 
 /** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
 function governancePhrase(e: AuditEntry): string {
-  const reason = REASON_LABELS[String(e.reason ?? '')];
   const n = occurrences(e);
   const times = n > 1 ? ` ×${n}` : '';
-  // "the keywords (keyword found)" read oddly: the Keywords rule is named as a rule, and its reason says nothing more.
-  if (e.ruleType === 'keyword') return `Keywords rule${times}`;
-  return `${ruleLabel(e.ruleType).toLowerCase()}${reason ? ` (${reason})` : ''}${times}`;
+  return `${blockedByPhrase(e.ruleType, e.reason, true)}${times}`;
 }
 
 /** Unknown or absent types degrade to readable prose rather than throwing. */
