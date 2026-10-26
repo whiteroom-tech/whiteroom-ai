@@ -115,6 +115,8 @@ describe('Controls page', () => {
     // Stat cards, as Performance counts rule actions.
     expect(m.text()).toMatch(/Enforcing2Loop breaker, Call rate/);
     expect(m.text()).toMatch(/Rule actions\s*7/);
+    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.startsWith('Rule actions'))!;
+    expect(card.textContent).toMatch(/· last 7 days$/);
     // The one Loop breaker gets its own count; the $200 cap never acts.
     expect(m.row('100 times').textContent).toContain('2 blocked · last 7 days');
     expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');
@@ -385,7 +387,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     m.root.unmount();
   });
 
-  it('"Add in Watch" asks before throwing away an edit to the allowlist, then reopens it from the saved rule', async () => {
+  it('"Add to your allowlist" asks before throwing away an edit to the allowlist, then reopens it from the saved rule', async () => {
     api.models = ['gpt-4o'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' }; // a fleet-wide allowlist in Watch takes the models
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
@@ -393,7 +395,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     await m.click(m.row('Only allow'));
     await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
     expect(m.button('Save')!.disabled).toBe(false);
-    await m.click(m.button('Add in Watch'));
+    await m.click(m.button('Add to your allowlist'));
     expect(m.text()).toContain('Discard your changes to Model allowlist?');
     expect(api.update).not.toHaveBeenCalled();
     await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
@@ -404,7 +406,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     m.root.unmount();
   });
 
-  it('"Add in Watch" is busy until the list reloads, so a second click adds nothing, then says what it did', async () => {
+  it('"Add to your allowlist" names what the allowlist leaves out, is busy until the list reloads, then says what it did', async () => {
     api.models = ['gpt-4o'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' }; // a fleet-wide allowlist in Watch takes the models
     let finish!: () => void;
@@ -413,7 +415,9 @@ describe('Controls page, suggestions, removing and filtering', () => {
       finish = () => { api.saved[id] = rule; resolve({ rule }); };
     }));
     const m = await mount();
-    await m.click(m.button('Add in Watch'));
+    expect(m.text()).toContain('Your Model allowlist leaves out gpt-4o, which your fleet used in the last 14 days. With it added, the allowlist would have stopped 0 calls.');
+    expect(m.button('Add in Watch')).toBeUndefined();
+    await m.click(m.button('Add to your allowlist'));
     const busy = [...m.el.querySelectorAll('button')].find((b) => b.textContent?.includes('Adding…')) as HTMLButtonElement;
     expect(busy.disabled).toBe(true);
     await act(async () => { busy.click(); });
@@ -421,7 +425,39 @@ describe('Controls page, suggestions, removing and filtering', () => {
     await flush();
     expect(api.update).toHaveBeenCalledTimes(1);
     expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
-    expect(m.button('Add in Watch')).toBeUndefined();
+    expect(m.button('Add to your allowlist')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('an empty Tool list in Watch says it does nothing yet, in the warning colour', async () => {
+    api.saved.r6 = { ...RULES[5], mode: 'watch' };
+    const m = await mount();
+    const stat = [...m.row('No tools picked yet.').querySelectorAll('span')].find((s) => s.textContent === 'Does nothing until you add a tool') as HTMLElement;
+    expect(stat.style.color).toBe('var(--warn-tx)');
+    m.root.unmount();
+  });
+
+  it('an Off allowlist that already has the models: "Turn on in Watch" puts it in Watch', async () => {
+    api.models = ['claude-haiku-4-5-20251001'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all', mode: 'off' };
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
+    const m = await mount();
+    expect(m.text()).toContain('Your Model allowlist is Off. In Watch only, it would have stopped 0 calls in the last 14 days.');
+    await m.click(m.button('Turn on in Watch'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] } }), 'k');
+    expect(m.text()).toContain('Turned your Model allowlist on in Watch only.');
+    m.root.unmount();
+  });
+
+  it('an Off allowlist missing a model: names it, says it goes to Watch, and adds it', async () => {
+    api.models = ['gpt-4o'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all', mode: 'off' };
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
+    const m = await mount();
+    expect(m.text()).toContain('Your Model allowlist leaves out gpt-4o, which your fleet used in the last 14 days. With it added, the allowlist would have stopped 0 calls. It goes to Watch only.');
+    await m.click(m.button('Add to your allowlist'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['gpt-4o', 'claude-haiku-4-5-20251001'] } }), 'k');
+    expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
     m.root.unmount();
   });
 
@@ -485,7 +521,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     const m = await mount();
     const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.includes('Rule actions'))!;
     // The mocked engine's 2 blocks are fleet-wide, none of them lead-agent's.
-    expect(card.textContent).toMatch(/^Rule actions\S*0no rule stepped in$/);
+    expect(card.textContent).toMatch(/^Rule actions\S*0none in the last 7 days$/);
     m.root.unmount();
   });
 

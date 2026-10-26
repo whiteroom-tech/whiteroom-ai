@@ -80,6 +80,18 @@ describe('row status lines', () => {
     expect(rowStat({ ...r, response: 'notify' }, { byRuleType: counts, onlyOfItsType: true })).toBe('1 told you · last 7 days');
     expect(rowStat(r, { byRuleType: counts, onlyOfItsType: false })).toBe('');
     expect(rowStat(r, { onlyOfItsType: true })).toBe('');
+    // Counts loaded with nothing for this rule type: it acted 0 times.
+    expect(rowStat(rule({ mode: 'enforce', ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }), { byRuleType: counts, onlyOfItsType: true })).toBe('0 blocked · last 7 days');
+  });
+
+  it('a Keywords or Tool list rule with nothing picked says it does nothing yet', () => {
+    const kw = rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true } });
+    expect(rowStat(kw, { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Does nothing until you add a keyword');
+    expect(rowStat({ ...kw, mode: 'enforce' }, { byRuleType: counts, onlyOfItsType: true })).toBe('Does nothing until you add a keyword');
+    expect(rowStat({ ...kw, mode: 'off' }, { onlyOfItsType: true })).toBe('');
+    // Keywords hidden from this caller still count as picked.
+    expect(rowStat(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true, keywordCount: 2 } }), { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Hasn’t fired since its last change');
+    expect(rowStat(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Does nothing until you add a tool');
   });
 
   it('viewing one agent: that agent’s would-acts, and an Enforce count only for a rule that covers just them', () => {

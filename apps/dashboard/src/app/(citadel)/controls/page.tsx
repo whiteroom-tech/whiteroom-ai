@@ -19,7 +19,7 @@ import {
   performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
-  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
+  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -32,7 +32,7 @@ import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
+  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, emptyPick, isDirty, money, NO_ACTIONS, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
   type RuleDraft,
 } from "@/lib/controls-view";
 
@@ -303,9 +303,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setError(null);
     setNotice(null);
     const description = "Added Model allowlist in Watch (suggested)";
-    // Only a fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch):
-    // an enforcing one stays as it is, and one for some agents isn't widened. Otherwise, a new rule.
-    const target = rules.find((r) => r.ruleType === "model_allowlist" && r.mode !== "enforce" && r.appliesTo === "all");
+    // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
+    const target = suggestedAllowlistTarget(rules);
     try {
       if (!target) {
         await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
@@ -313,7 +312,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const prev = (target.params as ModelAllowlistParams).allowedModels;
         await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
       }
-      setNotice(target ? "Added the models to your Model allowlist, in Watch only." : "Added a Model allowlist in Watch only.");
+      const added = target ? models.some((m) => !(target.params as ModelAllowlistParams).allowedModels.includes(m)) : true;
+      setNotice(!target ? "Added a Model allowlist in Watch only." : added ? "Added the models to your Model allowlist, in Watch only." : "Turned your Model allowlist on in Watch only.");
     } catch (e) { handleError(e, "add the suggested allowlist"); }
     // Busy until the list reloads and the banner goes, so a second click can't add another rule.
     try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
@@ -334,8 +334,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const overlap = spendOverlap(shown);
   // Viewing one agent: that agent's rule actions, to match the rules shown.
   const counts = actions ? tallyFromRuleActions(agentFilter ? actions.byAgent[agentFilter] ?? NO_ACTIONS : actions.totals) : null;
+  const countWords = counts ? tallyWords(counts).map((w) => w.text).join(" · ") : "";
   const allowlistSuggestion = suggestions.onlyModels && !rules.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
+  // The allowlist the suggestion would add to (see addSuggestedAllowlist), and the models it lacks.
+  const allowlistTarget = allowlistSuggestion ? suggestedAllowlistTarget(rules) : undefined;
+  const allowlistMissing = allowlistTarget ? allowlistSuggestion!.filter((m) => !(allowlistTarget.params as ModelAllowlistParams).allowedModels.includes(m)) : [];
   const typeCount = (t: GovernanceRuleType) => rules.filter((r) => r.ruleType === t).length;
 
   const row = (r: GovernanceRule) => {
@@ -356,7 +360,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         </span>
         <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 12.5, color: "var(--tx2)" }}>
           <span>{scope.lead}<span style={{ fontFamily: FONT_MONO, color: "var(--tx)" }}>{scope.agents}</span></span>
-          {stat && <span style={never ? { color: "var(--warn-tx)" } : undefined}>{stat}</span>}
+          {stat && <span style={never || emptyPick(r) ? { color: "var(--warn-tx)" } : undefined}>{stat}</span>}
         </span>
       </button>
     );
@@ -396,8 +400,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             <StatCard variant="card" label="Enforcing" value={enforcing.length} sub={ruleNames(enforcing)} />
             <StatCard variant="card" label="Watching" hint="Watch only counts what a rule would do and never acts. Enforce acts." value={watching.length} sub={ruleNames(watching)} />
             <StatCard variant="card" label="Off" value={off.length} sub={ruleNames(off)} />
-            <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={counts ? tallyTotal(counts).toLocaleString() : "—"}
-              sub={counts ? tallyWords(counts).map((w) => w.text).join(" · ") || "no rule stepped in" : "last 7 days"} />
+            <StatCard variant="card" label="Rule actions" hint={`${HELP.ruleActions} Last 7 days.`} value={counts ? tallyTotal(counts).toLocaleString() : "—"}
+              sub={!counts ? "last 7 days" : countWords ? `${countWords} · last 7 days` : "none in the last 7 days"} />
           </section>
 
           {error && !selected && <Banner variant="error" actions={<Button variant="ghost" size={28} onClick={() => setError(null)}>Dismiss</Button>}>{error}</Banner>}
@@ -417,8 +421,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             </Banner>
           )}
           {allowlistSuggestion && (
-            <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>Add in Watch</Button>}>
-              Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.
+            <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>{!allowlistTarget ? "Add in Watch" : allowlistMissing.length ? "Add to your allowlist" : "Turn on in Watch"}</Button>}>
+              {allowlistTarget && !allowlistMissing.length
+                ? <>Your Model allowlist is Off. In Watch only, it would have stopped 0 calls in the last 14 days.</>
+                : allowlistTarget
+                ? <>Your Model allowlist leaves out <span style={{ fontFamily: FONT_MONO }}>{allowlistMissing.join(", ")}</span>, which your fleet used in the last 14 days. With {allowlistMissing.length === 1 ? "it" : "them"} added, the allowlist would have stopped 0 calls.{allowlistTarget.mode === "off" ? " It goes to Watch only." : ""}</>
+                : <>Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.</>}
             </Banner>
           )}
 
@@ -551,7 +559,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   );
 }
 
-const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
+// Only a fleet-wide allowlist that isn't enforcing takes suggested models: an enforcing
+// one stays as it is, and one for some agents isn't widened.
+const suggestedAllowlistTarget = (rules: GovernanceRule[]) =>
+  rules.find((r) => r.ruleType === "model_allowlist" && r.mode !== "enforce" && r.appliesTo === "all");
 
 /** What enforcing would have done, from the rule's time in Watch; and the fleet-wide side effect, when there is one. */
 function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: GovernanceRule; wouldAct: RuleWouldActResult | null }) {
