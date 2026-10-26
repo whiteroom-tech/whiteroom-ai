@@ -131,14 +131,12 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const TALLY_WORD: Record<GovernanceResponse, string> = { notify: 'told you', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
-const NO_COUNTS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
+/** A rule (or agent) with no actions. */
+export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
 
 /** A Keywords or Tool list rule with nothing picked can never act: what it still needs. */
 export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string | null {
-  if (rule.ruleType === 'keyword') {
-    const p = rule.params as KeywordParams;
-    return p.keywords.length || p.keywordCount ? null : 'a keyword';
-  }
+  if (rule.ruleType === 'keyword') return keywordTotal(rule.params as KeywordParams) ? null : 'a keyword';
   if (rule.ruleType === 'tool_list') return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
   return null;
 }
@@ -167,7 +165,7 @@ export function rowStat(rule: GovernanceRule, ctx: {
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     // byRule lists only rule types that acted: a missing type acted 0 times.
-    const c = ctx.onlyOfItsType && justThem && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_COUNTS : undefined;
+    const c = ctx.onlyOfItsType && justThem && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
     return c ? `${fmt(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
   }
   if (rule.mode === 'watch') {

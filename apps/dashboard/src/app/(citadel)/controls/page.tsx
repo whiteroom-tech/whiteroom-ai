@@ -19,7 +19,7 @@ import {
   performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
-  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
+  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -32,7 +32,7 @@ import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, emptyPick, isDirty, money, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
+  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, emptyPick, isDirty, money, NO_ACTIONS, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
   type RuleDraft,
 } from "@/lib/controls-view";
 
@@ -562,8 +562,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 // one stays as it is, and one for some agents isn't widened.
 const suggestedAllowlistTarget = (rules: GovernanceRule[]) =>
   rules.find((r) => r.ruleType === "model_allowlist" && r.mode !== "enforce" && r.appliesTo === "all");
-
-const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
 
 /** What enforcing would have done, from the rule's time in Watch; and the fleet-wide side effect, when there is one. */
 function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: GovernanceRule; wouldAct: RuleWouldActResult | null }) {
