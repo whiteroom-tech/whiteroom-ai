@@ -115,6 +115,8 @@ describe('Controls page', () => {
     // Stat cards, as Performance counts rule actions.
     expect(m.text()).toMatch(/Enforcing2Loop breaker, Call rate/);
     expect(m.text()).toMatch(/Rule actions\s*7/);
+    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.startsWith('Rule actions'))!;
+    expect(card.textContent).toMatch(/· last 7 days$/);
     // The one Loop breaker gets its own count; the $200 cap never acts.
     expect(m.row('100 times').textContent).toContain('2 blocked · last 7 days');
     expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');

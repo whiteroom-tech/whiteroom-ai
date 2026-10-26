@@ -333,6 +333,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const overlap = spendOverlap(shown);
   // Viewing one agent: that agent's rule actions, to match the rules shown.
   const counts = actions ? tallyFromRuleActions(agentFilter ? actions.byAgent[agentFilter] ?? NO_ACTIONS : actions.totals) : null;
+  const countWords = counts ? tallyWords(counts).map((w) => w.text).join(" · ") : "";
   const allowlistSuggestion = suggestions.onlyModels && !rules.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
   // The allowlist the suggestion would add to (see addSuggestedAllowlist), and the models it lacks.
@@ -399,7 +400,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             <StatCard variant="card" label="Watching" hint="Watch only counts what a rule would do and never acts. Enforce acts." value={watching.length} sub={ruleNames(watching)} />
             <StatCard variant="card" label="Off" value={off.length} sub={ruleNames(off)} />
             <StatCard variant="card" label="Rule actions" hint={`${HELP.ruleActions} Last 7 days.`} value={counts ? tallyTotal(counts).toLocaleString() : "—"}
-              sub={counts ? (tallyWords(counts).length ? `${tallyWords(counts).map((w) => w.text).join(" · ")} · last 7 days` : "none in the last 7 days") : "last 7 days"} />
+              sub={!counts ? "last 7 days" : countWords ? `${countWords} · last 7 days` : "none in the last 7 days"} />
           </section>
 
           {error && !selected && <Banner variant="error" actions={<Button variant="ghost" size={28} onClick={() => setError(null)}>Dismiss</Button>}>{error}</Banner>}
