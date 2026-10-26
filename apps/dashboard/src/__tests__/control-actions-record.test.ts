@@ -25,6 +25,11 @@ describe('recordControlAction', () => {
     expect(inserts()[0][1]).toEqual(['f1', 'pause_agent', 'a1', null, 'u1']);
   });
 
+  it('records who removed an agent', async () => {
+    await recordControlAction('u1', 'f1', 'deregister_agent', '{"agent_id":"a1"}', '{"success":true}');
+    expect(inserts()[0][1]).toEqual(['f1', 'deregister_agent', 'a1', null, 'u1']);
+  });
+
   it('prunes the fleet\'s rows older than 45 days as it writes', async () => {
     await recordControlAction('u1', 'f1', 'stop_agent', '{"agent_id":"a1"}', '{}');
     const prune = mocks.query.mock.calls.find(([sql]) => String(sql).startsWith('DELETE FROM control_actions'));

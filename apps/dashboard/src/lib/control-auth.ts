@@ -16,6 +16,9 @@ import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'pause_agent', 'resume_agent', 'stop_agent',
+  // Removing an agent is an owner's call too. The engine doesn't require the
+  // secret for it yet, so this gates only the dashboard path.
+  'deregister_agent',
   'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test',
   'fleet_data_settings_get', 'fleet_data_settings_set',
   'goal_get', 'goal_set_owner', 'agent_new_run',
