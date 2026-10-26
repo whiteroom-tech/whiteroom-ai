@@ -429,6 +429,14 @@ describe('Controls page, suggestions, removing and filtering', () => {
     m.root.unmount();
   });
 
+  it('an empty Tool list in Watch says it does nothing yet, in the warning colour', async () => {
+    api.saved.r6 = { ...RULES[5], mode: 'watch' };
+    const m = await mount();
+    const stat = [...m.row('No tools picked yet.').querySelectorAll('span')].find((s) => s.textContent === 'Does nothing until you add a tool') as HTMLElement;
+    expect(stat.style.color).toBe('var(--warn-tx)');
+    m.root.unmount();
+  });
+
   it('an Off allowlist that already has the models: "Turn on in Watch" puts it in Watch', async () => {
     api.models = ['claude-haiku-4-5-20251001'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all', mode: 'off' };
