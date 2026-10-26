@@ -312,7 +312,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const prev = (target.params as ModelAllowlistParams).allowedModels;
         await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
       }
-      setNotice(target ? "Added the models to your Model allowlist, in Watch only." : "Added a Model allowlist in Watch only.");
+      const added = target ? models.some((m) => !(target.params as ModelAllowlistParams).allowedModels.includes(m)) : true;
+      setNotice(!target ? "Added a Model allowlist in Watch only." : added ? "Added the models to your Model allowlist, in Watch only." : "Turned your Model allowlist on in Watch only.");
     } catch (e) { handleError(e, "add the suggested allowlist"); }
     // Busy until the list reloads and the banner goes, so a second click can't add another rule.
     try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
@@ -359,7 +360,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         </span>
         <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 12.5, color: "var(--tx2)" }}>
           <span>{scope.lead}<span style={{ fontFamily: FONT_MONO, color: "var(--tx)" }}>{scope.agents}</span></span>
-          {stat && <span style={never || (r.mode !== "off" && emptyPick(r)) ? { color: "var(--warn-tx)" } : undefined}>{stat}</span>}
+          {stat && <span style={never || emptyPick(r) ? { color: "var(--warn-tx)" } : undefined}>{stat}</span>}
         </span>
       </button>
     );

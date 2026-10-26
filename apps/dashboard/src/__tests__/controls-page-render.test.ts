@@ -437,6 +437,19 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.text()).toContain('Your Model allowlist is Off. In Watch only, it would have stopped 0 calls in the last 14 days.');
     await m.click(m.button('Turn on in Watch'));
     expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] } }), 'k');
+    expect(m.text()).toContain('Turned your Model allowlist on in Watch only.');
+    m.root.unmount();
+  });
+
+  it('an Off allowlist missing a model: names it, says it goes to Watch, and adds it', async () => {
+    api.models = ['gpt-4o'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all', mode: 'off' };
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
+    const m = await mount();
+    expect(m.text()).toContain('Your Model allowlist leaves out gpt-4o, which your fleet used in the last 14 days. With it added, the allowlist would have stopped 0 calls. It goes to Watch only.');
+    await m.click(m.button('Add to your allowlist'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['gpt-4o', 'claude-haiku-4-5-20251001'] } }), 'k');
+    expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
     m.root.unmount();
   });
 
