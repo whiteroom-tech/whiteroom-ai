@@ -131,6 +131,17 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const TALLY_WORD: Record<GovernanceResponse, string> = { notify: 'told you', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
+const NO_COUNTS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
+
+/** A Keywords or Tool list rule with nothing picked can never act: what it still needs. */
+export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string | null {
+  if (rule.ruleType === 'keyword') {
+    const p = rule.params as KeywordParams;
+    return p.keywords.length || p.keywordCount ? null : 'a keyword';
+  }
+  if (rule.ruleType === 'tool_list') return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
+  return null;
+}
 
 /**
  * The row's status line. Enforce: what it did in the last 7 days, from the
@@ -138,6 +149,7 @@ const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
  * of its type (two spend caps would share the count). Watch: what it would
  * have done since its last change. Viewing one agent, the counts are that
  * agent's: an Enforce count shows only for a rule that covers just them.
+ * A Keywords or Tool list rule with nothing picked says so instead.
  */
 export function rowStat(rule: GovernanceRule, ctx: {
   /** The engine's rule_actions byRule (keyed by rule type). */
@@ -149,9 +161,13 @@ export function rowStat(rule: GovernanceRule, ctx: {
   agent?: string | null;
 }): string {
   const response = rule.response ?? 'block';
+  if (rule.mode === 'off') return '';
+  const nothingPicked = emptyPick(rule);
+  if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
-    const c = ctx.onlyOfItsType && justThem ? ctx.byRuleType?.[rule.ruleType] : undefined;
+    // byRule lists only rule types that acted: a missing type acted 0 times.
+    const c = ctx.onlyOfItsType && justThem && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_COUNTS : undefined;
     return c ? `${fmt(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
   }
   if (rule.mode === 'watch') {
@@ -310,7 +326,7 @@ export function draftProblem(d: RuleDraft): string | null {
 export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string; isNew?: boolean }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
-  { type: 'call_rate', title: 'Limit calls per minute', desc: 'Slow down an agent that makes too many calls at once.' },
+  { type: 'call_rate', title: 'Limit calls per minute', desc: 'Block calls once an agent makes too many in a minute.' },
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get told, or block the call, when words you pick show up.', isNew: true },
