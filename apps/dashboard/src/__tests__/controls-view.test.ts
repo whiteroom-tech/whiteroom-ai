@@ -48,6 +48,18 @@ describe('the agent filter and groups', () => {
     expect(ruleNames([all, rule({}), rule({ ruleType: 'call_rate', params: { maxCalls: 60 } })])).toBe('Spend cap, Call rate');
     expect(ruleNames([])).toBe('—');
   });
+
+  it('lists a mode in the Add a rule order, spend caps of a kind smallest first', () => {
+    const kw = rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true } });
+    const allow = rule({ ruleType: 'model_allowlist', params: { allowedModels: [] } });
+    const loop = rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } });
+    const rate = rule({ ruleType: 'call_rate', params: { maxCalls: 60 } });
+    const day200 = rule({ params: { dailyCap: 200, scope: 'day', unit: 'dollars' } });
+    const day190 = rule({ params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
+    const run50k = rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' } });
+    const off = rule({ mode: 'off' });
+    expect(byMode([kw, allow, day200, loop, run50k, off, rate, day190], 'watch')).toEqual([day190, day200, run50k, rate, allow, loop, kw]);
+  });
 });
 
 describe('spend cap overlap', () => {
