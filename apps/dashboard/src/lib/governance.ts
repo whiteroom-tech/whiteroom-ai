@@ -44,7 +44,7 @@ export const REASON_LABELS: Record<string, string> = {
  */
 export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boolean): string {
   if (ruleType === 'keyword') return 'the Keywords rule';
-  const label = RULE_LABELS[ruleType as GovernanceRuleType] ?? 'governance rule';
+  const label = ruleLabel(ruleType);
   const why = REASON_LABELS[String(reason ?? '')];
   return `${lower ? `the ${label.toLowerCase()}` : label}${why ? ` (${why})` : ''}`;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockedByPhrase, countsFromRuleActions, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
+import { blockedByPhrase, countsFromRuleActions, ruleLabel, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
   convertSpendCap,
   computeSuggestions,
   governanceCounts,
@@ -140,6 +140,10 @@ describe('activity feed governance rows', () => {
     // The Home chip says the same.
     expect(blockedByPhrase('keyword', 'keyword_found', false)).toBe('the Keywords rule');
     expect(blockedByPhrase('spend_cap', 'budget_exceeded', false)).toBe('Spend cap (budget exceeded)');
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', true)).toBe('the spend cap (budget exceeded)');
+    expect(blockedByPhrase('spend_cap', 'something_new', true)).toBe('the spend cap');
+    expect(blockedByPhrase(undefined, undefined, false)).toBe(ruleLabel(undefined));
+    expect(blockedByPhrase('mystery', undefined, true)).toBe(`the ${ruleLabel('mystery').toLowerCase()}`);
     expect(technicalLine(m)).toContain('model gpt-4o');
   });
 
