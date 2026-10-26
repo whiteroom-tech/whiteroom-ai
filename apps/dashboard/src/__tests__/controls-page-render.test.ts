@@ -113,7 +113,7 @@ describe('Controls page', () => {
     expect(m.text()).toContain('When an agent makes the same call 100 times in a run, block the call.');
     expect(m.text()).toContain('Only market-researcher');
     // Stat cards, as Performance counts rule actions.
-    expect(m.text()).toMatch(/Enforcing2Loop breaker, Call rate/);
+    expect(m.text()).toMatch(/Enforcing2Call rate, Loop breaker/);
     expect(m.text()).toMatch(/Rule actions\s*7/);
     const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.startsWith('Rule actions'))!;
     expect(card.textContent).toMatch(/· last 7 days$/);

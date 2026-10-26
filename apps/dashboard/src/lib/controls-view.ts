@@ -88,8 +88,21 @@ export function rulesFor(rules: readonly GovernanceRule[], agent: string | null)
   return agent === null ? [...rules] : rules.filter((r) => r.appliesTo === 'all' || r.appliesTo.includes(agent));
 }
 
+/** One mode's rules in the "Add a rule" order, so the same kinds sit together. Spend caps of the same kind run smallest first. */
 export function byMode(rules: readonly GovernanceRule[], mode: GovernanceMode): GovernanceRule[] {
-  return rules.filter((r) => r.mode === mode);
+  return rules.filter((r) => r.mode === mode).sort(ruleOrder);
+}
+
+function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
+  const byType = typeRank(a.ruleType) - typeRank(b.ruleType);
+  if (byType || a.ruleType !== 'spend_cap') return byType;
+  const pa = a.params as SpendCapParams, pb = b.params as SpendCapParams;
+  return pa.scope.localeCompare(pb.scope) || pa.unit.localeCompare(pb.unit) || pa.dailyCap - pb.dailyCap;
+}
+
+function typeRank(t: GovernanceRuleType): number {
+  const i = RULE_TEMPLATES.findIndex((r) => r.type === t);
+  return i < 0 ? RULE_TEMPLATES.length : i;
 }
 
 /** Rule names for a stat card's sub-line, each once: "Spend cap, Loop breaker". */
@@ -320,12 +333,12 @@ export function draftProblem(d: RuleDraft): string | null {
 
 // ── Add a rule ──────────────────────────────────────────────────────
 
-/** "Add a rule" choices, by goal, each naming its rule. */
+/** "Add a rule" choices, by goal, each naming its rule. Also the order rules are listed in on Controls (byMode). */
 export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string; isNew?: boolean }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
-  { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'call_rate', title: 'Limit calls per minute', desc: 'Block calls once an agent makes too many in a minute.' },
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
+  { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get told, or block the call, when words you pick show up.', isNew: true },
 ];
