@@ -136,6 +136,8 @@
      breaking sticky. */
   .citadel-layout { --wr-menu-h: 44px; height: auto; min-height: 100dvh; overflow: visible; overflow-x: clip; grid-template-rows: auto; }
   .wr-page-body { overflow: visible !important; }
+  /* A link to a section (/settings#alerts) lands below the menu bar, not under it. */
+  .citadel-layout [id] { scroll-margin-top: calc(var(--wr-menu-h) + 8px); }
   .citadel-mobile-menu { display: flex; align-items: center; gap: 8px; height: var(--wr-menu-h); text-align: left; background: var(--card); color: var(--brand); border-bottom: 1px solid var(--line); padding: 0 16px; font-size: 12px; flex-shrink: 0; position: sticky; top: 0; z-index: 25; }
   .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: var(--wr-menu-h); bottom: 0; left: 0; width: 220px; height: auto; z-index: 30; }
 
