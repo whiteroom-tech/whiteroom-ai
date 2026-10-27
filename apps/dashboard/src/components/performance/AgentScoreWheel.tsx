@@ -12,7 +12,7 @@ const STROKE = 5;
 const BAR = 56;
 
 export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
-  if (agent.score == null) return <span style={{ color: 'var(--tx3)', fontSize: 12 }}>–</span>;
+  if (agent.score == null) return <span style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)' }}>–</span>;
 
   const wedges = scoreWedges(agent);
   const arcs = wheelArcs(wedges.length, SIZE, STROKE, 18);
@@ -29,10 +29,10 @@ export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: FONT_MONO, fontWeight: 700, color: scoreColor(agent.score),
         }}>
-          <span style={{ fontSize: agent.score >= 10 ? 16 : 18, lineHeight: 1 }}>{agent.score}</span>
+          <span style={{ fontSize: 'var(--fs-md)', lineHeight: 1 }}>{agent.score}</span>
         </span>
       </span>
-      <span aria-hidden style={{ display: 'grid', gridTemplateColumns: `auto ${BAR}px auto`, alignItems: 'center', columnGap: 8, rowGap: 3, fontSize: 11.5, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+      <span aria-hidden style={{ display: 'grid', gridTemplateColumns: `auto ${BAR}px auto`, alignItems: 'center', columnGap: 8, rowGap: 1, fontSize: 'var(--fs-xs)', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
         {wedges.map((w) => (
           <span key={w.label} style={{ display: 'contents' }}>
             <span style={{ color: 'var(--tx2)' }}>{w.short}</span>

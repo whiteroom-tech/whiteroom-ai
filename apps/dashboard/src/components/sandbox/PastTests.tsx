@@ -75,7 +75,7 @@ export function startDownload(state: DownloadState, save: () => Promise<void>, s
 export function DownloadReport({ state, onClick }: { state: DownloadState; onClick: () => void }) {
   return <>
     <div className={s.btnRow} style={{ marginTop: 10 }}>
-      <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onClick} aria-disabled={state.saving || undefined} style={{ fontSize: 12 }}>{state.saving ? 'Downloading…' : 'Download report'}</button>
+      <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onClick} aria-disabled={state.saving || undefined} style={{ fontSize: 'var(--fs-sm)' }}>{state.saving ? 'Downloading…' : 'Download report'}</button>
     </div>
     <p className={s.small} aria-live="polite" style={{ margin: state.outcome ? '6px 0 0' : 0, color: state.outcome === 'failed' ? 'var(--bad)' : undefined }}>
       {state.outcome === 'saved' ? 'Report downloaded.' : state.outcome === 'failed' ? 'Couldn’t get this report. Try again.' : ''}

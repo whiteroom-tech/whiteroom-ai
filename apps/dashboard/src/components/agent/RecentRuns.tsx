@@ -32,7 +32,7 @@ export function RecentRuns({ fleetId, authKey, agentId, preview }: { fleetId: st
   if (hidden) {
     return (
       <Panel title="Recent runs" actions={<Link href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}`} className="wr-link">All runs &rarr;</Link>}>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Run summaries aren&rsquo;t available yet. Runs shows this agent&rsquo;s events.</p>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Run summaries aren&rsquo;t available yet. Runs shows this agent&rsquo;s events.</p>
       </Panel>
     );
   }
@@ -43,14 +43,14 @@ export function RecentRuns({ fleetId, authKey, agentId, preview }: { fleetId: st
       actions={<Link href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}`} className="wr-link">All runs &rarr;</Link>}
     >
       {runs === null ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>{failed ? 'Couldn\u2019t load recent runs. Reload to try again.' : 'Loading\u2026'}</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{failed ? 'Couldn\u2019t load recent runs. Reload to try again.' : 'Loading\u2026'}</p>
       ) : runs.length === 0 ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>No runs in the last 7 days.</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No runs in the last 7 days.</p>
       ) : runs.map((r) => (
         <Link key={r.runId} href={runHref(r.runId)} className="wr-activity-row" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 500 }}>#{r.shift}</span>
-          <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', marginRight: 10 }}>{fmtStarted(r.startedAt)} · {fmtLength(r.lengthSeconds)}</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 500 }}>#{r.shift}</span>
+          <span style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginRight: 10 }}>{fmtStarted(r.startedAt)} · {fmtLength(r.lengthSeconds)}</span>
             {standOut(r).text}
           </span>
           <span />

@@ -53,14 +53,14 @@ export function HomePreview({ empty = false }: { empty?: boolean }) {
   if (empty) {
     return (
       <AppShell>
-        <PageHeader title="Home" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Waiting for the first call · preview</span>} />
+        <PageHeader title="Home" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Waiting for the first call · preview</span>} />
         <EmptyHome />
       </AppShell>
     );
   }
   return (
     <AppShell>
-      <PageHeader title="Home" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>}>
+      <PageHeader title="Home" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Preview with sample data</span>}>
         <Button>Refresh</Button>
       </PageHeader>
       <HomeView

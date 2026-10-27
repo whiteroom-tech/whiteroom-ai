@@ -5,7 +5,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { applyTheme, storedTheme } from '@/lib/theme';
 
 /**
- * The one layout for every signed-in page (README › Global shell): a 220px
+ * The one layout for every signed-in page (README › Global shell): a 248px
  * sidebar and the page column. Pages draw their own header with PageHeader.
  * Below 720px the sidebar folds into a menu button (globals.css).
  */

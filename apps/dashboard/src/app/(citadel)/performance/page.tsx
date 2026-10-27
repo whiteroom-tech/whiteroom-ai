@@ -101,7 +101,7 @@ function TrendBadge({ value, invert, unit = '%' }: { value: number | null; inver
   const bg = negative ? 'var(--bad-bg)' : positive ? 'var(--ok-bg)' : 'var(--sunk)';
   const arrow = value > 0 ? '↑' : value < 0 ? '↓' : '';
   return (
-    <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: bg, color, fontFamily: FONT_MONO }}>
+    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: bg, color, fontFamily: FONT_MONO }}>
       {arrow}{Math.abs(value).toFixed(1)}{unit === 'pp' ? ' pp' : '%'}
     </span>
   );
@@ -151,11 +151,11 @@ function FleetActivityChart({ hourly }: { hourly: FleetHourlyDataPoint[] }) {
           );
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
         <span>{hourly.length > 0 ? new Date(hourly[0].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
         <span>{hourly.length > 0 ? new Date(hourly[hourly.length - 1].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
       </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: 'var(--tx3)' }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>
         {[['var(--brand)', 0.75, 'Complete'], ['var(--warn)', 0.85, 'Errors'], ['var(--tx3)', 0.3, 'Other']].map(([bg, op, label]) => (
           <span key={label as string}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: bg as string, opacity: op as number, marginRight: 4 }} />{label as string}</span>
         ))}
@@ -192,11 +192,11 @@ function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
         </svg>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {arcs.map((a, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)' }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
               <span style={{ color: 'var(--tx2)', minWidth: 60 }}>{a.model.provider}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
             </div>
           ))}
         </div>
@@ -221,7 +221,7 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
     <div style={CARD}>
       <h3 style={H3}>Traffic by Model</h3>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', fontSize: 'var(--fs-sm)', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
               {([['Model', 'model'], ['Calls', 'calls'], ['Input', 'input'], ['Output', 'output'], ['Cost', 'cost']] as [string, TrafficSortKey][]).map(([h, k]) => (
@@ -236,11 +236,11 @@ function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
           <tbody>
             {sorted.map((m, i) => (
               <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
-                <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx)' }}>{m.model ?? 'unknown'}</td>
+                <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{m.model ?? 'unknown'}</td>
                 <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{m.calls.toLocaleString()}</td>
-                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtTokens(m.inputTokens)}</td>
-                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtTokens(m.outputTokens)}</td>
-                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 12, color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
+                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{fmtTokens(m.inputTokens)}</td>
+                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{fmtTokens(m.outputTokens)}</td>
+                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
               </tr>
             ))}
           </tbody>
@@ -259,11 +259,11 @@ function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, tr
   return (
     <div onClick={onClick} style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0, cursor: onClick ? 'pointer' : undefined, borderColor: active ? 'var(--brand)' : 'var(--line)', transition: 'border-color 0.15s', position: 'relative', paddingBottom: sparklineData && sparklineData.length > 1 ? 48 : 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--brand)' : 'var(--tx3)' }}>{label}</div>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: active ? 'var(--brand)' : 'var(--tx3)' }}>{label}</div>
         <TrendBadge value={trend ?? null} invert={trendInvert} unit={trendUnit} />
       </div>
-      <div style={{ fontSize: 24, fontWeight: 700, fontFamily: FONT_MONO, color: warn ? 'var(--warn)' : 'var(--tx)' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
+      <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: warn ? 'var(--warn)' : 'var(--tx)' }}>{value}</div>
+      {sub && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
       {sparklineData && sparklineData.length > 1 && (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
           <Sparkline data={sparklineData} color={sparklineColor} />
@@ -274,8 +274,8 @@ function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, tr
 }
 
 function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blockedCount, cache, auditFailed }: { metric: string; models: PerformanceModelSummary[]; hourly: FleetHourlyDataPoint[]; govSavings?: GovSavings | null; govCounts?: GovernanceCounts | null; blockedCount?: number; cache?: CacheFigures; auditFailed?: boolean }) {
-  const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' };
-  const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 12, fontFamily: FONT_MONO, color: 'var(--tx)' };
+  const TH: React.CSSProperties = { padding: '6px 8px', fontWeight: 600, textAlign: 'left', color: 'var(--tx3)', fontSize: 'var(--fs-xs)', textTransform: 'uppercase', letterSpacing: '0.03em' };
+  const TD: React.CSSProperties = { padding: '6px 8px', fontSize: 'var(--fs-sm)', fontFamily: FONT_MONO, color: 'var(--tx)' };
   const TDR: React.CSSProperties = { ...TD, textAlign: 'right' };
 
   if (metric === 'requests') {
@@ -300,11 +300,11 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             </table>
           </div>
           {peakHour && peakHour.calls > 0 && (
-            <div style={{ fontSize: 12, color: 'var(--tx2)', minWidth: 140 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Peak hour</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', minWidth: 140 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--tx3)', fontSize: 'var(--fs-xs)', textTransform: 'uppercase' }}>Peak hour</div>
               <div style={{ fontFamily: FONT_MONO }}>{new Date(peakHour.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-              <div style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: 'var(--tx)' }}>{peakHour.calls} calls</div>
-              <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--tx3)', fontSize: 11, textTransform: 'uppercase' }}>Completion</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-card)', fontWeight: 700, color: 'var(--tx)' }}>{peakHour.calls} calls</div>
+              <div style={{ marginTop: 8, fontWeight: 600, color: 'var(--tx3)', fontSize: 'var(--fs-xs)', textTransform: 'uppercase' }}>Completion</div>
               <div style={{ fontFamily: FONT_MONO }}>{peakHour.completeCount} complete · {peakHour.errorCount} errors</div>
             </div>
           )}
@@ -334,7 +334,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             ))}</tbody>
           </table>
         </div>
-        <div style={{ display: 'flex', gap: 24, marginTop: 12, fontSize: 12, color: 'var(--tx2)' }}>
+        <div style={{ display: 'flex', gap: 24, marginTop: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           <span>Total tokens: {fmtTokens(models.reduce((s, m) => s + m.inputTokens + m.outputTokens, 0))}</span>
           <span>Input: {fmtTokens(models.reduce((s, m) => s + m.inputTokens, 0))}</span>
           <span>Output: {fmtTokens(models.reduce((s, m) => s + m.outputTokens, 0))}</span>
@@ -354,7 +354,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Response time breakdown</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Approximate p50 — weighted average of per-bucket medians, not a true fleet percentile.</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>Approximate p50 — weighted average of per-bucket medians, not a true fleet percentile.</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
             { label: 'Weighted avg', value: fmtLatency(weightedAvg) },
@@ -364,8 +364,8 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             { label: 'Measured calls', value: totalWeight.toLocaleString() },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 120 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
-              <div style={{ fontSize: 14, fontFamily: FONT_MONO, fontWeight: 600, color: 'var(--tx)' }}>{s.value}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 600, color: 'var(--tx)' }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -382,7 +382,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Failed calls, broken down</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Failed calls = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as &quot;Other&quot;.</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>Failed calls = (errors + interrupted) / total calls. Includes provider API errors, timeouts, and interrupted requests. Does not include cancelled, governance-blocked, or unknown outcomes — those are counted as &quot;Other&quot;.</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { label: 'Model calls', value: totalCalls.toLocaleString(), color: 'var(--tx)' },
@@ -393,15 +393,15 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             { label: 'Failed calls', value: totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(2)}%` : '0%', color: totalErrors > 0 ? 'var(--bad)' : 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 100 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
-              <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: s.color }}>{s.value}</div>
-              {'desc' in s && <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>{(s as { desc: string }).desc}</div>}
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 700, color: s.color }}>{s.value}</div>
+              {'desc' in s && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 2 }}>{(s as { desc: string }).desc}</div>}
             </div>
           ))}
         </div>
         {errorHours.length > 0 && (
           <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 6 }}>Hours with Errors</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 6 }}>Hours with Errors</div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr><th style={TH}>Time</th><th style={{ ...TH, textAlign: 'right' }}>Calls</th><th style={{ ...TH, textAlign: 'right' }}>Errors</th><th style={{ ...TH, textAlign: 'right' }}>Rate</th></tr></thead>
@@ -417,7 +417,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             </div>
           </>
         )}
-        {errorHours.length === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No errors in the selected time window.</div>}
+        {errorHours.length === 0 && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No errors in the selected time window.</div>}
       </div>
     );
   }
@@ -438,24 +438,24 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Saved by WhiteRoom</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from handover compression (handovers and context offloads) and the prompt caching WhiteRoom added, each at the input prices your agents actually pay. Caching your agents already do on their own isn&apos;t counted.</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from handover compression (handovers and context offloads) and the prompt caching WhiteRoom added, each at the input prices your agents actually pay. Caching your agents already do on their own isn&apos;t counted.</div>
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total saved</div>
-            <div style={{ fontSize: 20, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{savingsFigure(!!auditFailed, totalSavingsMicros, !!govSavings?.partial || c.unpricedReadTokens > 0)}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Total saved</div>
+            <div style={{ fontSize: 'var(--fs-card)', fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--ok)' }}>{savingsFigure(!!auditFailed, totalSavingsMicros, !!govSavings?.partial || c.unpricedReadTokens > 0)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Caching WhiteRoom added</div>
-            <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(cacheMicros)}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Caching WhiteRoom added</div>
+            <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(cacheMicros)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Handover compression</div>
-            <div style={{ fontSize: 16, fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{savingsFigure(!!auditFailed, govCostMicros, !!govSavings?.partial)}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Handover compression</div>
+            <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{savingsFigure(!!auditFailed, govCostMicros, !!govSavings?.partial)}</div>
           </div>
         </div>
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache savings</div>
+        <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Cache savings</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
             { label: 'Caching WhiteRoom added', value: fmtCost(cacheMicros), color: 'var(--ok)' },
@@ -466,26 +466,26 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             { label: 'Fresh input tokens', value: fmtTokens(totalInput), color: 'var(--tx)' },
           ].map((s, i) => (
             <div key={i} style={{ minWidth: 120 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
-              <div style={{ fontSize: 14, fontFamily: FONT_MONO, fontWeight: 600, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 600, color: s.color }}>{s.value}</div>
             </div>
           ))}
         </div>
 
         {totalCacheRead > 0 && (
-          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)', marginBottom: 16 }}>
+          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <div style={{ width: '100%', height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden' }}>
                 <div style={{ width: `${(cacheHitRate * 100).toFixed(1)}%`, height: '100%', borderRadius: 4, background: 'var(--ok)' }} />
               </div>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, whiteSpace: 'nowrap' }}>{(cacheHitRate * 100).toFixed(1)}%</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>{(cacheHitRate * 100).toFixed(1)}%</span>
             </div>
             <span>Of all input tokens, <strong>{fmtTokens(totalCacheRead)}</strong> were served from cache instead of being reprocessed{ownCaching != null && ', your agents\' own caching included'}.{c.writePremiumMicros > 0 && <> Est. saved is net of the <strong>{fmtCost(c.writePremiumMicros)}</strong> extra that cache writes cost.</>}</span>
           </div>
         )}
-        {totalCacheRead === 0 && <div style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
+        {totalCacheRead === 0 && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Handover compression savings</div>
+        <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Handover compression savings</div>
         {govTokens > 0 ? (
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
             {[
@@ -493,16 +493,16 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
               { label: 'Tokens saved', value: fmtTokens(govTokens), color: 'var(--tx)' },
             ].map((s, i) => (
               <div key={i} style={{ minWidth: 120 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
-                <div style={{ fontSize: 14, fontFamily: FONT_MONO, fontWeight: 600, color: s.color }}>{s.value}</div>
+                <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 600, color: s.color }}>{s.value}</div>
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No handover compression savings yet. Handovers and context offloads reduce redundant token processing.</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No handover compression savings yet. Handovers and context offloads reduce redundant token processing.</div>
         )}
         {govTokens > 0 && (
-          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--tx2)' }}>
+          <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             These savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model. Each agent&apos;s tokens are valued at the input price it pays, cache discounts included.
           </div>
         )}
@@ -516,11 +516,11 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Rule actions</h3>
-        <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 12 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>
           Calls stopped by rules on the Controls page. Blocked = Enforce stopped the call; would-block = a Watch rule matched but the call went through. Per-rule and per-agent counts come from recent audit events.
         </div>
         {!counts || (counts.blocks === 0 && counts.wouldBlocks === 0 && !blockedCount) ? (
-          <div style={{ fontSize: 12, color: 'var(--tx3)' }}>No governance rule fired in the selected time window.</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No governance rule fired in the selected time window.</div>
         ) : (
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
             <div style={{ overflowX: 'auto', flex: '1 1 260px' }}>
@@ -726,7 +726,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           variant="card"
           label="Saved by WhiteRoom"
           hint={HELP.savings}
-          value={auditFailed ? '—' : <><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
+          value={auditFailed ? '—' : <><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
           sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
@@ -737,7 +737,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
         <button type="button" className="wr-link" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-expanded={moreDetail} onClick={() => setMoreDetail((v) => !v)}>
           {moreDetail ? 'Hide detail' : 'More detail: requests, response time, models'}
         </button>
-        {loadedAt && <span style={{ marginLeft: 12, fontSize: 11.5, color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</span>}
+        {loadedAt && <span style={{ marginLeft: 12, fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</span>}
       </div>
       {moreDetail && (
         <section aria-label="More detail">
@@ -814,7 +814,7 @@ function AgentView({ data }: { data: AgentPerformanceResult }) {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
             <span>{new Date(data.hourly[0].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             <span>{new Date(data.hourly[data.hourly.length - 1].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
@@ -874,7 +874,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
   const finding = recDetail?.finding;
   const f = data.finding;
 
-  if (!f && !rec) return <div style={{ color: 'var(--tx3)', fontSize: 14 }}>Finding not found or evidence has expired.</div>;
+  if (!f && !rec) return <div style={{ color: 'var(--tx3)', fontSize: 'var(--fs-md)' }}>Finding not found or evidence has expired.</div>;
 
   return (
     <>
@@ -884,7 +884,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
             <h3 style={H3}>Recommendation</h3>
             <div style={{ display: 'flex', gap: 6 }}><Badge status={rec.status} /><Badge status={rec.verificationStatus} size="small" /></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 'var(--fs-sm)' }}>
             {[
               [diagDetector ? 'Finding' : 'Detector', detectorLabel(rec.detector)],
               ...(diagDetector ? [] : [['Action', rec.action.replace(/_/g, ' ')]]),
@@ -903,10 +903,10 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
 
       {recommendationId && !diagDetector && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <button onClick={() => exportBrief('copy')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
+          <button onClick={() => exportBrief('copy')} disabled={briefLoading} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
             {briefCopied ? 'Copied' : briefLoading ? 'Loading…' : 'Copy implementation brief'}
           </button>
-          <button onClick={() => exportBrief('download')} disabled={briefLoading} style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
+          <button onClick={() => exportBrief('download')} disabled={briefLoading} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
             {briefLoading ? 'Loading…' : 'Download as Markdown'}
           </button>
         </div>
@@ -916,10 +916,10 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
         <>
           <div style={CARD}>
             <h3 style={H3}>Finding details</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 'var(--fs-sm)' }}>
               <div><span style={{ color: 'var(--tx3)' }}>{diagDetector ? 'Finding' : 'Detector'}:</span> <span style={{ color: 'var(--tx)' }}>{detectorLabel(f.detector)}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Agent:</span> <span style={{ color: 'var(--tx)' }}>{f.agentId}</span></div>
-              <div><span style={{ color: 'var(--tx3)' }}>Window:</span> <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>{fmtDay(f.windowStart)} – {fmtDay(f.windowEnd)}</span></div>
+              <div><span style={{ color: 'var(--tx3)' }}>Window:</span> <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{fmtDay(f.windowStart)} – {fmtDay(f.windowEnd)}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Coverage:</span> <span style={{ color: 'var(--tx)' }}>{f.coverage}</span></div>
               <div><span style={{ color: 'var(--tx3)' }}>Basis:</span> <span style={{ color: 'var(--tx2)' }}>{f.basis}</span></div>
               {f.limitations && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--tx3)' }}>Limitations:</span> <span style={{ color: 'var(--warn)' }}>{(diagDetector && limitationText(diagDetector, f.limitations)) || f.limitations}</span></div>}
@@ -940,7 +940,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
           {data.calls.length > 0 && (
             <div style={CARD}>
               <h3 style={H3}>Evidence Calls ({data.calls.length})</h3>
-              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', fontSize: 'var(--fs-sm)', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
                     {((diagDetector ? ['Call ID', 'Model', 'Shift', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
@@ -959,18 +959,18 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
                 <tbody>
                   {sortedCalls.map((c, i) => (
                     <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
                       {diagDetector ? (
-                        <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx)' }}>{c.watchNumber != null ? String(c.watchNumber) : '--'}</td>
+                        <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>{c.watchNumber != null ? String(c.watchNumber) : '--'}</td>
                       ) : (
                         <>
                           <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{String(c.toolDefinitionCount ?? '--')}</td>
-                          <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
+                          <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
                         </>
                       )}
                       <td style={{ padding: 8 }}><Badge status={String(c.terminal ?? 'unknown')} /></td>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1215,16 +1215,16 @@ export default function PerformancePage() {
         fleetId={fleetId}
         title={<>
           {view !== 'index' && (
-            <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Performance</button>
+            <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} style={{ fontSize: 'var(--fs-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Performance</button>
           )}
           {view === 'evidence' && selectedAgent && (
             <>
               <span style={{ color: 'var(--tx3)' }}>/</span>
-              <button onClick={() => { setView('agent'); setSelectedFindingId(null); }} style={{ fontSize: 13, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{selectedAgent}</button>
+              <button onClick={() => { setView('agent'); setSelectedFindingId(null); }} style={{ fontSize: 'var(--fs-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{selectedAgent}</button>
             </>
           )}
           <span style={{ color: 'var(--tx3)' }}>{view !== 'index' ? '/' : ''}</span>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>
+          <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>
             {view === 'index' ? 'Performance' : view === 'agent' ? selectedAgent : 'Evidence'}
           </span>
         </>}
@@ -1236,7 +1236,7 @@ export default function PerformancePage() {
           size={26}
           options={[{ value: '24', label: '24h' }, { value: '72', label: '3d' }, { value: '168', label: '7d' }]}
         />
-        <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>rolling, from now</span>
+        <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>rolling, from now</span>
       </PageHeader>
 
       {/* Content — dimmed while a range/agent fetch is in flight over data

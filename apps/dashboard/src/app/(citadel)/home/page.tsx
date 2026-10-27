@@ -16,7 +16,7 @@ export default function HomePage() {
   if (auth.status !== 'authenticated') return <FleetLogin auth={auth} />;
 
   const live = (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
       {updated.failing
         ? <><span style={{ color: 'var(--warn)', display: 'flex' }}><Icon name="alertCircle" size={12} /></span>Retrying{updated.at ? ` · last updated ${clock(updated.at)}` : ''}</>
         : updated.empty

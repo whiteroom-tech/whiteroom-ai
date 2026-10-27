@@ -164,7 +164,7 @@ export function RotationResult({ result, onDismiss }: { result: Extract<Credenti
         {result.apiKey && <CopyChip text={result.apiKey} display="New API key (hidden)" label="Copy the new API key" />}
         {result.proxyKeys.map((k) => k.wrKey && (
           <div key={k.wrKey.slice(0, 22)} style={{ display: 'grid', gap: 4 }}>
-            <span style={{ fontSize: 12.5 }}>{label(k)}{k.endpoint ? ` · ${k.endpoint}` : ''}</span>
+            <span style={{ fontSize: 'var(--fs-sm)' }}>{label(k)}{k.endpoint ? ` · ${k.endpoint}` : ''}</span>
             <CopyChip text={`${PROXY_ORIGIN}/${k.wrKey}`} label={`Copy the new proxy URL for the ${label(k)}`} />
             <CopyChip text={issuedEnvHint(k.provider, `${PROXY_ORIGIN}/${k.wrKey}`)} label={`Copy the environment line for the ${label(k)}`} />
           </div>

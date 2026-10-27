@@ -90,7 +90,7 @@ export function AdminShell({
       >
         <div className="flex items-center gap-2.5" style={{ padding: '5px 10px 18px' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ho)', boxShadow: '0 0 9px var(--ho)' }} />
-          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15, letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 'var(--fs-md)', letterSpacing: 2.5, color: 'var(--tx)', whiteSpace: 'nowrap' }}>
             WR ADMIN
           </span>
         </div>
@@ -104,7 +104,7 @@ export function AdminShell({
               aria-current={active ? 'page' : undefined}
               className="flex items-center gap-2.5"
               style={{
-                padding: '8px 10px', borderRadius: 7, fontSize: 14, fontWeight: 600,
+                padding: '8px 10px', borderRadius: 7, fontSize: 'var(--fs-md)', fontWeight: 600,
                 textDecoration: 'none',
                 background: active ? 'var(--ho-bg)' : 'transparent',
                 color: active ? 'var(--ho)' : 'var(--tx2)',
@@ -118,7 +118,7 @@ export function AdminShell({
           );
         })}
 
-        <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 12, color: 'var(--tx3)' }}>
+        <div style={{ marginTop: 'auto', padding: '11px 10px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>
           Internal tools
         </div>
       </aside>
@@ -129,20 +129,20 @@ export function AdminShell({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
               {breadcrumb && (
                 <>
-                  <Link href={breadcrumb.href} style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>
+                  <Link href={breadcrumb.href} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>
                     {breadcrumb.label}
                   </Link>
                   <span style={{ color: 'var(--tx3)' }}>/</span>
                 </>
               )}
-              <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-xl)', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {title}
               </h1>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span
                 style={{
-                  fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
+                  fontSize: 'var(--fs-xs)', fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
                   padding: '3px 9px', borderRadius: 99,
                   background: 'var(--ho-bg)', color: 'var(--ho)', border: '1px solid var(--ho)',
                 }}
@@ -152,7 +152,7 @@ export function AdminShell({
               <ThemeToggle />
             </div>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--tx3)', margin: '0 0 22px' }}>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', margin: '0 0 22px' }}>
             Everything you change here is written to the admin audit log.
           </p>
           {children}

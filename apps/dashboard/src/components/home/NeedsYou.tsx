@@ -93,7 +93,7 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
   const count = held.length + gone.length + runs.length;
   if (count === 0) {
     return (
-      <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--tx2)' }}>
+      <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         <span style={{ display: 'flex', color: 'var(--ok)' }}><Icon name="check" size={14} /></span>
         Nothing needs you right now.
         {undo && <Button variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button>}
@@ -101,7 +101,7 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
     );
   }
 
-  const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 14, alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 };
+  const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 14, alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 'var(--fs-sm)' };
   return (
     <Panel title={<>Needs you<Hint text={HELP.needsYou} /></>} count={<span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: 'var(--warn)' }}>{count}</span>} bodyPadding={0}>
       {held.map((a) => (

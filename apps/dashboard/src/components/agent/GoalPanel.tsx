@@ -120,39 +120,39 @@ export function GoalPanel({ fleetId, agentId }: { fleetId: string; agentId: stri
         <form onSubmit={(e) => { e.preventDefault(); if (!busy) void save(); }} style={{ display: 'grid', gap: 8 }}>
           {showLatest && (
             <div style={{ display: 'grid', gap: 4, padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 6 }}>
-              <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Latest goal, from the other change</span>
-              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Latest goal, from the other change</span>
+              <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>
                 {owner?.unreadable ? 'It can’t be read on this WhiteRoom engine.' : owner?.goal || 'No goal set.'}
               </p>
             </div>
           )}
           <textarea
             className="wr-input" rows={3} maxLength={MAX} required readOnly={!!busy} aria-label="Goal for this agent"
-            value={draft} onChange={(e) => setDraft(e.target.value)} style={{ resize: 'vertical', fontSize: 13.5 }}
+            value={draft} onChange={(e) => setDraft(e.target.value)} style={{ resize: 'vertical', fontSize: 'var(--fs-md)' }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'var(--tx2)', flex: 1 }}>{draft.length} / {MAX}</span>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', flex: 1 }}>{draft.length} / {MAX}</span>
             {owner?.goal && <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => setConfirm('clear')}>Clear goal</Button>}
             <Button type="button" size={28} variant="ghost" disabled={!!busy} onClick={() => { setDraft(null); setShowLatest(false); }}>Cancel</Button>
             <Button type="submit" size={28} variant="primary" busy={busy === 'save'} busyLabel="Saving…" disabled={!draft.trim() || !!busy}>Save goal</Button>
           </div>
         </form>
       ) : owner?.unreadable ? (
-        <p role="note" style={{ margin: 0, fontSize: 13, color: 'var(--warn-tx)' }}>
+        <p role="note" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>
           A goal is saved but can’t be opened on this engine. Setting one replaces it.
         </p>
       ) : owner?.goal ? (
         <div style={{ display: 'grid', gap: 6 }}>
           <span><Tag tone="brand">Set by you</Tag></span>
-          <p style={{ margin: 0, fontSize: 14, color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>{owner.goal}</p>
-          <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Updated {fmtTime(owner.updated_at)}{who ? ` ${who}` : ''} · applies to every task</span>
+          <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx)', whiteSpace: 'pre-wrap' }}>{owner.goal}</p>
+          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Updated {fmtTime(owner.updated_at)}{who ? ` ${who}` : ''} · applies to every task</span>
         </div>
       ) : (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           No goal set. Until you set one, WhiteRoom uses the goal the agent gives, or its first message in the task.
         </p>
       )}
-      {note && <p role={note.ok ? 'status' : 'alert'} style={{ margin: '10px 0 0', fontSize: 12.5, color: note.ok ? 'var(--tx2)' : 'var(--bad)' }}>{note.text}</p>}
+      {note && <p role={note.ok ? 'status' : 'alert'} style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.ok ? 'var(--tx2)' : 'var(--bad)' }}>{note.text}</p>}
 
       <ConfirmDialog
         open={confirm === 'clear'}

@@ -20,8 +20,8 @@ export function EmptyHome() {
           <div style={{ display: 'grid', gap: 16 }}>
             <span style={{ color: 'var(--brand)', display: 'flex' }}><Icon name="box" size={28} strokeWidth={1.8} /></span>
             <div>
-              <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600 }}>No agents connected yet</h2>
-              <p style={{ margin: '6px 0 0', fontSize: 13.5, lineHeight: 1.55, color: 'var(--tx2)' }}>
+              <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'var(--fs-card)', fontWeight: 600 }}>No agents connected yet</h2>
+              <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-md)', lineHeight: 1.55, color: 'var(--tx2)' }}>
                 Point an agent at the WhiteRoom proxy and it appears here on its first call. Nothing else changes in your code for agents with a system prompt.
               </p>
             </div>
@@ -35,13 +35,13 @@ export function EmptyHome() {
               <li><span>Run your agent exactly as before. No CLI commands needed.</span></li>
             </ol>
             <AgentNaming />
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
               Using Azure OpenAI, AWS Bedrock or your own provider key? <Link href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 4 }}>
               <Link href={ROUTES.sandbox} className="wr-btn wr-btn--primary wr-btn--h32">Test in Sandbox &rarr;</Link>
               <a href={SETUP_GUIDE_URL} target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--ghost wr-btn--h32">Read the setup guide</a>
-              <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }}>Checks for a call every 5 s</span>
+              <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>Checks for a call every 5 s</span>
             </div>
           </div>
         </Panel>

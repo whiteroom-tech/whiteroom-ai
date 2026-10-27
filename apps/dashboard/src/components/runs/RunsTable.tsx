@@ -238,7 +238,7 @@ export function RunsTable({ preview, retentionDays }: {
       <PageHeader title="Runs" fleetId={fleetId}>
         <SegmentedControl<RunsRange> label="Range" value={day ? null : range} onChange={(r) => changeFilter({ range: r })} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
         <Button onClick={() => void exportAll()} busy={exporting} busyLabel="Exporting…" disabled={!runs?.length}>Export .xlsx</Button>
-        <Link href="/settings#audit-integrity" style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Audit integrity</Link>
+        <Link href="/settings#audit-integrity" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Audit integrity</Link>
       </PageHeader>
 
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
@@ -248,7 +248,7 @@ export function RunsTable({ preview, retentionDays }: {
           )}
           <SelectChip label="Agent" value={agent} onChange={(a) => changeFilter({ agent: a })} options={agentOptions} />
           {range === 'custom' && !day ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--tx2)' }} title={`Up to ${MAX_SPAN_DAYS} days at a time`}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={`Up to ${MAX_SPAN_DAYS} days at a time`}>
               <input type="date" className="wr-date" aria-label="From" value={span.fromDay} min={oldest ?? undefined} max={today} onChange={(e) => { if (validDay(e.target.value)) changeFilter({ from: e.target.value }); }} />
               to
               <input type="date" className="wr-date" aria-label="To" value={span.toDay} min={oldest ?? undefined} max={today} onChange={(e) => { if (validDay(e.target.value)) changeFilter({ to: e.target.value }); }} />
@@ -260,7 +260,7 @@ export function RunsTable({ preview, retentionDays }: {
               {day && <Button variant="ghost" size={32} aria-label="Next day" disabled={day >= today} onClick={() => changeFilter({ day: addDays(day, 1) })}>&rarr;</Button>}
             </span>
           )}
-          <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }}>{updatedAt ? `Updated ${fmtTime(updatedAt)}` : ''}</span>
+          <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{updatedAt ? `Updated ${fmtTime(updatedAt)}` : ''}</span>
         </div>
         {dayCounts && (
           <DayStrip
@@ -279,7 +279,7 @@ export function RunsTable({ preview, retentionDays }: {
           {!shown ? (
             failing ? <LoadingLine>Couldn&rsquo;t load runs yet. Retrying&hellip;</LoadingLine> : <LoadingLine />
           ) : shown.length === 0 ? (
-            <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>No {flaggedOnly ? 'flagged runs' : 'runs'} {day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}{agent !== 'all' ? ` for ${agent}` : ''}.{flaggedOnly ? ' A run is flagged when it repeats the same call or fails several calls in a row.' : ' A run appears once an agent makes calls in a shift.'}</p>
+            <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No {flaggedOnly ? 'flagged runs' : 'runs'} {day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}{agent !== 'all' ? ` for ${agent}` : ''}.{flaggedOnly ? ' A run is flagged when it repeats the same call or fails several calls in a row.' : ' A run appears once an agent makes calls in a shift.'}</p>
           ) : (
             <DataTable<RunSummary>
               caption="Runs, newest first"
@@ -308,7 +308,7 @@ export function RunsTable({ preview, retentionDays }: {
               ]}
               footer={(page > 0 || next) ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
                   <span style={{ marginLeft: 'auto' }} />
                   {page > 0 && <Button variant="ghost" size={28} onClick={() => setCursors((c) => c.slice(0, -1))}>&larr; Newer</Button>}
                   {next && <Button size={28} onClick={() => setCursors((c) => [...c, next])}>Older &rarr;</Button>}
@@ -318,7 +318,7 @@ export function RunsTable({ preview, retentionDays }: {
           )}
         </Panel>
 
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--tx2)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           Times and days are in your time zone ({zoneName()}). A run is one agent&rsquo;s shift. {retentionDays ? <>Runs are kept {retentionDays} days on your plan.</> : <>Runs are kept as long as your plan keeps history.</>}
         </p>
       </div>

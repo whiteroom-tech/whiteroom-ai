@@ -27,15 +27,15 @@ export function StatCard({ label, value, variant = 'tile', hint, suffix, sub, su
       </div>
     );
   }
-  const subStyle: React.CSSProperties = { display: 'block', fontFamily: FONT_MONO, fontSize: 11, marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const subStyle: React.CSSProperties = { display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs, 0.875rem)', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
   return (
     // wr-stat-card / wr-stat-sub: the dashboard's stat strips line the cards'
     // rows up and let the caption wrap on phones (globals.css).
     <div className="wr-stat-card" style={{ background: color.card, border: `1px solid ${color.line}`, borderRadius: 14, padding: '16px 18px', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 500, color: color.tx2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', fontSize: 'var(--fs-sm, 0.96875rem)', fontWeight: 500, color: color.tx2 }}>
         {label}{hint && <Hint text={hint} />}
       </div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 700, lineHeight: 1.1, marginTop: 4, color: color.tx, fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-num, 2.375rem)', fontWeight: 700, lineHeight: 1.1, marginTop: 4, color: color.tx, fontVariantNumeric: 'tabular-nums' }}>
         {value}{suffix != null && <span style={{ color: color.tx2, fontWeight: 600 }}> {suffix}</span>}
       </div>
       {sub != null && (subHref

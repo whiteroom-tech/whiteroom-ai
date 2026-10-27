@@ -105,7 +105,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         bodyPadding="14px 18px"
         actions={<Button size={28} className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>}
       >
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' }}>
           What agents actually said and did: their replies, the tools they called and the pages they visited, with credentials removed. Kept {ttlHours} hours, then deleted; never part of the audit record.
         </p>
       </Panel>
@@ -124,10 +124,10 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         </>
       }
     >
-      {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 12.5, color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
+      {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 'var(--fs-sm)', color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
       {loading && rows.length === 0 && <LoadingLine />}
       {!loading && !error && shown.length === 0 && (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy, unless personal details are removed.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy, unless personal details are removed.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
       )}
       {pageRows.map((r) => {
         const canOpen = liveExpandable(r);
@@ -135,9 +135,9 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         const id = `live-${r.key}`;
         return (
           <div key={r.key} className="wr-live-row">
-            <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)', paddingTop: 2 }}>{r.time}</span>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', paddingTop: 2 }}>{r.time}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
             <div style={{ minWidth: 0 }}>
               {canOpen ? (
                 <button type="button" className="wr-live-toggle" aria-expanded={isOpen} aria-controls={id} onClick={() => toggle(r.key)}>
@@ -154,7 +154,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       })}
       {shown.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
             {win.from}&ndash;{win.to} of {shown.length} in the last {ttlHours} h{total > rows.length ? ` · newest ${rows.length} of ${total} loaded` : ''}
           </span>
           <span style={{ marginLeft: 'auto' }} />

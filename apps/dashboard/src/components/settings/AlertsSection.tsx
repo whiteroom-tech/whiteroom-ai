@@ -34,7 +34,7 @@ export function AlertsSection() {
 
   return (
     <Panel title="Alerts">
-      <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>
         A message in {channels.length > 1 ? 'Slack or Microsoft Teams' : 'Slack'} when a rule says Just tell me, pauses or stops an agent, or blocks a call and you asked to be told. Each alert links to the run. For fleet {fleetId}.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -66,10 +66,10 @@ function ChannelRow({ fleetId, channel, ending, onStatus }: { fleetId: string; c
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</span>
+      <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{c.name}</span>
       {ending ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13 }}>Webhook ending <span style={{ fontFamily: FONT_MONO }}>…{ending}</span></span>
+          <span style={{ fontSize: 'var(--fs-sm)' }}>Webhook ending <span style={{ fontFamily: FONT_MONO }}>…{ending}</span></span>
           <Button size={28} busy={busy === 'test'} busyLabel="Sending…" onClick={() => void run('test', async () => { if (!(await alertsTest(fleetId, channel))?.success) throw new Error(`${c.name} didn’t accept the test message.`); }, 'Test message sent. Check the channel.')}>Send a test</Button>
           <Button variant="ghost" size={28} busy={busy === 'remove'} busyLabel="Removing…" onClick={() => void run('remove', () => apply(null), `${c.name} alerts are off.`)}>Remove</Button>
         </div>
@@ -86,7 +86,7 @@ function ChannelRow({ fleetId, channel, ending, onStatus }: { fleetId: string; c
           <Button type="submit" variant="primary" busy={busy === 'save'} busyLabel="Checking…">Connect {c.short}</Button>
         </form>
       )}
-      {note && <p role="status" style={{ margin: 0, fontSize: 12.5, color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
+      {note && <p role="status" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
     </div>
   );
 }

@@ -69,7 +69,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
           }
         >
           {fleets.length === 0 ? (
-            <p style={{ fontSize: 13.5, color: 'var(--tx3)', margin: 0 }}>No fleets linked to this account.</p>
+            <p style={{ fontSize: 'var(--fs-md)', color: 'var(--tx3)', margin: 0 }}>No fleets linked to this account.</p>
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
               {fleets.map((f) => (
@@ -78,10 +78,10 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
                   style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '13px 15px', background: 'var(--sunk)' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>{f.fleetId}</span>
-                    {f.label && <span style={{ fontSize: 12, color: 'var(--tx3)' }}>{f.label}</span>}
+                    <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>{f.fleetId}</span>
+                    {f.label && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{f.label}</span>}
                     {!f.exists && (
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
+                      <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
                         unknown to engine
                       </span>
                     )}
@@ -106,7 +106,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
                       {Object.entries(f.byStatus).map(([status, n]) => (
                         <span
                           key={status}
-                          style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--line)', color: 'var(--tx2)' }}
+                          style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--line)', color: 'var(--tx2)' }}
                         >
                           {n} {status.replace(/_/g, ' ')}
                         </span>
@@ -121,18 +121,18 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
 
         <Card title="Admin history" subtitle="Changes made to this account from this panel.">
           {audit.length === 0 ? (
-            <p style={{ fontSize: 13.5, color: 'var(--tx3)', margin: 0 }}>Nothing recorded.</p>
+            <p style={{ fontSize: 'var(--fs-md)', color: 'var(--tx3)', margin: 0 }}>Nothing recorded.</p>
           ) : (
             <div style={{ display: 'grid', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
               {audit.map((e) => (
-                <div key={e.id} style={{ background: 'var(--sunk)', padding: '10px 14px', fontSize: 13, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                  <span style={{ fontFamily: mono, fontSize: 11.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                <div key={e.id} style={{ background: 'var(--sunk)', padding: '10px 14px', fontSize: 'var(--fs-sm)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                  <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                     {e.createdAt.slice(0, 16).replace('T', ' ')}
                   </span>
-                  <span style={{ fontFamily: mono, fontSize: 12, color: 'var(--ho)' }}>{e.action}</span>
+                  <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--ho)' }}>{e.action}</span>
                   <span style={{ color: 'var(--tx2)' }}>by {e.actorEmail ?? 'unknown'}</span>
                   {e.details && (
-                    <span style={{ fontFamily: mono, fontSize: 11.5, color: 'var(--tx3)' }}>
+                    <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>
                       {JSON.stringify(e.details)}
                     </span>
                   )}
@@ -149,8 +149,8 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <section style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '20px 22px' }}>
-      <h2 style={{ fontFamily: display, fontSize: 16, fontWeight: 700, color: 'var(--tx)', margin: 0 }}>{title}</h2>
-      {subtitle && <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '5px 0 0' }}>{subtitle}</p>}
+      <h2 style={{ fontFamily: display, fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--tx)', margin: 0 }}>{title}</h2>
+      {subtitle && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '5px 0 0' }}>{subtitle}</p>}
       <div style={{ marginTop: 16 }}>{children}</div>
     </section>
   );
@@ -167,12 +167,12 @@ function Grid({ children }: { children: React.ReactNode }) {
 function Field({ label, value, mono: isMono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 4 }}>
+      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 4 }}>
         {label}
       </div>
       <div
         style={{
-          fontSize: 13.5, color: 'var(--tx)',
+          fontSize: 'var(--fs-md)', color: 'var(--tx)',
           fontFamily: isMono ? mono : 'inherit',
           overflow: 'hidden', textOverflow: 'ellipsis',
         }}
@@ -186,10 +186,10 @@ function Field({ label, value, mono: isMono }: { label: string; value: ReactNode
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 3 }}>
+      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 3 }}>
         {label}
       </div>
-      <div style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>{value}</div>
+      <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>{value}</div>
     </div>
   );
 }

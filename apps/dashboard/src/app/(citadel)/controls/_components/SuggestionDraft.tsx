@@ -53,14 +53,14 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
   if (problem) {
     return (
       <div className="gov-panel" style={panel}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Suggested rule</h2>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>{problem}</p>
+        <h2 style={{ fontSize: 'var(--fs-card)', fontWeight: 700, margin: 0 }}>Suggested rule</h2>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{problem}</p>
         <button type="button" className="dx-link" onClick={() => onCancel(false)}>Close</button>
       </div>
     );
   }
   if (!loaded) {
-    return <div className="gov-panel" style={panel}><p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading the suggestion…</p></div>;
+    return <div className="gov-panel" style={panel}><p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Loading the suggestion…</p></div>;
   }
 
   const { rec, ruleType } = loaded;
@@ -105,15 +105,15 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
 
   return (
     <section className="gov-panel" style={panel} aria-labelledby="suggestion-title">
-      <h2 id="suggestion-title" style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{existingRule ? `${RULE_TITLE[ruleType]} from this suggestion` : `New ${RULE_LABEL[ruleType]} from a suggestion`}</h2>
-      <div style={{ background: 'var(--brand-dim)', border: '1px solid var(--brand)', borderRadius: 8, padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}>
+      <h2 id="suggestion-title" style={{ fontSize: 'var(--fs-card)', fontWeight: 700, margin: 0 }}>{existingRule ? `${RULE_TITLE[ruleType]} from this suggestion` : `New ${RULE_LABEL[ruleType]} from a suggestion`}</h2>
+      <div style={{ background: 'var(--brand-dim)', border: '1px solid var(--brand)', borderRadius: 8, padding: '10px 12px', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
         {rec.status === 'open'
           ? <><b style={{ color: 'var(--brand)' }}>Suggested for <span style={MONO}>{rec.agentId}</span>:</b> {loaded.sentence}</>
           : <>This suggestion is {STATUS_LABEL[rec.status] ?? rec.status}. You can still add the rule.</>}
       </div>
-      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>Watch mode records every time this rule would have stepped in. It doesn&apos;t block anything.</p>
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Watch mode records every time this rule would have stepped in. It doesn&apos;t block anything.</p>
 
-      <dl style={{ display: 'grid', gridTemplateColumns: '140px minmax(0,1fr)', gap: '10px 14px', fontSize: 13, alignItems: 'center', margin: 0 }}>
+      <dl style={{ display: 'grid', gridTemplateColumns: '140px minmax(0,1fr)', gap: '10px 14px', fontSize: 'var(--fs-sm)', alignItems: 'center', margin: 0 }}>
         <dt style={{ color: 'var(--tx2)' }}>Rule</dt><dd style={{ margin: 0 }}>{RULE_TITLE[ruleType]}</dd>
         <dt style={{ color: 'var(--tx2)' }}>Applies to</dt><dd style={{ margin: 0, ...MONO }}>{rec.agentId}</dd>
         <dt style={{ color: 'var(--tx2)' }}><label htmlFor="suggestion-amount">{loaded.text.label}</label></dt>
@@ -122,30 +122,30 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
           {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{loaded.text.suffix}</span>
-          {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 12, color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {field.max.toLocaleString('en-US')}.</span>}
-          {farAbove && !existingRule && <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
-          {existingRule && <span id="suggestion-existing" style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>This suggestion already has a rule. Its number is changed on the rule itself.</span>}
+          {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {field.max.toLocaleString('en-US')}.</span>}
+          {farAbove && !existingRule && <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
+          {existingRule && <span id="suggestion-existing" style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>This suggestion already has a rule. Its number is changed on the rule itself.</span>}
         </dd>
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>
         <dd style={{ margin: 0 }}>
           <span role="group" aria-label="Mode" style={{ display: 'inline-flex', border: '1px solid var(--line2)', borderRadius: 6, overflow: 'hidden' }}>
-            <button type="button" aria-pressed="true" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, border: 0, background: 'var(--brand-dim)', color: 'var(--brand)' }}>Watch</button>
-            <button type="button" disabled style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, border: 0, background: 'none', color: 'var(--tx3)', cursor: 'not-allowed' }}>Enforce</button>
+            <button type="button" aria-pressed="true" style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'var(--brand-dim)', color: 'var(--brand)' }}>Watch</button>
+            <button type="button" disabled style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'none', color: 'var(--tx3)', cursor: 'not-allowed' }}>Enforce</button>
           </span>
-          <span style={{ display: 'block', fontSize: 12, color: 'var(--tx2)', marginTop: 6 }}>Switch to Enforce after you&apos;ve seen what it catches.</span>
+          <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>Switch to Enforce after you&apos;ve seen what it catches.</span>
         </dd>
       </dl>
 
-      {failure && <div role="alert" style={{ fontSize: 12.5, color: 'var(--tx)', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 8, padding: '8px 12px' }}>{failure}</div>}
+      {failure && <div role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx)', background: 'var(--bad-bg)', border: '1px solid var(--bad)', borderRadius: 8, padding: '8px 12px' }}>{failure}</div>}
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         {existingRule ? (
           <button type="button" className="dx-main-btn" onClick={() => onDone(existingRule.id, '')} style={{
-            fontSize: 13, fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
+            fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
             background: 'var(--brand)', color: 'var(--bg)', cursor: 'pointer',
           }}>Show the rule</button>
         ) : (<button type="button" className="dx-main-btn" disabled={saving || !valid} onClick={() => void add()} style={{
-          fontSize: 13, fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
+          fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
           background: 'var(--brand)', color: 'var(--bg)', cursor: saving ? 'wait' : 'pointer', opacity: saving || !valid ? 0.6 : 1,
         }}>{saving ? 'Adding…' : ruleId ? 'Try again' : 'Add in Watch'}</button>)}
         <button type="button" className="dx-link" onClick={() => onCancel(!!ruleId)}>Cancel</button>

@@ -51,16 +51,16 @@ export function RecommendationsCard({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <h3 style={H3} id="recommendations-heading" tabIndex={-1}>
           Recommendations
-          {total > 0 && <span style={{ marginLeft: 8, fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{total}</span>{recCountSuffix(status)}</span>}
+          {total > 0 && <span style={{ marginLeft: 8, fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{total}</span>{recCountSuffix(status)}</span>}
         </h3>
         {/* One agent: nothing to filter by. */}
-        {showAgentFilter && <input aria-label="Filter by agent" value={agentFilter} onChange={e => onAgentFilter(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
+        {showAgentFilter && <input aria-label="Filter by agent" value={agentFilter} onChange={e => onAgentFilter(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 'var(--fs-sm)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
       </div>
-      <div aria-live="polite" style={{ fontSize: 12.5, color: 'var(--tx2)', margin: notice ? '0 0 8px' : 0 }}>{notice}</div>
+      <div aria-live="polite" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: notice ? '0 0 8px' : 0 }}>{notice}</div>
       {showStatuses && <div role="group" aria-label="Show recommendations by status" style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
         {REC_STATUSES.map(st => (
           <button key={st} type="button" aria-pressed={status === st} onClick={() => onStatus(st)} style={{
-            fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
+            fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
             background: status === st ? 'var(--brand-dim)' : 'transparent',
             color: status === st ? 'var(--brand)' : 'var(--tx3)',
             border: `1px solid ${status === st ? 'var(--brand)' : 'var(--line)'}`,
@@ -81,13 +81,13 @@ export function RecommendationsCard({
       ) : (
         <article key={rec.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>{recTitle(rec.detector)}</span>
-            <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{rec.agentId}</button>
+            <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>{recTitle(rec.detector)}</span>
+            <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{rec.agentId}</button>
             <Badge status={rec.status} />
             {rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
           </div>
-          {rec.summary && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
-          <div style={{ fontSize: 12, color: 'var(--tx2)' }}>
+          {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             Since {fmtDay(rec.createdAt)}
             {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} action{rec.feedbackCount !== 1 ? 's' : ''}</>}
           </div>
@@ -97,22 +97,22 @@ export function RecommendationsCard({
             onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
             onFeedback={(f) => onFeedback(rec, f)}
           />
-          {feedbackError?.recId === rec.id && <div role="alert" style={{ fontSize: 11.5, color: 'var(--bad)' }}>{feedbackError.message}</div>}
+          {feedbackError?.recId === rec.id && <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--bad)' }}>{feedbackError.message}</div>}
         </article>
       )) : (
-        <div style={{ color: 'var(--tx3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
+        <div style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)', textAlign: 'center', padding: 16 }}>
           {loading ? 'Loading…' : error ? 'Recommendations unavailable.' : recEmptyText(status, hasCalls, filtered)}
         </div>
       )}
 
       {!showStatuses && !error && (
-        <button type="button" className="wr-link" onClick={onShowStatuses} style={{ background: 'none', border: 'none', padding: 0, marginTop: 12, minHeight: 24, cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+        <button type="button" className="wr-link" onClick={onShowStatuses} style={{ background: 'none', border: 'none', padding: 0, marginTop: 12, minHeight: 24, cursor: 'pointer', fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
           Show closed and other statuses
         </button>
       )}
 
       {error && (
-        <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 12, marginTop: 8 }}>
+        <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 'var(--fs-sm)', marginTop: 8 }}>
           {error}
         </div>
       )}
@@ -120,7 +120,7 @@ export function RecommendationsCard({
       {hasMore && (
         <div style={{ textAlign: 'center', marginTop: 12 }}>
           <button onClick={onMore} disabled={loading} style={{
-            fontSize: 12, fontWeight: 600, padding: '6px 16px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
+            fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 16px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
             background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)', opacity: loading ? 0.5 : 1,
           }}>{loading ? 'Loading…' : 'Load more'}</button>
         </div>
@@ -137,7 +137,7 @@ function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; bus
     evidence: <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
     toggle: (
       <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
-        fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+        fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
         background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
       }}>{more ? 'Less' : 'More'}</button>
     ),

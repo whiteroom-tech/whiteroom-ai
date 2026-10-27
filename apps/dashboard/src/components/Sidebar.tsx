@@ -102,7 +102,7 @@ export function Sidebar() {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: '.02em', lineHeight: 1.1, color: 'var(--tx)' }}>WhiteRoom</div>
           {fleetId && (
-            <div title={fleetId} style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fleetId}</div>
+            <div title={fleetId} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fleetId}</div>
           )}
         </div>
       </div>
@@ -133,8 +133,8 @@ export function Sidebar() {
       <div className="wr-sidebar__account">
         <span aria-hidden="true" className="wr-sidebar__avatar">{person.charAt(0).toUpperCase()}</span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{person}</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role ? `${role} · ${APP_VERSION}` : APP_VERSION}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{person}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role ? `${role} · ${APP_VERSION}` : APP_VERSION}</div>
         </div>
         <AccountMenu organization={org ? org.name ?? '' : null} invitations={org?.invitations ?? 0} />
       </div>

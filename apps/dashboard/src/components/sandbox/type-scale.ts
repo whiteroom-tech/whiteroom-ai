@@ -1,9 +1,8 @@
-// The Sandbox's type floor, in one place: detail text is never smaller than
-// MIN_TEXT_PX. Only the classes below may be: mono uppercase labels (eyebrows,
-// the "What the test checks" header), the mode badge and the checklist dots'
-// icon size. They are labels, not text anyone has to read for details.
+// The Sandbox's type floor, in one place: no text is smaller than MIN_TEXT_PX.
+// Sizes now come from the shared --fs-* rem tokens in globals.css (smallest is
+// 14px), so no class needs an exception; add one here only if that changes.
 
 export const MIN_TEXT_PX = 12;
 
 /** guided.module.css classes allowed below MIN_TEXT_PX. */
-export const SMALL_LABEL_CLASSES: readonly string[] = ['badgeMode', 'diagDot', 'eyebrow', 'previewHeader'];
+export const SMALL_LABEL_CLASSES: readonly string[] = [];

@@ -122,7 +122,7 @@ export function DataPrivacySection() {
 
   return (
     <Panel title="Data and privacy">
-      <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 6px', maxWidth: '62ch' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px', maxWidth: '62ch' }}>
         What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from handover notes and the live feed before they’re saved.
       </p>
 
@@ -136,7 +136,7 @@ export function DataPrivacySection() {
       >
         {settings.handover_persistence && settings.handover_max_age_hours != null && (
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</span>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</span>
             <SegmentedControl label="Keep notes for" value={MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) ? String(settings.handover_max_age_hours) : null}
               options={MAX_AGE_OPTIONS.map((o) => ({ value: String(o.hours), label: o.label }))}
               onChange={(v) => {
@@ -144,11 +144,11 @@ export function DataPrivacySection() {
                 if (busy || hours === settings.handover_max_age_hours) return;
                 change({ handover_max_age_hours: hours });
               }} />
-            <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
           </div>
         )}
         {carriesOnlyInLabeledRuns(settings) && (
-          <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>
+          <p style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             Notes carry over only between calls with the same run label. <a href="https://whiteroom.tech/docs.html#runs" target="_blank" rel="noopener noreferrer">How to label runs</a>
           </p>
         )}
@@ -175,13 +175,13 @@ export function DataPrivacySection() {
           }} />}
       />
 
-      <p style={{ margin: '12px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>
+      <p style={{ margin: '12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         Deleted data can stay in encrypted database backups until those backups expire.
       </p>
-      {busy && !pending && <p role="status" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>Saving…</p>}
+      {busy && !pending && <p role="status" style={{ margin: '8px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Saving…</p>}
       {note && (
         <div style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)', flex: '1 1 260px' }}>{note}</p>
+          <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)', flex: '1 1 260px' }}>{note}</p>
           {retry && <Button size={28} busy={busy} busyLabel="Saving…" onClick={() => void save(retry)}>Try again</Button>}
         </div>
       )}
@@ -210,8 +210,8 @@ function Row({ title, text, control, last, children }: { title: string; text: st
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '14px 0', borderBottom: last ? 'none' : '1px solid var(--line)' }}>
       <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--tx2)', maxWidth: '58ch' }}>{text}</p>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{title}</div>
+        <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '58ch' }}>{text}</p>
         {children}
       </div>
       <div style={{ flex: 'none' }}>{control}</div>

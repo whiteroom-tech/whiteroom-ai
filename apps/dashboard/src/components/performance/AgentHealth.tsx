@@ -37,9 +37,9 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
   return (
     <section aria-labelledby="agent-health-heading" className={`wr-health${warn ? ' wr-health--warn' : ''}`}>
       <div className="wr-health__head">
-        <h3 id="agent-health-heading" style={{ margin: 0, fontSize: 14, fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h3>
+        <h3 id="agent-health-heading" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h3>
         {line && (
-          <span aria-live="polite" className="wr-health__status" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: line.error ? 'var(--bad)' : 'var(--tx2)' }}>
+          <span aria-live="polite" className="wr-health__status" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 'var(--fs-sm)', color: line.error ? 'var(--bad)' : 'var(--tx2)' }}>
             {line.busy && <span className="dx-spin" aria-hidden />}
             <span>{line.text}</span>
             {line.action && <button type="button" className="dx-link dx-strong" onClick={onCheck}>{line.action.label}</button>}
@@ -57,7 +57,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
               ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 7v6" /><path d="M12 17h.01" /></svg>
               : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
           </span>
-          <span style={{ fontSize: 15.5, fontWeight: 700, color: warn ? 'var(--warn-tx)' : 'var(--tx)' }}>{verdict.title}</span>
+          <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: warn ? 'var(--warn-tx)' : 'var(--tx)' }}>{verdict.title}</span>
         </div>
       )}
 
@@ -115,21 +115,21 @@ function CheckList({ data, onFix }: { data: FleetDiagnosis; onFix: () => void })
     <div style={{ display: 'grid', gap: 12, maxWidth: 760 }}>
       {agents.map((a) => (
         <div key={a.agentId}>
-          {agents.length > 1 && <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>{a.agentId}</div>}
+          {agents.length > 1 && <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 4 }}>{a.agentId}</div>}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {a.rows.map((r, i) => (
-              <li key={`${r.tone}-${r.title}-${i}`} style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px', padding: '5px 0', fontSize: 13 }}>
+              <li key={`${r.tone}-${r.title}-${i}`} style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px', padding: '5px 0', fontSize: 'var(--fs-sm)' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={ICON[r.tone].label} style={{ color: ICON[r.tone].color, flex: 'none', alignSelf: 'center' }}>{ICON[r.tone].path}</svg>
                 <span style={{ color: r.tone === 'problem' ? 'var(--warn-tx)' : r.tone === 'set-aside' ? 'var(--tx2)' : 'var(--tx)', fontWeight: r.tone === 'problem' ? 600 : 400 }}>{r.title}</span>
-                {r.note && <span style={{ color: 'var(--tx2)', fontSize: 12.5 }}>{r.note}</span>}
-                {r.tone === 'problem' && <button type="button" className="dx-link dx-strong" onClick={onFix} style={{ fontSize: 12.5, minHeight: 24 }}>See the fix →</button>}
+                {r.note && <span style={{ color: 'var(--tx2)', fontSize: 'var(--fs-sm)' }}>{r.note}</span>}
+                {r.tone === 'problem' && <button type="button" className="dx-link dx-strong" onClick={onFix} style={{ fontSize: 'var(--fs-sm)', minHeight: 24 }}>See the fix →</button>}
               </li>
             ))}
           </ul>
         </div>
       ))}
       {data.waiting.map((w) => (
-        <p key={w.agentId} style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <p key={w.agentId} style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           <span style={{ fontFamily: FONT_MONO }}>{w.agentId}</span> isn&rsquo;t checked yet: {w.calls7d} of {data.minCalls} calls this week.
         </p>
       ))}

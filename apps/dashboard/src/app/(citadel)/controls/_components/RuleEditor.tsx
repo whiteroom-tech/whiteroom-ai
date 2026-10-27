@@ -32,8 +32,8 @@ const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value)
 const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
   { value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: 'warn' },
 ];
-const help = { margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--tx2)' } as const;
-const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 13.5 } as const;
+const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
+const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
 export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
@@ -83,12 +83,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       <div className="gov-edhead" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
         <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
-        <h2 className="gov-edhead__title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{RULE_LABELS[rule.ruleType]}</h2>
+        <h2 className="gov-edhead__title" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>{RULE_LABELS[rule.ruleType]}</h2>
         <span className={`gov-edhead__mode${draft.mode === 'enforce' ? ' is-on' : ''}`}>{MODES.find((m) => m.value === draft.mode)?.label}{dirty ? ' · unsaved' : ''}</span>
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
       {rule.sourceRecommendationId && (
-        <p style={{ margin: '-12px 0 0', fontSize: 12.5, color: 'var(--tx2)' }}>
+        <p style={{ margin: '-12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           From a Diagnosis suggestion · <Link href={ROUTES.performance} style={{ color: 'var(--brand)', fontWeight: 600 }}>see it in Performance</Link>
         </p>
       )}
@@ -133,7 +133,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         )}
         {rule.ruleType === 'model_allowlist' && (
           <>
-            <span style={{ fontSize: 13.5 }}>Only allow these models:</span>
+            <span style={{ fontSize: 'var(--fs-md)' }}>Only allow these models:</span>
             <GroupPicker values={(p as ModelAllowlistParams).allowedModels} onChange={(allowedModels) => setParams({ allowedModels })} groups={MODEL_GROUPS}
               addLabel="+ add model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
           </>
@@ -175,7 +175,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         )}
         {rule.ruleType === 'tool_list' && (
           <>
-            <span style={{ fontSize: 13.5 }}>When an agent is about to run any of these tools:</span>
+            <span style={{ fontSize: 'var(--fs-md)' }}>When an agent is about to run any of these tools:</span>
             <GroupPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} groups={TOOL_GROUPS}
               addLabel="+ add tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
             <p style={help}>In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.</p>
@@ -198,7 +198,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           </p>
         )}
         {draft.response === 'block' && (
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-sm)', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
             <input type="checkbox" checked={draft.alsoNotify} onChange={(e) => set({ alsoNotify: e.target.checked })} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
             Also send me an alert
           </label>
@@ -243,7 +243,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       <details className="gov-details">
         <summary>What the agent gets</summary>
-        <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 11.5, lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
+        <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
           {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
         </pre>
         {draft.response !== 'notify' && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}
@@ -254,12 +254,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
           {history.length === 0 && <p style={help}>No history yet.</p>}
           {history.slice(0, 10).map((h) => (
-            <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5 }}>
+            <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 'var(--fs-sm)' }}>
               <span>{h.description}</span>
               <span style={{ color: 'var(--tx2)', flex: 'none' }}>{timeAgo(h.time)} · {historyWho(h, actors)}</span>
             </div>
           ))}
-          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
+          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
         </div>
       </details>
     </div>

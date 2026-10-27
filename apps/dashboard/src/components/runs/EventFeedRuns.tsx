@@ -150,7 +150,7 @@ export function EventFeedRuns() {
         {partialSince && (
           <Banner variant="warn">Partial range: history is only kept from {partialSince}, so this range and its export start there.</Banner>
         )}
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           Totals, the daily savings chart and the per-agent table are on <Link href={ROUTES.performance} className="wr-link">Performance &rarr;</Link>
         </p>
 
@@ -161,7 +161,7 @@ export function EventFeedRuns() {
           bodyPadding={0}
           actions={
             <>
-              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
+              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
               <SelectChip<FeedVariant> label="Feed view" value={feedVariant} onChange={setFeedVariant} options={FEED_VARIANTS} />
               <Button size={28} aria-pressed={feedTechnical} onClick={() => setFeedTechnical((t) => !t)} title="Show raw event types and tool arguments">Technical</Button>
             </>

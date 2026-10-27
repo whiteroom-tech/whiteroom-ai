@@ -127,7 +127,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
     return (
       <div style={CARD}>
         <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
-        <div style={{ fontSize: 12, color: 'var(--bad)' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>
           Couldn&apos;t load cost tracking: {loadError}
           {loadError === 'Unknown action.' && ' — the backend hasn’t been deployed with this feature yet.'}
         </div>
@@ -146,40 +146,40 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
             which one is actually usable can change as pricing coverage does. */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2" title="Used to estimate tasks remaining. It does not stop spending — add a spend cap on the Controls page for that.">
-            <span style={{ fontSize: 10.5, color: 'var(--tx2)', letterSpacing: 0.5 }}>BUDGET PER DAY</span>
-            <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>$</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>BUDGET PER DAY</span>
+            <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>$</span>
             <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
           </div>
           <div className="flex items-center gap-2" title="For a model with no $/token price on file yet — tracks tasks left in tokens instead of dollars.">
-            <span style={{ fontSize: 10.5, color: 'var(--tx2)', letterSpacing: 0.5 }}>TOKENS PER DAY</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>TOKENS PER DAY</span>
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         </div>
       </div>
       {/* Always said: these numbers track spending, they don't limit it. */}
-      <p style={{ margin: '-4px 0 14px', fontSize: 12.5, color: 'var(--tx2)' }}>
+      <p style={{ margin: '-4px 0 14px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         Budgets are for tracking only. They don&rsquo;t stop your agents. To set a limit,{' '}
         <Link href={ROUTES.controls} className="wr-link" style={{ fontWeight: 600 }}>add a spend cap in Controls →</Link>
       </p>
       {(() => {
         const notice = budgetNotice(forecast);
         return notice && (
-          <div role="status" style={{ margin: '0 0 14px', padding: '9px 12px', borderRadius: 6, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', fontSize: 13, fontWeight: 600, color: 'var(--warn-tx)' }}>
+          <div role="status" style={{ margin: '0 0 14px', padding: '9px 12px', borderRadius: 6, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--warn-tx)' }}>
             {notice}
           </div>
         );
       })()}
       {budgetSaveError && (
-        <div role="alert" style={{ fontSize: 12, color: 'var(--bad)', margin: '-4px 0 12px' }}>{budgetSaveError}</div>
+        <div role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '-4px 0 12px' }}>{budgetSaveError}</div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
+          <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx)' }}>
             {/* Same money format as the Spend card, so a small rate isn't rounded to $0.01. */}
             {fmtCost(Math.round(forecast.burnRateUsdPerHour * 1_000_000))} / h
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
         </div>
         {(() => {
           const dollar = resolveTasksLeft(forecast, 'dollar');
@@ -201,17 +201,17 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
   if (value == null) {
     return (
       <div>
-        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
-        <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>{note}</div>
+        <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{note}</div>
       </div>
     );
   }
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT_MONO, color: tasksLeftColor(value) }}>
+      <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: tasksLeftColor(value) }}>
         {value}
       </div>
-      <div style={{ fontSize: 11.5, color: 'var(--tx3)' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{label}</div>
     </div>
   );
 }
