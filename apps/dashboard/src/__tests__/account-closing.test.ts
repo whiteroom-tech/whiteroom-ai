@@ -194,6 +194,7 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       const s = world.sub;
       return { rows: s?.stripe_subscription_id && (params[1] as string[]).includes(s.status) ? [{}] : [] };
     }
+    if (sql.startsWith('UPDATE subscriptions SET updated_at')) { world.log.push('subscription to the back of the queue'); return one(!!world.sub); }
     if (sql.startsWith('UPDATE subscriptions SET status')) { if (world.sub) world.sub.status = String(params[1]); return one(!!world.sub); }
     if (sql.includes('FROM subscriptions')) { world.log.push('read plan'); return { rows: world.sub ? [world.sub] : [] }; }
     if (sql.startsWith('SELECT org_id FROM organization_members')) return { rows: world.soleOrgOwner ? [{ org_id: 'o1' }] : [] };
@@ -623,6 +624,8 @@ describe('a closed fleet bills nothing', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(await cancelClosedSubscriptions()).toEqual({ cancelled: 0, failed: 1 });
     expect(world.sub?.status).toBe('past_due');
+    // Moved behind the others, so one that keeps failing can't hold up the batch.
+    expect(world.log).toContain('subscription to the back of the queue');
     expect(errors).toHaveBeenCalledWith(expect.stringContaining('retried next run'), 'stripe down');
     expect(await cancelClosedSubscriptions()).toEqual({ cancelled: 1, failed: 0 });
   });

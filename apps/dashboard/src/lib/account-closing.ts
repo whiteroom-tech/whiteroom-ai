@@ -240,7 +240,7 @@ export async function cancelClosedSubscriptions(): Promise<{ cancelled: number; 
     `SELECT s.user_id, s.stripe_subscription_id, s.status FROM subscriptions s
      JOIN users u ON u.id = s.user_id
      WHERE u.closes_at <= now() AND s.stripe_subscription_id IS NOT NULL AND s.status = ANY($1)
-     ORDER BY u.closes_at
+     ORDER BY s.updated_at, u.closes_at
      LIMIT $2`,
     [BILLABLE_STRIPE_STATUSES, CANCEL_BATCH],
   );
@@ -255,6 +255,8 @@ export async function cancelClosedSubscriptions(): Promise<{ cancelled: number; 
       if (isActiveStatus(was)) await reportRefundNeeded(userId, subId, `was ${was}`);
     } catch (err) {
       failed++;
+      // To the back of the queue (least recently tried first), so one that keeps failing can't hold up the rest.
+      await db().query(`UPDATE subscriptions SET updated_at = now() WHERE user_id = $1 AND stripe_subscription_id = $2`, [userId, subId]).catch(() => {});
       console.error(`[closing] couldn't cancel subscription ${subId} for user ${userId}; retried next run:`, err instanceof Error ? err.message : err);
     }
   }

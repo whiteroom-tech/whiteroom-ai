@@ -11,16 +11,13 @@ import { billableAgents, hasLiveSubscription, isPaidPlanId, isTrialActive, strip
 import { HOUR_MS } from '@/lib/format';
 
 /**
- * `support`: the refusal is one only support can resolve, so the page offers
- * a way to reach them (SUPPORT_EMAIL).
- */
-/**
  * How long a Checkout page stays payable. Stripe's shortest allowed lifetime
  * is 30 minutes from its own clock; a minute's margin keeps a slow request
  * from being refused for it.
  */
 const CHECKOUT_LIFETIME_S = 31 * 60;
 
+/** `support`: a refusal only support can resolve, so the page offers a way to reach them (SUPPORT_EMAIL). */
 type UrlResult = { ok: true; url: string } | { ok: false; error: string; support?: boolean };
 
 async function requireUser(): Promise<{ id: string; email: string | null }> {
