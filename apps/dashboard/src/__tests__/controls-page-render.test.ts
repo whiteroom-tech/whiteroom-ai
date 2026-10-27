@@ -1309,8 +1309,25 @@ describe('Controls page, mockup suggestions and toasts', () => {
     await m.click(m.button('Add to allowlist…'));
     await m.click(m.button('Allow for all agents'));
     await m.click(m.button('Undo'));
-    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] }, ifVersion: 5 }, 'k');
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] }, ifVersion: 5, description: 'Undid the last change' }, 'k');
     expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Change undone.');
+    m.root.unmount();
+  });
+
+  it('Undo of an added copy leaves it alone when it changed since', async () => {
+    api.created.push({ ...base, id: 'kw', ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password'], where: 'incoming', wholeWord: true } });
+    api.create.mockImplementation(async (_f: string, r: Record<string, unknown>) => {
+      const rule = { ...base, id: 'c0', response: 'block', ...r } as GovernanceRule;
+      // Someone changes the copy straight after: the reload brings version 2.
+      api.created.push({ ...rule, version: 2 });
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Cover all agents…'));
+    await m.click(m.button('Cover all agents'));
+    await m.click(m.button('Undo'));
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('This rule changed again since, so Undo left it as it is.');
     m.root.unmount();
   });
 

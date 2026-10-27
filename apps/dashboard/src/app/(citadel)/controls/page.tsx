@@ -418,11 +418,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const undoBusy = useRef(false);
   // A toast's Undo runs after later renders: through this ref it sees the page as it is then
   // (an edit made since is asked about first), not as it was when the toast opened.
-  const live = useRef({ undoSaved: (_: GovernanceRule, __: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {}, guard: (go: () => void) => go() });
+  const live = useRef({ undoSaved: (_: GovernanceRule, __: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: GovernanceRule) => {}, guard: (go: () => void) => go() });
 
   /** Undo of something this visit added: removes it again. */
-  const undoAdded = async (ruleId: string) => {
+  const undoAdded = async (created: GovernanceRule) => {
+    const ruleId = created.id;
     if (undoBusy.current) return;
+    // Changed since it was added (edited, switched to Block, a teammate): Undo leaves that work alone.
+    const now = rules.find((r) => r.id === ruleId);
+    if (now && now.version !== created.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
     undoBusy.current = true;
     setSaving(true);
     setError(null);
@@ -498,7 +502,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => [...rs, created]);
       // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
-      showToast(`Added a ${RULE_LABELS[next.ruleType]} rule just for ${agentsPicked.join(", ")}, in Record only. Everyone else keeps the original.`, () => live.current.undoAdded(created.id));
+      showToast(`Added a ${RULE_LABELS[next.ruleType]} rule just for ${agentsPicked.join(", ")}, in Record only. Everyone else keeps the original.`, () => live.current.undoAdded(created));
       void fetchData();
     } catch (e) {
       if (fleetRef.current === forFleet) handleError(e, "add the copy");
@@ -584,7 +588,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         description: `Added a copy of the ${RULE_LABELS.keyword} rule for all agents`,
       }, authKey);
       setRules((rs) => [...rs, created]);
-      showToast(`${keywordsShort(rule.params as KeywordParams)} rule now covers all agents (Record only).`, () => live.current.undoAdded(created.id));
+      showToast(`${keywordsShort(rule.params as KeywordParams)} rule now covers all agents (Record only).`, () => live.current.undoAdded(created));
     } catch (e) { handleError(e, "add the rule for all agents"); }
     finally { setSaving(false); void fetchData(); }
   };
@@ -613,7 +617,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     try {
       if (!target) {
         const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
-        showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created.id));
+        showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created));
       } else {
         const prev = (target.params as ModelAllowlistParams).allowedModels;
         const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description, ifVersion: target.version }, authKey);
@@ -624,7 +628,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           undoBusy.current = true;
           setSaving(true);
           try {
-            const { rule: back } = await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version }, authKey);
+            const { rule: back } = await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version, description: "Undid the last change" }, authKey);
             if (selectedRef.current === back.id) setDraft(draftFrom(back));
             showToast("Change undone.");
           } catch (e) {
@@ -654,7 +658,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   });
 
   // Every toast Undo asks about an unsaved edit first, as opening another rule does.
-  live.current = { undoSaved, restore: (r) => guard(() => void restore(r)), undoAdded: (id) => guard(() => void undoAdded(id)), guard };
+  live.current = { undoSaved, restore: (r) => guard(() => void restore(r)), undoAdded: (r) => guard(() => void undoAdded(r)), guard };
 
   /** Shows one agent's rules (null: all); an open rule that isn't among them closes. */
   const changeAgent = (agent: string | null) => {
