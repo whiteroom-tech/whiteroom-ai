@@ -96,6 +96,9 @@ describe('engine route records accepted control changes', () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBe('svc-secret');
     expect(mocks.access).not.toHaveBeenCalled();
+    // The full audit export too: the engine gives it only to the dashboard.
+    expect(await sentSecret({ action: 'export_audit_full', fleet_id: 'f1' })).toBe('svc-secret');
+    expect(await sentSecret({ action: 'export_audit_full', fleet_id: 'f2' })).toBeUndefined();
     // A fleet the account doesn't hold (a fleet key pasted into another account's session): counts only.
     expect(await sentSecret({ action: 'governance_list', fleet_id: 'f2' })).toBeUndefined();
     // A fleet the account holds, but the session carries a different key: no secret.

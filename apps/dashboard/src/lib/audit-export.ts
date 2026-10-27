@@ -10,6 +10,18 @@ export interface AuditExportFile {
   events: number | null;
 }
 
+/**
+ * The pages came back but don't add up to the history WhiteRoom signed: a
+ * problem with the audit trail itself, not with the connection. `plain` says
+ * what was wrong in a few words.
+ */
+export class AuditExportProblem extends Error {
+  constructor(message: string, readonly plain: string) {
+    super(message);
+    this.name = 'AuditExportProblem';
+  }
+}
+
 /** Busy, rate-limited or briefly unreachable: worth a short wait and another try. */
 const RETRYABLE = new Set([429, 502, 503]);
 const RETRIES = 3;
@@ -54,8 +66,10 @@ export async function buildAuditExport(
     page = await get();
   } catch (e) {
     // An older engine doesn't know the action (400); 409 is a fleet whose
-    // history isn't stored yet. Both still get the signed export they had.
-    if (e instanceof WhiteRoomApiError && (e.status === 409 || (e.status === 400 && e.reason === 'Unknown action.'))) {
+    // history isn't stored yet; 403 is an engine that wants the dashboard's
+    // service secret for it before this dashboard sends one. All still get
+    // the signed export they had.
+    if (e instanceof WhiteRoomApiError && (e.status === 409 || e.status === 403 || (e.status === 400 && e.reason === 'Unknown action.'))) {
       const signed = await exportAuditSigned(fleetId);
       return { blob: new Blob([JSON.stringify(signed, null, 2)], { type: 'application/json' }), events: null };
     }
@@ -74,7 +88,7 @@ export async function buildAuditExport(
   let lastHash: string | null = null;
   for (;;) {
     for (const e of page.events) {
-      if (e.seq !== expect) throw new Error('The export is missing events.');
+      if (e.seq !== expect) throw new AuditExportProblem('The export is missing events.', 'some events are missing');
       expect++;
       lastHash = typeof e.hash === 'string' ? e.hash : null;
     }
@@ -86,34 +100,19 @@ export async function buildAuditExport(
     if (page.nextFromSeq === null) break;
     if (cancelled()) return null;
     // Each page must move forward within the pinned range, right after its last event, or this would never end.
-    if (page.events.length === 0 || page.nextFromSeq !== expect || page.nextFromSeq > page.toSeq) throw new Error('The export stopped moving forward.');
+    if (page.events.length === 0 || page.nextFromSeq !== expect || page.nextFromSeq > page.toSeq) throw new AuditExportProblem('The export stopped moving forward.', 'it stopped before the end');
     page = await get({ fromSeq: page.nextFromSeq, toSeq: pinned });
     if (!page) return null;
-    if (page.toSeq !== pinned || page.firstSeq !== pinnedFirst) throw new Error('The export changed part-way through.');
+    if (page.toSeq !== pinned || page.firstSeq !== pinnedFirst) throw new AuditExportProblem('The export changed part-way through.', 'it changed while it was downloading');
   }
   const m = page.manifest;
-  if (!m) throw new Error('The export ended without its signature.');
-  // What was collected must be exactly what WhiteRoom signed for.
-  // An empty history (count 0) is a signed, empty file. Today's engine answers
-  // 409 for a fleet with no stored events instead, which falls back above.
-  const empty = done === 0 && m.count === 0;
-  // The signed head hash is the last event's: content swapped in under the right seq doesn't pass.
-  // An empty one's head sits just before its first seq and has no hash.
-  const headOk = empty ? m.headSeq === m.firstSeq - 1 && m.headHash === null : m.headSeq === expect - 1 && m.headHash === lastHash;
+  if (!m) throw new AuditExportProblem('The export ended without its signature.', 'it doesn’t match WhiteRoom’s signature');
+  // What was collected must be exactly what WhiteRoom signed for. The signed
+  // head hash is the last event's: content swapped in under the right seq doesn't pass.
+  const headOk = m.headSeq === expect - 1 && m.headHash === lastHash;
   if (m.firstSeq !== page.firstSeq || m.headSeq !== pinned || m.count !== done || !headOk) {
-    throw new Error('The export doesn’t match its signature.');
+    throw new AuditExportProblem('The export doesn’t match its signature.', 'it doesn’t match WhiteRoom’s signature');
   }
   parts.push(`\n],"manifest":${JSON.stringify(m, null, 2)}}\n`);
   return { blob: new Blob(parts, { type: 'application/json' }), events: done };
-}
-
-/** Saves a Blob through a temporary link. */
-export function saveBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  // Revoked after the click has been handled, so a large file isn't cut off.
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

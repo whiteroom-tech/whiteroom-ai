@@ -8,7 +8,7 @@ import type {
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
-import { DAY_MS, ordinal } from '@/lib/format';
+import { DAY_MS, fmtCount, ordinal } from '@/lib/format';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
@@ -31,8 +31,7 @@ export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming
 
 const VERB: Record<GovernanceResponse, string> = { notify: NOTIFY.verb, block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
 
-const fmt = (n: number) => n.toLocaleString('en-US');
-export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmt(p.dailyCap)}` : `${fmt(p.dailyCap)} tokens`);
+export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount(p.dailyCap)}` : `${fmtCount(p.dailyCap)} tokens`);
 
 /**
  * The rule as one sentence, split so the values can be set in mono. Only a
@@ -49,10 +48,10 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   }
   if (rule.ruleType === 'loop_breaker') {
     const p = rule.params as LoopBreakerParams;
-    return { pre: 'When an agent makes the same call ', val: fmt(p.threshold), post: ` times in a ${p.scope}, ${v}.` };
+    return { pre: 'When an agent makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}, ${v}.` };
   }
   if (rule.ruleType === 'call_rate') {
-    return { pre: 'When an agent makes more than ', val: fmt((rule.params as CallRateParams).maxCalls), post: ` calls in a minute, ${v}.` };
+    return { pre: 'When an agent makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ` calls in a minute, ${v}.` };
   }
   if (rule.ruleType === 'keyword') {
     const p = rule.params as KeywordParams;
@@ -150,7 +149,7 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 
 const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const TALLY_WORD: Record<GovernanceResponse, string> = { notify: NOTIFY.done, block: 'blocked', pause: 'paused', stop: 'stopped' };
-const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
+const times = (n: number) => (n === 1 ? 'once' : `${fmtCount(n)} times`);
 /** A rule (or agent) with no actions. */
 export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
 
@@ -191,7 +190,7 @@ export function rowStat(rule: GovernanceRule, ctx: {
     const c = !justThem ? undefined
       : ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS
       : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
-    return c ? `${fmt(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
+    return c ? `${fmtCount(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
   }
   if (rule.mode === 'watch') {
     if (!ctx.wouldAct) return '';
@@ -424,11 +423,11 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
     }
     case 'loop_breaker': {
       const p = a as LoopBreakerParams, n = b as LoopBreakerParams;
-      return n.threshold > p.threshold ? [`Acts after ${fmt(n.threshold)} repeats instead of ${fmt(p.threshold)}`] : [];
+      return n.threshold > p.threshold ? [`Acts after ${fmtCount(n.threshold)} repeats instead of ${fmtCount(p.threshold)}`] : [];
     }
     case 'call_rate': {
       const p = a as CallRateParams, n = b as CallRateParams;
-      return n.maxCalls > p.maxCalls ? [`Allows ${fmt(n.maxCalls)} calls a minute instead of ${fmt(p.maxCalls)}`] : [];
+      return n.maxCalls > p.maxCalls ? [`Allows ${fmtCount(n.maxCalls)} calls a minute instead of ${fmtCount(p.maxCalls)}`] : [];
     }
     case 'model_allowlist': {
       const added = (b as ModelAllowlistParams).allowedModels.filter((m) => !(a as ModelAllowlistParams).allowedModels.includes(m));

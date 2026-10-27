@@ -15,6 +15,7 @@ import { ROUTES } from '@/lib/routes';
 import { PracticeDialog } from './PracticeDialog';
 import { PracticeResults, type ResultAction } from './PracticeResults';
 import { PracticeRunView } from './PracticeRunView';
+import { saveBlob } from '@/lib/download';
 import { PracticeSetup, type SetupData } from './PracticeSetup';
 import s from '../guided.module.css';
 import p from './practice.module.css';
@@ -267,9 +268,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const download = () => {
     if (!run || !result?.report) return;
     const at = run.endedAt ?? new Date().toISOString();
-    const url = URL.createObjectURL(new Blob([practiceReportHtml(run.id, result.report, at)], { type: 'text/html' }));
-    const a = document.createElement('a'); a.href = url; a.download = practiceReportFileName(run.id, at); a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlob(new Blob([practiceReportHtml(run.id, result.report, at)], { type: 'text/html' }), practiceReportFileName(run.id, at));
     track('practice_report_downloaded');
   };
 

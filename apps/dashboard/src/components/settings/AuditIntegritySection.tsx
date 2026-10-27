@@ -3,22 +3,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Panel } from '@whiteroom/ui';
 import { auditIntegrity, verifyAudit } from '@/lib/whiteroom/client';
-import { buildAuditExport, saveBlob } from '@/lib/audit-export';
+import { AuditExportProblem, buildAuditExport } from '@/lib/audit-export';
+import { saveBlob } from '@/lib/download';
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { fmtTime, timeAgo, plural } from '@/lib/format';
+import { fmtCount, fmtTime, timeAgo, plural } from '@/lib/format';
 import { AUDIT_KEPT } from '@/lib/plans';
 
 /**
  * Settings › Audit integrity (Phase 1 spec H2): how much of the fleet's
  * audit trail has been checked, any recorded gaps, a check on demand and the
- * signed export of the whole history. Hidden when no fleet is signed in or the engine predates it.
+ * signed export of the whole history. Always shown, so a link to
+ * #audit-integrity lands on it: without a fleet session it says to sign in.
  */
 export function AuditIntegritySection() {
   const { fleetId, status: authStatus } = useFleetAuth();
   const [info, setInfo] = useState<AuditIntegrity | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState<'check' | 'export' | null>(null);
-  const [note, setNote] = useState<{ tone: 'ok' | 'bad' | 'neutral'; text: string } | null>(null);
+  const [note, setNote] = useState<{ tone: 'ok' | 'bad' | 'neutral'; text: string; check?: boolean } | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   // The fleet shown now: an export still running for another one stops and saves nothing.
   const fleetRef = useRef(fleetId);
@@ -43,23 +46,34 @@ export function AuditIntegritySection() {
 
   useEffect(() => {
     setInfo(null);
+    setLoadFailed(false);
     if (authStatus !== 'authenticated' || !fleetId) return;
     let live = true;
-    auditIntegrity(fleetId).then((i) => { if (live) setInfo(i); }, () => {});
+    auditIntegrity(fleetId).then((i) => { if (live) setInfo(i); }, () => { if (live) setLoadFailed(true); });
     return () => { live = false; };
   }, [fleetId, authStatus]);
 
-  if (!fleetId || !info) return null;
+  if (!info) {
+    const signedOut = authStatus === 'unauthenticated' || (authStatus === 'authenticated' && !fleetId);
+    const line = signedOut
+      ? 'Sign in to your fleet to download the audit trail.'
+      : loadFailed ? 'Couldn’t load the audit trail. Reload the page to try again.' : 'Loading the audit trail…';
+    return (
+      <Panel title="Audit integrity">
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: 0 }}>{line}</p>
+      </Panel>
+    );
+  }
 
   async function check() {
     setBusy('check');
     setNote(null);
     try {
       const r = await verifyAudit(fleetId!);
-      if (r.valid === true) setNote({ tone: 'ok', text: `All ${r.eventsVerified.toLocaleString('en-US')} events check out${r.cached ? ' (checked in the last minute)' : ''}.` });
+      if (r.valid === true) setNote({ tone: 'ok', text: `All ${fmtCount(r.eventsVerified)} events check out${r.cached ? ' (checked in the last minute)' : ''}.` });
       else if (r.valid === false) setNote({ tone: 'bad', text: `A problem was found: ${r.message}` });
       // Part-way isn't a pass: no green until every event is checked.
-      else setNote({ tone: 'neutral', text: `${r.eventsVerified.toLocaleString('en-US')} events checked so far. Run the check again to continue.` });
+      else setNote({ tone: 'neutral', text: `${fmtCount(r.eventsVerified)} events checked so far. Run the check again to continue.` });
       await reload(fleetId!);
     } catch {
       setNote({ tone: 'bad', text: 'The check didn’t run. Try again.' });
@@ -81,15 +95,25 @@ export function AuditIntegritySection() {
       }, { isCancelled: () => !current() });
       if (!file || !current()) return;
       saveBlob(file.blob, `whiteroom-audit-${id}-${new Date().toISOString().slice(0, 10)}.json`);
-      if (file.events !== null) setNote({ tone: 'neutral', text: `Downloaded ${file.events.toLocaleString('en-US')} events, signed by WhiteRoom.` });
-    } catch {
-      if (current()) setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
+      if (file.events !== null) setNote({ tone: 'ok', text: `Downloaded ${fmtCount(file.events)} events, signed by WhiteRoom.` });
+    } catch (e) {
+      if (!current()) return;
+      // The history itself didn't add up: trying again won't help, a check will say more.
+      if (e instanceof AuditExportProblem) setNote({ tone: 'bad', text: `The export found a problem with the audit trail: ${e.plain}.`, check: true });
+      else setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
     } finally {
       if (exportRef.current === run) {
         setBusy(null);
         setProgress(null);
       }
     }
+  }
+
+  /** Stops the download in progress: it saves nothing. */
+  function cancelDownload() {
+    exportRef.current++;
+    setBusy(null);
+    setProgress(null);
   }
 
   const tracked = info.mode === 'sequenced';
@@ -124,10 +148,18 @@ export function AuditIntegritySection() {
       {tracked && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button size={28} busy={busy === 'check'} busyLabel="Checking…" onClick={() => void check()}>Run check now</Button>
-          <Button variant="ghost" size={28} busy={busy === 'export'} busyLabel={exportLabel(progress)} onClick={() => void download()}>Download signed export</Button>
+          {/* The label stays put while it works, so the button doesn't change width; progress has its own line. */}
+          <Button variant="ghost" size={28} disabled={busy === 'export'} aria-busy={busy === 'export' || undefined} onClick={() => void download()}>Download signed export</Button>
+          {busy === 'export' && <Button variant="ghost" size={28} onClick={cancelDownload}>Cancel</Button>}
         </div>
       )}
-      {note && <p role="status" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.tone === 'ok' ? 'var(--ok)' : note.tone === 'bad' ? 'var(--bad)' : 'var(--tx2)' }}>{note.text}</p>}
+      {busy === 'export' && <p role="status" className="wr-audit-progress" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{exportLabel(progress)}</p>}
+      {note && (
+        <p role="status" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.tone === 'ok' ? 'var(--ok)' : note.tone === 'bad' ? 'var(--bad)' : 'var(--tx2)' }}>
+          {note.text}
+          {note.check && <> <button type="button" className="wr-link" disabled={busy !== null} onClick={() => void check()} style={{ background: 'none', border: 0, padding: 0, font: 'inherit', fontWeight: 600, cursor: 'pointer' }}>Run check now.</button></>}
+        </p>
+      )}
     </Panel>
   );
 }
@@ -139,15 +171,13 @@ export function AuditIntegritySection() {
  */
 export function coverageLine(verifiedThrough: number, head: number, when: string | null): string {
   if (!when) return 'Not checked yet';
-  const n = (x: number) => x.toLocaleString('en-US');
-  if (verifiedThrough >= head) return head > 0 ? `All ${n(head)} events checked · ${when}` : `Checked · nothing recorded yet · ${when}`;
+  if (verifiedThrough >= head) return head > 0 ? `All ${fmtCount(head)} events checked · ${when}` : `Checked · nothing recorded yet · ${when}`;
   const pct = Math.min(99, Math.floor((verifiedThrough / Math.max(1, head)) * 100));
-  return `${n(verifiedThrough)} of ${n(head)} events checked (${pct}%) · ${when}`;
+  return `${fmtCount(verifiedThrough)} of ${fmtCount(head)} events checked (${pct}%) · ${when}`;
 }
 
-/** The Download button while it works: how many events are in so far. */
+/** The line under the buttons while a download works: how many events are in so far. */
 export function exportLabel(p: { done: number; total: number } | null): string {
   if (!p || p.total === 0) return 'Preparing…';
-  const n = (x: number) => x.toLocaleString('en-US');
-  return `Preparing… ${n(p.done)} of ${n(p.total)} events`;
+  return `Preparing… ${fmtCount(p.done)} of ${fmtCount(p.total)} events`;
 }

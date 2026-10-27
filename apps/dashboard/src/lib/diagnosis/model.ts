@@ -4,7 +4,7 @@
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
-import { timeAgo, plural } from '@/lib/format';
+import { fmtCount, plural, timeAgo } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -262,7 +262,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
       };
       return {
         kind: 'table', caption: 'Highest-token calls on the flagged days', columns: ['Time', 'Model', 'Tokens'],
-        rows: [...calls].sort((a, b) => tokens(b) - tokens(a)).map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), tokens(c).toLocaleString('en-US')]),
+        rows: [...calls].sort((a, b) => tokens(b) - tokens(a)).map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), fmtCount(tokens(c))]),
       };
     }
     case 'review_provider_failures':

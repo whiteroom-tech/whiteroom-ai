@@ -8,6 +8,7 @@ import type { RunSummary } from '@/lib/whiteroom/types';
 import { addDays, collectRuns, dayLabel, ignoresFlagged, localDay, unusualSummary } from '@/lib/runs';
 import { agentSignals } from '@/lib/performance-insights';
 import { ROUTES } from '@/lib/routes';
+import { fmtCount } from '@/lib/format';
 
 const DAYS = 7;
 
@@ -118,7 +119,7 @@ export function UnusualDetails({ flagged }: { flagged: FlaggedRuns }) {
           </div>
         </>
       )}
-      {truncated && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Showing the newest {runs.length.toLocaleString('en-US')} flagged runs.</p>}
+      {truncated && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Showing the newest {fmtCount(runs.length)} flagged runs.</p>}
     </div>
   );
 }

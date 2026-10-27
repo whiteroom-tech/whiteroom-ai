@@ -41,9 +41,10 @@ export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-e
  * Reads the engine answers in full only with the dashboard's service secret,
  * sent for a signed-in account that holds the fleet (not only its owner):
  * governance_list hides Keywords lists from a bare fleet key, which every
- * agent holds.
+ * agent holds, and export_audit_full (the whole audit history) is the
+ * dashboard's to fetch, not an agent's.
  */
-export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list']);
+export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list', 'export_audit_full']);
 
 /** The fleet a BFF body reads, when it's one of SECRET_READ_ACTIONS; else null. */
 export function secretReadFleet(body: string): string | null {

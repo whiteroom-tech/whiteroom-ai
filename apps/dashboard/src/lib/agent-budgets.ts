@@ -1,7 +1,7 @@
 // Per-agent daily budgets (Performance › Cost): a planning figure that never
-// stops anything, and the Spend cap rule "Also block at this amount" adds.
+// stops anything, and the Spend cap rule "Also add a Spend cap at this amount" adds.
 import type { AgentBudgetForecast, GovernanceRule, SpendCapParams } from '@/lib/whiteroom/types';
-import { plural } from '@/lib/format';
+import { fmtCount, plural } from '@/lib/format';
 
 export const MAX_AGENT_BUDGET_USD = 1_000_000;
 
@@ -18,10 +18,10 @@ export function parseBudget(text: string): number | null {
 export function callsLeftText(f: AgentBudgetForecast): string {
   if (f.callsLeftReason === 'partial_coverage') return 'Some of today’s calls have no price yet';
   if (f.callsLeft === null) return 'No priced calls yet to estimate from';
-  return `${f.callsLeft.toLocaleString('en-US')} ${plural(f.callsLeft, 'call')} left today`;
+  return `${fmtCount(f.callsLeft)} ${plural(f.callsLeft, 'call')} left today`;
 }
 
-/** A Spend cap for one agent at this many dollars a day: what "Also block at this amount" adds, in Record only. */
+/** A Spend cap for one agent at this many dollars a day: what "Also add a Spend cap at this amount" adds, in Record only. */
 export function capRuleFor(agentId: string, usd: number) {
   const params: SpendCapParams = { dailyCap: usd, scope: 'day', unit: 'dollars' };
   return { ruleType: 'spend_cap' as const, mode: 'watch' as const, response: 'block' as const, params, appliesTo: [agentId] };
@@ -34,4 +34,21 @@ export function existingCap(rules: GovernanceRule[], agentId: string, usd: numbe
     const p = r.params as SpendCapParams;
     return p.unit === 'dollars' && p.scope === 'day' && p.dailyCap === usd;
   }) ?? null;
+}
+
+/** Total of the agents' daily budgets, in dollars. */
+export function budgetsTotal(budgets: AgentBudgetForecast[]): number {
+  return budgets.reduce((t, b) => t + b.budgetUsd, 0);
+}
+
+/**
+ * An engine refusal in plain words, for the ones a person can act on; null
+ * for anything else (the caller says "try again"). The engine's own text is
+ * never shown: it can name fields and limits meant for code.
+ */
+export function refusalText(reason: string | undefined): string | null {
+  if (!reason) return null;
+  if (/no agent .* in this fleet/i.test(reason)) return 'That agent isn’t in this fleet.';
+  if (/at most \d+ rules/i.test(reason)) return 'This fleet already has the most rules it can have. Remove one in Controls first.';
+  return null;
 }

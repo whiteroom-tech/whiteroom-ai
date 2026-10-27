@@ -19,7 +19,7 @@ import {
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
-import { fmtTokens, partialMark, plural } from '@/lib/format';
+import { fmtCount, fmtTokens, partialMark, plural } from '@/lib/format';
 import { RULE_ACTIVITY } from '@/lib/vocab';
 import { NeedsYou } from '@/components/home/NeedsYou';
 import { AgentActions } from '@/components/home/AgentActions';
@@ -231,12 +231,12 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           <h2 id="home-today" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Today <span style={{ fontWeight: 400, color: 'var(--tx2)' }}>· since 12:00 am {zoneName()}</span></h2>
           {quiet && (
             <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx2)' }}>
-              Quiet so far today.{week && week.calls !== null && <> This week: {week.calls.toLocaleString('en-US')} model {plural(week.calls, 'call')}{week.costUsd !== null && <>, {usd(week.costUsd)}{partialMark(week.partial)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
+              Quiet so far today.{week && week.calls !== null && <> This week: {fmtCount(week.calls)} model {plural(week.calls, 'call')}{week.costUsd !== null && <>, {usd(week.costUsd)}{partialMark(week.partial)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
             </p>
           )}
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />
-          <StatCard variant="card" label="Model calls" hint={HELP.modelCallsToday} value={today ? today.calls.toLocaleString('en-US') : '—'} sub={todaySub} />
+          <StatCard variant="card" label="Model calls" hint={HELP.modelCallsToday} value={today ? fmtCount(today.calls) : '—'} sub={todaySub} />
           <StatCard
             variant="card"
             label="Spend"
@@ -245,7 +245,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved by WhiteRoom →` : todaySub}
             subHref={saved && !todayFailing ? ROUTES.performance : undefined}
           />
-          <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={todayRules ? tallyTotal(todayRules).toLocaleString('en-US') : '—'} sub={todayRules ? (tallyTotal(todayRules) > 0 ? tallyShort(todayRules) : 'none today') : 'not available yet'} subHref={todayRules && tallyTotal(todayRules) > 0 ? `${ROUTES.runs}?show=rules&day=${localDay()}` : undefined} />
+          <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={todayRules ? fmtCount(tallyTotal(todayRules)) : '—'} sub={todayRules ? (tallyTotal(todayRules) > 0 ? tallyShort(todayRules) : 'none today') : 'not available yet'} subHref={todayRules && tallyTotal(todayRules) > 0 ? `${ROUTES.runs}?show=rules&day=${localDay()}` : undefined} />
         </div>
         </section>
 

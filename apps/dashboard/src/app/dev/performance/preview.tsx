@@ -175,14 +175,14 @@ export function PerformancePreview() {
 /** Sample budgets for the preview: kept in the page, never sent anywhere. */
 function previewBudgetsApi(): AgentBudgetsApi {
   let agents: AgentBudgetForecast[] = [
-    { agentId: 'lead-agent', budgetUsd: 20, spentTodayUsd: 6.42, burnRateUsdPerHour: 1.1, callsLeft: 214, callsLeftReason: 'available' },
-    { agentId: 'code-reviewer', budgetUsd: 5, spentTodayUsd: 5.31, burnRateUsdPerHour: 0.6, callsLeft: 0, callsLeftReason: 'available' },
+    { agentId: 'lead-agent', budgetUsd: 20, spentTodayUsd: 6.42, callsLeft: 214, callsLeftReason: 'available' },
+    { agentId: 'code-reviewer', budgetUsd: 5, spentTodayUsd: 5.31, callsLeft: 0, callsLeftReason: 'available' },
   ];
   return {
     list: async (fleetId) => ({ fleetId, budgetPeriod: 'day', budgetTimeZone: 'UTC', agents }),
     set: async (_f, agentId, usd) => {
       agents = agents.filter((a) => a.agentId !== agentId);
-      if (usd !== null) agents.push({ agentId, budgetUsd: usd, spentTodayUsd: 0, burnRateUsdPerHour: null, callsLeft: null, callsLeftReason: 'no_history' });
+      if (usd !== null) agents.push({ agentId, budgetUsd: usd, spentTodayUsd: 0, callsLeft: null, callsLeftReason: 'no_history' });
     },
     rules: async () => [],
     addCap: async (_f, agentId, usd) => ({ id: 'gr_preview', fleetId: 'acme-claims-prod', version: 1, changedBy: 'preview', changedAt: new Date().toISOString(), ...capRuleFor(agentId, usd) }),
