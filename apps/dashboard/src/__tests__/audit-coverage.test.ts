@@ -8,5 +8,8 @@ describe('audit check coverage', () => {
     expect(coverageLine(2045, 2045, 'just now')).toBe('All 2,045 events checked · just now');
     expect(coverageLine(0, 2045, null)).toBe('Not checked yet');
     expect(coverageLine(5, 10, null)).toBe('Not checked yet');
+    // Checked, before anything was recorded.
+    expect(coverageLine(0, 0, 'just now')).toBe('Checked · nothing recorded yet · just now');
+    expect(coverageLine(0, 12, 'just now')).toBe('0 of 12 events checked (0%) · just now');
   });
 });

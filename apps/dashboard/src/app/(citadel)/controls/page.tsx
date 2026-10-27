@@ -240,7 +240,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // Never edits the log: an update's old settings go into the editor and are
   // saved as a new change, through the checks above; a removed rule comes
   // back as a new rule in Record only.
-  const undo = (u: Undo) => {
+  // Removals added back in this visit: hidden at once, before the reload brings the log's own "added" line.
+  const [restored, setRestored] = useState<Set<string>>(() => new Set());
+  const undoOf = (h: GovernanceHistoryEntry) => (restored.has(h.id) ? null : undoFor(h, rules, history));
+  const undo = (u: Undo, entryId?: string) => {
     if (u.kind === "update") {
       const r = rules.find((x) => x.id === u.ruleId);
       if (!r) return;
@@ -253,10 +256,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       });
       return;
     }
-    guard(() => void restore(u.rule));
+    guard(() => void restore(u.rule, entryId));
   };
 
-  const restore = async (rule: Extract<Undo, { kind: "restore" }>["rule"]) => {
+  const restore = async (rule: Extract<Undo, { kind: "restore" }>["rule"], entryId?: string) => {
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -266,6 +269,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         params: rule.params, appliesTo: rule.appliesTo, description: `Added back ${RULE_LABELS[rule.ruleType]} rule`,
       }, authKey);
       setRules((rs) => [...rs, created]);
+      if (entryId) setRestored((s) => new Set(s).add(entryId));
       setSelectedId(created.id);
       setDraft(draftFrom(created));
       setNotice(`${RULE_LABELS[rule.ruleType]} is back, in Record only.${rule.mode === "enforce" ? " Turn on Block when you’re ready." : ""}`);
@@ -511,7 +515,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               wouldAct={wouldActs[`${selected.id}@${selected.version}`] ?? null}
               history={history.filter((h) => h.ruleId === selected.id)}
               actors={actors}
-              undoOf={(h) => undoFor(h, rules)}
+              undoOf={undoOf}
               onUndo={undo}
               dirty={dirty}
               error={error}
@@ -530,7 +534,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <p className="gov-eyebrow" style={{ marginTop: 6 }}>Recent changes</p>
                 {recent.map((h) => (
-                  <HistoryLine key={h.id} entry={h} withRule undo={undoFor(h, rules)} onUndo={undo} busy={saving} />
+                  <HistoryLine key={h.id} entry={h} withRule undo={undoOf(h)} onUndo={undo} busy={saving} />
                 ))}
                 <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
               </div>

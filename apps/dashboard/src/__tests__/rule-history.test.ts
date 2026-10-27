@@ -33,10 +33,17 @@ describe('change log', () => {
   it('adds a removed rule back, but never twice', () => {
     expect(undoFor(entry(cap(190), null, { description: 'Removed Spend cap rule' }), [])).toEqual({ kind: 'restore', rule: { ...cap(190), ruleType: 'spend_cap' } });
     expect(undoFor(entry(cap(190), null), [rule(cap(190))])).toBeNull();
-    // Added back already (a new id, same settings and scope): no second copy.
-    expect(undoFor(entry(cap(190), null), [rule(cap(190), { id: 'gr_new', mode: 'watch' })])).toBeNull();
-    // A different cap of the same type doesn't count.
-    expect(undoFor(entry(cap(190), null), [rule(cap(500), { id: 'gr_other' })])).toMatchObject({ kind: 'restore' });
+    const removed = entry(cap(190), null, { id: 'gh_rm', time: '2026-10-26T12:00:00Z' });
+    // Added back already (a later add with the same settings, new id): no second copy.
+    const addedBack = entry(null, cap(190), { id: 'gh_add', ruleId: 'gr_new', description: 'Added back Spend cap rule', time: '2026-10-26T12:05:00Z' });
+    expect(undoFor(removed, [rule(cap(190), { id: 'gr_new' })], [addedBack, removed])).toBeNull();
+    // Removed again later: only the newest removal offers it.
+    const removedAgain = entry(cap(190), null, { id: 'gh_rm2', ruleId: 'gr_new', time: '2026-10-26T12:10:00Z' });
+    expect(undoFor(removed, [], [removedAgain, addedBack, removed])).toBeNull();
+    expect(undoFor(removedAgain, [], [removedAgain, addedBack, removed])).toMatchObject({ kind: 'restore' });
+    // A hand-made look-alike rule doesn't hide it, nor does a different cap's history.
+    expect(undoFor(removed, [rule(cap(190), { id: 'gr_mine' })], [removed])).toMatchObject({ kind: 'restore' });
+    expect(undoFor(removed, [], [entry(null, cap(500), { id: 'gh_x', time: '2026-10-26T12:30:00Z' }), removed])).toMatchObject({ kind: 'restore' });
   });
 
   it('offers nothing for an add, an older entry, or a Keywords list it can’t see', () => {

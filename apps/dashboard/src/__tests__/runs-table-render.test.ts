@@ -29,11 +29,11 @@ const run = (shift: number, x: Partial<RunSummary> = {}): RunSummary => ({
 const { RunsTable } = await import('@/components/runs/RunsTable');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 
-async function mount() {
+async function mount(preview?: RunSummary[]) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => { root.render(h(RunsTable, {})); });
+  await act(async () => { root.render(h(RunsTable, preview ? { preview } : {})); });
   await flush();
   const radio = (label: string) => [...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
   const click = async (b: Element | undefined) => { await act(async () => { (b as HTMLElement).click(); }); await flush(); };
@@ -76,6 +76,20 @@ describe('Runs › Show › Rule activity', () => {
     const m = await mount();
     expect(m.radio('Rule activity')).toBeUndefined();
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ ruleActivity: false }), 'k');
+    m.root.unmount();
+  });
+});
+
+describe('Runs › Show › Rule activity, in the preview (no engine)', () => {
+  it('keeps runs where a rule blocked or would have acted, and hides the day totals', async () => {
+    const m = await mount([run(1, { wouldActCalls: 2 }), run(2, { blockedCalls: 1, wouldActCalls: 0 }), run(3, { wouldActCalls: 0 })]);
+    expect(m.text()).toMatch(/3 runs/);
+    await m.click(m.radio('Rule activity'));
+    const rows = [...m.el.querySelectorAll('[role="row"]')].filter((r) => /#\d/.test(r.textContent ?? ''));
+    expect(rows.map((r) => r.textContent?.match(/#(\d+)/)?.[1])).toEqual(['1', '2']);
+    // Day totals count every run, so they're left out under a filter.
+    expect(m.text()).not.toMatch(/·\s*3 runs/);
+    expect(api.list).not.toHaveBeenCalled();
     m.root.unmount();
   });
 });

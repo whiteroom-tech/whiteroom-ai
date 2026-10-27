@@ -115,9 +115,9 @@ export function AuditIntegritySection() {
  * event, so a partial check never reads as a pass.
  */
 export function coverageLine(verifiedThrough: number, head: number, when: string | null): string {
-  if (!when || verifiedThrough <= 0) return 'Not checked yet';
+  if (!when) return 'Not checked yet';
   const n = (x: number) => x.toLocaleString('en-US');
-  if (verifiedThrough >= head) return `All ${n(head)} events checked · ${when}`;
+  if (verifiedThrough >= head) return head > 0 ? `All ${n(head)} events checked · ${when}` : `Checked · nothing recorded yet · ${when}`;
   const pct = Math.min(99, Math.floor((verifiedThrough / Math.max(1, head)) * 100));
   return `${n(verifiedThrough)} of ${n(head)} events checked (${pct}%) · ${when}`;
 }

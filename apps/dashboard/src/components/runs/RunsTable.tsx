@@ -129,7 +129,8 @@ export function RunsTable({ preview, retentionDays }: {
     if (change.agent !== undefined) setAgent(change.agent);
     if (change.show !== undefined) setShow(change.show);
     setCursors([null]);
-    setRuns(null);
+    // The preview fetches nothing: it keeps its sample and filters it below.
+    setRuns(preview ?? null);
     setNext(null);
   }
 

@@ -52,7 +52,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   history: GovernanceHistoryEntry[];
   /** How to undo a change, or null (lib/rule-history). */
   undoOf: (h: GovernanceHistoryEntry) => Undo | null;
-  onUndo: (u: Undo) => void;
+  onUndo: (u: Undo, entryId: string) => void;
   actors: ControlActor[];
   dirty: boolean;
   error: string | null;

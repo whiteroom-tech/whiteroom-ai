@@ -16,7 +16,7 @@ export function HistoryLine({ entry, actors, withRule, undo, onUndo, busy }: {
   /** Name the rule too (the fleet-wide Recent changes list). */
   withRule?: boolean;
   undo: Undo | null;
-  onUndo: (u: Undo) => void;
+  onUndo: (u: Undo, entryId: string) => void;
   busy?: boolean;
 }) {
   const detail = changeDetail(entry);
@@ -33,7 +33,7 @@ export function HistoryLine({ entry, actors, withRule, undo, onUndo, busy }: {
         </div>
       )}
       {undo && (
-        <button type="button" className="gov-link" disabled={busy} onClick={() => onUndo(undo)}
+        <button type="button" className="gov-link" disabled={busy} onClick={() => onUndo(undo, entry.id)}
           style={{ alignSelf: 'flex-start', padding: '2px 0', border: 0, background: 'none', color: 'var(--brand)', fontWeight: 600, fontSize: 'var(--fs-sm)', cursor: busy ? 'default' : 'pointer' }}>
           {undo.kind === 'restore' ? 'Add it back' : 'Undo this change'}
         </button>

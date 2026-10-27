@@ -27,22 +27,26 @@ export type Undo =
 
 /**
  * How to undo this change, or null when it can't be done safely:
- * - a removal: the rule as it was, to add back (in Record only), unless a
- *   rule with the same settings and scope is already there;
+ * - a removal: the rule as it was, to add back (in Record only), only on
+ *   its newest removal and until the log shows it added again;
  * - an update: only what this change touched, and only while the rule still
  *   looks exactly as the change left it (otherwise a later change would be
  *   overwritten);
  * - an add, an older entry with no snapshots, or a Keywords list the engine
  *   hid: nothing (Remove is the way to undo an add).
  */
-export function undoFor(entry: GovernanceHistoryEntry, rules: GovernanceRule[]): Undo | null {
+export function undoFor(entry: GovernanceHistoryEntry, rules: GovernanceRule[], history: GovernanceHistoryEntry[] = []): Undo | null {
   const { before, after } = entry;
   if (!before) return null;
   const hidden = (s: GovernanceRuleSnapshot) => entry.ruleType === 'keyword' && !(s.params as { keywords?: string[] }).keywords?.length && Boolean((s.params as { keywordCount?: number }).keywordCount);
   if (hidden(before)) return null;
   if (after === null) {
-    // Already back: the same rule, or one added back with the same settings and scope (a new id).
-    if (rules.some((r) => r.id === entry.ruleId || (r.ruleType === entry.ruleType && same(r.params, before.params) && same(r.appliesTo, before.appliesTo)))) return null;
+    if (rules.some((r) => r.id === entry.ruleId)) return null;
+    // From the log, not from look-alike rules: once it's been added again (a new id), or
+    // removed again later, this entry no longer offers it, so it can't come back twice.
+    const sameRule = (s: GovernanceRuleSnapshot | null | undefined) => !!s && same(s.params, before.params) && same(s.appliesTo, before.appliesTo);
+    const later = history.filter((h) => h.id !== entry.id && h.ruleType === entry.ruleType && Date.parse(h.time) > Date.parse(entry.time));
+    if (later.some((h) => (h.before === null && sameRule(h.after)) || (h.after === null && sameRule(h.before)))) return null;
     return { kind: 'restore', rule: { ...structuredClone(before), ruleType: entry.ruleType } };
   }
   if (!after) return null;
