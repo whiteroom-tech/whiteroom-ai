@@ -37,7 +37,7 @@ export function TextInput({
         color: color.tx,
         borderRadius: 6,
         padding: '4px 8px',
-        fontSize: 'var(--fs-xs)',
+        fontSize: 'var(--fs-xs, 0.875rem)',
         fontFamily: mono ? FONT_MONO : undefined,
       }}
     />

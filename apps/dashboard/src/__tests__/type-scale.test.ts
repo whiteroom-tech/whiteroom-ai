@@ -11,8 +11,10 @@ const ALLOWED = new Set(['components/citadel/FleetLogin.tsx:fontSize: 26', 'comp
 // Standalone documents (email, downloadable reports) render outside the
 // dashboard, where the Text size setting doesn't apply.
 const STANDALONE = new Set(['lib/magic-link-email.ts', 'lib/sandbox/report.ts', 'lib/sandbox/practice/report.ts']);
-// fontSize: 12 / '12px' / "0.8rem"; font-size: 12px / 0.8rem / 1em / 10pt.
-const FIXED = /fontSize:\s*['"`]?\d[\d.]*|font-size:\s*[\d.]+(?:px|rem|em|pt)\b/g;
+// Any font size that isn't a --fs-* token: fontSize: 12 / '12px' / fontSize={12};
+// font-size: 12px / clamp(…) / 2vw (only var(), inherit and the root's % are
+// allowed); and the font: shorthand with a size in it.
+const FIXED = /fontSize:\s*['"`]?\d[\d.]*|fontSize=\{\s*\d|font-size:(?!\s*(?:var\(|inherit\b|[\d.]+%))\s*[^;}"'\n]+|\bfont:\s*[^;}"'\n]*\d(?:px|rem|em|pt)\b/g;
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

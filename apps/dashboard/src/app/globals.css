@@ -160,7 +160,7 @@
   /* A link to a section (/settings#alerts) lands below the menu bar, not under it. */
   .citadel-layout [id] { scroll-margin-top: calc(var(--wr-menu-h) + 8px); }
   .citadel-mobile-menu { display: flex; align-items: center; gap: 8px; height: var(--wr-menu-h); text-align: left; background: var(--card); color: var(--brand); border-bottom: 1px solid var(--line); padding: 0 16px; font-size: var(--fs-sm); flex-shrink: 0; position: sticky; top: 0; z-index: 25; }
-  .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: var(--wr-menu-h); bottom: 0; left: 0; width: 220px; height: auto; z-index: 30; }
+  .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: var(--wr-menu-h); bottom: 0; left: 0; width: 248px; height: auto; z-index: 30; }
 
   /* Header: the fleet ID yields first; when the name, status and actions still don't
      fit (Agent detail, Runs), they wrap below; long names wrap rather than clip. */
@@ -274,8 +274,8 @@
 
 .wr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; border-radius: 7px; border: 1px solid transparent; font: inherit; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; flex: none; cursor: pointer; transition: background-color .12s, color .12s, border-color .12s; }
 .wr-btn--h28 { min-height: 1.75rem; padding: 0 12px; font-size: var(--fs-sm); }
-.wr-btn--h32 { height: 32px; }
-.wr-btn--h36 { height: 36px; padding: 0 16px; }
+.wr-btn--h32 { min-height: 2rem; }
+.wr-btn--h36 { min-height: 2.25rem; padding: 0 16px; }
 .wr-btn--h44 { height: 44px; padding: 0 16px; font-size: var(--fs-md); }
 .wr-btn--primary { background: var(--brand); color: var(--on-brand); font-weight: 600; }
 .wr-btn--secondary { background: var(--raised); color: var(--tx); border-color: var(--line2); }
@@ -419,8 +419,8 @@
 .wr-agent-card { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 14px; background: var(--sunk); border: 1px solid var(--line);  color: var(--tx); text-decoration: none; transition: border-color .12s; }
 .wr-agent-card:hover { border-color: var(--line2); }
 .wr-agent-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.wr-chip-warn { display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border-radius: 6px; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; background: var(--warn-bg); color: var(--warn); }
-.wr-activity-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 14px; align-items: center; height: 38px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+.wr-chip-warn { display: inline-flex; align-items: center; gap: 7px; min-height: 1.5rem; padding: 0 10px; border-radius: 6px; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; background: var(--warn-bg); color: var(--warn); }
+.wr-activity-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 2.375rem; padding: 0 18px; border-bottom: 1px solid var(--line); }
 .wr-activity-row:last-child { border-bottom: 0; }
 .wr-live-row { display: grid; grid-template-columns: 64px 120px 76px minmax(0, 1fr); gap: 14px; align-items: start; padding: 10px 18px; border-bottom: 1px solid var(--line); }
 .wr-live-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: var(--tx); font: inherit; text-align: left; cursor: pointer; }
@@ -437,7 +437,7 @@
 .wr-live-step__text { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx2); overflow-wrap: anywhere; white-space: pre-wrap; }
 .wr-live-step[data-failed] .wr-live-step__label { color: var(--bad); }
 .wr-live-meta { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx3); }
-.wr-live-badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; margin-left: 10px; padding: 0 9px; border-radius: 6px; background: var(--brand-dim); color: var(--brand); font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.wr-live-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 1.375rem; margin-left: 10px; padding: 0 9px; border-radius: 6px; background: var(--brand-dim); color: var(--brand); font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
 .wr-btn--reveal { background: var(--brand-dim); color: var(--brand); border-color: var(--brand); font-weight: 600; }
 .wr-link { font-size: var(--fs-sm); font-weight: 500; color: var(--brand); text-decoration: none; white-space: nowrap; }
 .wr-link:hover { text-decoration: underline; }
@@ -531,13 +531,13 @@ a.wr-btn { text-decoration: none; }
 }
 
 /* Fleet key (app/fleet-key/onboarding) */
-.wr-key-field { flex: 1; min-width: 0; min-height: 32px; display: flex; align-items: center; padding: 6px 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--tx); word-break: break-all; }
+.wr-key-field { flex: 1; min-width: 0; min-height: 2rem; display: flex; align-items: center; padding: 6px 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--tx); word-break: break-all; }
 .wr-key-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .wr-key-list > li { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; border-radius: 8px; background: var(--sunk); border: 1px solid var(--line); min-width: 0; }
 .wr-key-list > li > * { flex: none; white-space: nowrap; }
 .wr-key-list .wr-key-endpoint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) { .wr-key-list > li { flex-wrap: wrap; } .wr-key-list .wr-key-endpoint { flex-basis: 100%; order: 5; } }
-.wr-input { height: 34px; padding: 0 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.wr-input { min-height: 2.125rem; padding: 0 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-family: var(--font-mono); font-size: var(--fs-sm); }
 .wr-input:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
 /* Narrow screens: segmented controls and panel headers wrap instead of
