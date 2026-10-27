@@ -306,7 +306,7 @@ describe('Controls page', () => {
     expect(m.el.querySelector('dialog[open]')).toBeNull();
     // Only what the save changed goes back, over the version it made.
     expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', ifVersion: 2, description: 'Undid the last change' }, 'k');
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Undone. Model allowlist is record only again.');
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Undone. Model allowlist is back to how it was (Record only).');
     expect(m.row('Only claude').querySelector('.ctl-mtag')!.textContent).toBe('Record only');
     m.root.unmount();
   });

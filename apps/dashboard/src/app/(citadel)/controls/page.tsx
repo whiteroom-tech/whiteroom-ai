@@ -407,7 +407,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const { rule: back } = await governanceUpdateRule(fleetId, r.id, { ...changes, ifVersion: saved.version, description: "Undid the last change" }, authKey);
         setRules((rs) => rs.map((x) => (x.id === back.id && back.version >= x.version ? back : x)));
         if (selectedRef.current === back.id) setDraft(draftFrom(back));
-        showToast(`Undone. ${RULE_LABELS[back.ruleType]} is ${MODE_LABEL[back.mode].toLowerCase()} again.`);
+        showToast(`Undone. ${RULE_LABELS[back.ruleType]} is back to how it was (${back.mode === "enforce" ? DOES_TAG[back.response ?? "block"] : MODE_LABEL[back.mode]}).`);
       } catch (e) {
         if (e instanceof WhiteRoomApiError && e.status === 409) showToast("This rule changed again since, so Undo left it as it is.");
         else handleError(e, "undo the change");

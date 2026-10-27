@@ -133,7 +133,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     const from = waitUntil(o);
     if (from === null) return null;
     if (from === 'record-first') return 'needs 24 hours in Record only first';
-    if (from === 'unknown') return 'needs 24 hours in Record only first, and its start isn’t on record';
+    if (from === 'unknown') return 'needs 24 hours in Record only first (we can’t see when this rule started recording)';
     const day = new Date(from).toDateString() === new Date().toDateString() ? 'today' : new Date(from).toDateString() === new Date(Date.now() + 86_400_000).toDateString() ? 'tomorrow' : new Date(from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     return `available from ${fmtTime(from)} ${day} (needs 24 hours in Record only first)`;
   };
