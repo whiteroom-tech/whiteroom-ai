@@ -836,7 +836,7 @@ section[aria-labelledby="runs-table-title"] .wr-panel__title { white-space: norm
 .wr-run-crumb + .citadel-page-header { min-height: 3.5rem !important; }
 .wr-run-summary { margin: 0; font-size: var(--fs-card); line-height: 1.5; color: var(--tx); }
 .wr-run-summary strong { font-weight: 600; font-variant-numeric: tabular-nums; }
-.wr-run-summary__model { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx2); }
+.wr-run-summary__model { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
 .wr-run-flags { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: var(--fs-sm); color: var(--tx2); }
 .wr-run-flags strong { color: var(--tx); font-weight: 600; }
 .wr-run-mtag { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; font-weight: 500; white-space: nowrap; color: var(--tx2); }
