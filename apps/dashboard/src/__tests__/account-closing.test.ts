@@ -182,7 +182,7 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       return one(ok);
     }
     if (sql.startsWith('UPDATE users SET closing_email_sent_at = now()')) {
-      const ok = !u.closing_email_sent_at || ms(u.closing_email_sent_at) < now - 60 * MIN || u.closing_email_reason !== params[1];
+      const ok = params[1] === 'deleted' || !u.closing_email_sent_at || ms(u.closing_email_sent_at) < now - 60 * MIN || u.closing_email_reason !== params[1];
       if (ok) { u.closing_email_sent_at = new Date(now).toISOString(); u.closing_email_reason = String(params[1]); }
       return one(ok);
     }
@@ -360,14 +360,22 @@ describe('Delete account starts a 14-day window', () => {
 });
 
 describe('closing emails', () => {
-  it('at most one of each kind an hour, however often windows start', async () => {
+  it('at most one lapse email an hour, however often a lapse window restarts', async () => {
     setup();
-    const closing = { reason: 'deleted' as const, closesAt: IN_14_DAYS };
+    const closing = { reason: 'lapsed' as const, closesAt: IN_14_DAYS };
     await sendClosingEmail('u1', closing);
     await sendClosingEmail('u1', closing);
     expect(sendEmail).toHaveBeenCalledTimes(1);
 
     world.user.closing_email_sent_at = at(-61 * MIN);
+    await sendClosingEmail('u1', closing);
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it('every deletion notice is sent, even a second one within the hour (the "didn\'t ask for this" warning)', async () => {
+    setup();
+    const closing = { reason: 'deleted' as const, closesAt: IN_14_DAYS };
+    await sendClosingEmail('u1', closing);
     await sendClosingEmail('u1', closing);
     expect(sendEmail).toHaveBeenCalledTimes(2);
   });

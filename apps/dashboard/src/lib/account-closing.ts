@@ -152,22 +152,24 @@ async function ownerEmail(userId: string): Promise<string | null> {
   return (rows[0]?.email as string | undefined) || null;
 }
 
-/** At most one closing email an hour per account, however often windows start. */
+/** At most one lapse email an hour per account, however often a lapse window restarts. */
 const CLOSING_EMAIL_GAP = '1 hour';
 
 /**
  * Tells the owner a window has started. Best effort: the window is already
  * stored, and the banner says the same on every page, so a failed send is
- * logged rather than undoing it. Skipped when the same kind went to this
- * account in the last hour (users.closing_email_sent_at / _reason), so a
- * deletion notice is never held back by a lapse email.
+ * logged rather than undoing it. A lapse email is skipped when one went to
+ * this account in the last hour (users.closing_email_sent_at / _reason).
+ * A deletion notice is always sent: it is the owner's warning if they
+ * didn't ask for it, and each one needs the email address typed.
  */
 export async function sendClosingEmail(userId: string, closing: Closing): Promise<void> {
   try {
     // Claimed before sending, so two windows starting at once send one email.
     const { rowCount } = await db().query(
       `UPDATE users SET closing_email_sent_at = now(), closing_email_reason = $2
-       WHERE id = $1 AND (closing_email_sent_at IS NULL OR closing_email_sent_at < now() - interval '${CLOSING_EMAIL_GAP}'
+       WHERE id = $1 AND ($2 = 'deleted' OR closing_email_sent_at IS NULL
+                          OR closing_email_sent_at < now() - interval '${CLOSING_EMAIL_GAP}'
                           OR closing_email_reason IS DISTINCT FROM $2)`,
       [userId, closing.reason],
     );
