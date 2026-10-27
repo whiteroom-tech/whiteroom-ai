@@ -256,6 +256,37 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
+  it('on a phone, Escape or the dimmed list closes the editor sheet; never on a desktop or under a dialog', async () => {
+    const phone = { matches: true };
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(max-width: 720px)' && phone.matches, media: q, addEventListener() {}, removeEventListener() {} }));
+    const escape = async () => { await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); }); await flush(); };
+    const sheet = () => m.el.querySelector('aside[aria-label="Edit rule"]');
+    const m = await mount();
+    try {
+      // A desktop: the editor is a side panel, and Escape leaves it alone.
+      phone.matches = false;
+      await m.click(m.row('Only allow'));
+      await escape();
+      expect(sheet()).toBeTruthy();
+      // A phone, nothing changed: Escape goes back.
+      phone.matches = true;
+      await escape();
+      expect(sheet()).toBeFalsy();
+      // An unsaved change: the dimmed list asks first, and Escape doesn't close the sheet under that dialog.
+      await m.click(m.row('Only allow'));
+      await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
+      await m.click(m.el.querySelector('.gov-scrim')!);
+      expect(m.text()).toContain('Discard your changes to Model allowlist?');
+      await escape();
+      expect(sheet()).toBeTruthy();
+      await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+      expect(sheet()).toBeFalsy();
+    } finally {
+      vi.unstubAllGlobals();
+      m.root.unmount();
+    }
+  });
+
   it('Remove asks first, then deletes', async () => {
     const m = await mount();
     await m.click(m.row('100 times'));

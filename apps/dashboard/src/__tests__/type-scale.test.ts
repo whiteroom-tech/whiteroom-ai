@@ -7,9 +7,7 @@ import { join, relative } from 'node:path';
 // stuck at a fixed, too-small pixel size.
 const ROOTS = [join(__dirname, '..'), join(__dirname, '../../../../packages/ui/src')];
 // The WhiteRoom wordmark is a brand asset and keeps its fixed size.
-// The phone tab bar's labels stay at 14px (--fs-xs at the default size): five
-// must fit a 320px phone, and its icons carry them at a larger Text size.
-const ALLOWED = new Set(['components/citadel/FleetLogin.tsx:fontSize: 26', 'components/Sidebar.tsx:fontSize: 16', 'app/globals.css:font-size: 14px']);
+const ALLOWED = new Set(['components/citadel/FleetLogin.tsx:fontSize: 26', 'components/Sidebar.tsx:fontSize: 16']);
 // Standalone documents (email, downloadable reports) render outside the
 // dashboard, where the Text size setting doesn't apply.
 const STANDALONE = new Set(['lib/magic-link-email.ts', 'lib/sandbox/report.ts', 'lib/sandbox/practice/report.ts']);
@@ -46,5 +44,13 @@ describe('type scale', () => {
     const sizes = [...css.matchAll(/--fs-[a-z]+:\s*([\d.]+)rem/g)].map((m) => Number(m[1]) * 16);
     expect(sizes.length).toBeGreaterThanOrEqual(8);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(14);
+  });
+
+  // The phone tab bar's labels are the only fixed size: five tabs must fit a
+  // 320px phone, so they don't follow Text size. Nothing else may join it.
+  it('has one fixed-size token, --fs-tab, at 14px', () => {
+    const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
+    expect([...css.matchAll(/--fs-[a-z]+:\s*[\d.]+px/g)].map((m) => m[0])).toEqual(['--fs-tab: 14px']);
+    expect([...css.matchAll(/var\(--fs-tab\)/g)]).toHaveLength(1);
   });
 });

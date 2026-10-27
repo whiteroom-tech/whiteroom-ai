@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Phase 8: the phone tab bar, Home and End in a segmented control, and
+// Phase 8: the phone tab bar and its menu, Home and End in a segmented control, and
 // Needs you's Undo staying while it has focus.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
@@ -14,7 +14,11 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   listRuns: async () => ({ runs: [{ runId: 'r1', agentId: 'a1', shift: 3, flags: [{ kind: 'loop' }] }], total: 1 }),
 }));
 
+vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
+vi.mock('@/lib/organization-actions', () => ({ myOrganizationSummary: async () => null }));
+
 const { PhoneTabBar, TABS, MORE } = await import('@/components/PhoneTabBar');
+const { AppShell } = await import('@/components/AppShell');
 const { SegmentedControl } = await import('@whiteroom/ui');
 const { NeedsYou } = await import('@/components/home/NeedsYou');
 
@@ -56,6 +60,37 @@ describe('phone tab bar', () => {
   });
 });
 
+describe('phone menu (AppShell)', () => {
+  const open = () => el.querySelector('.wr-shell')!.classList.contains('navigation-open');
+  const more = () => el.querySelector('.wr-tabbar button') as HTMLButtonElement;
+  const shell = () => h(AppShell, null, h('main', null, 'page'));
+
+  it('More opens the menu; Escape, the scrim and going to a page close it', async () => {
+    nav.path = '/home';
+    await render(shell());
+    expect(open()).toBe(false);
+    expect(el.querySelector('.wr-menu-scrim')).toBeNull();
+    await act(async () => { more().click(); });
+    expect(open()).toBe(true);
+    expect(more().getAttribute('aria-expanded')).toBe('true');
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+    expect(open()).toBe(false);
+    await act(async () => { more().click(); });
+    await act(async () => { (el.querySelector('.wr-menu-scrim') as HTMLElement).click(); });
+    expect(open()).toBe(false);
+    await act(async () => { more().click(); });
+    nav.path = '/settings';
+    await render(shell());
+    expect(open()).toBe(false);
+  });
+
+  it('the sidebar it opens is the one More controls', async () => {
+    await render(shell());
+    expect(el.querySelector('#wr-main-nav')).toBeTruthy();
+    expect(more().getAttribute('aria-controls')).toBe('wr-main-nav');
+  });
+});
+
 describe('segmented control keys', () => {
   it('Home and End pick the first and last enabled options', async () => {
     const onChange = vi.fn();
@@ -76,8 +111,12 @@ describe('segmented control keys', () => {
 describe('Needs you undo', () => {
   const mount = async () => {
     await render(h(NeedsYou, { agents: [], holds: {}, holdsKnown: true, fleet: { fleetId: 'f1' } }));
+    const live = el.querySelector('[role="status"]');
+    expect(live?.textContent).toBe('');
     const button = (text: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
     await act(async () => { button('Mark as seen')!.click(); });
+    // The same element: it stays mounted when the panel gives way to "Nothing needs you".
+    expect(el.querySelector('[role="status"]')).toBe(live);
     return button;
   };
 
@@ -86,7 +125,8 @@ describe('Needs you undo', () => {
     vi.useFakeTimers();
     const undo = button('Undo')!;
     expect(document.activeElement).toBe(undo);
-    expect(undo.closest('[role="status"]')?.textContent).toContain('Marked as seen.');
+    // Announced through a live region that was already there, so screen readers speak it.
+    expect(el.querySelector('[role="status"]')!.textContent).toBe('Marked as seen.');
     await act(async () => { vi.advanceTimersByTime(30_000); });
     expect(button('Undo')).toBeDefined();
     await act(async () => { undo.blur(); });

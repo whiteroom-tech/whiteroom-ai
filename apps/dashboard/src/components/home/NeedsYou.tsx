@@ -106,19 +106,22 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
   const runs = (flagged ?? []).filter((r) => !seen.includes(r.runId));
   if (!holdsKnown && flagged === null) return null;
   const count = held.length + gone.length + runs.length;
+  // Always mounted, so the message is announced when it appears (a live
+  // region inserted with its text often isn't). The notes below are visual.
+  const live = <p role="status" className="wr-sr-only">{undo ? 'Marked as seen.' : ''}</p>;
   if (count === 0) {
-    return (
+    return (<>{live}
       <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         <span style={{ display: 'flex', color: 'var(--ok)' }}><Icon name="check" size={14} /></span>
         Nothing needs you right now.
-        {undo && <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} {...undoHold}>Marked as seen.<Button ref={undoRef} variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button></span>}
+        {undo && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} {...undoHold}><span aria-hidden="true">Marked as seen.</span><Button ref={undoRef} variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button></span>}
       </p>
-    );
+    </>);
   }
 
   // Columns come from .wr-needs-row: on phones the row wraps, the action below the text.
   const row: React.CSSProperties = { display: 'grid', gap: 14, alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 'var(--fs-sm)' };
-  return (
+  return (<>{live}
     <Panel title={<>Needs you<Hint text={HELP.needsYou} /></>} count={<span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: 'var(--warn)' }}>{count}</span>} bodyPadding={0}>
       {held.map((a) => (
         <div key={a.agentId} className="wr-needs-row" style={row}>
@@ -149,11 +152,11 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
         </div>
       ))}
       {undo && (
-        <div role="status" style={{ ...row, gridTemplateColumns: '1fr auto', color: 'var(--tx2)' }} {...undoHold}>
-          <span>Marked as seen.</span>
+        <div style={{ ...row, gridTemplateColumns: '1fr auto', color: 'var(--tx2)' }} {...undoHold}>
+          <span aria-hidden="true">Marked as seen.</span>
           <Button ref={undoRef} variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button>
         </div>
       )}
     </Panel>
-  );
+  </>);
 }

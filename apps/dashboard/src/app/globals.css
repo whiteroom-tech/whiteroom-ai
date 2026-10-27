@@ -40,6 +40,9 @@
   --fs-section: 1.625rem; /* 26px   page section titles */
   --fs-page: 2rem;        /* 32px   page titles */
   --fs-num: 2.375rem;     /* 38px   headline figures */
+  /* The one fixed size: phone tab-bar labels stay 14px at every Text size so
+     all five tabs fit a 320px phone; their icons carry them. */
+  --fs-tab: 14px;
 }
 /* Text size: set on <html> before first paint by app/layout.tsx (wr_text). */
 :root[data-wr-text="lg"] { font-size: 112.5%; }
@@ -144,6 +147,9 @@
 .wr-account-menu__item--bad { color: var(--bad); }
 .wr-account-menu__count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--brand); }
 
+/* Read by screen readers, not shown. */
+.wr-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
 /* Keep the shared navigation usable on narrow screens without squeezing content. */
 .citadel-mobile-menu, .wr-tabbar, .wr-menu-scrim { display: none; }
 @media (max-width: 720px) {
@@ -166,10 +172,9 @@
   .wr-shell--tabs { --wr-menu-h: 0px; --wr-tabbar-h: 58px; padding-bottom: calc(var(--wr-tabbar-h) + env(safe-area-inset-bottom, 0px)); }
   .wr-shell--tabs.navigation-open > aside { bottom: calc(var(--wr-tabbar-h) + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 48px); box-shadow: 0 8px 24px var(--shadow); }
   .wr-menu-scrim { display: block; position: fixed; inset: 0; z-index: 29; background: var(--overlay); }
-  /* Each tab is at least as wide as its label. Labels hold at 14px (not the
-     Text size setting) so all five fit a 320px phone; the icons carry them. */
+  /* Each tab is at least as wide as its label (--fs-tab, fixed). */
   .wr-tabbar { display: grid; grid-template-columns: repeat(5, minmax(min-content, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
-  .wr-tabbar__item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: var(--wr-tabbar-h); padding: 0 4px; border: 0; background: none; font: inherit; font-size: 14px; white-space: nowrap; font-weight: 500; line-height: 1; color: var(--tx2); text-decoration: none; cursor: pointer; }
+  .wr-tabbar__item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: var(--wr-tabbar-h); padding: 0 4px; border: 0; background: none; font: inherit; font-size: var(--fs-tab); white-space: nowrap; font-weight: 500; line-height: 1; color: var(--tx2); text-decoration: none; cursor: pointer; }
   .wr-tabbar__item.is-active { color: var(--brand); }
   .wr-tabbar__item:focus-visible { outline: 2px solid var(--brand); outline-offset: -4px; border-radius: 10px; }
 
