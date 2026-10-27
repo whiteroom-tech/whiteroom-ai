@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { Button, FONT_MONO } from '@whiteroom/ui';
 import { dayLabel, localDay } from '@/lib/runs';
 
@@ -20,12 +21,19 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
   onLater?: () => void;
 }) {
   const first = days[0]?.day;
-  // Phones show the last 14 days (globals.css), so their first label is the 14th from the end.
-  const firstOnPhone = days[Math.max(0, days.length - 14)]?.day;
+  // Where the strip scrolls (phones), open on the picked day, else the newest.
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const i = selected ? days.findIndex((d) => d.day === selected) : -1;
+    el.scrollLeft = i < 0 ? el.scrollWidth : Math.max(0, ((i + 0.5) / days.length) * el.scrollWidth - el.clientWidth / 2);
+  }, [first, selected, days]);
   const last = days[days.length - 1]?.day;
   const max = Math.max(1, ...days.map((d) => d.runs));
   return (
     <div>
+      <div className="wr-strip-scroll" ref={wrap}>
       <div className="wr-daystrip" role="group" aria-label="Runs per day">
         {days.map((d) => {
           const label = `${dayLabel(d.day)}: ${d.runs} run${d.runs === 1 ? '' : 's'}`;
@@ -45,10 +53,10 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
           );
         })}
       </div>
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
         <Button variant="ghost" size={28} aria-label="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
-        <span className="wr-daystrip-start--wide">{first ? dayLabel(first, Date.now(), false) : ''}</span>
-        <span className="wr-daystrip-start--phone">{firstOnPhone ? dayLabel(firstOnPhone, Date.now(), false) : ''}</span>
+        <span>{first ? dayLabel(first, Date.now(), false) : ''}</span>
         <span style={{ marginLeft: 'auto' }}>{last ? (last === localDay() ? 'Today' : dayLabel(last, Date.now(), false)) : ''}</span>
         <Button variant="ghost" size={28} aria-label="Later 30 days" disabled={!onLater} onClick={onLater}>&rsaquo;</Button>
       </div>

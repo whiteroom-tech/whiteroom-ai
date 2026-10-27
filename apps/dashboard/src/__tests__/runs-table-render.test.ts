@@ -30,13 +30,13 @@ const run = (shift: number, x: Partial<RunSummary> = {}): RunSummary => ({
 const { RunsTable } = await import('@/components/runs/RunsTable');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 
-async function mount(preview?: RunSummary[]) {
+async function mount(preview?: RunSummary[], retentionDays?: number) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
   // RunsTable's props default to {}, which createElement's overloads can't infer.
-  const Table = RunsTable as FC<{ preview?: RunSummary[] }>;
-  await act(async () => { root.render(h(Table, { preview })); });
+  const Table = RunsTable as FC<{ preview?: RunSummary[]; retentionDays?: number }>;
+  await act(async () => { root.render(h(Table, { preview, retentionDays })); });
   await flush();
   const radio = (label: string) => [...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
   const click = async (b: Element | undefined) => { await act(async () => { (b as HTMLElement).click(); }); await flush(); };
@@ -125,6 +125,30 @@ describe('Runs › a day by hour', () => {
     const m = await mount();
     expect(m.text()).not.toContain('by hour');
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    m.root.unmount();
+  });
+
+  it('asks again on another day after an ignored hour, and refreshes the hours with the list', async () => {
+    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    let honour = false;
+    api.list.mockImplementation(async (_f: string, o: { hour?: number | null }) => ({ runs: honour && o.hour === 9 ? [run(1, { startedAt: at(9) })] : [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
+    const m = await mount();
+    expect(m.text()).not.toContain('by hour');
+    honour = true;
+    const calls = api.hours.mock.calls.length;
+    await m.click(m.el.querySelector('button[aria-label="Previous day"]') ?? undefined);
+    expect(m.text()).toContain('by hour');
+    // Every list load brings the hours too, so a poll keeps the bars current.
+    expect(api.hours.mock.calls.length).toBeGreaterThan(calls);
+    m.root.unmount();
+  });
+
+  it('applies a link’s hour only to the day it named', async () => {
+    const old = new Date(Date.now() - 40 * 86_400_000).toLocaleDateString('en-CA');
+    nav.params = new URLSearchParams(`day=${old}&hour=9`);
+    const m = await mount(undefined, 30);
+    expect(api.list).toHaveBeenCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    expect(api.list).not.toHaveBeenCalledWith('f1', expect.objectContaining({ hour: 9 }), 'k');
     m.root.unmount();
   });
 

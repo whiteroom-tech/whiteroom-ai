@@ -61,7 +61,9 @@ export function RunsTable({ preview, retentionDays }: {
   const [hour, setHour] = useState<number | null>(() => {
     const raw = params.get('hour');
     const h = Number(raw);
-    return raw !== null && Number.isInteger(h) && h >= 0 && h <= 23 && validDay(params.get('day')) ? h : null;
+    const d = validDay(params.get('day'));
+    // Only for the day the link named: a day older than the plan keeps moves to the oldest kept, and the hour isn't that day's.
+    return raw !== null && Number.isInteger(h) && h >= 0 && h <= 23 && d && !(oldestKept(retentionDays) && d < oldestKept(retentionDays)!) ? h : null;
   });
   const [hours, setHours] = useState<{ hour: number; runs: number }[] | null>(null);
   const [hoursOk, setHoursOk] = useState(true);
@@ -138,8 +140,9 @@ export function RunsTable({ preview, retentionDays }: {
     pinStrip(stripEndFor(runsWindow(nextView), stripEnd, STRIP_DAYS));
     if (change.agent !== undefined) setAgent(change.agent);
     if (change.show !== undefined) setShow(change.show);
-    // An hour belongs to its day: a different day (or none) drops it.
+    // An hour belongs to its day: a different day (or none) drops it, and a new day or agent asks for hours again.
     setHour(change.hour !== undefined ? change.hour : nextView.day === day ? hour : null);
+    if (nextView.day !== day || change.agent !== undefined) setHoursOk(true);
     setCursors([null]);
     // The preview fetches nothing: it keeps its sample and filters it below.
     setRuns(preview ?? null);
@@ -157,6 +160,11 @@ export function RunsTable({ preview, retentionDays }: {
       // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
       if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHoursOk(false); return; }
       setRuns(res.runs);
+      // The picked day's hours refresh with the list, so a new run's hour shows; a failed refresh keeps the last counts.
+      if (day && hoursOk) void runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey).then((h) => {
+        if (stale()) return;
+        if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours);
+      }, () => {});
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
       setTotal(res.total);
@@ -168,7 +176,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       setFailing(true);
     }
-  }, [fleetId, authKey, range, day, hour, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
+  }, [fleetId, authKey, range, day, hour, hoursOk, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
 
   const { refresh } = usePoll(load, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   // usePoll fetches on mount; refetch only when the filter or page changes.
@@ -178,20 +186,10 @@ export function RunsTable({ preview, retentionDays }: {
     refresh();
   }, [range, day, hour, from, to, agent, show, cursors, refresh]);
 
-  // The picked day's runs per hour (engine run_hours; the preview counts its own sample).
+  // A new day or agent starts without hours until they load with the list (load above); the preview counts its own sample.
   useEffect(() => {
-    setHours(null);
-    if (!day) return;
-    if (preview) { setHours(hoursFromRuns(preview, day)); return; }
-    if (!fleetId || !hoursOk) return;
-    let live = true;
-    runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey).then((r) => {
-      if (!live) return;
-      if ('unsupported' in r) { setHoursOk(false); setHour(null); return; }
-      setHours(r.hours);
-    }, () => {});
-    return () => { live = false; };
-  }, [day, agent, fleetId, authKey, preview, hoursOk]);
+    setHours(preview && day ? hoursFromRuns(preview, day) : null);
+  }, [day, agent, preview]);
 
   // The strip depends only on the agent and its own 30 days, so it loads on
   // its own: paging the list or picking a day on it doesn't refetch it, and a slow strip never holds up the
