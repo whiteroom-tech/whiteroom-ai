@@ -31,6 +31,14 @@ describe('day strip scrolling', () => {
     strip.scrollLeft = 120;
     await act(async () => { root.render(h(DayStrip, props())); });
     expect(strip.scrollLeft).toBe(120);
+    // Picking a day centres it; un-picking leaves the strip where it is.
+    await act(async () => { root.render(h(DayStrip, { ...props(), selected: '2026-10-10' })); });
+    expect(strip.scrollLeft).toBe((9.5 / 30) * 1000 - 150);
+    await act(async () => { root.render(h(DayStrip, props())); });
+    expect(strip.scrollLeft).toBe((9.5 / 30) * 1000 - 150);
+    // A different window (paging) opens at its newest day.
+    await act(async () => { root.render(h(DayStrip, { ...props(), days: days().map((d) => ({ ...d, day: d.day.replace('2026-10', '2026-09') })) })); });
+    expect(strip.scrollLeft).toBe(1000);
     root.unmount();
   });
 });
