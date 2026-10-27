@@ -28,6 +28,8 @@ describe('audit check wording', () => {
       .toEqual({ tone: 'neutral', title: 'Nothing changed', detail: 'All 2,045 events verified. 2 recorded gaps where events may be missing.' });
   });
   it('says only what a partial check covered', () => {
+    // An explicit "not complete" wins over an extent read separately.
+    expect(auditCheckText({ valid: true, complete: false, eventsVerified: 2045, message: '' }, info({ verifiedThroughSeq: 2045 })).tone).toBe('neutral');
     expect(auditCheckText({ valid: true, eventsVerified: 939, message: '' }, info())).toEqual({
       tone: 'neutral', title: 'Nothing changed in the events checked', detail: 'Verified through event 939 of 2,045. Events before tracking started aren’t covered. The rest hasn’t been checked yet.',
     });

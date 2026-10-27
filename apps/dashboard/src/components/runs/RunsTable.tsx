@@ -222,6 +222,11 @@ export function RunsTable({ preview, retentionDays }: {
       const c = clampSpan(change.from ?? shownSpan.fromDay, change.to ?? shownSpan.toDay, { today, oldest, moved: change.from !== undefined ? 'from' : 'to' });
       Object.assign(nextView, { range: 'custom', day: null, from: c.from, to: c.to });
     }
+    const nextHour = change.hour !== undefined ? change.hour : nextView.day === day ? hour : null;
+    // Picking what's already picked (the active range or Show option) changes nothing: no reload, no dimming.
+    const same = nextView.range === range && nextView.day === day && (nextView.from ?? null) === from && (nextView.to ?? null) === to
+      && (change.agent ?? agent) === agent && (change.show ?? show) === show && nextHour === hour;
+    if (same) return;
     setRange(nextView.range);
     setDay(nextView.day);
     setFrom(nextView.from ?? null);
@@ -230,7 +235,7 @@ export function RunsTable({ preview, retentionDays }: {
     if (change.agent !== undefined) setAgent(change.agent);
     if (change.show !== undefined) setShow(change.show);
     // An hour belongs to its day: a different day (or none) drops it, and a new day or agent asks for hours again.
-    setHour(change.hour !== undefined ? change.hour : nextView.day === day ? hour : null);
+    setHour(nextHour);
     if (nextView.day !== day || change.agent !== undefined) { setHoursOk(true); setHourPickOk(true); }
     setLimit(PAGE);
     // The preview fetches nothing: it keeps its sample, and lists it below.

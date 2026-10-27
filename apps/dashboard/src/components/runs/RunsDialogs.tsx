@@ -151,8 +151,9 @@ export function auditCheckText(r: VerifyAuditResult, info: AuditIntegrity | null
   if (r.valid === false) return { tone: 'bad', title: 'A problem was found', detail: r.message };
   const before = info && (info.prunedBeforeTracking || info.legacyEvents > 0) ? ' Events before tracking started aren’t covered.' : '';
   const gaps = info && info.gaps.count > 0 ? ` ${info.gaps.count} recorded ${info.gaps.count === 1 ? 'gap' : 'gaps'} where events may be missing.` : '';
-  // Green only for a whole check: the engine says complete, or every recorded event is verified.
-  const whole = r.valid === true && (r.complete === true || (!!info && info.headSeq > 0 && info.verifiedThroughSeq >= info.headSeq));
+  // Green only for a whole check: the engine says complete, or (when it doesn't say) every recorded event is verified.
+  // The engine's own answer wins; the separately read extent only fills in when it says nothing.
+  const whole = r.valid === true && (r.complete ?? (!!info && info.headSeq > 0 && info.verifiedThroughSeq >= info.headSeq));
   if (whole) {
     const all = info?.headSeq ? `All ${fmtCount(info.headSeq)} events verified.` : `All ${fmtCount(r.eventsVerified)} events verified.`;
     return { tone: gaps ? 'neutral' : 'ok', title: gaps ? 'Nothing changed' : 'Nothing changed or missing', detail: `${all}${before}${gaps}` };

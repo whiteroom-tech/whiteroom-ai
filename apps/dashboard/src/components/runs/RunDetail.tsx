@@ -149,7 +149,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       const got = preview ? { events: data.events, truncated: false } : await collectRunEvents((c) => getRunEvents(fleetId, runId, { cursor: c, kind: 'all' }, authKey));
       downloadWorkbook(buildWorkbook(runSheets(data.run, got.events, totals)), `whiteroom-run-${data.run.agentId}-${data.run.shift}${got.truncated ? `-first-${got.events.length}` : ''}.xlsx`);
       setToast(got.truncated
-        ? `Downloaded the first ${fmtCount(got.events.length)} calls and events of run ${data.run.shift}; it has more than one file holds.`
+        ? `Downloaded the first ${fmtCount(got.events.length)} calls and events of run ${data.run.shift}. The rest didn’t fit in one file.`
         : `Downloaded run ${data.run.shift}.`);
     } catch (e) {
       if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }

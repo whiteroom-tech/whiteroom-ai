@@ -88,6 +88,22 @@ describe('run page exports and links', () => {
     el.remove();
   });
 
+  it('says so, in the toast and the file name, when a run is too long for one export', async () => {
+    xlsx.download.mockClear();
+    api.events.mockImplementation(async (_f: string, _r: string, q: { cursor?: string | null }) => page(Number(q.cursor ?? 0), { pages: 150 }));
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
+    await flush();
+    await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'Export this run') as HTMLElement).click(); });
+    await act(async () => { for (let i = 0; i < 400; i++) await Promise.resolve(); });
+    expect(xlsx.download.mock.calls[0][1]).toBe('whiteroom-run-a-4-first-100.xlsx');
+    expect(el.textContent).toContain('Downloaded the first 100 calls and events of run 4');
+    await act(async () => root.unmount());
+    el.remove();
+  });
+
   it('says when See in timeline can’t find the call', async () => {
     api.events.mockImplementation(async (_f: string, _r: string, q: { cursor?: string | null; eventId?: string | null }) => (q.eventId ? page(0, { eventFound: false }) : page(Number(q.cursor ?? 0))));
     const el = document.createElement('div');

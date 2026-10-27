@@ -175,6 +175,15 @@ describe('Runs › failures and engine limits', () => {
     m.root.unmount();
   });
 
+  it('doesn’t dim the table when the picked option is picked again', async () => {
+    const m = await mount();
+    const calls = api.list.mock.calls.length;
+    await m.click(m.radio('7 days'));
+    expect(m.el.querySelector('.wr-runs-body.is-loading')).toBeNull();
+    expect(api.list.mock.calls.length).toBe(calls);
+    m.root.unmount();
+  });
+
   it('shows flagged segments when counted, and none when the engine says it couldn’t count them', async () => {
     const today = new Date().toLocaleDateString('en-CA');
     api.days = { days: [{ day: today, runs: 3, flagged: 1 }] };
