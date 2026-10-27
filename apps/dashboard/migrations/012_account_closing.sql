@@ -18,6 +18,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS close_reason text;
 -- organization the account alone owns): the owner is told once, and the
 -- billing sync only looks again once that may have changed.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_at timestamptz;
+-- When the owner was told about the block. Set only after a send that
+-- worked, so a failed email is tried again and a sent one never repeats.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_notified_at timestamptz;
 
 DO $$
 BEGIN

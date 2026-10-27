@@ -46,7 +46,7 @@ export async function getClosing(userId: string, q: Queryable = db(), opts: { lo
  */
 export async function startClosing(q: Queryable, userId: string, reason: CloseReason, opts: { replaceEnded?: boolean } = {}): Promise<Closing | null> {
   const { rows } = await q.query(
-    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, close_blocked_at = NULL, updated_at = now()
+    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, close_blocked_at = NULL, close_blocked_notified_at = NULL, updated_at = now()
      WHERE id = $1 AND (closes_at IS NULL${opts.replaceEnded ? ' OR closes_at <= now()' : ''})
      RETURNING closes_at, close_reason`,
     [userId, reason, CLOSE_WINDOW_DAYS],
@@ -61,7 +61,7 @@ export async function startClosing(q: Queryable, userId: string, reason: CloseRe
  */
 export async function cancelClosing(q: Queryable, userId: string, reason?: CloseReason): Promise<boolean> {
   const { rowCount } = await q.query(
-    `UPDATE users SET closes_at = NULL, close_reason = NULL, close_blocked_at = NULL, updated_at = now()
+    `UPDATE users SET closes_at = NULL, close_reason = NULL, close_blocked_at = NULL, close_blocked_notified_at = NULL, updated_at = now()
      WHERE id = $1 AND closes_at > now() AND ($2::text IS NULL OR close_reason = $2)`,
     [userId, reason ?? null],
   );
@@ -131,10 +131,12 @@ const FINISH_BATCH = 100;
  *
  * An account that can't be deleted at the end of its window (a subscription
  * started meanwhile, an organization it alone owns) is recorded once:
- * close_blocked_at is set, a warning logged and the owner emailed what to
- * do. It isn't tried again until what blocked it may have changed (its
- * subscription row, or its organization's membership, changed since), with
- * a daily check as a backstop, and those checks are quiet.
+ * close_blocked_at is set and a warning logged, and the owner is emailed
+ * what to do (close_blocked_notified_at, set only once a send works; a
+ * failed send is tried again on the next run). It isn't tried again until
+ * what blocked it may have changed (its subscription row, or its
+ * organization's membership, changed since), with a daily check as a
+ * backstop, and those checks are quiet.
  */
 export async function finishDeletedAccounts(): Promise<{ deleted: number; skipped: number; blocked: number }> {
   const { rows } = await db().query(
@@ -142,6 +144,7 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
      WHERE close_reason = 'deleted' AND closes_at <= now()
        AND NOT EXISTS (SELECT 1 FROM entitlement_outbox o WHERE o.user_id = u.id AND o.delivered_at IS NULL)
        AND (u.close_blocked_at IS NULL
+            OR u.close_blocked_notified_at IS NULL
             OR u.close_blocked_at < now() - interval '1 day'
             OR EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.updated_at > u.close_blocked_at)
             OR EXISTS (SELECT 1 FROM organization_members m
@@ -160,7 +163,7 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
       await client.query('BEGIN');
       // Re-checked under the lock: cancelled meanwhile, or not due after all.
       const { rows: still } = await client.query(
-        `SELECT close_blocked_at FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
+        `SELECT close_blocked_at, close_blocked_notified_at FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
         [id],
       );
       if (!still.length) {
@@ -175,9 +178,15 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
         await client.query(`UPDATE users SET close_blocked_at = now() WHERE id = $1`, [id]);
         await client.query('COMMIT');
         blockedCount++;
-        if (first) {
-          console.warn(`[closing] deletion of user ${id} blocked: ${blocked}`);
-          await sendDeletionBlockedEmail(id, blocked);
+        if (first) console.warn(`[closing] deletion of user ${id} blocked: ${blocked}`);
+        // Told once: recorded only after a send that worked, so a failed
+        // send is tried again on the next run (quietly), and a sent one never
+        // repeats.
+        if (still[0].close_blocked_notified_at == null && (await sendDeletionBlockedEmail(id, blocked))) {
+          await db().query(
+            `UPDATE users SET close_blocked_notified_at = now() WHERE id = $1 AND close_blocked_notified_at IS NULL`,
+            [id],
+          );
         }
         continue;
       }
@@ -195,16 +204,18 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
   return { deleted, skipped, blocked: blockedCount };
 }
 
-/** Tells the owner, once, why their account wasn't deleted at the end of its window. Best effort. */
-async function sendDeletionBlockedEmail(userId: string, why: string): Promise<void> {
+/** Tells the owner why their account wasn't deleted at the end of its window. Resolves whether it was sent. */
+async function sendDeletionBlockedEmail(userId: string, why: string): Promise<boolean> {
   try {
     const { rows } = await db().query(`SELECT email FROM users WHERE id = $1`, [userId]);
     const to = rows[0]?.email as string | undefined;
-    if (!to) return;
+    if (!to) return false;
     const { subject, html, text } = deletionBlockedEmail(why, `${appOrigin()}/settings`);
     await sendEmail({ to, subject, html, text });
+    return true;
   } catch {
-    console.error(`[closing] couldn't send the blocked-deletion email for user ${userId}`);
+    console.error(`[closing] couldn't send the blocked-deletion email for user ${userId}; tried again next run`);
+    return false;
   }
 }
 
@@ -268,10 +279,10 @@ export async function closingColumnsPresent(): Promise<boolean | null> {
   try {
     const { rows } = await db().query(
       `SELECT count(*)::int AS n FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason', 'close_blocked_at')`,
+       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason', 'close_blocked_at', 'close_blocked_notified_at')`,
     );
     const n = rows[0]?.n;
-    return typeof n === 'number' ? n === 3 : null;
+    return typeof n === 'number' ? n === 4 : null;
   } catch {
     return null;
   }

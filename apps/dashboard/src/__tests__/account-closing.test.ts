@@ -39,6 +39,8 @@ interface State {
   blocked?: boolean;
   /** users.close_blocked_at of the due account (set by an earlier run). */
   blockedAt?: string | null;
+  /** users.close_blocked_notified_at of the due account. */
+  notifiedAt?: string | null;
 }
 
 /** Answers every query by its SQL, so the order of checks doesn't matter. */
@@ -50,6 +52,14 @@ function db(state: State) {
     }
     if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: EMAIL }] };
     if (sql.startsWith('SELECT closes_at, close_reason FROM users')) return { rows: state.closing ? [state.closing] : [] };
+    if (sql.startsWith('UPDATE users SET close_blocked_notified_at = now()')) {
+      state.notifiedAt = new Date().toISOString();
+      return { rows: [], rowCount: 1 };
+    }
+    if (sql.startsWith('UPDATE users SET close_blocked_at = now()')) {
+      state.blockedAt = new Date().toISOString();
+      return { rows: [], rowCount: 1 };
+    }
     if (sql.startsWith("UPDATE users SET close_reason = 'deleted'")) {
       if (state.closing?.close_reason !== 'lapsed' || Date.parse(state.closing.closes_at) <= Date.now()) return { rows: [], rowCount: 0 };
       state.closing = { ...state.closing, close_reason: 'deleted' };
@@ -75,7 +85,7 @@ function db(state: State) {
     if (sql.includes('trial_ends_at')) return { rows: [{ trial_ends_at: state.trialEndsAt ?? PAST }] };
     if (sql.includes('AS provisioned')) return { rows: state.owner ? [{ fleetId: 'fleet-1', userId: 'u1', provisioned: true, since: 1 }] : [] };
     if (sql.includes('SELECT fleet_id FROM users')) return { rows: state.owner ? [{ fleet_id: 'fleet-1' }] : [] };
-    if (sql.includes('FOR UPDATE') && sql.includes("close_reason = 'deleted'")) return { rows: [{ close_blocked_at: state.blockedAt ?? null }] };
+    if (sql.includes('FOR UPDATE') && sql.includes("close_reason = 'deleted'")) return { rows: [{ close_blocked_at: state.blockedAt ?? null, close_blocked_notified_at: state.notifiedAt ?? null }] };
     return { rows: [], rowCount: 0 };
   });
 }
@@ -332,8 +342,37 @@ describe('the end of a deletion window', () => {
     warn.mockRestore();
   });
 
+  it('a blocked-deletion email that fails to send is sent on the next check, once, quietly', async () => {
+    const state: Parameters<typeof db>[0] = { closing: null, due: ['u-due'], blocked: true, blockedAt: null, notifiedAt: null };
+    db(state);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    sendEmail.mockRejectedValueOnce(new Error('Could not send the email.'));
+    await finishDeletedAccounts();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(state.blockedAt).not.toBeNull();
+    expect(state.notifiedAt).toBeNull(); // not recorded: the send failed
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // The next check sends it, quietly, and records it.
+    await finishDeletedAccounts();
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+    expect(state.notifiedAt).not.toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // And never again.
+    await finishDeletedAccounts();
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+
+    // Accounts still waiting for their email are picked up every run.
+    const select = sqlCalls().find((s) => s.includes('entitlement_outbox'))!;
+    expect(select).toContain('u.close_blocked_notified_at IS NULL');
+    warn.mockRestore();
+    errors.mockRestore();
+  });
+
   it('a deletion already recorded as blocked is checked again quietly: no second warning or email', async () => {
-    db({ closing: null, due: ['u-due'], blocked: true, blockedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+    db({ closing: null, due: ['u-due'], blocked: true, blockedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), notifiedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 1 });
     expect(warn).not.toHaveBeenCalled();
@@ -361,10 +400,10 @@ describe('the end of a deletion window', () => {
   it('starting or cancelling a window clears an earlier block', async () => {
     db({ closing: null, started: true });
     await deleteAccount(EMAIL);
-    expect(sqlCalls().find((s) => s.startsWith('UPDATE users SET closes_at = now()'))).toContain('close_blocked_at = NULL');
+    expect(sqlCalls().find((s) => s.startsWith('UPDATE users SET closes_at = now()'))).toContain('close_blocked_at = NULL, close_blocked_notified_at = NULL');
     db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, cancelled: 1, trialEndsAt: IN_14_DAYS });
     await cancelAccountDeletion();
-    expect(sqlCalls().find((s) => s.startsWith('UPDATE users SET closes_at = NULL'))).toContain('close_blocked_at = NULL');
+    expect(sqlCalls().find((s) => s.startsWith('UPDATE users SET closes_at = NULL'))).toContain('close_blocked_at = NULL, close_blocked_notified_at = NULL');
   });
 });
 
