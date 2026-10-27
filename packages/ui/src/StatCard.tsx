@@ -27,8 +27,8 @@ export function StatCard({ label, value, variant = 'tile', hint, suffix, sub, su
       </div>
     );
   }
-  // The caption wraps to two lines before it's cut, so it reads whole at any width.
-  const subStyle: React.CSSProperties = { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, lineClamp: 2, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs, 0.875rem)', marginTop: 6, overflow: 'hidden', overflowWrap: 'anywhere' } as React.CSSProperties;
+  // The caption wraps as far as it needs and is never cut, so a key figure always reads whole.
+  const subStyle: React.CSSProperties = { display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs, 0.875rem)', marginTop: 6, overflowWrap: 'anywhere' };
   return (
     // wr-stat-card: the dashboard's stat strips line the cards' rows up (globals.css).
     <div className="wr-stat-card" style={{ background: color.card, border: `1px solid ${color.line}`, borderRadius: 14, padding: '16px 18px', minWidth: 0 }}>
