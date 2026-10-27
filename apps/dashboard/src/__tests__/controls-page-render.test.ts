@@ -782,13 +782,14 @@ describe('Controls page, weakening a rule', () => {
     expect(m.text()).not.toContain('Your fleet spends about');
     m.root.unmount();
     // With 14 days of spend: about $12.50 a day; above $10 it's rounded.
-    const day = (d: number) => new Date(Date.UTC(2026, 9, d)).toISOString();
-    api.hourly = [{ hour: day(1), costMicros: 100_000_000 }, { hour: day(14), costMicros: 75_000_000 }];
+    // Hours counted back from now, as the store returns them.
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    api.hourly = [{ hour: ago(13.5), costMicros: 100_000_000 }, { hour: ago(1), costMicros: 75_000_000 }];
     const m2 = await mount();
     await m2.click(m2.row('$190'));
     expect(m2.text()).toContain('Your fleet spends about $13 a day, all agents together (last 14 days).');
     m2.root.unmount();
-    api.hourly = [{ hour: day(1), costMicros: 4_000_000 }, { hour: day(2), costMicros: 3_000_000 }];
+    api.hourly = [{ hour: ago(1.5), costMicros: 4_000_000 }, { hour: ago(0.5), costMicros: 3_000_000 }];
     const m3 = await mount();
     await m3.click(m3.row('$190'));
     expect(m3.text()).toContain('Your fleet spends about $3.50 a day, all agents together (last 2 days).');
@@ -808,6 +809,21 @@ describe('Controls page, weakening a rule', () => {
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
     expect(api.update).not.toHaveBeenCalled();
     expect(m.text()).toContain('Added a copy for lead-agent, in Record only. The rule for all agents is unchanged.');
+    m.root.unmount();
+  });
+
+  it('a failed copy says so and leaves the rule and the edit as they were', async () => {
+    api.create.mockRejectedValue(new Error('down'));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
+    await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
+    await m.click(m.button('Save'));
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Keep it for all, and add a copy')));
+    expect(m.text()).toMatch(/add the copy/i);
+    expect(api.update).not.toHaveBeenCalled();
+    // The narrowed edit is still there to save or discard.
+    expect(m.button('Save')!.disabled).toBe(false);
     m.root.unmount();
   });
 });

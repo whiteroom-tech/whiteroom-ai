@@ -426,8 +426,13 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
     }
     case 'keyword': {
       const p = a as KeywordParams, n = b as KeywordParams;
+      const out: string[] = [];
       const removed = p.keywords.filter((k) => !n.keywords.includes(k));
-      return removed.length ? [`No longer looks for ${removed.map((k) => `“${k}”`).join(', ')}`] : [];
+      if (removed.length) out.push(`No longer looks for ${removed.map((k) => `“${k}”`).join(', ')}`);
+      if (!p.wholeWord && n.wholeWord) out.push('Matches whole words only, not parts of words');
+      if (p.where !== n.where && p.where !== 'incoming' && n.where !== 'both') out.push(`No longer looks in ${p.where === 'both' && n.where === 'incoming' ? 'model replies' : 'incoming data'}`);
+      if (p.where === 'incoming' && n.where === 'replies') out.push('No longer looks in incoming data');
+      return out;
     }
     default:
       return [];
@@ -435,13 +440,14 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
 }
 
 /**
- * Average dollars a day from hourly points, over the days they actually cover (a fleet two days old
- * averages over two days, not the whole window), up to `maxDays`. Null without data, never a made-up $0.
+ * Average dollars a day from hourly points, from the first point until now (a fleet two days old
+ * averages over two days, not the whole window; idle days since still count), up to `maxDays`. Null without data, never a made-up $0.
  */
-export function averageDailySpend(hourly: { error?: string; hourly?: { hour?: string; costMicros?: number }[] } | null | undefined, maxDays: number): { perDay: number; days: number } | null {
+export function averageDailySpend(hourly: { error?: string; hourly?: { hour?: string; costMicros?: number }[] } | null | undefined, maxDays: number, now: number = Date.now()): { perDay: number; days: number } | null {
   if (!hourly || hourly.error || !Array.isArray(hourly.hourly) || hourly.hourly.length === 0 || maxDays <= 0) return null;
   const times = hourly.hourly.map((h) => Date.parse(h.hour ?? '')).filter((t) => !Number.isNaN(t));
-  const spanDays = times.length ? (Math.max(...times) - Math.min(...times) + 3_600_000) / 86_400_000 : maxDays;
+  // From the first point to now: quiet days since count, so a burst long ago isn't read as a daily rate.
+  const spanDays = times.length ? (now - Math.min(...times)) / 86_400_000 : maxDays;
   const days = Math.min(maxDays, Math.max(1, Math.ceil(spanDays)));
   return { perDay: hourly.hourly.reduce((n, h) => n + (h.costMicros || 0), 0) / 1e6 / days, days };
 }

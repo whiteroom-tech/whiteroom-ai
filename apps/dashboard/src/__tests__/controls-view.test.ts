@@ -251,6 +251,22 @@ describe('weakening a rule', async () => {
     // Stronger or unchanged: nothing to confirm.
     expect(weakenings(cap, { ...cap, response: 'stop', params: { dailyCap: 100, scope: 'day', unit: 'dollars' } })).toEqual([]);
     expect(weakenings({ ...cap, mode: 'watch' }, cap)).toEqual([]);
+    // Loop breaker and call rate: a higher number is looser.
+    const loop = rule({ ruleType: 'loop_breaker', params: { threshold: 10, scope: 'run', ignoreTools: [] } });
+    expect(weakenings(loop, { ...loop, params: { threshold: 20, scope: 'run', ignoreTools: [] } })).toEqual(['Acts after 20 repeats instead of 10']);
+    const rate = rule({ ruleType: 'call_rate', params: { maxCalls: 60 } });
+    expect(weakenings(rate, { ...rate, params: { maxCalls: 90 } })).toEqual(['Allows 90 calls a minute instead of 60']);
+    expect(weakenings(rate, { ...rate, params: { maxCalls: 30 } })).toEqual([]);
+    // A milder response counts only while the rule acts; and the alert line only for Block.
+    expect(weakenings({ ...cap, mode: 'watch' }, { ...cap, mode: 'watch', response: 'notify' })).toEqual([]);
+    expect(weakenings({ ...cap, response: 'pause', alsoNotify: true }, { ...cap, response: 'pause', alsoNotify: false })).toEqual([]);
+    // Keywords: dropping one, whole words only, or looking in fewer places.
+    const kw = rule({ ruleType: 'keyword', params: { keywords: ['a', 'b'], where: 'both', wholeWord: false } });
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a'], where: 'both', wholeWord: false } })).toEqual(['No longer looks for “b”']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'both', wholeWord: true } })).toEqual(['Matches whole words only, not parts of words']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'incoming', wholeWord: false } })).toEqual(['No longer looks in model replies']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'replies', wholeWord: false } })).toEqual(['No longer looks in incoming data']);
+    expect(weakenings({ ...kw, params: { keywords: ['a'], where: 'incoming', wholeWord: false } }, { ...kw, params: { keywords: ['a'], where: 'both', wholeWord: false } })).toEqual([]);
     // A new unit or period can't be compared: it's asked about.
     expect(weakenings(cap, { ...cap, params: { dailyCap: 190, scope: 'run', unit: 'dollars' } })).toEqual(['Limit: $190 a day → $190 a run']);
     expect(weakenings(cap, { ...cap, params: { dailyCap: 50000, scope: 'day', unit: 'tokens' } })).toEqual(['Limit: $190 a day → 50,000 tokens a day']);
@@ -266,9 +282,12 @@ describe('fleet daily spend beside a spend cap', async () => {
   it('averages the hourly spend per day, and is unknown rather than $0 without data', () => {
     const at = (d: number, h = 0) => new Date(Date.UTC(2026, 9, d, h)).toISOString();
     // 14 days of data: the total over 14.
-    expect(averageDailySpend({ hourly: [{ hour: at(1), costMicros: 7_000_000 }, { hour: at(14, 23), costMicros: 21_000_000 }] }, 14)).toEqual({ perDay: 2, days: 14 });
+    const now = Date.UTC(2026, 9, 27, 0);
+    expect(averageDailySpend({ hourly: [{ hour: at(13), costMicros: 7_000_000 }, { hour: at(26, 23), costMicros: 21_000_000 }] }, 14, now)).toEqual({ perDay: 2, days: 14 });
     // A fleet two days old averages over two days, not fourteen.
-    expect(averageDailySpend({ hourly: [{ hour: at(25), costMicros: 7_000_000 }, { hour: at(26, 10), costMicros: 7_000_000 }] }, 14)).toEqual({ perDay: 7, days: 2 });
+    expect(averageDailySpend({ hourly: [{ hour: at(25), costMicros: 7_000_000 }, { hour: at(26, 10), costMicros: 7_000_000 }] }, 14, now)).toEqual({ perDay: 7, days: 2 });
+    // A burst 10 days ago and nothing since is spread over those 10 days.
+    expect(averageDailySpend({ hourly: [{ hour: at(17), costMicros: 20_000_000 }] }, 14, now)).toEqual({ perDay: 2, days: 10 });
     expect(averageDailySpend({ hourly: [] }, 14)).toBeNull();
     expect(averageDailySpend({ error: 'no store' }, 14)).toBeNull();
     expect(averageDailySpend(null, 14)).toBeNull();
