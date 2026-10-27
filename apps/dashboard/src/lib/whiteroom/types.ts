@@ -323,6 +323,7 @@ export interface AgentPerformanceResult {
     errorRate: number;
     /** Calls stopped by a governance rule in Enforce (absent on older engines). */
     blockedCount?: number;
+    /** The median (p50) call time over the window, despite the name: shown as "Typical response". */
     avgLatencyMs: number | null;
   };
   error?: string;
@@ -815,6 +816,21 @@ export interface AuditIntegrity {
   legacyEvents: number;
   gaps: { count: number; recent: Array<{ type: string; from: string | null; to: string | null }> };
   anchoring: { enabled: boolean };
+}
+
+/**
+ * One page of the full signed export (engine export_audit_full). Events are
+ * passed through to the file as they come; the last page has the signed
+ * manifest (head seq and hash, count) and nextFromSeq null.
+ */
+export interface AuditExportPage {
+  fleetId: string;
+  firstSeq: number;
+  toSeq: number;
+  fromSeq: number;
+  events: Array<Record<string, unknown> & { seq: number }>;
+  nextFromSeq: number | null;
+  manifest?: Record<string, unknown> & { firstSeq: number; headSeq: number; count: number; signature: string };
 }
 
 export interface VerifyAuditResult {

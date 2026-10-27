@@ -28,7 +28,7 @@ import {
 type Pending = 'pausing' | 'stopping' | 'resuming' | 'removing' | null;
 
 /**
- * Agent detail (redesign screen 3): one agent's last 7 days and score, its
+ * Agent detail: one agent's last 7 days and score, its
  * current run, progress notes, task type, the rules on it and latest
  * activity, with the actions today's engine supports.
  * Actions are not optimistic: the pill reads "Pausing…" / "Resuming…" until
@@ -343,7 +343,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
             <AgentWeekCard fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview?.week} />
             <div className="wr-agent-grid">
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
-                <Panel title={<>Current run<Hint text={HELP.currentShift} /></>} count={shiftSummary(agent, fmtTokens)}>
+                <Panel title={<>Current run<Hint text={HELP.currentRun} /></>} count={shiftSummary(agent, fmtTokens)}>
                   {!progress && shiftAside(agent, fmtTokens).length > 0 && (
                     <div style={{ display: 'grid', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {shiftAside(agent, fmtTokens).map((line) => <div key={line}>{line}</div>)}
@@ -363,7 +363,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                 </Panel>
 
                 <Panel
-                  title={<>Progress notes<Hint text={HELP.handoverNotes} /></>}
+                  title={<>Progress notes<Hint text={HELP.progressNotes} /></>}
                   actions={notesState === 'current' && handover?.session_stats ? <Tag tone="ho">{handover.session_stats.tasks_completed} tasks → notes</Tag> : undefined}
                 >
                   {notesState !== 'current' ? (

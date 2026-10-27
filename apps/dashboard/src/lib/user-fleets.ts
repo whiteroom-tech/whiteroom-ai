@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { enqueueEntitlementSync } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
+import { plural } from '@/lib/format';
 
 export interface UserFleet {
   id: string;
@@ -91,7 +92,7 @@ export async function addUserFleet(
         ok: false,
         error: plan === 'expired'
           ? 'Your free trial has ended. Subscribe in Settings to link more fleets.'
-          : `Your ${PLANS[plan].name} plan includes ${limit} fleet${limit === 1 ? '' : 's'} and you're using ${used}. Upgrade in Settings to link more.`,
+          : `Your ${PLANS[plan].name} plan includes ${limit} ${plural(limit, 'fleet')} and you're using ${used}. Upgrade in Settings to link more.`,
       };
     }
 

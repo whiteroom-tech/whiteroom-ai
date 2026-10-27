@@ -7,6 +7,7 @@ import { stripe } from '@/lib/stripe';
 import { closingDate, getClosing } from '@/lib/account-closing';
 import { countAgents, getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
 import { billableAgents, hasLiveSubscription, isPaidPlanId, isTrialActive, stripePriceId } from '@/lib/plans';
+import { HOUR_MS } from '@/lib/format';
 
 type UrlResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -104,7 +105,7 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     if (plan === 'starter') {
       const trialEndsAt = await getTrialEndsAt(user.id);
       const ms = trialEndsAt ? new Date(trialEndsAt).getTime() : 0;
-      if (isTrialActive(trialEndsAt) && ms - Date.now() > 48 * 3600 * 1000) {
+      if (isTrialActive(trialEndsAt) && ms - Date.now() > 48 * HOUR_MS) {
         trialEnd = Math.floor(ms / 1000);
       }
     }

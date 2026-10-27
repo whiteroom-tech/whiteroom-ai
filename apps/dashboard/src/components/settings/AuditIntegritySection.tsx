@@ -1,23 +1,39 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Panel } from '@whiteroom/ui';
-import { auditIntegrity, exportAuditSigned, verifyAudit } from '@/lib/whiteroom/client';
+import { auditIntegrity, verifyAudit } from '@/lib/whiteroom/client';
+import { buildAuditExport, saveBlob } from '@/lib/audit-export';
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { fmtTime, timeAgo } from '@/lib/format';
+import { fmtTime, timeAgo, plural } from '@/lib/format';
 import { AUDIT_KEPT } from '@/lib/plans';
 
 /**
  * Settings › Audit integrity (Phase 1 spec H2): how much of the fleet's
  * audit trail has been checked, any recorded gaps, a check on demand and the
- * signed export. Hidden when no fleet is signed in or the engine predates it.
+ * signed export of the whole history. Hidden when no fleet is signed in or the engine predates it.
  */
 export function AuditIntegritySection() {
   const { fleetId, status: authStatus } = useFleetAuth();
   const [info, setInfo] = useState<AuditIntegrity | null>(null);
   const [busy, setBusy] = useState<'check' | 'export' | null>(null);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad' | 'neutral'; text: string } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // The fleet shown now: an export still running for another one stops and saves nothing.
+  const fleetRef = useRef(fleetId);
+  // Which download is current: an older one finishing late can't touch a newer one's state.
+  const exportRef = useRef(0);
+  useEffect(() => {
+    fleetRef.current = fleetId;
+    return () => {
+      // Leaving a fleet cancels its download, so the next fleet's button is free at once.
+      fleetRef.current = null;
+      exportRef.current++;
+      setBusy((b) => (b === 'export' ? null : b));
+      setProgress(null);
+    };
+  }, [fleetId]);
 
   // After a check, unless the fleet changed meanwhile.
   const reload = useCallback(async (id: string) => {
@@ -53,20 +69,26 @@ export function AuditIntegritySection() {
   }
 
   async function download() {
+    const id = fleetId!;
+    const run = ++exportRef.current;
+    const current = () => exportRef.current === run && fleetRef.current === id;
     setBusy('export');
     setNote(null);
+    setProgress(null);
     try {
-      const signed = await exportAuditSigned(fleetId!);
-      const url = URL.createObjectURL(new Blob([JSON.stringify(signed, null, 2)], { type: 'application/json' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `whiteroom-audit-${fleetId}-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const file = await buildAuditExport(id, (done, total) => {
+        if (current()) setProgress({ done, total });
+      }, { isCancelled: () => !current() });
+      if (!file || !current()) return;
+      saveBlob(file.blob, `whiteroom-audit-${id}-${new Date().toISOString().slice(0, 10)}.json`);
+      if (file.events !== null) setNote({ tone: 'neutral', text: `Downloaded ${file.events.toLocaleString('en-US')} events, signed by WhiteRoom.` });
     } catch {
-      setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
+      if (current()) setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
     } finally {
-      setBusy(null);
+      if (exportRef.current === run) {
+        setBusy(null);
+        setProgress(null);
+      }
     }
   }
 
@@ -74,7 +96,7 @@ export function AuditIntegritySection() {
   const checked = coverageLine(info.verifiedThroughSeq, info.headSeq, info.verifiedAt ? timeAgo(info.verifiedAt) : null);
   const gaps = info.gaps.count === 0
     ? 'nothing recorded missing'
-    : `${info.gaps.count} gap${info.gaps.count === 1 ? '' : 's'} recorded where events may be missing`;
+    : `${info.gaps.count} ${plural(info.gaps.count, 'gap')} recorded where events may be missing`;
 
   return (
     <Panel title="Audit integrity">
@@ -102,7 +124,7 @@ export function AuditIntegritySection() {
       {tracked && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button size={28} busy={busy === 'check'} busyLabel="Checking…" onClick={() => void check()}>Run check now</Button>
-          <Button variant="ghost" size={28} busy={busy === 'export'} busyLabel="Preparing…" onClick={() => void download()}>Download signed export</Button>
+          <Button variant="ghost" size={28} busy={busy === 'export'} busyLabel={exportLabel(progress)} onClick={() => void download()}>Download signed export</Button>
         </div>
       )}
       {note && <p role="status" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.tone === 'ok' ? 'var(--ok)' : note.tone === 'bad' ? 'var(--bad)' : 'var(--tx2)' }}>{note.text}</p>}
@@ -121,4 +143,11 @@ export function coverageLine(verifiedThrough: number, head: number, when: string
   if (verifiedThrough >= head) return head > 0 ? `All ${n(head)} events checked · ${when}` : `Checked · nothing recorded yet · ${when}`;
   const pct = Math.min(99, Math.floor((verifiedThrough / Math.max(1, head)) * 100));
   return `${n(verifiedThrough)} of ${n(head)} events checked (${pct}%) · ${when}`;
+}
+
+/** The Download button while it works: how many events are in so far. */
+export function exportLabel(p: { done: number; total: number } | null): string {
+  if (!p || p.total === 0) return 'Preparing…';
+  const n = (x: number) => x.toLocaleString('en-US');
+  return `Preparing… ${n(p.done)} of ${n(p.total)} events`;
 }

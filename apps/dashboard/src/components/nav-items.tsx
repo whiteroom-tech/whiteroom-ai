@@ -36,7 +36,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Govern',
     items: [
-      { key: 'controls', href: ROUTES.controls, label: 'Controls', tip: 'Rules that watch your agents and step in when you want them to' },
+      { key: 'controls', href: ROUTES.controls, label: 'Controls', tip: 'Rules for your agents, and what they do when one is broken' },
     ],
   },
   {

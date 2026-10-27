@@ -16,6 +16,7 @@ import { evidenceHeader } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
 import { Badge, CARD } from './primitives';
 import { ROUTES } from '@/lib/routes';
+import { plural } from '@/lib/format';
 
 // -- §6.2.3 Diagnosis rows --------------------------------------------------
 
@@ -112,7 +113,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
               border: `1px solid ${w.calls <= 2 ? 'var(--warn-line)' : 'var(--line2)'}`,
               background: w.calls <= 2 ? 'var(--warn-bg)' : 'transparent',
               color: w.calls <= 2 ? 'var(--warn-tx)' : 'var(--tx2)',
-            }}>run {w.watch} · {w.calls} {w.calls === 1 ? 'call' : 'calls'}</span>
+            }}>run {w.watch} · {w.calls} {plural(w.calls, 'call')}</span>
           ))}
         </div>
       </div>

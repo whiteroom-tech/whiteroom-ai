@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
-import { agentTotalsFromBuckets, dailySavingsFromBuckets, savingsDollars, type AgentTotals, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { agentTotalsFromBuckets, dailySavingsFromBuckets, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { readSnapshot, saveSnapshot, updateSnapshot } from '@/lib/performance-snapshot';
@@ -18,6 +18,7 @@ import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 import { IndexView, type FeedbackResult } from './_components/IndexView';
 import { AgentView, EvidenceView } from './_components/AgentEvidence';
+import { HOUR_MS } from '@/lib/format';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
@@ -75,7 +76,7 @@ export default function PerformancePage() {
   const [govSavings, setGovSavings] = useState<GovSavings | null>(shown?.govSavings ?? null);
   const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(shown?.govCounts ?? null);
   const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(shown?.savingsDays ?? null);
-  const [byAgent, setByAgent] = useState<AgentTotals[] | null>(shown?.byAgent ?? null);
+  const [agentIds, setAgentIds] = useState<string[] | null>(shown?.agentIds ?? null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
@@ -90,7 +91,7 @@ export default function PerformancePage() {
     const stale = () => indexReq.current !== req;
     setLoading(true); setError('');
     try {
-      const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
+      const cutoff = Date.now() - hoursBack * HOUR_MS;
       const weekStart = new Date();
       weekStart.setHours(0, 0, 0, 0);
       weekStart.setDate(weekStart.getDate() - 6); // the Savings chart's 7 calendar days
@@ -117,7 +118,7 @@ export default function PerformancePage() {
         savingsDays: daysShown,
         govSavings: audit?.savingsBuckets ? savingsDollars(audit.savingsBuckets, audit.savings) : null,
         govCounts: fromAudit,
-        byAgent: audit?.savingsBuckets ? agentTotalsFromBuckets(audit.savingsBuckets) : null,
+        agentIds: audit?.savingsBuckets ? agentTotalsFromBuckets(audit.savingsBuckets).map((t) => t.agent) : null,
         auditFailed: !audit?.savingsBuckets,
         loadedAt: loadedNow,
       };
@@ -127,7 +128,7 @@ export default function PerformancePage() {
       setSavingsDays(snapshot.savingsDays);
       setGovSavings(snapshot.govSavings);
       setGovCounts(snapshot.govCounts);
-      setByAgent(snapshot.byAgent);
+      setAgentIds(snapshot.agentIds);
       setAuditFailed(snapshot.auditFailed);
       saveSnapshot(fleetId, hoursBack, snapshot);
       if (fromAudit) {
@@ -156,7 +157,7 @@ export default function PerformancePage() {
     setSavingsDays(snap.savingsDays);
     setGovSavings(snap.govSavings);
     setGovCounts(snap.govCounts);
-    setByAgent(snap.byAgent);
+    setAgentIds(snap.agentIds);
     setAuditFailed(snap.auditFailed);
     setLoadedAt(snap.loadedAt);
   };
@@ -286,7 +287,7 @@ export default function PerformancePage() {
         {view === 'index' && indexData && Date.now() < UNNAMED_CALLS_NOTE_UNTIL && (
           <div style={{ marginBottom: 16 }}><Banner variant="info">Since Oct 19, these numbers include calls from agents without a name. Saved by WhiteRoom isn&rsquo;t affected.</Banner></div>
         )}
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} byAgent={byAgent} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'agent' && agentData && <AgentView data={agentData} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

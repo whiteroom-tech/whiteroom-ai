@@ -20,10 +20,17 @@ export const MODE_MEANING: Record<RuleMode, string> = {
 };
 
 /**
+ * The notify response in customer words: the picker option, the verb in a
+ * rule's sentence, the count of times it fired, and its row tag. The engine
+ * value stays 'notify'.
+ */
+export const NOTIFY = { option: 'Alert me', verb: 'alert you', done: 'alerted you', tag: 'Alerts' } as const;
+
+/**
  * A rule's row tag: what it does now. Record only for watch; in Block mode, the response, so a rule
  * that only alerts never wears a red "Block" (only real stops are filled).
  */
-export const DOES_TAG: Record<'block' | 'pause' | 'stop' | 'notify', string> = { block: 'Blocks', pause: 'Pauses', stop: 'Stops', notify: 'Alerts' };
+export const DOES_TAG: Record<'block' | 'pause' | 'stop' | 'notify', string> = { block: 'Blocks', pause: 'Pauses', stop: 'Stops', notify: NOTIFY.tag };
 
 /** The count of everything rules did or would have done. */
 export const RULE_ACTIVITY = 'Rule activity';

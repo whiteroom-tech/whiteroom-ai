@@ -35,7 +35,7 @@ export function AlertsSection() {
   return (
     <Panel title="Alerts">
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>
-        A message in {channels.length > 1 ? 'Slack or Microsoft Teams' : 'Slack'} when a rule alerts you, pauses or stops an agent, or blocks a call and you asked to be told. Each alert links to the run. For fleet {fleetId}.
+        A message in {channels.length > 1 ? 'Slack or Microsoft Teams' : 'Slack'} when a rule alerts you, pauses or stops an agent, or blocks a call and you asked for an alert. Each alert links to the run. For fleet {fleetId}.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} />)}

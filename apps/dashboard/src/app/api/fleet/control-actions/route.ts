@@ -4,6 +4,7 @@
 
 import { auth } from '@/auth';
 import { holdsFleet, recentControlActions } from '@/lib/control-actions';
+import { DAY_MS } from '@/lib/format';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
   const fleetId = params.get('fleet_id');
   if (!fleetId) return Response.json({ error: 'fleet_id is required.' }, { status: 400 });
   // Only as far back as the page needs (oldest history entry or hold); 30 days at most.
-  const floor = Date.now() - 30 * 86_400_000;
+  const floor = Date.now() - 30 * DAY_MS;
   const asked = Date.parse(params.get('since') ?? '');
   const since = new Date(Number.isFinite(asked) ? Math.max(asked, floor) : floor);
   let holds: boolean;

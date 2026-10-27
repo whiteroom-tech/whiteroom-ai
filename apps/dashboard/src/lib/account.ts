@@ -8,8 +8,9 @@ import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
 import { cancelClosing, deletionBlocker, getClosing, lapsedPaidPlan, sendClosingEmail, startClosing, type Closing } from '@/lib/account-closing';
 import { enqueueEntitlementSync, resolvePlan, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { HOUR_MS } from '@/lib/format';
 
-const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
+const EMAIL_CHANGE_TTL_MS = HOUR_MS;
 
 export interface SignInMethod {
   /**

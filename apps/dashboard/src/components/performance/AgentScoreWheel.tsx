@@ -1,8 +1,8 @@
-// A watch-face per agent row in the By-agent table (audit M12): three equal
+// An agent's score as a small wheel (Home's agents, the agent page): three equal
 // ring segments (clean calls, cost, speed) in their tier colors,
 // the 0-10 score in the center, and a small legend that names each part with
 // a bar and its value, so it reads without hovering. A part with no data is a
-// faint track, not gray. No click handler — it's connected to the row it's in.
+// faint track, not gray. No click handler: the row or card it sits in is the link.
 import { FONT_MONO } from '@whiteroom/ui';
 import { scoreColor, scoreWedges, wedgeStroke, wedgeSummary, wheelArcs } from '@/lib/agent-scores';
 import type { AgentScore } from '@/lib/whiteroom/types';
@@ -12,7 +12,7 @@ const STROKE = 5;
 const BAR = 56;
 
 export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
-  if (agent.score == null) return <span style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)' }}>–</span>;
+  if (agent.score == null) return <span style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)' }}>—</span>;
 
   const wedges = scoreWedges(agent);
   const arcs = wheelArcs(wedges.length, SIZE, STROKE, 18);
@@ -39,7 +39,7 @@ export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
             <span style={{ height: 4, borderRadius: 2, background: 'var(--track)', overflow: 'hidden' }}>
               {w.value != null && <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, w.value))}%`, borderRadius: 2, background: w.color }} />}
             </span>
-            <span style={{ fontFamily: FONT_MONO, textAlign: 'right', color: w.value == null ? 'var(--tx3)' : 'var(--tx)' }}>{w.value == null ? '–' : w.value}</span>
+            <span style={{ fontFamily: FONT_MONO, textAlign: 'right', color: w.value == null ? 'var(--tx3)' : 'var(--tx)' }}>{w.value == null ? '—' : w.value}</span>
           </span>
         ))}
       </span>

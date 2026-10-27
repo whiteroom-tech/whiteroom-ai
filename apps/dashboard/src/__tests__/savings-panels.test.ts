@@ -42,7 +42,9 @@ describe('Savings axis', () => {
     expect(axisTop(0)).toBe(1);
   });
   it('labels without a trailing .0', () => {
-    expect([axisLabel(150_000), axisLabel(75_000), axisLabel(0), axisLabel(1_500_000)]).toEqual(['150K', '75K', '0', '1.50M']);
+    expect([150_000, 75_000, 0, 1_500_000].map(axisLabel)).toEqual(['150K', '75K', '0', '1.5M']);
+    // Each tick names its own value: the midpoint of a 25K or 2.5M axis isn't rounded to a neighbour.
+    expect([axisTop(24_000) / 2, axisTop(2_400_000) / 2, axisTop(1_400) / 2].map(axisLabel)).toEqual(['12.5K', '1.25M', '750']);
   });
 });
 
@@ -50,7 +52,7 @@ describe('Savings card caption', () => {
   it('names every part of the total it sits under', () => {
     expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, estimated');
     expect(savingsCaption(0, 12_000)).toBe('cache reads, estimated');
-    expect(savingsCaption(2_000, 12_000)).toBe('2.0K tokens not spent + cache reads, estimated');
+    expect(savingsCaption(2_000, 12_000)).toBe('2K tokens not spent + cache reads, estimated');
     expect(savingsCaption(0, 0)).toBe('nothing saved in this range');
   });
 });

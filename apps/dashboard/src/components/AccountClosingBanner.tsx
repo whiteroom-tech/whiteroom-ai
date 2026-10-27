@@ -6,11 +6,10 @@ import { Banner, Button } from '@whiteroom/ui';
 import { cancelAccountDeletion, getAccountClosing } from '@/lib/account';
 import { closingDate as day, type Closing } from '@/lib/closing-shared';
 import { ROUTES } from '@/lib/routes';
+import { DAY_MS, plural } from '@/lib/format';
 
 /** Fired after a deletion starts or is cancelled, so every banner on the page re-reads. */
 export const CLOSING_CHANGED = 'wr:account-closing-changed';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Whole days left, counting a part day as a day; 0 once the time has passed. */
 export function daysLeft(closesAt: string, now = Date.now()): number {
@@ -20,7 +19,7 @@ export function daysLeft(closesAt: string, now = Date.now()): number {
 /** The banner's words for a closing window. */
 export function closingMessage(c: Closing, now = Date.now()): string {
   const left = daysLeft(c.closesAt, now);
-  const when = `${day(c.closesAt)}, in ${left} day${left === 1 ? '' : 's'}`;
+  const when = `${day(c.closesAt)}, in ${left} ${plural(left, 'day')}`;
   if (c.reason === 'deleted') {
     return left > 0
       ? `Your account will be deleted on ${when}. Your fleet keeps working until then.`

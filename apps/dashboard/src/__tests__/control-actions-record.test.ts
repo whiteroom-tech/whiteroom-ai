@@ -36,13 +36,14 @@ describe('recordControlAction', () => {
     expect(prune?.[1]).toEqual(['f1', 45]);
   });
 
-  it('records an owner goal change, so the goal can name who set it', async () => {
+  // Nothing reads an owner goal change back, so it isn't kept (a real goal body, not an empty one).
+  it('doesn\'t record an owner goal change', async () => {
     await recordControlAction('u1', 'f1', 'goal_set_owner', '{"agent_id":"a1","goal":"x"}', '{}');
-    expect(inserts()[0][1]).toEqual(['f1', 'goal_set_owner', 'a1', null, 'u1']);
+    expect(inserts()).toHaveLength(0);
   });
 
-  it('records only holds, rule changes and goals, and swallows a failed write', async () => {
-    for (const a of ['alerts_test', 'alerts_set_slack', 'resume_agent', 'goal_get', 'agent_new_run']) await recordControlAction('u1', 'f1', a, '{}', '{}');
+  it('records only holds and rule changes, and swallows a failed write', async () => {
+    for (const a of ['alerts_test', 'alerts_set_slack', 'resume_agent', 'goal_get', 'goal_set_owner', 'agent_new_run']) await recordControlAction('u1', 'f1', a, '{}', '{}');
     expect(inserts()).toHaveLength(0);
     mocks.query.mockRejectedValueOnce(new Error('db down'));
     vi.spyOn(console, 'warn').mockImplementation(() => {});
