@@ -318,6 +318,8 @@
 .wr-tag--warn { color: var(--warn); }
 .wr-tag--brand { color: var(--brand); }
 .wr-tag--muted { color: var(--tx2); }
+/* A rule in Block: the one filled tag, so rules that really act stand out. */
+.wr-tag--block { color: var(--bad); background: var(--bad-bg); border-color: var(--bad-line); }
 
 .wr-banner { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); font-size: var(--fs-md); line-height: 1.5; }
 .wr-banner__icon { display: flex; margin-top: 1px; }

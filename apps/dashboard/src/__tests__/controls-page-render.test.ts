@@ -108,10 +108,16 @@ const choose = async (select: HTMLSelectElement, value: string) => {
 };
 
 describe('Controls page', () => {
-  it('reads each rule as a sentence, grouped by what it does now, with the cards and the overlap', async () => {
+  it('reads each rule as a sentence, grouped by who it covers, with the cards and the overlap', async () => {
     const m = await mount();
     const groups = [...m.el.querySelectorAll('.wr-panel__title')].map((t) => t.textContent);
-    expect(groups).toEqual(['Acting', 'Record only', 'Off']);
+    expect(groups).toEqual(['Rules for all agents', 'Rules for specific agents', 'Off']);
+    // Block rules come first in a group, with the one filled tag; Record only is plain.
+    const all = [...m.el.querySelectorAll('.wr-panel')].find((p) => p.querySelector('.wr-panel__title')?.textContent === 'Rules for all agents')!;
+    expect([...all.querySelectorAll('.gov-row .wr-tag')].map((t) => t.textContent)).toEqual(['Blocks', 'Record only', 'Record only']);
+    expect(all.querySelector('.wr-tag--block')?.textContent).toBe('Blocks');
+    // Two rules can stop calls, so there's no warning about it.
+    expect(m.text()).not.toContain('can stop calls');
     expect(m.text()).toContain('When an agent makes the same call 100 times in a run, block the call.');
     expect(m.text()).toContain('Only market-researcher');
     // Stat cards, as Performance counts rule actions.
@@ -124,6 +130,70 @@ describe('Controls page', () => {
     expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');
     expect(m.text()).toContain('Your $200 cap would never act. Both are in Record only');
     expect(m.text()).toContain('Pick a rule to change it');
+    m.root.unmount();
+  });
+
+  it('gathers the tips under Suggestions, and shows no heading without any', async () => {
+    const m = await mount();
+    const section = m.el.querySelector('section[aria-labelledby="gov-suggestions"]')!;
+    expect(section.querySelector('h2')!.textContent).toBe('Suggestions');
+    expect(section.textContent).toContain('Your $200 cap would never act.');
+    expect(m.text()).toContain('By mode');
+    m.root.unmount();
+    api.saved.r4 = { ...RULES[3], mode: 'off' };
+    const none = await mount();
+    expect(none.el.querySelector('section[aria-labelledby="gov-suggestions"]')).toBeNull();
+    none.root.unmount();
+  });
+
+  it('says when no rule stops calls, and says nothing when every rule is off', async () => {
+    api.saved.r1 = { ...RULES[0], mode: 'watch' };
+    api.saved.r5 = { ...RULES[4], response: 'notify' };
+    const m = await mount();
+    expect(m.text()).toContain('No rule stops calls yet, so every call goes through.');
+    m.root.unmount();
+    for (const r of RULES) api.saved[r.id] = { ...r, mode: 'off' };
+    const off = await mount();
+    expect(off.text()).not.toContain('stop calls');
+    off.root.unmount();
+    // One active rule, and it stops calls: nothing to warn about.
+    for (const r of RULES) api.saved[r.id] = r.id === 'r1' ? r : { ...r, mode: 'off' };
+    const one = await mount();
+    expect(one.text()).not.toContain('stop calls');
+    one.root.unmount();
+  });
+
+  it('tags a Block-mode rule by what it does: an alert-only rule is never a red Block', async () => {
+    api.saved.r1 = { ...RULES[0], response: 'notify' };
+    const m = await mount();
+    const tag = m.row('100 times').querySelector('.wr-tag')!;
+    expect(tag.textContent).toBe('Alerts');
+    expect(tag.className).not.toContain('wr-tag--block');
+    m.root.unmount();
+  });
+
+  it('a Block rule with nothing picked yet is not a filled tag', async () => {
+    api.saved.r6 = { ...RULES[5], mode: 'enforce' };
+    const m = await mount();
+    const row = [...m.el.querySelectorAll('.gov-row')].find((r) => r.textContent?.includes('Tool list'))!;
+    expect(row.querySelector('.wr-tag')!.className).not.toContain('wr-tag--block');
+    expect(row.querySelector('.wr-tag')!.textContent).toBe('Not set up');
+    m.root.unmount();
+  });
+
+  it('names the agent in the group titles when filtering', async () => {
+    nav.params = new URLSearchParams('agent=lead-agent');
+    const m = await mount();
+    const groups = [...m.el.querySelectorAll('.wr-panel__title')].map((t) => t.textContent);
+    expect(groups).toEqual(['Rules for all agents (including lead-agent)', 'Rules just for lead-agent (or a few agents)', 'Off']);
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+
+  it('warns when at most one rule can actually stop calls', async () => {
+    api.saved.r5 = { ...RULES[4], mode: 'watch' };
+    const m = await mount();
+    expect(m.text()).toContain('Only 1 rule can stop calls (Loop breaker). The others don’t stop calls.');
     m.root.unmount();
   });
 
