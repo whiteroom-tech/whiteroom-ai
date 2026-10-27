@@ -45,6 +45,25 @@ export function closingMessage(c: Closing, now = Date.now(), timeZone?: string):
     : `Your fleet closed on ${date}. Its audit trail is kept for ${AUDIT_KEPT}.`;
 }
 
+/** How long a read of the closing state is reused across pages: it changes rarely, and a change here re-reads at once. */
+export const CLOSING_READ_TTL_MS = 60_000;
+let lastRead: { at: number; value: Promise<Awaited<ReturnType<typeof getAccountClosing>>> } | null = null;
+
+/** The account's closing state, shared by the pages opened within CLOSING_READ_TTL_MS. */
+export function readClosing(fresh = false): ReturnType<typeof getAccountClosing> {
+  if (!fresh && lastRead && Date.now() - lastRead.at < CLOSING_READ_TTL_MS) return lastRead.value;
+  const value = getAccountClosing();
+  lastRead = { at: Date.now(), value };
+  // A failed or unknown read isn't kept, so the next page tries again.
+  value.then((v) => { if (v === 'unknown' && lastRead?.value === value) lastRead = null; }, () => { if (lastRead?.value === value) lastRead = null; });
+  return value;
+}
+
+/** Test hook: forget the shared read. */
+export function _forgetClosingRead(): void {
+  lastRead = null;
+}
+
 const linkClass = 'wr-btn wr-btn--secondary wr-btn--h28';
 
 /** The fix a blocked deletion needs, as a link: Manage billing, or the organization. */
@@ -80,17 +99,19 @@ export function AccountClosingBanner() {
   const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
   useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
 
-  const load = useCallback(() => {
-    getAccountClosing().then(
+  const load = useCallback((fresh: boolean) => {
+    readClosing(fresh).then(
       (state) => { if (state !== 'unknown') setClosing(state); },
       () => {},
     );
   }, []);
 
   useEffect(() => {
-    load();
-    window.addEventListener(CLOSING_CHANGED, load);
-    return () => window.removeEventListener(CLOSING_CHANGED, load);
+    load(false);
+    // A change on this page (delete, cancel, keep): read it again at once.
+    const changed = () => load(true);
+    window.addEventListener(CLOSING_CHANGED, changed);
+    return () => window.removeEventListener(CLOSING_CHANGED, changed);
   }, [load]);
 
   if (!closing) return null;

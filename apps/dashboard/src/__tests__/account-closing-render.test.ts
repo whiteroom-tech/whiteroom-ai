@@ -13,10 +13,11 @@ const api = vi.hoisted(() => ({
   deleteAccount: vi.fn(async () => ({ ok: true }) as { ok: true } | { ok: false; error: string }),
   cancel: vi.fn(async () => ({ ok: true }) as { ok: true } | { ok: false; error: string }),
   refresh: vi.fn(),
+  reads: 0,
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: api.refresh, push: vi.fn() }), usePathname: () => '/settings' }));
 vi.mock('@/lib/account', () => ({
-  getAccountClosing: async () => api.closing,
+  getAccountClosing: async () => { api.reads++; return api.closing; },
   cancelAccountDeletion: api.cancel,
   deleteAccount: api.deleteAccount,
   cancelEmailChange: vi.fn(), requestEmailChange: vi.fn(), signOutEverywhere: vi.fn(), unlinkProvider: vi.fn(), updateProfile: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
 
-const { AccountClosingBanner, closingMessage } = await import('@/components/AccountClosingBanner');
+const { AccountClosingBanner, closingMessage, _forgetClosingRead, readClosing, CLOSING_READ_TTL_MS } = await import('@/components/AccountClosingBanner');
 const { daysLeft, closingDate } = await import('@/lib/closing-shared');
 const { AUDIT_KEPT } = await import('@/lib/plans');
 const { DangerSection } = await import('@/app/settings/settings-view');
@@ -47,6 +48,7 @@ async function mount(node: React.ReactElement) {
 }
 
 beforeEach(() => {
+  _forgetClosingRead();
   api.closing = null;
   api.deleteAccount.mockReset().mockImplementation(async () => ({ ok: true }));
   api.cancel.mockReset().mockImplementation(async () => ({ ok: true }));
@@ -264,5 +266,31 @@ describe('a blocked deletion (the window ended, something stops the removal)', (
     const { deletionBlockedEmail } = await import('@/lib/magic-link-email');
     const { blockedMessage } = await import('@/lib/closing-shared');
     expect(deletionBlockedEmail(SUB, 'https://app.example.test/settings').text).toContain(blockedMessage(SUB));
+  });
+});
+
+describe('the closing state read', () => {
+  it('is shared by pages opened within a minute, read again after that or after a change, and never kept when unknown', async () => {
+    vi.useFakeTimers();
+    try {
+      api.reads = 0;
+      api.closing = null;
+      await readClosing();
+      await readClosing();
+      expect(api.reads).toBe(1);
+      await readClosing(true); // a change on this page
+      expect(api.reads).toBe(2);
+      vi.advanceTimersByTime(CLOSING_READ_TTL_MS);
+      await readClosing();
+      expect(api.reads).toBe(3);
+      api.closing = 'unknown';
+      _forgetClosingRead();
+      await readClosing();
+      await Promise.resolve();
+      await readClosing();
+      expect(api.reads).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

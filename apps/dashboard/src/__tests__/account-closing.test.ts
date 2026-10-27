@@ -139,7 +139,7 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       return { rows: [closingCols(u)] };
     }
     if (sql.startsWith("UPDATE users SET close_reason = 'deleted', delete_after") && sql.includes('closes_at <= now()')) {
-      if (!u.closes_at || ms(u.closes_at) > now) return { rows: [] };
+      if (!u.closes_at || ms(u.closes_at) > now || (u.close_reason === 'deleted' && u.delete_after)) return { rows: [] };
       u.close_reason = 'deleted';
       u.delete_after = at(Number(params[1]) * DAY);
       clearBlocked(u);
@@ -310,6 +310,13 @@ describe('Delete account starts a 14-day window', () => {
     const text = sendEmail.mock.calls.at(-1)![0].text as string;
     expect(text).toContain('Your fleet is already closed');
     expect(text).not.toContain('keeps working');
+  });
+
+  it('asking again on an ended deletion keeps its removal date', async () => {
+    setup({ user: { closes_at: PAST, close_reason: 'deleted', delete_after: IN_14_DAYS } });
+    expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
+    expect(world.user.delete_after).toBe(IN_14_DAYS);
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it('asking again while a deletion runs (double submit, second tab) changes nothing and sends no second email', async () => {

@@ -88,12 +88,13 @@ export async function lapseToDeletion(q: Queryable, userId: string): Promise<Clo
 /**
  * Delete after the window has ended (the fleet is already closed, and closing
  * is final): the closing time stays, the account goes CLOSE_WINDOW_DAYS from
- * now.
+ * now. An ended deletion that already has its removal date keeps it, so
+ * asking again doesn't push it back.
  */
 export async function endedToDeletion(q: Queryable, userId: string): Promise<Closing | null> {
   const { rows } = await q.query(
     `UPDATE users SET close_reason = 'deleted', delete_after = now() + make_interval(days => $2), ${CLEAR_BLOCKED}, updated_at = now()
-     WHERE id = $1 AND closes_at <= now()
+     WHERE id = $1 AND closes_at <= now() AND (close_reason <> 'deleted' OR delete_after IS NULL)
      RETURNING ${CLOSING_COLUMNS}`,
     [userId, CLOSE_WINDOW_DAYS],
   );

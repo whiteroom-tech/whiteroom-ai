@@ -80,6 +80,11 @@ describe('releaseFleet', () => {
     expect(sent).toHaveProperty('closesAt', null);
     expect(sent).not.toHaveProperty('closeReason');
   });
+  it('applies the remaining owner\'s plan when a fleet is released and someone still holds it', async () => {
+    account({ sub: null, trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(), owner: 'u1' });
+    await releaseFleet('fleet-1');
+    expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'starter', status: 'active' });
+  });
 });
 
 describe('the engine confirming a push', () => {
@@ -97,9 +102,4 @@ describe('the engine confirming a push', () => {
     expect(await syncEntitlementsToEngine('u1')).toBe(false);
   });
 
-  it('applies the remaining owner\'s plan when a fleet is released and someone still holds it', async () => {
-    account({ sub: null, trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(), owner: 'u1' });
-    await releaseFleet('fleet-1');
-    expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'starter', status: 'active' });
-  });
 });
