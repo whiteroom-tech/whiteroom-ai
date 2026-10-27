@@ -104,6 +104,7 @@ describe('deleteAccount safeguards', () => {
   function respond(over: { subscription?: Record<string, unknown>; ownedOrgs?: string[]; stranded?: string[] }) {
     query.mockImplementation(async (sql: string) => {
       if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: USER.email }] };
+      if (sql.startsWith('SELECT 1 FROM users')) return { rows: [{}], rowCount: 1 };
       if (sql.includes('FROM subscriptions')) return { rows: over.subscription ? [over.subscription] : [] };
       if (sql.startsWith('SELECT org_id FROM organization_members')) return { rows: (over.ownedOrgs ?? []).map((org_id) => ({ org_id })) };
       if (sql.includes('FROM organizations o')) return { rows: (over.stranded ?? []).map((name) => ({ name })) };
