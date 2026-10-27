@@ -43,6 +43,7 @@ export function AgentBudgetsSection({ fleetId, authKey, agentIds, api = liveAgen
 }) {
   const [budgets, setBudgets] = useState<AgentBudgetForecast[] | null>(null);
   const [unsupported, setUnsupported] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [agent, setAgent] = useState('');
   const [amount, setAmount] = useState('');
   const [alsoBlock, setAlsoBlock] = useState(false);
@@ -55,10 +56,14 @@ export function AgentBudgetsSection({ fleetId, authKey, agentIds, api = liveAgen
   const load = useCallback(async (stale: () => boolean) => {
     try {
       const res = await api.list(fleetId, authKey);
-      if (!stale()) { setBudgets(res.agents); setUnsupported(false); }
+      if (!stale()) { setBudgets(res.agents); setUnsupported(false); setLoadFailed(false); }
     } catch (e) {
-      // An engine without per-agent budgets answers "Unknown action.": the section stays hidden.
-      if (!stale() && (e as { reason?: string }).reason === 'Unknown action.') setUnsupported(true);
+      if (stale()) return;
+      // An engine without per-agent budgets refuses the action (the repo's older-engine answer): the section stays hidden.
+      const err = e as { status?: number; reason?: string };
+      if (err.status === 400 && err.reason === 'Unknown action.') setUnsupported(true);
+      // Anything else: say so, and keep figures already shown.
+      else setLoadFailed(true);
     }
   }, [fleetId, authKey, api]);
   const { refresh } = usePoll(load, { intervalMs: 60_000 });
@@ -73,52 +78,63 @@ export function AgentBudgetsSection({ fleetId, authKey, agentIds, api = liveAgen
     const usd = parseBudget(amount);
     if (!picked || usd === null) { setNote({ tone: 'bad', text: `Enter an amount in dollars, above 0 and up to ${MAX_AGENT_BUDGET_USD.toLocaleString('en-US')}.` }); return; }
     const forFleet = fleetId;
+    const current = () => fleetRef.current === forFleet;
     setBusy(true);
     setNote(null);
     try {
-      await api.set(forFleet, picked, usd, authKey);
-      let text = `Budget for ${picked} set to ${fmtCost(usd * 1_000_000)} a day.`;
-      let ruleId: string | undefined;
-      if (alsoBlock) {
-        const already = existingCap(await api.rules(forFleet, authKey), picked, usd);
-        if (already) {
-          text += ` A Spend cap at this amount is already set for ${picked}.`;
-          ruleId = already.id;
-        } else {
-          ruleId = (await api.addCap(forFleet, picked, usd, authKey)).id;
-          text += ` Added a Spend cap for ${picked} at this amount, in Record only: it shows what it would block. Turn on Block in Controls when you’re ready.`;
-        }
+      try {
+        await api.set(forFleet, picked, usd, authKey);
+      } catch (e) {
+        const reason = (e as { reason?: string }).reason;
+        if (current()) setNote({ tone: 'bad', text: reason ? `Not saved: ${reason}` : 'Not saved. Try again.' });
+        return;
       }
-      if (fleetRef.current !== forFleet) return;
-      setNote({ tone: 'ok', text, ruleId });
-      setAmount('');
-      setAlsoBlock(false);
-      refresh();
-    } catch (e) {
-      if (fleetRef.current !== forFleet) return;
-      const reason = (e as { reason?: string }).reason;
-      setNote({ tone: 'bad', text: reason ? `Not saved: ${reason}` : 'Not saved. Try again.' });
-      refresh();
+      const saved = `Budget for ${picked} set to ${fmtCost(usd * 1_000_000)} a day.`;
+      if (current()) { setAmount(''); setAlsoBlock(false); }
+      if (!alsoBlock) { if (current()) setNote({ tone: 'ok', text: saved }); return; }
+      // The budget is saved; the cap is its own step, and a failure there says only that.
+      try {
+        const already = existingCap(await api.rules(forFleet, authKey), picked, usd);
+        const ruleId = already ? already.id : (await api.addCap(forFleet, picked, usd, authKey)).id;
+        const text = already
+          ? `${saved} A Spend cap at this amount is already set for ${picked}.`
+          : `${saved} Added a Spend cap for ${picked} at this amount, in Record only: it shows what it would block. Turn on Block in Controls when you’re ready.`;
+        if (current()) setNote({ tone: 'ok', text, ruleId });
+      } catch (e) {
+        const reason = (e as { reason?: string }).reason;
+        const why = reason ? `: ${reason.replace(/\.$/, '')}` : '';
+        if (current()) setNote({ tone: 'bad', text: `${saved} The Spend cap wasn’t added${why}. Add it in Controls, or set the budget again with the box ticked.` });
+      }
     } finally {
-      if (fleetRef.current === forFleet) setBusy(false);
+      setBusy(false);
+      if (current()) refresh();
     }
   }
 
   async function remove(agentId: string) {
+    const forFleet = fleetId;
+    const current = () => fleetRef.current === forFleet;
     setBusy(true);
     setNote(null);
     try {
-      await api.set(fleetId, agentId, null, authKey);
-      setNote({ tone: 'ok', text: `Budget for ${agentId} removed. Any Spend cap for it stays in Controls.` });
-      refresh();
+      await api.set(forFleet, agentId, null, authKey);
+      if (current()) { setNote({ tone: 'ok', text: `Budget for ${agentId} removed. Any Spend cap for it stays in Controls.` }); refresh(); }
     } catch {
-      setNote({ tone: 'bad', text: `Couldn’t remove the budget for ${agentId}. Try again.` });
+      if (current()) setNote({ tone: 'bad', text: `Couldn’t remove the budget for ${agentId}. Try again.` });
     } finally {
       setBusy(false);
     }
   }
 
-  if (unsupported || budgets === null) return null;
+  if (unsupported) return null;
+  if (budgets === null) {
+    return loadFailed ? (
+      <div style={CARD}>
+        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Budgets per agent<Hint text={HELP.agentBudgets} /></h3>
+        <p role="status" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Couldn&rsquo;t load the budgets. Retrying&hellip;</p>
+      </div>
+    ) : null;
+  }
 
   return (
     <div style={CARD}>
@@ -166,8 +182,8 @@ export function AgentBudgetsSection({ fleetId, authKey, agentIds, api = liveAgen
 
       {note && (
         <p role={note.tone === 'bad' ? 'alert' : 'status'} style={{ margin: '12px 0 0', fontSize: 'var(--fs-sm)', color: note.tone === 'bad' ? 'var(--bad)' : 'var(--tx)' }}>
-          {note.text}{' '}
-          {note.ruleId && <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(note.ruleId)}`} className="wr-link" style={{ fontWeight: 600 }}>See the rule in Controls →</Link>}
+          {note.text}
+          {note.ruleId && <> <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(note.ruleId)}`} className="wr-link" style={{ fontWeight: 600 }}>See the rule in Controls →</Link></>}
         </p>
       )}
     </div>

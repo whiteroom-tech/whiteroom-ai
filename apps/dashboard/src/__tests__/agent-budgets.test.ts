@@ -20,7 +20,9 @@ describe('agent budget helpers', () => {
   it('reads an amount in dollars, above 0 and up to the cap', () => {
     expect(parseBudget('25')).toBe(25);
     expect(parseBudget(' $12.5 ')).toBe(12.5);
-    for (const bad of ['', '0', '-3', 'ten', '2000000']) expect(parseBudget(bad)).toBeNull();
+    expect(parseBudget('1,000')).toBe(1000);
+    // Plain dollars and cents only.
+    for (const bad of ['', '0', '-3', 'ten', '2000000', '1e5', '0x10', '.5e1', '0.001']) expect(parseBudget(bad)).toBeNull();
   });
 
   it('says the calls left, or why there is no figure', () => {
@@ -137,7 +139,7 @@ describe('Budgets per agent card', () => {
     api.set.mockRejectedValueOnce(Object.assign(new Error('HTTP 400'), { reason: 'There’s no agent lead-agent in this fleet.' }));
     await m.type('5');
     await m.submit();
-    expect(m.note()).toBe('Not saved: There’s no agent lead-agent in this fleet. ');
+    expect(m.note()).toBe('Not saved: There’s no agent lead-agent in this fleet.');
     m.root.unmount();
   });
 
@@ -153,9 +155,58 @@ describe('Budgets per agent card', () => {
 
   it('stays hidden on an engine without per-agent budgets', async () => {
     const api = fakeApi();
-    api.list.mockRejectedValue(Object.assign(new Error('HTTP 400'), { reason: 'Unknown action.' }));
+    api.list.mockRejectedValue(Object.assign(new Error('HTTP 400'), { status: 400, reason: 'Unknown action.' }));
     const m = await mount(api);
     expect(m.el.textContent).toBe('');
     m.root.unmount();
   });
+
+  it('says when the budgets can’t be loaded, rather than hiding the card', async () => {
+    const api = fakeApi();
+    api.list.mockRejectedValue(Object.assign(new Error('HTTP 503'), { status: 503 }));
+    const m = await mount(api);
+    expect(m.el.textContent).toContain('Couldn’t load the budgets. Retrying…');
+    m.root.unmount();
+  });
+
+  it('a budget saved but a cap that fails says exactly that', async () => {
+    const api = fakeApi();
+    api.addCap.mockRejectedValueOnce(Object.assign(new Error('HTTP 400'), { reason: 'A fleet can have at most 30 rules.' }));
+    const m = await mount(api);
+    await m.type('10');
+    await m.check();
+    await m.submit();
+    expect(api.set).toHaveBeenCalledWith('f1', 'lead-agent', 10, undefined);
+    expect(m.note()).toBe('Budget for lead-agent set to $10.00 a day. The Spend cap wasn’t added: A fleet can have at most 30 rules. Add it in Controls, or set the budget again with the box ticked.');
+    expect(m.note()).not.toContain('Not saved');
+    m.root.unmount();
+  });
+
+  it('a Remove that fails says so and keeps the budget', async () => {
+    const api = fakeApi([forecast()]);
+    api.set.mockRejectedValueOnce(new Error('HTTP 503'));
+    const m = await mount(api);
+    await act(async () => { (m.el.querySelector('button[aria-label="Remove the budget for lead-agent"]') as HTMLButtonElement).click(); });
+    await flush();
+    expect(m.note()).toBe('Couldn’t remove the budget for lead-agent. Try again.');
+    expect(m.el.querySelector('.wr-agent-budget')?.textContent).toContain('lead-agent');
+    m.root.unmount();
+  });
+
+  it('a save still running when the fleet changes leaves the new fleet’s card usable and quiet', async () => {
+    let release!: () => void;
+    const api = fakeApi();
+    api.set.mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+    const m = await mount(api);
+    await m.type('10');
+    await act(async () => { (m.el.querySelector('form') as HTMLFormElement).requestSubmit(); });
+    expect(m.el.textContent).toContain('Saving…');
+    await act(async () => { m.root.render(h(AgentBudgetsSection, { fleetId: 'f2', agentIds: ['other'], api })); });
+    await act(async () => { release(); });
+    await flush();
+    expect(m.el.textContent).not.toContain('Saving…');
+    expect(m.note()).toBe('');
+    m.root.unmount();
+  });
 });
+

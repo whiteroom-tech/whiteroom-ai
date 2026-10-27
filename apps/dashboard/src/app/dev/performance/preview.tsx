@@ -188,4 +188,3 @@ function previewBudgetsApi(): AgentBudgetsApi {
     addCap: async (_f, agentId, usd) => ({ id: 'gr_preview', fleetId: 'acme-claims-prod', version: 1, changedBy: 'preview', changedAt: new Date().toISOString(), ...capRuleFor(agentId, usd) }),
   };
 }
-

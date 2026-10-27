@@ -7,8 +7,11 @@ export const MAX_AGENT_BUDGET_USD = 1_000_000;
 
 /** A typed amount: dollars above 0 (at most MAX_AGENT_BUDGET_USD), or null when it isn't one. */
 export function parseBudget(text: string): number | null {
-  const n = Number(text.trim().replace(/^\$/, ''));
-  return text.trim() !== '' && Number.isFinite(n) && n > 0 && n <= MAX_AGENT_BUDGET_USD ? n : null;
+  // Plain dollars and cents only: "1e5" or "0x10" would quietly become something else.
+  const t = text.trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const n = Number(t);
+  return n > 0 && n <= MAX_AGENT_BUDGET_USD ? n : null;
 }
 
 /** The figure under an agent's budget: calls left today, or why there isn't one. */
