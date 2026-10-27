@@ -24,8 +24,8 @@
 .taskMark { width:14px; flex:none; text-align:center; font-family:var(--font-mono); }
 
 .group { margin:14px 0 0; }
-.groupTitle { font-family:var(--font-mono); font-size: var(--fs-xs); font-weight:600; letter-spacing:.1em; color:var(--tx3); margin:0 0 2px; text-transform:uppercase; }
-.how { font-size: var(--fs-xs); color:var(--tx3); margin-top:3px; }
+.groupTitle { font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:600; letter-spacing:.1em; color:var(--tx3); margin:0 0 2px; text-transform:uppercase; }
+.how { font-size: var(--fs-sm); color:var(--tx3); margin-top:3px; }
 .fix { font-size: var(--fs-sm); color:var(--tx2); margin-top:6px; line-height:1.55; }
 
 .facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:4px 14px; margin:8px 0 0; font-size: var(--fs-sm); }

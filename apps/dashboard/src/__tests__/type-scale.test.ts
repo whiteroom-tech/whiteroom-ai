@@ -51,11 +51,22 @@ describe('type scale', () => {
     expect(small).toEqual([]);
   });
 
-  it('keeps the smallest token at 14px or more', () => {
+  it('keeps every token at 15.5px or more, except the 14px group label', () => {
     const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
-    const sizes = [...css.matchAll(/--fs-[a-z]+:\s*([\d.]+)rem/g)].map((m) => Number(m[1]) * 16);
+    const sizes = [...css.matchAll(/--fs-([a-z]+):\s*([\d.]+)rem/g)].map((m) => [m[1], Number(m[2]) * 16] as const);
     expect(sizes.length).toBeGreaterThanOrEqual(8);
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(14);
+    expect(sizes.filter(([, px]) => px < 15.5).map(([name]) => name)).toEqual(['label']);
+    expect(Object.fromEntries(sizes).label).toBe(14);
+  });
+
+  // The 14px label is only for the sidebar's uppercase group labels.
+  it('uses --fs-label only for the sidebar group labels', () => {
+    const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
+    const users = css.split('\n').filter((l) => l.includes('var(--fs-label)')).map((l) => l.trim().split(' ')[0]);
+    expect(users).toEqual(['.wr-sidebar__eyebrow']);
+    for (const root of ROOTS) {
+      for (const f of files(root)) if (!f.endsWith('globals.css')) expect(readFileSync(f, 'utf8')).not.toContain('--fs-label');
+    }
   });
 
   // The phone tab bar's labels are the only fixed size: five tabs must fit a

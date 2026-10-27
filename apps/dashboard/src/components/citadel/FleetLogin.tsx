@@ -51,7 +51,7 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
           <Logo width={22} height={30} gradientId="wr-l" />
           <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 0.5, color: 'var(--tx)' }}>WhiteRoom</span>
         </div>
-        <p style={{ fontSize: 'var(--fs-xs)', letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+        <p style={{ fontSize: 'var(--fs-sm)', letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
 
         {auth.retryableError && (
           <div className="text-left" style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, padding: '12px 16px', marginBottom: 24 }}>
@@ -68,7 +68,7 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
 
         <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
           <div>
-            <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
+            <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
               YOUR API KEY OR FLEET TOKEN
             </label>
             <input
@@ -95,7 +95,7 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
           </button>
         </form>
 
-        <p style={{ color: 'var(--tx3)', fontSize: 'var(--fs-xs)', textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+        <p style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)', textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
           Your key is never stored or sent to any third party.<br />
           It is used only to identify your fleet in this session.
         </p>

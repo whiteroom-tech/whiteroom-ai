@@ -22,8 +22,9 @@ export function CopyButton({ text, disabled, label }: { text: string; disabled?:
           setTimeout(() => setCopied(false), 2000);
         });
       }}
-      className="ml-2 shrink-0 px-3 py-1.5 text-xs font-mono rounded-md border transition-all"
+      className="ml-2 shrink-0 px-3 py-1.5 rounded-md border transition-all"
       style={{
+        fontSize: 'var(--fs-sm, 0.96875rem)',
         borderColor: copied ? color.ok : color.line,
         color: copied ? color.ok : color.tx2,
         background: copied ? 'var(--ok-bg)' : 'transparent',

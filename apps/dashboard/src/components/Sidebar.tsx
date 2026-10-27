@@ -10,7 +10,7 @@ import { safeGet } from '@/lib/safe-storage';
 import { isNavActive } from '@/lib/routes';
 import { NAV, NavIcon } from '@/components/nav-items';
 import { APP_VERSION } from '@/components/citadel/PageChrome';
-import { AccountMenu } from '@/components/AccountMenu';
+import { SidebarPreferences } from '@/components/SidebarPreferences';
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', member: 'Member' };
 
@@ -47,7 +47,7 @@ export function Sidebar() {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: '.02em', lineHeight: 1.1, color: 'var(--tx)' }}>WhiteRoom</div>
           {fleetId && (
-            <div title={fleetId} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fleetId}</div>
+            <div title={fleetId} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fleetId}</div>
           )}
         </div>
       </div>
@@ -75,13 +75,14 @@ export function Sidebar() {
         ))}
       </nav>
 
+      <SidebarPreferences organization={org ? org.name ?? '' : null} invitations={org?.invitations ?? 0} />
+
       <div className="wr-sidebar__account">
         <span aria-hidden="true" className="wr-sidebar__avatar">{person.charAt(0).toUpperCase()}</span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{person}</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role ? `${role} · ${APP_VERSION}` : APP_VERSION}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role ? `${role} · ${APP_VERSION}` : APP_VERSION}</div>
         </div>
-        <AccountMenu organization={org ? org.name ?? '' : null} invitations={org?.invitations ?? 0} />
       </div>
     </aside>
   );

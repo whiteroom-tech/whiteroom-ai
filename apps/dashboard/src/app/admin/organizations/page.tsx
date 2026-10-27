@@ -63,7 +63,7 @@ export default async function AdminOrganizationsPage() {
 }
 
 const th: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700,
+  textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-sm)', fontWeight: 700,
   letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)',
   background: 'var(--sunk)', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
 };

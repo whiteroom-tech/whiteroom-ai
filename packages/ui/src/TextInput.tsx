@@ -46,7 +46,7 @@ export const TextInput = forwardRef<HTMLInputElement, {
         color: color.tx,
         borderRadius: 6,
         padding: '4px 8px',
-        fontSize: 'var(--fs-xs, 0.875rem)',
+        fontSize: 'var(--fs-sm, 0.96875rem)',
         fontFamily: mono ? FONT_MONO : undefined,
       }}
     />

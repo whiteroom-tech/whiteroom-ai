@@ -50,7 +50,7 @@ export function RecentRuns({ fleetId, authKey, agentId, preview }: { fleetId: st
         <Link key={r.runId} href={runHref(r.runId)} className="wr-activity-row" style={{ textDecoration: 'none', color: 'inherit' }}>
           <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 500 }}>#{r.shift}</span>
           <span style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginRight: 10 }}>{fmtStarted(r.startedAt)} · {fmtLength(r.lengthSeconds)}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginRight: 10 }}>{fmtStarted(r.startedAt)} · {fmtLength(r.lengthSeconds)}</span>
             {standOut(r).text}
           </span>
           <span />

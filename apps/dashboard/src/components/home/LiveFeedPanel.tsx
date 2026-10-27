@@ -135,7 +135,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         const id = `live-${r.key}`;
         return (
           <div key={r.key} className="wr-live-row">
-            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', paddingTop: 2, whiteSpace: 'nowrap' }}>{r.time}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', paddingTop: 2, whiteSpace: 'nowrap' }}>{r.time}</span>
             <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
             <div style={{ minWidth: 0 }}>
@@ -154,7 +154,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       })}
       {shown.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
             {win.from}&ndash;{win.to} of {shown.length} in the last {ttlHours} h{total > rows.length ? ` · newest ${rows.length} of ${total} loaded` : ''}
           </span>
           <span style={{ marginLeft: 'auto' }} />

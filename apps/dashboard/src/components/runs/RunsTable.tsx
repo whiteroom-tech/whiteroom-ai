@@ -66,7 +66,7 @@ export function RunsPhoneList({ runs, groupOf, onOpen }: {
                   <span style={{ display: 'flex', paddingTop: 3, color: s.tone === 'failed' || s.tone === 'flag' ? 'var(--warn)' : 'var(--tx2)' }}><Icon name={STAND_OUT_ICON[s.tone]} size={13} /></span>
                   <span>{s.text}</span>
                 </span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                   {fmtLength(r.lengthSeconds)} · {usd(r.spendMicros / 1e6)}{r.unpricedAttempts ? '+' : ''}
                 </span>
               </Link>
@@ -348,7 +348,7 @@ export function RunsTable({ preview, retentionDays }: {
   const pager = shown && (page > 0 || next) ? (
     // Its padding comes from the .wr-table__foot it sits in (here and in DataTable's footer).
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-      <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
+      <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
       <span style={{ marginLeft: 'auto' }} />
       {page > 0 && <Button variant="ghost" size={28} onClick={() => setCursors((c) => c.slice(0, -1))}>&larr; Newer</Button>}
       {next && <Button size={28} onClick={() => setCursors((c) => [...c, next])}>Older &rarr;</Button>}
@@ -389,7 +389,7 @@ export function RunsTable({ preview, retentionDays }: {
               {day && <Button variant="ghost" size={32} aria-label="Next day" disabled={day >= today} onClick={() => changeFilter({ day: addDays(day, 1) })}>&rarr;</Button>}
             </span>
           )}
-          <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{updatedAt ? `Updated ${fmtTime(updatedAt)}` : ''}</span>
+          <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{updatedAt ? `Updated ${fmtTime(updatedAt)}` : ''}</span>
         </div>
         {dayCounts && (
           <DayStrip

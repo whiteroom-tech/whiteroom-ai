@@ -220,7 +220,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
           <StatCard variant="card" label="Average per hour" hint={HELP.hourlySpend} value={`${fmtCost(s.totalCost / hoursInRange)}${partialMark(spendPartial)}`} sub="over every hour shown, quiet ones too" />
           <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(compression)} />
         </div>
-        {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
+        {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
         {/* Each its own full row: Cost prediction (a card with its own bottom margin), then tokens with vs without, then spend by model. */}
         <CostTrackingSection fleetId={fleetId} authKey={authKey} />
         <AgentBudgetsSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} />

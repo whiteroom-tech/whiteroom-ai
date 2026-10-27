@@ -55,7 +55,7 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
             );
           })}
         </div>
-        <div aria-hidden className="wr-hourstrip-axis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
+        <div aria-hidden className="wr-hourstrip-axis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           {[0, 6, 12, 18].map((h) => <span key={h}>{hourLabel(h)}</span>)}
         </div>
       </div>

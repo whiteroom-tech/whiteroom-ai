@@ -12,6 +12,12 @@ export const TEXT_SIZES: { value: TextSize; label: string }[] = [
   { value: 'xl', label: 'Larger' },
 ];
 
+/** The sidebar's compact labels; each keeps its full name for screen readers. */
+export const TEXT_SIZE_SHORT: Record<TextSize, string> = { md: 'A', lg: 'A+', xl: 'A++' };
+
+/** Fired on window when the size changes, so every control on the page shows it. */
+export const TEXT_SIZE_CHANGED = 'wr:text-size-changed';
+
 /**
  * Runs inline in <head> before first paint (app/layout.tsx). Plain ES5 so it
  * can be inlined as a string; applies the same rule as parseTextSize.
@@ -35,4 +41,5 @@ export function applyTextSize(size: TextSize, root: Element | null = typeof docu
 export function chooseTextSize(size: TextSize) {
   safeSet('wr_text', size);
   applyTextSize(size);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(TEXT_SIZE_CHANGED));
 }

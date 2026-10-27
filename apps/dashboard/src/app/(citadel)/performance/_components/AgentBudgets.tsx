@@ -224,7 +224,7 @@ export function AgentBudgetsSection({ fleetId, authKey, agentIds, api = liveAgen
               <input type="checkbox" checked={alsoBlock} onChange={(e) => setAlsoBlock(e.target.checked)} aria-describedby={capHintId} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
               Also add a Spend cap at this amount
             </label>
-            <span id={capHintId} style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', paddingLeft: 24 }}>Starts in Record only. Turn on Block in Controls.</span>
+            <span id={capHintId} style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', paddingLeft: 24 }}>Starts in Record only. Turn on Block in Controls.</span>
           </span>
           <Button type="submit" variant="primary" size={32} busy={busy} busyLabel="Saving…">Set budget</Button>
         </form>

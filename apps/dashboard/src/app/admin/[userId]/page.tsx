@@ -81,7 +81,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
                     <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>{f.fleetId}</span>
                     {f.label && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{f.label}</span>}
                     {!f.exists && (
-                      <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
+                      <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
                         unknown to engine
                       </span>
                     )}
@@ -106,7 +106,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
                       {Object.entries(f.byStatus).map(([status, n]) => (
                         <span
                           key={status}
-                          style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--line)', color: 'var(--tx2)' }}
+                          style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--line)', color: 'var(--tx2)' }}
                         >
                           {n} {status.replace(/_/g, ' ')}
                         </span>
@@ -126,13 +126,13 @@ export default async function AdminUserPage({ params }: { params: Promise<{ user
             <div style={{ display: 'grid', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
               {audit.map((e) => (
                 <div key={e.id} style={{ background: 'var(--sunk)', padding: '10px 14px', fontSize: 'var(--fs-sm)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                  <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                     {e.createdAt.slice(0, 16).replace('T', ' ')}
                   </span>
                   <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--ho)' }}>{e.action}</span>
                   <span style={{ color: 'var(--tx2)' }}>by {e.actorEmail ?? 'unknown'}</span>
                   {e.details && (
-                    <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>
+                    <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>
                       {JSON.stringify(e.details)}
                     </span>
                   )}
@@ -167,7 +167,7 @@ function Grid({ children }: { children: React.ReactNode }) {
 function Field({ label, value, mono: isMono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 4 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 4 }}>
         {label}
       </div>
       <div
@@ -186,7 +186,7 @@ function Field({ label, value, mono: isMono }: { label: string; value: ReactNode
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 3 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 3 }}>
         {label}
       </div>
       <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>{value}</div>

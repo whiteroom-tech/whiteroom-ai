@@ -1,7 +1,7 @@
 /* ── Topbar ── */
 
 /* ── Badges ── */
-.badgeMode { font-family:var(--font-mono); font-size: var(--fs-xs); font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; }
+.badgeMode { font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; }
 .badgeMode.live { background:var(--ok-bg); color:var(--ok); }
 .badgeMode.demo { background:var(--brand-dim); color:var(--brand); }
 
@@ -32,7 +32,7 @@
 .railTitle { font-size: var(--fs-md); font-weight:600; color:var(--tx); line-height:1.35; }
 .railTitleTodo { color:var(--tx2); }
 .railSub { font-size: var(--fs-sm); color:var(--tx2); line-height:1.4; }
-.eyebrow { font-family:var(--font-mono); font-size: var(--fs-xs); font-weight:500; letter-spacing:.13em; color:var(--brand); margin-bottom:4px; }
+.eyebrow { font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:500; letter-spacing:.13em; color:var(--brand); margin-bottom:4px; }
 .pageTitle { font-family:var(--font-display); font-size:var(--fs-page); font-weight:700; line-height:1.15; margin:0 0 4px; outline:none; }
 .pageSub { color:var(--tx2); font-size: var(--fs-md); max-width:56ch; margin:0 0 24px; line-height:1.6; }
 
@@ -88,7 +88,7 @@
 .diagStep { display:flex; align-items:flex-start; gap:12px; padding:7px 0; position:relative; }
 .diagStep::before { content:''; position:absolute; left:11px; top:30px; bottom:-7px; width:1px; background:var(--line); }
 .diagStep:last-child::before { display:none; }
-.diagDot { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size: var(--fs-xs); position:relative; z-index:1; }
+.diagDot { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size: var(--fs-sm); position:relative; z-index:1; }
 .diagDone { background:var(--ok-bg); color:var(--ok); }
 .diagActive { background:var(--brand-dim); color:var(--brand); border:2px solid var(--brand); }
 .diagPending { background:var(--sunk); color:var(--tx3); }
@@ -140,7 +140,7 @@
 
 /* ── What the test checks (start screen) ── */
 .preview { background:var(--sunk); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:16px 0; max-width:640px; }
-.previewHeader { font-family:var(--font-mono); font-size: var(--fs-xs); font-weight:600; letter-spacing:.1em; color:var(--tx3); margin:0 0 12px; }
+.previewHeader { font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:600; letter-spacing:.1em; color:var(--tx3); margin:0 0 12px; }
 .previewList { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
 .previewItem { display:grid; grid-template-columns:24px minmax(0,1fr); gap:12px; align-items:start; }
 .previewNum { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size: var(--fs-sm); font-weight:600; background:var(--brand-dim); color:var(--brand); }

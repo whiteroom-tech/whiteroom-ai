@@ -9,6 +9,8 @@ export type Segment<V extends string> = {
   dot?: 'warn' | 'ok' | 'brand' | 'bad';
   disabled?: boolean;
   title?: string;
+  /** Accessible name when the label is a symbol, e.g. "Large text" for A+. */
+  ariaLabel?: string;
 };
 
 /**
@@ -53,6 +55,7 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
             tabIndex={o.value === tabStop ? 0 : -1}
             disabled={o.disabled}
             title={o.title}
+            aria-label={o.ariaLabel}
             className={`wr-seg__item${on ? ' is-on' : ''}`}
             style={{ minHeight: `${size / 16}rem` }}
             onClick={() => onChange(o.value)}

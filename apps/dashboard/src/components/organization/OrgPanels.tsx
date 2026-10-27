@@ -56,9 +56,9 @@ export function Panel({
 export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '14px 16px', minWidth: 0 }}>
-      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: 'var(--tx3)' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: 'var(--tx3)' }}>{label}</div>
       <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-card)', fontWeight: 600, color: 'var(--tx)', marginTop: 6 }}>{value}</div>
-      {hint && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 3 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
@@ -85,7 +85,7 @@ export function OrgSummary({ org }: { org: OrgDetail }) {
 }
 
 const th: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700,
+  textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-sm)', fontWeight: 700,
   letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)',
   background: 'var(--sunk)', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
 };
@@ -99,7 +99,7 @@ export function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'ho' | 
   return (
     <span
       style={{
-        fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '1px 7px', borderRadius: 99, whiteSpace: 'nowrap',
+        fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '1px 7px', borderRadius: 99, whiteSpace: 'nowrap',
         background: muted ? 'var(--line)' : `var(--${tone}-bg)`, color: muted ? 'var(--tx2)' : `var(--${tone})`,
       }}
     >
@@ -216,7 +216,7 @@ export function MembersPanel({
                   {m.email ?? <span style={{ color: 'var(--tx3)' }}>no email</span>}
                   {m.userId === viewerId && <span style={{ color: 'var(--tx3)', fontWeight: 500 }}> (you)</span>}
                 </div>
-                {m.name && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 2 }}>{m.name}</div>}
+                {m.name && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 2 }}>{m.name}</div>}
               </td>
               <td style={td}>
                 {canEdit ? (
@@ -344,7 +344,7 @@ export function FleetsPanel({ fleets, windowDays }: { fleets: OrgFleetRow[]; win
             <tr key={`${f.ownerUserId}:${f.fleetId}`}>
               <td style={td}>
                 <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{f.fleetId}</div>
-                {f.label && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 2 }}>{f.label}</div>}
+                {f.label && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 2 }}>{f.label}</div>}
               </td>
               <td style={{ ...td, color: 'var(--tx2)' }}>{f.ownerEmail ?? f.ownerUserId}</td>
               {f.exists ? (
@@ -406,7 +406,7 @@ export function AuditPanel({ audit }: { audit: OrgAuditEntry[] }) {
             const staff = e.details?.by === 'whiteroom_admin';
             return (
               <div key={e.id} style={{ background: 'var(--sunk)', padding: '10px 14px', fontSize: 'var(--fs-sm)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                   {e.createdAt.slice(0, 16).replace('T', ' ')}
                 </span>
                 <span style={{ color: 'var(--tx)' }}>{e.actorEmail ?? 'someone'}</span>
