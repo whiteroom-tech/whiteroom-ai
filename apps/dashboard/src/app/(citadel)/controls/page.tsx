@@ -670,7 +670,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 {recent.map((h) => (
                   <HistoryLine key={h.id} entry={h} withRule undo={undoOf(h)} onUndo={undo} busy={saving} />
                 ))}
-                <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
+                <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--brand)" }}>Audit trail →</Link>
               </div>
             )}
           </aside>

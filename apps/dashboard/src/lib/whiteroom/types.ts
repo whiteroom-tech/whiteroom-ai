@@ -794,7 +794,7 @@ export interface RuleWouldActResult {
   since?: string | null;
 }
 
-/** Settings › Audit integrity (engine audit_integrity, Phase 1 spec H2). */
+/** Settings › Audit trail (engine audit_integrity, Phase 1 spec H2). */
 export interface AuditIntegrity {
   fleetId: string;
   mode: 'legacy' | 'sequenced';

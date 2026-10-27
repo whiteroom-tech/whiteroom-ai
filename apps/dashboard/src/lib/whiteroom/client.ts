@@ -703,7 +703,7 @@ export function listRuns(
   }, key);
 }
 
-/** Settings › Audit integrity: how much of the chain is verified, and recorded gaps. */
+/** Settings › Audit trail: how much of the chain is verified, and recorded gaps. */
 export function auditIntegrity(fleetId: string, key?: string): Promise<AuditIntegrity> {
   return apiCall({ action: 'audit_integrity', fleet_id: fleetId }, key);
 }
