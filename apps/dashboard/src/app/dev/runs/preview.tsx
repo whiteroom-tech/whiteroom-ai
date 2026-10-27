@@ -7,10 +7,11 @@ import type { RunSummary } from '@/lib/whiteroom/types';
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 const run = (agentId: string, shift: number, startMin: number, lenMin: number, x: Partial<RunSummary> = {}): RunSummary => ({
   runId: `${agentId}~${shift}`, agentId, shift, startedAt: ago(startMin), endedAt: ago(startMin - lenMin), lengthSeconds: lenMin * 60,
-  calls: 12, failedCalls: 0, blockedCalls: 0, spendMicros: 310_000, unpricedAttempts: 0, coverage: { calls: 12, checked: 12 }, flags: [], ...x,
+  calls: 12, failedCalls: 0, blockedCalls: 0, wouldActCalls: 0, spendMicros: 310_000, unpricedAttempts: 0, coverage: { calls: 12, checked: 12 }, flags: [], ...x,
 });
 const RUNS: RunSummary[] = [
-  run('lead-agent', 14, 25, 23, { spendMicros: 1_920_000, blockedCalls: 1 }),
+  run('lead-agent', 14, 25, 23, { spendMicros: 1_920_000, blockedCalls: 1, wouldActCalls: 2 }),
+  run('code-reviewer', 4, 50, 18, { wouldActCalls: 6 }),
   run('writer-agent', 9, 70, 12, { coverage: { calls: 6, checked: 4 }, calls: 6 }),
   run('lead-agent', 13, 140, 31, { failedCalls: 4, flags: [{ signal: 'error_streak', calls: 4 }] }),
   run('scout-agent', 6, 200, 14, { flags: [{ signal: 'repeating_call', tool: 'fetch_page', calls: 7 }] }),

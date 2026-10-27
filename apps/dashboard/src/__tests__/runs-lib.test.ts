@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, flagText, ignoresFlagged, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runMeta, RUNS_EXPORT_HEADER, runsCount, runsDays, runsExportRow, standOut, timelineRow, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 
@@ -75,6 +75,14 @@ describe('what stood out', () => {
   it('leads with a rule block, then failures', () => {
     expect(standOut(run({ blockedCalls: 1, failedCalls: 2 }))).toEqual({ tone: 'rule', text: 'A rule blocked 1 call' });
     expect(standOut(run({ failedCalls: 2 }))).toEqual({ tone: 'failed', text: '2 calls failed' });
+    // A Record only rule's would-acts are evidence too, and never read as a block.
+    expect(standOut({ ...run({}), wouldActCalls: 3 })).toEqual({ tone: 'rule', text: 'A Record only rule would have acted 3 times' });
+    expect(standOut({ ...run({}), wouldActCalls: 1 }).text).toBe('A Record only rule would have acted once');
+    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('A rule blocked 2 calls · 1 more in Record only');
+    // An engine that doesn't count them (no field) can't be filtered by them.
+    expect(ignoresRuleActivity([{}, {}])).toBe(true);
+    expect(ignoresRuleActivity([{ wouldActCalls: 0 }])).toBe(false);
+    expect(ignoresRuleActivity([])).toBe(false);
   });
   it('never reports a clean result for calls that weren’t read', () => {
     expect(standOut(run({ checked: 4 })).text).toBe('Partly checked: 4 of 6 calls could be read');

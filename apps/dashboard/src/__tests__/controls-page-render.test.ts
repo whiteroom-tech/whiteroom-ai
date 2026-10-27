@@ -53,7 +53,7 @@ const api = vi.hoisted(() => ({
   listGate: null as Promise<void> | null,
   /** What Settings › Alerts has; null: an engine without alerts. */
   alerts: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null } | null,
-  history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string }>,
+  history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string; before?: unknown; after?: unknown }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
@@ -550,6 +550,45 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.text()).toMatch(/Couldn’t remove the rule/);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
     expect(m.row('100 times')).toBeTruthy();
+    m.root.unmount();
+  });
+});
+
+describe('Controls page, change log', () => {
+  const snap = (dailyCap: number, mode = 'watch') => ({ mode, response: 'block', alsoNotify: false, appliesTo: 'all', params: { dailyCap, scope: 'day', unit: 'dollars' } });
+  const when = new Date(Date.now() - 60_000).toISOString();
+
+  it('shows old and new for a settings change, and Undo fills in the old settings to save as a new change', async () => {
+    api.history = [{ id: 'h1', ruleId: 'r3', ruleType: 'spend_cap', description: 'Settings updated', by: 'test', time: when, before: snap(150), after: snap(190) }];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    expect(m.text()).toContain('Was: When an agent spends more than $150 in a day, it would block the call.');
+    expect(m.text()).toContain('Now: When an agent spends more than $190 in a day, it would block the call.');
+    await m.click(m.button('Undo this change'));
+    expect(m.text()).toContain('The settings from before that change are filled in. Check them, then Save.');
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
+    // Nothing is sent until Save, and then it's an ordinary update over the current version.
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', expect.objectContaining({ params: { dailyCap: 150, scope: 'day', unit: 'dollars' }, ifVersion: 1 }), 'k');
+    m.root.unmount();
+  });
+
+  it('offers no undo once the rule has changed again', async () => {
+    api.history = [{ id: 'h1', ruleId: 'r3', ruleType: 'spend_cap', description: 'Settings updated', by: 'test', time: when, before: snap(150), after: snap(170) }];
+    const m = await mount();
+    expect(m.text()).toContain('Was: When an agent spends more than $150');
+    expect(m.button('Undo this change')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('adds a removed rule back as a new rule in Record only', async () => {
+    api.history = [{ id: 'h2', ruleId: 'gone', ruleType: 'spend_cap', description: 'Removed Spend cap rule', by: 'test', time: when, before: snap(500, 'enforce'), after: null }];
+    api.create.mockImplementation(async (_f: string, r: Record<string, unknown>) => { const rule = { ...base, id: 'r9', ...r }; api.created.push(rule as GovernanceRule); return { rule }; });
+    const m = await mount();
+    await m.click(m.button('Add it back'));
+    expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', response: 'block', params: { dailyCap: 500, scope: 'day', unit: 'dollars' }, appliesTo: 'all' }), 'k');
+    expect(m.text()).toContain('Spend cap is back, in Record only. Turn on Block when you’re ready.');
     m.root.unmount();
   });
 });

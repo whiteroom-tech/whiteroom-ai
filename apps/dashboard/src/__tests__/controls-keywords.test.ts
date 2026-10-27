@@ -12,16 +12,16 @@ const added = (hoursAgo: number): GovernanceHistoryEntry[] => [{ id: 'h', ruleId
 
 describe('Keywords in plain words', () => {
   it('reads as one sentence, for each place it looks', () => {
-    expect(ruleSentenceText(kw())).toBe('When incoming data contains any of “Project Falcon”, “SSN”, block the call.');
-    expect(ruleSentenceText(kw({ response: 'notify', params: { keywords: ['Orion'], where: 'replies', wholeWord: true } }))).toBe('When a model reply contains “Orion”, tell me.');
+    expect(ruleSentenceText(kw())).toBe('When incoming data contains any of “Project Falcon”, “SSN”, it would block the call.');
+    expect(ruleSentenceText(kw({ response: 'notify', params: { keywords: ['Orion'], where: 'replies', wholeWord: true } }))).toBe('When a model reply contains “Orion”, it would tell me.');
     expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'both', wholeWord: true } }))).toMatch(/^When incoming data or a reply contains/);
     expect(ruleSentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true } }))).toBe('No keywords picked yet.');
   });
 
   it('a list the engine hid (no dashboard secret) reads as a count and can’t be saved', () => {
     const hidden = kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 3 } });
-    expect(ruleSentenceText(hidden)).toBe('When incoming data contains any of 3 hidden keywords, block the call.');
-    expect(ruleSentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 1 } }))).toBe('When incoming data contains a hidden keyword, block the call.');
+    expect(ruleSentenceText(hidden)).toBe('When incoming data contains any of 3 hidden keywords, it would block the call.');
+    expect(ruleSentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 1 } }))).toBe('When incoming data contains a hidden keyword, it would block the call.');
     // Only the list is out of reach: the rule can still go to Watch or Off.
     expect(draftProblem({ ...draftFrom(hidden), mode: 'off' })).toBeNull();
     // A hidden list isn't an empty one: it can be enforced, and an enforcing one still acts.
@@ -29,7 +29,7 @@ describe('Keywords in plain words', () => {
     expect(draftProblem({ ...draftFrom(hidden), mode: 'enforce', appliesTo: ['lead-agent'] })).toBeNull();
     expect(canAct({ ...hidden, mode: 'enforce' })).toBe(true);
     expect(canAct(kw({ mode: 'enforce', params: { keywords: [], where: 'incoming', wholeWord: true } }))).toBe(false);
-    expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'incoming', wholeWord: true } }))).toBe('When incoming data contains “Orion”, block the call.');
+    expect(ruleSentenceText(kw({ mode: 'enforce', params: { keywords: ['Orion'], where: 'incoming', wholeWord: true } }))).toBe('When incoming data contains “Orion”, block the call.');
   });
 
   it('a rule holds up to 50 keywords', () => {

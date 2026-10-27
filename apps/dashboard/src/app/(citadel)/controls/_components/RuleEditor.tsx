@@ -3,7 +3,9 @@
 // The selected rule, as four steps (When · Then · Applies to · Mode) and a
 // Save button: nothing reaches the engine until Save (Controls spec Rev 1, D1).
 
-import { MODE_LABEL, modeWords } from '@/lib/vocab';
+import { HistoryLine } from './HistoryLine';
+import type { Undo } from '@/lib/rule-history';
+import { MODE_LABEL } from '@/lib/vocab';
 import { useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl, SelectChip } from '@whiteroom/ui';
@@ -12,7 +14,7 @@ import type {
 } from '@/lib/whiteroom/types';
 import { RESPONSE_EFFECT, RULE_LABELS, responseOptions } from '@/lib/governance';
 import { canAct, watchSummary } from '@/lib/controls-guard';
-import { historyWho, type ControlActor } from '@/lib/control-actors';
+import type { ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
@@ -36,7 +38,7 @@ const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, undoOf, onUndo, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
@@ -48,6 +50,9 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   wouldAct: RuleWouldActResult | null;
   /** This rule's own history, newest first. */
   history: GovernanceHistoryEntry[];
+  /** How to undo a change, or null (lib/rule-history). */
+  undoOf: (h: GovernanceHistoryEntry) => Undo | null;
+  onUndo: (u: Undo) => void;
   actors: ControlActor[];
   dirty: boolean;
   error: string | null;
@@ -189,8 +194,13 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         <div className="gov-fill" style={{ alignSelf: 'flex-start' }}>
           <SelectChip label="What the rule does" value={draft.response} onChange={(response) => onDraft(changeResponse(draft, response))} options={responseOptions(govV1, draft.response)} />
         </div>
+        {draft.mode !== 'enforce' && (
+          <p style={{ ...help, color: 'var(--tx)', fontWeight: 600 }}>
+            {draft.mode === 'watch' ? 'Record only: this doesn’t happen yet. WhiteRoom records it and lets the call through.' : 'Off: this doesn’t happen.'} It happens in Block.
+          </p>
+        )}
         <p style={help}>
-          {RESPONSE_EFFECT[draft.response]}
+          {draft.mode === 'enforce' ? '' : 'In Block: '}{RESPONSE_EFFECT[draft.response]}
           {draft.response === 'block' && draft.alsoNotify && ' You also get an alert in your alert channel (Settings › Alerts) with a link to the run.'}
         </p>
         {alerts && alertChannel === false && (
@@ -255,10 +265,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
           {history.length === 0 && <p style={help}>No history yet.</p>}
           {history.slice(0, 10).map((h) => (
-            <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 'var(--fs-sm)' }}>
-              <span>{modeWords(h.description)}</span>
-              <span style={{ color: 'var(--tx2)', flex: 'none' }}>{timeAgo(h.time)} · {historyWho(h, actors)}</span>
-            </div>
+            <HistoryLine key={h.id} entry={h} actors={actors} undo={undoOf(h)} onUndo={onUndo} busy={saving} />
           ))}
           <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
         </div>

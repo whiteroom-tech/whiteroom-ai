@@ -32,10 +32,15 @@ const VERB: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'bl
 const fmt = (n: number) => n.toLocaleString('en-US');
 export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmt(p.dailyCap)}` : `${fmt(p.dailyCap)} tokens`);
 
-/** The rule as one sentence, split so the values can be set in mono. */
-export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response' | 'alsoNotify'>): { pre: string; val: string; post: string } {
+/**
+ * The rule as one sentence, split so the values can be set in mono. Only a
+ * rule in Block does what it says; in Record only or Off it "would", so the
+ * sentence never claims a call is stopped when it isn't.
+ */
+export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response' | 'alsoNotify'> & { mode?: GovernanceRule['mode'] }): { pre: string; val: string; post: string } {
   const response = rule.response ?? 'block';
-  const v = response === 'block' && rule.alsoNotify ? 'block the call and tell me' : VERB[response];
+  const does = response === 'block' && rule.alsoNotify ? 'block the call and tell me' : VERB[response];
+  const v = rule.mode === undefined || rule.mode === 'enforce' ? does : `it would ${does}`;
   if (rule.ruleType === 'spend_cap') {
     const p = rule.params as SpendCapParams;
     return { pre: 'When an agent spends more than ', val: money(p), post: ` in a ${p.scope}, ${v}.` };

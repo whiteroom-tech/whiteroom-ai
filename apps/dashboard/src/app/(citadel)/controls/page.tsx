@@ -5,7 +5,9 @@
 // to the engine only on Save. Built from the shared primitives and the
 // dashboard's own words, so it reads like the other tabs.
 
-import { MODE_GROUP, MODE_MEANING, RULE_ACTIVITY, modeWords } from '@/lib/vocab';
+import { HistoryLine } from "./_components/HistoryLine";
+import { undoFor, type Undo } from "@/lib/rule-history";
+import { MODE_GROUP, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -232,6 +234,47 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (kw.kind === "confirm") { setDialog({ kind: "keyword", rule: selected, next }); return; }
     if (draft.mode === "enforce" && selected.mode !== "enforce") { setDialog({ kind: "enforce", rule: selected, next }); return; }
     void commit(selected, draft);
+  };
+
+  // ── Undo (lib/rule-history) ─────────────────────────────────────
+  // Never edits the log: an update's old settings go into the editor and are
+  // saved as a new change, through the checks above; a removed rule comes
+  // back as a new rule in Record only.
+  const undo = (u: Undo) => {
+    if (u.kind === "update") {
+      const r = rules.find((x) => x.id === u.ruleId);
+      if (!r) return;
+      guard(() => {
+        if (suggestionRec) router.replace(withParams({ rec: null }));
+        setSelectedId(r.id);
+        setDraft(draftFrom({ ...r, ...u.changes }));
+        setError(null);
+        setNotice("The settings from before that change are filled in. Check them, then Save.");
+      });
+      return;
+    }
+    guard(() => void restore(u.rule));
+  };
+
+  const restore = async (rule: Extract<Undo, { kind: "restore" }>["rule"]) => {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { rule: created } = await governanceCreateRule(fleetId, {
+        ruleType: rule.ruleType, mode: "watch", response: rule.response, alsoNotify: rule.alsoNotify,
+        params: rule.params, appliesTo: rule.appliesTo, description: `Added back ${RULE_LABELS[rule.ruleType]} rule`,
+      }, authKey);
+      setRules((rs) => [...rs, created]);
+      setSelectedId(created.id);
+      setDraft(draftFrom(created));
+      setNotice(`${RULE_LABELS[rule.ruleType]} is back, in Record only.${rule.mode === "enforce" ? " Turn on Block when you’re ready." : ""}`);
+      void fetchData();
+    } catch (e) {
+      handleError(e, "add the rule back");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const commit = async (rule: GovernanceRule, d: RuleDraft) => {
@@ -468,6 +511,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               wouldAct={wouldActs[`${selected.id}@${selected.version}`] ?? null}
               history={history.filter((h) => h.ruleId === selected.id)}
               actors={actors}
+              undoOf={(h) => undoFor(h, rules)}
+              onUndo={undo}
               dirty={dirty}
               error={error}
               saving={saving}
@@ -485,10 +530,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <p className="gov-eyebrow" style={{ marginTop: 6 }}>Recent changes</p>
                 {recent.map((h) => (
-                  <div key={h.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 'var(--fs-sm)' }}>
-                    <span>{RULE_LABELS[h.ruleType]} · {modeWords(h.description)}</span>
-                    <span style={{ color: "var(--tx2)", flex: "none" }}>{timeAgo(h.time)}</span>
-                  </div>
+                  <HistoryLine key={h.id} entry={h} withRule undo={undoFor(h, rules)} onUndo={undo} busy={saving} />
                 ))}
                 <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
               </div>

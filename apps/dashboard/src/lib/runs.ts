@@ -130,6 +130,14 @@ export function ignoresFlagged(runs: Pick<RunSummary, 'flags'>[]): boolean {
   return runs.length > 0 && runs.every((r) => r.flags === undefined);
 }
 
+/** Runs › Show: every run, flagged ones, or ones where a rule acted or would have. */
+export type RunsShow = 'all' | 'flagged' | 'rules';
+
+/** True when the engine doesn't count rule actions per run (before E1a), so it ignored the Rule activity filter. */
+export function ignoresRuleActivity(runs: Pick<RunSummary, 'wouldActCalls'>[]): boolean {
+  return runs.length > 0 && runs.every((r) => r.wouldActCalls === undefined);
+}
+
 /** One flag in words: "Repeating the same call: fetch_page ×6", "4 failed calls in a row". */
 export function flagText(f: RunFlag): string {
   return f.signal === 'repeating_call' ? `Repeating the same call: ${f.tool} ×${f.calls}` : `${f.calls} failed calls in a row`;
@@ -141,11 +149,13 @@ export function flagText(f: RunFlag): string {
  * unusual" only when every call could be read, never a clean answer for
  * something that wasn't measured.
  */
-export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'>): { tone: StandOutTone; text: string } {
+export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'> & Partial<Pick<RunSummary, 'wouldActCalls'>>): { tone: StandOutTone; text: string } {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const [first, ...more] = run.flags ?? [];
   if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${plural(more.length, 'more flag')}` : flagText(first) };
-  if (run.blockedCalls > 0) return { tone: 'rule', text: `A rule blocked ${plural(run.blockedCalls, 'call')}` };
+  const would = run.wouldActCalls ?? 0;
+  if (run.blockedCalls > 0) return { tone: 'rule', text: `A rule blocked ${plural(run.blockedCalls, 'call')}${would ? ` · ${would} more in Record only` : ''}` };
+  if (would > 0) return { tone: 'rule', text: `A Record only rule would have acted ${would === 1 ? 'once' : `${would} times`}` };
   if (run.failedCalls > 0) return { tone: 'failed', text: `${plural(run.failedCalls, 'call')} failed` };
   const { calls, checked } = run.coverage;
   if (calls > 0 && checked === 0) return { tone: 'coverage', text: 'Not assessed: none of its calls could be read' };
