@@ -5,7 +5,7 @@ import { Window } from "happy-dom";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
-import { HomeView, weekRules } from "@/components/home/HomeContent";
+import { HomeView, weekRules, weekSentence } from "@/components/home/HomeContent";
 import type { AgentInfo, FleetReport } from "@/lib/whiteroom/types";
 import type { ChangeRow } from "@/lib/home-changes";
 
@@ -85,6 +85,10 @@ describe("Home (mockup parity)", () => {
   it("words the week's rules", () => {
     expect(weekRules(tally(2, 0))).toBe("rules blocked 2 calls");
     expect(weekRules(tally(0, 0))).toBe("no rule activity");
+    // Spend and rules are said each when known.
+    expect(weekSentence({ ...WEEK, costUsd: null })).toBe("rules would have blocked 120 calls");
+    expect(weekSentence({ ...WEEK, rules: null })).toBe("$3.17 spent");
+    expect(weekSentence({ ...WEEK, costUsd: null, rules: null })).toBe("");
     expect(weekRules({ blocks: 0, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 1 })).toBe("rules acted 3 times");
   });
 

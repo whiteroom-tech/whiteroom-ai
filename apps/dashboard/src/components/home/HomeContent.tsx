@@ -287,7 +287,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
             <p className="wr-home-quiet">
               Quiet so far today.
               {lastActive && <> <strong>Last activity {dayLabel(lastActive.day)}:</strong> {fmtCount(lastActive.runs)} {plural(lastActive.runs, 'run')}.</>}
-              {week && week.costUsd !== null && <> This week: {usd(week.costUsd)}{partialMark(week.partial)} spent{week.rules && <>, {weekRules(week.rules)}</>}.</>}
+              {week && weekSentence(week) && <> This week: {weekSentence(week)}.</>}
               {' '}<Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
             </p>
           )}
@@ -442,6 +442,14 @@ function WeekLine({ w }: { w: AgentWeek }) {
 /** The saved figure's tooltip: what the tokens are worth at the agent's own prices, when the engine prices them. */
 function savedTitle(w: AgentWeek): string | undefined {
   return w.saved && w.savedUsd != null ? `${fmtTokens(w.saved)} tokens saved, about ${usd(w.savedUsd)} at this agent's prices (est.)` : undefined;
+}
+
+/** "$3.17 spent, rules would have blocked 120 calls": the spend and the rules each when known; '' when neither is. */
+export function weekSentence(w: HomeWeek): string {
+  const parts: string[] = [];
+  if (w.costUsd !== null) parts.push(`${usd(w.costUsd)}${partialMark(w.partial)} spent`);
+  if (w.rules) parts.push(weekRules(w.rules));
+  return parts.join(', ');
 }
 
 /** The week's rules in a sentence: "rules would have blocked 120 calls". */
