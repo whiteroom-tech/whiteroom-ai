@@ -167,7 +167,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
   const hourly = hourlyData?.hourly ?? [];
   // The selected range (the second half of the hourly rows), and what the
-  // Spend and Hourly cards say about completeness.
+  // Spend and Average per hour cards say about completeness.
   const { shown: displayHourly, gapLine, partial: spendPartial } = spendSummary(hourly, s.unpricedAttempts);
 
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
@@ -217,7 +217,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
             value={auditFailed ? '—' : <><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
             sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
           />
-          <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value={`${fmtCost(s.totalCost / hoursInRange)}${partialMark(spendPartial)}`} sub="spend per hour, on average" />
+          <StatCard variant="card" label="Average per hour" hint={HELP.hourlySpend} value={`${fmtCost(s.totalCost / hoursInRange)}${partialMark(spendPartial)}`} sub="over every hour shown, quiet ones too" />
           <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(compression)} />
         </div>
         {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
@@ -235,7 +235,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
       <section aria-labelledby="perf-control" style={{ marginBottom: 24 }}>
         <h2 id="perf-control" style={sectionTitle}>Control</h2>
-        <div className="wr-perf-strip">
+        <div className="wr-perf-strip wr-perf-strip--1">
           <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : ruleTotal.toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
         </div>
         <p style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Rules and their changes are on <Link href={ROUTES.controls} className="wr-link">Controls &rarr;</Link></p>
@@ -243,7 +243,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
       <section aria-labelledby="perf-performance">
         <h2 id="perf-performance" style={sectionTitle}>Performance</h2>
-        <div className="wr-perf-strip" style={{ marginBottom: 20 }}>
+        <div className="wr-perf-strip wr-perf-strip--2" style={{ marginBottom: 20 }}>
           <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
           <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(s.avgLatencyMs)} sub="median time per call" />
         </div>

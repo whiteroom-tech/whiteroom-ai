@@ -178,7 +178,7 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   handover_in: { label: 'Took over', tone: 'ho' },
   self_handover: { label: 'Smaller context', tone: 'ho' },
   agent_paused: { label: 'Paused', tone: 'warn' },
-  governance_block: { label: 'Blocked', tone: 'muted' },
+  governance_block: { label: 'Blocked', tone: 'block' },
   governance_would_block: { label: 'Record only', tone: 'muted' },
   unnamed_call_refused: { label: 'Refused', tone: 'warn' },
   unclean_stop: { label: 'Gap', tone: 'warn' },

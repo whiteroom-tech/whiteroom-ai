@@ -139,7 +139,7 @@ export function PerformancePreview() {
             <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
               <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub="last 24 h" />
               <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(CARDS.savedMicros)}</>} sub={savingsCaption(CARDS.savedTokens, 0)} />
-              <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value={fmtCost(CARDS.spendMicros / CARDS.hours)} sub="spend per hour, on average" />
+              <StatCard variant="card" label="Average per hour" hint={HELP.hourlySpend} value={fmtCost(CARDS.spendMicros / CARDS.hours)} sub="over every hour shown, quiet ones too" />
               <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(CARDS.compression)} />
             </div>
           )}
@@ -150,7 +150,7 @@ export function PerformancePreview() {
         {sample !== 'empty' && (
           <section aria-labelledby="pv-control" style={{ display: 'grid', gap: 12 }}>
             <h2 id="pv-control" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Control</h2>
-            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+            <div className="wr-perf-strip wr-perf-strip--1" style={{ marginBottom: 0 }}>
               <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={tallyTotal(CARDS.rules).toLocaleString()} sub={tallyShort(CARDS.rules)} />
             </div>
           </section>
@@ -158,7 +158,7 @@ export function PerformancePreview() {
         {sample !== 'empty' && (
           <section aria-labelledby="pv-performance" style={{ display: 'grid', gap: 16 }}>
             <h2 id="pv-performance" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Performance</h2>
-            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+            <div className="wr-perf-strip wr-perf-strip--2" style={{ marginBottom: 0 }}>
               <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(CARDS.failed / CARDS.calls)} sub={`${CARDS.failed} of ${CARDS.calls}`} />
               <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub="median time per call" />
             </div>

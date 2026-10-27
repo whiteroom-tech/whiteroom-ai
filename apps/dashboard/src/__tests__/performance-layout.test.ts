@@ -33,7 +33,7 @@ describe('Performance overview layout', () => {
   it('puts spend, savings, the hourly rate and smaller context under Cost, and rule activity under Control', () => {
     const html = view();
     const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
-    for (const label of ['Spend', 'Saved by WhiteRoom', 'Hourly', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    for (const label of ['Spend', 'Saved by WhiteRoom', 'Average per hour', 'Smaller context']) expect(cost).toContain(`>${label}<`);
     expect(cost).toContain('$0.912');
     const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
     expect(control).toContain('Rule activity');
@@ -49,7 +49,7 @@ describe('Performance overview layout', () => {
     // $2.40 over 24 hours is $0.100 an hour; the sub-line is the range when nothing makes it inexact.
     const exact = text(view({ ...DATA, summary: { ...DATA.summary, totalCost: 2_400_000 } }, 'last 24 hours'));
     expect(exact).toMatch(/Spend .*\$2\.40 last 24 hours/);
-    expect(exact).toMatch(/Hourly .*\$0\.100 spend per hour/);
+    expect(exact).toMatch(/Average per hour .*\$0\.100 over every hour shown/);
     expect(exact).toMatch(/Typical response .*1\.9s median time per call/);
     // Unpriced calls make both a lower bound ("+"), and the Spend sub-line says why.
     const partial = text(view({ ...DATA, summary: { ...DATA.summary, totalCost: 2_400_000, unpricedAttempts: 3 } }, 'last 24 hours'));
