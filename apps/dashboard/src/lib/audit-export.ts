@@ -63,6 +63,9 @@ export async function buildAuditExport(
   }
   if (!page) return null;
 
+  // The head the first page pinned: every later page must be for the same one.
+  const pinned = page.toSeq;
+  const pinnedFirst = page.firstSeq;
   const total = Math.max(0, page.toSeq - page.firstSeq + 1);
   const parts: BlobPart[] = [`{"format":"whiteroom-audit-export","version":1,"fleetId":${JSON.stringify(fleetId)},"events":[\n`];
   let done = 0;
@@ -82,13 +85,17 @@ export async function buildAuditExport(
     if (cancelled()) return null;
     // Each page must move forward within the pinned range, right after its last event, or this would never end.
     if (page.events.length === 0 || page.nextFromSeq !== expect || page.nextFromSeq > page.toSeq) throw new Error('The export stopped moving forward.');
-    page = await get({ fromSeq: page.nextFromSeq, toSeq: page.toSeq });
+    page = await get({ fromSeq: page.nextFromSeq, toSeq: pinned });
     if (!page) return null;
+    if (page.toSeq !== pinned || page.firstSeq !== pinnedFirst) throw new Error('The export changed part-way through.');
   }
   const m = page.manifest;
   if (!m) throw new Error('The export ended without its signature.');
   // What was collected must be exactly what WhiteRoom signed for.
-  if (done === 0 || m.firstSeq !== page.firstSeq || m.headSeq !== expect - 1 || m.headSeq !== page.toSeq || m.count !== done) {
+  // An empty history (count 0) is a signed, empty file. Today's engine answers
+  // 409 for a fleet with no stored events instead, which falls back above.
+  const empty = done === 0 && m.count === 0;
+  if (m.firstSeq !== page.firstSeq || m.headSeq !== pinned || m.count !== done || (!empty && m.headSeq !== expect - 1)) {
     throw new Error('The export doesn’t match its signature.');
   }
   parts.push(`\n],"manifest":${JSON.stringify(m, null, 2)}}\n`);
