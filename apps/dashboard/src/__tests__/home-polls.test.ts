@@ -162,8 +162,11 @@ describe('Home conditional polls', () => {
     busy.root.unmount();
   });
 
-  it('drops the flagged count when the engine stops flagging runs', async () => {
+  it('keeps the flagged count through a failed read, and drops it when the engine stops flagging runs', async () => {
     const m = await mount();
+    expect(m.text()).toContain('3 flagged runs today');
+    api.runs.mockRejectedValue(new Error('down'));
+    await m.advance(60_000);
     expect(m.text()).toContain('3 flagged runs today');
     api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1' }], total: 1, cursor: null });
     await m.advance(60_000);

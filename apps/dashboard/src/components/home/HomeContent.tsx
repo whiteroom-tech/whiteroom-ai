@@ -149,8 +149,9 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // Today's flagged runs, for the fact line; older engines don't flag runs.
   const { refresh: refreshFlagged } = usePoll(async (stale) => {
     const res = await listRuns(fleetId, { ...runsDays('today'), flagged: true, pageSize: 10 }, authKey).catch(() => null);
-    if (stale()) return;
-    setFlaggedToday(!res || 'unsupported' in res || ignoresFlagged(res.runs) ? null : res.total);
+    // A failed read keeps the last count; only an engine that can't flag runs clears it.
+    if (stale() || !res) return;
+    setFlaggedToday('unsupported' in res || ignoresFlagged(res.runs) ? null : res.total);
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
   // The last day with runs (up to 30 days back), for the quiet-day box: read only on a quiet day.
