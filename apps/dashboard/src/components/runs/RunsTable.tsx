@@ -346,7 +346,8 @@ export function RunsTable({ preview, retentionDays }: {
   const shown = preview && runs ? preview.list({ ...span, flagged: flaggedOnly, ruleActivity: rulesOnly, hour }) : runs;
 
   const pager = shown && (page > 0 || next) ? (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
+    // Its padding comes from the .wr-table__foot it sits in (here and in DataTable's footer).
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
       <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
       <span style={{ marginLeft: 'auto' }} />
       {page > 0 && <Button variant="ghost" size={28} onClick={() => setCursors((c) => c.slice(0, -1))}>&larr; Newer</Button>}
