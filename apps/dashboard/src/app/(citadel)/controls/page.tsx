@@ -7,11 +7,11 @@
 
 import { HistoryLine } from "./_components/HistoryLine";
 import { undoFor, type Undo } from "@/lib/rule-history";
-import { MODE_GROUP, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
+import { MODE_GROUP, MODE_LABEL, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Banner, Button, FONT_MONO, Panel, SelectChip, StatCard } from "@whiteroom/ui";
+import { Banner, Button, FONT_MONO, Panel, SelectChip, StatCard, Tag } from "@whiteroom/ui";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor } from "./_components/RuleEditor";
@@ -37,6 +37,7 @@ import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
   appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, emptyPick, isDirty, money, NO_ACTIONS, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
   type RuleDraft,
+  coverageGroups, stopping,
 } from "@/lib/controls-view";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
@@ -397,6 +398,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // ── What the page shows ─────────────────────────────────────────
   const shown = useMemo(() => rulesFor(rules, agentFilter), [rules, agentFilter]);
   const enforcing = byMode(shown, "enforce"), watching = byMode(shown, "watch"), off = byMode(shown, "off");
+  const groups = coverageGroups(shown);
+  const canStop = stopping(shown);
   const overlap = spendOverlap(shown);
   // Viewing one agent: that agent's rule actions, to match the rules shown.
   const counts = actions ? tallyFromRuleActions(agentFilter ? actions.byAgent[agentFilter] ?? NO_ACTIONS : actions.totals) : null;
@@ -417,11 +420,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       ? overlap!.never.mode === "watch"
         ? `Would never act: the ${money(overlap!.first.params as SpendCapParams)} cap would act first`
         : `Never acts: the ${money(overlap!.first.params as SpendCapParams)} cap acts first`
-      : rowStat(r, { byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null, agent: agentFilter });
+      : rowStat(r, { byRuleType: actions?.byRule, byRuleId: actions?.byRuleId, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null, agent: agentFilter });
     return (
       <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-current={r.id === selectedId || undefined}>
         <span style={{ minWidth: 0, flex: "1 1 320px" }}>
-          <span style={{ display: "block", fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>{RULE_LABELS[r.ruleType]}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>
+            {RULE_LABELS[r.ruleType]}
+            {r.mode !== "off" && <Tag tone={r.mode === "enforce" ? "block" : "muted"}>{MODE_LABEL[r.mode]}</Tag>}
+          </span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
         </span>
         <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
@@ -473,32 +479,45 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           {error && !selected && <Banner variant="error" actions={<Button variant="ghost" size={28} onClick={() => setError(null)}>Dismiss</Button>}>{error}</Banner>}
           {notice && !selected && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
 
-          {overlap && (
-            <Banner variant="warn" actions={<Button size={28} onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))}>Remove the {money(overlap.never.params as SpendCapParams)} cap</Button>}>
-              {overlap.never.mode === "watch"
-                ? <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap would never act. Both are in Record only, and the <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and would always act first.</>
-                : <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap will never act. The <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and always acts first.</>}
+          {loaded && shown.some((r) => r.mode !== "off") && canStop.length <= 1 && (
+            <Banner variant="warn">
+              {canStop.length === 0
+                ? <>No rule stops calls yet. Rules in Record only record what they would have done and let every call through.</>
+                : <>Only 1 rule can stop calls ({RULE_LABELS[canStop[0].ruleType]}). The rest record what they would have done and let calls through.</>}
             </Banner>
           )}
 
-          {suggestions.noCaching && (
-            <Banner variant="info" actions={<a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--secondary wr-btn--h28" style={{ textDecoration: "none" }}>How to turn on caching</a>}>
-              None of your fleet’s input is cached, so agents pay full price for repeated context. Not a rule: caching is turned on in your client.
-            </Banner>
-          )}
-          {allowlistSuggestion && (
-            <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>{!allowlistTarget ? "Add in Record only" : allowlistMissing.length ? "Add to your allowlist" : "Turn on in Record only"}</Button>}>
-              {allowlistTarget && !allowlistMissing.length
-                ? <>Your Model allowlist is Off. In Record only, it would have stopped 0 calls in the last 14 days.</>
-                : allowlistTarget
-                ? <>Your Model allowlist leaves out <span style={{ fontFamily: FONT_MONO }}>{allowlistMissing.join(", ")}</span>, which your fleet used in the last 14 days. With {allowlistMissing.length === 1 ? "it" : "them"} added, the allowlist would have stopped 0 calls.{allowlistTarget.mode === "off" ? " It goes to Record only." : ""}</>
-                : <>Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.</>}
-            </Banner>
+          {(overlap || suggestions.noCaching || allowlistSuggestion) && (
+            <section aria-labelledby="gov-suggestions" style={{ display: "grid", gap: 10 }}>
+              <h2 id="gov-suggestions" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Suggestions</h2>
+              {overlap && (
+                <Banner variant="warn" actions={<Button size={28} onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))}>Remove the {money(overlap.never.params as SpendCapParams)} cap</Button>}>
+                  {overlap.never.mode === "watch"
+                    ? <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap would never act. Both are in Record only, and the <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and would always act first.</>
+                    : <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap will never act. The <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and always acts first.</>}
+                </Banner>
+              )}
+
+              {suggestions.noCaching && (
+                <Banner variant="info" actions={<a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--secondary wr-btn--h28" style={{ textDecoration: "none" }}>How to turn on caching</a>}>
+                  None of your fleet’s input is cached, so agents pay full price for repeated context. Not a rule: caching is turned on in your client.
+                </Banner>
+              )}
+              {allowlistSuggestion && (
+                <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>{!allowlistTarget ? "Add in Record only" : allowlistMissing.length ? "Add to your allowlist" : "Turn on in Record only"}</Button>}>
+                  {allowlistTarget && !allowlistMissing.length
+                    ? <>Your Model allowlist is Off. In Record only, it would have stopped 0 calls in the last 14 days.</>
+                    : allowlistTarget
+                    ? <>Your Model allowlist leaves out <span style={{ fontFamily: FONT_MONO }}>{allowlistMissing.join(", ")}</span>, which your fleet used in the last 14 days. With {allowlistMissing.length === 1 ? "it" : "them"} added, the allowlist would have stopped 0 calls.{allowlistTarget.mode === "off" ? " It goes to Record only." : ""}</>
+                    : <>Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.</>}
+                </Banner>
+              )}
+            </section>
           )}
 
-          {group(MODE_GROUP.enforce, enforcing, "No rules are acting yet. Rules in Record only show what they would do first.")}
-          {group(MODE_GROUP.watch, watching, "No rules in Record only.")}
-          {group("Off", off, "No rules are off.", true)}
+          {group(agentFilter ? `Rules for all agents (including ${agentFilter})` : "Rules for all agents", groups.all, "No rules cover every agent.")}
+          {group(agentFilter ? `Rules just for ${agentFilter} (or a few agents)` : "Rules for specific agents", groups.some, "No rules for specific agents.")}
+          {group("Off", groups.off, "No rules are off.", true)}
 
           <p style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flex: "none" }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>

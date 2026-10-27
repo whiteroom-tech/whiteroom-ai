@@ -108,10 +108,16 @@ const choose = async (select: HTMLSelectElement, value: string) => {
 };
 
 describe('Controls page', () => {
-  it('reads each rule as a sentence, grouped by what it does now, with the cards and the overlap', async () => {
+  it('reads each rule as a sentence, grouped by who it covers, with the cards and the overlap', async () => {
     const m = await mount();
     const groups = [...m.el.querySelectorAll('.wr-panel__title')].map((t) => t.textContent);
-    expect(groups).toEqual(['Acting', 'Record only', 'Off']);
+    expect(groups).toEqual(['Rules for all agents', 'Rules for specific agents', 'Off']);
+    // Block rules come first in a group, with the one filled tag; Record only is plain.
+    const all = [...m.el.querySelectorAll('.wr-panel')].find((p) => p.querySelector('.wr-panel__title')?.textContent === 'Rules for all agents')!;
+    expect([...all.querySelectorAll('.gov-row .wr-tag')].map((t) => t.textContent)).toEqual(['Block', 'Record only', 'Record only']);
+    expect(all.querySelector('.wr-tag--block')?.textContent).toBe('Block');
+    // Two rules can stop calls, so there's no warning about it.
+    expect(m.text()).not.toContain('can stop calls');
     expect(m.text()).toContain('When an agent makes the same call 100 times in a run, block the call.');
     expect(m.text()).toContain('Only market-researcher');
     // Stat cards, as Performance counts rule actions.
@@ -124,6 +130,13 @@ describe('Controls page', () => {
     expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');
     expect(m.text()).toContain('Your $200 cap would never act. Both are in Record only');
     expect(m.text()).toContain('Pick a rule to change it');
+    m.root.unmount();
+  });
+
+  it('warns when at most one rule can actually stop calls', async () => {
+    api.saved.r5 = { ...RULES[4], mode: 'watch' };
+    const m = await mount();
+    expect(m.text()).toContain('Only 1 rule can stop calls (Loop breaker). The rest record what they would have done and let calls through.');
     m.root.unmount();
   });
 

@@ -209,3 +209,25 @@ describe('typed numbers, units and responses', () => {
     expect(appliesNow(['a', 'b'])).toBe('It applies to a, b, and takes effect now.');
   });
 });
+
+describe('groups and per-rule counts', async () => {
+  const { coverageGroups, stopping, rowStat } = await import('@/lib/controls-view');
+  it('groups by who a rule covers, Block first, Off apart; and counts what can stop calls', () => {
+    const a = rule({ id: 'a', mode: 'watch' }), b = rule({ id: 'b', mode: 'enforce' }), c = rule({ id: 'c', appliesTo: ['lead'], mode: 'enforce', response: 'notify' }), d = rule({ id: 'd', mode: 'off' });
+    const g = coverageGroups([a, b, c, d]);
+    expect(g.all.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(g.some.map((r) => r.id)).toEqual(['c']);
+    expect(g.off.map((r) => r.id)).toEqual(['d']);
+    // A "tell me" rule in Block doesn't stop anything.
+    expect(stopping([a, b, c, d]).map((r) => r.id)).toEqual(['b']);
+  });
+
+  it('gives each rule its own count when the engine sends counts per rule, even with two of a type', () => {
+    const one = rule({ id: 'gr_1', mode: 'enforce' });
+    const counts = { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
+    expect(rowStat(one, { byRuleId: { gr_1: counts }, onlyOfItsType: false })).toBe('4 blocked · last 7 days');
+    expect(rowStat(rule({ id: 'gr_2', mode: 'enforce' }), { byRuleId: { gr_1: counts }, onlyOfItsType: false })).toBe('0 blocked · last 7 days');
+    // Without per-rule counts, two of a type can't be told apart: no number.
+    expect(rowStat(one, { byRuleType: { spend_cap: counts }, onlyOfItsType: false })).toBe('');
+  });
+});

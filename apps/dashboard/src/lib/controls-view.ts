@@ -170,6 +170,8 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
 export function rowStat(rule: GovernanceRule, ctx: {
   /** The engine's rule_actions byRule (keyed by rule type). */
   byRuleType?: Record<string, RuleActionCounts>;
+  /** Per rule id (engine E1a): each rule's own count, even with two of a type. */
+  byRuleId?: Record<string, RuleActionCounts>;
   onlyOfItsType: boolean;
   /** unversioned: the engine's count may include events from before the rule's last change. */
   wouldAct?: { byAgent: Record<string, number>; unversioned?: boolean } | null;
@@ -182,8 +184,11 @@ export function rowStat(rule: GovernanceRule, ctx: {
   if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
-    // byRule lists only rule types that acted: a missing type acted 0 times.
-    const c = ctx.onlyOfItsType && justThem && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
+    // Per rule id when the engine sends it; else per type, only when it's the one rule of its type.
+    // Both list only what acted: a missing one acted 0 times.
+    const c = !justThem ? undefined
+      : ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS
+      : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
     return c ? `${fmt(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
   }
   if (rule.mode === 'watch') {
@@ -347,3 +352,21 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get told, or block the call, when words you pick show up.', isNew: true },
 ];
+
+// ── Groups: who a rule covers ───────────────────────────────────────
+
+/** Controls groups rules by who they cover; Off is apart. Within a group, Block (enforce) first. */
+export function coverageGroups(rules: GovernanceRule[]): { all: GovernanceRule[]; some: GovernanceRule[]; off: GovernanceRule[] } {
+  const on = rules.filter((r) => r.mode !== 'off');
+  const blockFirst = (list: GovernanceRule[]) => [...list].sort((a, b) => (a.mode === 'enforce' ? 0 : 1) - (b.mode === 'enforce' ? 0 : 1));
+  return {
+    all: blockFirst(on.filter((r) => r.appliesTo === 'all')),
+    some: blockFirst(on.filter((r) => r.appliesTo !== 'all')),
+    off: rules.filter((r) => r.mode === 'off'),
+  };
+}
+
+/** Rules that can stop a call or an agent now: Block mode with a response other than "tell me", that has something to act on. */
+export function stopping(rules: GovernanceRule[]): GovernanceRule[] {
+  return rules.filter((r) => r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r));
+}
