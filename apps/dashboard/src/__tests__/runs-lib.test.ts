@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, fmtClockLength, spanLabel, exportDays, runName, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, fmtClockLength, spanLabel, exportDays, runName, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 
@@ -166,6 +166,17 @@ describe('run detail rows', () => {
     expect(ruleActivityFooter([a, { ...a, mode: 'enforce' }])).toBe('Record only rules let their calls through; rules set to Block acted.');
     expect(ruleActivityLink([a, a])).toEqual({ href: '/controls?rule=gr_1', text: 'Open Model allowlist in Controls' });
     expect(ruleActivityLink([a, { ...a, ruleId: 'gr_2' }]).href).toBe('/controls');
+  });
+  it('collects a run’s events page by page, and stops at the cap', async () => {
+    const get = vi.fn(async (cursor: string | null) => ({ fleetId: 'f', run: { runId: 'a~1', agentId: 'a', shift: 1, startedAt: '', endedAt: '' }, events: [{ id: `e${cursor ?? 0}`, kind: 'event' as const, at: '', type: 'x' }], page: Number(cursor ?? 0), pages: 3, total: 3, eventFound: null }));
+    expect((await collectRunEvents(get)).map((e) => e.id)).toEqual(['e0', 'e1', 'e2']);
+    expect(get.mock.calls.map((c) => c[0])).toEqual([null, '1', '2']);
+    expect(await collectRunEvents(get, 2)).toHaveLength(2);
+  });
+  it('never says blocked for a rule outcome it doesn’t know, and marks only real finish events', () => {
+    const odd = timelineRow({ id: 'c', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'r', ruleType: 'keyword', mode: 'enforce', response: 'redact', outcome: 'redacted' as never, reason: 'keyword_found' }] });
+    expect(odd.rule?.text).toBe('a rule acted: a keyword was found');
+    expect(timelineRow({ id: 'e', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'subtask_complete', detail: { agentId: 'a' } }).glyph).toBe('event');
   });
   it('exports a run as its summary and every row', () => {
     const head = { runId: 'a~4', agentId: 'a', shift: 4, startedAt: '2026-10-25T00:45:00Z', endedAt: '2026-10-25T00:45:24Z', calls: 1, models: ['m1'] };

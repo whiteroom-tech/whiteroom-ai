@@ -87,10 +87,12 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   }, [kind, cursor, refresh]);
 
   // The totals fallback: the run's row in list_runs for the day it started, looked up
-  // once per run (polls don't repeat it), reading that agent's day a few pages deep.
+  // once per run and size (polls that bring nothing new don't repeat it), reading that
+  // agent's day a few pages deep.
   const run = data?.run;
   const needTotals = !!run && run.calls === undefined && !preview;
-  const lookupKey = needTotals && run ? `${run.runId}|${run.startedAt}` : null;
+  // Its last call's end is in the key, so a run still going is looked up again as it grows.
+  const lookupKey = needTotals && run ? `${run.runId}|${run.startedAt}|${run.endedAt}` : null;
   const lookedUp = useRef<string | null>(null);
   useEffect(() => {
     if (!lookupKey || !run || lookedUp.current === lookupKey) return;

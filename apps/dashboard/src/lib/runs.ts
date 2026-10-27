@@ -339,11 +339,11 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
   const [a, ...more] = e.ruleActions ?? [];
   if (!a) return undefined;
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
-  return { text: `${CALL_OUTCOME_TEXT[a.outcome] ?? 'blocked'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
+  return { text: `${CALL_OUTCOME_TEXT[a.outcome] ?? 'a rule acted'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
 }
 
 const START_EVENT = /^(watch_start|run_started)$/;
-const DONE_EVENT = /(watch_end|run_ended|run_finished|task_complete)$/;
+const DONE_EVENT = /^(watch_end|run_ended|run_finished|task_complete)$/;
 
 /**
  * One row of What happened. Calls say what the agent called and which tools

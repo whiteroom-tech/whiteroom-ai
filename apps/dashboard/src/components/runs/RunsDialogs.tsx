@@ -152,7 +152,9 @@ export function auditCheckText(r: VerifyAuditResult, info: AuditIntegrity | null
   const through = head ? `Verified through event ${fmtCount(info!.verifiedThroughSeq || r.eventsVerified)} of ${fmtCount(head)}.` : `${fmtCount(r.eventsVerified)} events verified.`;
   const before = info && (info.prunedBeforeTracking || info.legacyEvents > 0) ? ' Events before tracking started aren’t covered.' : '';
   const gaps = info && info.gaps.count > 0 ? ` ${info.gaps.count} recorded ${info.gaps.count === 1 ? 'gap' : 'gaps'} where events may be missing.` : '';
-  if (r.valid === true) return { tone: gaps ? 'neutral' : 'ok', title: gaps ? 'Nothing changed' : 'Nothing changed or missing', detail: `${through}${before}${gaps}` };
   if (r.valid === false) return { tone: 'bad', title: 'A problem was found', detail: r.message };
+  // Green only for a whole check whose coverage is known: a partial one, or one whose extent couldn't be read, says less.
+  if (r.valid === true && r.complete !== false && info) return { tone: gaps ? 'neutral' : 'ok', title: gaps ? 'Nothing changed' : 'Nothing changed or missing', detail: `${through}${before}${gaps}` };
+  if (r.valid === true && r.complete !== false) return { tone: 'neutral', title: 'Nothing changed in the events checked', detail: `${through} How much of the trail that covers couldn’t be read just now.` };
   return { tone: 'neutral', title: 'Checked part of the trail', detail: `${fmtCount(r.eventsVerified)} events checked so far. Open this again to continue.` };
 }
