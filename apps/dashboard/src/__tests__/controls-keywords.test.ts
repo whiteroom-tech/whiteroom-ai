@@ -87,7 +87,7 @@ describe('blocking incoming data needs a day in Watch and a typed confirmation',
     expect(keywordBlockCheck(kw({ mode: 'enforce', response: 'notify' }), { response: 'block' }, added(1), NOW).kind).toBe('blocked');
   });
 
-  it('says when no one will be told: Pause, Stop and Block with an alert send one, in Enforce', () => {
+  it('says when no one will get the alert: Pause, Stop and Block with an alert send one, in Enforce', () => {
     const d = draftFrom(kw({ mode: 'enforce' }));
     expect(sendsAlert(d)).toBe(false);
     expect(sendsAlert({ ...d, alsoNotify: true })).toBe(true);

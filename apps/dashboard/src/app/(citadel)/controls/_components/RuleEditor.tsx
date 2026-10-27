@@ -210,7 +210,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         </p>
         {alerts && alertChannel === false && (
           <p style={{ ...help, color: 'var(--warn-tx)' }}>
-            No alert channel is connected, so no one will be told. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
+            No alert channel is connected, so no one will get the alert. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
           </p>
         )}
         {draft.response === 'block' && (

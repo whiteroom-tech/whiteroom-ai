@@ -134,7 +134,7 @@ describe('what the agent gets', () => {
     expect(agentGets(rule({}))).toBe('403 governance_block\nresponse: block\nreason: budget_exceeded\nretryable: false\nresets: next day (00:00 UTC)');
     expect(agentGets(rule({ ruleType: 'call_rate', params: { maxCalls: 60 } }))).toMatch(/retryable: true\nresets: once the last minute is back under the limit$/);
     expect(agentGets(rule({ response: 'stop' }))).toMatch(/retryable: false\nresets: when someone resumes it$/);
-    expect(agentGets(rule({ response: 'notify' }))).toBe('Nothing: the call goes through.\nYou get told; the agent doesn’t.');
+    expect(agentGets(rule({ response: 'notify' }))).toBe('Nothing: the call goes through.\nYou get an alert; the agent doesn’t.');
   });
 });
 

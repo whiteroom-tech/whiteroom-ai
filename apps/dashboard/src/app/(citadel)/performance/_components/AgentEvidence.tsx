@@ -75,7 +75,9 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
   async function exportBrief(mode: 'copy' | 'download') {
     if (!fleetId || !recommendationId) return;
     setBriefLoading(true);
+    // A new try starts clean: no note, and no "Copied" left from the last one.
     setBriefError(null);
+    setBriefCopied(false);
     try {
       const result = await performanceRecommendationExport(fleetId, recommendationId, 'markdown', authKey);
       if (!('markdown' in result) || !result.markdown) throw new Error('no brief');
@@ -91,6 +93,7 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
         URL.revokeObjectURL(url);
       }
     } catch {
+      setBriefCopied(false);
       setBriefError(mode === 'copy' ? 'Couldn’t copy the brief. Try again.' : 'Couldn’t download the brief. Try again.');
     } finally { setBriefLoading(false); }
   }
