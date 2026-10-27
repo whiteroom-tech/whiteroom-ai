@@ -1351,6 +1351,42 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('Undo of an added rule says it’s gone when the fresh read no longer lists it', async () => {
+    api.models = ['gpt-4o'];
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => {
+      const rule = { ...base, id: 'a1', response: 'block', appliesTo: 'all', ...r } as GovernanceRule;
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add allowlist…'));
+    await m.click(m.button('Add in Record only'));
+    // A teammate removes it after the page last loaded: only the engine knows.
+    api.created = [];
+    await m.click(m.button('Undo'));
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('That rule isn’t here any more, so there’s nothing to undo.');
+    m.root.unmount();
+  });
+
+  it('Undo of an added rule deletes nothing when the fresh read fails', async () => {
+    api.models = ['gpt-4o'];
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => {
+      const rule = { ...base, id: 'a1', response: 'block', appliesTo: 'all', ...r } as GovernanceRule;
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add allowlist…'));
+    await m.click(m.button('Add in Record only'));
+    api.listFail = true;
+    await m.click(m.button('Undo'));
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(m.text()).not.toContain('Change undone.');
+    expect(m.text()).toContain('Couldn’t');
+    m.root.unmount();
+  });
+
   it('a refused allowlist suggestion says so and leaves the open allowlist open', async () => {
     api.models = ['gpt-4o'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
