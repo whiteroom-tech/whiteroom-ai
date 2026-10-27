@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AgentHealth, Row } from '@/components/performance/AgentHealth';
+import { AgentHealth, UnusualRow as Row } from '@/components/performance/AgentHealth';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
 import type { FlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import type { DiagnosisFinding, FleetDiagnosis, RecommendationDetail } from '@/lib/whiteroom/types';
@@ -19,22 +19,23 @@ const line = { text: 'Checked 2 hours ago · 1 agent', action: { label: 'Check n
 const noop = () => {};
 
 describe('Agent health, rendered', () => {
-  it('a quiet week: fine, Unusual behaviour is a plain line, Health check folds out closed', () => {
+  it('a quiet week: no issues in N checks, Unusual behaviour is a plain line, Health checks fold out closed', () => {
     const html = renderToStaticMarkup(h(AgentHealth, { flagged: flags([]), diagnosis: diag([]), line, onCheck: noop, onReview: noop }));
-    expect(html).toContain('Your agents look fine');
-    expect(html).toContain('Nothing unusual this week');
-    expect(html).not.toMatch(/<details[^>]*>\s*<summary>[\s\S]*?Unusual behaviour/);
-    expect(html).toMatch(/<details class="wr-health__row">/);
-    expect(html).not.toContain('<details open');
+    expect(html).toContain('No issues in 1 check');
+    expect(html).toContain('Nothing unusual in the last 7 days');
+    expect(html).not.toContain('<details');
+    expect(html).toMatch(/aria-expanded="false"[^>]*>[\s\S]*?Health checks/);
+    expect(html).toContain('1 passed');
     expect(html).toContain('Check now');
   });
 
-  it('a problem week: both rows start open, the problem has See the fix', () => {
+  it('a problem week: the headline counts the problem, flagged runs fold open, checks grouped by check start open', () => {
     const runs = [{ agentId: 'lead-agent', startedAt: '2026-10-21T12:00:00', flags: [{ signal: 'repeating_call', tool: 't', calls: 5 }] }] as FlaggedRuns['runs'];
     const html = renderToStaticMarkup(h(AgentHealth, { flagged: flags(runs), diagnosis: diag([finding]), line, onCheck: noop, onReview: noop }));
-    expect(html).toContain('lead-agent needs a look');
-    expect(html.match(/<details open=""/g)).toHaveLength(2);
-    expect(html).toContain('Runs fill up too fast');
+    expect(html).toContain('1 problem in 2 checks');
+    expect(html.match(/<details open=""/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-expanded="true"[^>]*>[\s\S]*?Health checks/);
+    expect(html).toContain('Starting over too often');
     expect(html).toContain('See the fix');
     expect(html).toContain('1 problem · 1 passed');
   });
@@ -44,16 +45,16 @@ describe('Agent health, rendered', () => {
   });
 });
 
-describe('fold-out row, rendered', () => {
+describe('Unusual behaviour row, rendered', () => {
   const row = { tone: 'ok' as const, text: 'All good' };
   it('with no detail it is a plain line, not a disclosure', () => {
-    const html = renderToStaticMarkup(h(Row, { label: 'Health check', row, open: true }));
+    const html = renderToStaticMarkup(h(Row, { row, open: true }));
     expect(html).toContain('wr-health__row--plain');
     expect(html).not.toContain('<details');
   });
   it('with detail it follows its default', () => {
-    expect(renderToStaticMarkup(h(Row, { label: 'L', row, open: true }, h('p', null, 'detail')))).toContain('<details open=""');
-    expect(renderToStaticMarkup(h(Row, { label: 'L', row, open: false }, h('p', null, 'detail')))).not.toContain('<details open');
+    expect(renderToStaticMarkup(h(Row, { row, open: true }, h('p', null, 'detail')))).toContain('<details open=""');
+    expect(renderToStaticMarkup(h(Row, { row, open: false }, h('p', null, 'detail')))).not.toContain('<details open');
   });
 });
 
@@ -66,23 +67,23 @@ describe('Recommendations, rendered', () => {
   };
   it('opens on Open: count says "open", status filters hidden behind a link, no agent filter for one agent', () => {
     const html = renderToStaticMarkup(h(RecommendationsCard, props));
-    expect(html).toContain('1</span> open');
-    expect(html).toContain('Show closed and other statuses');
+    expect(html).toContain('>1 open<');
+    expect(html).toContain('Show past recommendations');
     expect(html).not.toContain('Show recommendations by status');
     expect(html).not.toContain('Filter by agent');
   });
-  it('older rows: a title from the detector, View evidence and More, no "none" badge', () => {
+  it('older rows: a title from the detector, See why and Options, no "none" badge', () => {
     const html = renderToStaticMarkup(h(RecommendationsCard, props));
     expect(html).toContain('Cache behavior');
-    expect(html).toContain('View evidence');
-    expect(html).toContain('>More<');
+    expect(html).toContain('See why');
+    expect(html).toContain('>Options<');
     expect(html).not.toContain('Mark as fixed');
     expect(html).not.toMatch(/>none</);
   });
   it('a row with no current finding offers no feedback, and says why, so nothing doomed is sent', () => {
     const html = renderToStaticMarkup(h(RecommendationsCard, { ...props, recs: [{ ...rec, currentFindingId: null }] }));
-    expect(html).toContain('View evidence');
-    expect(html).not.toContain('>More<');
+    expect(html).toContain('See why');
+    expect(html).not.toContain('>Options<');
     expect(html).toContain('Can’t be marked yet: there’s no current evidence for it.');
     // A closed row has nothing to mark anyway: no note.
     expect(renderToStaticMarkup(h(RecommendationsCard, { ...props, status: 'all', recs: [{ ...rec, status: 'dismissed', currentFindingId: null }] }))).not.toContain('Can’t be marked yet');
@@ -90,7 +91,7 @@ describe('Recommendations, rendered', () => {
   it('after "Show closed…": the status filters show and the link goes', () => {
     const html = renderToStaticMarkup(h(RecommendationsCard, { ...props, status: 'all', showStatuses: true }));
     expect(html).toContain('Show recommendations by status');
-    expect(html).not.toContain('Show closed and other statuses');
+    expect(html).not.toContain('Show past recommendations');
   });
   it('an empty filtered list says so, not "nothing to review"', () => {
     const html = renderToStaticMarkup(h(RecommendationsCard, { ...props, recs: [], total: 0, filtered: true, showAgentFilter: true, agentFilter: 'x' }));

@@ -273,9 +273,23 @@ export interface PerformanceIndexResult {
     /** Prompt caching over the window, priced per model (absent on older engines). */
     cache?: CacheSummary;
   };
+  /** The same totals over the window of the same length just before this one (absent on older engines). */
+  previous?: PerformanceWindowTotals;
   recommendations: PerformanceRecommendation[];
   priceInfo: { version: string; ageDays: number; stale: boolean; expired: boolean };
   error?: string;
+}
+
+/** engine performance_index.previous: the "vs prior period" figures. */
+export interface PerformanceWindowTotals {
+  period: { start: string; end: string };
+  totalCalls: number;
+  /** Micros, as summary.totalCost. */
+  totalCost: number;
+  pricedAttempts: number;
+  unpricedAttempts: number;
+  /** Median response time (ms); null without calls. */
+  avgLatencyMs: number | null;
 }
 
 export interface HourlyDataPoint {
@@ -521,22 +535,42 @@ export interface CacheSummary {
   agentSavedMicros?: number;
 }
 
-/** One agent's daily budget against its spend today (a planning figure, never a limit). */
+/** Why an agent has no tasks-left figure (engine PR 297), checked in this order. */
+export type TasksLeftReason = 'no_task_type' | 'not_enough_tasks' | 'no_budget' | 'partial_coverage';
+
+/** One agent's daily budget against its spend today, and its cost prediction (a planning figure, never a limit). */
 export interface AgentBudgetForecast {
   agentId: string;
-  budgetUsd: number;
+  /** Null for an agent without a budget (listed when all agents are asked for). */
+  budgetUsd: number | null;
+  /** Optional daily token budget beside the dollar one; absent on older engines. */
+  budgetTokens?: number | null;
   spentTodayUsd: number;
+  tokensToday?: number;
   /** Spend per working hour over the last 14 days; null without priced calls. Not shown; newer engines leave it out. */
   burnRateUsdPerHour?: number | null;
   /** Calls the rest of today's budget covers at the agent's own average cost per call. */
   callsLeft: number | null;
-  callsLeftReason: 'available' | 'no_history' | 'partial_coverage';
+  callsLeftReason: 'available' | 'no_history' | 'partial_coverage' | 'no_budget';
+  /** The rest is the cost prediction (engine PR 297); all absent on older engines. */
+  taskType?: string | null;
+  /** Average cost and tokens of one predicted unit (see AgentBudgetsResult.unit); null without priced calls. */
+  costPerTaskUsd?: number | null;
+  tokensPerTask?: number | null;
+  /** Units left today: whichever of the dollar and token budgets runs out first. */
+  tasksLeft?: number | null;
+  limitedBy?: 'usd' | 'tokens' | null;
+  tasksLeftReason?: TasksLeftReason | null;
 }
 
 export interface AgentBudgetsResult {
   fleetId: string;
   budgetPeriod: 'day';
   budgetTimeZone: string;
+  /** What one predicted "task" is: "call" today. Absent on engines without the per-agent prediction. */
+  unit?: string;
+  /** How far back the per-unit averages look, in hours. */
+  rateLookbackHours?: number;
   agents: AgentBudgetForecast[];
 }
 
@@ -814,6 +848,8 @@ export interface AuditSummaryResult {
   savings?: SavingsTotals;
   /** Each agent's smaller-context savings at its own price, lower-cased ids (engine E1b; absent on older engines). */
   savingsByAgent?: Record<string, { tokens: number; usdMicros: number | null }>;
+  /** The same savings per local day, oldest first, adding up to `savings` (absent on older engines). */
+  savingsByDay?: Array<{ day: string; tokens: number; usdMicros: number; unpricedTokens: number }>;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 

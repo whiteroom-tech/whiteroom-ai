@@ -2,53 +2,15 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { performanceRecommendationExport, performanceRecommendationGet } from '@/lib/whiteroom/client';
-import { fmtCost, fmtDay, fmtTokens, plural } from '@/lib/format';
-import type { AgentPerformanceResult, PerformanceEvidenceResult, RecommendationGetResult, DiagnosisDetectorId } from '@/lib/whiteroom/types';
+import { fmtDay, plural } from '@/lib/format';
+import type { PerformanceEvidenceResult, RecommendationGetResult, DiagnosisDetectorId } from '@/lib/whiteroom/types';
 import { FONT_MONO } from '@whiteroom/ui';
 import { Badge, CARD, H3 } from './primitives';
 import { DiagnosisEvidence } from './Diagnosis';
 import { isDiagnosisDetector, limitationText, TITLES } from '@/lib/diagnosis/copy';
-import { useTableSort, sortRows, ariaSort, sortArrow, fmtLatency, fmtPct, MetricCard } from './perf-utils';
+import { useTableSort, sortRows, ariaSort, sortArrow, MetricCard } from './perf-utils';
 import { saveBlob } from '@/lib/download';
 
-
-export function AgentView({ data }: { data: AgentPerformanceResult }) {
-  const t = data.totals;
-  const maxCalls = useMemo(() => Math.max(...data.hourly.map(x => x.calls), 1), [data.hourly]);
-  return (
-    <>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <MetricCard label="Model calls" value={t.calls.toLocaleString()} />
-        <MetricCard label="Spend" value={fmtCost(t.costMicros)} />
-        <MetricCard label="Typical response" value={fmtLatency(t.avgLatencyMs)} />
-        <MetricCard label="Failed calls" value={fmtPct(t.errorRate)} warn={t.errorRate > 0.05} />
-        {t.blockedCount !== undefined && <MetricCard label="Refused by rules" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Calls Controls rules refused" />}
-      </div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <MetricCard label="Input tokens" value={fmtTokens(t.inputTokens)} />
-        <MetricCard label="Output tokens" value={fmtTokens(t.outputTokens)} />
-        <MetricCard label="Cache read" value={fmtTokens(t.cacheReadTokens)} sub={t.inputTokens > 0 ? `${Math.round((t.cacheReadTokens / t.inputTokens) * 100)}% of input` : ''} />
-        <MetricCard label="Cache write" value={fmtTokens(t.cacheWriteTokens)} />
-      </div>
-      {data.hourly.length > 0 && (
-        <div style={CARD}>
-          <h3 style={H3}>Hourly activity</h3>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 120 }}>
-            {data.hourly.map((h, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', height: '100%' }}>
-                <div style={{ width: '100%', maxWidth: 24, height: `${Math.max(2, (h.calls / maxCalls) * 100)}%`, background: h.errorCount > 0 ? 'var(--warn)' : 'var(--brand)', borderRadius: '3px 3px 0 0', opacity: 0.8 }} title={`${h.calls} calls, ${h.errorCount} errors\n${new Date(h.hour).toLocaleString()}`} />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
-            <span>{new Date(data.hourly[0].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            <span>{new Date(data.hourly[data.hourly.length - 1].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
 
 export function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: PerformanceEvidenceResult; fleetId?: string | null; recommendationId?: string | null; authKey?: string }) {
   const [briefLoading, setBriefLoading] = useState(false);

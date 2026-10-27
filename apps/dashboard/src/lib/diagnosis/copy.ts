@@ -22,7 +22,7 @@ export function isDiagnosisDetector(detector: string): detector is DiagnosisDete
 }
 
 export const TITLES: Record<DiagnosisDetectorId, string> = {
-  review_handover_churn: 'Runs fill up too fast',
+  review_handover_churn: 'Starting over too often',
   review_tool_loops: 'Repeating the same call',
   review_spend_outliers: 'Unusually expensive days',
   review_tool_errors: 'A tool keeps failing',

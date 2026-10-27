@@ -2,9 +2,24 @@
 // the page shows it at once while a fresh copy loads (instead of a loading line
 // on every visit). Memory only: it lasts until the tab reloads, and never
 // outlives the figures' own refresh, which always runs.
-import type { PerformanceIndexResult, FleetHourlyResult } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, FleetHourlyResult, GovernanceRule, RuleActionCounts } from '@/lib/whiteroom/types';
 import type { DaySavings, GovSavings } from '@/lib/analytics-metrics';
 import type { GovernanceCounts } from '@/lib/governance';
+
+/** The overview's figures beyond the index and audit reads; each null (or undefined) when unknown. */
+export interface OverviewExtras {
+  /** Hourly cost: the fleet's spend per working hour. */
+  workingHour: { usdPerHour: number; lookbackHours: number | null } | null;
+  rules: GovernanceRule[] | null;
+  /** Rule activity per rule id (engine rule_actions, newer engines). */
+  byRuleId: Record<string, RuleActionCounts> | undefined;
+  /** Tokens used in the range, for "about N% less". */
+  rangeUsedTokens: number | null;
+  /** Dollars saved per local day, micros (engine savingsByDay). */
+  usdByDay: Record<string, number> | null;
+}
+
+export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, rangeUsedTokens: null, usdByDay: null };
 
 export interface PerformanceSnapshot {
   indexData: PerformanceIndexResult;
@@ -16,6 +31,8 @@ export interface PerformanceSnapshot {
   agentIds: string[] | null;
   auditFailed: boolean;
   loadedAt: number;
+  /** Absent from snapshots saved before these figures. */
+  extras?: OverviewExtras;
 }
 
 // A few fleets × three ranges is plenty; the oldest entry goes first.

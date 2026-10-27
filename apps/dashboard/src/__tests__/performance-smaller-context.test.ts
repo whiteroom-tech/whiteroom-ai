@@ -16,7 +16,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 }));
 vi.mock('@/lib/diagnosis/useDiagnosis', () => ({ useDiagnosis: () => ({ data: null, run: null, justRan: false, checkNow: async () => false }) }));
 vi.mock('@/components/performance/UnusualBehaviour', async (orig) => ({ ...(await orig<typeof import('@/components/performance/UnusualBehaviour')>()), useFlaggedRuns: () => ({ runs: [], truncated: false, failed: false, loading: false, days: [] }) }));
-vi.mock('@/app/(citadel)/performance/_components/CostTracking', () => ({ CostTrackingSection: () => null }));
+vi.mock('@/app/(citadel)/performance/_components/CostPrediction', () => ({ CostPredictionSection: () => null }));
 
 const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
 const DATA = { fleetId: 'f1', period: { start: '2026-10-26T00:00:00Z', end: '2026-10-27T00:00:00Z' }, summary: { totalCalls: 1, totalCost: 0, avgLatencyMs: 1, errorRate: 0, models: [] }, recommendations: [], priceInfo: { version: '1', ageDays: 1, stale: false, expired: false } };

@@ -235,7 +235,7 @@ describe('health check rows', () => {
       { tone: 'problem', title: 'A tool keeps failing' },
       { tone: 'fine', title: 'Repeating the same call' },
       { tone: 'waiting', title: 'Unusually expensive days', note: 'starts in about 8 days' },
-      { tone: 'set-aside', title: 'Runs fill up too fast', note: 'snoozed' },
+      { tone: 'set-aside', title: 'Starting over too often', note: 'snoozed' },
     ] }]);
     // Each set-aside status by its own name.
     expect(['snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating'].map(setAsideLabel)).toEqual(['snoozed', 'dismissed', 'marked fixed', 'stopped happening', 'evaluating']);

@@ -1,119 +1,99 @@
 'use client';
 
-import { useState } from 'react';
-import { Hint, Panel, FONT_MONO } from '@whiteroom/ui';
+import { useId, useState } from 'react';
 import type { DaySavings } from '@/lib/analytics-metrics';
-import { fmtEnergy, fmtTokens } from '@/lib/format';
-import { HELP } from '@/lib/metric-definitions';
+import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
+import { fewerTokens, tokenTotals } from '@/lib/performance-overview';
+import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 
-const PLOT_H = 120;
-
-/**
- * The Savings card's caption, describing the same total as its value: tokens
- * shorter handovers didn't spend, plus prompt-cache reads billed at a discount.
- */
-export function savingsCaption(handoverTokens: number, cacheMicros: number): string {
-  const parts = [
-    handoverTokens > 0 ? `${fmtTokens(handoverTokens)} tokens not spent` : null,
-    cacheMicros > 0 ? 'cache reads' : null,
-  ].filter(Boolean);
-  return parts.length ? `${parts.join(' + ')}, estimated` : 'nothing saved in this range';
-}
-
-/** Round a max up to a tidy axis top, so the tallest bar fills most of the plot. */
-export function axisTop(max: number): number {
-  if (max <= 0) return 1;
-  const p = 10 ** Math.floor(Math.log10(max));
-  return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((v) => v >= max) ?? 10 * p;
-}
-
-/** A tick's label, naming the exact value at that tick ("12.5K", "1.25M"), not a rounded neighbour. */
-export function axisLabel(n: number): string {
-  if (n < 1000) return String(n);
-  return n < 1_000_000 ? `${Number((n / 1000).toFixed(2))}K` : `${Number((n / 1_000_000).toFixed(2))}M`;
-}
+const PLOT_H = 100;
 
 function weekday(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 }
+function weekdayLong(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
+}
 
 /**
- * Savings (README › Performance): tokens with WhiteRoom against the ceiling
- * without it, for each of the last 7 days. Always 7 days, whatever the page
- * range; the header says so.
+ * Tokens: with WhiteRoom vs without. Two total bars and the difference in
+ * words; the same per day, with what each day saved, folds out under By day. Always the last 7 days,
+ * whatever the page range; the header says so. `usdByDay` (engine
+ * savingsByDay, absent on older engines) adds each day's dollars to its label.
  */
-export function SavingsChart({ days }: { days: DaySavings[] }) {
-  const [focus, setFocus] = useState<string | null>(null);
-  const top = axisTop(Math.max(...days.map((d) => d.used + d.saved), 0));
-  const h = (n: number) => Math.max(n > 0 ? 2 : 0, Math.round((n / top) * PLOT_H));
-  const empty = days.every((d) => d.used === 0 && d.saved === 0);
-  const shown = days.find((d) => d.day === focus);
-  const energy = fmtEnergy(days.reduce((n, d) => n + d.saved, 0));
+export function TokensCompare({ days, usdByDay, defaultOpen = false }: { days: DaySavings[]; usdByDay?: Record<string, number> | null; defaultOpen?: boolean }) {
+  const [byDay, setByDay] = useState(defaultOpen);
+  const byDayId = useId();
+  const { used, without, saved } = tokenTotals(days);
+  const energy = fmtEnergy(saved);
+  const empty = without === 0;
+  const max = Math.max(...days.map((d) => d.used + d.saved), 0);
+  const h = (n: number) => (n > 0 ? Math.max(3, Math.round((n / max) * PLOT_H)) : 0);
+  const fewer = fewerTokens(saved, used);
+  const dayWords = days.map((d) => d.used + d.saved > 0
+    ? `${weekdayLong(d.day)}: ${fmtTokens(d.used + d.saved)} without, ${fmtTokens(d.used)} with`
+    : `${weekdayLong(d.day)}: no calls`).join('. ');
 
   return (
-    <Panel title={<>Savings<Hint text={HELP.savingsChart} /></>} count={energy ? `last 7 days · ${energy} saved` : 'last 7 days'}>
+    <div className="wr-pcard wr-tokens" style={{ marginBottom: 16, overflow: 'hidden' }}>
+      <div className="wr-tokens__head">
+        <div style={{ minWidth: 0 }}>
+          <h3 className="wr-pcard__title">Tokens: with WhiteRoom vs without</h3>
+          <p className="wr-cap" style={{ margin: '2px 0 0' }}>What your agents sent to the models, compared with what they would have sent without WhiteRoom.</p>
+        </div>
+        <span className="wr-cap wr-tokens__meta">last 7 days{energy ? ` · ${energy} saved` : ''}</span>
+      </div>
       {empty ? (
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No model calls in the last 7 days.</p>
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls in the last 7 days.</p>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8 }}>
-            <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-              {[top, top / 2, 0].map((v, i) => (
-                <span key={i} style={{ position: 'absolute', right: 0, top: `${(i / 2) * 100}%`, transform: 'translateY(-50%)' }}>{axisLabel(v)}</span>
-              ))}
-            </div>
-            <div style={{ position: 'relative' }}>
-              <div aria-hidden="true" style={{ position: 'absolute', inset: `0 0 auto 0`, height: PLOT_H }}>
-                {[0, 0.5, 1].map((f) => (
-                  <div key={f} style={{ position: 'absolute', left: 0, right: 0, top: `${f * 100}%`, borderTop: '1px dashed var(--line)' }} />
-                ))}
-              </div>
-              <div role="list" aria-label="Tokens per day, last 7 days" style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, gap: 6 }}>
-                {days.map((d) => {
-                  const without = d.used + d.saved;
-                  const label = `${weekday(d.day)}: ${fmtTokens(d.used)} tokens with WhiteRoom, est. ${fmtTokens(without)} without`;
-                  return (
-                    <div
-                      key={d.day}
-                      role="listitem"
-                      tabIndex={0}
-                      aria-label={label}
-                      title={label}
-                      onMouseEnter={() => setFocus(d.day)}
-                      onMouseLeave={() => setFocus(null)}
-                      onFocus={() => setFocus(d.day)}
-                      onBlur={() => setFocus(null)}
-                      className="wr-savings-day"
-                    >
-                      <div style={{ height: PLOT_H, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 3 }}>
-                        <div style={{ width: 12, height: h(d.used), background: 'var(--brand)', borderRadius: '2px 2px 0 0' }} />
-                        <div style={{ width: 12, height: h(without), background: 'var(--line2)', borderRadius: '2px 2px 0 0' }} />
-                      </div>
-                      <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{weekday(d.day)}</div>
-                      {/* Two lines, so neighbouring days' figures never run into each other. */}
-                      <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)', whiteSpace: 'nowrap' }}>
-                        {without ? fmtTokens(d.used) : '—'}
-                      </div>
-                      {without > 0 && (
-                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
-                          / {fmtTokens(without)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          <div className="wr-tokens__totals" role="img" aria-label={`Last 7 days: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
+            <span className="wr-lbl">Without WhiteRoom, est.</span>
+            <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--without" style={{ width: 'calc((100% - 72px) * 1)' }} /><strong>{fmtTokens(without)}</strong></div>
+            <span className="wr-lbl" style={{ color: 'var(--tx)' }}>With WhiteRoom</span>
+            <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--with" style={{ width: `calc((100% - 72px) * ${(used / without).toFixed(3)})` }} /><strong>{fmtTokens(used)}</strong></div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--brand)' }} />With WhiteRoom</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--line2)' }} />Without, est.</span>
-            <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
-              {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, est. ${fmtTokens(shown.used + shown.saved)} without` : ''}
-            </span>
+          <p className="wr-tokens__diff">
+            {fewer ? <strong style={{ color: 'var(--ok)' }}>{fewer}</strong> : <strong>Nothing saved yet</strong>}
+            <span className="wr-cap"> · estimated from how much each agent would have sent without WhiteRoom</span>
+          </p>
+          <Disclosure label="By day" note={saved > 0 ? 'tokens with and without WhiteRoom, each day' : undefined} open={byDay} onToggle={() => setByDay((v) => !v)} controls={byDayId}>
+          <div className="wr-tokens__byday">
+          <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>
+            {days.map((d) => {
+              const wo = d.used + d.saved;
+              return (
+                <div key={d.day} className="wr-tokens__day" title={wo ? `${weekdayLong(d.day)}: ${fmtTokens(d.used)} with WhiteRoom, est. ${fmtTokens(wo)} without` : undefined}>
+                  {wo ? (
+                    <>
+                      <div className="wr-tokens__col"><span className="wr-tokens__val">{fmtTokens(wo)}</span><div className="wr-tokens__vbar wr-tokens__bar--without" style={{ height: h(wo) }} /></div>
+                      <div className="wr-tokens__col"><span className="wr-tokens__val wr-tokens__val--with">{fmtTokens(d.used)}</span><div className="wr-tokens__vbar wr-tokens__bar--with" style={{ height: h(d.used) }} /></div>
+                    </>
+                  ) : <span className="wr-cap" style={{ paddingBottom: 4, color: 'var(--tx3)' }}>—</span>}
+                </div>
+              );
+            })}
           </div>
+          <div className="wr-tokens__labels" aria-hidden="true">
+            {days.map((d) => {
+              const usd = usdByDay?.[d.day];
+              return (
+                <div key={d.day}>
+                  <div className="wr-cap">{weekday(d.day)}</div>
+                  {d.saved > 0 && <div className="wr-cap wr-tokens__saved">{fmtTokens(d.saved)} saved</div>}
+                  {d.saved > 0 && usd != null && usd > 0 && <div className="wr-cap wr-tokens__usd">{fmtCost(usd)}</div>}
+                </div>
+              );
+            })}
+          </div>
+          <div className="wr-cap wr-tokens__legend">
+            <span><span className="wr-tokens__key wr-tokens__bar--without" />Without WhiteRoom, est.</span>
+            <span><span className="wr-tokens__key wr-tokens__bar--with" />With WhiteRoom</span>
+          </div>
+          </div>
+          </Disclosure>
         </>
       )}
-    </Panel>
+    </div>
   );
 }

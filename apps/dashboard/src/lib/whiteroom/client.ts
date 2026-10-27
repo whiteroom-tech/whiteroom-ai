@@ -598,14 +598,24 @@ export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?
   return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
 }
 
-/** Each agent with a daily budget, against its spend since the viewer's midnight. */
-export function agentBudgetsGet(fleetId: string, key?: string): Promise<AgentBudgetsResult> {
-  return apiCall<AgentBudgetsResult>({ action: 'agent_budgets_get', fleet_id: fleetId, tz: viewerTimeZone() }, key);
+/**
+ * Each agent with a daily budget, against its spend since the viewer's
+ * midnight, with its cost prediction. `allAgents` lists every agent in the
+ * fleet, budget or not (engines without it ignore the flag).
+ */
+export function agentBudgetsGet(fleetId: string, key?: string, opts: { allAgents?: boolean } = {}): Promise<AgentBudgetsResult> {
+  return apiCall<AgentBudgetsResult>({ action: 'agent_budgets_get', fleet_id: fleetId, tz: viewerTimeZone(), ...(opts.allAgents && { all_agents: true }) }, key);
 }
 
-/** Sets an agent's daily budget; null clears it. The owner's call (dashboard-only on the engine). */
-export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd: number | null, key?: string): Promise<void> {
-  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd }, key));
+/**
+ * Sets an agent's daily budget; null clears it (the token budget with it).
+ * `budgetTokens` left out keeps the stored token budget; null clears it.
+ * The owner's call (dashboard-only on the engine).
+ */
+export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd: number | null, key?: string, budgetTokens?: number | null): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({
+    action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd, ...(budgetTokens !== undefined && { budget_tokens: budgetTokens }),
+  }, key));
 }
 
 // -- Fleet governance rules (Controls page) --
