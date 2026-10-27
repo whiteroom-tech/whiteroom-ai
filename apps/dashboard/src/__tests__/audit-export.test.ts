@@ -87,4 +87,55 @@ describe('full audit export', () => {
     expect(file).toBeNull();
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
+
+  it('uses the older signed export for a fleet whose history isn’t stored yet (409)', async () => {
+    client.signed.mockResolvedValueOnce({ fleetId: 'f1', entries: [], signature: 'old' });
+    const notTracked = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 409', 409, 'History tracking hasn’t started for this fleet yet.'); });
+    const file = await buildAuditExport('f1', () => {}, { fetchPage: notTracked });
+    expect(file!.events).toBeNull();
+    expect(client.signed).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes on any other refusal instead of falling back', async () => {
+    client.signed.mockClear();
+    const refused = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 400', 400, 'to_seq is outside this fleet’s stored history.'); });
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: refused })).rejects.toThrow('HTTP 400');
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(client.signed).not.toHaveBeenCalled();
+  });
+
+  it('retries a busy later page and carries on from the same place', async () => {
+    const { fetchPage } = engine();
+    const real = fetchPage.getMockImplementation()!;
+    let failed = false;
+    fetchPage.mockImplementation(async (f, c) => {
+      if (c?.fromSeq === 501 && !failed) { failed = true; throw new WhiteRoomApiError('HTTP 503', 503); }
+      return real(f, c);
+    });
+    const wait = vi.fn(async () => {});
+    const file = await buildAuditExport('f1', () => {}, { fetchPage, wait });
+    expect(wait).toHaveBeenCalledTimes(1);
+    expect(fetchPage.mock.calls.map(([, c]) => c?.fromSeq)).toEqual([undefined, 501, 501, 1001]);
+    expect(file!.events).toBe(HEAD);
+    expect(JSON.parse(await file!.blob.text()).events).toHaveLength(HEAD);
+  });
+
+  it('gives up when a later page stays busy', async () => {
+    const { fetchPage } = engine();
+    const real = fetchPage.getMockImplementation()!;
+    fetchPage.mockImplementation(async (f, c) => {
+      if (c) throw new WhiteRoomApiError('HTTP 429', 429);
+      return real(f, c);
+    });
+    await expect(buildAuditExport('f1', () => {}, { fetchPage, wait: async () => {} })).rejects.toThrow('HTTP 429');
+    expect(fetchPage).toHaveBeenCalledTimes(1 + 4);
+  });
+
+  it('stops with an error when the pages stop moving forward', async () => {
+    const stuck = vi.fn(async (): Promise<Page> => ({ fleetId: 'f1', firstSeq: 1, toSeq: HEAD, fromSeq: 1, events: [event(1)], nextFromSeq: 1 }));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: stuck })).rejects.toThrow('stopped moving forward');
+    expect(stuck).toHaveBeenCalledTimes(1);
+    const beyond = vi.fn(async (): Promise<Page> => ({ fleetId: 'f1', firstSeq: 1, toSeq: 10, fromSeq: 1, events: [event(1)], nextFromSeq: 11 }));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: beyond })).rejects.toThrow('stopped moving forward');
+  });
 });

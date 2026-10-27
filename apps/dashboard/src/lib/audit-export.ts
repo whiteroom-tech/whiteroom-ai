@@ -65,6 +65,8 @@ export async function buildAuditExport(
     onProgress(Math.min(done, total), total);
     if (page.nextFromSeq === null) break;
     if (opts.isCancelled?.()) return null;
+    // Each page must move forward within the pinned range, or this would never end.
+    if (!(page.nextFromSeq > page.fromSeq && page.nextFromSeq <= page.toSeq)) throw new Error('The export stopped moving forward.');
     page = await get({ fromSeq: page.nextFromSeq, toSeq: page.toSeq });
   }
   if (!page.manifest) throw new Error('The export ended without its signature.');

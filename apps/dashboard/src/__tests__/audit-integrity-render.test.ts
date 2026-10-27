@@ -7,7 +7,8 @@ import { createRoot } from 'react-dom/client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1' }) }));
+const auth = vi.hoisted(() => ({ fleetId: 'f1' }));
+vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: auth.fleetId }) }));
 const api = vi.hoisted(() => ({ verify: vi.fn(), build: vi.fn(), save: vi.fn() }));
 vi.mock('@/lib/audit-export', () => ({ buildAuditExport: api.build, saveBlob: api.save }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -30,7 +31,7 @@ async function mount() {
   return { el, root, run, note };
 }
 
-beforeEach(() => { api.verify.mockReset(); api.build.mockReset(); api.save.mockReset(); });
+beforeEach(() => { auth.fleetId = 'f1'; api.verify.mockReset(); api.build.mockReset(); api.save.mockReset(); });
 
 describe('audit integrity', () => {
   it('leads with coverage, never a pass below 100%', async () => {
@@ -83,6 +84,57 @@ describe('audit integrity', () => {
     await flush();
     expect(api.save).not.toHaveBeenCalled();
     expect(m.note()!.textContent).toBe('The export didn’t download. Try again.');
+    m.root.unmount();
+  });
+
+  /** Starts a download that waits for the test to report progress and finish it. */
+  async function startDownload(m: Awaited<ReturnType<typeof mount>>) {
+    const ctl = {} as { finish: (v: unknown) => void; report: (done: number, total: number) => void; isCancelled: () => boolean };
+    api.build.mockImplementationOnce((_id: string, onProgress: typeof ctl.report, opts: { isCancelled: () => boolean }) => {
+      ctl.report = onProgress;
+      ctl.isCancelled = opts.isCancelled;
+      return new Promise((r) => { ctl.finish = r; });
+    });
+    await act(async () => { ([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Download signed export') as HTMLButtonElement).click(); });
+    await flush();
+    return ctl;
+  }
+
+  it('saves nothing and stops counting when the fleet changes mid-export', async () => {
+    const m = await mount();
+    const ctl = await startDownload(m);
+    expect(ctl.isCancelled()).toBe(false);
+    auth.fleetId = 'f2';
+    await act(async () => { m.root.render(h(AuditIntegritySection)); });
+    await flush();
+    expect(ctl.isCancelled()).toBe(true);
+    await act(async () => { ctl.report(5000, 12345); });
+    expect(m.el.textContent).not.toContain('5,000 of 12,345');
+    await act(async () => { ctl.finish({ blob: new Blob(['{}']), events: 12345 }); });
+    await flush();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(m.note()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('saves nothing when the page is left mid-export', async () => {
+    const m = await mount();
+    const ctl = await startDownload(m);
+    m.root.unmount();
+    expect(ctl.isCancelled()).toBe(true);
+    await act(async () => { ctl.report(5000, 12345); ctl.finish({ blob: new Blob(['{}']), events: 12345 }); });
+    await flush();
+    expect(api.save).not.toHaveBeenCalled();
+  });
+
+  it('saves the older export from an older engine without a count note', async () => {
+    const m = await mount();
+    const ctl = await startDownload(m);
+    const blob = new Blob(['{}']);
+    await act(async () => { ctl.finish({ blob, events: null }); });
+    await flush();
+    expect(api.save).toHaveBeenCalledWith(blob, expect.any(String));
+    expect(m.note()).toBeNull();
     m.root.unmount();
   });
 });
