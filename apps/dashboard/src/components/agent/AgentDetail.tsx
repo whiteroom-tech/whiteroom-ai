@@ -170,7 +170,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           e.preventDefault();
           const list = items();
           const at = list.indexOf(document.activeElement as HTMLButtonElement);
-          list[(at + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
+          const down = e.key === 'ArrowDown';
+          // From outside the items, Down goes to the first and Up to the last.
+          const next = at === -1 ? (down ? 0 : list.length - 1) : (at + (down ? 1 : -1) + list.length) % list.length;
+          list[next]?.focus();
         }
         return;
       }

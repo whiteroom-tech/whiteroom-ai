@@ -128,6 +128,10 @@ describe('Agent detail ⋯ menu keyboard', () => {
     expect(document.activeElement).toBe(items[1]);
     await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' })); });
     expect(document.activeElement).toBe(items[0]);
+    // From outside the items, Up goes to the last one.
+    (document.activeElement as HTMLElement).blur();
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' })); });
+    expect(document.activeElement).toBe(items[items.length - 1]);
     await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
     expect(m.menu()).toBeNull();
     expect(document.activeElement).toBe(m.more());
