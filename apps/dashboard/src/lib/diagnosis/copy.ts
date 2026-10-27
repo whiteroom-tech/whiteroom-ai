@@ -6,6 +6,7 @@
  * checked.
  */
 import type { DiagnosisDetectorId, DiagnosisMeasures } from '@/lib/whiteroom/types';
+import { plural } from '@/lib/format';
 
 export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_handover_churn',
@@ -136,16 +137,16 @@ export function notMeasuredShort(code: string, reason: string): string {
     return more > 0 ? build(more) : engineText();
   });
   switch (code) {
-    case 'few_watches': return left(/has (\d+)/, 5, (m) => `needs ${m} more ${m === 1 ? 'run' : 'runs'}`);
-    case 'short_history': return left(/has (\d+)/, 14, (m) => `starts in about ${m} ${m === 1 ? 'day' : 'days'}`);
+    case 'few_watches': return left(/has (\d+)/, 5, (m) => `needs ${m} more ${plural(m, 'run')}`);
+    case 'short_history': return left(/has (\d+)/, 14, (m) => `starts in about ${m} ${plural(m, 'day')}`);
     case 'low_coverage': return n(/for (\d+)%/, (x) => `can only see ${x}% of its tool calls`);
     case 'hashing_off':
     case 'detector_off': return 'switched off on this engine';
     case 'openai_format': return 'only works with Anthropic-format tools';
-    case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${m === 1 ? 'result' : 'results'}`);
+    case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${plural(m, 'result')}`);
     case 'not_captured': return 'nothing recorded yet';
-    case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${m === 1 ? 'call' : 'calls'} this week`);
-    case 'few_requests': return left(/had (\d+)/, 100, (m) => `needs ${m} more ${m === 1 ? 'call' : 'calls'} to one model in a day`);
+    case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${plural(m, 'call')} this week`);
+    case 'few_requests': return left(/had (\d+)/, 100, (m) => `needs ${m} more ${plural(m, 'call')} to one model in a day`);
     case 'thin_evidence': return 'too few calls show it yet';
     case 'first_check_pending': return 'first check runs overnight';
     case 'publish_failed': return 'couldn\u2019t be saved; checked again soon';

@@ -3,6 +3,7 @@ import { listOrganizations } from '@/lib/organizations';
 import { AdminShell } from '../admin-shell';
 import { CreateOrganizationForm } from './create-form';
 import { FONT_MONO as mono } from '@whiteroom/ui';
+import { plural } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export default async function AdminOrganizationsPage() {
       <CreateOrganizationForm />
 
       <div style={{ margin: '22px 0 10px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-        {orgs.length} {orgs.length === 1 ? 'organization' : 'organizations'}
+        {orgs.length} {plural(orgs.length, 'organization')}
       </div>
 
       <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', background: 'var(--card)' }}>

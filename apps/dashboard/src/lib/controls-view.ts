@@ -7,6 +7,8 @@ import type {
   GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
+import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
+import { DAY_MS } from '@/lib/format';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
@@ -27,7 +29,7 @@ export function keywordFits(keywords: readonly string[]): boolean {
 /** Where a Keywords rule looks, as it reads in a sentence. */
 export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };
 
-const VERB: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
+const VERB: Record<GovernanceResponse, string> = { notify: NOTIFY.verb, block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmt(p.dailyCap)}` : `${fmt(p.dailyCap)} tokens`);
@@ -39,7 +41,7 @@ export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmt(p.da
  */
 export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response' | 'alsoNotify'> & { mode?: GovernanceRule['mode'] }): { pre: string; val: string; post: string } {
   const response = rule.response ?? 'block';
-  const does = response === 'block' && rule.alsoNotify ? 'block the call and tell me' : VERB[response];
+  const does = response === 'block' && rule.alsoNotify ? `block the call and ${NOTIFY.verb}` : VERB[response];
   const v = rule.mode === undefined || rule.mode === 'enforce' ? does : `it would ${does}`;
   if (rule.ruleType === 'spend_cap') {
     const p = rule.params as SpendCapParams;
@@ -123,7 +125,7 @@ const covers = (a: GovernanceScope, b: GovernanceScope) => a === 'all' || (b !==
 /**
  * Two spend caps that do the same thing (same unit, period, mode, response
  * and alert), where the lower one covers every agent the higher one does:
- * then the higher one never acts. A $190 Just tell me and a $200 Block is a
+ * then the higher one never acts. A $190 Alert me and a $200 Block is a
  * warning before a stop, not an overlap; nor is a fleet-wide $500 beside a
  * $190 cap for one agent.
  */
@@ -147,7 +149,7 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 // ── What each row says ──────────────────────────────────────────────
 
 const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
-const TALLY_WORD: Record<GovernanceResponse, string> = { notify: 'told you', block: 'blocked', pause: 'paused', stop: 'stopped' };
+const TALLY_WORD: Record<GovernanceResponse, string> = { notify: NOTIFY.done, block: 'blocked', pause: 'paused', stop: 'stopped' };
 const times = (n: number) => (n === 1 ? 'once' : `${fmt(n)} times`);
 /** A rule (or agent) with no actions. */
 export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
@@ -207,10 +209,10 @@ const REASON: Record<GovernanceRuleType, string> = {
   keyword: 'keyword_found',
 };
 
-/** The engine's 403 for this rule (blockResponseBody); nothing for Just tell me. */
+/** The engine's 403 for this rule (blockResponseBody); nothing for Alert me. */
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
   const response = rule.response ?? 'block';
-  if (response === 'notify') return 'Nothing: the call goes through.\nYou get told; the agent doesn’t.';
+  if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it'
     : rule.ruleType === 'call_rate' ? 'once the last minute is back under the limit'
@@ -305,7 +307,7 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
   return { ...d, number, params: { ...p, unit } };
 }
 
-/** Whether the rule, as drafted, sends an alert when it acts: Just tell me, Pause, Stop, or Block with an alert. */
+/** Whether the rule, as drafted, sends an alert when it acts: Alert me, Pause, Stop, or Block with an alert. */
 export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): boolean {
   return d.mode === 'enforce' && (d.response !== 'block' || d.alsoNotify);
 }
@@ -350,7 +352,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
-  { type: 'keyword', title: 'Flag keywords', desc: 'Get told, or block the call, when words you pick show up.', isNew: true },
+  { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.', isNew: true },
 ];
 
 // ── Groups: who a rule covers ───────────────────────────────────────
@@ -366,17 +368,20 @@ export function coverageGroups(rules: GovernanceRule[]): { all: GovernanceRule[]
   };
 }
 
-/** Rules that can stop a call or an agent now: Block mode with a response other than "tell me", that has something to act on. */
+/** Whether a rule can stop a call or an agent now: Block mode with a response other than Alert me, that has something to act on. */
+export function isStopping(r: GovernanceRule): boolean {
+  return r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r);
+}
+
+/** The rules that can stop a call or an agent now (isStopping). */
 export function stopping(rules: GovernanceRule[]): GovernanceRule[] {
-  return rules.filter((r) => r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r));
+  return rules.filter(isStopping);
 }
 
 // ── Weakening a rule ────────────────────────────────────────────────
 
 const MODE_RANK: Record<GovernanceMode, number> = { off: 0, watch: 1, enforce: 2 };
 const RESPONSE_RANK: Record<GovernanceResponse, number> = { notify: 0, block: 1, pause: 2, stop: 3 };
-const MODE_WORD: Record<GovernanceMode, string> = { off: 'Off', watch: 'Record only', enforce: 'Block' };
-const RESPONSE_WORD: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
 
 /**
  * What a change makes weaker, in plain lines, so Save can ask first: a lower
@@ -386,9 +391,9 @@ const RESPONSE_WORD: Record<GovernanceResponse, string> = { notify: 'tell me', b
  */
 export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[] {
   const out: string[] = [];
-  if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_WORD[prev.mode]} → ${MODE_WORD[next.mode]}`);
+  if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_LABEL[prev.mode]} → ${MODE_LABEL[next.mode]}`);
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
-  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`Then: ${RESPONSE_WORD[pr]} → ${RESPONSE_WORD[nr]}`);
+  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`Then: ${VERB[pr]} → ${VERB[nr]}`);
   if (prev.alsoNotify && !next.alsoNotify && nr === 'block') out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
@@ -449,7 +454,7 @@ export function averageDailySpend(hourly: { error?: string; hourly?: { hour?: st
   if (!hourly || hourly.error || !Array.isArray(hourly.hourly) || hourly.hourly.length === 0 || maxDays <= 0) return null;
   const times = hourly.hourly.map((h) => Date.parse(h.hour ?? '')).filter((t) => !Number.isNaN(t));
   // From the first point to now: quiet days since count, so a burst long ago isn't read as a daily rate.
-  const spanDays = times.length ? (now - Math.min(...times)) / 86_400_000 : maxDays;
+  const spanDays = times.length ? (now - Math.min(...times)) / DAY_MS : maxDays;
   const days = Math.min(maxDays, Math.max(1, Math.ceil(spanDays)));
   return { perDay: hourly.hourly.reduce((n, h) => n + (h.costMicros || 0), 0) / 1e6 / days, days };
 }

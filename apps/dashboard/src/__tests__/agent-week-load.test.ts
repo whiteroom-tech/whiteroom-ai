@@ -55,17 +55,23 @@ describe('Last 7 days card, loading', () => {
     const hours = api.scores.mock.calls[0][1];
     expect(hours).toBeGreaterThanOrEqual(6 * 24);
     expect(hours).toBeLessThanOrEqual(7 * 24 + 2);
+    // Rule activity for this agent only, not the whole fleet.
+    expect(api.rules.mock.calls[0][1]).toMatchObject({ agentId: 'Lead-Agent' });
     const text = () => (el.textContent ?? '').replace(/\s+/g, ' ');
-    expect(text()).toContain('Tokens without WhiteRoom, est.4.0K');
+    expect(text()).toContain('Tokens without WhiteRoom, est.4K');
     expect(text()).toContain('Rule activity0');
     // Every read fails on the next refresh: the figures stay.
     api.audit.mockRejectedValue(new Error('down'));
     api.scores.mockRejectedValue(new Error('down'));
     api.rules.mockRejectedValue(new Error('down'));
+    // The week is reread every 5 minutes, not every minute.
     await act(async () => { vi.advanceTimersByTime(60_000); });
     await flush();
+    expect(api.audit).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(4 * 60_000); });
+    await flush();
     expect(api.audit).toHaveBeenCalledTimes(2);
-    expect(text()).toContain('Tokens without WhiteRoom, est.4.0K');
+    expect(text()).toContain('Tokens without WhiteRoom, est.4K');
     expect(text()).toContain('How is the score worked out?');
     root.unmount();
   });

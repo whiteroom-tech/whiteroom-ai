@@ -1,4 +1,4 @@
-// Pure helpers for Agent detail (redesign screen 3). No React, so the rules
+// Pure helpers for Agent detail. No React, so the rules
 // for what an operator may do, and what the page says, can be unit-tested.
 //
 // What today's engine supports: pause_agent sends a working agent on its

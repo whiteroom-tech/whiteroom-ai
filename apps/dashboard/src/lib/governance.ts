@@ -13,6 +13,7 @@ import type {
   GovernanceRuleType,
   PerformanceIndexResult,
 } from './whiteroom/types';
+import { NOTIFY } from './vocab';
 
 export const GOVERNANCE_BLOCK = 'governance_block';
 export const GOVERNANCE_WOULD_BLOCK = 'governance_would_block';
@@ -200,7 +201,7 @@ export function computeSuggestions(index: PerformanceIndexResult, hourly: FleetH
 
 /** The "then" select, in the Rev 9 words. */
 export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
-  notify: 'Just tell me', block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent',
+  notify: NOTIFY.option, block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent',
 };
 
 /** What each response does, under the select (README › Screen 5). */
@@ -248,7 +249,7 @@ export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'w
   if (t.stopped) out.push({ text: `${t.stopped} stopped`, tone: 'bad' });
   if (t.paused) out.push({ text: `${t.paused} paused`, tone: 'bad' });
   if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
-  if (t.toldYou) out.push({ text: `${t.toldYou} told you`, tone: 'tx2' });
+  if (t.toldYou) out.push({ text: `${t.toldYou} ${NOTIFY.done}`, tone: 'tx2' });
   if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (Record only)`, tone: 'warn' });
   return out;
 }

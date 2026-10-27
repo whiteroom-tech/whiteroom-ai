@@ -4,6 +4,7 @@ import { AdminShell } from './admin-shell';
 import { UserSearch } from './user-search';
 import { Pill } from '@/components/organization/OrgPanels';
 import { FONT_MONO as mono } from '@whiteroom/ui';
+import { plural } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ export default async function AdminUsersPage({
 
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '16px 0 10px' }}>
         <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-          {result.total} {result.total === 1 ? 'account' : 'accounts'}
+          {result.total} {plural(result.total, 'account')}
           {query && <> matching <span style={{ fontFamily: mono, color: 'var(--tx)' }}>{query}</span></>}
         </span>
         {result.total > result.pageSize && (

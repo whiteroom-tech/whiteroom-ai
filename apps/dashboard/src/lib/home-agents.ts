@@ -5,11 +5,13 @@
 import { hourTotals, sortAgents } from '@/lib/home';
 import { ruleActionsByAgent, tallyFromRuleActions, type GovernanceTally } from '@/lib/governance';
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
-import type { auditSummary, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
+import { HOUR_MS } from '@/lib/format';
+import { localDay } from '@/lib/runs';
+import { auditSummary, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
 import type { AgentInfo, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
-  /** Tokens the agent used in the last 7 days; absent when the audit read failed (shown as –, never 0). */
+  /** Tokens the agent used in the last 7 days; absent when the audit read failed (shown as —, never 0). */
   used?: number;
   /** Tokens WhiteRoom saved it (smaller context), est.; absent with `used`. */
   saved?: number;
@@ -45,13 +47,6 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   return base;
 }
 
-/** "120K" / "980": tokens, short. */
-export function shortTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
-  return String(Math.round(n));
-}
-
 /**
  * The last 7 days as Home and the agent page read them: from local midnight
  * six days ago, plus that window in whole hours for the engine's hourly
@@ -61,8 +56,26 @@ export function shortTokens(n: number): string {
  */
 export function weekWindow(now: number = Date.now()): { start: Date; hours: number } {
   const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
-  const HOUR = 3_600_000;
-  return { start, hours: (Math.floor(now / HOUR) + 1) - Math.floor(start.getTime() / HOUR) };
+  return { start, hours: (Math.floor(now / HOUR_MS) + 1) - Math.floor(start.getTime() / HOUR_MS) };
+}
+
+/** The 7-day figures change slowly: Home and the agent page reread them every 5 minutes. */
+export const WEEK_POLL_MS = 5 * 60_000;
+
+/**
+ * The reads behind the last 7 days, shared by Home and the agent page. Each
+ * one that fails comes back null. `agentId` narrows rule activity to one
+ * agent; `hourly` adds the fleet's calls and spend (Home only).
+ */
+export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean } = {}) {
+  const { start, hours } = weekWindow();
+  const [audit, scores, rules, hourly] = await Promise.all([
+    auditSummary(fleetId, start, authKey).catch(() => null),
+    performanceAgentScores(fleetId, hours, authKey).catch(() => null),
+    ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: localDay(), agentId: opts.agentId }, authKey).catch(() => null),
+    opts.hourly ? performanceFleetHourly(fleetId, hours, authKey).catch(() => null) : null,
+  ]);
+  return { start, audit, scores, rules, hourly };
 }
 
 /** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
@@ -100,7 +113,7 @@ export function homeWeek(
     for (const [id, t] of Object.entries(merged)) if (id) (agents[id] ??= {}).rules = t;
   }
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
-  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
+  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / HOUR_MS) * HOUR_MS) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 

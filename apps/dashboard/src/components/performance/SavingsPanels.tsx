@@ -27,9 +27,10 @@ export function axisTop(max: number): number {
   return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((v) => v >= max) ?? 10 * p;
 }
 
-/** Axis labels: "150K", not "150.0K". */
+/** A tick's label, naming the exact value at that tick ("12.5K", "1.25M"), not a rounded neighbour. */
 export function axisLabel(n: number): string {
-  return fmtTokens(n).replace(/\.0+(?=[KM])/, '');
+  if (n < 1000) return String(n);
+  return n < 1_000_000 ? `${Number((n / 1000).toFixed(2))}K` : `${Number((n / 1_000_000).toFixed(2))}M`;
 }
 
 function weekday(day: string): string {
@@ -91,7 +92,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
                       <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{weekday(d.day)}</div>
                       {/* Two lines, so neighbouring days' figures never run into each other. */}
                       <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)', whiteSpace: 'nowrap' }}>
-                        {without ? fmtTokens(d.used) : '–'}
+                        {without ? fmtTokens(d.used) : '—'}
                       </div>
                       {without > 0 && (
                         <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>

@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, StatCard, StatusPill, FONT_MONO } from '@whiteroom/ui';
-import { auditLog, auditSummary, checkWatch, fleetReport, isAuthError, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, fleetReport, isAuthError, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
 import { blockedByPhrase, recentBlocksByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
-import { AGENT_SORTS, FIND_FROM, homeWeek, shortTokens, shownAgents, TABLE_FROM, weekWindow, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
+import { AGENT_SORTS, FIND_FROM, homeWeek, loadWeekReads, shownAgents, TABLE_FROM, WEEK_POLL_MS, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { localDay, zoneName } from '@/lib/runs';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { ROUTES } from '@/lib/routes';
@@ -19,7 +19,8 @@ import {
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
-import { partialMark } from '@/lib/format';
+import { fmtTokens, partialMark, plural } from '@/lib/format';
+import { RULE_ACTIVITY } from '@/lib/vocab';
 import { NeedsYou } from '@/components/home/NeedsYou';
 import { AgentActions } from '@/components/home/AgentActions';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -28,7 +29,7 @@ import { EmptyHome } from './EmptyHome';
 export type AgentsView = 'cards' | 'table';
 
 /**
- * Home (redesign screens 1a/1b): the five-second check. A 4-number strip,
+ * Home: the five-second check. A 4-number strip,
  * the agents, the latest activity in plain words, and the live feed.
  * P2 pieces (Needs you, Paused/Stopped, flagged runs) arrive with the
  * governance engine and stay hidden until their data exists.
@@ -107,20 +108,19 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   }, [fleetId, authKey]);
 
   // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
-  // activity: extra, so a failure hides them rather than failing the page, and once a minute is enough.
+  // activity are extra: a failure hides them rather than failing the page. The week changes
+  // slowly, so it's reread every 5 minutes; today's rule activity once a minute.
   const { refresh: refreshWeek } = usePoll(async (stale) => {
-    const todayDay = localDay();
-    const { start, hours: weekHours } = weekWindow();
-    const [audit, scores, weekRules, dayRules, hourly] = await Promise.all([
-      auditSummary(fleetId, start, authKey).catch(() => null),
-      performanceAgentScores(fleetId, weekHours, authKey).catch(() => null),
-      ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: todayDay }, authKey).catch(() => null),
-      ruleActions(fleetId, { fromDay: todayDay, toDay: todayDay }, authKey).catch(() => null),
-      performanceFleetHourly(fleetId, weekHours, authKey).catch(() => null),
-    ]);
+    const { start, audit, scores, rules, hourly } = await loadWeekReads(fleetId, authKey, { hourly: true });
     if (stale()) return;
-    setWeek(homeWeek(audit, scores, weekRules, hourly, start.getTime()));
-    setTodayRules(dayRules && !('unsupported' in dayRules) ? tallyFromRuleActions(dayRules.totals) : null);
+    setWeek(homeWeek(audit, scores, rules, hourly, start.getTime()));
+  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty });
+
+  const { refresh: refreshTodayRules } = usePoll(async (stale) => {
+    const day = localDay();
+    const res = await ruleActions(fleetId, { fromDay: day, toDay: day }, authKey).catch(() => null);
+    if (stale()) return;
+    setTodayRules(res && !('unsupported' in res) ? tallyFromRuleActions(res.totals) : null);
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
   const { refresh } = usePoll(async (stale) => {
@@ -132,7 +132,6 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       const ok = await todayOk;
       if (stale()) return;
       setTodayFailing(!ok);
-      if (stale()) return;
       setFailing(false);
       onUpdated?.(Date.now(), false, emptyRef.current);
     } catch (e) {
@@ -148,8 +147,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // since usePoll already fetched on mount.
   const firstSignal = useRef(refreshSignal);
   useEffect(() => {
-    if (refreshSignal !== firstSignal.current) { refresh(); refreshWeek(); }
-  }, [refreshSignal, refresh, refreshWeek]);
+    if (refreshSignal !== firstSignal.current) { refresh(); refreshWeek(); refreshTodayRules(); }
+  }, [refreshSignal, refresh, refreshWeek, refreshTodayRules]);
 
   function changeView(v: AgentsView) {
     setView(v);
@@ -232,7 +231,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           <h2 id="home-today" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Today <span style={{ fontWeight: 400, color: 'var(--tx2)' }}>· since 12:00 am {zoneName()}</span></h2>
           {quiet && (
             <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx2)' }}>
-              Quiet so far today.{week && week.calls !== null && <> This week: {week.calls.toLocaleString('en-US')} model call{week.calls === 1 ? '' : 's'}{week.costUsd !== null && <>, {usd(week.costUsd)}{partialMark(week.partial)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
+              Quiet so far today.{week && week.calls !== null && <> This week: {week.calls.toLocaleString('en-US')} model {plural(week.calls, 'call')}{week.costUsd !== null && <>, {usd(week.costUsd)}{partialMark(week.partial)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
             </p>
           )}
         <div className="wr-home-strip">
@@ -246,7 +245,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved by WhiteRoom →` : todaySub}
             subHref={saved && !todayFailing ? ROUTES.performance : undefined}
           />
-          <StatCard variant="card" label="Rule activity" hint={HELP.ruleActions} value={todayRules ? tallyTotal(todayRules).toLocaleString('en-US') : '—'} sub={todayRules ? (tallyTotal(todayRules) > 0 ? tallyShort(todayRules) : 'none today') : 'not available yet'} subHref={todayRules && tallyTotal(todayRules) > 0 ? `${ROUTES.runs}?show=rules&day=${localDay()}` : undefined} />
+          <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={todayRules ? tallyTotal(todayRules).toLocaleString('en-US') : '—'} sub={todayRules ? (tallyTotal(todayRules) > 0 ? tallyShort(todayRules) : 'none today') : 'not available yet'} subHref={todayRules && tallyTotal(todayRules) > 0 ? `${ROUTES.runs}?show=rules&day=${localDay()}` : undefined} />
         </div>
         </section>
 
@@ -309,10 +308,10 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               columns={[
                 { key: 'agent', header: 'Agent', width: 'minmax(160px,1.4fr)', render: (a) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{a.agentId}</span> },
                 { key: 'status', header: 'Status', width: '150px', render: (a) => <StatusPill state={agentState(a)} /> },
-                { key: 'used', header: 'Tokens used', width: '110px', numeric: true, render: (a) => { const u = weekOf(a.agentId)?.used; return u !== undefined ? shortTokens(u) : '–'; } },
-                { key: 'saved', header: 'Saved, est.', width: '110px', numeric: true, render: (a) => { const w = weekOf(a.agentId); return w?.saved ? (w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`) : '–'; } },
-                { key: 'rules', header: 'Rule activity', width: 'minmax(160px,1.2fr)', render: (a) => { const r = weekOf(a.agentId)?.rules; return r && tallyTotal(r) > 0 ? <span style={{ whiteSpace: 'normal' }}>{tallyShort(r)}</span> : <span style={{ color: 'var(--tx2)' }}>–</span>; } },
-                { key: 'score', header: 'Score', width: '200px', render: (a) => { const sc = weekOf(a.agentId)?.score; return sc ? <AgentScoreWheel agent={sc} /> : <span style={{ color: 'var(--tx2)' }}>–</span>; } },
+                { key: 'used', header: 'Tokens used', width: '110px', numeric: true, render: (a) => { const u = weekOf(a.agentId)?.used; return u !== undefined ? fmtTokens(u) : '—'; } },
+                { key: 'saved', header: 'Saved, est.', width: '110px', numeric: true, render: (a) => { const w = weekOf(a.agentId); return w?.saved ? (w.savedUsd != null ? usd(w.savedUsd) : `${fmtTokens(w.saved)} tokens`) : '—'; } },
+                { key: 'rules', header: RULE_ACTIVITY, width: 'minmax(160px,1.2fr)', render: (a) => { const r = weekOf(a.agentId)?.rules; return r && tallyTotal(r) > 0 ? <span style={{ whiteSpace: 'normal' }}>{tallyShort(r)}</span> : <span style={{ color: 'var(--tx2)' }}>—</span>; } },
+                { key: 'score', header: 'Score', width: '200px', render: (a) => { const sc = weekOf(a.agentId)?.score; return sc ? <AgentScoreWheel agent={sc} /> : <span style={{ color: 'var(--tx2)' }}>—</span>; } },
               ]}
             />
           )}
@@ -360,8 +359,8 @@ function agentHref(agentId: string): string {
 /** "Last 7 days: 120K tokens · saved $1.20 · 2 blocked · score 8". */
 function weekLine(w: AgentWeek): string {
   const bits: string[] = [];
-  if (w.used !== undefined) bits.push(`${shortTokens(w.used)} tokens`);
-  if (w.saved) bits.push(`saved ${w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`}`);
+  if (w.used !== undefined) bits.push(`${fmtTokens(w.used)} tokens`);
+  if (w.saved) bits.push(`saved ${w.savedUsd != null ? usd(w.savedUsd) : `${fmtTokens(w.saved)} tokens`}`);
   if (w.rules && tallyTotal(w.rules) > 0) bits.push(tallyShort(w.rules));
   if (w.score?.score != null) bits.push(`score ${w.score.score}`);
   return bits.length ? `Last 7 days: ${bits.join(' · ')}` : '';

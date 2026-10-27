@@ -5,7 +5,7 @@ import { Button, Panel } from '@whiteroom/ui';
 import { auditIntegrity, exportAuditSigned, verifyAudit } from '@/lib/whiteroom/client';
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { fmtTime, timeAgo } from '@/lib/format';
+import { fmtTime, timeAgo, plural } from '@/lib/format';
 import { AUDIT_KEPT } from '@/lib/plans';
 
 /**
@@ -74,7 +74,7 @@ export function AuditIntegritySection() {
   const checked = coverageLine(info.verifiedThroughSeq, info.headSeq, info.verifiedAt ? timeAgo(info.verifiedAt) : null);
   const gaps = info.gaps.count === 0
     ? 'nothing recorded missing'
-    : `${info.gaps.count} gap${info.gaps.count === 1 ? '' : 's'} recorded where events may be missing`;
+    : `${info.gaps.count} ${plural(info.gaps.count, 'gap')} recorded where events may be missing`;
 
   return (
     <Panel title="Audit integrity">

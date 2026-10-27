@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { timeAgo } from '@/lib/format';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -291,8 +292,8 @@ describe('refetch on focus', () => {
     expect(g.startRead()).not.toBeNull(); // reset also ended the check
   });
   it('relative time', () => {
-    expect(relativeTime(new Date(NOW - 20_000).toISOString(), NOW)).toBe('just now');
-    expect(relativeTime(new Date(NOW - 3 * 3600_000).toISOString(), NOW)).toBe('3 hours ago');
+    expect(timeAgo(new Date(NOW - 20_000).toISOString(), NOW)).toBe('just now');
+    expect(timeAgo(new Date(NOW - 3 * 3600_000).toISOString(), NOW)).toBe('3 hours ago');
   });
 });
 

@@ -19,6 +19,7 @@ import { PastTests } from './PastTests';
 import { PracticeCard, type PracticeEntry, usePracticeEntry } from './practice/PracticeCard';
 import { PRACTICE_SUMMARY } from '@/lib/sandbox/practice/model';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
+import { plural } from '@/lib/format';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
@@ -316,7 +317,7 @@ export function activitySummary(run: RunStatusResult | null): string | null {
   const failed = failedCallsOf(run);
   if (!agents && !failed) return null;
   const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
-  return `${agents} agent${agents === 1 ? '' : 's'} · ${callCount(calls)}${failed ? ` · ${failed.count} failed` : ''} · newest first`;
+  return `${agents} ${plural(agents, 'agent')} · ${callCount(calls)}${failed ? ` · ${failed.count} failed` : ''} · newest first`;
 }
 
 const CHECK_ICON_PASS = <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5"/></svg>;
@@ -366,7 +367,7 @@ export function CheckPreview() {
 export function timerSpoken(seconds: number | null | undefined, expired: boolean): string {
   if (expired || seconds === 0) return 'Test ended';
   const m = Math.max(1, Math.ceil((seconds ?? 1800) / 60));
-  return `Test ends in about ${m} minute${m === 1 ? '' : 's'}`;
+  return `Test ends in about ${m} ${plural(m, 'minute')}`;
 }
 
 /** The workspace header's countdown, labelled. The visible text ticks each second; the spoken one each minute. */

@@ -13,7 +13,7 @@ const added = (hoursAgo: number): GovernanceHistoryEntry[] => [{ id: 'h', ruleId
 describe('Keywords in plain words', () => {
   it('reads as one sentence, for each place it looks', () => {
     expect(ruleSentenceText(kw())).toBe('When incoming data contains any of “Project Falcon”, “SSN”, it would block the call.');
-    expect(ruleSentenceText(kw({ response: 'notify', params: { keywords: ['Orion'], where: 'replies', wholeWord: true } }))).toBe('When a model reply contains “Orion”, it would tell me.');
+    expect(ruleSentenceText(kw({ response: 'notify', params: { keywords: ['Orion'], where: 'replies', wholeWord: true } }))).toBe('When a model reply contains “Orion”, it would alert you.');
     expect(ruleSentenceText(kw({ params: { keywords: ['Orion'], where: 'both', wholeWord: true } }))).toMatch(/^When incoming data or a reply contains/);
     expect(ruleSentenceText(kw({ params: { keywords: [], where: 'incoming', wholeWord: true } }))).toBe('No keywords picked yet.');
   });
@@ -63,7 +63,7 @@ describe('blocking incoming data needs a day in Watch and a typed confirmation',
     expect(keywordBlockCheck(kw(), { mode: 'enforce', response: 'pause' }, added(30), NOW)).toEqual({ kind: 'confirm' });
   });
 
-  it('doesn’t ask for replies only, Just tell me, Stop (stopCheck’s), other rules, or a rule already blocking', () => {
+  it('doesn’t ask for replies only, Alert me, Stop (stopCheck’s), other rules, or a rule already blocking', () => {
     expect(keywordBlockCheck(kw({ params: { keywords: ['a'], where: 'replies', wholeWord: true } }), { mode: 'enforce' }, added(1), NOW)).toEqual({ kind: 'ok' });
     expect(keywordBlockCheck(kw({ response: 'notify' }), { mode: 'enforce' }, added(1), NOW)).toEqual({ kind: 'ok' });
     expect(keywordBlockCheck(kw(), { mode: 'enforce', response: 'stop' }, added(1), NOW)).toEqual({ kind: 'ok' });
@@ -80,14 +80,14 @@ describe('blocking incoming data needs a day in Watch and a typed confirmation',
     expect(keywordVerb('block')).toBe('block calls');
   });
 
-  it('moving an enforced Stop down to Block or Pause doesn’t ask again; Just tell me up to Block does', () => {
+  it('moving an enforced Stop down to Block or Pause doesn’t ask again; Alert me up to Block does', () => {
     const stopping = kw({ mode: 'enforce', response: 'stop' });
     expect(keywordBlockCheck(stopping, { response: 'block' }, added(1), NOW)).toEqual({ kind: 'ok' });
     expect(keywordBlockCheck(stopping, { response: 'pause' }, added(1), NOW)).toEqual({ kind: 'ok' });
     expect(keywordBlockCheck(kw({ mode: 'enforce', response: 'notify' }), { response: 'block' }, added(1), NOW).kind).toBe('blocked');
   });
 
-  it('says when no one will be told: Pause, Stop and Block with an alert send one, in Enforce', () => {
+  it('says when no one will get the alert: Pause, Stop and Block with an alert send one, in Enforce', () => {
     const d = draftFrom(kw({ mode: 'enforce' }));
     expect(sendsAlert(d)).toBe(false);
     expect(sendsAlert({ ...d, alsoNotify: true })).toBe(true);

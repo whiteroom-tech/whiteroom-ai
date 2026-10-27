@@ -11,6 +11,7 @@ import type { PracticeCheck, PracticeReport, PracticeResult, PracticeRun } from 
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
 import p from './practice.module.css';
+import { plural } from '@/lib/format';
 
 const OBSERVERS = CATALOG.observers as Record<PracticeCheck['observer'], string>;
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -137,7 +138,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
             <dt>Adapter (reported by the CLI)</dt><dd>{r.tested.adapter ?? '—'}</dd>
             <dt>Model asked for</dt><dd>{r.tested.modelRequested ?? '—'}</dd>
             <dt>Model used</dt><dd>{r.tested.modelsUsed.join(', ') || '—'}</dd>
-            <dt>Runs</dt><dd>{r.runs}{r.scope ? ` · rerun of ${r.scope.length} check${r.scope.length === 1 ? '' : 's'}` : ''}</dd>
+            <dt>Runs</dt><dd>{r.runs}{r.scope ? ` · rerun of ${r.scope.length} ${plural(r.scope.length, 'check')}` : ''}</dd>
             <dt>CLI version</dt><dd>{r.tested.cli ?? '—'}</dd>
             <dt>Test version</dt><dd>{r.testVersion}</dd>
             {r.how.memoryLimitAdjusted && <><dt>Memory</dt><dd>Memory limit adjusted during the test</dd></>}

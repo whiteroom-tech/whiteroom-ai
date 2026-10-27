@@ -1,6 +1,5 @@
-// The agent page put together (redesign Phase 6a): Last 7 days above the
-// grid, Rules on this agent beside Recent runs, and no Goal or "What it
-// carries forward" panels (decision Q9).
+// The agent page put together: Last 7 days above the grid, and Rules on this
+// agent beside Recent runs.
 import { describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -31,7 +30,23 @@ describe('agent page layout', () => {
     expect(at('Rules on this agent')).toBeGreaterThan(-1);
     expect(at('Rules on this agent')).toBeLessThan(at('Recent runs'));
     expect(html).toContain('href="/controls?rule=r9"');
-    expect(html).not.toMatch(/>Goal<|carries forward|Start a new task|Handover quality/);
+  });
+});
+
+describe('agent page, what it leaves out', () => {
+  // With progress notes to show, so a carried-forward panel would have something to render.
+  it('has no Goal panel or "What it carries forward", but does show its progress notes', () => {
+    const html = renderToStaticMarkup(h(AgentDetail, {
+      fleetId: 'f', agentId: 'lead-agent', from: 'home',
+      preview: {
+        agent: { agentId: 'lead-agent', status: 'working', watchNumber: 2, tasksCompleted: 3 },
+        handover: { state: 'Drafting the claims summary', pending: [{ task: 'Check the totals' }], warnings: ['Totals are from yesterday'], session_stats: { tasks_completed: 3, total_tokens: 12_000 } },
+        entries: [], rules: [RULE],
+      },
+    }));
+    expect(html).toContain('Progress notes');
+    expect(html).not.toMatch(/>Goal</);
+    expect(html).not.toMatch(/carries forward/i);
   });
 });
 

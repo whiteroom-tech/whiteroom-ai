@@ -393,8 +393,7 @@
 @media (max-width: 600px) {
   .wr-strip-scroll { overflow-x: auto; }
   .wr-strip-scroll > * { min-width: 50rem; }
-  .wr-hourstrip-wrap { overflow-x: auto; }
-  .wr-hourstrip-wrap > * { min-width: 40rem; }
+  .wr-strip-scroll.is-hours > * { min-width: 40rem; }
 }
 .wr-daystrip__day { position: relative; display: flex; align-items: flex-end; padding: 0; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
 .wr-daystrip__day:hover { background: var(--brand-dim); }

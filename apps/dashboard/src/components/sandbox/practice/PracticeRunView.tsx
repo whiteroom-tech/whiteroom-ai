@@ -8,6 +8,7 @@ import {
 import type { PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
 import p from './practice.module.css';
+import { plural } from '@/lib/format';
 
 function Command({ text, label }: { text: string; label: string }) {
   return (
@@ -69,7 +70,7 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
       {code && left ? <>
         <Command text={code.code} label="Copy run code" />
         <p className={p.meta}>
-          Expires in {left}{tries !== null && tries < 5 ? <> · <span className={p.warnText}>{tries} {tries === 1 ? 'try' : 'tries'} left with the wrong key</span></> : null} · Works once.
+          Expires in {left}{tries !== null && tries < 5 ? <> · <span className={p.warnText}>{tries} {plural(tries, 'try', 'tries')} left with the wrong key</span></> : null} · Works once.
         </p>
       </> : <p className={p.meta}>{code ? 'This run code has expired.' : 'The run code is shown only once, when it’s made. Get a new one to see it here.'}</p>}
       <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={onNewCode} style={{ marginTop: 8, fontSize: 'var(--fs-sm)' }}>Get a new run code</button>

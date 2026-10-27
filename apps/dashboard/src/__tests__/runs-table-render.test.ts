@@ -27,17 +27,20 @@ const run = (shift: number, x: Partial<RunSummary> = {}): RunSummary => ({
   lengthSeconds: 60, calls: 3, failedCalls: 0, blockedCalls: 0, spendMicros: 0, unpricedAttempts: 0, coverage: { calls: 3, checked: 3 }, flags: [], ...x,
 });
 
+vi.mock('@/components/AppShell', () => ({ AppShell: () => null }));
 vi.mock('@/lib/xlsx', async (orig) => ({ ...(await orig<typeof import('@/lib/xlsx')>()), downloadWorkbook: vi.fn() }));
 
 const { RunsTable } = await import('@/components/runs/RunsTable');
+const { samplePreview } = await import('@/app/dev/runs/preview');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 
-async function mount(preview?: RunSummary[], retentionDays?: number) {
+async function mount(sample?: RunSummary[], retentionDays?: number) {
+  const preview = sample && samplePreview(sample);
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
   // RunsTable's props default to {}, which createElement's overloads can't infer.
-  const Table = RunsTable as FC<{ preview?: RunSummary[]; retentionDays?: number }>;
+  const Table = RunsTable as FC<{ preview?: ReturnType<typeof samplePreview>; retentionDays?: number }>;
   await act(async () => { root.render(h(Table, { preview, retentionDays })); });
   await flush();
   const radio = (label: string) => [...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;

@@ -1,6 +1,5 @@
 // Performance's overview, rendered to HTML: Cost, then a read-only Control
-// summary, then Performance (plan Rev1); the More detail toggle, Calls per
-// hour and the By agent table are gone (By agent is on Home now).
+// summary, then Performance, with the figures each card works out.
 import { describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -12,14 +11,14 @@ const { IndexView, smallerContextCard } = await import('@/app/(citadel)/performa
 const DATA = {
   fleetId: 'f1',
   period: { start: '2026-10-26T00:00:00Z', end: '2026-10-27T00:00:00Z' },
-  summary: { totalCalls: 99, totalCost: 0.912, avgLatencyMs: 1900, errorRate: 0.02, blockedCount: 2, models: [{ model: 'claude-haiku-4-5', calls: 99, costMicros: 912_000, inputTokens: 1, outputTokens: 1 }] },
+  summary: { totalCalls: 99, totalCost: 912_000, avgLatencyMs: 1900, errorRate: 0.02, blockedCount: 2, models: [{ model: 'claude-haiku-4-5', calls: 99, costMicros: 912_000, inputTokens: 1, outputTokens: 1 }] },
   recommendations: [],
   priceInfo: { version: '1', ageDays: 1, stale: false, expired: false },
 };
 
 const view = (data: object = DATA, rangeLabel = 'last 24 h') => renderToStaticMarkup(h(IndexView, {
   data, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: {} },
-  savingsDays: null, byAgent: null, rangeLabel, fleetId: 'f1', authKey: 'k',
+  savingsDays: null, agentIds: null, rangeLabel, fleetId: 'f1', authKey: 'k',
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
 } as never));
 
@@ -35,6 +34,7 @@ describe('Performance overview layout', () => {
     const html = view();
     const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
     for (const label of ['Spend', 'Saved by WhiteRoom', 'Hourly', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    expect(cost).toContain('$0.912');
     const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
     expect(control).toContain('Rule activity');
     expect(control).toContain('2 blocked · 57 in Record only');
@@ -57,9 +57,19 @@ describe('Performance overview layout', () => {
     expect(partial).toMatch(/\$0\.100\+/);
     expect(partial).not.toMatch(/\$2\.40\+ last 24 hours/);
   });
+});
 
-  it('leaves out More detail, Calls per hour and By agent', () => {
-    const html = view();
+describe('Performance overview, what it leaves out', () => {
+  // With data that would fill them (several agents, hourly rows, models), so this can't pass on empty markup.
+  it('has no More detail toggle, Calls per hour chart or By agent table, but does show its sections', () => {
+    const html = renderToStaticMarkup(h(IndexView, {
+      data: DATA, hourlyData: { hourly: Array.from({ length: 48 }, (_, i) => ({ hour: new Date(Date.UTC(2026, 9, 25, i)).toISOString(), calls: 4, costMicros: 19_000, errors: 0 })) },
+      auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: { 'lead-agent': { blocks: 2, wouldBlocks: 0 }, writer: { blocks: 0, wouldBlocks: 57 } }, byRule: {} },
+      savingsDays: null, agentIds: ['lead-agent', 'writer'], rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
+      onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
+    } as never));
+    expect(html).toContain('id="perf-performance"');
+    expect(html).toContain('>Spend<');
     expect(html).not.toContain('More detail');
     expect(html).not.toContain('Calls per hour');
     expect(html).not.toContain('By agent');

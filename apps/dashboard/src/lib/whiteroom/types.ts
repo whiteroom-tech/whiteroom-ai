@@ -323,6 +323,7 @@ export interface AgentPerformanceResult {
     errorRate: number;
     /** Calls stopped by a governance rule in Enforce (absent on older engines). */
     blockedCount?: number;
+    /** The median (p50) call time over the window, despite the name: shown as "Typical response". */
     avgLatencyMs: number | null;
   };
   error?: string;

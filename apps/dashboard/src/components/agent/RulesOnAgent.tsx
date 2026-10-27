@@ -2,18 +2,19 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { FONT_MONO, Hint, Panel, Tag } from '@whiteroom/ui';
+import { FONT_MONO, Hint, Panel } from '@whiteroom/ui';
 import { governanceList } from '@/lib/whiteroom/client';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { RULE_LABELS } from '@/lib/governance';
-import { DOES_TAG, MODE_LABEL } from '@/lib/vocab';
-import { emptyPick, ruleSentence, rulesFor, stopping } from '@/lib/controls-view';
+import { ruleSentence, rulesFor } from '@/lib/controls-view';
+import { RuleDoesTag } from '@/components/RuleDoesTag';
+import { plural } from '@/lib/format';
 
 /**
- * The rules from Controls that cover this agent (redesign screen 3): the ones
+ * The rules from Controls that cover this agent: the ones
  * that are on, tagged the way Controls tags them, each linking to its rule.
  * Off rules are counted, not listed.
  */
@@ -56,7 +57,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
         </p>
       ) : on.length === 0 ? (
         <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-          No rules are on for this agent.{off > 0 ? ` ${off} ${off === 1 ? 'rule is' : 'rules are'} Off.` : ''}
+          No rules are on for this agent.{off > 0 ? ` ${off} ${plural(off, 'rule is', 'rules are')} Off.` : ''}
         </p>
       ) : (
         <>
@@ -68,10 +69,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
                   <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(r.id)}`} className="wr-agent-rule">
                     <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {RULE_LABELS[r.ruleType]}
-                      {r.mode === 'watch' && <Tag tone="muted">{MODE_LABEL.watch}</Tag>}
-                      {r.mode === 'enforce' && (emptyPick(r)
-                        ? <Tag tone="muted">Not set up</Tag>
-                        : <Tag tone={stopping([r]).length ? 'block' : 'brand'}>{DOES_TAG[r.response ?? 'block']}</Tag>)}
+                      <RuleDoesTag rule={r} />
                     </span>
                     <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}</span>
                   </Link>
@@ -81,7 +79,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
           </ul>
           {off > 0 && (
             <p style={{ margin: 0, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-              {off} more {off === 1 ? 'rule is' : 'rules are'} Off.
+              {off} more {plural(off, 'rule is', 'rules are')} Off.
             </p>
           )}
         </>

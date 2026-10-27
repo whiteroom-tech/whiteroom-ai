@@ -2,11 +2,11 @@
 
 import { useCallback, useState } from 'react';
 import { FONT_MONO } from '@whiteroom/ui';
-import { auditSummary, performanceAgentScores, ruleActions } from '@/lib/whiteroom/client';
 import { usePoll } from '@/hooks/usePoll';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
-import { localDay } from '@/lib/runs';
-import { agentWeekFrom, shortTokens, weekWindow, type AgentWeek } from '@/lib/home-agents';
+import { agentWeekFrom, loadWeekReads, WEEK_POLL_MS, type AgentWeek } from '@/lib/home-agents';
+import { fmtTokens } from '@/lib/format';
+import { RULE_ACTIVITY } from '@/lib/vocab';
 import { scoreParts } from '@/lib/agent-scores';
 import { tallyShort, tallyTotal } from '@/lib/governance';
 import { weekTokens } from '@/lib/agent-detail';
@@ -15,7 +15,7 @@ const label = { fontSize: 'var(--fs-sm)', color: 'var(--tx2)' } as const;
 const figure = { fontFamily: FONT_MONO, fontSize: 'var(--fs-xl)', fontWeight: 600 } as const;
 
 /**
- * One agent's last 7 days (redesign screen 3): tokens with and without
+ * One agent's last 7 days: tokens with and without
  * WhiteRoom, rule activity and score, with how the score is worked out. The
  * same reads as Home's agent list. A part that has never loaded shows "—",
  * never 0; a refresh that fails keeps the last figures.
@@ -30,18 +30,13 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
   const [week, setWeek] = useState<AgentWeek | undefined>(preview);
   const [loaded, setLoaded] = useState(!!preview);
   const load = useCallback(async (stale: () => boolean) => {
-    const { start, hours } = weekWindow();
-    const [audit, scores, rules] = await Promise.all([
-      auditSummary(fleetId, start, authKey).catch(() => null),
-      performanceAgentScores(fleetId, hours, authKey).catch(() => null),
-      ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: localDay() }, authKey).catch(() => null),
-    ]);
+    const { audit, scores, rules } = await loadWeekReads(fleetId, authKey, { agentId });
     if (stale()) return;
     // A read that failed keeps what loaded before; one that worked and doesn't mention the agent is none.
     setWeek((prev) => agentWeekFrom(prev, agentId, audit, scores, rules));
     setLoaded(true);
   }, [fleetId, authKey, agentId]);
-  usePoll(load, { intervalMs: 60_000, enabled: !!fleetId && !preview });
+  usePoll(load, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !preview });
 
   const tokens = weekTokens(week);
   const score = week?.score;
@@ -51,14 +46,14 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
     <section className="wr-panel" aria-labelledby="agent-week" style={{ overflow: 'hidden' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 40px', alignItems: 'center', padding: '16px 20px' }}>
         <h2 id="agent-week" className="wr-panel__title" style={{ margin: 0 }}>Last 7 days</h2>
-        <span><span style={label}>Tokens without WhiteRoom, est.</span><br /><strong style={figure}>{tokens ? shortTokens(tokens.without) : dash}</strong></span>
+        <span><span style={label}>Tokens without WhiteRoom, est.</span><br /><strong style={figure}>{tokens ? fmtTokens(tokens.without) : dash}</strong></span>
         <span>
           <span style={label}>With WhiteRoom</span><br />
-          <strong style={figure}>{tokens ? shortTokens(tokens.used) : dash}</strong>
-          {tokens && tokens.saved > 0 && <span style={{ ...label, color: 'var(--ok)' }}> {shortTokens(tokens.saved)} less ({tokens.pct}%)</span>}
+          <strong style={figure}>{tokens ? fmtTokens(tokens.used) : dash}</strong>
+          {tokens && tokens.saved > 0 && <span style={{ ...label, color: 'var(--ok)' }}> {fmtTokens(tokens.saved)} less ({tokens.pct}%)</span>}
         </span>
         <span>
-          <span style={label}>Rule activity</span><br />
+          <span style={label}>{RULE_ACTIVITY}</span><br />
           {rules && tallyTotal(rules) > 0
             ? <strong style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{tallyShort(rules)}</strong>
             : <strong style={figure}>{rules ? '0' : dash}</strong>}

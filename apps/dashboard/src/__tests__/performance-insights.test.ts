@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { showRecAgentFilter, pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, plural, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { plural } from '@/lib/format';
+import { showRecAgentFilter, pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, fmtCount, insightsVerdict, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
@@ -29,9 +30,10 @@ describe('performance verdict', () => {
     expect(insightsVerdict({ ...base, flaggedRuns: 1000, flaggedAtLeast: true })!.title).toBe('1,000+ runs looked unusual');
     expect(fmtCount(1000, true)).toBe('1,000+');
     expect(fmtCount(7)).toBe('7');
-    expect(plural(1, false, 'run', 'runs')).toBe('run');
-    expect(plural(1, true, 'run', 'runs')).toBe('runs');
-    expect(plural(0, false, 'run', 'runs')).toBe('runs');
+    expect(plural(1, 'run')).toBe('run');
+    expect(plural(1, 'run', 'runs', true)).toBe('runs');
+    expect(plural(0, 'run')).toBe('runs');
+    expect(plural(2, 'try', 'tries')).toBe('tries');
   });
 });
 
@@ -65,6 +67,7 @@ describe('recommendations list', () => {
   it('keeps Mark as fixed, Snooze and Dismiss behind More on open rows', () => {
     expect(recRowActions(true, false)).toEqual(['evidence', 'toggle']);
     expect(recRowActions(true, true)).toEqual(['evidence', 'toggle', 'fixed', 'snooze', 'dismiss']);
+    expect(recRowActions(true, true, false)).toEqual(['evidence']);
     expect(recRowActions(false, true)).toEqual(['evidence']);
   });
   it('sends implemented for Mark as fixed, and a reason with Dismiss', () => {
@@ -140,12 +143,12 @@ describe('fold-out rows', () => {
 
 describe('recommendations agent filter', () => {
   it('shows when the rows come from more than one agent, even if only one had traffic in the range', () => {
-    expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], [{ agent: 'a' }], '')).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], ['a'], '')).toBe(true);
   });
   it('hides with one agent everywhere; shows with traffic from several, unknown traffic, or a typed filter', () => {
-    expect(showRecAgentFilter([{ agentId: 'a' }], [{ agent: 'a' }], '')).toBe(false);
-    expect(showRecAgentFilter([], [{ agent: 'a' }, { agent: 'b' }], '')).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }], ['a'], '')).toBe(false);
+    expect(showRecAgentFilter([], ['a', 'b'], '')).toBe(true);
     expect(showRecAgentFilter([], null, '')).toBe(true);
-    expect(showRecAgentFilter([{ agentId: 'a' }], [{ agent: 'a' }], 'x')).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }], ['a'], 'x')).toBe(true);
   });
 });

@@ -111,7 +111,7 @@ describe('which rules turn on refusals for unnamed calls (engine fleetHasEnforci
     for (const t of ['spend_cap', 'loop_breaker', 'call_rate']) expect(canAct(r(t, 'enforce'))).toBe(true);
   });
 
-  it('Just tell me never counts: it lets every call through', () => {
+  it('Alert me never counts: it lets every call through', () => {
     const withResponse = (response: string) => ({ ...r('spend_cap', 'enforce'), response }) as unknown as R;
     expect(canAct(withResponse('notify'))).toBe(false);
     for (const response of ['block', 'pause', 'stop']) expect(canAct(withResponse(response))).toBe(true);

@@ -19,6 +19,7 @@ import {
   type EventModel,
   type FeedVariant,
 } from '@/lib/activity';
+import { plural } from '@/lib/format';
 
 // Three interchangeable row designs over one shared model (ported from
 // whiteroom-ai-whiteroom's dashboard). Styled with this app's existing
@@ -269,7 +270,7 @@ export function ActivityFeed({
         summary={
           <>
             {current === 0 ? 'Latest' : `${start + 1}–${start + visible.length}`} · page {current + 1} of {pages} ·{' '}
-            {total} event{total !== 1 ? 's' : ''}
+            {total} {plural(total, 'event')}
           </>
         }
       />

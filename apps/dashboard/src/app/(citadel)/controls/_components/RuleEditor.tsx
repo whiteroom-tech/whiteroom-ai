@@ -82,7 +82,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     setParams({ keywords: [...keywords, typed] });
     setKeyword('');
   };
-  // Just tell me, Pause and Stop alert; Block does when asked to.
+  // Alert me, Pause and Stop alert; Block does when asked to.
   const alerts = sendsAlert(draft);
   const seen = watching && wouldAct ? watchSummary({ response: rule.response }, wouldAct) : null;
 
@@ -210,7 +210,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         </p>
         {alerts && alertChannel === false && (
           <p style={{ ...help, color: 'var(--warn-tx)' }}>
-            No alert channel is connected, so no one will be told. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
+            No alert channel is connected, so no one will get the alert. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link>
           </p>
         )}
         {draft.response === 'block' && (

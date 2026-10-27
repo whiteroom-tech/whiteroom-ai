@@ -4,6 +4,7 @@
  * Pure, so the wording can be tested without rendering.
  */
 import { flaggedInWindow, UNUSUAL_SIGNALS } from '@/lib/runs';
+import { plural } from '@/lib/format';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { humanizeDetector, type DiagnosisSummary } from '@/lib/diagnosis/model';
 
@@ -40,7 +41,7 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
   const problems = i.problems ?? 0;
   const flagged = i.flaggedRuns ?? 0;
   if (problems > 0) return { tone: 'warn', title: i.problemAgent ? `${i.problemAgent} needs a look` : 'Some agents need a look' };
-  if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${plural(flagged, i.flaggedAtLeast, 'run looked', 'runs looked')} unusual` };
+  if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${plural(flagged, 'run looked', 'runs looked', i.flaggedAtLeast)} unusual` };
   if (i.flagsPending || i.healthPending) return null;
   return { tone: 'ok', title: 'Your agents look fine' };
 }
@@ -48,11 +49,6 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
 /** A count, with "+" when it's a lower bound. */
 export function fmtCount(n: number, atLeast = false): string {
   return `${n.toLocaleString('en-US')}${atLeast ? '+' : ''}`;
-}
-
-/** Singular only for exactly one, never for a lower bound ("1+ runs"). */
-export function plural(n: number, atLeast: boolean, one: string, many: string): string {
-  return n === 1 && !atLeast ? one : many;
 }
 
 /** The signals Unusual behaviour can't see yet, for its "Not tracked yet" line. */
@@ -70,8 +66,8 @@ export const DEFAULT_REC_STATUS = 'open';
  * not range-scoped) come from more than one agent, when the range's traffic
  * does, when the traffic list couldn't load, or while a filter is typed.
  */
-export function showRecAgentFilter(recs: { agentId: string }[], byAgent: { agent: string }[] | null, typed: string): boolean {
-  return typed !== '' || byAgent === null || byAgent.length > 1 || new Set(recs.map((r) => r.agentId)).size > 1;
+export function showRecAgentFilter(recs: { agentId: string }[], agentIds: string[] | null, typed: string): boolean {
+  return typed !== '' || agentIds === null || agentIds.length > 1 || new Set(recs.map((r) => r.agentId)).size > 1;
 }
 
 /** An older engine recommendation's title from its detector id: "review_cache_behavior" → "Cache behavior". */
@@ -102,12 +98,16 @@ export type RecRowAction = 'evidence' | 'toggle' | 'fixed' | 'snooze' | 'dismiss
 /**
  * Buttons on a recommendation row that isn't from the health check, in order:
  * View evidence, then (open rows only) a More/Less toggle that reveals
- * Mark as fixed, Snooze and Dismiss.
+ * Mark as fixed, Snooze and Dismiss. A row with no current finding gets no
+ * feedback buttons: the engine would refuse any feedback without one.
  */
-export function recRowActions(open: boolean, expanded: boolean): RecRowAction[] {
-  if (!open) return ['evidence'];
+export function recRowActions(open: boolean, expanded: boolean, hasFinding = true): RecRowAction[] {
+  if (!open || !hasFinding) return ['evidence'];
   return expanded ? ['evidence', 'toggle', 'fixed', 'snooze', 'dismiss'] : ['evidence', 'toggle'];
 }
+
+/** Why an open row has no feedback buttons. */
+export const NO_FINDING_NOTE = 'Can’t be marked yet: there’s no current evidence for it.';
 
 /** What each feedback button sends. Dismiss gives the one reason these rows offer. */
 export function recFeedback(action: Exclude<RecRowAction, 'evidence' | 'toggle'>): { action: 'implemented' | 'snooze' | 'dismiss'; reason?: string } {
@@ -143,7 +143,7 @@ export function unusualRow(f: { count: number | null; atLeast: boolean; failed: 
   if (f.failed) return { tone: 'muted', text: 'Couldn\u2019t load flagged runs. Reload to try again.' };
   if (f.count === null) return null;
   if (f.count === 0) return { tone: 'ok', text: 'Nothing unusual this week' };
-  return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, f.atLeast, 'run', 'runs')} flagged this week` };
+  return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, 'run', 'runs', f.atLeast)} flagged this week` };
 }
 
 /** The health check's row: its summary line (counts only; see diagnosisSummary). */

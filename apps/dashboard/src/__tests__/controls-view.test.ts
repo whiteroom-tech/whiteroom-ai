@@ -15,16 +15,16 @@ describe('rule sentences', () => {
     expect(ruleSentence(rule({}))).toEqual({ pre: 'When an agent spends more than ', val: '$190', post: ' in a day, it would block the call.' });
     // Only a rule in Block does it; Record only and Off say what it would do.
     expect(ruleSentenceText(rule({ mode: 'enforce' }))).toBe('When an agent spends more than $190 in a day, block the call.');
-    expect(ruleSentenceText(rule({ mode: 'off', response: 'notify' }))).toBe('When an agent spends more than $190 in a day, it would tell me.');
-    expect(ruleSentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, it would tell me.');
+    expect(ruleSentenceText(rule({ mode: 'off', response: 'notify' }))).toBe('When an agent spends more than $190 in a day, it would alert you.');
+    expect(ruleSentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, it would alert you.');
     expect(ruleSentenceText(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('When an agent makes the same call 100 times in a run, it would block the call.');
     expect(ruleSentenceText(rule({ ruleType: 'call_rate', params: { maxCalls: 60 }, response: 'pause' }))).toBe('When an agent makes more than 60 calls in a minute, it would pause the agent.');
     expect(ruleSentenceText(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Only allow claude-haiku-4-5. For any other model, it would block the call.');
     expect(ruleSentenceText(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }))).toBe('No tools picked yet.');
   });
 
-  it('says "and tell me" when Block also alerts', () => {
-    expect(ruleSentenceText(rule({ alsoNotify: true, mode: 'enforce' }))).toBe('When an agent spends more than $190 in a day, block the call and tell me.');
+  it('says "and alert you" when Block also alerts', () => {
+    expect(ruleSentenceText(rule({ alsoNotify: true, mode: 'enforce' }))).toBe('When an agent spends more than $190 in a day, block the call and alert you.');
     expect(ruleSentenceText(rule({ alsoNotify: true, response: 'stop' }))).toMatch(/stop the agent\.$/);
   });
 
@@ -92,7 +92,7 @@ describe('row status lines', () => {
   it('Enforce: the last 7 days, only when the count belongs to this rule alone', () => {
     const r = rule({ mode: 'enforce' });
     expect(rowStat(r, { byRuleType: counts, onlyOfItsType: true })).toBe('3 blocked · last 7 days');
-    expect(rowStat({ ...r, response: 'notify' }, { byRuleType: counts, onlyOfItsType: true })).toBe('1 told you · last 7 days');
+    expect(rowStat({ ...r, response: 'notify' }, { byRuleType: counts, onlyOfItsType: true })).toBe('1 alerted you · last 7 days');
     expect(rowStat(r, { byRuleType: counts, onlyOfItsType: false })).toBe('');
     expect(rowStat(r, { onlyOfItsType: true })).toBe('');
     // Counts loaded with nothing for this rule type: it acted 0 times.
@@ -134,7 +134,7 @@ describe('what the agent gets', () => {
     expect(agentGets(rule({}))).toBe('403 governance_block\nresponse: block\nreason: budget_exceeded\nretryable: false\nresets: next day (00:00 UTC)');
     expect(agentGets(rule({ ruleType: 'call_rate', params: { maxCalls: 60 } }))).toMatch(/retryable: true\nresets: once the last minute is back under the limit$/);
     expect(agentGets(rule({ response: 'stop' }))).toMatch(/retryable: false\nresets: when someone resumes it$/);
-    expect(agentGets(rule({ response: 'notify' }))).toBe('Nothing: the call goes through.\nYou get told; the agent doesn’t.');
+    expect(agentGets(rule({ response: 'notify' }))).toBe('Nothing: the call goes through.\nYou get an alert; the agent doesn’t.');
   });
 });
 
@@ -218,7 +218,7 @@ describe('groups and per-rule counts', async () => {
     expect(g.all.map((r) => r.id)).toEqual(['b', 'a']);
     expect(g.some.map((r) => r.id)).toEqual(['c']);
     expect(g.off.map((r) => r.id)).toEqual(['d']);
-    // A "tell me" rule in Block doesn't stop anything.
+    // An Alert me rule in Block doesn't stop anything.
     expect(stopping([a, b, c, d]).map((r) => r.id)).toEqual(['b']);
     // Nor does one with nothing picked yet (a tool list with no tools acts on nothing).
     expect(stopping([rule({ id: 'e', mode: 'enforce', ruleType: 'tool_list', params: { blockedTools: [] } })])).toEqual([]);
@@ -243,7 +243,7 @@ describe('weakening a rule', async () => {
   it('names every way a change makes the rule weaker, and nothing for a stronger one', () => {
     const cap = rule({ mode: 'enforce', response: 'pause', alsoNotify: false, params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
     expect(weakenings(cap, { ...cap, mode: 'off' })).toEqual(['Mode: Block → Off']);
-    expect(weakenings(cap, { ...cap, response: 'notify' })).toEqual(['Then: pause the agent → tell me']);
+    expect(weakenings(cap, { ...cap, response: 'notify' })).toEqual(['Then: pause the agent → alert you']);
     expect(weakenings(cap, { ...cap, appliesTo: ['lead'] })).toEqual(['Covers only lead, not every agent']);
     expect(weakenings({ ...cap, appliesTo: ['lead', 'writer'] }, { ...cap, appliesTo: ['lead'] })).toEqual(['No longer covers writer']);
     expect(weakenings(cap, { ...cap, params: { dailyCap: 250, scope: 'day', unit: 'dollars' } })).toEqual(['Limit: $190 → $250']);

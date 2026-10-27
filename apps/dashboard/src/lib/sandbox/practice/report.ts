@@ -7,6 +7,7 @@
 
 import { DISCLAIMER, fixLine, headline, STATUS_LABEL } from './model';
 import type { PracticeReport } from './types';
+import { plural } from '@/lib/format';
 
 /** Control, C1 and bidi characters, which could make the file read differently from what it says (§9.7). */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
@@ -35,7 +36,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px
 </style></head><body><main>
 <p class="muted">WHITEROOM · PRACTICE TEST REPORT</p>
 <h1 class="${tone}">${esc(headline(r))}</h1>
-<p class="muted">Fleet ${esc(r.tested.fleet)} · Agent ${esc(r.tested.agent)} · ${r.runs} run${r.runs === 1 ? '' : 's'} · ${esc(date)} · Test ${esc(id)}</p>
+<p class="muted">Fleet ${esc(r.tested.fleet)} · Agent ${esc(r.tested.agent)} · ${r.runs} ${plural(r.runs, 'run')} · ${esc(date)} · Test ${esc(id)}</p>
 <h2>Checks</h2>
 <div class="card"><table><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>
 ${r.checks.map((c) => `<tr><td>${esc(c.mode ? `${c.label} · ${c.mode}` : c.label)}</td><td class="${c.status === 'passed' ? 'ok' : c.status === 'failed' ? 'bad' : 'wait'}">${esc(STATUS_LABEL[c.status])}</td></tr>`).join('\n')}

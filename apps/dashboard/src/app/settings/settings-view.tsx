@@ -24,6 +24,7 @@ import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
+import { plural, DAY_MS } from '@/lib/format';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -264,7 +265,7 @@ function PlanSection({
   const trialEnd = entitlement.trialEndsAt.slice(0, 10);
   // ceil so an active trial never reads "0 days left"; capped because a DST
   // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
-  const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / 86_400_000)));
+  const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / DAY_MS)));
 
   return (
     <Section title="Plan" description="What your subscription currently allows. Limits apply to every fleet on the account.">
@@ -285,7 +286,7 @@ function PlanSection({
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)', fontWeight: 700 }}>{PLANS[plan].name}</span>
             {entitlement.onTrial && (
               <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
-                free · {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left
+                free · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left
               </span>
             )}
             {subscription?.planOverride && (
