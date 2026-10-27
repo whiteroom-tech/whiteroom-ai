@@ -73,6 +73,30 @@ describe('releaseFleet', () => {
     expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'starter' });
   });
 
+  it('cancels any closing for a fleet nobody owns any more: closesAt null, no reason', async () => {
+    account({ sub: null, trialEndsAt: new Date().toISOString(), owner: null });
+    await releaseFleet('fleet-1');
+    const sent = pushed();
+    expect(sent).toHaveProperty('closesAt', null);
+    expect(sent).not.toHaveProperty('closeReason');
+  });
+});
+
+describe('the engine confirming a push', () => {
+  it('a push with no closing counts as delivered on any 2xx, even from an engine that predates closing', async () => {
+    account({ sub: null, trialEndsAt: new Date(Date.now() + 86_400_000).toISOString() });
+    fetchMock.mockResolvedValue(new Response('{"success":true,"applied":["fleet-1"],"unknown":[]}', { status: 200 }));
+    expect(await syncEntitlementsToEngine('u1')).toBe(true);
+    expect(pushed()).toMatchObject({ closesAt: null, closeReason: null });
+  });
+
+  it('is not delivered on a 503 (a closing change the engine could not store)', async () => {
+    account({ sub: null, trialEndsAt: new Date(Date.now() + 86_400_000).toISOString() });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValue(new Response('{"error":"Couldn\'t save the closing change"}', { status: 503 }));
+    expect(await syncEntitlementsToEngine('u1')).toBe(false);
+  });
+
   it('applies the remaining owner\'s plan when a fleet is released and someone still holds it', async () => {
     account({ sub: null, trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(), owner: 'u1' });
     await releaseFleet('fleet-1');
