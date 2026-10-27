@@ -70,6 +70,9 @@ describe('Last 7 days on the agent page', () => {
     expect(scoreWorking([{ value: 84.6 }, { value: 84.6 }])).toEqual({ sum: '(8.46 + 8.46) ÷ 2 = 8.46 → 8', score: 8 });
     // Enough places that the rounding shows.
     expect(scoreWorking([{ value: 74.96 }, { value: 74.96 }])?.sum).toBe('(7.496 + 7.496) ÷ 2 = 7.496 → 7');
+    // The result is rounded from the printed mean, so the two always agree.
+    expect(scoreWorking([{ value: 74.99 }, { value: 74.999 }])?.sum).toBe('(7.499 + 7.5) ÷ 2 = 7.499 → 7');
+    expect(scoreWorking([{ value: 74.996 }, { value: 75 }])?.sum).toBe('(7.5 + 7.5) ÷ 2 = 7.5 → 8');
   });
 });
 

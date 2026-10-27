@@ -86,8 +86,10 @@ function consequences(kind: RotationKind) {
   );
 }
 
-export function RotateDialog({ kind, open, onClose, onDone }: {
+export function RotateDialog({ kind, open, onClose, onDone, preview = false }: {
   kind: RotationKind;
+  /** /dev/fleet-key: confirming closes the dialog and changes nothing. */
+  preview?: boolean;
   open: boolean;
   onClose: () => void;
   /** The change went through: the new API key (on a rotation) and the new proxy URLs, to show once. */
@@ -98,6 +100,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   const { cloudKeys, error, unconfirmedKey } = state;
 
   async function run(reissueCloudIdentityKeys: boolean) {
+    if (preview) { onClose(); return; }
     if (!canConfirm(state, busy)) return;
     setBusy(true); dispatch({ type: 'start' });
     try {

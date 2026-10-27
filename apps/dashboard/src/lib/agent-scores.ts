@@ -110,7 +110,8 @@ export function scoreWorking(parts: Pick<ScorePart, 'value'>[]): { sum: string; 
   const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
   // Parts and mean to up to three places, so the rounding shows (7.496 → 7,
   // never "7.5 → 7"). The card shows this same score in the ring, so the two can't disagree.
-  const score = Math.round(mean);
+  // Rounded from the printed figure, so the sum and its result always agree.
+  const score = Math.round(+places(mean));
   if (scored.length === 1) return { sum: `${places(mean)} → ${score}`, score };
   return { sum: `(${scored.map(places).join(' + ')}) ÷ ${scored.length} = ${places(mean)} → ${score}`, score };
 }

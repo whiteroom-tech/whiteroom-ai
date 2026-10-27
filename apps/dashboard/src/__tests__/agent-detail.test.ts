@@ -60,6 +60,10 @@ describe('the Now card', () => {
     // Older engine: an idle agent's flat fields are lifetime totals, so no run is claimed.
     expect(nowCard({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332 }, [], date).run).toBeNull();
   });
+  it('says the same words as the header for a short pause', () => {
+    expect(nowCard({ agentId: 'a', status: 'resting' }, [], date).status).toBe(statusWords('resting').text);
+  });
+
   it('says Paused or Stopped while held', () => {
     expect(nowCard({ agentId: 'a', status: 'working', hold: { state: 'stopped', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } }, [], date).status).toBe('Stopped');
   });

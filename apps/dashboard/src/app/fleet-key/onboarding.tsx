@@ -122,7 +122,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
       sub="Bring your own key. Each key gets its own proxy URL; WhiteRoom stores only a hash and the last 4 characters, never the key itself."
       right={keys && keys.length > 0 && !adding ? (
         <>
-          {!previewKeys && <Button size={28} onClick={() => setReplacing(true)}>Replace URLs&hellip;</Button>}
+          <Button size={28} onClick={() => setReplacing(true)}>Replace URLs&hellip;</Button>
           <Button size={28} onClick={() => setAdding(true)}>+ Add a provider key</Button>
         </>
       ) : undefined}
@@ -175,6 +175,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
       />
       <RotateDialog
         kind="proxy-urls"
+        preview={!!previewKeys}
         open={replacing}
         onClose={() => setReplacing(false)}
         onDone={(result) => { setReplacing(false); setIssued(null); setReplaced(result); void refresh().catch(() => {}); }}
@@ -475,7 +476,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
             <Banner variant="info" icon="check">Welcome, {name}. Your account is ready: point an agent at WhiteRoom below and it appears on <a href={ROUTES.home} className="wr-link">Home</a> on its first call.</Banner>
           )}
 
-          <SettingsCard id="fleet-key" title="Your WhiteRoom fleet key" sub="For CLI commands and API requests" right={!previewKeys && !rotated ? <Button variant="danger" className="wr-btn--outline-bad" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
+          <SettingsCard id="fleet-key" title="Your WhiteRoom fleet key" sub="For CLI commands and API requests" right={!rotated ? <Button variant="danger" className="wr-btn--outline-bad" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
               {rotated && <RotationResult result={rotated} onDismiss={() => window.location.reload()} />}
               {/* After a rotation the old key is dead: only the new one, in the banner, is offered. */}
@@ -489,7 +490,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                 Keep it private. Anyone with it can act on this fleet. If it leaks, rotate it.
               </p>
             </div>
-            <RotateDialog kind="api-key" open={rotating} onClose={() => setRotating(false)} onDone={(result) => { setRotating(false); setShowKey(false); setRotated(result); }} />
+            <RotateDialog kind="api-key" preview={!!previewKeys} open={rotating} onClose={() => setRotating(false)} onDone={(result) => { setRotating(false); setShowKey(false); setRotated(result); }} />
           </SettingsCard>
 
           <SettingsCard id="point" title="Point your agent at WhiteRoom">

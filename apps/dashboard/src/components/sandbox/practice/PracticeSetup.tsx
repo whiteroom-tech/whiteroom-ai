@@ -30,23 +30,23 @@ function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] |
   const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
   return (
     <div style={{ margin: '16px 0' }}>
-    <SettingsCard id="practice-checks-preview" title="What the test checks">
-      <ol className={s.previewList}>
-        {scenarios.map((sc) => (
-          <li key={sc} className={s.previewItem}>
-            <span className={s.previewName}>{sc}</span>
-            <span className={s.previewText}>{CATALOG.checks.filter((c) => c.scenario === sc && c.label !== sc).map((c) => c.label).join(' · ')}</span>
+      <SettingsCard id="practice-checks-preview" title="What the test checks">
+        <ol className={s.previewList}>
+          {scenarios.map((sc) => (
+            <li key={sc} className={s.previewItem}>
+              <span className={s.previewName}>{sc}</span>
+              <span className={s.previewText}>{CATALOG.checks.filter((c) => c.scenario === sc && c.label !== sc).map((c) => c.label).join(' · ')}</span>
+            </li>
+          ))}
+          <li className={s.previewItem}>
+            <span className={s.previewName}>{CATALOG.controls.scenario}</span>
+            {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
+              : controls.length ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
+              : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
+            {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
           </li>
-        ))}
-        <li className={s.previewItem}>
-          <span className={s.previewName}>{CATALOG.controls.scenario}</span>
-          {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
-            : controls.length ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
-            : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
-          {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
-        </li>
-      </ol>
-    </SettingsCard>
+        </ol>
+      </SettingsCard>
     </div>
   );
 }

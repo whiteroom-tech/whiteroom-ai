@@ -170,7 +170,7 @@ export function KeyField({ credential, showKey, provider, onChange, onToggleShow
         {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
         {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
         {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
-        {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s your WhiteRoom fleet key. Paste your Anthropic or OpenAI key, or a fleet token (wr_…).</span>}
+        {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s your WhiteRoom fleet key. Paste your agent’s Anthropic or OpenAI key instead.</span>}
         {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
       </p>
       {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have a WhiteRoom fleet token? Paste it instead.</p>}

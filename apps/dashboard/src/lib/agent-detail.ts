@@ -88,7 +88,7 @@ export interface NowCard {
 export function nowCard(a: AgentInfo, runs: RunSummary[] | null, fmtDate: (iso: string) => string): NowCard {
   const s = agentState(a);
   const shift = currentShift(a);
-  const status = a.hold ? (a.hold.state === 'stopped' ? 'Stopped' : 'Paused') : s === 'resting' ? 'Paused' : shift ? 'Running' : 'Not running';
+  const status = a.hold ? (a.hold.state === 'stopped' ? 'Stopped' : 'Paused') : s === 'resting' ? statusWords('resting').text : shift ? 'Running' : 'Not running';
   let run: NowCard['run'] = null;
   if (shift) {
     run = { label: 'Run', number: shift.watchNumber || 1, tail: [taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min so far`].join(' · ') };

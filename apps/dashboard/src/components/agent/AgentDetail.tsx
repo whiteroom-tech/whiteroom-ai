@@ -212,6 +212,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     return () => { clearInterval(id); clearTimeout(giveUp); };
   }, [pending, refresh, tick]);
 
+  /** /dev/agent: actions change the sample agent on screen, and nothing is sent. */
+  const previewHold = (state: 'paused' | 'stopped' | null) =>
+    setAgent((a) => (a ? { ...a, hold: state ? { state, by: 'dashboard', reason: null, at: new Date().toISOString() } : null } : a));
+
   async function pause() {
     // A Gov v1 fleet holds the agent until someone resumes it, so Pause offers
     // Undo; an older fleet pauses it for a moment and it starts again on its own.
@@ -219,7 +223,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     const toastFor = (): { text: string; undo?: () => void } => held
       ? { text: `${agentId} paused. It makes no calls until you resume it. ${UNNAMED_CALLS_REFUSED}`, undo: () => void resume(true) }
       : { text: `${agentId} is paused for a moment. It starts again on its own.` };
-    if (preview) { setToast(toastFor()); return; }
+    if (preview) { if (held) previewHold('paused'); setToast(toastFor()); return; }
     setActionError(null);
     setPending('pausing');
     try {
@@ -238,7 +242,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   async function stop() {
     setConfirmStop(false);
-    if (preview) return;
+    if (preview) { previewHold('stopped'); return; }
     setActionError(null);
     setPending('stopping');
     try {
@@ -276,7 +280,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   async function resume(held = false) {
     // A pause toast would now be wrong.
     setToast(null);
-    if (preview) return;
+    if (preview) { previewHold(null); return; }
     setActionError(null);
     resumingHold.current = held || !!agent?.hold;
     resumeSent.current = false;
@@ -301,13 +305,13 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     setTaskSaving(true);
     setTaskNote(null);
     try {
-      await updateAgentTaskType(fleetId, agentId, value, authKey);
+      if (!preview) await updateAgentTaskType(fleetId, agentId, value, authKey);
       // Show the saved value right away instead of the old one until the
       // next poll brings it back.
       setAgent((a) => (a ? { ...a, taskType: value } : a));
       setTaskDraft(null);
       setTaskNote({ ok: true, text: 'Saved.' });
-      refresh();
+      if (!preview) refresh();
     } catch {
       setTaskNote({ ok: false, text: 'Couldn’t save. Try again.' });
     } finally {
