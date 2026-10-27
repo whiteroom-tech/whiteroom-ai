@@ -42,6 +42,19 @@ describe('Home agents: one list', () => {
     expect(w.calls).toBeNull();
     expect(w.costUsd).toBeNull();
     expect(homeWeek(null, null, { unsupported: true }, null)).toEqual({ agents: {}, calls: null, costUsd: null, rules: null });
+    // The audit read failed but rules came back: tokens are unknown (–), never 0.
+    const noAudit = homeWeek(null, null, { fleetId: 'f', totals: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: { writer: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } } as never, null);
+    expect(noAudit.agents.writer.used).toBeUndefined();
+  });
+});
+
+describe('rule activity, short', () => {
+  it('fits a card line, whatever the tally holds', async () => {
+    const { tallyShort } = await import('@/lib/governance');
+    expect(tallyShort(tally({ blocks: 2, wouldBlocks: 47 }))).toBe('2 blocked · 47 in Record only');
+    expect(tallyShort(tally({ wouldBlocks: 3 }))).toBe('3 in Record only');
+    expect(tallyShort({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 1, toldYou: 4 })).toBe('1 stopped · 2 paused · 1 blocked · 4 told you');
+    expect(tallyShort(tally({}))).toBe('');
   });
 });
 
@@ -79,5 +92,11 @@ describe('Home view', () => {
     expect(big).toContain('aria-label="Find an agent"');
     expect(view({ report: REPORT(many.length), agents: many, view: 'cards' })).not.toContain('role="grid"');
     expect(view({})).not.toContain('aria-label="Find an agent"');
+  });
+
+  it('shows – for tokens it couldn’t read, never 0', () => {
+    const html = view({ view: 'table', week: { agents: { 'lead-agent': { rules: tally({ blocks: 1 }) } }, calls: null, costUsd: null, rules: null } });
+    expect(html).not.toMatch(/Last 7 days: 0 tokens/);
+    expect(html).toContain('1 blocked');
   });
 });

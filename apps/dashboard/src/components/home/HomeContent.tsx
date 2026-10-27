@@ -212,7 +212,9 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AgentSort>('attention');
   const weeks = week?.agents ?? {};
-  const sorted = shownAgents(agents, weeks, search, sort);
+  // Search and sort only while their controls are shown (above 6 agents): a fleet that shrinks can't stay filtered.
+  const finding = agents.length > 6;
+  const sorted = shownAgents(agents, weeks, finding ? search : '', finding ? sort : 'attention');
   const weekOf = (id: string) => weeks[id.toLowerCase()];
   const quiet = !!today && today.calls === 0 && !todayFailing;
   const nameNote = inferredNameNote(agents);
@@ -258,7 +260,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
         >
           <div style={{ display: 'grid', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Status now · tokens, savings, rule activity and score for the last 7 days.</p>
-            {agents.length > 6 && (
+            {finding && (
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <input type="search" className="wr-input" aria-label="Find an agent" placeholder="Find an agent" value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: '1 1 14rem', minWidth: 0, maxWidth: '22rem' }} />
                 <SelectChip label="Sort" value={sort} onChange={setSort} options={AGENT_SORTS} />
@@ -284,7 +286,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                         <StatusPill state={agentState(a)} />
                       </div>
                       <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{progressLine(a)}</div>
-                      {w && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{weekLine(w)}</div>}
+                      {w && weekLine(w) && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{weekLine(w)}</div>}
                       {block && (
                         <div>
                           <span className="wr-chip-warn">
@@ -309,8 +311,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               columns={[
                 { key: 'agent', header: 'Agent', width: 'minmax(160px,1.4fr)', render: (a) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{a.agentId}</span> },
                 { key: 'status', header: 'Status', width: '150px', render: (a) => <StatusPill state={agentState(a)} /> },
-                { key: 'used', header: 'Tokens used', width: '110px', numeric: true, render: (a) => { const w = weekOf(a.agentId); return w ? shortTokens(w.used) : '–'; } },
-                { key: 'saved', header: 'Saved, est.', width: '110px', numeric: true, render: (a) => { const w = weekOf(a.agentId); return w && w.saved > 0 ? (w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`) : '–'; } },
+                { key: 'used', header: 'Tokens used', width: '110px', numeric: true, render: (a) => { const u = weekOf(a.agentId)?.used; return u !== undefined ? shortTokens(u) : '–'; } },
+                { key: 'saved', header: 'Saved, est.', width: '110px', numeric: true, render: (a) => { const w = weekOf(a.agentId); return w?.saved ? (w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`) : '–'; } },
                 { key: 'rules', header: 'Rule activity', width: 'minmax(160px,1.2fr)', render: (a) => { const r = weekOf(a.agentId)?.rules; return r && tallyTotal(r) > 0 ? <span style={{ whiteSpace: 'normal' }}>{tallyShort(r)}</span> : <span style={{ color: 'var(--tx2)' }}>–</span>; } },
                 { key: 'score', header: 'Score', width: '200px', render: (a) => { const sc = weekOf(a.agentId)?.score; return sc ? <AgentScoreWheel agent={sc} /> : <span style={{ color: 'var(--tx2)' }}>–</span>; } },
               ]}
@@ -382,17 +384,18 @@ export function homeWeek(
     }
   }
   const okRules = rules && !('unsupported' in rules) ? rules : null;
-  if (okRules) for (const [id, c] of Object.entries(okRules.byAgent)) (agents[key(id)] ??= { used: 0, saved: 0 }).rules = tallyFromRuleActions(c);
-  if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= { used: 0, saved: 0 }).score = s;
+  if (okRules) for (const [id, c] of Object.entries(okRules.byAgent)) (agents[key(id)] ??= {}).rules = tallyFromRuleActions(c);
+  if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
   const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
 /** "Last 7 days: 120K tokens · saved $1.20 · 2 blocked · score 8". */
 function weekLine(w: AgentWeek): string {
-  const bits = [`Last 7 days: ${shortTokens(w.used)} tokens`];
-  if (w.saved > 0) bits.push(`saved ${w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`}`);
+  const bits: string[] = [];
+  if (w.used !== undefined) bits.push(`${shortTokens(w.used)} tokens`);
+  if (w.saved) bits.push(`saved ${w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`}`);
   if (w.rules && tallyTotal(w.rules) > 0) bits.push(tallyShort(w.rules));
   if (w.score?.score != null) bits.push(`score ${w.score.score}`);
-  return bits.join(' · ');
+  return bits.length ? `Last 7 days: ${bits.join(' · ')}` : '';
 }

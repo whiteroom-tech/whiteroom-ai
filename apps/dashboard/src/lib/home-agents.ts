@@ -2,15 +2,15 @@
 // last 7 days (audit_summary tokens and savings, rule_actions, scores), and
 // the search and sort that keep a big fleet usable.
 
-import { agentState, sortAgents } from '@/lib/home';
+import { sortAgents } from '@/lib/home';
 import type { GovernanceTally } from '@/lib/governance';
 import type { AgentInfo, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
-  /** Tokens the agent used in the last 7 days. */
-  used: number;
-  /** Tokens WhiteRoom saved it (smaller context), est. */
-  saved: number;
+  /** Tokens the agent used in the last 7 days; absent when the audit read failed (shown as –, never 0). */
+  used?: number;
+  /** Tokens WhiteRoom saved it (smaller context), est.; absent with `used`. */
+  saved?: number;
   /** The same in dollars at its own price, when the engine prices it (E1b). */
   savedUsd?: number | null;
   rules?: GovernanceTally;
@@ -38,12 +38,6 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   if (sort === 'used') return [...base].sort((x, y) => (week(y)?.used ?? 0) - (week(x)?.used ?? 0));
   if (sort === 'saved') return [...base].sort((x, y) => (week(y)?.saved ?? 0) - (week(x)?.saved ?? 0));
   return base;
-}
-
-/** Whether an agent needs a look now: held, or not reporting. */
-export function needsAttention(a: AgentInfo): boolean {
-  const s = agentState(a);
-  return s === 'stale' || s === 'disconnected' || !!a.hold;
 }
 
 /** "120K" / "980": tokens, short. */
