@@ -62,7 +62,7 @@ interface Account {
 interface World {
   user: Account;
   /** The subscriptions row, or null. */
-  sub: { plan: string; status: string; plan_override: string | null; stripe_subscription_id?: string | null; stripe_customer_id?: string } | null;
+  sub: { plan: string; status: string; plan_override: string | null; stripe_subscription_id?: string | null; stripe_customer_id?: string; updated_at?: string } | null;
   trialEndsAt: string;
   /** Owns fleet-1. */
   owner: boolean;
@@ -208,7 +208,8 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
     }
     if (sql.startsWith('UPDATE subscriptions SET updated_at')) { world.log.push('subscription to the back of the queue'); return one(!!world.sub); }
     if (sql.startsWith('UPDATE subscriptions SET status')) { if (world.sub) world.sub.status = String(params[1]); return one(!!world.sub); }
-    if (sql.includes('FROM subscriptions')) { world.log.push('read plan'); return { rows: world.sub ? [world.sub] : [] }; }
+    // A subscription row last changed now unless a test says otherwise (a lapse counts from LAPSE_WINDOWS_FROM).
+    if (sql.includes('FROM subscriptions')) { world.log.push('read plan'); return { rows: world.sub ? [{ updated_at: new Date().toISOString(), ...world.sub }] : [] }; }
     if (sql.startsWith('SELECT org_id FROM organization_members')) return { rows: world.soleOrgOwner ? [{ org_id: 'o1' }] : [] };
     if (sql.startsWith('SELECT o.name FROM organizations')) return { rows: world.soleOrgOwner ? [{ name: 'Acme' }] : [] };
 
@@ -458,6 +459,13 @@ describe('the closing state Settings and the banner read', () => {
 });
 
 describe('plan lapse', () => {
+  it('a paid plan that lapsed before closing windows began keeps its old behaviour: no window, no email', async () => {
+    setup({ owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null, updated_at: '2026-09-01T00:00:00Z' }, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(world.user.closes_at).toBeNull();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   it('a lapsed paid plan starts a lapse window and emails once; the fleet keeps working on its old plan meanwhile', async () => {
     setup({ owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
     expect(await syncEntitlementsToEngine('u1')).toBe(true);
@@ -595,6 +603,12 @@ describe('checkout on a closing account', () => {
     const lifetime = expires_at - Date.now() / 1000;
     expect(lifetime).toBeGreaterThanOrEqual(30 * 60);
     expect(lifetime).toBeLessThanOrEqual(32 * 60);
+  });
+
+  it('an account that isn’t closing keeps Stripe’s usual Checkout lifetime', async () => {
+    setup({ trialEndsAt: PAST });
+    expect(await startCheckout('starter')).toEqual({ ok: true, url: 'https://checkout.example.test/s' });
+    expect(stripeApi.createSession.mock.calls[0][0]).not.toHaveProperty('expires_at');
   });
 });
 

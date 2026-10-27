@@ -194,9 +194,16 @@ export async function sendClosingEmail(userId: string, closing: Closing): Promis
  * that fleet is switched off but kept, so subscribing later picks up where
  * it left off.
  */
-export function lapsedPaidPlan(plan: PlanId, sub: { plan: string } | null): PaidPlanId | null {
-  return plan === 'expired' && sub && isPaidPlanId(sub.plan) ? sub.plan : null;
+export function lapsedPaidPlan(plan: PlanId, sub: { plan: string; updatedAt?: string | null } | null): PaidPlanId | null {
+  if (plan !== 'expired' || !sub || !isPaidPlanId(sub.plan)) return null;
+  // Only lapses from when closing windows began: an older one keeps the
+  // behaviour it had, rather than every such account getting a window, an
+  // email and a closed fleet the day this ships.
+  return sub.updatedAt && Date.parse(sub.updatedAt) >= Date.parse(LAPSE_WINDOWS_FROM) ? sub.plan : null;
 }
+
+/** Paid plans that lapse from this moment on get the closing window; earlier lapses don't. */
+export const LAPSE_WINDOWS_FROM = '2026-10-27T00:00:00Z';
 
 /**
  * Keeps a lapse window in step with the plan, on every entitlement push:
@@ -205,7 +212,7 @@ export function lapsedPaidPlan(plan: PlanId, sub: { plan: string } | null): Paid
  * deletion window is left alone either way. Returns the window to send to
  * the engine.
  */
-export async function reconcileLapse(userId: string, plan: PlanId, sub: { plan: string } | null): Promise<Closing | null> {
+export async function reconcileLapse(userId: string, plan: PlanId, sub: { plan: string; updatedAt?: string | null } | null): Promise<Closing | null> {
   const current = await getClosing(userId);
   if (lapsedPaidPlan(plan, sub)) {
     if (current) return current;

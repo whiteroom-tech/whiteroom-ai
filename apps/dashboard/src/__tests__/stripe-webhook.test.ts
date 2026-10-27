@@ -143,6 +143,18 @@ describe('stripe webhook: a subscription on a closing account', () => {
     expect(mocks.sync).toHaveBeenCalledWith('u1');
   });
 
+  it('in a deletion’s last minutes, when it can no longer be cancelled: nothing changes here, and the subscription is left for the closed-fleet pass', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: LATER });
+    mocks.cancelClosing.mockResolvedValueOnce(false);
+    expect((await deliver(subscription([{ price: 'price_starter', quantity: 1 }]))).status).toBe(200);
+    expect(mocks.cancelClosing).toHaveBeenCalledWith(expect.anything(), 'u1', 'deleted');
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('deletion cancelled'));
+    // Not cancelled at Stripe yet: once the fleet closes, cancelClosedSubscriptions cancels it and reports the refund.
+    expect(mocks.cancelStripe).not.toHaveBeenCalled();
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
   it('during a lapse window, or for a subscription that is not active, leaves both alone', async () => {
     mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: LATER });
     await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));

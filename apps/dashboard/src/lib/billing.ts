@@ -143,8 +143,9 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
         ...(trialEnd ? { trial_end: trialEnd } : {}),
       },
       allow_promotion_codes: true,
-      // A session left open could be paid after the fleet closes.
-      expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_LIFETIME_S,
+      // A closing account's session expires soon, so it can't be paid after the
+      // fleet closes; everyone else keeps Stripe's usual lifetime.
+      ...(closing ? { expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_LIFETIME_S } : {}),
     });
 
     if (!session.url) return { ok: false, error: 'Stripe did not return a checkout URL.' };
