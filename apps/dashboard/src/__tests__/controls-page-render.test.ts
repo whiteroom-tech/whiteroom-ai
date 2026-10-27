@@ -594,6 +594,16 @@ describe('Controls page, change log', () => {
     m.root.unmount();
   });
 
+  it('a failed Add it back says so and keeps offering it', async () => {
+    api.history = [{ id: 'h3', ruleId: 'gone', ruleType: 'spend_cap', description: 'Removed Spend cap rule', by: 'test', time: when, before: snap(500, 'enforce'), after: null }];
+    api.create.mockRejectedValue(new Error('boom'));
+    const m = await mount();
+    await m.click(m.button('Add it back'));
+    expect(m.text()).toMatch(/add the rule back/i);
+    expect(m.button('Add it back')).toBeTruthy();
+    m.root.unmount();
+  });
+
   it('the editor says a Record only or Off rule’s Then doesn’t happen yet', async () => {
     const m = await mount();
     await m.click(m.row('$190'));

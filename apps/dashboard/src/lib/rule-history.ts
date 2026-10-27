@@ -10,7 +10,11 @@ import type { GovernanceHistoryEntry, GovernanceRule, GovernanceRuleSnapshot } f
 const FIELDS = ['mode', 'response', 'alsoNotify', 'appliesTo', 'params'] as const;
 type Field = (typeof FIELDS)[number];
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** Deep equality that ignores object key order (the log and the rule list may serialise differently). */
+const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object'
+  ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+  : v ?? null);
+const same = (a: unknown, b: unknown) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 const norm = (s: GovernanceRuleSnapshot, f: Field) => (f === 'alsoNotify' ? s.alsoNotify === true : f === 'response' ? s.response ?? 'block' : s[f]);
 
 /** "Was …" / "Now …" sentences for a settings change; the description already says mode, Then and scope changes. */

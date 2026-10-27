@@ -26,6 +26,9 @@ describe('change log', () => {
     expect(undoFor(entry(cap(190), after), [rule(after)])).toEqual({ kind: 'update', ruleId: 'gr_1', changes: { mode: 'watch', params: { dailyCap: 190, scope: 'day', unit: 'dollars' } } });
     // Changed again since: undoing would overwrite that, so no undo.
     expect(undoFor(entry(cap(190), after), [rule(cap(120, { mode: 'enforce' }))])).toBeNull();
+    // Key order doesn't matter: the log may list params differently from the rule.
+    const reordered = { ...after, params: { unit: 'dollars', scope: 'day', dailyCap: 150 } } as GovernanceRuleSnapshot;
+    expect(undoFor(entry(cap(190), after), [rule(reordered)])).toMatchObject({ kind: 'update' });
     // A missing response or alsoNotify reads as the defaults.
     expect(undoFor(entry(cap(190), cap(150)), [rule({ ...cap(150), response: undefined, alsoNotify: undefined })])).toMatchObject({ kind: 'update' });
   });
