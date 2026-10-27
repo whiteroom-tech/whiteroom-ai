@@ -138,6 +138,14 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       world.log.push(`start ${u.close_reason}`);
       return { rows: [closingCols(u)] };
     }
+    if (sql.startsWith("UPDATE users SET close_reason = 'deleted', delete_after") && sql.includes('closes_at <= now()')) {
+      if (!u.closes_at || ms(u.closes_at) > now) return { rows: [] };
+      u.close_reason = 'deleted';
+      u.delete_after = at(Number(params[1]) * DAY);
+      clearBlocked(u);
+      world.log.push('ended to deletion');
+      return { rows: [closingCols(u)] };
+    }
     if (sql.startsWith("UPDATE users SET close_reason = 'deleted', delete_after")) {
       if (u.close_reason !== 'lapsed' || ms(u.closes_at) <= now) return { rows: [] };
       u.close_reason = 'deleted';
@@ -289,14 +297,19 @@ describe('Delete account starts a 14-day window', () => {
     expect(await getAccountClosing()).toMatchObject({ reason: 'deleted', closesAt: new Date(lapseEnds).toISOString(), deleteAfter: world.user.delete_after });
   });
 
-  it('over a window that has run out, starts a fresh 14 days instead of deleting at once', async () => {
+  it('after the fleet has closed, the account still gets 14 days, and nothing says the fleet keeps working', async () => {
     for (const reason of ['lapsed', 'deleted']) {
       setup({ user: { closes_at: PAST, close_reason: reason } });
       expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
       expect(world.user.close_reason).toBe('deleted');
-      expect(near(world.user.closes_at, Date.now() + 14 * DAY)).toBe(true);
+      // Closing is final: the fleet's closing time stays; only the account's removal is new.
+      expect(world.user.closes_at).toBe(PAST);
+      expect(near(world.user.delete_after, Date.now() + 14 * DAY)).toBe(true);
       expect(world.deleted).toBe(false);
     }
+    const text = sendEmail.mock.calls.at(-1)![0].text as string;
+    expect(text).toContain('Your fleet is already closed');
+    expect(text).not.toContain('keeps working');
   });
 
   it('asking again while a deletion runs (double submit, second tab) changes nothing and sends no second email', async () => {

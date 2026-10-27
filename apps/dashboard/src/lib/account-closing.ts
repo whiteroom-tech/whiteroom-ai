@@ -53,18 +53,17 @@ export async function getClosing(userId: string, q: Queryable = db(), opts: { lo
 const CLEAR_BLOCKED = 'close_blocked_at = NULL, close_blocked_notified_at = NULL, close_blocked_email_attempts = 0';
 
 /**
- * Starts a 14-day window, unless one is already running. `replaceEnded` also
- * starts a fresh one over a window that has run out. A deletion's account
+ * Starts a 14-day window for an account with none. A deletion's account
  * goes at the same time its fleet closes (delete_after = closes_at). Returns
  * the new window, or null when nothing started, so only the caller that
  * started it sends the email.
  */
-export async function startClosing(q: Queryable, userId: string, reason: CloseReason, opts: { replaceEnded?: boolean } = {}): Promise<Closing | null> {
+export async function startClosing(q: Queryable, userId: string, reason: CloseReason): Promise<Closing | null> {
   const { rows } = await q.query(
     `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2,
             delete_after = CASE WHEN $2 = 'deleted' THEN now() + make_interval(days => $3) END,
             ${CLEAR_BLOCKED}, updated_at = now()
-     WHERE id = $1 AND (closes_at IS NULL${opts.replaceEnded ? ' OR closes_at <= now()' : ''})
+     WHERE id = $1 AND closes_at IS NULL
      RETURNING ${CLOSING_COLUMNS}`,
     [userId, reason, CLOSE_WINDOW_DAYS],
   );
@@ -80,6 +79,21 @@ export async function lapseToDeletion(q: Queryable, userId: string): Promise<Clo
   const { rows } = await q.query(
     `UPDATE users SET close_reason = 'deleted', delete_after = now() + make_interval(days => $2), ${CLEAR_BLOCKED}, updated_at = now()
      WHERE id = $1 AND close_reason = 'lapsed' AND closes_at > now()
+     RETURNING ${CLOSING_COLUMNS}`,
+    [userId, CLOSE_WINDOW_DAYS],
+  );
+  return toClosing(rows[0]);
+}
+
+/**
+ * Delete after the window has ended (the fleet is already closed, and closing
+ * is final): the closing time stays, the account goes CLOSE_WINDOW_DAYS from
+ * now.
+ */
+export async function endedToDeletion(q: Queryable, userId: string): Promise<Closing | null> {
+  const { rows } = await q.query(
+    `UPDATE users SET close_reason = 'deleted', delete_after = now() + make_interval(days => $2), ${CLEAR_BLOCKED}, updated_at = now()
+     WHERE id = $1 AND closes_at <= now()
      RETURNING ${CLOSING_COLUMNS}`,
     [userId, CLOSE_WINDOW_DAYS],
   );
@@ -158,7 +172,8 @@ export async function sendClosingEmail(userId: string, closing: Closing): Promis
     const to = await ownerEmail(userId);
     if (!to) return;
     const removedOn = closing.deleteAfter && closing.deleteAfter !== closing.closesAt ? closingDate(closing.deleteAfter) : undefined;
-    const { subject, html, text } = accountClosingEmail(closing.reason, closingDate(closing.closesAt), `${appOrigin()}/settings`, removedOn);
+    const fleetClosed = Date.parse(closing.closesAt) <= Date.now();
+    const { subject, html, text } = accountClosingEmail(closing.reason, closingDate(closing.closesAt), `${appOrigin()}/settings`, removedOn, fleetClosed);
     try {
       await sendEmail({ to, subject, html, text });
     } catch (err) {

@@ -12,7 +12,7 @@ import {
   getClosing,
   keepClosedAccount,
   lapsedPaidPlan,
-  lapseToDeletion,
+  endedToDeletion, lapseToDeletion,
   sendClosingEmail,
   startClosing,
 } from '@/lib/account-closing';
@@ -389,8 +389,11 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
       return { ok: false, error: blocked.message };
     }
 
-    if (!current || !isClosingOpen(current)) {
-      changed = await startClosing(client, userId, 'deleted', { replaceEnded: true });
+    if (!current) {
+      changed = await startClosing(client, userId, 'deleted');
+    } else if (!isClosingOpen(current)) {
+      // The fleet already closed (closing is final): only the account's removal is new.
+      changed = await endedToDeletion(client, userId);
     } else if (current.reason === 'lapsed') {
       changed = await lapseToDeletion(client, userId);
     }

@@ -99,11 +99,15 @@ export function accountClosingEmail(
   settingsUrl: string,
   /** A deletion whose account goes later than its fleet closes: that later date. */
   removedOn?: string,
+  /** The fleet had already closed when the deletion started. */
+  fleetClosed = false,
 ): { subject: string; html: string; text: string } {
   const email = reason === 'deleted'
     ? transactionalEmail({
         heading: 'Your account will be deleted',
-        body: removedOn
+        body: fleetClosed && removedOn
+          ? `Your fleet is already closed and your WhiteRoom fleet key no longer works. Your account is deleted on ${removedOn}. Until then you can download your data in Settings. The audit trail is kept for ${AUDIT_KEPT}.`
+          : removedOn
           ? `Your fleet keeps working until ${date}. Then it closes and your WhiteRoom fleet key stops working. Your account is deleted on ${removedOn}. Until then you can download your data or cancel in Settings. The audit trail is kept for ${AUDIT_KEPT}.`
           : `Your fleet keeps working until ${date}. Then it closes: your WhiteRoom fleet key stops working and your account is deleted. Until then you can download your data or cancel in Settings. The audit trail is kept for ${AUDIT_KEPT}.`,
         cta: 'Open Settings',
