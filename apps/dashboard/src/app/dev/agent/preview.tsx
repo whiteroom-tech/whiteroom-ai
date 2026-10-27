@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { SegmentedControl } from '@whiteroom/ui';
 import { AppShell } from '@/components/AppShell';
 import { AgentDetail } from '@/components/agent/AgentDetail';
-import type { AgentInfo, AuditEntry, GovernanceRule, HandoverDoc } from '@/lib/whiteroom/types';
+import type { AgentInfo, AuditEntry, GovernanceRule, HandoverDoc, RunSummary } from '@/lib/whiteroom/types';
 import type { AgentWeek } from '@/lib/home-agents';
 
 const iso = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString();
@@ -32,6 +32,16 @@ const RULES: GovernanceRule[] = [
   { ...ruleBase, id: 'r3', ruleType: 'spend_cap', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { dailyCap: 20, scope: 'day', unit: 'dollars' } },
   { ...ruleBase, id: 'r6', ruleType: 'call_rate', mode: 'off', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
 ];
+// Recent runs to match the sample: run 8 is the one in progress, 6 and 7 came before it.
+const run = (shift: number, startMin: number, lenMin: number, x: Partial<RunSummary> = {}): RunSummary => ({
+  runId: `lead-agent~${shift}`, agentId: 'lead-agent', shift, startedAt: iso(startMin), endedAt: iso(startMin - lenMin), lengthSeconds: lenMin * 60,
+  calls: 12, failedCalls: 0, blockedCalls: 0, wouldActCalls: 0, spendMicros: 310_000, unpricedAttempts: 0, coverage: { calls: 12, checked: 12 }, flags: [], ...x,
+});
+const RUNS: RunSummary[] = [
+  run(8, 10, 10, { blockedCalls: 1, wouldActCalls: 2 }),
+  run(7, 95, 31, { failedCalls: 4, flags: [{ signal: 'error_streak', calls: 4 }] }),
+  run(6, 1500, 27),
+];
 const STATES: Record<string, AgentInfo> = {
   working: { agentId: 'lead-agent', status: 'working', taskType: 'claims triage', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4, minutesRemaining: 3.2, percentComplete: '41%', tokensUsed: 12_400 },
   resting: { agentId: 'lead-agent', status: 'resting', taskType: 'claims triage', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4, restPercent: '40', alarmAt: new Date(Date.now() + 3 * 60_000).toISOString() },
@@ -52,7 +62,7 @@ export function AgentPreview() {
         fleetId="acme-claims-prod"
         agentId="lead-agent"
         from="home"
-        preview={{ agent: STATES[which], handover: which === 'idle' ? null : HANDOVER, entries: which === 'idle' ? [] : ENTRIES, week: which === 'idle' ? {} : WEEK, rules: RULES }}
+        preview={{ agent: STATES[which], handover: which === 'idle' ? null : HANDOVER, entries: which === 'idle' ? [] : ENTRIES, week: which === 'idle' ? {} : WEEK, rules: RULES, runs: which === 'idle' ? [] : RUNS }}
       />
     </AppShell>
   );

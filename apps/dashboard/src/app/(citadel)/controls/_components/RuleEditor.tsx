@@ -18,12 +18,12 @@ import type { ControlActor } from '@/lib/control-actors';
 import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, changeResponse, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, changeResponse, loopActs, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
-/** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS). */
-const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword'>, string> = {
-  spend_cap: 'Acts before the next call.', loop_breaker: 'Acts on the Nth call.', model_allowlist: 'Acts before the call.',
+/** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
+const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
+  spend_cap: 'Acts before the next call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call.', call_rate: 'Acts on the call over the limit.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
@@ -32,8 +32,8 @@ const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   both: 'Acts before the call reaches the model, and on the reply before the agent gets it.',
 };
 const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
-const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
-  { value: 'off', label: MODE_LABEL.off }, { value: 'watch', label: MODE_LABEL.watch }, { value: 'enforce', label: MODE_LABEL.enforce, dot: 'warn' },
+const MODES: { value: GovernanceMode; label: string; dot?: 'bad' }[] = [
+  { value: 'off', label: MODE_LABEL.off }, { value: 'watch', label: MODE_LABEL.watch }, { value: 'enforce', label: MODE_LABEL.enforce, dot: 'bad' },
 ];
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
@@ -131,7 +131,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             </div>
             <span style={help}>Ignore:</span>
             <GroupPicker values={(p as LoopBreakerParams).ignoreTools} onChange={(ignoreTools) => setParams({ ignoreTools })} groups={TOOL_GROUPS}
-              addLabel="+ add tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
+              addLabel="+ Add tool" ariaLabel="Add a tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
             <p style={help}>Calls to these tools never count as a loop.</p>
           </>
         )}
@@ -146,7 +146,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>Only allow these models:</span>
             <GroupPicker values={(p as ModelAllowlistParams).allowedModels} onChange={(allowedModels) => setParams({ allowedModels })} groups={MODEL_GROUPS}
-              addLabel="+ add model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
+              addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
           </>
         )}
         {rule.ruleType === 'keyword' && (
@@ -188,7 +188,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>When an agent is about to run any of these tools:</span>
             <GroupPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} groups={TOOL_GROUPS}
-              addLabel="+ add tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
+              addLabel="+ Add tool" ariaLabel="Add a tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
             <p style={help}>In Block, a streamed call is checked before it streams, so its text arrives all at once. In Record only, streamed calls aren’t checked.</p>
           </>
         )}
@@ -232,7 +232,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           <SegmentedControl<GovernanceMode> label="Mode" value={draft.mode} onChange={(mode) => set({ mode })} options={MODES} />
         </div>
         <p style={{ ...help, display: 'inline-flex', alignItems: 'center' }}>
-          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Record only. Records what it would do, never acts.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : ACTS[rule.ruleType]}
+          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Record only. Records what it would do, never acts.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : ACTS[rule.ruleType]}
           {canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}
         </p>
         {watching && wouldAct && (

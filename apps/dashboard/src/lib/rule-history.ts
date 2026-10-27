@@ -5,6 +5,8 @@
 // back as a new rule in Record only, like any new rule.
 
 import { ruleSentenceText } from '@/lib/controls-view';
+import { RULE_LABELS } from '@/lib/governance';
+import { modeWords } from '@/lib/vocab';
 import type { GovernanceHistoryEntry, GovernanceRule, GovernanceRuleSnapshot } from '@/lib/whiteroom/types';
 
 const FIELDS = ['mode', 'response', 'alsoNotify', 'appliesTo', 'params'] as const;
@@ -18,6 +20,19 @@ const same = (a: unknown, b: unknown) => JSON.stringify(canon(a)) === JSON.strin
 const norm = (s: GovernanceRuleSnapshot, f: Field) => (f === 'alsoNotify' ? s.alsoNotify === true : f === 'response' ? s.response ?? 'block' : s[f]);
 
 /** "Was …" / "Now …" sentences for a settings change; the description already says mode, Then and scope changes. */
+/**
+ * A change in today's words. In the fleet-wide list the rule's name is
+ * already shown ("Spend cap · …"), so "Removed Spend cap rule" reads
+ * "Removed" and "Added new Keywords rule" reads "Added".
+ */
+export function historyText(entry: Pick<GovernanceHistoryEntry, 'description' | 'ruleType'>, withRule = false): string {
+  const text = modeWords(entry.description);
+  if (!withRule) return text;
+  const label = RULE_LABELS[entry.ruleType]?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = label ? text.match(new RegExp(`^(Removed|Added|Deleted|Created)(?: new)? ${label} rule$`, 'i')) : null;
+  return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() : text;
+}
+
 export function changeDetail(entry: GovernanceHistoryEntry): { was: string; now: string } | null {
   const { before, after } = entry;
   if (!before || !after || same(before.params, after.params)) return null;

@@ -36,6 +36,51 @@ function isRange(v: string | null): v is RunsRange {
 const STRIP_DAYS = 30;
 
 /**
+ * Phones (below 640px): each run is a stacked row, so nothing is cut off:
+ * run · agent · time, then what stood out, then length and spend.
+ */
+export function RunsPhoneList({ runs, groupOf, onOpen, footer }: {
+  runs: RunSummary[];
+  groupOf: (r: RunSummary) => { key: string; label: React.ReactNode };
+  /** Called before a run opens. */
+  onOpen: () => void;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div className="wr-runs-list">
+      <ul aria-label="Runs, newest first">
+        {runs.map((r, i) => {
+          const g = groupOf(r);
+          const s = standOut(r);
+          const startsGroup = i === 0 || groupOf(runs[i - 1]).key !== g.key;
+          return (
+            <li key={r.runId}>
+              {startsGroup && <div className="wr-table__group">{g.label}</div>}
+              <Link href={runHref(r.runId)} className="wr-runs-list__row" onClick={onOpen}>
+                <span className="wr-runs-list__top">
+                  <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>#{r.shift}</span>
+                  <span aria-hidden="true" style={{ color: 'var(--tx2)' }}>·</span>
+                  <span style={{ fontFamily: FONT_MONO, fontWeight: 500, minWidth: 0, overflowWrap: 'anywhere' }}>{r.agentId}</span>
+                  <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, color: 'var(--tx2)', whiteSpace: 'nowrap' }} title={fmtStarted(r.startedAt)}>{fmtTime(r.startedAt)}</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: s.tone === 'clean' || s.tone === 'coverage' ? 'var(--tx2)' : 'var(--tx)' }}>
+                  <span style={{ display: 'flex', paddingTop: 3, color: s.tone === 'failed' || s.tone === 'flag' ? 'var(--warn)' : 'var(--tx2)' }}><Icon name={STAND_OUT_ICON[s.tone]} size={13} /></span>
+                  <span>{s.text}</span>
+                </span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
+                  {fmtLength(r.lengthSeconds)} · {usd(r.spendMicros / 1e6)}{r.unpricedAttempts ? '+' : ''}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {footer && <div className="wr-table__foot">{footer}</div>}
+    </div>
+  );
+}
+
+/**
  * Runs (README › Screens › 2a): one row per run, a run being one agent's
  * shift. Falls back to the event feed when the engine has no list_runs yet.
  */
@@ -256,8 +301,10 @@ export function RunsTable({ preview, retentionDays }: {
     return [{ value: 'all', label: 'All agents' }, ...names.map((a) => ({ value: a, label: a }))];
   }, [agents, agent]);
 
+  // The run page's back link returns to this list, filters and all.
+  const remember = () => safeSessionSet(RUNS_LIST_URL_KEY, `${window.location.pathname}${window.location.search}`);
   function open(run: RunSummary) {
-    safeSessionSet(RUNS_LIST_URL_KEY, `${window.location.pathname}${window.location.search}`);
+    remember();
     router.push(runHref(run.runId));
   }
 
@@ -300,6 +347,15 @@ export function RunsTable({ preview, retentionDays }: {
   // /dev/runs fetches nothing: its sample lists what the filter shows.
   const shown = preview && runs ? preview.list({ ...span, flagged: flaggedOnly, ruleActivity: rulesOnly, hour }) : runs;
 
+  const pager = shown && (page > 0 || next) ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
+      <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
+      <span style={{ marginLeft: 'auto' }} />
+      {page > 0 && <Button variant="ghost" size={28} onClick={() => setCursors((c) => c.slice(0, -1))}>&larr; Newer</Button>}
+      {next && <Button size={28} onClick={() => setCursors((c) => [...c, next])}>Older &rarr;</Button>}
+    </div>
+  ) : undefined;
+
   if (auth.status !== 'authenticated' && !preview) return <FleetLogin auth={auth} />;
   if (unsupported) return <EventFeedRuns />;
 
@@ -311,7 +367,7 @@ export function RunsTable({ preview, retentionDays }: {
         <Link href="/settings#audit-integrity" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Audit integrity</Link>
       </PageHeader>
 
-      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, alignContent: 'start' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {(flagsKnown || rulesKnown || show !== 'all') && (
             <SegmentedControl<RunsShow> label="Show" value={show} onChange={(v) => changeFilter({ show: v })} size={26} options={[
@@ -358,6 +414,9 @@ export function RunsTable({ preview, retentionDays }: {
           ) : shown.length === 0 ? (
             <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No {flaggedOnly ? 'flagged runs' : rulesOnly ? 'runs with rule activity' : 'runs'} {day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}{agent !== 'all' ? ` for ${agent}` : ''}.{flaggedOnly ? ' A run is flagged when it repeats the same call or fails several calls in a row.' : rulesOnly ? ' A run shows here when a rule blocked a call or, in Record only, would have.' : ' A run appears once an agent makes calls.'}</p>
           ) : (
+            <>
+            <RunsPhoneList runs={shown} groupOf={groupOf} onOpen={remember} footer={pager} />
+            <div className="wr-runs-table">
             <DataTable<RunSummary>
               caption="Runs, newest first"
               rows={shown}
@@ -384,15 +443,10 @@ export function RunsTable({ preview, retentionDays }: {
                   },
                 },
               ]}
-              footer={(page > 0 || next) ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{page * PAGE + 1}–{page * PAGE + shown.length} of {total}</span>
-                  <span style={{ marginLeft: 'auto' }} />
-                  {page > 0 && <Button variant="ghost" size={28} onClick={() => setCursors((c) => c.slice(0, -1))}>&larr; Newer</Button>}
-                  {next && <Button size={28} onClick={() => setCursors((c) => [...c, next])}>Older &rarr;</Button>}
-                </div>
-              ) : undefined}
+              footer={pager}
             />
+            </div>
+            </>
           )}
         </Panel>
 

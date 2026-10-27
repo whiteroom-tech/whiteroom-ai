@@ -69,6 +69,11 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
         <span style={{ marginLeft: 'auto' }}>{last ? (last === localDay() ? 'Today' : dayLabel(last, Date.now(), false)) : ''}</span>
         <Button variant="ghost" size={28} aria-label="Later 30 days" disabled={!onLater} onClick={onLater}>&rsaquo;</Button>
       </div>
+      {/* What the two bar shades mean (and the picked day's colour, once there is one). */}
+      <p className="wr-daystrip__legend">
+        <span><span className={`wr-daystrip__key ${selected ? 'is-selected' : 'is-in'}`} aria-hidden="true" />{selected ? 'Picked day' : 'Days listed below'}</span>
+        <span><span className="wr-daystrip__key" aria-hidden="true" />Other days</span>
+      </p>
     </div>
   );
 }

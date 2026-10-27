@@ -6,8 +6,7 @@
 import { timeAgo } from '@/lib/format';
 import { historyWho, type ControlActor } from '@/lib/control-actors';
 import { RULE_LABELS } from '@/lib/governance';
-import { changeDetail, type Undo } from '@/lib/rule-history';
-import { modeWords } from '@/lib/vocab';
+import { changeDetail, historyText, type Undo } from '@/lib/rule-history';
 import type { GovernanceHistoryEntry } from '@/lib/whiteroom/types';
 
 export function HistoryLine({ entry, actors, withRule, undo, onUndo, busy }: {
@@ -22,9 +21,10 @@ export function HistoryLine({ entry, actors, withRule, undo, onUndo, busy }: {
   const detail = changeDetail(entry);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ minWidth: 0 }}>{withRule && `${RULE_LABELS[entry.ruleType]} · `}{modeWords(entry.description)}</span>
-        <span style={{ color: 'var(--tx2)', flex: 'none' }}>{timeAgo(entry.time)}{actors && ` · ${historyWho(entry, actors)}`}</span>
+      {/* One layout for every change: what changed on the left, when always on the right. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+        <span style={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>{withRule && `${RULE_LABELS[entry.ruleType]} · `}{historyText(entry, withRule)}</span>
+        <span style={{ color: 'var(--tx2)', flex: 'none', whiteSpace: 'nowrap' }}>{timeAgo(entry.time)}{actors && ` · ${historyWho(entry, actors)}`}</span>
       </div>
       {detail && (
         <div style={{ color: 'var(--tx2)', lineHeight: 1.45 }}>

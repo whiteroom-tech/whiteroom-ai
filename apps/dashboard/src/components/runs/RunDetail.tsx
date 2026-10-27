@@ -12,7 +12,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { clock } from '@/lib/home';
-import { flagText, loadRunPage, parseRunId, runMeta, RUNS_LIST_URL_KEY, timelineRow, type RunKind } from '@/lib/runs';
+import { flagsNote, flagText, loadRunPage, parseRunId, runMeta, ruleActivityCount, RUNS_LIST_URL_KEY, timelineRow, type RunKind } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
@@ -122,11 +122,11 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         {!!data?.run.flags?.length && (
           <Banner variant="warn">
             <span style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--warn-tx)', marginBottom: 2 }}>What stood out</span>
-            {data.run.flags.map(flagText).join(' · ')}. These are flags; they don&rsquo;t block anything.
+            {data.run.flags.map(flagText).join(' · ')}. {flagsNote(data.run.ruleActions)}
           </Banner>
         )}
         {!!data?.run.ruleActions?.length && (
-          <Panel title={RULE_ACTIVITY} count={data.run.ruleActions.reduce((n, a) => n + a.occurrences, 0)} bodyPadding={0}>
+          <Panel title={RULE_ACTIVITY} count={ruleActivityCount(data.run.ruleActions)} bodyPadding={0}>
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {data.run.ruleActions.map((a) => (
                 <li key={`${a.at}-${a.ruleId}-${a.mode}`} style={{ display: 'flex', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)' }}>

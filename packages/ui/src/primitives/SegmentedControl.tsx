@@ -5,8 +5,8 @@ import { useRef } from 'react';
 export type Segment<V extends string> = {
   value: V;
   label: React.ReactNode;
-  /** A 6px status dot before the label, e.g. Enforce or Flagged. */
-  dot?: 'warn' | 'ok' | 'brand';
+  /** A 6px status dot before the label, e.g. Block (bad) or Flagged (warn). */
+  dot?: 'warn' | 'ok' | 'brand' | 'bad';
   disabled?: boolean;
   title?: string;
 };

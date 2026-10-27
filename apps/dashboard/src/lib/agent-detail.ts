@@ -64,13 +64,20 @@ function clampPct(n: number): number {
 }
 
 /**
- * "#3 · 17 tasks · 4.1 min worked · 12.4K tokens" for the Current shift
- * header; "none running" when there is no shift (M14).
+ * The Current run header: "#3", or "none in progress" when there is no run
+ * (M14). The run's figures sit in the panel (shiftStats), so the header never
+ * runs out of room.
  */
-export function shiftSummary(a: AgentInfo, fmtTokens: (n: number) => string): string {
+export function shiftSummary(a: AgentInfo): string {
   const shift = currentShift(a);
-  if (!shift) return 'none in progress';
-  const bits = [`#${shift.watchNumber || 1}`, taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
+  return shift ? `#${shift.watchNumber || 1}` : 'none in progress';
+}
+
+/** "17 tasks · 4.1 min worked · 12.4K tokens" for the run in progress; null with none. */
+export function shiftStats(a: AgentInfo, fmtTokens: (n: number) => string): string | null {
+  const shift = currentShift(a);
+  if (!shift) return null;
+  const bits = [taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
   if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
   return bits.join(' · ');
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentIdFromSegment, notesAreLong, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftSummary } from '@/lib/agent-detail';
+import { agentIdFromSegment, notesAreLong, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftStats, shiftSummary } from '@/lib/agent-detail';
 import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
 import { agentState } from '@/lib/home';
 
@@ -46,17 +46,21 @@ describe('progress and summary', () => {
   });
 
   it('summarises the shift', () => {
-    expect(shiftSummary(working, (n) => `${n / 1000}K`)).toBe('#8 · 62 tasks · 9.4 min worked · 12.4K tokens');
-    expect(shiftSummary({ agentId: 'a', status: 'idle' }, String)).toBe('none in progress');
+    // The header keeps to the run number; the figures go in the panel, so they never overflow it.
+    expect(shiftSummary(working)).toBe('#8');
+    expect(shiftStats(working, (n) => `${n / 1000}K`)).toBe('62 tasks · 9.4 min worked · 12.4K tokens');
+    expect(shiftSummary({ agentId: 'a', status: 'idle' })).toBe('none in progress');
+    expect(shiftStats({ agentId: 'a', status: 'idle' }, String)).toBeNull();
   });
 
   it('never shows lifetime totals as the current shift (M14)', () => {
     const idle = { agentId: 'a', status: 'idle', currentShift: null, lastShift: { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 }, lifetime: { tokensUsed: 4_030_000, tasksCompleted: 332, minutesWorked: 40 } };
-    expect(shiftSummary(idle, (n) => `${n / 1e6}M`)).toBe('none in progress');
+    expect(shiftSummary(idle)).toBe('none in progress');
+    expect(shiftStats(idle, String)).toBeNull();
     expect(shiftAside(idle, (n) => `${n / 1e6}M`)).toEqual(['Last run #41: 5 tasks', 'Lifetime: 332 tasks, 4.03M tokens']);
     expect(shiftAside(working, String)).toEqual([]);
     // Older engine: an idle agent's flat fields are lifetime totals, so no shift is claimed.
-    expect(shiftSummary({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332, tokensUsed: 4_030_000 }, String)).toBe('none in progress');
+    expect(shiftSummary({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332, tokensUsed: 4_030_000 })).toBe('none in progress');
     expect(shiftProgress(idle)).toBeNull(); // no made-up 0% bar
     expect(shiftProgress({ agentId: 'a', status: 'idle', percentComplete: '0%' })).toBeNull();
   });

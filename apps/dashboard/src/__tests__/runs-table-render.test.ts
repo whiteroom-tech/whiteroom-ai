@@ -104,6 +104,22 @@ describe('Runs › Show › Rule activity, in the preview (no engine)', () => {
   });
 });
 
+describe('Runs › phones', () => {
+  it('lists each run as a stacked row: run · agent · time, what stood out, then length and spend', async () => {
+    const m = await mount([run(1, { lengthSeconds: 1380, spendMicros: 1_920_000, wouldActCalls: 2 })]);
+    const rows = [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')];
+    expect(rows).toHaveLength(1);
+    const [top, stood, figures] = [...rows[0].children].map((c) => c.textContent ?? '');
+    expect(top).toMatch(/^#1·lead-agent\d{1,2}:\d{2} (am|pm)$/);
+    expect(stood).toContain('A Record only rule would have acted 2 times');
+    expect(figures).toBe('23 min · $1.92');
+    expect(rows[0].getAttribute('href')).toBe('/runs/lead-agent~1');
+    // The desktop table is still there for wide screens; CSS picks one.
+    expect(m.el.querySelector('.wr-runs-table [role="grid"]')).not.toBeNull();
+    m.root.unmount();
+  });
+});
+
 describe('Runs › a day by hour', () => {
   const day = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
   const at = (h: number) => { const d = new Date(`${day}T00:00:00`); d.setHours(h, 15); return d.toISOString(); };

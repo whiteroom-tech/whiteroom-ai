@@ -77,7 +77,7 @@ describe('ScopeField', () => {
     await choose(el.querySelector('select[aria-label="Which agents this rule applies to"]')!, 'some');
     expect(onChange).toHaveBeenLastCalledWith([]);
     await act(async () => { root.render(h(ScopeField, { scope: ['a1'], agents: ['a1', 'a2'], onChange })); });
-    expect([...el.querySelectorAll('select[aria-label="Add an agent"] option')].map((o) => o.textContent)).toEqual(['+ add agent', 'a2', 'Other (type an agent name)…']);
+    expect([...el.querySelectorAll('select[aria-label="Add an agent"] option')].map((o) => o.textContent)).toEqual(['+ Add agent', 'a2', 'Other (type an agent name)…']);
     await choose(el.querySelector('select[aria-label="Add an agent"]')!, 'a2');
     expect(onChange).toHaveBeenLastCalledWith(['a1', 'a2']);
     await act(async () => { (el.querySelector('button[aria-label="Remove a1"]') as HTMLButtonElement).click(); });

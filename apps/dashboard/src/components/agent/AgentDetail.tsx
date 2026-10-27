@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Banner, Button, Hint, Panel, StatusPill, Tag, TextInput, FONT_MONO, type AgentState } from '@whiteroom/ui';
 import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
-import type { AgentInfo, AuditEntry, GovernanceRule, HandoverDoc } from '@/lib/whiteroom/types';
+import type { AgentInfo, AuditEntry, GovernanceRule, HandoverDoc, RunSummary } from '@/lib/whiteroom/types';
 import type { AgentWeek } from '@/lib/home-agents';
 import { usePoll } from '@/hooks/usePoll';
 import { fmtTime, fmtTokens } from '@/lib/format';
@@ -22,7 +22,7 @@ import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-ac
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
 import {
-  breakEndsAt, canResume, canStartBreak, handoverLines, notesAreLong, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftSummary,
+  breakEndsAt, canResume, canStartBreak, handoverLines, notesAreLong, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftStats, shiftSummary,
 } from '@/lib/agent-detail';
 
 type Pending = 'pausing' | 'stopping' | 'resuming' | 'removing' | null;
@@ -42,7 +42,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   from: 'home' | 'runs';
   onAuthError?: (msg: string) => void;
   /** Sample data for /dev/agent: nothing is fetched and actions do nothing. */
-  preview?: { agent: AgentInfo; handover: HandoverDoc | null; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[] };
+  preview?: { agent: AgentInfo; handover: HandoverDoc | null; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[]; runs?: RunSummary[] };
 }) {
   const [agent, setAgent] = useState<AgentInfo | null>(preview?.agent ?? null);
   const [notFound, setNotFound] = useState(false);
@@ -301,9 +301,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         title={title}
         fleetId={fleetId}
         badge={state && (
-          <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
             <StatusPill state={state} />
-            {model && <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{model}</span>}
+            {/* The model yields before the actions: cut with … rather than run under them. */}
+            {model && <span title={model} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, maxWidth: '100%' }}>{model}</span>}
           </span>
         )}
       >
@@ -343,7 +344,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
             <AgentWeekCard fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview?.week} />
             <div className="wr-agent-grid">
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
-                <Panel title={<>Current run<Hint text={HELP.currentRun} /></>} count={shiftSummary(agent, fmtTokens)}>
+                <Panel title={<>Current run<Hint text={HELP.currentRun} /></>} count={shiftSummary(agent)}>
+                  {shiftStats(agent, fmtTokens) && (
+                    <p style={{ margin: progress ? '0 0 12px' : 0, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{shiftStats(agent, fmtTokens)}</p>
+                  )}
                   {!progress && shiftAside(agent, fmtTokens).length > 0 && (
                     <div style={{ display: 'grid', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {shiftAside(agent, fmtTokens).map((line) => <div key={line}>{line}</div>)}
@@ -419,7 +423,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
                 <RulesOnAgent fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.rules ?? []) : undefined} />
-                <RecentRuns fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? [] : undefined} />
+                <RecentRuns fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.runs ?? []) : undefined} />
                 <Panel title="Recent activity" bodyPadding={0}>
                   <ActivityRows rows={activity} empty="Nothing yet for this agent." />
                 </Panel>
