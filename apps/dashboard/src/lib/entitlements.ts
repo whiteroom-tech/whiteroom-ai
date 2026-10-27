@@ -17,13 +17,8 @@ import { db } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
-import { effectivePlan, isPaidPlanId, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
-import { reconcileLapse, type Closing } from '@/lib/account-closing';
-
-/** What a lapsed plan runs on during its closing window: the paid plan it had, or Starter after a trial. */
-export function gracePlan(sub: { plan: string } | null): PlanId {
-  return sub && isPaidPlanId(sub.plan) ? sub.plan : 'starter';
-}
+import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
+import { lapsedPaidPlan, reconcileLapse, type Closing } from '@/lib/account-closing';
 
 export interface SubscriptionRow {
   plan: string;
@@ -241,22 +236,23 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
 
   const [{ plan, sub }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
 
-  // A lapsed plan starts the 14-day closing window, and one that came back
+  // A lapsed paid plan starts the 14-day closing window, and one that came back
   // cancels it (lib/account-closing.ts). Before the fleet check: an account
   // with no fleet still gets the email and the banner.
   let closing: Closing | null;
   try {
-    closing = await reconcileLapse(userId, plan);
+    closing = await reconcileLapse(userId, plan, sub);
   } catch (err) {
     console.error('[entitlements] closing check failed');
     return false;
   }
   if (fleetIds.length === 0) return true;
 
-  // During the window the fleets keep working: a lapsed plan runs on the
-  // plan it had (Starter after a trial) until the window ends.
+  // During the window the fleets keep working: a lapsed paid plan runs on
+  // the plan it had until the window ends. An ended free period stays off,
+  // window or not (a trial account that deletes isn't switched back on).
   const windowOpen = !!closing && new Date(closing.closesAt).getTime() > Date.now();
-  const applied: PlanId = plan === 'expired' && windowOpen ? gracePlan(sub) : plan;
+  const applied: PlanId = (windowOpen && lapsedPaidPlan(plan, sub)) || plan;
   const limits = limitsFor(applied);
 
   const payload = {

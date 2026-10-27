@@ -155,11 +155,20 @@ describe('Cancel deletion', () => {
     expect(ran('INSERT INTO entitlement_outbox')).toBe(false);
   });
 
-  it('keeps the window as a lapse when the plan has lapsed meanwhile', async () => {
-    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, trialEndsAt: PAST });
+  it('keeps the window as a lapse when a paid plan has lapsed meanwhile', async () => {
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, sub: { plan: 'pro', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
     expect(await cancelAccountDeletion()).toEqual({ ok: true });
     expect(sqlCalls().some((s) => s.includes("SET close_reason = 'lapsed'"))).toBe(true);
     expect(ran('UPDATE users SET closes_at = NULL')).toBe(false);
+  });
+
+  it('after a free period ran out, cancelling ends the window outright (no lapse window)', async () => {
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, cancelled: 1, owner: true, trialEndsAt: PAST });
+    expect(await cancelAccountDeletion()).toEqual({ ok: true });
+    expect(ran('UPDATE users SET closes_at = NULL')).toBe(true);
+    expect(sqlCalls().some((s) => s.includes("SET close_reason = 'lapsed'"))).toBe(false);
+    // Back to today's trial-over state: switched off, kept, nothing closing.
+    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', closesAt: null, closeReason: null });
   });
 
   it('banner state: null signed out, the window signed in', async () => {
@@ -171,7 +180,7 @@ describe('Cancel deletion', () => {
 });
 
 describe('plan lapse', () => {
-  it('a lapsed plan starts a lapse window and emails once; the fleet keeps working on its old plan meanwhile', async () => {
+  it('a lapsed paid plan starts a lapse window and emails once; the fleet keeps working on its old plan meanwhile', async () => {
     db({ closing: null, started: true, owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
     expect(await syncEntitlementsToEngine('u1')).toBe(true);
     expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'pro', status: 'active', maxAgents: 500, closesAt: IN_14_DAYS, closeReason: 'lapsed' });
@@ -179,32 +188,54 @@ describe('plan lapse', () => {
     expect((sendEmail.mock.calls[0][0] as { subject: string }).subject).toBe('Your WhiteRoom plan has ended');
   });
 
-  it('a trial that ran out runs on Starter during the window; after it, the fleet is off', async () => {
-    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'lapsed' }, owner: true, trialEndsAt: PAST });
+  it('a free period that ran out is not a lapse: no window, no email, switched off but kept', async () => {
+    db({ closing: null, started: true, owner: true, sub: null, trialEndsAt: PAST });
+    expect(await syncEntitlementsToEngine('u1')).toBe(true);
+    expect(ran('UPDATE users SET closes_at = now()')).toBe(false);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', maxAgents: 0, closesAt: null, closeReason: null });
+
+    // A subscription row that never named a paid plan (Checkout abandoned) is no lapse either.
+    fetchMock.mockClear();
+    db({ closing: null, started: true, owner: true, sub: { plan: 'none', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(ran('UPDATE users SET closes_at = now()')).toBe(false);
+    expect(pushed()).toMatchObject({ status: 'inactive', closesAt: null });
+  });
+
+  it('a running paid-lapse window sends no second email; after it, the fleet is off', async () => {
+    const sub = { plan: 'starter', status: 'canceled', plan_override: null };
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'lapsed' }, owner: true, sub, trialEndsAt: PAST });
     await syncEntitlementsToEngine('u1');
     expect(pushed()).toMatchObject({ plan: 'starter', status: 'active', closesAt: IN_14_DAYS });
-    expect(sendEmail).not.toHaveBeenCalled(); // already running: no second email
+    expect(sendEmail).not.toHaveBeenCalled();
 
     fetchMock.mockClear();
-    db({ closing: { closes_at: PAST, close_reason: 'lapsed' }, owner: true, trialEndsAt: PAST });
+    db({ closing: { closes_at: PAST, close_reason: 'lapsed' }, owner: true, sub, trialEndsAt: PAST });
     await syncEntitlementsToEngine('u1');
     expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', closesAt: PAST });
   });
 
+  it('a trial-over account that deletes is not switched back on during the window', async () => {
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, owner: true, sub: null, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', closesAt: IN_14_DAYS, closeReason: 'deleted' });
+  });
+
   it('a plan that comes back cancels a lapse window, but not a deletion', async () => {
     db({ closing: { closes_at: IN_14_DAYS, close_reason: 'lapsed' }, cancelled: 1 });
-    expect(await reconcileLapse('u1', 'pro')).toBeNull();
+    expect(await reconcileLapse('u1', 'pro', { plan: 'pro' })).toBeNull();
     const cancel = query.mock.calls.find((c) => String(c[0]).startsWith('UPDATE users SET closes_at = NULL'))!;
     expect(cancel[1]).toEqual(['u1', 'lapsed']);
 
     db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, cancelled: 1 });
-    expect(await reconcileLapse('u1', 'pro')).toEqual({ reason: 'deleted', closesAt: IN_14_DAYS });
+    expect(await reconcileLapse('u1', 'pro', { plan: 'pro' })).toEqual({ reason: 'deleted', closesAt: IN_14_DAYS });
     expect(ran('UPDATE users SET closes_at = NULL')).toBe(false);
   });
 
   it('a window that has run out stays, whatever the plan does', async () => {
     db({ closing: { closes_at: PAST, close_reason: 'lapsed' } });
-    expect(await reconcileLapse('u1', 'starter')).toEqual({ reason: 'lapsed', closesAt: PAST });
+    expect(await reconcileLapse('u1', 'starter', null)).toEqual({ reason: 'lapsed', closesAt: PAST });
     expect(ran('UPDATE users SET closes_at = NULL')).toBe(false);
   });
 

@@ -6,7 +6,7 @@ import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
-import { cancelClosing, deletionBlocker, getClosing, sendClosingEmail, startClosing, type Closing } from '@/lib/account-closing';
+import { cancelClosing, deletionBlocker, getClosing, lapsedPaidPlan, sendClosingEmail, startClosing, type Closing } from '@/lib/account-closing';
 import { enqueueEntitlementSync, resolvePlan, syncEntitlementsToEngine } from '@/lib/entitlements';
 
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
@@ -395,18 +395,18 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
 }
 
 /**
- * Cancels a deletion that hasn't run out: back to normal. If the plan has
- * lapsed meanwhile, the window carries on as a lapse, same date.
+ * Cancels a deletion that hasn't run out: back to normal. If a paid plan
+ * has lapsed meanwhile, the window carries on as a lapse, same date.
  */
 export async function cancelAccountDeletion(): Promise<ActionResult> {
   const userId = await requireUserId();
-  const { plan } = await resolvePlan(userId);
+  const { plan, sub } = await resolvePlan(userId);
 
   const client = await db().connect();
   let changed = false;
   try {
     await client.query('BEGIN');
-    if (plan === 'expired') {
+    if (lapsedPaidPlan(plan, sub)) {
       const res = await client.query(
         `UPDATE users SET close_reason = 'lapsed', updated_at = now()
          WHERE id = $1 AND close_reason = 'deleted' AND closes_at > now()`,

@@ -7,7 +7,7 @@ import { appOrigin } from '@/lib/app-origin';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { accountClosingEmail } from '@/lib/magic-link-email';
-import { isActiveStatus, type PlanId } from '@/lib/plans';
+import { isActiveStatus, isPaidPlanId, type PaidPlanId, type PlanId } from '@/lib/plans';
 import { CLOSE_WINDOW_DAYS, closingDate, type Closing, type CloseReason } from '@/lib/closing-shared';
 
 export { CLOSE_WINDOW_DAYS, closingDate, type Closing, type CloseReason };
@@ -84,14 +84,26 @@ export async function sendClosingEmail(userId: string, closing: Closing): Promis
 }
 
 /**
- * Keeps a lapse window in step with the plan, on every entitlement push:
- * a plan that has lapsed ('expired') starts one; a plan that came back
- * cancels it while it's still running. A deletion window is left alone
- * either way. Returns the window to send to the engine.
+ * The paid plan that lapsed, or null. A lapse is a paid subscription that
+ * ended (decision Q4): the effective plan is 'expired' and the subscription
+ * row still names the paid plan it had. A free period that ran out is not a
+ * lapse: that fleet is switched off but kept, as before, so subscribing
+ * later picks up where it left off.
  */
-export async function reconcileLapse(userId: string, plan: PlanId): Promise<Closing | null> {
+export function lapsedPaidPlan(plan: PlanId, sub: { plan: string } | null): PaidPlanId | null {
+  return plan === 'expired' && sub && isPaidPlanId(sub.plan) ? sub.plan : null;
+}
+
+/**
+ * Keeps a lapse window in step with the plan, on every entitlement push:
+ * a paid plan that has lapsed starts one; a plan that came back (or a lapse
+ * that turns out not to be one) cancels it while it's still running. A
+ * deletion window is left alone either way. Returns the window to send to
+ * the engine.
+ */
+export async function reconcileLapse(userId: string, plan: PlanId, sub: { plan: string } | null): Promise<Closing | null> {
   const current = await getClosing(userId);
-  if (plan === 'expired') {
+  if (lapsedPaidPlan(plan, sub)) {
     if (current) return current;
     const started = await startClosing(db(), userId, 'lapsed');
     if (started) await sendClosingEmail(userId, started);
