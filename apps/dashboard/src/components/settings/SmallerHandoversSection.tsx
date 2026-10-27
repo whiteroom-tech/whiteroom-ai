@@ -53,8 +53,8 @@ export function SmallerHandoversSection() {
     if (!loadFailed) return null;
     const fleet = fleetId;
     return (
-      <Panel title="Smaller handovers">
-        <LoadFailed what="smaller handover settings" busy={reloading} onRetry={() => { setReloading(true); void load(fleet).finally(() => setReloading(false)); }} />
+      <Panel title="Cheaper calls">
+        <LoadFailed what="cheaper call settings" busy={reloading} onRetry={() => { setReloading(true); void load(fleet).finally(() => setReloading(false)); }} />
       </Panel>
     );
   }
@@ -76,12 +76,12 @@ export function SmallerHandoversSection() {
   }
 
   return (
-    <Panel title="Smaller handovers">
+    <Panel title="Cheaper calls">
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
         Changes that make handover notes cheaper to send, tried one at a time. For fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <SegmentedControl label="Smaller handovers" value={preview.compression_mode} options={OPTIONS}
+        <SegmentedControl label="Cheaper calls" value={preview.compression_mode} options={OPTIONS}
           onChange={(v) => {
             const mode = v as CompressionMode;
             if (busy || mode === preview.compression_mode) return;
@@ -108,7 +108,7 @@ export function SmallerHandoversSection() {
 
       <ConfirmDialog
         open={confirmOn}
-        title="Turn on smaller handovers?"
+        title="Turn on cheaper calls?"
         body={preview.cleared.length
           ? 'Changes that have passed testing start applying to what your agents receive from their next call. You can switch back to Preview or Off at any time.'
           : 'None of the changes has passed testing yet, so nothing your agents receive changes for now. Changes start applying as they pass, without asking again.'}

@@ -172,7 +172,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setFleetId(null);
           setFleetToken(null);
           setStatus('unauthenticated');
-          setLoginError('Fleet token invalid. Please enter your API key.');
+          setLoginError('Fleet token invalid. Please enter your WhiteRoom fleet key.');
         } else {
           // Engine/route unreachable: the token may be perfectly fine.
           // Keep the legacy creds and let the user retry the migration.
@@ -253,7 +253,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         const listData = await listFleets(token);
         const fleets = preferProductionFleet(listData.fleets ?? []);
         if (!fleets.length) {
-          setLoginError('No fleets found for this API key. Register an agent first.');
+          setLoginError('No fleets found for this fleet key. Register an agent first.');
           return;
         }
         const claim = await claimFleet(fleets[0].fleetId, token);

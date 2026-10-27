@@ -1,7 +1,7 @@
 'use client';
 
 // "Add a rule": what to control, by goal, each naming its rule. Shares the
-// dialog frame with ConfirmDialog; new rules start in Watch only.
+// dialog frame with ConfirmDialog; new rules start in Record only.
 
 import { Tag } from '@whiteroom/ui';
 import type { GovernanceRuleType } from '@/lib/whiteroom/types';
@@ -19,7 +19,7 @@ export function AddRuleDialog({ open, busy, onPick, onCancel }: {
     <DialogFrame open={open} busy={busy} onCancel={onCancel} labelledBy="add-rule-title">
       <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <h2 id="add-rule-title" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 700 }}>Add a rule</h2>
-        <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.55, color: 'var(--tx2)' }}>New rules start in Watch only, so nothing is blocked until you say so.</p>
+        <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.55, color: 'var(--tx2)' }}>New rules start in Record only, so nothing is blocked until you say so.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {RULE_TEMPLATES.map((t) => (
             <button key={t.type} type="button" disabled={busy} onClick={() => onPick(t.type)} className="gov-template">

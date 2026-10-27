@@ -43,11 +43,11 @@ describe('Watching summary', () => {
 
   it('names each agent with its count from the engine, busiest first', () => {
     expect(watchSummary(rule, { byAgent: { scout: 1, 'lead-agent': 15 }, unversioned: false }))
-      .toBe('Watching: would have paused lead-agent 15 times, scout once since its last change.');
+      .toBe('Record only: would have paused lead-agent 15 times, scout once since its last change.');
   });
 
   it('claims no response when older, unversioned events are counted', () => {
-    expect(watchSummary(rule, { byAgent: { 'lead-agent': 2 }, unversioned: true })).toBe('Watching: would have acted on lead-agent 2 times since its last change.');
+    expect(watchSummary(rule, { byAgent: { 'lead-agent': 2 }, unversioned: true })).toBe('Record only: would have acted on lead-agent 2 times since its last change.');
   });
 
   it('is null when the rule has not fired', () => {

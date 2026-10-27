@@ -473,7 +473,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
             <Banner variant="info" icon="check">Welcome, {name}. Your account is ready: point an agent at WhiteRoom below and it appears on <a href={ROUTES.home} className="wr-link">Home</a> on its first call.</Banner>
           )}
 
-          <Panel title="Your API key" actions={!previewKeys && !rotated ? <Button size={28} variant="danger" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
+          <Panel title="Your WhiteRoom fleet key" actions={!previewKeys && !rotated ? <Button size={28} variant="danger" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
               {rotated && <RotationResult result={rotated} onDismiss={() => window.location.reload()} />}
               {/* After a rotation the old key is dead: only the new one, in the banner, is offered. */}
@@ -481,7 +481,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                 <code className="wr-key-field">{showKey ? apiKey : maskKey(apiKey)}</code>
                 <Button onClick={() => setShowKey((v) => !v)} aria-pressed={showKey}>{showKey ? 'Hide' : 'Reveal'}</Button>
                 {/* Reveal first: copying a secret you can't see is easy to do by accident. */}
-                <CopyValueButton text={apiKey} what="your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
+                <CopyValueButton text={apiKey} what="your fleet key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
               </div>}
               <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                 Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet. If it leaks, rotate it.

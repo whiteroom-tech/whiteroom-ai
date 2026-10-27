@@ -92,11 +92,11 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
     setSaving(false);
     if (result.ok) {
       onDone(result.ruleId, result.existing
-        ? `This suggestion's ${RULE_LABEL[ruleType]} was already added in Watch for ${rec.agentId}, so it was kept as it is. Change its number in the list if you need to.`
-        : `${RULE_TITLE[ruleType]} added in Watch for ${rec.agentId}. You'll see what it would have caught in Runs.`);
+        ? `This suggestion's ${RULE_LABEL[ruleType]} was already added in Record only for ${rec.agentId}, so it was kept as it is. Change its number in the list if you need to.`
+        : `${RULE_TITLE[ruleType]} added in Record only for ${rec.agentId}. You'll see what it would have done in Runs.`);
     } else if (result.step === 'feedback') {
       setRuleId(result.ruleId);
-      setFailure(`${RULE_TITLE[ruleType]} added in Watch. We couldn't mark the suggestion as done.`);
+      setFailure(`${RULE_TITLE[ruleType]} added in Record only. We couldn't mark the suggestion as done.`);
     } else {
       // A timeout can hide a rule the engine did create; retrying is safe either way.
       setFailure("Couldn't confirm the rule was added. Try again.");
@@ -111,7 +111,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
           ? <><b style={{ color: 'var(--brand)' }}>Suggested for <span style={MONO}>{rec.agentId}</span>:</b> {loaded.sentence}</>
           : <>This suggestion is {STATUS_LABEL[rec.status] ?? rec.status}. You can still add the rule.</>}
       </div>
-      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Watch mode records every time this rule would have stepped in. It doesn&apos;t block anything.</p>
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Record only records every time this rule would have stepped in. It doesn&apos;t block anything.</p>
 
       <dl style={{ display: 'grid', gridTemplateColumns: '140px minmax(0,1fr)', gap: '10px 14px', fontSize: 'var(--fs-sm)', alignItems: 'center', margin: 0 }}>
         <dt style={{ color: 'var(--tx2)' }}>Rule</dt><dd style={{ margin: 0 }}>{RULE_TITLE[ruleType]}</dd>
@@ -129,10 +129,10 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>
         <dd style={{ margin: 0 }}>
           <span role="group" aria-label="Mode" style={{ display: 'inline-flex', border: '1px solid var(--line2)', borderRadius: 6, overflow: 'hidden' }}>
-            <button type="button" aria-pressed="true" style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'var(--brand-dim)', color: 'var(--brand)' }}>Watch</button>
-            <button type="button" disabled style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'none', color: 'var(--tx3)', cursor: 'not-allowed' }}>Enforce</button>
+            <button type="button" aria-pressed="true" style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'var(--brand-dim)', color: 'var(--brand)' }}>Record only</button>
+            <button type="button" disabled style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'none', color: 'var(--tx3)', cursor: 'not-allowed' }}>Block</button>
           </span>
-          <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>Switch to Enforce after you&apos;ve seen what it catches.</span>
+          <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>Switch to Block after you&apos;ve seen what it would have done.</span>
         </dd>
       </dl>
 
@@ -147,7 +147,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
         ) : (<button type="button" className="dx-main-btn" disabled={saving || !valid} onClick={() => void add()} style={{
           fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
           background: 'var(--brand)', color: 'var(--bg)', cursor: saving ? 'wait' : 'pointer', opacity: saving || !valid ? 0.6 : 1,
-        }}>{saving ? 'Adding…' : ruleId ? 'Try again' : 'Add in Watch'}</button>)}
+        }}>{saving ? 'Adding…' : ruleId ? 'Try again' : 'Add in Record only'}</button>)}
         <button type="button" className="dx-link" onClick={() => onCancel(!!ruleId)}>Cancel</button>
       </div>
     </section>

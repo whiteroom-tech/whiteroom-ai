@@ -69,7 +69,7 @@ function clampPct(n: number): number {
  */
 export function shiftSummary(a: AgentInfo, fmtTokens: (n: number) => string): string {
   const shift = currentShift(a);
-  if (!shift) return 'none running';
+  if (!shift) return 'none in progress';
   const bits = [`#${shift.watchNumber || 1}`, taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
   if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
   return bits.join(' · ');
@@ -83,7 +83,7 @@ export function shiftSummary(a: AgentInfo, fmtTokens: (n: number) => string): st
 export function shiftAside(a: AgentInfo, fmtTokens: (n: number) => string): string[] {
   if (currentShift(a)) return [];
   const out: string[] = [];
-  if (a.lastShift) out.push(`Last shift #${a.lastShift.watchNumber}: ${taskWord(a.lastShift.tasksCompleted)}`);
+  if (a.lastShift) out.push(`Last run #${a.lastShift.watchNumber}: ${taskWord(a.lastShift.tasksCompleted)}`);
   if (a.lifetime) out.push(`Lifetime: ${taskWord(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
   return out;
 }

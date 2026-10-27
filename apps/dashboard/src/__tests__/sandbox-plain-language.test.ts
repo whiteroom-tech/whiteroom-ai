@@ -21,7 +21,7 @@ describe('Sandbox plain language', () => {
     expect(SANDBOX_CHECKS.map((c) => checkLabel(c.id, 'engine name'))).toEqual([
       'Your agent connects',
       'It keeps working when its memory fills up',
-      'It picks up where it left off',
+      'It keeps working',
     ]);
   });
 

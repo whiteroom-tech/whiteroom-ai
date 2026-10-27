@@ -1,5 +1,6 @@
 'use client';
 
+import { MODE_LABEL } from '@/lib/vocab';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, Hint, Icon, Panel, SegmentedControl, Tag, FONT_MONO } from '@whiteroom/ui';
@@ -124,12 +125,12 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
           </Banner>
         )}
         {!!data?.run.ruleActions?.length && (
-          <Panel title="Rule actions" count={data.run.ruleActions.reduce((n, a) => n + a.occurrences, 0)} bodyPadding={0}>
+          <Panel title="Rule activity" count={data.run.ruleActions.reduce((n, a) => n + a.occurrences, 0)} bodyPadding={0}>
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {data.run.ruleActions.map((a) => (
                 <li key={`${a.at}-${a.ruleId}-${a.mode}`} style={{ display: 'flex', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)' }}>
                   <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', flex: 'none' }}>{clock(a.at)}</span>
-                  <span>&lsquo;{RULE_LABELS[a.ruleType]}&rsquo; · {a.mode === 'enforce' ? RESPONSE_LABEL[a.response] : `would ${RESPONSE_LABEL[a.response].toLowerCase()}`} · {a.mode === 'enforce' ? 'Enforce' : 'Watch only'}{a.occurrences > 1 && ` · ×${a.occurrences}`}</span>
+                  <span>&lsquo;{RULE_LABELS[a.ruleType]}&rsquo; · {a.mode === 'enforce' ? RESPONSE_LABEL[a.response] : `would ${RESPONSE_LABEL[a.response].toLowerCase()}`} · {MODE_LABEL[a.mode === 'enforce' ? 'enforce' : 'watch']}{a.occurrences > 1 && ` · ×${a.occurrences}`}</span>
                 </li>
               ))}
             </ul>

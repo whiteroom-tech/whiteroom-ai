@@ -3,7 +3,7 @@ import type { CompressionItem, CompressionPreview } from '@/lib/whiteroom/client
 /** What each change does, from the reader's side (spec §14.3: what, not how). */
 export const ITEM_COPY: Array<{ id: CompressionItem; title: string; text: string }> = [
   { id: 'C1', title: 'Cache more of each request', text: 'More of each request reads from your provider’s prompt cache, on every Claude route.' },
-  { id: 'C2', title: 'Send notes the same way every time', text: 'A resent handover reads from the cache instead of being paid for again.' },
+  { id: 'C2', title: 'Send notes the same way every time', text: 'Repeated text is read from the cache instead of being paid for again.' },
 ];
 
 /** The changes to list: those this engine reports. */

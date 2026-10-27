@@ -26,7 +26,7 @@ export function memoryCheckDetail(log: readonly { type: string }[]): string {
 export const SANDBOX_CHECKS = [
   { id: 'core.connect', label: 'Your agent connects', meaning: 'Its calls reach the model through WhiteRoom and come back normally.' },
   { id: 'core.handoff', label: 'It keeps working when its memory fills up', meaning: 'When your agent’s memory fills up, WhiteRoom saves a short summary so it can keep going.' },
-  { id: 'core.resume', label: 'It picks up where it left off', meaning: 'Its next call after the summary works, and it carries on from there.' },
+  { id: 'core.resume', label: 'It keeps working', meaning: 'Its next call after the summary works, and it carries on from there.' },
 ] as const;
 
 /** The check names the page and the report share. */

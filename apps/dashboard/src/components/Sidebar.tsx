@@ -53,7 +53,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'Setup',
     items: [
       { key: 'sandbox', href: ROUTES.sandbox, label: 'Sandbox', tip: 'Try an agent on a test task before it touches real work' },
-      { key: 'fleetKey', href: ROUTES.fleetKey, label: 'Fleet key', tip: 'Your API key and proxy address, needed to connect an agent' },
+      { key: 'fleetKey', href: ROUTES.fleetKey, label: 'Fleet key', tip: 'Your WhiteRoom fleet key and proxy address, needed to connect an agent' },
       { key: 'settings', href: ROUTES.settings, label: 'Settings', tip: 'Profile, plan, alerts and sign-in' },
     ],
   },

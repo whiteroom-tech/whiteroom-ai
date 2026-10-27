@@ -3,6 +3,7 @@
 // The selected rule, as four steps (When · Then · Applies to · Mode) and a
 // Save button: nothing reaches the engine until Save (Controls spec Rev 1, D1).
 
+import { MODE_LABEL, modeWords } from '@/lib/vocab';
 import { useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl, SelectChip } from '@whiteroom/ui';
@@ -30,7 +31,7 @@ const KEYWORD_ACTS: Record<KeywordWhere, string> = {
 };
 const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
 const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
-  { value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: 'warn' },
+  { value: 'off', label: MODE_LABEL.off }, { value: 'watch', label: MODE_LABEL.watch }, { value: 'enforce', label: MODE_LABEL.enforce, dot: 'warn' },
 ];
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
@@ -178,7 +179,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             <span style={{ fontSize: 'var(--fs-md)' }}>When an agent is about to run any of these tools:</span>
             <GroupPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} groups={TOOL_GROUPS}
               addLabel="+ add tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
-            <p style={help}>In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.</p>
+            <p style={help}>In Block, a streamed call is checked before it streams, so its text arrives all at once. In Record only, streamed calls aren’t checked.</p>
           </>
         )}
       </section>
@@ -216,12 +217,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           <SegmentedControl<GovernanceMode> label="Mode" value={draft.mode} onChange={(mode) => set({ mode })} options={MODES} />
         </div>
         <p style={{ ...help, display: 'inline-flex', alignItems: 'center' }}>
-          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Watch only. Counting, never acting.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : ACTS[rule.ruleType]}
+          {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Record only. Records what it would do, never acts.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : ACTS[rule.ruleType]}
           {canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}
         </p>
         {watching && wouldAct && (
           <p style={{ ...help, color: seen ? 'var(--warn-tx)' : 'var(--tx2)' }}>
-            {seen ?? 'Watching: it hasn’t fired since its last change.'}
+            {seen ?? 'Record only: it hasn’t matched since its last change.'}
             {wouldAct.since ? ` Last changed ${timeAgo(wouldAct.since)}.` : ''}
           </p>
         )}
@@ -255,7 +256,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           {history.length === 0 && <p style={help}>No history yet.</p>}
           {history.slice(0, 10).map((h) => (
             <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 'var(--fs-sm)' }}>
-              <span>{h.description}</span>
+              <span>{modeWords(h.description)}</span>
               <span style={{ color: 'var(--tx2)', flex: 'none' }}>{timeAgo(h.time)} · {historyWho(h, actors)}</span>
             </div>
           ))}

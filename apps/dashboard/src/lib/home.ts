@@ -52,12 +52,12 @@ export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): s
   const shift = currentShift(a);
   if (!shift) {
     const last = a.lastShift;
-    if (state === 'resting') return last ? `Rest after shift ${last.watchNumber} · ${taskWord(last.tasksCompleted)}` : 'On a break';
+    if (state === 'resting') return last ? `Rest after run ${last.watchNumber} · ${taskWord(last.tasksCompleted)}` : 'On a break';
     const waiting = state === 'paused' || state === 'stopped' ? 'waiting to be resumed' : 'waiting for work';
-    return last ? `Last shift ${last.watchNumber} · ${taskWord(last.tasksCompleted)} · ${waiting}` : `No shift running · ${waiting}`;
+    return last ? `Last run ${last.watchNumber} · ${taskWord(last.tasksCompleted)} · ${waiting}` : `No run in progress · ${waiting}`;
   }
-  const head = `Shift ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
-  if (state === 'resting') return `Rest after shift ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
+  const head = `Run ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
+  if (state === 'resting') return `Rest after run ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
   if (state === 'idle') return `${head} · waiting for work`;
   if (state === 'paused' || state === 'stopped') return `${head} · waiting to be resumed`;
   return `${head} · ${oneDecimal(shift.minutesWorked)} min worked`;
@@ -76,7 +76,7 @@ export function sortAgents<T extends AgentInfo>(agents: T[]): T[] {
 
 /** Counts for the strip's "1 resting · 1 idle" sub-caption, most important first. */
 export function stateSummary(agents: AgentInfo[]): string {
-  const order: [AgentState, string][] = [['stale', 'not reporting'], ['disconnected', 'disconnected'], ['handover', 'handing over'], ['resting', 'resting'], ['idle', 'idle']];
+  const order: [AgentState, string][] = [['stale', 'not reporting'], ['disconnected', 'disconnected'], ['handover', 'saving progress'], ['resting', 'resting'], ['idle', 'idle']];
   const counts = new Map<AgentState, number>();
   agents.forEach((a) => { const s = agentState(a); counts.set(s, (counts.get(s) ?? 0) + 1); });
   return order.filter(([s]) => counts.get(s)).map(([s, word]) => `${counts.get(s)} ${word}`).join(' · ');
@@ -173,13 +173,13 @@ export interface ActivityRow {
 }
 
 const TAGS: Record<string, { label: string; tone: TagTone }> = {
-  handover_out: { label: 'Handover', tone: 'ho' },
-  handover_in: { label: 'Handover', tone: 'ho' },
-  handover: { label: 'Handover', tone: 'ho' },
-  self_handover: { label: 'Handover', tone: 'ho' },
+  handover_out: { label: 'Progress saved', tone: 'ho' },
+  handover_in: { label: 'Progress saved', tone: 'ho' },
+  handover: { label: 'Progress saved', tone: 'ho' },
+  self_handover: { label: 'Progress saved', tone: 'ho' },
   agent_paused: { label: 'Paused', tone: 'warn' },
   governance_block: { label: 'Blocked', tone: 'muted' },
-  governance_would_block: { label: 'Watch only', tone: 'muted' },
+  governance_would_block: { label: 'Record only', tone: 'muted' },
   unnamed_call_refused: { label: 'Refused', tone: 'warn' },
   unclean_stop: { label: 'Gap', tone: 'warn' },
   possible_gap: { label: 'Gap', tone: 'warn' },
@@ -448,8 +448,8 @@ export function savedByWhiteRoomHint(s: SavedByWhiteRoom): string {
   const cents = (n: number) => Math.round(n * 100);
   const cacheCents = s.cache == null ? 0 : Math.max(0, cents(s.usd) - cents(s.handover));
   const parts = cacheCents === 0
-    ? `${usd(s.handover)} from smaller handovers`
-    : `${usd(s.handover)} from smaller handovers + ${usd(cacheCents / 100)} from caching WhiteRoom added`;
+    ? `${usd(s.handover)} from smaller context`
+    : `${usd(s.handover)} from smaller context + ${usd(cacheCents / 100)} from caching WhiteRoom added`;
   const own = s.agentCache != null && s.agentCache > 0 ? ` Your agents' own caching saved a further ${usd(s.agentCache)}, which isn't counted.` : '';
   return `Saved by WhiteRoom: est. ${usd(s.usd)}${plus} = ${parts}, across everything stored.${own} Performance shows the same sum for the last 24h, 3d or 7d.${s.partial ? ' "+" means some tokens had no price on file.' : ''}`;
 }

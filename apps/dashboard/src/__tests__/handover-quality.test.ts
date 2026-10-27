@@ -12,7 +12,7 @@ describe('handover quality rows', () => {
     expect(qualityRows(base)[0]).toEqual({ label: 'Values kept', detail: '196 of 200 values WhiteRoom checked', value: '98.0%', state: 'measured' });
   });
   it('never shows a partly checked share as healthy', () => {
-    expect(qualityRows({ ...base, shareChecked: 0.84 })[0]).toMatchObject({ state: 'partly', detail: 'Partly checked: 84.0% of the shifts’ text. Not enough to call this healthy.' });
+    expect(qualityRows({ ...base, shareChecked: 0.84 })[0]).toMatchObject({ state: 'partly', detail: 'Partly checked: 84.0% of the notes’ text. Not enough to call this healthy.' });
   });
   it('says not measured yet instead of showing a number', () => {
     const rows = qualityRows({ ...base, valuesChecked: 0, valuesKept: 0, valuesKeptShare: null, shareChecked: null });

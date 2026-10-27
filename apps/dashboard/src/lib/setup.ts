@@ -161,6 +161,6 @@ export const BEDROCK_ROLE_SUPPORT = [
 export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
 
 /** The ⓘ beside a rule in Enforce. */
-export const UNNAMED_CALLS_ENFORCE = 'Calls from agents WhiteRoom can’t identify are refused fleet-wide while a rule in Enforce blocks, pauses or stops calls.';
+export const UNNAMED_CALLS_ENFORCE = 'Calls from agents WhiteRoom can’t identify are refused fleet-wide while a Block-mode rule blocks, pauses or stops calls.';
 
 export const SETUP_GUIDE_URL = 'https://whiteroom.tech/docs.html';

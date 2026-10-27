@@ -34,14 +34,14 @@ export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; ag
   if (!q) {
     if (!failed) return null;
     return (
-      <Panel title={<>Handover quality<Hint text={HELP.handoverQuality} /></>}>
-        <LoadFailed what="handover quality" busy={retrying} onRetry={() => { setRetrying(true); void load().finally(() => setRetrying(false)); }} />
+      <Panel title={<>Note quality<Hint text={HELP.handoverQuality} /></>}>
+        <LoadFailed what="note quality" busy={retrying} onRetry={() => { setRetrying(true); void load().finally(() => setRetrying(false)); }} />
       </Panel>
     );
   }
   return (
     <Panel
-      title={<>Handover quality<Hint text={HELP.handoverQuality} /></>}
+      title={<>Note quality<Hint text={HELP.handoverQuality} /></>}
       actions={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Last 7 days · {q.handovers} handover{q.handovers === 1 ? '' : 's'}</span>}
     >
       <div style={{ display: 'grid' }}>

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The redesigned Controls page in a DOM (spec Rev 1, D1), with the engine
-// mocked: rules as sentences in Enforcing / Watching / Off, the agent filter,
+// mocked: rules as sentences in Blocking / Record only / Off, the agent filter,
 // Save sending only what changed after the Enforce preview, the Discard and
 // Remove dialogs.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -109,18 +109,18 @@ describe('Controls page', () => {
   it('reads each rule as a sentence, grouped by what it does now, with the cards and the overlap', async () => {
     const m = await mount();
     const groups = [...m.el.querySelectorAll('.wr-panel__title')].map((t) => t.textContent);
-    expect(groups).toEqual(['Enforcing', 'Watching', 'Off']);
+    expect(groups).toEqual(['Blocking', 'Record only', 'Off']);
     expect(m.text()).toContain('When an agent makes the same call 100 times in a run, block the call.');
     expect(m.text()).toContain('Only market-researcher');
     // Stat cards, as Performance counts rule actions.
-    expect(m.text()).toMatch(/Enforcing2Call rate, Loop breaker/);
-    expect(m.text()).toMatch(/Rule actions\s*7/);
-    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.startsWith('Rule actions'))!;
+    expect(m.text()).toMatch(/Blocking2Call rate, Loop breaker/);
+    expect(m.text()).toMatch(/Rule activity\s*7/);
+    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.startsWith('Rule activity'))!;
     expect(card.textContent).toMatch(/· last 7 days$/);
     // The one Loop breaker gets its own count; the $200 cap never acts.
     expect(m.row('100 times').textContent).toContain('2 blocked · last 7 days');
     expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');
-    expect(m.text()).toContain('Your $200 cap would never act. Both are in Watch only');
+    expect(m.text()).toContain('Your $200 cap would never act. Both are in Record only');
     expect(m.text()).toContain('Pick a rule to change it');
     m.root.unmount();
   });
@@ -139,14 +139,14 @@ describe('Controls page', () => {
     const m = await mount();
     await m.click(m.row('Only allow'));
     expect(m.button('Save')!.disabled).toBe(true);
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     expect(m.button('Save')!.disabled).toBe(false);
     await m.click(m.button('Save'));
-    expect(m.text()).toContain('Enforce the Model allowlist rule?');
+    expect(m.text()).toContain('Turn on Block for the Model allowlist rule?');
     expect(api.update).not.toHaveBeenCalled();
-    await m.click(m.button('Enforce rule'));
+    await m.click(m.button('Turn on Block'));
     expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', ifVersion: 1 }, 'k');
-    expect(m.text()).toContain('Saved. Model allowlist now enforces.');
+    expect(m.text()).toContain('Saved. Model allowlist now blocks.');
     m.root.unmount();
   });
 
@@ -171,9 +171,9 @@ describe('Controls page', () => {
     const m = await mount();
     await m.click(m.row('Only allow'));
     const pill = () => m.el.querySelector('.gov-edhead__mode')!.textContent;
-    expect(pill()).toBe('Watch only');
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
-    expect(pill()).toBe('Enforce · unsaved');
+    expect(pill()).toBe('Record only');
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
+    expect(pill()).toBe('Block · unsaved');
     expect(m.el.querySelector('.gov-actbar')!.classList.contains('is-dirty')).toBe(true);
     await m.click(m.button('‹ Controls'));
     expect(m.text()).toContain('Discard your changes to Model allowlist?');
@@ -236,9 +236,9 @@ describe('Controls page, editing', () => {
     const m = await mount();
     await m.click(m.row('Only allow'));
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'stop');
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     await m.click(m.button('Save'));
-    expect(m.text()).toContain('Run this rule in Watch for 24 hours before it can stop agents');
+    expect(m.text()).toContain('Run this rule in Record only for 24 hours before it can stop agents');
     expect(api.update).not.toHaveBeenCalled();
     m.root.unmount();
   });
@@ -250,7 +250,7 @@ describe('Controls page, editing', () => {
     const m = await mount();
     await m.click(m.row('Only allow'));
     await choose(m.el.querySelector('select[aria-label="What the rule does"]') as HTMLSelectElement, 'stop');
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     await m.click(m.button('Save'));
     expect(m.text()).toContain('Let this rule stop agents?');
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
@@ -393,7 +393,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
     const m = await mount();
     await m.click(m.row('Only allow'));
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     expect(m.button('Save')!.disabled).toBe(false);
     await m.click(m.button('Add to your allowlist'));
     expect(m.text()).toContain('Discard your changes to Model allowlist?');
@@ -416,7 +416,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     }));
     const m = await mount();
     expect(m.text()).toContain('Your Model allowlist leaves out gpt-4o, which your fleet used in the last 14 days. With it added, the allowlist would have stopped 0 calls.');
-    expect(m.button('Add in Watch')).toBeUndefined();
+    expect(m.button('Add in Record only')).toBeUndefined();
     await m.click(m.button('Add to your allowlist'));
     const busy = [...m.el.querySelectorAll('button')].find((b) => b.textContent?.includes('Adding…')) as HTMLButtonElement;
     expect(busy.disabled).toBe(true);
@@ -424,7 +424,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     await act(async () => { finish(); });
     await flush();
     expect(api.update).toHaveBeenCalledTimes(1);
-    expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
+    expect(m.text()).toContain('Added the models to your Model allowlist, in Record only.');
     expect(m.button('Add to your allowlist')).toBeUndefined();
     m.root.unmount();
   });
@@ -442,10 +442,10 @@ describe('Controls page, suggestions, removing and filtering', () => {
     api.saved.r2 = { ...RULES[1], appliesTo: 'all', mode: 'off' };
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
     const m = await mount();
-    expect(m.text()).toContain('Your Model allowlist is Off. In Watch only, it would have stopped 0 calls in the last 14 days.');
-    await m.click(m.button('Turn on in Watch'));
+    expect(m.text()).toContain('Your Model allowlist is Off. In Record only, it would have stopped 0 calls in the last 14 days.');
+    await m.click(m.button('Turn on in Record only'));
     expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] } }), 'k');
-    expect(m.text()).toContain('Turned your Model allowlist on in Watch only.');
+    expect(m.text()).toContain('Turned your Model allowlist on in Record only.');
     m.root.unmount();
   });
 
@@ -454,10 +454,10 @@ describe('Controls page, suggestions, removing and filtering', () => {
     api.saved.r2 = { ...RULES[1], appliesTo: 'all', mode: 'off' };
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
     const m = await mount();
-    expect(m.text()).toContain('Your Model allowlist leaves out gpt-4o, which your fleet used in the last 14 days. With it added, the allowlist would have stopped 0 calls. It goes to Watch only.');
+    expect(m.text()).toContain('Your Model allowlist leaves out gpt-4o, which your fleet used in the last 14 days. With it added, the allowlist would have stopped 0 calls. It goes to Record only.');
     await m.click(m.button('Add to your allowlist'));
     expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', params: { allowedModels: ['gpt-4o', 'claude-haiku-4-5-20251001'] } }), 'k');
-    expect(m.text()).toContain('Added the models to your Model allowlist, in Watch only.');
+    expect(m.text()).toContain('Added the models to your Model allowlist, in Record only.');
     m.root.unmount();
   });
 
@@ -470,10 +470,10 @@ describe('Controls page, suggestions, removing and filtering', () => {
       return { rule };
     });
     const m = await mount();
-    await m.click(m.button('Add in Watch'));
+    await m.click(m.button('Add in Record only'));
     expect(api.update).not.toHaveBeenCalled();
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'model_allowlist', mode: 'watch', params: { allowedModels: ['gpt-4o'] } }), 'k');
-    expect(m.text()).toContain('Added a Model allowlist in Watch only.');
+    expect(m.text()).toContain('Added a Model allowlist in Record only.');
     m.root.unmount();
   });
 
@@ -509,19 +509,19 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.el.querySelector('input[aria-label="Spend limit"]')).toBeTruthy();
     await act(async () => { finish(); });
     await flush();
-    expect(m.text()).toContain('Saved. Spend cap is in Watch only.');
+    expect(m.text()).toContain('Saved. Spend cap is in Record only.');
     expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
     expect(m.button('Save')!.disabled).toBe(true);
     expect(m.text()).not.toContain('From a Diagnosis suggestion');
     m.root.unmount();
   });
 
-  it('viewing one agent, Rule actions counts that agent’s', async () => {
+  it('viewing one agent, Rule activity counts that agent’s', async () => {
     nav.params = new URLSearchParams('agent=lead-agent');
     const m = await mount();
-    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.includes('Rule actions'))!;
+    const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.includes('Rule activity'))!;
     // The mocked engine's 2 blocks are fleet-wide, none of them lead-agent's.
-    expect(card.textContent).toMatch(/^Rule actions\S*0none in the last 7 days$/);
+    expect(card.textContent).toMatch(/^Rule activity\S*0none in the last 7 days$/);
     m.root.unmount();
   });
 
@@ -529,7 +529,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     const m = await mount();
     const agent = () => m.el.querySelector('select[aria-label="Agent"]') as HTMLSelectElement;
     await m.click(m.row('Only allow'));
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     await choose(agent(), 'lead-agent');
     expect(m.text()).toContain('Discard your changes to Model allowlist?');
     expect(nav.replace).not.toHaveBeenCalled();
@@ -621,7 +621,7 @@ describe('Keywords in the editor', () => {
     const warns = async () => {
       const m = await mount();
       await m.click(m.row('“Project Falcon”'));
-      await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+      await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
       const said = m.text().includes('No alert channel is connected');
       m.root.unmount();
       return said;
@@ -642,7 +642,7 @@ describe('Keywords in the editor', () => {
     api.history = [{ id: 'h1', ruleId: 'k1', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'test', time: new Date(Date.now() - 60_000).toISOString() }];
     const m = await mount();
     await m.click(m.row('“Project Falcon”'));
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     await m.click(m.button('Save'));
     expect(m.text()).toContain('before it can block calls on incoming data');
     expect(api.update).not.toHaveBeenCalled();
@@ -655,7 +655,7 @@ describe('Keywords in the editor', () => {
     api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule({ response: 'block' }), ...ch, version: 2 } }));
     const m = await mount();
     await m.click(m.row('“Project Falcon”'));
-    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Enforce')));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
     await m.click(m.button('Save'));
     expect(m.text()).toContain('Let this rule block calls on incoming data?');
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;

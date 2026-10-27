@@ -1,10 +1,11 @@
 "use client";
 
 // Controls (spec Rev 1, D1): rules read as sentences, grouped by what they do
-// now (Enforcing, Watching, Off), changed in one editor on the right and sent
+// now (Blocking, Record only, Off), changed in one editor on the right and sent
 // to the engine only on Save. Built from the shared primitives and the
 // dashboard's own words, so it reads like the other tabs.
 
+import { MODE_GROUP, MODE_MEANING, RULE_ACTIVITY, modeWords } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -247,7 +248,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
-      const how = saved.mode === "enforce" ? "now enforces" : saved.mode === "watch" ? "is in Watch only" : "is off";
+      const how = saved.mode === "enforce" ? "now blocks" : saved.mode === "watch" ? "is in Record only" : "is off";
       setNotice(`Saved. ${RULE_LABELS[saved.ruleType]} ${how}.`);
       void fetchData();
     } catch (e) {
@@ -284,7 +285,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setAdding("busy");
     setError(null);
     try {
-      // New rules start in Watch only; while viewing one agent, they start for that agent.
+      // New rules start in Record only; while viewing one agent, they start for that agent.
       const { rule } = await governanceCreateRule(fleetId, { ruleType, mode: "watch", ...(agentFilter && { appliesTo: [agentFilter] }) }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
@@ -302,7 +303,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setAddingSuggestion(true);
     setError(null);
     setNotice(null);
-    const description = "Added Model allowlist in Watch (suggested)";
+    const description = "Added Model allowlist in Record only (suggested)";
     // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
     const target = suggestedAllowlistTarget(rules);
     try {
@@ -313,7 +314,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
       }
       const added = target ? models.some((m) => !(target.params as ModelAllowlistParams).allowedModels.includes(m)) : true;
-      setNotice(!target ? "Added a Model allowlist in Watch only." : added ? "Added the models to your Model allowlist, in Watch only." : "Turned your Model allowlist on in Watch only.");
+      setNotice(!target ? "Added a Model allowlist in Record only." : added ? "Added the models to your Model allowlist, in Record only." : "Turned your Model allowlist on in Record only.");
     } catch (e) { handleError(e, "add the suggested allowlist"); }
     // Busy until the list reloads and the banner goes, so a second click can't add another rule.
     try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
@@ -397,10 +398,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <div className="gov-columns">
         <main className="gov-list">
           <section aria-label="Rules at a glance" className="wr-stat-strip" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
-            <StatCard variant="card" label="Enforcing" value={enforcing.length} sub={ruleNames(enforcing)} />
-            <StatCard variant="card" label="Watching" hint="Watch only counts what a rule would do and never acts. Enforce acts." value={watching.length} sub={ruleNames(watching)} />
+            <StatCard variant="card" label={MODE_GROUP.enforce} value={enforcing.length} sub={ruleNames(enforcing)} />
+            <StatCard variant="card" label={MODE_GROUP.watch} hint={`${MODE_MEANING.watch} ${MODE_MEANING.enforce}`} value={watching.length} sub={ruleNames(watching)} />
             <StatCard variant="card" label="Off" value={off.length} sub={ruleNames(off)} />
-            <StatCard variant="card" label="Rule actions" hint={`${HELP.ruleActions} Last 7 days.`} value={counts ? tallyTotal(counts).toLocaleString() : "—"}
+            <StatCard variant="card" label={RULE_ACTIVITY} hint={`${HELP.ruleActions} Last 7 days.`} value={counts ? tallyTotal(counts).toLocaleString() : "—"}
               sub={!counts ? "last 7 days" : countWords ? `${countWords} · last 7 days` : "none in the last 7 days"} />
           </section>
 
@@ -410,7 +411,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           {overlap && (
             <Banner variant="warn" actions={<Button size={28} onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))}>Remove the {money(overlap.never.params as SpendCapParams)} cap</Button>}>
               {overlap.never.mode === "watch"
-                ? <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap would never act. Both are in Watch only, and the <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and would always act first.</>
+                ? <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap would never act. Both are in Record only, and the <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and would always act first.</>
                 : <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap will never act. The <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and always acts first.</>}
             </Banner>
           )}
@@ -421,17 +422,17 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             </Banner>
           )}
           {allowlistSuggestion && (
-            <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>{!allowlistTarget ? "Add in Watch" : allowlistMissing.length ? "Add to your allowlist" : "Turn on in Watch"}</Button>}>
+            <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>{!allowlistTarget ? "Add in Record only" : allowlistMissing.length ? "Add to your allowlist" : "Turn on in Record only"}</Button>}>
               {allowlistTarget && !allowlistMissing.length
-                ? <>Your Model allowlist is Off. In Watch only, it would have stopped 0 calls in the last 14 days.</>
+                ? <>Your Model allowlist is Off. In Record only, it would have stopped 0 calls in the last 14 days.</>
                 : allowlistTarget
-                ? <>Your Model allowlist leaves out <span style={{ fontFamily: FONT_MONO }}>{allowlistMissing.join(", ")}</span>, which your fleet used in the last 14 days. With {allowlistMissing.length === 1 ? "it" : "them"} added, the allowlist would have stopped 0 calls.{allowlistTarget.mode === "off" ? " It goes to Watch only." : ""}</>
+                ? <>Your Model allowlist leaves out <span style={{ fontFamily: FONT_MONO }}>{allowlistMissing.join(", ")}</span>, which your fleet used in the last 14 days. With {allowlistMissing.length === 1 ? "it" : "them"} added, the allowlist would have stopped 0 calls.{allowlistTarget.mode === "off" ? " It goes to Record only." : ""}</>
                 : <>Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.</>}
             </Banner>
           )}
 
-          {group("Enforcing", enforcing, "No rules are enforcing. Rules in Watch only show what they would do first.")}
-          {group("Watching", watching, "No rules are watching.")}
+          {group(MODE_GROUP.enforce, enforcing, "No rules block yet. Rules in Record only show what they would do first.")}
+          {group(MODE_GROUP.watch, watching, "No rules in Record only.")}
           {group("Off", off, "No rules are off.", true)}
 
           <p style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
@@ -479,13 +480,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         ) : (
           <aside aria-label="Rule details" className="gov-panel is-empty">
             <p style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Pick a rule to change it</p>
-            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: "var(--tx2)" }}>Or use Add rule. New rules start in Watch only, so nothing is blocked until you say so.</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: "var(--tx2)" }}>Or use Add rule. New rules start in Record only, so nothing is blocked until you say so.</p>
             {recent.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <p className="gov-eyebrow" style={{ marginTop: 6 }}>Recent changes</p>
                 {recent.map((h) => (
                   <div key={h.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 'var(--fs-sm)' }}>
-                    <span>{RULE_LABELS[h.ruleType]} · {h.description}</span>
+                    <span>{RULE_LABELS[h.ruleType]} · {modeWords(h.description)}</span>
                     <span style={{ color: "var(--tx2)", flex: "none" }}>{timeAgo(h.time)}</span>
                   </div>
                 ))}
@@ -501,9 +502,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "enforce"}
         tone="neutral"
-        title={dialog?.kind === "enforce" ? `Enforce the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
+        title={dialog?.kind === "enforce" ? `Turn on Block for the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
         body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldActs[`${dialog.rule.id}@${dialog.rule.version}`] ?? null} /> : null}
-        confirmLabel="Enforce rule"
+        confirmLabel="Turn on Block"
         cancelLabel={dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep watching" : "Cancel"}
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); }}
@@ -575,7 +576,7 @@ function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: 
       {ruleSentenceText(next)} {appliesNow(next.appliesTo)}
       <span style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
         <span style={tile}><span style={big}>{n === null ? "—" : n.toLocaleString()}</span>{watched && wouldAct.unversioned ? "times it would have acted, some maybe before its last change" : "times it would have acted"}</span>
-        <span style={tile}><span style={big}>{watched && wouldAct.since ? timeAgo(wouldAct.since).replace(/ ago$/, "") : "—"}</span>{watched ? "in Watch only, since its last change" : "Turn on Watch first to see what it would do"}</span>
+        <span style={tile}><span style={big}>{watched && wouldAct.since ? timeAgo(wouldAct.since).replace(/ ago$/, "") : "—"}</span>{watched ? "in Record only, since its last change" : "Turn on Record only first to see what it would do"}</span>
       </span>
       {canAct(next) && <span style={{ display: "block", marginTop: 12 }}>{UNNAMED_CALLS_REFUSED}</span>}
     </>

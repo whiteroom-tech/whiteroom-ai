@@ -15,8 +15,8 @@ type Pending = { patch: Partial<DataSettings>; title: string; body: string; conf
 
 const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, 'patch'>> = {
   notesOff: {
-    title: 'Stop saving handover notes?',
-    body: 'Notes stay in memory only. After a WhiteRoom update, agents start their next shift without them. Saved notes are deleted now.',
+    title: 'Stop saving progress notes?',
+    body: 'Notes stay in memory only. After a restart, agents start their next run without them. Saved notes are deleted now.',
     confirm: 'Stop saving', cancel: 'Keep saving', tone: 'danger',
   },
   feedOff: {
@@ -26,7 +26,7 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
   },
   removePersonal: {
     title: 'Remove personal details from notes and the live feed?',
-    body: 'Email addresses and phone numbers are removed from handover notes and the live feed, including what’s already saved. After a WhiteRoom update, agents resume without them. Lead, sales and support agents may not finish their tasks.',
+    body: 'Email addresses and phone numbers are removed from progress notes and the live feed, including what’s already saved. After a restart, agents resume without them. Lead, sales and support agents may not finish their tasks.',
     confirm: 'Remove them', cancel: 'Keep them', tone: 'neutral',
   },
 };
@@ -113,7 +113,7 @@ export function DataPrivacySection() {
       setPending({
         patch,
         title: `Keep notes for ${ageLabel(hours)}?`,
-        body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a WhiteRoom update, agents idle longer than that resume without them.`,
+        body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a restart, agents idle longer than that resume without them.`,
         confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
       });
     } else if (kind) setPending({ patch, ...CONFIRM[kind] });
@@ -123,15 +123,15 @@ export function DataPrivacySection() {
   return (
     <Panel title="Data and privacy">
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px', maxWidth: '62ch' }}>
-        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from handover notes and the live feed before they’re saved.
+        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from progress notes and the live feed before they’re saved.
       </p>
 
       <Row
-        title="Save handover notes"
+        title="Save progress notes"
         text={settings.handover_persistence
-          ? 'Lets your agents pick up where they left off after a WhiteRoom update. Notes are encrypted.'
-          : 'Notes stay in memory only. After a WhiteRoom update, agents start their next shift without them.'}
-        control={<Toggle label="Save handover notes" checked={settings.handover_persistence} disabled={busy}
+          ? 'Lets your agents continue where they were after a restart. Notes are encrypted.'
+          : 'Notes stay in memory only. After a restart, agents start their next run without them.'}
+        control={<Toggle label="Save progress notes" checked={settings.handover_persistence} disabled={busy}
           onChange={(on) => change({ handover_persistence: on })} />}
       >
         {settings.handover_persistence && settings.handover_max_age_hours != null && (

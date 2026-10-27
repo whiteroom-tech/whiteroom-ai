@@ -339,7 +339,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           ) : (
             <div className="wr-agent-grid">
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
-                <Panel title={<>Current shift<Hint text={HELP.currentShift} /></>} count={shiftSummary(agent, fmtTokens)}>
+                <Panel title={<>Current run<Hint text={HELP.currentShift} /></>} count={shiftSummary(agent, fmtTokens)}>
                   {!progress && shiftAside(agent, fmtTokens).length > 0 && (
                     <div style={{ display: 'grid', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {shiftAside(agent, fmtTokens).map((line) => <div key={line}>{line}</div>)}
@@ -348,10 +348,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                   {progress && (
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-sm)', marginBottom: 6 }}>
-                        <span style={{ color: 'var(--tx2)' }}>{progress.onBreak ? 'Break progress' : 'Shift progress'}</span>
+                        <span style={{ color: 'var(--tx2)' }}>{progress.onBreak ? 'Break progress' : 'Run progress'}</span>
                         <span style={{ fontFamily: FONT_MONO }}>{progress.label}</span>
                       </div>
-                      <div role="progressbar" aria-valuenow={Math.round(progress.pct)} aria-valuemin={0} aria-valuemax={100} aria-label={progress.onBreak ? 'Break progress' : 'Shift progress'} style={{ height: 5, borderRadius: 3, background: 'var(--track)', overflow: 'hidden' }}>
+                      <div role="progressbar" aria-valuenow={Math.round(progress.pct)} aria-valuemin={0} aria-valuemax={100} aria-label={progress.onBreak ? 'Break progress' : 'Run progress'} style={{ height: 5, borderRadius: 3, background: 'var(--track)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${progress.pct}%`, background: progress.onBreak ? 'var(--tx2)' : 'var(--brand)' }} />
                       </div>
                     </div>
@@ -361,18 +361,18 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                 {!preview && <GoalPanel fleetId={fleetId} agentId={agentId} />}
 
                 <Panel
-                  title={<>Handover notes<Hint text={HELP.handoverNotes} /></>}
+                  title={<>Progress notes<Hint text={HELP.handoverNotes} /></>}
                   actions={notesState === 'current' && handover?.session_stats ? <Tag tone="ho">{handover.session_stats.tasks_completed} tasks → notes</Tag> : undefined}
                 >
                   {notesState !== 'current' ? (
                     <p role={notesState === 'failed' ? 'status' : undefined} style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-                      {notesState === 'failed' ? 'Couldn’t load this shift’s notes. Retrying…' : 'Loading notes…'}
+                      {notesState === 'failed' ? 'Couldn’t load this run’s notes. Retrying…' : 'Loading notes…'}
                     </p>
                   ) : notes.length === 0 ? (
                     <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {(agent.watchNumber ?? 1) > 1
-                        ? 'No handover notes saved for this agent.'
-                        : 'No handover yet. Notes appear here after this agent’s first shift ends.'}
+                        ? 'No progress notes saved for this agent.'
+                        : 'No notes yet. They appear here after this agent’s first run ends.'}
                     </p>
                   ) : (
                     <div style={{ display: 'grid', gap: 8, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' }}>
@@ -434,7 +434,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         title={v1 ? `Pause ${agentId}?` : `Give ${agentId} a break now?`}
         body={v1
           ? <>Its current run ends. It can&rsquo;t make calls until someone resumes it, even after a restart.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></>
-          : <>It stops making calls and takes its scheduled break now, instead of at the end of this shift. It starts again on its own when the break ends.</>}
+          : <>It stops making calls and takes its scheduled break now, instead of at the end of this run. It starts again on its own when the break ends.</>}
         confirmLabel={v1 ? 'Pause' : 'Start the break'}
         onConfirm={startBreak}
         onCancel={() => setConfirmBreak(false)}
