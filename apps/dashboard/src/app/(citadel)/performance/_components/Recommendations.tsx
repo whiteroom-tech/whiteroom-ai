@@ -7,7 +7,7 @@
 import { useState, type ReactNode } from 'react';
 import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import { FONT_MONO, SegmentedControl } from '@whiteroom/ui';
-import { fmtDay } from '@/lib/format';
+import { fmtDay, plural } from '@/lib/format';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction } from '@/lib/performance-insights';
 import { Badge, Btn, CARD, H3 } from './primitives';
@@ -83,7 +83,7 @@ export function RecommendationsCard({
           {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             Since {fmtDay(rec.createdAt)}
-            {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} action{rec.feedbackCount !== 1 ? 's' : ''}</>}
+            {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} {plural(rec.feedbackCount, 'action')}</>}
           </div>
           <RecActions
             open={rec.status === 'open'}

@@ -1,12 +1,13 @@
 // Captions for Performance's Cost tracking card (dashboard audit M10, M11).
 
 import type { PerformanceCostForecastResult } from './whiteroom/types';
+import { plural } from '@/lib/format';
 
 /** What the burn rate averages: hours with calls, over the engine's lookback. */
 export function burnCaption(f: Pick<PerformanceCostForecastResult, 'burnLookbackHours'>): string {
   const h = f.burnLookbackHours;
   if (!h) return 'spending per hour';
-  if (h < 24) return `per working hour, last ${h} ${h === 1 ? 'hour' : 'hours'}`;
+  if (h < 24) return `per working hour, last ${h} ${plural(h, 'hour')}`;
   const d = Math.round(h / 24);
   return `per working hour, last ${d === 1 ? 'day' : `${d} days`}`;
 }

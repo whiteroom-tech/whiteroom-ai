@@ -1,7 +1,8 @@
 'use client';
 
 import { AppShell } from '@/components/AppShell';
-import { RunsTable } from '@/components/runs/RunsTable';
+import { RunsTable, type RunsSample } from '@/components/runs/RunsTable';
+import { localDay, localHour } from '@/lib/runs';
 import type { RunSummary } from '@/lib/whiteroom/types';
 
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
@@ -22,10 +23,27 @@ const RUNS: RunSummary[] = [
   ...[3, 3, 4, 6, 6, 6, 6, 9, 12, 12, 15, 19, 19, 19, 22, 26].map((d, i) => run(i % 3 ? 'lead-agent' : 'writer-agent', 40 - i, d * 1440 + i * 37, 9 + (i % 5))),
 ];
 
+/** Sample runs standing in for the engine: listed, counted per day and per hour as it would. */
+export function samplePreview(runs: RunSummary[]): RunsSample {
+  const dayOf = (r: RunSummary) => localDay(Date.parse(r.startedAt));
+  const count = <K,>(keys: K[]) => { const m = new Map<K, number>(); for (const k of keys) m.set(k, (m.get(k) ?? 0) + 1); return [...m]; };
+  return {
+    runs,
+    dayCounts: count(runs.map(dayOf)).map(([day, n]) => ({ day, runs: n })),
+    list: (q) => runs.filter((r) => dayOf(r) >= q.fromDay && dayOf(r) <= q.toDay
+      && (!q.flagged || !!r.flags?.length)
+      && (!q.ruleActivity || r.blockedCalls > 0 || (r.wouldActCalls ?? 0) > 0)
+      && (q.hour === null || localHour(r.startedAt) === q.hour)),
+    hours: (day) => count(runs.filter((r) => dayOf(r) === day).map((r) => localHour(r.startedAt))).sort((a, b) => a[0] - b[0]).map(([hour, n]) => ({ hour, runs: n })),
+  };
+}
+
+const PREVIEW = samplePreview(RUNS);
+
 export function RunsPreview() {
   return (
     <AppShell>
-      <RunsTable preview={RUNS} />
+      <RunsTable preview={PREVIEW} />
     </AppShell>
   );
 }

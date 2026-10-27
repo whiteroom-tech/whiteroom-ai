@@ -1,8 +1,4 @@
-// Shared display formatters for the Citadel pages. Pure functions, no React.
-//
-// These consolidate copies that had drifted apart across the pages: the local
-// fmtK helpers rendered 1.5M tokens as "1500.0K", while the performance page's
-// fmtTokens handled millions correctly — that behavior is canonical here.
+// Shared display formatters for the dashboard pages. Pure functions, no React.
 
 import { estimateCost } from './analytics-metrics';
 
@@ -29,10 +25,27 @@ export function partialMark(partial: boolean): string {
   return partial ? '+' : '';
 }
 
-/** Token counts: 999 → "999", 1500 → "1.5K", 1_500_000 → "1.50M". */
+/** Token counts, short: 980 → "980", 4000 → "4K", 4100 → "4.1K", 12_340 → "12K", 1_500_000 → "1.5M". */
 export function fmtTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return n < 1_000_000 ? `${(n / 1000).toFixed(1)}K` : `${(n / 1_000_000).toFixed(2)}M`;
+  // One decimal below 10 of a unit, none above; never a trailing ".0".
+  const short = (v: number, unit: string) => `${v < 10 ? Number(v.toFixed(1)) : Math.round(v)}${unit}`;
+  if (n >= 999_500) return short(n / 1_000_000, 'M');
+  if (n >= 1000) return short(n / 1000, 'K');
+  return String(Math.round(n));
+}
+
+/** One hour and one day in milliseconds. */
+export const HOUR_MS = 3_600_000;
+export const DAY_MS = 86_400_000;
+
+/** "run" or "runs": the singular only for exactly one, never for a lower bound ("1+ runs"). */
+export function plural(n: number, one: string, many = `${one}s`, atLeast = false): string {
+  return n === 1 && !atLeast ? one : many;
+}
+
+/** "3 checks": the count with its word. */
+export function counted(n: number, one: string, many?: string): string {
+  return `${n} ${plural(n, one, many)}`;
 }
 
 /** Cost in micro-dollars: more precision the smaller the amount. */
@@ -75,7 +88,7 @@ export function timeAgo(ts: string | number | Date, now: number = Date.now()): s
   const m = Math.round(s / 60);
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
-  if (h < 24) return `${h} ${h === 1 ? 'hour' : 'hours'} ago`;
+  if (h < 24) return `${h} ${plural(h, 'hour')} ago`;
   const d = Math.round(h / 24);
-  return `${d} ${d === 1 ? 'day' : 'days'} ago`;
+  return `${d} ${plural(d, 'day')} ago`;
 }

@@ -5,7 +5,7 @@ import type { AuditEntry, RunEvent, RunEventsResult, RunFlag, RunSummary } from 
 import type { Sheet } from '@/lib/xlsx';
 import type { IconName, TagTone } from '@whiteroom/ui';
 import { activityRow, clock } from '@/lib/home';
-import { fmtTime } from '@/lib/format';
+import { counted, fmtTime, DAY_MS } from '@/lib/format';
 
 export type RunsPreset = 'today' | '7d' | '30d';
 export type RunsRange = RunsPreset | 'custom';
@@ -62,7 +62,7 @@ export function runsWindow(view: RunsView, now: number = Date.now()): { fromDay:
 
 /** Whole days from `a` to `b` (b − a). */
 export function daysBetween(a: string, b: string): number {
-  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
 }
 
 /**
@@ -135,13 +135,6 @@ export function localHour(iso: string): number {
   return new Date(iso).getHours();
 }
 
-/** Runs per hour of `day` from a set of runs (the /dev/runs preview has no engine). */
-export function hoursFromRuns(runs: Pick<RunSummary, 'startedAt'>[], day: string): { hour: number; runs: number }[] {
-  const m = new Map<number, number>();
-  for (const r of runs) if (localDay(Date.parse(r.startedAt)) === day) m.set(localHour(r.startedAt), (m.get(localHour(r.startedAt)) ?? 0) + 1);
-  return [...m].sort((a, b) => a[0] - b[0]).map(([hour, n]) => ({ hour, runs: n }));
-}
-
 /** True when the engine ignored the hour filter (before it took `hour`): a run from another hour came back. */
 export function ignoresHour(runs: Pick<RunSummary, 'startedAt'>[], hour: number): boolean {
   return runs.some((r) => localHour(r.startedAt) !== hour);
@@ -173,13 +166,12 @@ export function flagText(f: RunFlag): string {
  * something that wasn't measured.
  */
 export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'> & Partial<Pick<RunSummary, 'wouldActCalls'>>): { tone: StandOutTone; text: string } {
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const [first, ...more] = run.flags ?? [];
-  if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${plural(more.length, 'more flag')}` : flagText(first) };
+  if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${counted(more.length, 'more flag')}` : flagText(first) };
   const would = run.wouldActCalls ?? 0;
-  if (run.blockedCalls > 0) return { tone: 'rule', text: `A rule blocked ${plural(run.blockedCalls, 'call')}${would ? ` · ${would} more in Record only` : ''}` };
+  if (run.blockedCalls > 0) return { tone: 'rule', text: `A rule blocked ${counted(run.blockedCalls, 'call')}${would ? ` · ${would} more in Record only` : ''}` };
   if (would > 0) return { tone: 'rule', text: `A Record only rule would have acted ${would === 1 ? 'once' : `${would} times`}` };
-  if (run.failedCalls > 0) return { tone: 'failed', text: `${plural(run.failedCalls, 'call')} failed` };
+  if (run.failedCalls > 0) return { tone: 'failed', text: `${counted(run.failedCalls, 'call')} failed` };
   const { calls, checked } = run.coverage;
   if (calls > 0 && checked === 0) return { tone: 'coverage', text: 'Not assessed: none of its calls could be read' };
   if (checked < calls) return { tone: 'coverage', text: `Partly checked: ${checked} of ${calls} calls could be read` };

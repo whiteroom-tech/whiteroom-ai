@@ -5,6 +5,7 @@
 import { eventModel } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { withRunMode, type RunStatusResult } from './api';
+import { plural } from '@/lib/format';
 
 /** The agent saved a summary of its own work and kept going. */
 export const SUMMARY_TYPES = new Set(['self_handover']);
@@ -115,7 +116,7 @@ export function summaryText(r: TestReport): string {
   const why = (c: { detail: string | null }) => (c.detail ? ` (${c.detail})` : '');
   if (connect.result === 'failed') return `${names} reached WhiteRoom, but its calls didn’t come back normally${why(connect)}.`;
   if (connect.result !== 'passed') return `${names} hasn’t completed a call through WhiteRoom in this test yet, so nothing could be checked.`;
-  const parts = [`${names} made ${r.calls} call${r.calls === 1 ? '' : 's'} through WhiteRoom${r.calls > 1 ? ` over ${spanText(r.firstCallAt, r.lastCallAt)}` : ''}, and they came back normally.`];
+  const parts = [`${names} made ${r.calls} ${plural(r.calls, 'call')} through WhiteRoom${r.calls > 1 ? ` over ${spanText(r.firstCallAt, r.lastCallAt)}` : ''}, and they came back normally.`];
   if (handoff.result === 'failed') return [...parts, `When its memory filled up, saving a summary didn’t complete${why(handoff)}.`].join(' ');
   if (handoff.result !== 'passed') return [...parts, 'Its memory hadn’t filled up by the time of this report, so saving a summary wasn’t checked.'].join(' ');
   if (r.handovers) parts.push(`When its memory filled up, WhiteRoom saved a summary ${times(r.handovers)}, keeping its context compact.`);
@@ -164,7 +165,7 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 <div class="stats">
 <div class="stat"><b>${r.calls}</b><span class="muted">calls</span></div>
 <div class="stat"><b>${r.tokens.toLocaleString('en-US')}</b><span class="muted">tokens</span></div>
-<div class="stat"><b>${r.handovers}</b><span class="muted">${r.handovers === 1 ? 'summary' : 'summaries'} saved</span></div>
+<div class="stat"><b>${r.handovers}</b><span class="muted">${plural(r.handovers, 'summary', 'summaries')} saved</span></div>
 ${r.partnerHandoffs ? `<div class="stat"><b>${r.partnerHandoffs}</b><span class="muted">passed to another agent</span></div>` : ''}
 <div class="stat"><b>${esc(r.calls > 1 ? spanText(r.firstCallAt, r.lastCallAt) : '—')}</b><span class="muted">first to last call</span></div>
 </div></div>

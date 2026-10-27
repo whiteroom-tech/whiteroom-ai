@@ -4,7 +4,7 @@
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
-import { timeAgo } from '@/lib/format';
+import { timeAgo, plural } from '@/lib/format';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -61,9 +61,6 @@ export function createRequestGate() {
   };
 }
 
-/** The shared relative-time wording (lib/format timeAgo). */
-export const relativeTime = timeAgo;
-
 export type RunState = 'idle' | 'checking' | 'error';
 
 export interface StatusLine {
@@ -77,7 +74,7 @@ export interface StatusLine {
 export function statusLine(d: FleetDiagnosis | null, run: RunState, now: number, justRan: boolean): StatusLine | null {
   if (run === 'checking') {
     const n = d?.readyAgents ?? 0;
-    return { text: `Checking ${n} ${n === 1 ? 'agent' : 'agents'}…`, action: null, busy: true, error: false };
+    return { text: `Checking ${n} ${plural(n, 'agent')}…`, action: null, busy: true, error: false };
   }
   if (run === 'error') {
     return { text: 'Couldn’t finish the check. Your agents aren’t affected.', action: { label: 'Try again' }, busy: false, error: true };
@@ -96,13 +93,13 @@ export function statusLine(d: FleetDiagnosis | null, run: RunState, now: number,
     const checked = d.reports.length;
     return { text: `Checked ${checked} of ${checked + d.skipped.length} agents.`, action: { label: 'Check the rest' }, busy: false, error: false };
   }
-  const agents = `${d.readyAgents} ${d.readyAgents === 1 ? 'agent' : 'agents'}`;
+  const agents = `${d.readyAgents} ${plural(d.readyAgents, 'agent')}`;
   if (!d.checkedAt) {
     return { text: `First check runs within the hour · ${agents} ready`, action: { label: 'Check now' }, busy: false, error: false };
   }
   const open = openFindingCount(d);
-  const found = justRan ? ` · ${open} ${open === 1 ? 'finding' : 'findings'}` : '';
-  return { text: `Checked ${relativeTime(d.checkedAt, now)} · ${agents}${found}`, action: { label: 'Check now' }, busy: false, error: false };
+  const found = justRan ? ` · ${open} ${plural(open, 'finding')}` : '';
+  return { text: `Checked ${timeAgo(d.checkedAt, now)} · ${agents}${found}`, action: { label: 'Check now' }, busy: false, error: false };
 }
 
 export function openFindingCount(d: FleetDiagnosis): number {
@@ -139,10 +136,10 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   const fine = d.reports.reduce((n, r) => n + r.clear.length, 0);
   const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
   const openFindings = openFindingCount(d);
-  const checks = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`;
+  const checks = (n: number) => `${n} ${plural(n, 'check')}`;
   if (openFindings > 0) {
     const parts = [
-      `${openFindings} ${openFindings === 1 ? 'problem' : 'problems'}`,
+      `${openFindings} ${plural(openFindings, 'problem')}`,
       fine > 0 ? `${fine} passed` : '',
       needsData > 0 ? `${needsData} waiting for more data` : '',
     ].filter(Boolean);

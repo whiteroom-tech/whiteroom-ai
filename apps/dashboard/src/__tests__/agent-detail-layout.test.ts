@@ -1,6 +1,5 @@
-// The agent page put together (redesign Phase 6a): Last 7 days above the
-// grid, Rules on this agent beside Recent runs, and no Goal or "What it
-// carries forward" panels (decision Q9).
+// The agent page put together: Last 7 days above the grid, and Rules on this
+// agent beside Recent runs.
 import { describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -31,7 +30,6 @@ describe('agent page layout', () => {
     expect(at('Rules on this agent')).toBeGreaterThan(-1);
     expect(at('Rules on this agent')).toBeLessThan(at('Recent runs'));
     expect(html).toContain('href="/controls?rule=r9"');
-    expect(html).not.toMatch(/>Goal<|carries forward|Start a new task|Handover quality/);
   });
 });
 

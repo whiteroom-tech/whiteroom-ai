@@ -5,11 +5,13 @@
 
 import { keywordTotal } from '@/lib/controls-view';
 import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
+import { plural, HOUR_MS } from '@/lib/format';
+import { NOTIFY } from '@/lib/vocab';
 
 /**
  * A rule in Enforce that can act, so the proxy refuses calls it can't tie to
- * an agent. An empty model allowlist or tool list acts on nothing, and Just
- * tell me lets every call through. Mirrors the engine's fleetHasEnforcingRule
+ * an agent. An empty model allowlist or tool list acts on nothing, and Alert
+ * me lets every call through. Mirrors the engine's fleetHasEnforcingRule
  * (concepts/governance.ts).
  */
 export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params' | 'response'>): boolean {
@@ -53,14 +55,14 @@ export function longestWatchHours(ruleId: string, history: GovernanceHistoryEntr
     if (c.to === 'Watch') start = c.at;
   }
   if (start !== null && currentMode === 'watch') best = Math.max(best, now - start);
-  return Number.isFinite(best) ? best / 3_600_000 : 0;
+  return Number.isFinite(best) ? best / HOUR_MS : 0;
 }
 
 /** Why Stop can't be turned on yet, or null when it can. */
 export function stopBlockedReason(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number = Date.now(), what = 'stop agents'): string | null {
   const h = longestWatchHours(ruleId, history, currentMode, now);
   if (h >= STOP_WATCH_HOURS) return null;
-  const ran = h < 1 ? 'less than an hour' : `${Math.floor(h)} ${Math.floor(h) === 1 ? 'hour' : 'hours'}`;
+  const ran = h < 1 ? 'less than an hour' : `${Math.floor(h)} ${plural(Math.floor(h), 'hour')}`;
   return `Run this rule in Record only for ${STOP_WATCH_HOURS} hours before it can ${what}, so you can see what it would have done. It has run in Record only for ${ran}.`;
 }
 
@@ -121,7 +123,7 @@ export function stopPhrase(scope: GovernanceScope): string {
   return scope === 'all' ? 'stop all agents' : scope.join(', ');
 }
 
-const WOULD_VERB: Record<GovernanceResponse, string> = { notify: 'told you about', block: 'blocked', pause: 'paused', stop: 'stopped' };
+const WOULD_VERB: Record<GovernanceResponse, string> = { notify: `${NOTIFY.done} about`, block: 'blocked', pause: 'paused', stop: 'stopped' };
 
 /**
  * "Record only: would have paused lead-agent 86 times" from the engine's

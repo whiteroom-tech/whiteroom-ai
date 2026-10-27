@@ -6,6 +6,7 @@ import { SegmentedControl } from '@whiteroom/ui';
 import { chooseTheme, storedTheme, type ThemeChoice } from '@/lib/theme';
 import { ROUTES } from '@/lib/routes';
 import { TextSizeControl } from '@/components/TextSizeControl';
+import { plural } from '@/lib/format';
 
 /**
  * The ⋯ menu on the sidebar's account row: theme, the organization link and
@@ -48,7 +49,7 @@ export function AccountMenu({ organization, invitations }: { organization: strin
       <button
         ref={button}
         type="button"
-        aria-label={invitations > 0 ? `Account menu, ${invitations} pending invitation${invitations === 1 ? '' : 's'}` : 'Account menu'}
+        aria-label={invitations > 0 ? `Account menu, ${invitations} pending ${plural(invitations, 'invitation')}` : 'Account menu'}
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
@@ -74,7 +75,7 @@ export function AccountMenu({ organization, invitations }: { organization: strin
           {organization !== null && (
             <Link href={ROUTES.organization} className="wr-account-menu__item" onClick={() => setOpen(false)}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{organization || 'Organization'}</span>
-              {invitations > 0 && <span className="wr-account-menu__count">{invitations} invite{invitations === 1 ? '' : 's'}</span>}
+              {invitations > 0 && <span className="wr-account-menu__count">{invitations} {plural(invitations, 'invite')}</span>}
             </Link>
           )}
           <a href={ROUTES.signOut} className="wr-account-menu__item wr-account-menu__item--bad">Sign out</a>

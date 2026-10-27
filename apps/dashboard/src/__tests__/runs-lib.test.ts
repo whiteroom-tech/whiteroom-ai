@@ -321,11 +321,9 @@ describe('energy saved', () => {
 });
 
 describe('runs by hour', () => {
-  it('counts a day’s runs per local hour, labels hours plainly, and spots an ignored hour filter', async () => {
-    const { hoursFromRuns, hourLabel, ignoresHour } = await import('@/lib/runs');
+  it('labels hours plainly, and spots an ignored hour filter', async () => {
+    const { hourLabel, ignoresHour } = await import('@/lib/runs');
     const at = (h: number, m = 0) => { const d = new Date('2026-10-20T00:00:00'); d.setHours(h, m); return d.toISOString(); };
-    expect(hoursFromRuns([{ startedAt: at(9) }, { startedAt: at(9, 40) }, { startedAt: at(14) }, { startedAt: new Date('2026-10-21T09:00:00').toISOString() }], '2026-10-20'))
-      .toEqual([{ hour: 9, runs: 2 }, { hour: 14, runs: 1 }]);
     expect([0, 9, 12, 23].map(hourLabel)).toEqual(['12 am', '9 am', '12 pm', '11 pm']);
     expect(ignoresHour([{ startedAt: at(9) }], 9)).toBe(false);
     expect(ignoresHour([{ startedAt: at(9) }, { startedAt: at(10) }], 9)).toBe(true);

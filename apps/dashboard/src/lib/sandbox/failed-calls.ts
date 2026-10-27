@@ -5,6 +5,7 @@
 
 import { isCloudProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider } from './providers';
 import type { FailedCalls, RunStatusResult } from './api';
+import { plural } from '@/lib/format';
 
 export type { FailedCalls };
 
@@ -47,7 +48,7 @@ function kindOf(f: FailedCalls): Kind {
 
 /** "1 call", "3 calls". */
 export function callCount(n: number): string {
-  return `${n} call${n === 1 ? '' : 's'}`;
+  return `${n} ${plural(n, 'call')}`;
 }
 
 /** The region of a Bedrock test, from its Mantle host. */

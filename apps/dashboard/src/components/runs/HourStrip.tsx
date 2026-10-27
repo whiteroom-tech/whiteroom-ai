@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { FONT_MONO } from '@whiteroom/ui';
 import { hourLabel } from '@/lib/runs';
+import { barHeight, barLabel, centreBar } from './strip';
 
 /**
  * A picked day's runs per hour: 24 bars. Picking a bar lists that hour's
@@ -19,17 +20,17 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
   const max = Math.max(1, ...hours.map((h) => h.runs));
   // Where the strip scrolls (phones), open on the busiest hour rather than midnight.
   const wrap = useRef<HTMLDivElement>(null);
-  // Once per day, as soon as the day has a run: a poll that changes the busiest hour never pulls
-  // the person away from where they scrolled.
-  const busiest = useRef<number | null>(null);
-  busiest.current = hours.reduce<{ hour: number; runs: number } | null>((b, h) => (!b || h.runs > b.runs ? h : b), null)?.hour ?? null;
-  const hasRuns = busiest.current !== null;
+  const busiest = hours.reduce<{ hour: number; runs: number } | null>((b, h) => (!b || h.runs > b.runs ? h : b), null)?.hour ?? null;
+  const hasRuns = busiest !== null;
   const positionedFor = useRef<string | null>(null);
   useEffect(() => {
     const el = wrap.current;
-    if (!el || positionedFor.current === dayName || busiest.current === null || el.scrollWidth <= el.clientWidth) return;
-    el.scrollLeft = Math.max(0, (busiest.current / 24) * el.scrollWidth - el.clientWidth / 2);
+    if (!el || positionedFor.current === dayName || busiest === null || el.scrollWidth <= el.clientWidth) return;
+    centreBar(el, busiest, 24);
     positionedFor.current = dayName;
+    // Once per day, as soon as the day has a run: a poll that changes the busiest hour never pulls
+    // the person away from where they scrolled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayName, hasRuns]);
   return (
     <section aria-label={`${dayName} by hour`} style={{ display: 'grid', gap: 6 }}>
@@ -40,16 +41,16 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
         )}
       </div>
       {/* Phones scroll the hours sideways in here, so every bar stays tappable. */}
-      <div className="wr-hourstrip-wrap" ref={wrap}>
+      <div className="wr-strip-scroll is-hours" ref={wrap}>
         <div className="wr-daystrip wr-hourstrip" role="group" aria-label={`Runs per hour, ${dayName}`}>
           {Array.from({ length: 24 }, (_, h) => {
             const n = byHour.get(h) ?? 0;
             const on = h === selected;
-            const label = `${hourLabel(h)}: ${n} run${n === 1 ? '' : 's'}`;
+            const label = barLabel(hourLabel(h), n);
             return (
               <button key={h} type="button" className={`wr-daystrip__day${on ? ' is-selected' : ''}${selected === null ? ' is-in' : ''}`}
                 aria-pressed={on} aria-label={label} title={label} disabled={!onPick || (n === 0 && !on)} onClick={() => onPick?.(on ? null : h)}>
-                <span className="wr-daystrip__bar" style={{ height: n ? `${Math.max(14, (n / max) * 100)}%` : 2 }} />
+                <span className="wr-daystrip__bar" style={{ height: barHeight(n, max) }} />
               </button>
             );
           })}

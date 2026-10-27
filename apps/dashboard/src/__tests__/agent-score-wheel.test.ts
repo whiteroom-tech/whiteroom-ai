@@ -20,7 +20,7 @@ describe('AgentScoreWheel', () => {
   it('a part with no data has an empty track and a dash, not a zero bar', () => {
     const html = renderToStaticMarkup(h(AgentScoreWheel, { agent: agent({}) }));
     expect(html.match(/width:\d+%/g)).toEqual(['width:100%', 'width:100%']);
-    expect(html).toContain('>–<');
+    expect(html).toContain('>—<');
   });
 
   it('clamps a bar to 0–100', () => {
@@ -30,6 +30,6 @@ describe('AgentScoreWheel', () => {
   });
 
   it('no score yet is a dash', () => {
-    expect(renderToStaticMarkup(h(AgentScoreWheel, { agent: agent({ score: null }) }))).toContain('–');
+    expect(renderToStaticMarkup(h(AgentScoreWheel, { agent: agent({ score: null }) }))).toContain('—');
   });
 });

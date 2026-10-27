@@ -6,7 +6,12 @@ import { HELP } from '@/lib/metric-definitions';
 
 import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
-import { SavingsChart } from '@/components/performance/SavingsPanels';
+import { SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
+import { fmtCost } from '@/lib/format';
+import { tallyShort, tallyTotal } from '@/lib/governance';
+import { RULE_ACTIVITY } from '@/lib/vocab';
+import { smallerContextCard } from '@/app/(citadel)/performance/_components/IndexView';
+import { fmtLatency, fmtPct } from '@/app/(citadel)/performance/_components/perf-utils';
 import { dailySavings } from '@/lib/analytics-metrics';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
@@ -113,6 +118,9 @@ const ENTRIES = [0, 1, 2, 4, 5, 6].flatMap((ago) => [
 
 type Sample = 'quiet' | 'problem' | 'empty';
 
+// The overview's card figures, formatted as the page formats them.
+const CARDS = { spendMicros: 909_000, hours: 24, savedMicros: 1_360_000, savedTokens: 2_130_000, compression: 90.84, rules: { blocks: 2, wouldBlocks: 57 }, calls: 99, failed: 0, latencyMs: 1900 };
+
 export function PerformancePreview() {
   // One sample at a time, so each card shows once, as on the real page.
   const [sample, setSample] = useState<Sample>('quiet');
@@ -127,10 +135,10 @@ export function PerformancePreview() {
           <h2 id="pv-cost" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Cost</h2>
           {sample !== 'empty' && (
             <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
-              <StatCard variant="card" label="Spend" hint={HELP.spend} value="$0.909" sub="last 24 h" />
-              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
-              <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value="$0.0379" sub="spend per hour, on average" />
-              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value="90.8%" sub="smaller than full history, all time" />
+              <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub="last 24 h" />
+              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(CARDS.savedMicros)}</>} sub={savingsCaption(CARDS.savedTokens, 0)} />
+              <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value={fmtCost(CARDS.spendMicros / CARDS.hours)} sub="spend per hour, on average" />
+              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(CARDS.compression)} />
             </div>
           )}
           {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
@@ -140,7 +148,7 @@ export function PerformancePreview() {
           <section aria-labelledby="pv-control" style={{ display: 'grid', gap: 12 }}>
             <h2 id="pv-control" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Control</h2>
             <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
-              <StatCard variant="card" label="Rule activity" hint={HELP.ruleActions} value="59" sub="2 blocked · 57 in Record only" />
+              <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={tallyTotal(CARDS.rules).toLocaleString()} sub={tallyShort(CARDS.rules)} />
             </div>
           </section>
         )}
@@ -148,8 +156,8 @@ export function PerformancePreview() {
           <section aria-labelledby="pv-performance" style={{ display: 'grid', gap: 16 }}>
             <h2 id="pv-performance" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Performance</h2>
             <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
-              <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value="0%" sub="0 of 99" />
-              <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value="1.9 s" sub="median time per call" />
+              <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(CARDS.failed / CARDS.calls)} sub={`${CARDS.failed} of ${CARDS.calls}`} />
+              <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub="median time per call" />
             </div>
             {sample === 'quiet'
               ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>

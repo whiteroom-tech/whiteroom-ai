@@ -8,9 +8,9 @@ import { ROUTES } from '@/lib/routes';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
-import { cacheFigures, type AgentTotals, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
-import { fmtCost, fmtTime, partialMark } from '@/lib/format';
+import { fmtCost, fmtTime, HOUR_MS, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { PerformanceIndexResult, RecommendationDetail, FleetHourlyResult } from '@/lib/whiteroom/types';
@@ -29,7 +29,11 @@ export type FeedbackResult = 'done' | 'closed' | 'failed';
 /** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
-export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+/** Recommendations per page, and how long the agent filter waits after typing. */
+const REC_PAGE_SIZE = 15;
+const REC_FILTER_DEBOUNCE_MS = 300;
+
+export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
   auditFailed: boolean;
@@ -38,7 +42,8 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   govSavings: GovSavings | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
-  byAgent: AgentTotals[] | null;
+  /** The agents with audit totals in the range; null when unknown. */
+  agentIds: string[] | null;
   /** "last 24 h", for panels that follow the range. */
   rangeLabel: string;
   onSelectAgent: (id: string) => void;
@@ -67,7 +72,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
   // Debounce the agent filter so we don't fire a request per keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setRecAgentQuery(recAgent), 300);
+    const t = setTimeout(() => setRecAgentQuery(recAgent), REC_FILTER_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [recAgent]);
 
@@ -76,7 +81,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     const stale = () => recReq.current !== req;
     setRecLoading(true);
     try {
-      const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: 15, includeSummaries: true };
+      const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: REC_PAGE_SIZE, includeSummaries: true };
       if (recStatus !== 'all') opts.status = recStatus;
       if (recAgentQuery.trim()) opts.agentId = recAgentQuery.trim();
       if (cursor) opts.cursor = cursor;
@@ -106,7 +111,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
-  // its old status and buttons until a filter changes (audit F16).
+  // its old status and buttons until a filter changes.
   const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
     const result = await onFeedback(recId, findingVersion, action, reason, recover);
     if (result !== 'failed') void fetchRecs();
@@ -114,8 +119,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   };
   const submitDiagnosisFeedback = async (rec: RecommendationDetail, action: 'dismiss' | 'snooze' | 'implemented'): Promise<boolean> => {
     // No reason: Diagnosis rows don't ask why, and a made-up one would skew the feedback.
-    // Recovers from a finding that changed since the list loaded (409), and
-    // never sends the recommendation id as a finding id.
+    // Recovers from a finding that changed since the list loaded (409).
     const result = await submitFeedback(rec.id, rec.currentFindingId ?? '', action, undefined, true);
     if (result !== 'failed') {
       void diagnosis.refresh(); // the attention strip drops a snoozed finding at once
@@ -178,16 +182,18 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     };
   }, [cache, govSavings]);
 
-  const hoursInRange = Math.max(1, (Date.parse(data.period.end) - Date.parse(data.period.start)) / 3_600_000 || 1);
+  // At least an hour; an unreadable period counts as one.
+  const rangeHours = (Date.parse(data.period.end) - Date.parse(data.period.start)) / HOUR_MS;
+  const hoursInRange = rangeHours >= 1 ? rangeHours : 1;
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
-  const ruleSub = tallyShort({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked });
-
-  const ruleTotal = tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked });
+  const ruleTally = { ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked };
+  const ruleSub = tallyShort(ruleTally);
+  const ruleTotal = tallyTotal(ruleTally);
   const sectionTitle = { margin: '8px 0 12px', fontSize: 'var(--fs-card)', fontWeight: 700 } as const;
 
   return (
     <>
-      {/* Plan Rev1: Cost first, then a read-only Control summary, then Performance. Each follows the page range. */}
+      {/* Cost first, then a read-only Control summary, then Performance. Each follows the page range. */}
       <section aria-labelledby="perf-cost">
         <h2 id="perf-cost" style={sectionTitle}>Cost</h2>
         <div className="wr-perf-strip">
@@ -246,11 +252,11 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
           <RecommendationsCard
             recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
             showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setRecStatus('all'); }}
-            agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={showRecAgentFilter(recs, byAgent, recAgent)}
+            agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={showRecAgentFilter(recs, agentIds, recAgent)}
             filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
             loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
             onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
-            onFeedback={(rec, f) => void submitFeedback(rec.id, rec.currentFindingId ?? rec.id, f.action, f.reason)}
+            onFeedback={(rec, f) => void submitFeedback(rec.id, rec.currentFindingId ?? '', f.action, f.reason)}
             onDiagnosisFeedback={submitDiagnosisFeedback}
             feedbackLoading={feedbackLoading} feedbackError={feedbackError}
           />

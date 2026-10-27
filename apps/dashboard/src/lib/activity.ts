@@ -13,7 +13,7 @@
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
-import { timeAgo } from '@/lib/format';
+import { timeAgo, plural, HOUR_MS, DAY_MS } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 
 export type { AuditEntry, ToolDetail };
@@ -122,7 +122,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '✂', tone: 'wouldBlock', code: 'CUT',
     say: (e) => {
       const n = positiveCount(e.results);
-      return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to keep, so some were cut`;
+      return `had ${n === null ? 'tool results' : `${n} tool ${plural(n, 'result')}`} too large to keep, so some were cut`;
     },
   },
   // Handover delivery and goals (compression spec §6.3, §6.5, §14.4).
@@ -203,7 +203,7 @@ export function relTime(timestamp: unknown, now: number = Date.now()): string {
   const ms = new Date(String(timestamp ?? '')).getTime();
   if (!Number.isFinite(ms)) return '';
   // Within a day, the shared wording; older events show their date instead.
-  if (now - ms < 23.5 * 3_600_000) return timeAgo(ms, now);
+  if (now - ms < 23.5 * HOUR_MS) return timeAgo(ms, now);
   return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
@@ -217,7 +217,7 @@ export function feedDayLabel(timestamp: unknown, now: number = Date.now()): stri
   const d = new Date(String(timestamp ?? ''));
   if (!Number.isFinite(d.getTime())) return '';
   const today = new Date(now);
-  const yesterday = new Date(now - 86_400_000);
+  const yesterday = new Date(now - DAY_MS);
   if (d.toDateString() === today.toDateString()) return 'TODAY';
   if (d.toDateString() === yesterday.toDateString()) return 'YESTERDAY';
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
@@ -348,7 +348,7 @@ export function eventModel(e: AuditEntry, now: number = Date.now()): EventModel 
 export function eventSubtitle(m: EventModel): string {
   const bits: string[] = [];
   if (m.rel) bits.push(m.rel);
-  if (m.canExpand) bits.push(`${m.details.length} ${m.details.length === 1 ? 'action' : 'actions'}`);
+  if (m.canExpand) bits.push(`${m.details.length} ${plural(m.details.length, 'action')}`);
   return bits.join(' · ');
 }
 

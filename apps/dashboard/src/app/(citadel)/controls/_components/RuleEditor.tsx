@@ -82,7 +82,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     setParams({ keywords: [...keywords, typed] });
     setKeyword('');
   };
-  // Just tell me, Pause and Stop alert; Block does when asked to.
+  // Alert me, Pause and Stop alert; Block does when asked to.
   const alerts = sendsAlert(draft);
   const seen = watching && wouldAct ? watchSummary({ response: rule.response }, wouldAct) : null;
 

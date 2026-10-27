@@ -7,8 +7,9 @@ import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
 import { isActiveStatus } from '@/lib/plans';
+import { HOUR_MS } from '@/lib/format';
 
-const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
+const EMAIL_CHANGE_TTL_MS = HOUR_MS;
 
 export interface SignInMethod {
   /**

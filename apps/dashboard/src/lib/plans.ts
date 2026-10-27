@@ -69,7 +69,7 @@ export interface Plan {
 }
 
 /**
- * How long the audit trail is kept, on every plan (redesign decision Q3). Not
+ * How long the audit trail is kept, the same on every plan. Not
  * a plan limit: the engine never prunes audit_events (only perf_calls and
  * perf_hourly expire, per retentionDays). The only deletes are a Sandbox reset
  * and the purge of a legacy, untracked fleet. Change this if the engine ever

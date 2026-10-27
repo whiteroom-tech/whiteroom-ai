@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { performanceRecommendationExport, performanceRecommendationGet } from '@/lib/whiteroom/client';
-import { fmtCost, fmtDay, fmtTokens } from '@/lib/format';
+import { fmtCost, fmtDay, fmtTokens, plural } from '@/lib/format';
 import type { AgentPerformanceResult, PerformanceEvidenceResult, RecommendationGetResult, DiagnosisDetectorId } from '@/lib/whiteroom/types';
 import { FONT_MONO } from '@whiteroom/ui';
 import { Badge, CARD, H3 } from './primitives';
@@ -19,7 +19,7 @@ export function AgentView({ data }: { data: AgentPerformanceResult }) {
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <MetricCard label="Model calls" value={t.calls.toLocaleString()} />
         <MetricCard label="Spend" value={fmtCost(t.costMicros)} />
-        <MetricCard label="Average response" value={fmtLatency(t.avgLatencyMs)} />
+        <MetricCard label="Typical response" value={fmtLatency(t.avgLatencyMs)} />
         <MetricCard label="Failed calls" value={fmtPct(t.errorRate)} warn={t.errorRate > 0.05} />
         {t.blockedCount !== undefined && <MetricCard label="Refused by rules" value={t.blockedCount.toLocaleString()} warn={t.blockedCount > 0} sub="Calls Controls rules refused" />}
       </div>
@@ -52,6 +52,7 @@ export function AgentView({ data }: { data: AgentPerformanceResult }) {
 export function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: PerformanceEvidenceResult; fleetId?: string | null; recommendationId?: string | null; authKey?: string }) {
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefCopied, setBriefCopied] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
   const [recDetail, setRecDetail] = useState<RecommendationGetResult | null>(null);
 
   useEffect(() => {
@@ -74,9 +75,10 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
   async function exportBrief(mode: 'copy' | 'download') {
     if (!fleetId || !recommendationId) return;
     setBriefLoading(true);
+    setBriefError(null);
     try {
       const result = await performanceRecommendationExport(fleetId, recommendationId, 'markdown', authKey);
-      if (!('markdown' in result) || !result.markdown) return;
+      if (!('markdown' in result) || !result.markdown) throw new Error('no brief');
       if (mode === 'copy') {
         await navigator.clipboard.writeText(result.markdown);
         setBriefCopied(true);
@@ -88,7 +90,9 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
         a.href = url; a.download = `recommendation-${recommendationId}.md`; a.click();
         URL.revokeObjectURL(url);
       }
-    } catch {} finally { setBriefLoading(false); }
+    } catch {
+      setBriefError(mode === 'copy' ? 'Couldn’t copy the brief. Try again.' : 'Couldn’t download the brief. Try again.');
+    } finally { setBriefLoading(false); }
   }
 
   const rec = recDetail?.recommendation;
@@ -117,7 +121,7 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
               ...(diagDetector ? [] : [['Cohort', rec.cohort]]),
               ['Created', new Date(rec.createdAt).toLocaleString()],
               ['Updated', new Date(rec.updatedAt).toLocaleString()],
-              ['Feedback', `${rec.feedbackCount} action${rec.feedbackCount !== 1 ? 's' : ''}`],
+              ['Feedback', `${rec.feedbackCount} ${plural(rec.feedbackCount, 'action')}`],
               ...(finding && !diagDetector ? [['Lane', String(finding.lane ?? '--').replace(/_/g, ' ')]] : []),
             ].map(([k, v]) => (
               <div key={k}><span style={{ color: 'var(--tx3)' }}>{k}:</span> <span style={{ color: 'var(--tx)' }}>{v}</span></div>
@@ -127,13 +131,14 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
       )}
 
       {recommendationId && !diagDetector && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <button onClick={() => exportBrief('copy')} disabled={briefLoading} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
             {briefCopied ? 'Copied' : briefLoading ? 'Loading…' : 'Copy implementation brief'}
           </button>
           <button onClick={() => exportBrief('download')} disabled={briefLoading} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--tx)', cursor: 'pointer' }}>
             {briefLoading ? 'Loading…' : 'Download as Markdown'}
           </button>
+          {briefError && <span role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>{briefError}</span>}
         </div>
       )}
 

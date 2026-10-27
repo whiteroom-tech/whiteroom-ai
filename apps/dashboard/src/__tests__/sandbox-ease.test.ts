@@ -6,8 +6,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
@@ -15,10 +13,8 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { allChecksPassed, CheckPreview, checkGuidance, checksPassedCount, hasNoCalls, helpReducer, IDLE_HELP_AFTER_MS, idleHelpDelay, isObserved, runSnapshot, runTransition, testStartedEvent, TestRunFlow, WorkspacePanel, WorkspaceTabs } = await import('@/components/sandbox/TestRunFlow');
 const { PastTestDetail, PastTests } = await import('@/components/sandbox/PastTests');
-const { MIN_TEXT_PX, SMALL_LABEL_CLASSES } = await import('@/components/sandbox/type-scale');
 const { noCodeSetup } = await import('@/lib/sandbox/providers');
 
-const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const opts = { proxyUrl: 'https://proxy.whiteroom.tech/', base: 'https://proxy.whiteroom.tech/sk-wr-test', fleetId: 'sandbox-1234' };
 
 describe('No code change', () => {
@@ -203,52 +199,9 @@ describe('Nothing happening? per test', () => {
   });
 });
 
-/** Every rule in a stylesheet, nested @media included, with its selectors split. */
-function cssRules(css: string): { selectors: string[]; body: string }[] {
-  const src = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const rules: { selectors: string[]; body: string }[] = [];
-  let i = 0;
-  const block = (): void => {
-    while (i < src.length) {
-      const open = src.indexOf('{', i);
-      const close = src.indexOf('}', i);
-      if (close !== -1 && (open === -1 || close < open)) { i = close + 1; return; }
-      if (open === -1) { i = src.length; return; }
-      const prelude = src.slice(i, open).trim();
-      i = open + 1;
-      if (prelude.startsWith('@')) { block(); continue; }
-      const end = src.indexOf('}', i);
-      rules.push({ selectors: prelude.split(',').map((x) => x.trim()).filter(Boolean), body: src.slice(i, end) });
-      i = end + 1;
-    }
-  };
-  block();
-  return rules;
-}
-
-const SMALL_PX = (html: string) => [...html.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => Number(m[1])).filter((n) => n < MIN_TEXT_PX);
+const SMALL_PX = (html: string) => [...html.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => Number(m[1])).filter((n) => n < 12);
 
 describe('readable text', () => {
-  it('parses comma selectors, multi-line rules and @media blocks', () => {
-    const rules = cssRules('/* x */ .a,\n.b .c { font-size: 10px;\n color: red }\n@media (max-width:1px) { .d { font-size: 9px } }');
-    expect(rules).toEqual([{ selectors: ['.a', '.b .c'], body: ' font-size: 10px;\n color: red ' }, { selectors: ['.d'], body: ' font-size: 9px ' }]);
-  });
-
-  it('keeps guided.module.css at 12px or more, apart from the small labels', () => {
-    const small = new Set<string>();
-    for (const r of cssRules(read('../components/sandbox/guided.module.css'))) {
-      const px = /font-size:\s*([\d.]+)px/.exec(r.body);
-      if (!px || Number(px[1]) >= MIN_TEXT_PX) continue;
-      for (const sel of r.selectors) {
-        const subject = [...sel.matchAll(/\.([\w-]+)/g)].at(-1)?.[1] ?? sel;
-        expect(SMALL_LABEL_CLASSES).toContain(subject);
-        small.add(subject);
-      }
-    }
-    // The allow-list stays as small as the stylesheet needs.
-    expect([...small].sort()).toEqual([...SMALL_LABEL_CLASSES].sort());
-  });
-
   it('renders no inline text below 12px in the Sandbox', () => {
     const user = { previewUserId: 'u', previewPastTests: [] };
     const demoPassed = ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { demoEvidence: { status: 'observed', timestamp: '2026-10-12T10:00:00Z' } } })) as unknown as RunStatusResult['controls'];

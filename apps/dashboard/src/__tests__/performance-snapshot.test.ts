@@ -8,7 +8,7 @@ const snap = (loadedAt: number): PerformanceSnapshot => ({
   savingsDays: null,
   govSavings: null,
   govCounts: null,
-  byAgent: null,
+  agentIds: null,
   auditFailed: false,
   loadedAt,
 });

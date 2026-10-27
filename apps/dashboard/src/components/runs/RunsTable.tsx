@@ -1,10 +1,11 @@
 'use client';
 
+import { RULE_ACTIVITY } from '@/lib/vocab';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Banner, Button, DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
-import { fmtTime } from '@/lib/format';
+import { fmtTime, plural } from '@/lib/format';
 import { fleetReport, isAuthError, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -15,7 +16,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { addDays, clampSpan, hoursFromRuns, ignoresFlagged, ignoresHour, ignoresRuleActivity, localHour, type RunsShow, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, ignoresFlagged, ignoresHour, ignoresRuleActivity, type RunsShow, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
 import { DayStrip } from '@/components/runs/DayStrip';
 import { HourStrip } from '@/components/runs/HourStrip';
 import { safeSessionSet } from '@/lib/safe-storage';
@@ -38,9 +39,21 @@ const STRIP_DAYS = 30;
  * Runs (README › Screens › 2a): one row per run, a run being one agent's
  * shift. Falls back to the event feed when the engine has no list_runs yet.
  */
+/** /dev/runs: sample data in place of the engine. */
+export interface RunsSample {
+  /** Every sample run: the agent list, and whether flags and rule counts are known. */
+  runs: RunSummary[];
+  /** Runs per day, for the day strip. */
+  dayCounts: { day: string; runs: number }[];
+  /** The sample runs a filter lists. */
+  list: (q: { fromDay: string; toDay: string; flagged: boolean; ruleActivity: boolean; hour: number | null }) => RunSummary[];
+  /** Runs per hour of one day. */
+  hours: (day: string) => { hour: number; runs: number }[];
+}
+
 export function RunsTable({ preview, retentionDays }: {
-  /** /dev/runs: sample runs; nothing is fetched. */
-  preview?: RunSummary[];
+  /** /dev/runs: sample data; nothing is fetched. */
+  preview?: RunsSample;
   /** How many days the account's plan keeps; bounds the date pickers. */
   retentionDays?: number;
 } = {}) {
@@ -55,8 +68,8 @@ export function RunsTable({ preview, retentionDays }: {
   const flaggedOnly = show === 'flagged';
   const rulesOnly = show === 'rules';
   // Flagged shows once the engine reports flags (P2.1); Rule activity once it counts each run's rule actions (E1a).
-  const [flagsKnown, setFlagsKnown] = useState(() => !!preview?.some((r) => r.flags));
-  const [rulesKnown, setRulesKnown] = useState(() => !!preview?.some((r) => r.wouldActCalls !== undefined));
+  const [flagsKnown, setFlagsKnown] = useState(() => !!preview?.runs.some((r) => r.flags));
+  const [rulesKnown, setRulesKnown] = useState(() => !!preview?.runs.some((r) => r.wouldActCalls !== undefined));
   // A picked hour of the picked day (the hourly view); only with a day, and only on engines that take it.
   const [hour, setHour] = useState<number | null>(() => {
     const raw = params.get('hour');
@@ -90,13 +103,13 @@ export function RunsTable({ preview, retentionDays }: {
   const [stripPin, setStripPin] = useState<string | null>(() => { const end = runsWindow(view).toDay; return end === localDay() ? null : end; });
   const stripEnd = stripPin ?? localDay();
   const pinStrip = (end: string) => setStripPin(end >= localDay() ? null : end);
-  const [dayCounts, setDayCounts] = useState<{ day: string; runs: number }[] | null>(() => (preview ? countByDay(preview) : null));
+  const [dayCounts, setDayCounts] = useState<{ day: string; runs: number }[] | null>(() => preview?.dayCounts ?? null);
   // Cursors of the pages visited, so Newer goes back without refetching from the start.
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
-  const [runs, setRuns] = useState<RunSummary[] | null>(preview ?? null);
-  const [total, setTotal] = useState(preview?.length ?? 0);
+  const [runs, setRuns] = useState<RunSummary[] | null>(preview?.runs ?? null);
+  const [total, setTotal] = useState(preview?.runs.length ?? 0);
   const [next, setNext] = useState<string | null>(null);
-  const [agents, setAgents] = useState<string[]>(() => (preview ? [...new Set(preview.map((r) => r.agentId))].sort() : []));
+  const [agents, setAgents] = useState<string[]>(() => (preview ? [...new Set(preview.runs.map((r) => r.agentId))].sort() : []));
   const [unsupported, setUnsupported] = useState(false);
   const [failing, setFailing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
@@ -151,8 +164,8 @@ export function RunsTable({ preview, retentionDays }: {
     setHour(change.hour !== undefined ? change.hour : nextView.day === day ? hour : null);
     if (nextView.day !== day || change.agent !== undefined) { setHoursOk(true); setHourPickOk(true); }
     setCursors([null]);
-    // The preview fetches nothing: it keeps its sample and filters it below.
-    setRuns(preview ?? null);
+    // The preview fetches nothing: it keeps its sample, and lists it below.
+    setRuns(preview?.runs ?? null);
     setNext(null);
   }
 
@@ -192,7 +205,7 @@ export function RunsTable({ preview, retentionDays }: {
   // list or picking an hour doesn't refetch them, and a poll keeps a new run's hour current. A
   // failed refresh keeps the last counts (they're extra); the preview counts its own sample.
   useEffect(() => {
-    if (preview && day) setHours(hoursFromRuns(preview, day));
+    if (preview && day) setHours(preview.hours(day));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, agent, preview]);
   const loadHours = useCallback(async (stale: () => boolean) => {
@@ -281,11 +294,11 @@ export function RunsTable({ preview, retentionDays }: {
     const d = localDay(Date.parse(r.startedAt));
     // Day totals count every run, so they'd mislead under Flagged or Rule activity.
     const n = show !== 'all' || hour !== null ? undefined : counts.get(d);
-    return { key: d, label: <><strong>{dayLabel(d)}</strong>{n !== undefined && <>&nbsp;·&nbsp;{n} run{n === 1 ? '' : 's'}</>}</> };
+    return { key: d, label: <><strong>{dayLabel(d)}</strong>{n !== undefined && <>&nbsp;·&nbsp;{n} {plural(n, 'run')}</>}</> };
   };
   const today = localDay();
-  // /dev/runs fetches nothing, so it filters its sample to the shown days.
-  const shown = preview && runs ? runs.filter((r) => inSpan(localDay(Date.parse(r.startedAt))) && (!flaggedOnly || !!r.flags?.length) && (!rulesOnly || r.blockedCalls > 0 || (r.wouldActCalls ?? 0) > 0) && (hour === null || localHour(r.startedAt) === hour)) : runs;
+  // /dev/runs fetches nothing: its sample lists what the filter shows.
+  const shown = preview && runs ? preview.list({ ...span, flagged: flaggedOnly, ruleActivity: rulesOnly, hour }) : runs;
 
   if (auth.status !== 'authenticated' && !preview) return <FleetLogin auth={auth} />;
   if (unsupported) return <EventFeedRuns />;
@@ -304,7 +317,7 @@ export function RunsTable({ preview, retentionDays }: {
             <SegmentedControl<RunsShow> label="Show" value={show} onChange={(v) => changeFilter({ show: v })} size={26} options={[
               { value: 'all', label: 'All' },
               ...(flagsKnown || flaggedOnly ? [{ value: 'flagged' as const, label: 'Flagged', dot: 'warn' as const }] : []),
-              ...(rulesKnown || rulesOnly ? [{ value: 'rules' as const, label: 'Rule activity' }] : []),
+              ...(rulesKnown || rulesOnly ? [{ value: 'rules' as const, label: RULE_ACTIVITY }] : []),
             ]} />
           )}
           <SelectChip label="Agent" value={agent} onChange={(a) => changeFilter({ agent: a })} options={agentOptions} />
@@ -389,11 +402,4 @@ export function RunsTable({ preview, retentionDays }: {
       </div>
     </div>
   );
-}
-
-/** Runs per local day from a page of runs: the /dev/runs preview's strip. */
-function countByDay(runs: RunSummary[]): { day: string; runs: number }[] {
-  const m = new Map<string, number>();
-  for (const r of runs) { const d = localDay(Date.parse(r.startedAt)); m.set(d, (m.get(d) ?? 0) + 1); }
-  return [...m].map(([day, n]) => ({ day, runs: n }));
 }

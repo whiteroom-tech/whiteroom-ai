@@ -3,7 +3,7 @@
 // on every visit). Memory only: it lasts until the tab reloads, and never
 // outlives the figures' own refresh, which always runs.
 import type { PerformanceIndexResult, FleetHourlyResult } from '@/lib/whiteroom/types';
-import type { AgentTotals, DaySavings, GovSavings } from '@/lib/analytics-metrics';
+import type { DaySavings, GovSavings } from '@/lib/analytics-metrics';
 import type { GovernanceCounts } from '@/lib/governance';
 
 export interface PerformanceSnapshot {
@@ -12,7 +12,8 @@ export interface PerformanceSnapshot {
   savingsDays: DaySavings[] | null;
   govSavings: GovSavings | null;
   govCounts: GovernanceCounts | null;
-  byAgent: AgentTotals[] | null;
+  /** The agents with audit totals in the range; null when the audit read failed. */
+  agentIds: string[] | null;
   auditFailed: boolean;
   loadedAt: number;
 }

@@ -6,7 +6,7 @@
 
 import CATALOG from '@practice-contract/catalog.json';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
-import { fmtDay } from '@/lib/format';
+import { counted, fmtDay } from '@/lib/format';
 import type {
   PracticeCheck, PracticeControlCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource,
   PracticeStart, PracticeVerdict, RunCode,
@@ -248,7 +248,7 @@ export function billedLine(r: Pick<PracticeReport, 'runs' | 'tested'>): string {
 export function controlLine(c: PracticeControlCheck): string {
   const name = c.mode ? `${c.label} · ${c.mode}` : c.label;
   if (!c.checked) return `${name} · ${c.note ?? 'Not checked.'}`;
-  return `${name} · ${c.calls ? `${c.calls} extra call${c.calls === 1 ? '' : 's'}` : 'no extra calls'}`;
+  return `${name} · ${c.calls ? counted(c.calls, 'extra call') : 'no extra calls'}`;
 }
 
 /** The control checks' extra calls on the agent's key, only the rows a rerun covers when it names some. */
@@ -257,8 +257,6 @@ export function controlCalls(checks: PracticeControlCheck[], scope: string[] | n
 }
 
 // ── Results (§8) ─────────────────────────────────────────────────────────
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export const STATUS_LABEL: Record<PracticeCheck['status'], string> = CATALOG.statusLabels;
 export const VERDICT_LABEL: Record<PracticeVerdict, string> = CATALOG.verdictLabels;
@@ -269,15 +267,15 @@ export const openChecks = (r: PracticeReport) => required(r).filter((c) => c.sta
 
 /** "Passed · all 9 checks · 3 runs", "Didn't pass · 1 check failed", "Didn't finish · 2 checks couldn't run (not your agent)". */
 export function headline(r: PracticeReport): string {
-  const runs = plural(r.runs, 'run');
+  const runs = counted(r.runs, 'run');
   if (r.verdict === 'passed') {
     const scope = r.scope && [...new Set(required(r).map((c) => c.scenario))].join(', ');
-    return `${VERDICT_LABEL.passed} · ${scope ? `${scope} only` : `all ${plural(required(r).length, 'check')}`} · ${runs}`;
+    return `${VERDICT_LABEL.passed} · ${scope ? `${scope} only` : `all ${counted(required(r).length, 'check')}`} · ${runs}`;
   }
-  if (r.verdict === 'not_passed') return `${VERDICT_LABEL.not_passed} · ${plural(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`;
+  if (r.verdict === 'not_passed') return `${VERDICT_LABEL.not_passed} · ${counted(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`;
   const open = openChecks(r);
   const ours = open.length > 0 && open.every((c) => c.testProblem);
-  return `${VERDICT_LABEL.incomplete} · ${open.length ? `${plural(open.length, 'check')} couldn't run` : 'no checks could run'}${ours ? ' (not your agent)' : ''}`;
+  return `${VERDICT_LABEL.incomplete} · ${open.length ? `${counted(open.length, 'check')} couldn't run` : 'no checks could run'}${ours ? ' (not your agent)' : ''}`;
 }
 
 /** What a passed result doesn't prove (Appendix D), or null. */
@@ -335,9 +333,9 @@ export function rerunKey(tested: Pick<PracticeReport['tested'], 'provider' | 'pr
 
 /** "Rerun 1 check × 3 runs · usually 15–25 model calls (≈ $0.20–$0.35), never more than 40." (§10 fixed copy) */
 export function rerunConfirm(scope: string[] | null, runs: number, e: CallEstimate): string {
-  const what = scope ? `Rerun ${plural(scope.length, 'check')}` : 'Run the full test';
-  if (e.billedBy === 'Azure') return `${what} × ${plural(runs, 'run')} · never more than ${e.cap} model calls${billing(e)}.`;
-  return `${what} × ${plural(runs, 'run')} · ${usualCalls(e)}, never more than ${e.cap}${billing(e)}.`;
+  const what = scope ? `Rerun ${counted(scope.length, 'check')}` : 'Run the full test';
+  if (e.billedBy === 'Azure') return `${what} × ${counted(runs, 'run')} · never more than ${e.cap} model calls${billing(e)}.`;
+  return `${what} × ${counted(runs, 'run')} · ${usualCalls(e)}, never more than ${e.cap}${billing(e)}.`;
 }
 
 /** Why a test ended early, with no result or a partial one (§4 Lifecycle end reasons). */
@@ -391,7 +389,7 @@ export function pastResult(row: PracticeRunRow): { label: string; tone: 'brand' 
   const verdict: PracticeVerdict = row.lifecycle === 'finished' && row.verdict ? row.verdict : 'incomplete';
   const tone = verdict === 'passed' ? 'brand' : verdict === 'not_passed' ? 'warn' : 'muted';
   if (!row.rerun) return { label: VERDICT_LABEL[verdict], tone };
-  const n = row.checks ? ` (${plural(row.checks.total, 'check')})` : '';
+  const n = row.checks ? ` (${counted(row.checks.total, 'check')})` : '';
   const words: Record<PracticeVerdict, string> = { passed: `passed${n}`, not_passed: `didn’t pass${n}`, incomplete: 'didn’t finish' };
   return { label: `Rerun · ${words[verdict]}`, tone };
 }

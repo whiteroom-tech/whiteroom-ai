@@ -7,11 +7,11 @@
 
 import { HistoryLine } from "./_components/HistoryLine";
 import { undoFor, type Undo } from "@/lib/rule-history";
-import { DOES_TAG, MODE_GROUP, MODE_LABEL, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
+import { MODE_GROUP, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Banner, Button, FONT_MONO, Panel, SelectChip, StatCard, Tag } from "@whiteroom/ui";
+import { Banner, Button, FONT_MONO, Panel, SelectChip, StatCard } from "@whiteroom/ui";
 import { PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor } from "./_components/RuleEditor";
@@ -26,11 +26,12 @@ import type {
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
+import { RuleDoesTag } from "@/components/RuleDoesTag";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
 import { canAct, keywordBlockCheck, keywordPhrase, keywordVerb, stopCheck, stopPhrase } from "@/lib/controls-guard";
 import { HELP } from "@/lib/metric-definitions";
-import { timeAgo } from "@/lib/format";
+import { timeAgo, HOUR_MS } from "@/lib/format";
 import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
@@ -169,7 +170,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // Rule actions over the last 7 days, as Performance counts them. Optional: no card line without them.
   useEffect(() => {
     let cancelled = false;
-    const from = Date.now() - ACTIONS_HOURS * 3_600_000;
+    const from = Date.now() - ACTIONS_HOURS * HOUR_MS;
     fetchRuleActions(fleetId, { fromDay: localDay(from), toDay: localDay() }, authKey, ACTIONS_HOURS)
       .then((d) => { if (!cancelled && !("unsupported" in d)) setActions(d); }, () => {});
     return () => { cancelled = true; };
@@ -514,11 +515,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         <span style={{ minWidth: 0, flex: "1 1 320px" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>
             {RULE_LABELS[r.ruleType]}
-            {r.mode === "watch" && <Tag tone="muted">{MODE_LABEL.watch}</Tag>}
-            {/* Filled only when it really stops calls (stopping()): an alert-only rule, or one with nothing picked yet, isn't. */}
-            {r.mode === "enforce" && (emptyPick(r)
-              ? <Tag tone="muted">Not set up</Tag>
-              : <Tag tone={stopping([r]).length ? "block" : "brand"}>{DOES_TAG[r.response ?? "block"]}</Tag>)}
+            <RuleDoesTag rule={r} />
           </span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
         </span>

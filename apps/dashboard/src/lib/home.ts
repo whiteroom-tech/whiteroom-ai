@@ -1,11 +1,11 @@
-// Pure helpers for Home (redesign screen 1a/1b): agent status and progress
+// Pure helpers for Home: agent status and progress
 // lines, plain-language activity rows, live-feed rows and today's window.
 // No React, so the wording rules can be unit-tested directly.
 
 import type { AgentState, TagTone } from '@whiteroom/ui';
 import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport, ShiftMeasures } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
-import { fmtTime, fmtWhen } from '@/lib/format';
+import { fmtTime, fmtWhen, plural, HOUR_MS } from '@/lib/format';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
 
 // ── Agents ───────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ const STATE_OF: Record<string, AgentState> = {
 export function inferredNameNote(agents: Pick<AgentInfo, 'nameInferred'>[]): string | null {
   const n = agents.filter((a) => a.nameInferred).length;
   if (n === 0) return null;
-  return `${n === 1 ? '1 agent has' : `${n} agents have`} no name set, so WhiteRoom named ${n === 1 ? 'it' : 'them'} from ${n === 1 ? 'its' : 'their'} instructions. Agents with the same instructions count as one. Give each agent its own name with the x-whiteroom-agent header.`;
+  return `${n === 1 ? '1 agent has' : `${n} agents have`} no name set, so WhiteRoom named ${plural(n, 'it', 'them')} from ${plural(n, 'its', 'their')} instructions. Agents with the same instructions count as one. Give each agent its own name with the x-whiteroom-agent header.`;
 }
 
 export function agentState(a: Pick<AgentInfo, 'status' | 'minutesRemaining' | 'hold'> & { stale?: boolean; disconnected?: boolean }): AgentState {
@@ -45,7 +45,7 @@ export function currentShift(a: AgentInfo): ShiftMeasures | null {
 }
 
 /** "1 task", "5 tasks". */
-export const taskWord = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
+export const taskWord = (n: number) => `${n} ${plural(n, 'task')}`;
 
 /** "Shift 8 · 62 tasks · 9.4 min worked"; "Rest after shift 5 · 31 tasks" while resting; no shift figures without a shift. */
 export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
@@ -389,12 +389,12 @@ export function matchesFilter(row: LiveRow, f: LiveFilter): boolean {
 function localTodayStart(now: number): number {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
-  return Math.floor(d.getTime() / 3_600_000) * 3_600_000;
+  return Math.floor(d.getTime() / HOUR_MS) * HOUR_MS;
 }
 
 /** Hours to ask for so the window reaches back to the start of the viewer's today. */
 export function hoursSinceLocalMidnight(now: number = Date.now()): number {
-  return Math.max(1, Math.ceil((now - localTodayStart(now)) / 3_600_000));
+  return Math.max(1, Math.ceil((now - localTodayStart(now)) / HOUR_MS));
 }
 
 /** Calls and spend since the viewer's midnight, from hourly points; `partial` when some calls have no price on file or were dropped. */

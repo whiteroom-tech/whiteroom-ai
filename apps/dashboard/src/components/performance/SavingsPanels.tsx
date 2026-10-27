@@ -27,11 +27,6 @@ export function axisTop(max: number): number {
   return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((v) => v >= max) ?? 10 * p;
 }
 
-/** Axis labels: "150K", not "150.0K". */
-export function axisLabel(n: number): string {
-  return fmtTokens(n).replace(/\.0+(?=[KM])/, '');
-}
-
 function weekday(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 }
@@ -58,7 +53,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
           <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8 }}>
             <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
               {[top, top / 2, 0].map((v, i) => (
-                <span key={i} style={{ position: 'absolute', right: 0, top: `${(i / 2) * 100}%`, transform: 'translateY(-50%)' }}>{axisLabel(v)}</span>
+                <span key={i} style={{ position: 'absolute', right: 0, top: `${(i / 2) * 100}%`, transform: 'translateY(-50%)' }}>{fmtTokens(v)}</span>
               ))}
             </div>
             <div style={{ position: 'relative' }}>
@@ -91,7 +86,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
                       <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{weekday(d.day)}</div>
                       {/* Two lines, so neighbouring days' figures never run into each other. */}
                       <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)', whiteSpace: 'nowrap' }}>
-                        {without ? fmtTokens(d.used) : '–'}
+                        {without ? fmtTokens(d.used) : '—'}
                       </div>
                       {without > 0 && (
                         <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>

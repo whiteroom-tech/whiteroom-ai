@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
 import { HomeView } from '@/components/home/HomeContent';
-import { homeWeek, shortTokens, shownAgents, TABLE_FROM } from '@/lib/home-agents';
+import { homeWeek, shownAgents, TABLE_FROM } from '@/lib/home-agents';
+import { fmtTokens } from '@/lib/format';
 import type { AgentInfo, FleetReport } from '@/lib/whiteroom/types';
 
 const agent = (agentId: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo =>
@@ -27,7 +28,7 @@ describe('Home agents: one list', () => {
     expect(shownAgents(agents, weeks, '', 'used').map((a) => a.agentId)).toEqual(['writer', 'code-reviewer', 'lead-agent']);
     expect(shownAgents(agents, weeks, '', 'saved').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
     expect(shownAgents(agents, weeks, '', 'name').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
-    expect([980, 12_340, 1_500_000].map(shortTokens)).toEqual(['980', '12K', '1.5M']);
+    expect([980, 4000, 4100, 12_340, 999_999, 1_500_000, 12_000_000].map(fmtTokens)).toEqual(['980', '4K', '4.1K', '12K', '1M', '1.5M', '12M']);
   });
 
   it('builds each agent’s week from what came back, and leaves out what failed', () => {
@@ -60,7 +61,7 @@ describe('rule activity, short', () => {
     const { tallyShort } = await import('@/lib/governance');
     expect(tallyShort(tally({ blocks: 2, wouldBlocks: 47 }))).toBe('2 blocked · 47 in Record only');
     expect(tallyShort(tally({ wouldBlocks: 3 }))).toBe('3 in Record only');
-    expect(tallyShort({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 1, toldYou: 4 })).toBe('1 stopped · 2 paused · 1 blocked · 4 told you');
+    expect(tallyShort({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 1, toldYou: 4 })).toBe('1 stopped · 2 paused · 1 blocked · 4 alerted you');
     expect(tallyShort(tally({}))).toBe('');
   });
 });
