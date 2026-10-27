@@ -47,7 +47,7 @@ describe('Performance overview layout', () => {
     expect(cost).toContain('Spend by model');
     const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
     expect(control).toContain('Rule activity');
-    expect(control).toMatch(/2<\/strong> blocked · <strong[^>]*>57<\/strong> would have blocked/);
+    expect(control).toMatch(/2<\/strong> blocked · <strong[^>]*>57<\/strong> would have acted/);
     expect(control).toContain('All rules and agents');
     expect(control).toContain('href="/controls"');
     const perf = html.slice(html.indexOf('id="perf-performance"'));

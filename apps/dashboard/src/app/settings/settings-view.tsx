@@ -7,10 +7,12 @@ import { DataPrivacySection } from '@/components/settings/DataPrivacySection';
 import { SmallerHandoversSection } from '@/components/settings/SmallerHandoversSection';
 import { AuditIntegritySection } from '@/components/settings/AuditIntegritySection';
 import { useRouter } from 'next/navigation';
-import { PageHeader } from '@/components/citadel/PageChrome';
+import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
+import { SettingsCard } from '@/components/settings/SettingsCard';
+import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { AppShell } from '@/components/AppShell';
 import { TextSizeControl } from '@/components/TextSizeControl';
-import { Banner, Button, Panel, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { Banner, Button, FONT_MONO } from '@whiteroom/ui';
 import {
   cancelAccountDeletion,
   cancelEmailChange,
@@ -23,6 +25,8 @@ import {
   type ActionResult,
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
+import type { AlertsStatus, CompressionPreview, DataSettings } from '@/lib/whiteroom/client';
+import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
@@ -49,29 +53,25 @@ function Section({
   children: React.ReactNode;
   tone?: 'default' | 'danger';
 }) {
-  return (
-    <Panel title={tone === 'danger' ? <span style={{ color: 'var(--bad)' }}>{title}</span> : title} className={tone === 'danger' ? 'wr-panel--danger' : undefined}>
-      {description && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>{description}</p>}
-      {children}
-    </Panel>
-  );
+  const id = `settings-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`;
+  return <SettingsCard id={id} title={tone === 'danger' ? <span style={{ color: 'var(--bad)' }}>{title}</span> : title} sub={description} tone={tone}>{children}</SettingsCard>;
 }
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
   fontSize: 'var(--fs-sm)',
-  fontWeight: 500,
+  fontWeight: 600,
   color: 'var(--tx2)',
   marginBottom: 6,
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  height: 34,
-  background: 'var(--sunk)',
+  height: 40,
+  background: 'var(--card)',
   border: '1px solid var(--line2)',
-  borderRadius: 7,
-  padding: '0 11px',
+  borderRadius: 8,
+  padding: '0 12px',
   color: 'var(--tx)',
   fontSize: 'var(--fs-md)',
   fontFamily: 'inherit',
@@ -83,6 +83,7 @@ export function SettingsView({
   purchasablePlans,
   billingResult,
   closing,
+  samples,
 }: {
   account: AccountOverview;
   entitlement: Entitlement;
@@ -90,6 +91,8 @@ export function SettingsView({
   billingResult: string | null;
   /** The account's closing window (deleted or plan lapsed), null, or 'unknown' when it couldn't be read. */
   closing: ClosingState;
+  /** /dev/settings: sample fleet settings for the sections that read the engine. */
+  samples?: { data?: DataSettings; smaller?: CompressionPreview; alerts?: AlertsStatus; audit?: AuditIntegrity };
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -121,9 +124,10 @@ export function SettingsView({
 
   return (
     <AppShell>
-      <PageHeader title="Settings" fleetId={account.email} fleetTitle="Signed in as" />
+      <SettingsHeader email={account.email} />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <div ref={sections} className="wr-settings-stack" style={{ maxWidth: 960, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+        <div ref={sections} className="wr-settings-stack wr-setup-page">
+          <PageLead>Profile, plan, data, alerts and sign-in.</PageLead>
 
           {banner && (
             <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined} actions={banner.support ? <SupportLink /> : undefined}>{banner.text}</Banner>
@@ -131,10 +135,10 @@ export function SettingsView({
 
           <ProfileSection account={account} pending={pending} run={run} />
           <div id="plan"><PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} /></div>
-          <DataPrivacySection />
-          <SmallerHandoversSection />
-          <div id="alerts"><AlertsSection /></div>
-          <div id="audit-integrity"><AuditIntegritySection /></div>
+          <DataPrivacySection preview={samples?.data} />
+          <SmallerHandoversSection sample={samples?.smaller} />
+          <div id="alerts"><AlertsSection preview={samples?.alerts} /></div>
+          <div id="audit-integrity"><AuditIntegritySection preview={samples?.audit} /></div>
           <EmailSection account={account} pending={pending} run={run} />
           <MethodsSection account={account} pending={pending} run={run} />
           <SessionsSection pending={pending} />
@@ -143,6 +147,14 @@ export function SettingsView({
       </main>
     </AppShell>
   );
+}
+
+/** "/ fleet-id" when a fleet is signed in (as on every page), else the account email. */
+function SettingsHeader({ email }: { email: string | null }) {
+  const { fleetId } = useFleetAuth();
+  return fleetId
+    ? <PageHeader title="Settings" fleetId={fleetId} />
+    : <PageHeader title="Settings" fleetId={email} fleetTitle="Signed in as" />;
 }
 
 // -- Profile --
@@ -191,45 +203,44 @@ function ProfileSection({
   const dirty = name !== (account.name ?? '') || timezone !== (account.timezone ?? '');
 
   return (
-    <Section title="Profile" description="How you appear across the dashboard.">
-      <div style={{ display: 'grid', gap: 16 }}>
+    <Section title="Profile" description="How you appear across the dashboard">
+      <div className="wr-settings-pair">
         <div>
           <label htmlFor="name" style={labelStyle}>Display name</label>
           <input id="name" style={inputStyle} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <label htmlFor="tz" style={labelStyle}>Timezone</label>
+          <label htmlFor="tz" style={labelStyle}>Time zone</label>
           <select id="tz" style={inputStyle} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-            <option value="">Use my browser&apos;s timezone</option>
+            <option value="">Use my browser&apos;s time zone ({browserZone})</option>
             {options.map((z) => (
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
-          {/* M15: dashboard dates follow the browser whatever is picked here; say exactly that. */}
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', margin: '6px 0 0' }}>
-            The dashboard always shows dates and days in this browser&apos;s time zone ({browserZone}). What you pick here is only saved with your profile.
-          </p>
-        </div>
-        <div>
-          <Button
-            variant="primary"
-            disabled={pending || !dirty}
-            onClick={() => run(() => updateProfile({ name, timezone: timezone || null }), 'Profile saved.')}
-          >
-            Save profile
-          </Button>
-        </div>
-        {/* Applies at once and lives in this browser, so it sits apart from Save profile. */}
-        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-          <div style={labelStyle}>Text size</div>
-          <TextSizeControl />
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', margin: '6px 0 0' }}>
-            Makes all dashboard text larger. Changes right away and is saved on this browser.
-          </p>
         </div>
       </div>
+      {/* M15: dashboard dates follow the browser whatever is picked here; say exactly that. */}
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '10px 0 14px' }}>
+        Saved with your profile. For now the dashboard shows dates and day boundaries in this browser&apos;s time zone ({browserZone}).
+      </p>
+      {/* Applies at once and lives in this browser; Save profile doesn't change it. */}
+      <div style={labelStyle}>Text size</div>
+      <div style={{ marginBottom: 18 }}><TextSizeControl /></div>
+      <Button
+        disabled={pending || !dirty}
+        onClick={() => run(() => updateProfile({ name, timezone: timezone || null }), 'Profile saved.')}
+      >
+        Save profile
+      </Button>
     </Section>
   );
+}
+
+/** "Dec 26", or "Jan 4, 2027" outside the current year, for a plan date (stored at UTC midnight, so read in UTC). */
+export function shortDay(iso: string, now: number = Date.now()): string {
+  const d = new Date(iso);
+  const otherYear = d.getUTCFullYear() !== new Date(now).getUTCFullYear();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(otherYear ? { year: 'numeric' } : {}), timeZone: 'UTC' });
 }
 
 // -- Plan & billing --
@@ -263,55 +274,27 @@ function PlanSection({
     }
   }
 
-  const fleetsAtLimit = usage.fleets >= limits.maxFleets;
   // A paying customer switches plan in the portal (Checkout would start a
   // second subscription), so the cards route there instead.
   const subscribed = hasLiveSubscription(subscription);
   // On the free period, Starter is still worth offering: subscribing is how
   // they keep it once the 90 days are up.
   const offers = purchasablePlans.filter((p) => p !== plan || entitlement.onTrial);
-  const trialEnd = entitlement.trialEndsAt.slice(0, 10);
+  const trialEnd = shortDay(entitlement.trialEndsAt);
   // ceil so an active trial never reads "0 days left"; capped because a DST
   // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
   const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / DAY_MS)));
 
   return (
-    <Section title="Plan" description="What your subscription currently allows. Limits apply to every fleet on the account.">
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          flexWrap: 'wrap',
-          paddingBottom: 16,
-          borderBottom: '1px solid var(--line)',
-          marginBottom: 16,
-        }}
-      >
+    <Section title="Plan" description="Limits apply to every fleet on the account">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)', fontWeight: 700 }}>{PLANS[plan].name}</span>
-            {entitlement.onTrial && (
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
-                free · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left
-              </span>
-            )}
-            {subscription?.planOverride && (
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
-                comped
-              </span>
-            )}
-            {subscription?.cancelAtPeriodEnd && (
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
-                ends {subscription.currentPeriodEnd?.slice(0, 10)}
-              </span>
-            )}
-            {subscription?.status === 'past_due' && (
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--bad-bg)', color: 'var(--bad)' }}>
-                payment failed
-              </span>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[plan].name}</strong>
+            {entitlement.onTrial && <span className="wr-settings-pill" data-tone="ok">free · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left</span>}
+            {subscription?.planOverride && <span className="wr-settings-pill" data-tone="ok">comped</span>}
+            {subscription?.cancelAtPeriodEnd && <span className="wr-settings-pill" data-tone="warn">ends {subscription.currentPeriodEnd ? shortDay(subscription.currentPeriodEnd) : ''}</span>}
+            {subscription?.status === 'past_due' && <span className="wr-settings-pill" data-tone="bad">payment failed</span>}
           </div>
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '4px 0 0' }}>{PLANS[plan].blurb}</p>
         </div>
@@ -325,50 +308,41 @@ function PlanSection({
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
-        <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} atLimit={fleetsAtLimit} />
+      <div className="wr-settings-stats">
+        <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} over={usage.fleets > limits.maxFleets ? `${usage.fleets - limits.maxFleets} over the ${PLANS[plan].name} limit` : undefined} />
         {/* Live registered agents, never 0 when the engine can't be reached (M16).
             Pro's billed quantity is Stripe's last confirmed one, which can lag a change. */}
         {plan !== 'pro' && usage.agents !== null ? (
-          <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} atLimit={usage.agents >= limits.maxAgentsPerFleet} />
+          <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} over={usage.agents > limits.maxAgentsPerFleet ? `${usage.agents - limits.maxAgentsPerFleet} over the ${PLANS[plan].name} limit` : undefined} />
         ) : (
           agentPlanStats(plan, usage.agents, subscription?.billedAgents).map((s) => <Stat key={s.label} label={s.label} value={s.value} />)
         )}
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '-8px 0 20px' }}>
-        History kept covers call records and run history. The audit trail is kept for {AUDIT_KEPT}. Progress notes have their own limit under Data and privacy.
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '12px 0 16px' }}>
+        History covers call records and run history. The audit trail is kept for {AUDIT_KEPT}.
       </p>
 
       {offers.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+        <div className="wr-settings-plans">
           {offers.map((p) => (
-            <div
-              key={p}
-              style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '14px 16px', background: 'var(--sunk)' }}
-            >
+            <div key={p} className="wr-settings-plan">
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-md)', fontWeight: 700 }}>{PLANS[p].name}</span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-                  {formatPrice(PLANS[p].pricing?.monthlyCents ?? null)}<span style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)' }}>/mo</span>
-                </span>
+                <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
+                <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{formatPrice(PLANS[p].pricing?.monthlyCents ?? null)}/mo</strong>
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 14px', display: 'grid', gap: 5 }}>
-                {PLANS[p].features.map((f) => (
-                  <li key={f} style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', display: 'flex', gap: 7 }}>
-                    <span style={{ color: 'var(--brand)' }}>·</span>{f}
-                  </li>
-                ))}
+              <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
               </ul>
               <Button
-                variant="primary" style={{ width: '100%' }}
+                variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
                 disabled={busy !== null || pending}
                 onClick={() => go(() => (subscribed ? openBillingPortal() : startCheckout(p)), p)}
               >
                 {busy === p
                   ? 'Opening…'
                   : p === 'starter' && entitlement.onTrial
-                    ? `Subscribe, free until ${trialEnd}`
+                    ? `Subscribe (free until ${trialEnd})`
                     : `Switch to ${PLANS[p].name}`}
               </Button>
             </div>
@@ -381,24 +355,21 @@ function PlanSection({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px' }}>
-      <div style={{ ...labelStyle, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>{value}</div>
+    <div className="wr-settings-stat">
+      <div className="wr-settings-stat__label">{label}</div>
+      <div className="wr-settings-stat__num">{value}</div>
     </div>
   );
 }
 
-function Meter({ label, used, limit, atLimit }: { label: string; used: number; limit: number; atLimit: boolean }) {
-  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+function Meter({ label, used, limit, over }: { label: string; used: number; limit: number; over?: string }) {
   return (
-    <div style={{ background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px' }}>
-      <div style={{ ...labelStyle, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', fontWeight: 600, color: atLimit ? 'var(--warn)' : 'var(--tx)' }}>
-        {used} / {limit}
-      </div>
-      <div style={{ height: 3, borderRadius: 99, background: 'var(--track)', marginTop: 8, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: atLimit ? 'var(--warn)' : 'var(--brand)' }} />
-      </div>
+    <div className="wr-settings-stat" data-warn={over ? '' : undefined}>
+      <div className="wr-settings-stat__label">{label}</div>
+      <div className="wr-settings-stat__num" style={{ color: over ? 'var(--warn)' : undefined }}>{used} / {limit}</div>
+      {over
+        ? <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--warn)' }}>{over}</div>
+        : used >= limit && <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>At the limit: another one is refused</div>}
     </div>
   );
 }
@@ -419,10 +390,10 @@ function EmailSection({
   return (
     <Section
       title="Email address"
-      description="This is the address you sign in with, so a change has to be confirmed from the new inbox before it takes effect."
+      description="The address you sign in with. A change must be confirmed from the new inbox."
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', color: 'var(--tx)' }}>{account.email}</span>
+        <span>Current: <span style={{ fontFamily: FONT_MONO }}>{account.email}</span></span>
         {account.emailVerified && (
           <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ok-bg)', color: 'var(--ok)' }}>
             verified
@@ -501,62 +472,39 @@ function MethodsSection({
   run: (a: () => Promise<{ ok: boolean; error?: string }>, s: string) => void;
 }) {
   return (
-    <Section title="Sign-in methods" description="Ways you can get into this account. At least one has to stay.">
-      <div style={{ display: 'grid', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-        {account.methods.map((m) => (
-          <div
-            key={m.id}
-            style={{
-              background: 'var(--sunk)',
-              padding: '13px 15px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>
-                {PROVIDER_LABELS[m.provider] ?? m.provider}
+    <Section title="Sign-in methods" description="At least one has to stay">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {account.methods.map((m) => {
+          const same = account.methods.filter((o) => o.provider === m.provider);
+          return (
+            <div key={m.id} className="wr-srow">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <strong style={{ fontWeight: 600 }}>{PROVIDER_LABELS[m.provider] ?? m.provider}</strong>
                 {/* Several rows can share a provider — two Google accounts on
                     one user is a real shape in production — so the account
-                    reference below is what tells them apart. */}
-                {account.methods.filter((o) => o.provider === m.provider).length > 1 && (
-                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx3)', marginLeft: 6 }}>
-                    account {account.methods.filter((o) => o.provider === m.provider).findIndex((o) => o.id === m.id) + 1}
-                  </span>
-                )}
-              </div>
-              <div
-                style={{
-                  fontFamily: FONT_MONO,
-                  fontSize: 'var(--fs-sm)',
-                  color: 'var(--tx3)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
+                    number is what tells them apart. */}
+                {same.length > 1 && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginLeft: 6 }}>account {same.findIndex((o) => o.id === m.id) + 1}</span>}
                 {/* Google's account ref is a numeric ID that means nothing to
                     people; the email method's ref is the address itself. */}
-                {m.provider === 'email' ? m.accountRef : 'Connected'}
+                {m.provider === 'email' && <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.accountRef}</div>}
               </div>
+              {m.provider !== 'email' && <span className="wr-settings-pill" data-tone="ok">Connected</span>}
+              {m.canUnlink ? (
+                <Button
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() => run(() => unlinkProvider(m.id), `${PROVIDER_LABELS[m.provider] ?? m.provider} unlinked.`)}
+                >
+                  Unlink
+                </Button>
+              ) : (
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+                  {m.provider === 'email' ? 'Always available' : 'Only method'}
+                </span>
+              )}
             </div>
-            {m.canUnlink ? (
-              <Button
-                variant="secondary"
-                disabled={pending}
-                onClick={() => run(() => unlinkProvider(m.id), `${PROVIDER_LABELS[m.provider] ?? m.provider} unlinked.`)}
-              >
-                Unlink
-              </Button>
-            ) : (
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>
-                {m.provider === 'email' ? 'Always available' : 'Only method'}
-              </span>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Section>
   );
@@ -570,7 +518,7 @@ function SessionsSection({ pending }: { pending: boolean }) {
   return (
     <Section
       title="Active sessions"
-      description="Signs you out on every device, including this one. Use it if you've signed in somewhere you no longer control."
+      description="Signs you out on every device, including this one"
     >
       <Button
         variant="secondary"

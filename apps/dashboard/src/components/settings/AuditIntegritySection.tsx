@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Panel } from '@whiteroom/ui';
+import { Button } from '@whiteroom/ui';
+import { SettingsCard } from '@/components/settings/SettingsCard';
 import { auditIntegrity, verifyAudit, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AuditExportProblem, buildAuditExport } from '@/lib/audit-export';
 import { saveBlob } from '@/lib/download';
@@ -11,14 +12,17 @@ import { fmtCount, fmtTime, timeAgo, plural } from '@/lib/format';
 import { AUDIT_KEPT } from '@/lib/plans';
 
 /**
- * Settings › Audit integrity (Phase 1 spec H2): how much of the fleet's
+ * Settings › Audit trail (Phase 1 spec H2): how much of the fleet's
  * audit trail has been checked, any recorded gaps, a check on demand and the
  * signed export of the whole history. Always shown, so a link to
  * #audit-integrity lands on it: without a fleet session it says to sign in.
  */
-export function AuditIntegritySection() {
-  const { fleetId, status: authStatus } = useFleetAuth();
-  const [info, setInfo] = useState<AuditIntegrity | null>(null);
+export function AuditIntegritySection({ preview }: { preview?: AuditIntegrity } = {}) {
+  const auth = useFleetAuth();
+  // /dev/settings: a sample check, nothing fetched.
+  const fleetId = preview ? preview.fleetId : auth.fleetId;
+  const authStatus = auth.status;
+  const [info, setInfo] = useState<AuditIntegrity | null>(preview ?? null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
   const [busy, setBusy] = useState<'check' | 'export' | null>(null);
@@ -46,6 +50,7 @@ export function AuditIntegritySection() {
   }, []);
 
   useEffect(() => {
+    if (preview) return;
     setInfo(null);
     setLoadFailed(false);
     setUnsupported(false);
@@ -58,7 +63,7 @@ export function AuditIntegritySection() {
       else setLoadFailed(true);
     });
     return () => { live = false; };
-  }, [fleetId, authStatus]);
+  }, [fleetId, authStatus, preview]);
 
   if (unsupported) return null;
   if (!info) {
@@ -67,13 +72,15 @@ export function AuditIntegritySection() {
       ? 'Sign in to your fleet to download the audit trail.'
       : loadFailed ? 'Couldn’t load the audit trail. Reload the page to try again.' : 'Loading the audit trail…';
     return (
-      <Panel title="Audit integrity">
+      <SettingsCard id="audit" title="Audit trail" sub={AUDIT_SUB}>
         <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: 0 }}>{line}</p>
-      </Panel>
+      </SettingsCard>
     );
   }
 
   async function check() {
+    // /dev/settings: nothing is checked.
+    if (preview) { setNote({ tone: 'neutral', text: 'Preview: nothing was checked.' }); return; }
     setBusy('check');
     setNote(null);
     try {
@@ -91,6 +98,7 @@ export function AuditIntegritySection() {
   }
 
   async function download() {
+    if (preview) { setNote({ tone: 'neutral', text: 'Preview: nothing was downloaded.' }); return; }
     const id = fleetId!;
     const run = ++exportRef.current;
     const current = () => exportRef.current === run && fleetRef.current === id;
@@ -134,12 +142,9 @@ export function AuditIntegritySection() {
     : `${info.gaps.count} ${plural(info.gaps.count, 'gap')} recorded where events may be missing`;
 
   return (
-    <Panel title="Audit integrity">
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
-        Every event in this fleet’s history is linked to the one before it, so a changed or deleted event shows up when the history is checked. Kept for {AUDIT_KEPT}.
-      </p>
+    <SettingsCard id="audit" title="Audit trail" sub={AUDIT_SUB}>
       {tracked ? (
-        <p id="audit-integrity-status" style={{ fontSize: 'var(--fs-md)', margin: '0 0 6px' }}>{checked} · {gaps}</p>
+        <p id="audit-integrity-status" style={{ fontSize: 'var(--fs-md)', margin: '0 0 6px' }}><strong style={{ fontWeight: 600 }}>{checked}</strong> · {gaps}</p>
       ) : (
         <p style={{ fontSize: 'var(--fs-md)', margin: '0 0 6px' }}>History tracking hasn’t started for this fleet yet.</p>
       )}
@@ -151,17 +156,17 @@ export function AuditIntegritySection() {
         </ul>
       )}
       {info.prunedBeforeTracking && (
-        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px' }}>Older events were removed before tracking started, so the check begins after them.</p>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px' }}>Events before tracking started aren’t covered.</p>
       )}
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 14px', maxWidth: '62ch' }}>
-        Not yet anchored outside WhiteRoom: a check shows any change to the stored history, but can’t yet prove it to someone who doesn’t trust WhiteRoom’s records.
+        Not yet anchored outside WhiteRoom, so it can’t yet prove the history to someone who doesn’t trust WhiteRoom’s records. Kept for {AUDIT_KEPT}.
       </p>
       {tracked && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Button size={28} busy={busy === 'check'} busyLabel="Checking…" onClick={() => void check()}>Run check now</Button>
+          <Button variant="primary" busy={busy === 'check'} busyLabel="Checking…" onClick={() => void check()}>Run check now</Button>
           {/* The label stays put while it works, so the button doesn't change width; progress has its own line. */}
-          <Button variant="ghost" size={28} disabled={busy === 'export'} aria-busy={busy === 'export' || undefined} onClick={() => void download()}>Download signed export</Button>
-          {busy === 'export' && <Button variant="ghost" size={28} onClick={cancelDownload}>Cancel</Button>}
+          <Button disabled={busy === 'export'} aria-busy={busy === 'export' || undefined} onClick={() => void download()}>Download signed export</Button>
+          {busy === 'export' && <Button variant="ghost" onClick={cancelDownload}>Cancel</Button>}
         </div>
       )}
       {busy === 'export' && <p role="status" className="wr-audit-progress" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{exportLabel(progress)}</p>}
@@ -171,9 +176,11 @@ export function AuditIntegritySection() {
           {note.check && <> <button type="button" className="wr-link" disabled={busy !== null} onClick={() => void check()} style={{ background: 'none', border: 0, padding: 0, font: 'inherit', fontWeight: 600, cursor: 'pointer' }}>Run check now.</button></>}
         </p>
       )}
-    </Panel>
+    </SettingsCard>
   );
 }
+
+const AUDIT_SUB = 'Every event is linked to the one before it, so a changed or deleted event shows up when checked.';
 
 /**
  * How much of the history the last complete check covered: "939 of 2,045

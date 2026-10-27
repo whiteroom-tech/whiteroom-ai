@@ -8,7 +8,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }), useSe
 const { AgentWeekCard } = await import('@/components/agent/AgentWeekCard');
 const { RulesOnAgent } = await import('@/components/agent/RulesOnAgent');
 const { weekTokens } = await import('@/lib/agent-detail');
-const { scoreParts } = await import('@/lib/agent-scores');
+const { outOfTen, scoreParts, scoreSummary, scoreWorking } = await import('@/lib/agent-scores');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
@@ -20,11 +20,14 @@ describe('Last 7 days on the agent page', () => {
     } })));
     expect(t).toContain('Tokens without WhiteRoom, est. 279K');
     expect(t).toContain('With WhiteRoom 53.4K 226K less (81%)');
-    expect(t).toContain('2 blocked · 58 in Record only');
-    expect(t).toContain('How is the score worked out?');
-    expect(t).toContain('Clean calls 100 of 100');
+    expect(t).toContain('Rule activity 2 blocked · 58 would have acted');
+    expect(t).toContain('Score 8 out of 10');
+    expect(t).toContain('How is the score worked out? Clean calls 10 · Speed 5.7 · Cost not scored yet');
+    expect(t).toContain('Clean calls 10 of 10');
+    expect(t).toContain('Speed 5.7 of 10');
     expect(t).toContain('Cost not scored');
     expect(t).toContain('Needs a task type and a finished call.');
+    expect(t).toContain('(10 + 5.7) ÷ 2 = 7.85 → 8');
   });
 
   it('shows — when a read failed, never 0, and no score breakdown without a score', () => {
@@ -41,8 +44,36 @@ describe('Last 7 days on the agent page', () => {
     expect(weekTokens({ used: 25, saved: 75 })).toEqual({ without: 100, used: 25, saved: 75, pct: 75 });
   });
 
-  it('names the parts as the wheel does', () => {
-    expect(scoreParts({ completeRate: 1, costDiligence: 2, speedScore: 3 }).map((p) => [p.label, p.value])).toEqual([['Clean calls', 1], ['Cost', 2], ['Speed', 3]]);
+  it('offers "Set a task type" on the Cost row when the agent has none', () => {
+    const html = renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', hasTaskType: false, onSetTaskType: () => {}, preview: {
+      score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
+    } }));
+    expect(text(html)).toContain('Set a task type to include it.');
+    const withType = renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', hasTaskType: true, onSetTaskType: () => {}, preview: {
+      score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
+    } }));
+    expect(text(withType)).not.toContain('Set a task type');
+  });
+
+  it('names the parts as the wheel does, scored ones first, on a 0-10 scale', () => {
+    const parts = scoreParts({ completeRate: 1, costDiligence: 2, speedScore: 3 });
+    expect(parts.map((p) => [p.label, p.value])).toEqual([['Clean calls', 1], ['Speed', 3], ['Cost', 2]]);
+    expect([outOfTen(100), outOfTen(57), outOfTen(0), outOfTen(84.6)]).toEqual(['10', '5.7', '0', '8.46']);
+    expect(scoreSummary([{ label: 'Clean calls', value: 100 }, { label: 'Cost', value: null }])).toBe('Clean calls 10 · Cost not scored yet');
+  });
+
+  it('works the score out as the rounded average of the scored parts', () => {
+    expect(scoreWorking([{ value: 100 }, { value: 57 }, { value: null }])).toEqual({ sum: '(10 + 5.7) ÷ 2 = 7.85 → 8', score: 8 });
+    expect(scoreWorking([{ value: 40 }])).toEqual({ sum: '4 → 4', score: 4 });
+    expect(scoreWorking([{ value: null }])).toBeNull();
+    // Unrounded parts, so the sum ends on the score the ring shows (8.46 → 8, not 8.5 → 9).
+    expect(scoreWorking([{ value: 84.6 }, { value: 84.6 }])).toEqual({ sum: '(8.46 + 8.46) ÷ 2 = 8.46 → 8', score: 8 });
+    // Enough places that the rounding shows.
+    expect(scoreWorking([{ value: 74.96 }, { value: 74.96 }])?.sum).toBe('(7.496 + 7.496) ÷ 2 = 7.496 → 7');
+    // The result is rounded from the true mean, and the mean prints with enough places to show it.
+    expect(scoreWorking([{ value: 74.99 }, { value: 74.999 }])?.sum).toBe('(7.499 + 7.5) ÷ 2 = 7.499 → 7');
+    expect(scoreWorking([{ value: 74.996 }, { value: 74.996 }])?.sum).toBe('(7.5 + 7.5) ÷ 2 = 7.4996 → 7');
+    expect(scoreWorking([{ value: 75 }, { value: 75 }])?.sum).toBe('(7.5 + 7.5) ÷ 2 = 7.5 → 8');
   });
 });
 
@@ -70,5 +101,16 @@ describe('Rules on this agent', () => {
   it('says so when none are on', () => {
     const t = text(renderToStaticMarkup(h(RulesOnAgent, { fleetId: 'f', agentId: 'a', preview: [rules[3]] })));
     expect(t).toContain('No rules are on for this agent. 1 rule is Off.');
+  });
+});
+
+describe('one score on the card', () => {
+  it('shows the score worked out from the parts in the ring, the words and the sum, even if the engine rounded differently', () => {
+    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
+      score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 3 },
+    } })));
+    expect(t).toContain('Score 8 out of 10');
+    expect(t).toContain('= 7.85 → 8');
+    expect(t).not.toContain('3 out of 10');
   });
 });

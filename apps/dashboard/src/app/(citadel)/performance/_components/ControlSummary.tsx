@@ -44,7 +44,7 @@ export function ControlSummary({ counts, byRuleId, rules, unavailable }: {
           <div className="wr-num">{unavailable && !counts ? '—' : fmtCount(total)}</div>
           {counts ? (
             <div className="wr-cap">
-              <strong className="wr-strong">{fmtCount(counts.blocks)}</strong> blocked · <strong className="wr-strong">{fmtCount(counts.wouldBlocks)}</strong> would have blocked
+              <strong className="wr-strong">{fmtCount(counts.blocks)}</strong> blocked · <strong className="wr-strong">{fmtCount(counts.wouldBlocks)}</strong> would have acted
               {extra.length > 0 && <> · {extra.join(' · ')}</>}
             </div>
           ) : <div className="wr-cap">{unavailable ? 'couldn’t load, retrying on the next refresh' : 'Loading…'}</div>}
@@ -61,7 +61,7 @@ export function ControlSummary({ counts, byRuleId, rules, unavailable }: {
                 <span className="wr-ctrl__name">{r.label}</span>
                 <span className="wr-cap">
                   {r.blocked > 0 && <>blocked <strong className="wr-strong">{fmtCount(r.blocked)}</strong>{r.wouldBlock > 0 && ' · '}</>}
-                  {r.wouldBlock > 0 && <>would have blocked <strong className="wr-strong">{fmtCount(r.wouldBlock)}</strong></>}
+                  {r.wouldBlock > 0 && <>would have acted <strong className="wr-strong">{fmtCount(r.wouldBlock)}</strong></>}
                 </span>
                 {r.mode && <ModeTag mode={r.mode} />}
               </>

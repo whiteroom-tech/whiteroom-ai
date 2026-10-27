@@ -6,10 +6,11 @@ import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
   callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlLine, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
-  PRACTICE_TASKS, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
+  PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
+import { SettingsCard } from '@/components/settings/SettingsCard';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 
@@ -28,30 +29,25 @@ function KeyLine({ choice, fleet, className }: { choice: PracticeKeyChoice | nul
 function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] | null }) {
   const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
   return (
-    <section className={s.preview} aria-labelledby="practice-checks-preview">
-      <h3 id="practice-checks-preview" className={s.previewHeader}>WHAT THE TEST CHECKS</h3>
-      <ol className={s.previewList}>
-        {scenarios.map((sc, i) => (
-          <li key={sc} className={s.previewItem}>
-            <span className={s.previewNum} aria-hidden="true">{i + 1}</span>
-            <span>
+    <div style={{ margin: '16px 0' }}>
+      <SettingsCard id="practice-checks-preview" title="What the test checks" level={3}>
+        <ol className={s.previewList}>
+          {scenarios.map((sc) => (
+            <li key={sc} className={s.previewItem}>
               <span className={s.previewName}>{sc}</span>
               <span className={s.previewText}>{CATALOG.checks.filter((c) => c.scenario === sc && c.label !== sc).map((c) => c.label).join(' · ')}</span>
-            </span>
-          </li>
-        ))}
-        <li className={s.previewItem}>
-          <span className={s.previewNum} aria-hidden="true">{scenarios.length + 1}</span>
-          <span>
+            </li>
+          ))}
+          <li className={s.previewItem}>
             <span className={s.previewName}>{CATALOG.controls.scenario}</span>
             {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
               : controls.length ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
               : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
             {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
-          </span>
-        </li>
-      </ol>
-    </section>
+          </li>
+        </ol>
+      </SettingsCard>
+    </div>
   );
 }
 
@@ -155,9 +151,8 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
 
   return (
     <div className={p.wrap}>
-      <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
       <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Set up a practice test</h2>
-      <p className={s.pageSub}>Your agent works through {PRACTICE_TASKS} practice tasks while WhiteRoom checks the results and your controls. A run usually takes {usualMinutes(1)}. You start it from your computer with one command.</p>
+      <p className={s.pageSub}>{PRACTICE_SUMMARY}. You start it from your computer with one command.</p>
 
       {blocked && (
         <div className={s.notice} role="status">

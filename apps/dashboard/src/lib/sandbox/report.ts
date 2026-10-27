@@ -8,27 +8,23 @@ import { withRunMode, type RunStatusResult } from './api';
 import { fmtCount, plural } from '@/lib/format';
 import { saveBlob } from '@/lib/download';
 
-/** The agent saved a summary of its own work and kept going. */
-export const SUMMARY_TYPES = new Set(['self_handover']);
-/** The agent passed its work to another agent: worded separately from a saved summary. */
-export const PARTNER_TYPES = new Set(['handover', 'paired_handover']);
+/** Events where the agent kept going on a long task. Counted once, never described (customer copy says what, not how). */
+export const KEPT_GOING_TYPES = new Set(['self_handover', 'handover', 'paired_handover']);
 
 const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
 
-/** "Saved a summary 2 times and kept its context. Passed work to another agent once." for Checks. */
+/** "Kept going 2 times as the task ran long." for Checks. */
 export function memoryCheckDetail(log: readonly { type: string }[]): string {
-  const summaries = log.filter((e) => SUMMARY_TYPES.has(e.type)).length;
-  const handoffs = log.filter((e) => PARTNER_TYPES.has(e.type)).length;
+  const n = log.filter((e) => KEPT_GOING_TYPES.has(e.type)).length;
   // With no matching log entry (e.g. a truncated log), don't claim a count.
-  const saved = summaries ? `Saved a summary ${times(summaries)} and kept its context.` : 'Kept its context.';
-  return handoffs ? `${saved} Passed work to another agent ${times(handoffs)}.` : saved;
+  return n ? `Kept going ${times(n)} as the task ran long.` : 'Kept its place as the task ran long.';
 }
 
 /** The three checks, in order: the start screen, the Checks tab and the report all name them this way. */
 export const SANDBOX_CHECKS = [
   { id: 'core.connect', label: 'Your agent connects', meaning: 'Its calls reach the model through WhiteRoom and come back normally.' },
-  { id: 'core.handoff', label: 'It keeps working when its memory fills up', meaning: 'When your agent’s memory fills up, WhiteRoom saves a short summary so it can keep going.' },
-  { id: 'core.resume', label: 'It keeps working', meaning: 'Its next call after the summary works, and it carries on from there.' },
+  { id: 'core.handoff', label: 'It keeps going on long tasks', meaning: 'It doesn’t lose its place when a task runs long.' },
+  { id: 'core.resume', label: 'It carries on normally', meaning: 'Its next call goes through normally.' },
 ] as const;
 
 /** The check names the page and the report share. */
@@ -48,10 +44,8 @@ export interface TestReport {
   agents: { agentId: string; calls: number; tokens: number; shifts: number; shiftMinutes: number }[];
   calls: number;
   tokens: number;
-  /** Summaries the agent saved of its own work (self_handover). */
-  handovers: number;
-  /** Times work passed to another agent (handover, paired_handover). */
-  partnerHandoffs: number;
+  /** Times it kept going on a long task (KEPT_GOING_TYPES). */
+  keptGoing: number;
   firstEventAt: string | null;
   lastEventAt: string | null;
   /** First and last call: the agent's own activity, without later rests or watchdog handovers. */
@@ -85,14 +79,13 @@ export function buildTestReport(run: RunStatusResult, now: number = Date.now()):
     agents,
     calls: agents.reduce((n, a) => n + a.calls, 0),
     tokens: agents.reduce((n, a) => n + a.tokens, 0),
-    handovers: log.filter((e) => SUMMARY_TYPES.has(e.type)).length,
-    partnerHandoffs: log.filter((e) => PARTNER_TYPES.has(e.type)).length,
+    keptGoing: log.filter((e) => KEPT_GOING_TYPES.has(e.type)).length,
     firstEventAt: log[0]?.timestamp ?? null,
     lastEventAt: log.at(-1)?.timestamp ?? null,
     firstCallAt: log.find((e) => e.type === 'task_complete')?.timestamp ?? null,
     lastCallAt: log.findLast((e) => e.type === 'task_complete')?.timestamp ?? null,
-    // Calls and summaries in plain words; the internal task label and engine wording mean nothing to a reader.
-    events: log.map((e) => ({ at: e.timestamp, type: e.type, agentId: e.agentId, text: e.type === 'task_complete' ? 'made a call' : SUMMARY_TYPES.has(e.type) ? 'saved a summary of its work, keeping its context compact' : PARTNER_TYPES.has(e.type) ? 'passed its work to another agent' : eventModel(e as unknown as AuditEntry).said })),
+    // Calls and saved progress in plain words; the internal task label and engine wording mean nothing to a reader.
+    events: log.map((e) => ({ at: e.timestamp, type: e.type, agentId: e.agentId, text: e.type === 'task_complete' ? 'made a call' : KEPT_GOING_TYPES.has(e.type) ? 'saved its progress and kept going' : eventModel(e as unknown as AuditEntry).said })),
   };
 }
 
@@ -110,22 +103,31 @@ export function spanText(from: string | null, to: string | null): string {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+/**
+ * An engine reason in plain words, or null. Engine reasons are free text that
+ * can name internal steps, so only known forms reach the readable report; the
+ * raw text stays in the technical details.
+ */
+export function plainReason(detail: string | null): string | null {
+  const status = detail?.match(/^upstream (\d{3})$/i);
+  return status ? `the model provider answered with an error, status ${status[1]}` : null;
+}
+
 /** The plain-language paragraph: what each check found, and no more. */
 export function summaryText(r: TestReport): string {
   const names = r.agents.map((a) => a.agentId).join(', ') || 'Your agent';
   const [connect, handoff, resume] = r.checks;
-  const why = (c: { detail: string | null }) => (c.detail ? ` (${c.detail})` : '');
+  const why = (c: { detail: string | null }) => { const p = plainReason(c.detail); return p ? ` (${p})` : ''; };
   if (connect.result === 'failed') return `${names} reached WhiteRoom, but its calls didn’t come back normally${why(connect)}.`;
   if (connect.result !== 'passed') return `${names} hasn’t completed a call through WhiteRoom in this test yet, so nothing could be checked.`;
   const parts = [`${names} made ${r.calls} ${plural(r.calls, 'call')} through WhiteRoom${r.calls > 1 ? ` over ${spanText(r.firstCallAt, r.lastCallAt)}` : ''}, and they came back normally.`];
-  if (handoff.result === 'failed') return [...parts, `When its memory filled up, saving a summary didn’t complete${why(handoff)}.`].join(' ');
-  if (handoff.result !== 'passed') return [...parts, 'Its memory hadn’t filled up by the time of this report, so saving a summary wasn’t checked.'].join(' ');
-  if (r.handovers) parts.push(`When its memory filled up, WhiteRoom saved a summary ${times(r.handovers)}, keeping its context compact.`);
-  else if (!r.partnerHandoffs) parts.push('When its memory filled up, it kept its context.');
-  if (r.partnerHandoffs) parts.push(`It passed work to another agent ${times(r.partnerHandoffs)}${r.handovers ? '' : ', keeping its context compact'}.`);
-  parts.push(resume.result === 'passed' ? 'The agent carried on from where it left off.'
-    : resume.result === 'failed' ? `Its next call after the summary didn’t work${why(resume)}.`
-    : 'Its next call after the summary hadn’t arrived yet.');
+  if (handoff.result === 'failed') return [...parts, `When the task ran long, it lost its place${why(handoff)}.`].join(' ');
+  if (handoff.result !== 'passed') return [...parts, 'The task hadn’t run long by the time of this report, so that wasn’t checked.'].join(' ');
+  const kept = r.keptGoing;
+  parts.push(`When the task ran long, it kept going${kept > 1 ? ` (${times(kept)})` : ''}.`);
+  parts.push(resume.result === 'passed' ? 'Its next call went through normally.'
+    : resume.result === 'failed' ? `Its next call didn’t work${why(resume)}.`
+    : 'Its next call hadn’t arrived yet.');
   return parts.join(' ');
 }
 
@@ -157,7 +159,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px
 .ok{color:var(--ok)}.bad{color:var(--bad)}.wait{color:var(--wait)}
 details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:pre-wrap;word-break:break-all;margin:10px 0 0}
 </style></head><body><main>
-<p class="muted mono">WHITEROOM · SANDBOX TEST REPORT</p>
+<p class="muted">WhiteRoom · Sandbox test report</p>
 <h1 class="${r.passed === r.checks.length ? 'ok' : r.checks.some((c) => c.result === 'failed') ? 'bad' : 'wait'}">${esc(verdict)}</h1>
 <p class="muted">Test ${esc(r.testId)} · ${r.mode === 'demo' ? 'Demo run' : 'Your agent'} · Report made ${esc(when(r.generatedAt))} · Times below are ${esc(zoneName(r.generatedAt))}</p>
 
@@ -166,21 +168,19 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 <div class="stats">
 <div class="stat"><b>${r.calls}</b><span class="muted">calls</span></div>
 <div class="stat"><b>${fmtCount(r.tokens)}</b><span class="muted">tokens</span></div>
-<div class="stat"><b>${r.handovers}</b><span class="muted">${plural(r.handovers, 'summary', 'summaries')} saved</span></div>
-${r.partnerHandoffs ? `<div class="stat"><b>${r.partnerHandoffs}</b><span class="muted">passed to another agent</span></div>` : ''}
 <div class="stat"><b>${esc(r.calls > 1 ? spanText(r.firstCallAt, r.lastCallAt) : '—')}</b><span class="muted">first to last call</span></div>
 </div></div>
 
 <h2>The three checks</h2>
 <div class="card"><table><thead><tr><th></th><th>Check</th><th>What it means</th><th>Result</th></tr></thead><tbody>
-${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.detail && c.result === 'failed' ? `<br><span class="muted">${esc(c.detail)}</span>` : ''}</td></tr>`).join('\n')}
+${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.result === 'failed' && plainReason(c.detail) ? `<br><span class="muted">${esc(plainReason(c.detail))}</span>` : ''}</td></tr>`).join('\n')}
 </tbody></table></div>
 
 <h2>What happened</h2>
 <div class="card"><table><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>
 ${keyEvents.map((e) => `<tr><td class="mono">${esc(clock(e.at))}</td><td>${esc(e.agentId ? `${e.agentId} ${e.text}` : e.text)}</td></tr>`).join('\n') || '<tr><td colspan="2" class="muted">No events recorded.</td></tr>'}
 </tbody></table>
-<p class="muted">First and last call, plus every summary saved, every hand-off to another agent and every break. The full list is in the technical details below.</p></div>
+<p class="muted">The first and last call, and every other step. The full list is in the technical details below.</p></div>
 
 <p class="muted">These checks show your agent works through WhiteRoom. They don’t check that its answers are correct. Use them to help decide, not as a certificate.</p>
 

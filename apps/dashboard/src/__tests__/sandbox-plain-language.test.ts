@@ -14,22 +14,24 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 const { CheckPreview, checkGuidance, EVENT_LABELS, eventLabel, SANDBOX_STEPS, timerSpoken } = await import('@/components/sandbox/TestRunFlow');
 const { checkLabel, SANDBOX_CHECKS } = await import('@/lib/sandbox/report');
 
-const JARGON = /\bshifts?\b|hand(s|ed)? over|handover|\bwatch(es)?\b|policy chain/i;
+const JARGON = /\bshifts?\b|hand(s|ed)? over|handover|\bwatch(es)?\b|policy chain|\bsummar(y|ies)\b|\bmemory\b|\bnotes?\b|\bbreaks?\b|where it left off|passed work/i;
 
 describe('Sandbox plain language', () => {
   it('names the three checks the same way everywhere', () => {
     expect(SANDBOX_CHECKS.map((c) => checkLabel(c.id, 'engine name'))).toEqual([
       'Your agent connects',
-      'It keeps working when its memory fills up',
-      'It keeps working',
+      'It keeps going on long tasks',
+      'It carries on normally',
     ]);
   });
 
   it('shows the three checks on the start screen, without motion or buttons', () => {
     const html = renderToStaticMarkup(createElement(CheckPreview));
     for (const c of SANDBOX_CHECKS) expect(html).toContain(c.label);
-    expect(html).toContain('When your agent’s memory fills up, WhiteRoom saves a short summary so it can keep going.');
-    expect(html).toContain('You’ll get three pass/fail checks and a report you can download.');
+    expect(html).toContain('What the test checks');
+    expect(html).toContain('It doesn’t lose its place when a task runs long.');
+    expect(html).toContain('You get three pass/fail checks and a report to download.');
+    expect(html).not.toContain('WHAT THE TEST CHECKS');
     expect(html).not.toContain('<button');
     expect(html).not.toMatch(/Route|Evidence|aria-live/);
   });
@@ -40,38 +42,38 @@ describe('Sandbox plain language', () => {
       agents: [{ agentId: 'a', totalTasks: 1, watchMinutes: 2, currentWatch: { minutesWorked } }],
     }) as unknown as Parameters<typeof checkGuidance>[2];
     const waiting = checkGuidance('core.handoff', 'waiting', live(0.5), 'anthropic');
-    expect(waiting.detail).toBe('About 1:30 until WhiteRoom saves a summary.');
-    expect(waiting.action).toBe('Keep your agent making calls. The summary is saved on its own.');
-    expect(checkGuidance('core.handoff', 'waiting', live(2), 'anthropic').detail).toBe('Ready to save a summary. It happens on your agent’s next call.');
-    expect(checkGuidance('core.resume', 'waiting', live(2), 'anthropic').detail).toBe('Happens after the summary is saved.');
+    expect(waiting.detail).toBe('About 1:30 until the long-task check.');
+    expect(waiting.action).toBe('Keep your agent making calls. The check runs on its own.');
+    expect(checkGuidance('core.handoff', 'waiting', live(2), 'anthropic').detail).toBe('Ready for the long-task check. It happens on your agent’s next call.');
+    expect(checkGuidance('core.resume', 'waiting', live(2), 'anthropic').detail).toBe('Happens after the long-task check.');
     for (const g of [waiting, checkGuidance('core.resume', 'waiting', live(2), 'anthropic')]) {
       expect(`${g.detail} ${g.action ?? ''}`).not.toMatch(JARGON);
     }
   });
 
-  it('names hand-offs and summary problems for what they are', () => {
-    expect(eventLabel('handover_out')).toBe('Passed work to another agent');
-    expect(eventLabel('handover_in')).toBe('Took over work from another agent');
-    expect(eventLabel('handover_summary_failed')).toBe('Couldn’t write a summary');
-    expect(eventLabel('handover_something_failed')).toBe('Memory summary problem');
-    expect(eventLabel('handover_something_new')).toBe('Memory summary step');
+  it('names saved-progress steps and problems by what the reader sees', () => {
+    expect(eventLabel('handover_out')).toBe('Saved progress');
+    expect(eventLabel('handover_in')).toBe('Continued the work');
+    expect(eventLabel('handover_summary_failed')).toBe('Couldn’t save all progress');
+    expect(eventLabel('handover_something_failed')).toBe('Progress problem');
+    expect(eventLabel('handover_something_new')).toBe('Progress step');
   });
 
   it('says what the memory check found in plain words', () => {
     const run = { mode: 'connected' as const, auditLog: [{ id: 'h', timestamp: '2026-10-12T10:00:00Z', type: 'self_handover', agentId: 'a' }] };
-    expect(checkGuidance('core.handoff', 'observed', run, 'anthropic').detail).toBe('Saved a summary once and kept its context.');
+    expect(checkGuidance('core.handoff', 'observed', run, 'anthropic').detail).toBe('Kept going once as the task ran long.');
     // Passed with no matching log entry (e.g. a truncated log): no invented count.
-    expect(checkGuidance('core.handoff', 'observed', { mode: 'connected' as const, auditLog: [] }, 'anthropic').detail).toBe('Kept its context.');
-    expect(checkGuidance('core.resume', 'observed', run, 'anthropic').detail).toBe('Its next call after the summary worked.');
+    expect(checkGuidance('core.handoff', 'observed', { mode: 'connected' as const, auditLog: [] }, 'anthropic').detail).toBe('Kept its place as the task ran long.');
+    expect(checkGuidance('core.resume', 'observed', run, 'anthropic').detail).toBe('Its next call went through normally.');
   });
 
-  it('words passing work to another agent apart from saving a summary', () => {
+  it('counts every time it kept going, without saying how', () => {
     const at = '2026-10-12T10:00:00Z';
     const log = (...types: string[]) => ({ mode: 'connected' as const, auditLog: types.map((type, i) => ({ id: String(i), timestamp: at, type, agentId: 'a' })) });
     expect(checkGuidance('core.handoff', 'observed', log('self_handover', 'self_handover', 'paired_handover'), 'anthropic').detail)
-      .toBe('Saved a summary 2 times and kept its context. Passed work to another agent once.');
+      .toBe('Kept going 3 times as the task ran long.');
     expect(checkGuidance('core.handoff', 'observed', log('handover', 'paired_handover'), 'anthropic').detail)
-      .toBe('Kept its context. Passed work to another agent 2 times.');
+      .toBe('Kept going 2 times as the task ran long.');
   });
 
   it('labels Activity events without engine jargon', () => {
@@ -79,7 +81,7 @@ describe('Sandbox plain language', () => {
     expect(eventLabel('policy_enforcement_verified')).toBe('Control applied');
     expect(eventLabel('policy_decision')).toBe('Control check');
     expect(eventLabel('demo_activity')).toBe('Demo step');
-    expect(eventLabel('paired_handover')).toBe('Passed work to another agent');
+    expect(eventLabel('paired_handover')).toBe('Saved progress and kept going');
     expect(eventLabel('watch_start')).toBe('Started work');
     for (const label of Object.values(EVENT_LABELS)) expect(label).not.toMatch(JARGON);
     // Engine types with no label of their own still read as plain words.
@@ -100,13 +102,14 @@ describe('Sandbox plain language', () => {
   });
 
   it.each(['../components/sandbox/TestRunFlow.tsx', '../components/sandbox/CloudProviderParts.tsx', '../components/sandbox/PastTests.tsx'])(
-    '%s has no shift or handover wording in its copy', (rel) => {
+    '%s has no shift, handover, summary or memory wording in its copy', (rel) => {
       const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
       const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\/\/[^'"`\n]*$/gm, '');
       const strings = code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? [];
       const jsxText = code.match(/(?<=[>}])[^<>{}\n]+(?=[<{])/g) ?? [];
       // A lone identifier in quotes ('handover', 'self_handover') is an engine type, not copy.
-      const copy = [...strings, ...jsxText].filter((t) => !/^['"`][a-z_.]+['"`]$/.test(t.trim()));
+      // Template holes (${s.summary}) are code, not words.
+      const copy = [...strings, ...jsxText].map((t) => t.replace(/\$\{[^}]*\}/g, '')).filter((t) => !/^['"`][a-z_.]+['"`]$/.test(t.trim()));
       expect(copy.filter((t) => JARGON.test(t))).toEqual([]);
     });
 });

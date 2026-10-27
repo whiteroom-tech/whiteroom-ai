@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Panel, SegmentedControl, Toggle, FONT_MONO } from '@whiteroom/ui';
+import { Button, SegmentedControl, Toggle } from '@whiteroom/ui';
+import { SettingsCard } from '@/components/settings/SettingsCard';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { LoadFailed } from '@/components/citadel/States';
 import { dataSettingsGet, dataSettingsSet, type DataSettings } from '@/lib/whiteroom/client';
@@ -15,8 +16,8 @@ type Pending = { patch: Partial<DataSettings>; title: string; body: string; conf
 
 const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, 'patch'>> = {
   notesOff: {
-    title: 'Stop saving progress notes?',
-    body: 'Notes stay in memory only. After a restart, agents start their next run without them. Saved notes are deleted now.',
+    title: 'Stop saving agents’ progress?',
+    body: 'Progress is kept in memory only, and what’s saved now is deleted. After a restart, agents start their next run from the beginning.',
     confirm: 'Stop saving', cancel: 'Keep saving', tone: 'danger',
   },
   feedOff: {
@@ -25,8 +26,8 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
     confirm: 'Turn off live feed', cancel: 'Keep live feed', tone: 'danger',
   },
   removePersonal: {
-    title: 'Remove personal details from notes and the live feed?',
-    body: 'Email addresses and phone numbers are removed from progress notes and the live feed, including what’s already saved. After a restart, agents resume without them. Lead, sales and support agents may not finish their tasks.',
+    title: 'Remove personal details from saved progress and the live feed?',
+    body: 'Email addresses and phone numbers are removed from saved progress and the live feed, including what’s already saved. Lead, sales and support agents may not finish their tasks.',
     confirm: 'Remove them', cancel: 'Keep them', tone: 'neutral',
   },
 };
@@ -38,9 +39,12 @@ const CONFIRM: Record<'notesOff' | 'feedOff' | 'removePersonal', Omit<Pending, '
  * Hidden when no fleet is signed in or the engine doesn't have the setting;
  * a failed load says so, with Try again.
  */
-export function DataPrivacySection() {
-  const { fleetId, status: authStatus } = useFleetAuth();
-  const [settings, setSettings] = useState<DataSettings | null>(null);
+export function DataPrivacySection({ preview }: { preview?: DataSettings } = {}) {
+  const auth = useFleetAuth();
+  // /dev/settings: sample settings, nothing fetched or saved.
+  const fleetId = preview ? 'preview' : auth.fleetId;
+  const authStatus = auth.status;
+  const [settings, setSettings] = useState<DataSettings | null>(preview ?? null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -61,6 +65,7 @@ export function DataPrivacySection() {
   }, []);
 
   useEffect(() => {
+    if (preview) return;
     // Another fleet starts clean: no dialog, note or retry for the last one carries over.
     setSettings(null);
     setLoadFailed(false);
@@ -69,20 +74,21 @@ export function DataPrivacySection() {
     setRetry(null);
     if (authStatus !== 'authenticated' || !fleetId) return;
     void load(fleetId);
-  }, [fleetId, authStatus, load]);
+  }, [fleetId, authStatus, load, preview]);
 
   if (!fleetId) return null;
   if (!settings) {
     if (!loadFailed) return null;
     const fleet = fleetId;
     return (
-      <Panel title="Data and privacy">
+      <SettingsCard id="data-privacy" title="Data and privacy">
         <LoadFailed what="data and privacy settings" busy={reloading} onRetry={() => { setReloading(true); void load(fleet).finally(() => setReloading(false)); }} />
-      </Panel>
+      </SettingsCard>
     );
   }
 
   async function save(patch: Partial<DataSettings>) {
+    if (preview) { setPending(null); setSettings((prev) => prev && { ...prev, ...patch }); return; }
     const fleet = fleetId!;
     setBusy(true);
     setNote(null);
@@ -112,8 +118,8 @@ export function DataPrivacySection() {
       const hours = patch.handover_max_age_hours!;
       setPending({
         patch,
-        title: `Keep notes for ${ageLabel(hours)}?`,
-        body: `Saved notes older than ${ageLabel(hours)} are deleted now. After a restart, agents idle longer than that resume without them.`,
+        title: `Keep saved progress for ${ageLabel(hours)}?`,
+        body: `Saved progress older than ${ageLabel(hours)} is deleted now. After a restart, agents idle longer than that start from the beginning.`,
         confirm: `Change to ${ageLabel(hours)}`, cancel: 'Cancel', tone: 'neutral',
       });
     } else if (kind) setPending({ patch, ...CONFIRM[kind] });
@@ -121,35 +127,31 @@ export function DataPrivacySection() {
   };
 
   return (
-    <Panel title="Data and privacy">
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px', maxWidth: '62ch' }}>
-        What WhiteRoom keeps for fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>, and for how long. API keys, passwords and other credentials are always removed from progress notes and the live feed before they’re saved.
-      </p>
-
+    <SettingsCard id="data-privacy" title="Data and privacy" sub="What WhiteRoom keeps for this fleet, and for how long. Credentials are always removed first.">
       <Row
-        title="Save progress notes"
+        title="Save agents’ progress"
         text={settings.handover_persistence
-          ? 'Lets your agents continue where they were after a restart. Notes are encrypted.'
-          : 'Notes stay in memory only. After a restart, agents start their next run without them.'}
-        control={<Toggle label="Save progress notes" checked={settings.handover_persistence} disabled={busy}
+          ? 'Lets your agents keep their place after a restart. Encrypted.'
+          : 'Progress is kept in memory only. After a restart, agents start their next run from the beginning.'}
+        control={<Toggle label="Save agents’ progress" checked={settings.handover_persistence} disabled={busy}
           onChange={(on) => change({ handover_persistence: on })} />}
       >
         {settings.handover_persistence && settings.handover_max_age_hours != null && (
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>Keep notes for</span>
-            <SegmentedControl label="Keep notes for" value={MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) ? String(settings.handover_max_age_hours) : null}
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>Keep it for</span>
+            <SegmentedControl label="Keep saved progress for" value={MAX_AGE_OPTIONS.some((o) => o.hours === settings.handover_max_age_hours) ? String(settings.handover_max_age_hours) : null}
               options={MAX_AGE_OPTIONS.map((o) => ({ value: String(o.hours), label: o.label }))}
               onChange={(v) => {
                 const hours = Number(v);
                 if (busy || hours === settings.handover_max_age_hours) return;
                 change({ handover_max_age_hours: hours });
               }} />
-            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Each note is deleted that long after it&rsquo;s written.</span>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Deleted that long after it&rsquo;s saved.</span>
           </div>
         )}
         {carriesOnlyInLabeledRuns(settings) && (
           <p style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-            Notes carry over only between calls with the same run label. <a href="https://whiteroom.tech/docs.html#runs" target="_blank" rel="noopener noreferrer">How to label runs</a>
+            Progress is kept only between calls with the same run label. <a href="https://whiteroom.tech/docs.html#runs" target="_blank" rel="noopener noreferrer">How to label runs</a>
           </p>
         )}
       </Row>
@@ -165,9 +167,9 @@ export function DataPrivacySection() {
       />
       <Row
         last
-        title="Personal details in notes and the live feed"
-        text="Email addresses and phone numbers your agents work with (names aren’t detected). Keep them if your agents need them to finish the job, like lead or support agents."
-        control={<SegmentedControl label="Personal details in notes and the live feed" value={settings.personal_data}
+        title="Personal details"
+        text="Email addresses and phone numbers in saved progress and the live feed (names aren’t detected). Keep them if your agents need them, like lead or support agents."
+        control={<SegmentedControl label="Personal details" value={settings.personal_data}
           options={[{ value: 'keep', label: 'Keep' }, { value: 'exclude', label: 'Remove' }]}
           onChange={(v) => {
             if (busy || v === settings.personal_data) return;
@@ -197,13 +199,13 @@ export function DataPrivacySection() {
         onConfirm={() => { if (pending) void save(pending.patch); }}
         onCancel={() => setPending(null)}
       />
-    </Panel>
+    </SettingsCard>
   );
 }
 
 /** The engine refuses to turn the live feed on while personal details are removed (P0 #9). */
 export const liveFeedLocked = (s: DataSettings) => !s.content_capture && s.personal_data === 'exclude';
-/** Notes carry from one job to the next only within a labeled run (P0 #3a). */
+/** Saved progress carries from one job to the next only within a labeled run (P0 #3a). */
 export const carriesOnlyInLabeledRuns = (s: DataSettings) => s.handover_carry_forward_effective === 'explicit_run';
 
 function Row({ title, text, control, last, children }: { title: string; text: string; control: React.ReactNode; last?: boolean; children?: React.ReactNode }) {

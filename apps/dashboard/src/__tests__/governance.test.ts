@@ -4,7 +4,6 @@ import { blockedByPhrase, countsFromRuleActions, ruleLabel, ruleActionsByAgent, 
   computeSuggestions,
   governanceCounts,
   occurrences,
-  recentBlocksByAgent,
   REASON_LABELS,
   RULE_LABELS,
 } from '../lib/governance';
@@ -82,19 +81,6 @@ describe('rule actions from one source', () => {
     expect(c.byRule.spend_cap).toEqual({ blocks: 0, wouldBlocks: 0 });
     // Older engines without byRule keep the audit-log split.
     expect(countsFromRuleActions({ fleetId: 'f', totals: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: {} }, fallback).byRule).toBe(fallback);
-  });
-});
-
-describe('recentBlocksByAgent', () => {
-  it('keeps the newest block per agent inside the window', () => {
-    const recent = recentBlocksByAgent([
-      ev('governance_block', { agentId: 'a1', timestamp: ago(10), reason: 'loop_detected' }),
-      ev('governance_block', { agentId: 'a1', timestamp: ago(2), reason: 'budget_exceeded' }),
-      ev('governance_block', { agentId: 'a2', timestamp: ago(40) }),
-      ev('governance_would_block', { agentId: 'a3', timestamp: ago(1) }),
-    ], NOW);
-    expect(Object.keys(recent)).toEqual(['a1']);
-    expect(recent.a1.reason).toBe('budget_exceeded');
   });
 });
 

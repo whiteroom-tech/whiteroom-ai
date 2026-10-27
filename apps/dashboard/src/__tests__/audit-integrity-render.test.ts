@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › Audit integrity in a DOM: the coverage headline, and a check's
+// Settings › Audit trail in a DOM: the coverage headline, and a check's
 // note is green only when every event checked out.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';

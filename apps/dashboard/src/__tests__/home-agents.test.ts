@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Window } from 'happy-dom';
+
+const textOf = (html: string) => { const el = new Window().document.createElement('div'); el.innerHTML = html; return el.textContent ?? ''; };
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
@@ -57,8 +60,8 @@ describe('Home agents: one list', () => {
 describe('rule activity, short', () => {
   it('fits a card line, whatever the tally holds', async () => {
     const { tallyShort } = await import('@/lib/governance');
-    expect(tallyShort(tally({ blocks: 2, wouldBlocks: 47 }))).toBe('2 blocked · 47 in Record only');
-    expect(tallyShort(tally({ wouldBlocks: 3 }))).toBe('3 in Record only');
+    expect(tallyShort(tally({ blocks: 2, wouldBlocks: 47 }))).toBe('2 blocked · 47 would have acted');
+    expect(tallyShort(tally({ wouldBlocks: 3 }))).toBe('3 would have acted');
     expect(tallyShort({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 1, toldYou: 4 })).toBe('1 stopped · 2 paused · 1 blocked · 4 alerted you');
     expect(tallyShort(tally({}))).toBe('');
   });
@@ -66,13 +69,13 @@ describe('rule activity, short', () => {
 
 describe('Home view', () => {
   const view = (props: Record<string, unknown>) => renderToStaticMarkup(createElement(HomeView, {
-    report: REPORT(2), agents: [agent('lead-agent', 'idle'), agent('a-very-long-agent-name-that-must-not-be-cut-off', 'idle')], entries: [], today: { calls: 0, costUsd: 0 }, failing: false, view: null, onViewChange: () => {}, liveFeed: null, ...props,
+    report: REPORT(2), agents: [agent('lead-agent', 'idle'), agent('a-very-long-agent-name-that-must-not-be-cut-off', 'idle')], changes: [], today: { calls: 0, costUsd: 0 }, failing: false, view: null, onViewChange: () => {}, liveFeed: null, ...props,
   } as never));
 
   it('says the day starts at the viewer’s midnight, and leads a quiet day with the week', () => {
     const html = view({ week: { agents: {}, calls: 1234, costUsd: 3.17, partial: false, rules: tally({ wouldBlocks: 120 }) } });
     expect(html).toMatch(/Today.*since 12:00 am/);
-    expect(html).toContain('Quiet so far today. This week: 1,234 model calls, $3.17 spent; rules: 120 would have acted (Record only).');
+    expect(textOf(html)).toContain('Quiet so far today. This week: $3.17 spent, rules would have acted on 120 calls. View runs');
     // A lower bound says so.
     expect(view({ week: { agents: {}, calls: 3, costUsd: 1, partial: true, rules: null } })).toContain('$1.00+ spent');
   });
@@ -80,7 +83,7 @@ describe('Home view', () => {
   it('shows today’s rule activity, linking to those runs', () => {
     const html = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: tally({ blocks: 2, wouldBlocks: 3 }) });
     expect(html).toContain('Rule activity');
-    expect(html).toContain('2 blocked · 3 in Record only');
+    expect(html).toContain('2 blocked · 3 would have acted');
     expect(html).toContain('/runs?show=rules&amp;day=');
     expect(html).not.toContain('Quiet so far today');
     expect(html).not.toContain('Smaller context');
@@ -90,30 +93,32 @@ describe('Home view', () => {
     const unknown = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: null });
     expect(unknown).toContain('not available yet');
     const none = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: tally({}) });
-    expect(none).toContain('none today');
+    expect(none).toContain('0 blocked · 0 would have acted');
     expect(none).not.toContain('/runs?show=rules');
   });
 
   it('never cuts a name off, and shows each agent’s last 7 days', () => {
     const html = view({ week: { agents: { 'lead-agent': { used: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).toContain('a-very-long-agent-name-that-must-not-be-cut-off');
-    expect(html).toContain('overflow-wrap:anywhere');
-    expect(html).toContain('Last 7 days: 120K tokens · saved $1.20 · 2 blocked');
+    expect(html).toContain('class="wr-agent-card__name"');
+    expect(textOf(html)).toContain('120K tokens · 40K saved · 2 blocked');
+    // The dollar estimate is kept as the saved figure's tooltip.
+    expect(html).toContain('title="40K tokens saved, about $1.20 at this agent&#x27;s prices (est.)"');
   });
 
   it('opens on the table for a big fleet unless the viewer picked cards, with search and sort', () => {
     const many = Array.from({ length: TABLE_FROM + 1 }, (_, i) => agent(`agent-${i}`, 'idle'));
     const big = view({ report: REPORT(many.length), agents: many });
-    expect(big).toContain('role="grid"');
+    expect(big).toContain('class="wr-home-table"');
     expect(big).toContain('aria-label="Find an agent"');
     expect(big).toContain('Agents that need attention are listed first.');
-    expect(view({ report: REPORT(many.length), agents: many, view: 'cards' })).not.toContain('role="grid"');
+    expect(view({ report: REPORT(many.length), agents: many, view: 'cards' })).not.toContain('class="wr-home-table"');
     expect(view({})).not.toContain('aria-label="Find an agent"');
   });
 
   it('shows – for tokens it couldn’t read, never 0', () => {
     const html = view({ view: 'table', week: { agents: { 'lead-agent': { rules: tally({ blocks: 1 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
-    expect(html).not.toMatch(/Last 7 days: 0 tokens/);
+    expect(html).not.toMatch(/>0 tokens/);
     expect(html).toContain('1 blocked');
   });
 });

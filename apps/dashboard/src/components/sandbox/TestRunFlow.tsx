@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { PageHeader } from '@/components/citadel/PageChrome';
+import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
@@ -16,6 +16,7 @@ import { buildTestReport, checkLabel, memoryCheckDetail, reportSource, SANDBOX_C
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
+import { SettingsCard } from '@/components/settings/SettingsCard';
 import { PracticeCard, type PracticeEntry, usePracticeEntry } from './practice/PracticeCard';
 import { PRACTICE_SUMMARY } from '@/lib/sandbox/practice/model';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
@@ -48,23 +49,23 @@ export const EVENT_LABELS: Record<string, string> = {
   fleet_created: 'Test started',
   watch_start: 'Started work',
   task_complete: 'Call completed',
-  handover_begin: 'Memory full, saving a summary',
-  self_handover: 'Saved a summary and kept going',
-  handover: 'Passed work to another agent',
-  paired_handover: 'Passed work to another agent',
-  handover_out: 'Passed work to another agent',
-  handover_in: 'Took over work from another agent',
-  handover_deferred: 'Summary waiting for the next call',
-  handover_summary_failed: 'Couldn’t write a summary',
-  handover_delivery_abandoned: 'Summary not delivered',
-  handover_chain_abandoned: 'Stopped passing work on',
-  handover_unrecorded: 'Summary not recorded',
+  handover_begin: 'Saving progress',
+  self_handover: 'Saved progress and kept going',
+  handover: 'Saved progress and kept going',
+  paired_handover: 'Saved progress and kept going',
+  handover_out: 'Saved progress',
+  handover_in: 'Continued the work',
+  handover_deferred: 'Waiting for the next call',
+  handover_summary_failed: 'Couldn’t save all progress',
+  handover_delivery_abandoned: 'Progress not sent in full',
+  handover_chain_abandoned: 'Couldn’t get saved progress back',
+  handover_unrecorded: 'Progress saved, recorded later',
   handover_loop_detected: 'Repeating loop spotted',
-  handover_limit_lowered: 'Memory limit lowered',
-  handover_results_truncated: 'Long results shortened in the summary',
-  handover_notes_resealed: 'Summary notes resealed',
+  handover_limit_lowered: 'Settings adjusted',
+  handover_results_truncated: 'Long results shortened',
+  handover_notes_resealed: 'Saved progress re-secured',
   pair: 'Teamed up with another agent',
-  alarm: 'Short break ended',
+  alarm: 'Started again',
   agent_paused: 'Agent paused',
   agent_resumed: 'Agent resumed',
   deregister: 'Agent disconnected',
@@ -85,22 +86,23 @@ export const EVENT_LABELS: Record<string, string> = {
 /**
  * The demo walkthrough: one step per check, and what each check says once the
  * demo has passed it (`detail`; the first check counts calls like a live test).
- * The engine's demo runs two agents: demo-agent finishes a task, then passes
- * its work with a short summary to demo-agent-b, which finishes the next one.
+ * The engine's demo runs two agents: demo-agent finishes a task, then its
+ * work goes on in demo-agent-b, which finishes the next one. The copy says
+ * what the reader sees, never how WhiteRoom does it.
  * Its script also runs a safety-rule test, which isn't one of these checks, so
  * it isn't shown.
  */
 export const DEMO_STORY: { title: string; text: string; detail?: string }[] = [
   { title: 'Your agent connects', text: 'A demo agent sends its calls through WhiteRoom and finishes a task. Nothing about its calls changes.' },
   {
-    title: 'It keeps working when its memory fills up',
-    text: 'Its memory fills up. WhiteRoom saves a short summary and passes the work to a second demo agent, which keeps going.',
-    detail: 'WhiteRoom saved a short summary and passed the work to a second demo agent.',
+    title: SANDBOX_CHECKS[1].label,
+    text: 'The demo task runs long, and the work keeps going without losing its place.',
+    detail: 'The work kept going without losing its place.',
   },
   {
-    title: 'It keeps working',
-    text: 'The second demo agent starts from the summary instead of the full history, and finishes the next task.',
-    detail: 'The second demo agent continued from the summary and finished the next task.',
+    title: SANDBOX_CHECKS[2].label,
+    text: 'The next call goes through normally and finishes the next task.',
+    detail: 'The next call went through normally and finished the next task.',
   },
 ];
 
@@ -108,7 +110,7 @@ export const DEMO_STORY: { title: string; text: string; detail?: string }[] = [
 export function eventLabel(type: string): string {
   const known = EVENT_LABELS[type];
   if (known) return known;
-  if (/handover|handoff/.test(type)) return /fail|abandon|unrecorded|error/.test(type) ? 'Memory summary problem' : 'Memory summary step';
+  if (/handover|handoff/.test(type)) return /fail|abandon|unrecorded|error/.test(type) ? 'Progress problem' : 'Progress step';
   if (/policy/.test(type)) return 'Control step';
   if (/watch/.test(type)) return 'Work step';
   return type.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
@@ -151,14 +153,14 @@ export const FIRST_VISIT: { provider: SandboxProvider; endpoints: CloudEndpoints
 /** Another account signed in on this browser (not a first sign-in or a sign-out): its stored choices aren't theirs. */
 export const accountSwitched = (previous: string | undefined, next: string | undefined) => !!previous && !!next && previous !== next;
 
-/** The Start form's key field: the agent's API key, what was pasted, and where to find one. */
+/** The Start form's key field: the agent's provider key, what was pasted, and where to find one. */
 export function KeyField({ credential, showKey, provider, onChange, onToggleShow }: {
   credential: string; showKey: boolean; provider: DirectProvider; onChange: (value: string) => void; onToggleShow: () => void;
 }) {
   const keyKind = detectKey(credential);
   return (
     <div className={s.formGroup}>
-      <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s API key</label>
+      <label className={s.formLabel} htmlFor="sandbox-key">Your agent’s provider key</label>
       <div className={s.keyWrap}>
         <input id="sandbox-key" className={s.formInput} type={showKey ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={credential} onChange={e => onChange(e.target.value)} placeholder="sk-ant-…, sk-…, or wr_…" aria-describedby={keyKind === 'empty' ? 'sandbox-key-hint sandbox-key-token' : 'sandbox-key-hint'} />
         <button type="button" className={s.keyShow} onClick={onToggleShow}>{showKey ? 'Hide' : 'Show'}</button>
@@ -167,11 +169,11 @@ export function KeyField({ credential, showKey, provider, onChange, onToggleShow
         {keyKind === 'empty' && `Use the same key your agent uses, so we can match its calls to this test. ${KEY_HELP[provider]}`}
         {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
         {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
-        {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
-        {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s a WhiteRoom account key. Paste your Anthropic or OpenAI key, or a fleet token (wr_…).</span>}
-        {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
+        {keyKind === 'fleet' && 'An older WhiteRoom fleet key (wr_…). Pick Anthropic or OpenAI above for your agent’s provider.'}
+        {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s your WhiteRoom fleet key. Paste your agent’s Anthropic or OpenAI key instead.</span>}
+        {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or an older WhiteRoom fleet key (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
       </p>
-      {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have a WhiteRoom fleet token? Paste it instead.</p>}
+      {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have an older WhiteRoom fleet key (wr_…)? Paste it instead.</p>}
     </div>
   );
 }
@@ -285,7 +287,7 @@ export function checkGuidance(controlId: string, status: string | undefined, run
     if (controlId === 'core.handoff') {
       return { detail: memoryCheckDetail(run?.auditLog ?? []) };
     }
-    return { detail: 'Its next call after the summary worked.' };
+    return { detail: 'Its next call went through normally.' };
   }
   if (run?.mode === 'demo') return { detail: 'The demo fills this in a moment.' };
   if (controlId === 'core.connect') {
@@ -299,15 +301,15 @@ export function checkGuidance(controlId: string, status: string | undefined, run
     const worked = agent.currentWatch?.minutesWorked ?? 0;
     const left = Math.max(0, (total - worked) * 60);
     return {
-      detail: left > 0 ? `About ${formatCountdown(left)} until WhiteRoom saves a summary.` : 'Ready to save a summary. It happens on your agent’s next call.',
-      action: 'Keep your agent making calls. The summary is saved on its own.',
+      detail: left > 0 ? `About ${formatCountdown(left)} until the long-task check.` : 'Ready for the long-task check. It happens on your agent’s next call.',
+      action: 'Keep your agent making calls. The check runs on its own.',
       progress: { current: Math.min(worked, total), total, label: `${formatCountdown(Math.min(worked, total) * 60)} of ${total}:00` },
     };
   }
   const handoff = run?.controls?.find(c => c.controlId === 'core.handoff');
   // Demos returned above, so only live evidence matters here.
   const handoffDone = !!handoff && isObserved(run, handoff);
-  if (!handoffDone) return { detail: 'Happens after the summary is saved.' };
+  if (!handoffDone) return { detail: 'Happens after the long-task check.' };
   return { detail: 'Waiting for your agent’s next call.', action: 'Keep your agent running for one more call.' };
 }
 
@@ -342,24 +344,23 @@ export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stag
   return opts.stage >= 3 ? 2 : 1;
 }
 
+/** The line under the Sandbox header. */
+export const SANDBOX_LEAD = 'Test an agent before it goes live. Test runs never count toward your fleet’s numbers.';
+
 /** Start screen: the three checks the results will show, by the same names. */
 export function CheckPreview() {
   return (
-    <section className={s.preview} aria-labelledby="sandbox-checks-preview">
-      <h3 id="sandbox-checks-preview" className={s.previewHeader}>WHAT THE TEST CHECKS</h3>
+    <SettingsCard id="sandbox-checks-preview" title="What the test checks" level={3}>
       <ol className={s.previewList}>
-        {SANDBOX_CHECKS.map((c, i) => (
+        {SANDBOX_CHECKS.map((c) => (
           <li key={c.id} className={s.previewItem}>
-            <span className={s.previewNum} aria-hidden="true">{i + 1}</span>
-            <span>
-              <span className={s.previewName}>{c.label}</span>
-              <span className={s.previewText}>{c.meaning}</span>
-            </span>
+            <span className={s.previewName}>{c.label}</span>
+            <span className={s.previewText}>{c.meaning}</span>
           </li>
         ))}
       </ol>
-      <p className={s.previewDetail}>You’ll get three pass/fail checks and a report you can download.</p>
-    </section>
+      <p className={s.previewDetail}>You get three pass/fail checks and a report to download.</p>
+    </SettingsCard>
   );
 }
 
@@ -990,7 +991,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     <>
     <PageHeader title="Sandbox" />
     <main className={s.content}>
-      <div className={s.eyebrow}>WHITEROOM / TEST RUNS</div>
       <h2 className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
       <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
         <p className={s.pageSub}>Sandbox uses your WhiteRoom account sign-in, so sign in to create and manage your test environments.</p>
@@ -1065,17 +1065,16 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   return <>
     {/* ── Topbar (workspace only) ── */}
     {phase === 'workspace' && run && (
-      <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'DEMO' : 'LIVE TEST'}</span>}>
+      <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'Demo' : 'Live test'}</span>}>
         <TestTimer seconds={displaySeconds} expired={!!expired} />
       </PageHeader>
     )}
 
     {/* ── Header (start/setup only) ── */}
-    {phase !== 'workspace' && (
-      <PageHeader title="Sandbox" badge={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Test runs never count toward your fleet&rsquo;s numbers.</span>} />
-    )}
+    {phase !== 'workspace' && <PageHeader title="Sandbox" />}
 
     <main className={s.content}>
+      {phase !== 'workspace' && <div className="wr-setup-leadwrap" style={{ marginBottom: 8 }}><PageLead>{SANDBOX_LEAD}</PageLead></div>}
       <div className={s.layout}>
       <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
       <div className={s.body}>
@@ -1084,25 +1083,23 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
       {booting ? <p>Checking for an existing test…</p> : phase === 'start' ? <>
         {/* ═══ START ═══ */}
-        <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
         <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
-        <p className={s.pageSub}>Check that your agent works through WhiteRoom before you use it for real. It takes about 3 minutes and doesn’t touch your live fleet.</p>
+        <p className={s.pageSub}>Check your agent works through WhiteRoom before you use it for real. About 3 minutes; it doesn’t touch your live fleet.</p>
 
         <CheckPreview />
 
         <div className={s.btnRow}>
           <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => setPhase('setup')}>Test my agent →</button>
-          <button className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => void begin('demo')}>See a demo first</button>
+          <button className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => void begin('demo')}>See a demo first</button>
         </div>
-        <p className={s.small} style={{ marginTop: 10 }}>You’ll need the API key your agent uses. The demo needs nothing.</p>
+        <p className={s.small} style={{ marginTop: 10 }}>You’ll need the provider key your agent uses. The demo needs nothing.</p>
         <PracticeCard entry={practice} />
       </> : phase === 'setup' ? <>
         {/* ═══ SETUP ═══ */}
-        <div className={s.eyebrow}>WHITEROOM / SANDBOX</div>
         <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Start your test</h2>
         <p className={s.pageSub}>{cloud
           ? 'Tell us where your agent’s model runs. Your agent keeps its own key; this test gives it a URL to call through.'
-          : 'Paste the API key your agent uses. We only use it to link this test to your agent’s calls; the key itself is never stored.'}</p>
+          : 'Paste the provider key your agent uses. We only use it to link this test to your agent’s calls; the key itself is never stored.'}</p>
         <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 480 }}>
           <ProviderChoices value={provider} unsupported={unsupported} disabled={busy} followsKey={!cloud && (keyKind === 'anthropic' || keyKind === 'openai')} lastUsed={lastUsed} onPick={pickProvider} />
           {cloud ? (
@@ -1148,7 +1145,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {/* ── Setup tab ── */}
         <WorkspacePanel tab="setup" active={wsTab === 'setup'}>
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your agent’s API key stays where it is.</p>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your agent’s provider key stays where it is.</p>
           <div className={s.selectRow}>
             {isDemo ? <>
               <button className={`${s.selectPill} ${directProvider === 'anthropic' ? s.selectPillOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
@@ -1206,7 +1203,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Nothing happening?</summary>
               <ul style={{ paddingLeft: 18, marginTop: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', lineHeight: 1.7 }}>
                 {liveCloud ? <CloudTroubleshooting provider={liveCloud} endpointHost={run?.endpointHost} /> : <>
-                <li>Make sure your agent uses the same API key you pasted to start this test.</li>
+                <li>Make sure your agent uses the same provider key you pasted to start this test.</li>
                 <li>Every call needs both headers from the code above: <code>x-whiteroom-fleet</code> and <code>x-whiteroom-agent</code>.</li>
                 <li>OpenAI agents must use the <code>/v1</code> URL shown above.</li>
                 </>}
@@ -1220,7 +1217,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         <WorkspacePanel tab="results" active={wsTab === 'results'}>
           {isDemo && (
             <div className={s.card} style={{ marginBottom: 16 }}>
-              <div className={s.eyebrow}>DEMO WALKTHROUGH</div>
               <h2 style={{ fontFamily: FONT_DISPLAY }}>{DEMO_STORY[scene].title}</h2>
               <p>{DEMO_STORY[scene].text}</p>
               <div className={s.btnRow}>
