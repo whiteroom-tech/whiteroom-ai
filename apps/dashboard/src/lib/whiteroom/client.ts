@@ -36,6 +36,7 @@ import type {
   PerformanceEvidenceResult,
   PerformanceFeedbackResult,
   PerformanceIndexResult,
+  AgentPerformanceResult,
   PerformanceLiveFeedResult,
   PaginatedRecommendationsResult,
   RecommendationGetResult,
@@ -465,6 +466,10 @@ export async function resumeAgent(fleetId: string, agentId: string, key?: string
 
 export function performanceIndex(fleetId: string, hoursBack?: number, key?: string): Promise<PerformanceIndexResult> {
   return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, hours_back: hoursBack ?? 24 }, key);
+}
+
+export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
+  return apiCall<AgentPerformanceResult>({ action: 'performance_agent', fleet_id: fleetId, agent_id: agentId, hours_back: hoursBack ?? 24 }, key);
 }
 
 export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {

@@ -302,6 +302,16 @@ export interface HourlyDataPoint {
   outputTokens: number;
 }
 
+/** One agent's calls and spend over a window (engine performance_agent): Controls reads its daily spend and call count. */
+export interface AgentPerformanceResult {
+  fleetId: string;
+  agentId: string;
+  period: { start: string; end: string };
+  hourly: HourlyDataPoint[];
+  totals: { calls: number; costMicros: number };
+  error?: string;
+}
+
 export interface AgentScore {
   agentId: string;
   calls: number;
