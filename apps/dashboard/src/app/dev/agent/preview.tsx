@@ -10,7 +10,7 @@ import type { AgentWeek } from '@/lib/home-agents';
 const iso = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString();
 const ENTRIES: AuditEntry[] = [
   { id: '1', type: 'task_complete', timestamp: iso(1), agentId: 'lead-agent', taskName: 'Policy draft: Meridian Foods', model: 'claude-haiku-4-5' },
-    { id: '3', type: 'watch_start', timestamp: iso(4), agentId: 'lead-agent' },
+  { id: '3', type: 'watch_start', timestamp: iso(4), agentId: 'lead-agent' },
   { id: '4', type: 'governance_block', timestamp: iso(9), agentId: 'lead-agent', ruleType: 'spend_cap', reason: 'budget_exceeded' },
   { id: '5', type: 'task_complete', timestamp: iso(15), agentId: 'lead-agent', taskName: 'Look up carrier filing' },
 ];

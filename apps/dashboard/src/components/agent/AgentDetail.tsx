@@ -270,6 +270,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   /** `held`: releasing a hold just made here (Undo), before a poll has shown it. */
   async function resume(held = false) {
+    // A pause toast would now be wrong.
+    setToast(null);
     if (preview) return;
     setActionError(null);
     resumingHold.current = held || !!agent?.hold;

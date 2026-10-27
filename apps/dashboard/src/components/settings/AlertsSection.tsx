@@ -40,19 +40,21 @@ export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
   return (
     <SettingsCard id="alerts" title="Alerts" sub={`A ${channels.length > 1 ? 'Slack or Teams' : 'Slack'} message when a rule alerts you, pauses or stops an agent, or blocks a call. Each links to the run.`}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} />)}
+        {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} preview={!!preview} />)}
       </div>
     </SettingsCard>
   );
 }
 
-function ChannelRow({ fleetId, channel, ending, onStatus }: { fleetId: string; channel: AlertChannel; ending: string | null; onStatus: (s: AlertsStatus) => void }) {
+function ChannelRow({ fleetId, channel, ending, onStatus, preview = false }: { fleetId: string; channel: AlertChannel; ending: string | null; onStatus: (s: AlertsStatus) => void; preview?: boolean }) {
   const c = CHANNELS[channel];
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState<'save' | 'test' | 'remove' | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function run(kind: 'save' | 'test' | 'remove', fn: () => Promise<unknown>, done: string) {
+    // /dev/settings: nothing is sent.
+    if (preview) { setNote({ ok: true, text: 'Preview: nothing was sent.' }); return; }
     setBusy(kind);
     setNote(null);
     try {

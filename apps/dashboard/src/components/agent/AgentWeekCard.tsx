@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { Button } from '@whiteroom/ui';
 import { usePoll } from '@/hooks/usePoll';
 import { ScoreRing } from '@/components/agent/ScoreRing';
 import { agentWeekFrom, loadWeekReads, WEEK_POLL_MS, type AgentWeek } from '@/lib/home-agents';
@@ -88,7 +89,7 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
                       <td>
                         {p.measures}
                         {p.value == null && (p.label === 'Cost' && !hasTaskType && onSetTaskType
-                          ? <> <button type="button" className="wr-btn wr-btn--secondary wr-btn--h32" onClick={onSetTaskType}>Set a task type</button> to include it.</>
+                          ? <> <Button onClick={onSetTaskType}>Set a task type</Button> to include it.</>
                           : p.missing ? ` ${p.missing}` : '')}
                       </td>
                     </tr>

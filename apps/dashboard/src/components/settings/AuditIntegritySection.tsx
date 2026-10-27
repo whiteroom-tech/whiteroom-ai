@@ -79,6 +79,8 @@ export function AuditIntegritySection({ preview }: { preview?: AuditIntegrity } 
   }
 
   async function check() {
+    // /dev/settings: nothing is checked.
+    if (preview) { setNote({ tone: 'neutral', text: 'Preview: nothing was checked.' }); return; }
     setBusy('check');
     setNote(null);
     try {
@@ -96,6 +98,7 @@ export function AuditIntegritySection({ preview }: { preview?: AuditIntegrity } 
   }
 
   async function download() {
+    if (preview) { setNote({ tone: 'neutral', text: 'Preview: nothing was downloaded.' }); return; }
     const id = fleetId!;
     const run = ++exportRef.current;
     const current = () => exportRef.current === run && fleetRef.current === id;

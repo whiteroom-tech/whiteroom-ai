@@ -360,7 +360,9 @@ function Meter({ label, used, limit, over }: { label: string; used: number; limi
     <div className="wr-settings-stat" data-warn={over ? '' : undefined}>
       <div className="wr-settings-stat__label">{label}</div>
       <div className="wr-settings-stat__num" style={{ color: over ? 'var(--warn)' : undefined }}>{used} / {limit}</div>
-      {over && <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--warn)' }}>{over}</div>}
+      {over
+        ? <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--warn)' }}>{over}</div>
+        : used >= limit && <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>At the limit: another one is refused</div>}
     </div>
   );
 }
