@@ -432,6 +432,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setSaving(true);
     setError(null);
     try {
+      // The engine's delete takes no version, so read the rule fresh first: a teammate's edit since the
+      // page last loaded is left alone too.
+      const fresh = (await governanceList(fleetId, authKey)).rules.find((r) => r.id === ruleId);
+      if (!fresh) { showToast("That rule isn’t here any more, so there’s nothing to undo."); return; }
+      if (fresh.version !== created.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
       await governanceDeleteRule(fleetId, ruleId, authKey);
       setRules((rs) => rs.filter((r) => r.id !== ruleId));
       if (selectedRef.current === ruleId) { setSelectedId(null); setDraft(null); }

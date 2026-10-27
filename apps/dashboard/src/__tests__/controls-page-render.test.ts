@@ -1317,14 +1317,37 @@ describe('Controls page, mockup suggestions and toasts', () => {
 
   it('Undo of a suggested new allowlist removes it even when the reload after adding it failed', async () => {
     api.models = ['gpt-4o'];
-    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => ({ rule: { ...base, id: 'a1', response: 'block', appliesTo: 'all', ...r } as GovernanceRule }));
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => {
+      const rule = { ...base, id: 'a1', response: 'block', appliesTo: 'all', ...r } as GovernanceRule;
+      api.created.push(rule);
+      return { rule };
+    });
     const m = await mount();
     api.listFail = true;
     await m.click(m.button('Add allowlist…'));
     await m.click(m.button('Add in Record only'));
     expect(api.create).toHaveBeenCalled();
+    api.listFail = false;
     await m.click(m.button('Undo'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'a1', 'k');
+    m.root.unmount();
+  });
+
+  it('Undo of an added rule reads it fresh first, and leaves a teammate’s newer edit alone', async () => {
+    api.models = ['gpt-4o'];
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => {
+      const rule = { ...base, id: 'a1', response: 'block', appliesTo: 'all', ...r } as GovernanceRule;
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add allowlist…'));
+    await m.click(m.button('Add in Record only'));
+    // A teammate edits it after the page last loaded: only the engine knows.
+    api.created[0] = { ...api.created[0], version: api.created[0].version + 1 };
+    await m.click(m.button('Undo'));
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('This rule changed again since, so Undo left it as it is.');
     m.root.unmount();
   });
 
