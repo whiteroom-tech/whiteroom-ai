@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  agentGets, appliesNow, byMode, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
+  agentGets, appliesNow, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleSentence, rulesFor, ruleSentenceText, spendOverlap,
+  blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from '@/lib/controls-view';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -29,10 +30,21 @@ describe('rule sentences', () => {
   });
 
   it('names who a rule covers', () => {
-    expect(scopeLabel('all')).toEqual({ lead: 'All agents', agents: '' });
-    expect(scopeLabel(['lead-agent'])).toEqual({ lead: 'Only ', agents: 'lead-agent' });
-    expect(scopeLabel(['a', 'b', 'c'])).toEqual({ lead: 'Only ', agents: '3 agents' });
-    expect(scopeLabel([])).toEqual({ lead: 'No agents selected', agents: '' });
+    expect(whoFor('all')).toBe('all agents');
+    expect(whoFor(['lead-agent', 'code-reviewer'])).toBe('lead-agent, code-reviewer');
+    expect(whoFor([])).toBe('no agents');
+  });
+
+  it('reads a row as the condition alone, the value apart', () => {
+    expect(ruleCondition(rule({}))).toEqual({ pre: 'Over ', val: '$190', post: ' a day' });
+    expect(ruleConditionText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' } }))).toBe('Over 50,000 tokens in a run');
+    expect(ruleCondition(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' } })).val).toBe('50,000');
+    expect(ruleConditionText(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('Same call 100× in a run');
+    expect(ruleConditionText(rule({ ruleType: 'call_rate', params: { maxCalls: 60 } }))).toBe('Over 60 calls a minute');
+    expect(ruleConditionText(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Only claude-haiku-4-5');
+    expect(ruleConditionText(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: ['password'], wholeWord: true } }))).toBe('Incoming data contains "password"');
+    expect(ruleConditionText(rule({ ruleType: 'keyword', params: { where: 'replies', keywords: [], wholeWord: true, keywordCount: 3 } }))).toBe('A model reply contains 3 hidden keywords');
+    expect(ruleConditionText(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }))).toBe('No tools picked yet');
   });
 });
 
@@ -46,22 +58,58 @@ describe('the agent filter and groups', () => {
     expect(rulesFor([all, lead, other], 'lead-agent')).toEqual([all, lead]);
   });
 
-  it('groups by mode and names each rule type once', () => {
-    expect(byMode([all, lead, other], 'enforce')).toEqual([lead]);
-    expect(ruleNames([all, rule({}), rule({ ruleType: 'call_rate', params: { maxCalls: 60 } })])).toBe('Spend cap, Call rate');
-    expect(ruleNames([])).toBe('—');
+  it('groups by who a rule covers: all agents, each agent by name, and Off and not set up', () => {
+    const lb = rule({ id: 'lb', mode: 'enforce', ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } });
+    const two = rule({ id: 'two', appliesTo: ['b-agent', 'a-agent'] });
+    const tools = rule({ id: 'tools', ruleType: 'tool_list', params: { blockedTools: [] } });
+    const g = ruleGroups([all, lead, other, lb, two, tools]);
+    expect(g.all.map((r) => r.id)).toEqual(['lb', all.id]);
+    // A rule for two agents shows under both; agents in name order.
+    expect(g.byAgent.map((x) => [x.agent, x.rules.map((r) => r.id)])).toEqual([['a-agent', ['two']], ['b-agent', ['two']], ['lead-agent', [lead.id]]]);
+    expect(g.off.map((r) => r.id)).toEqual([other.id]);
+    expect(g.unset.map((r) => r.id)).toEqual(['tools']);
+    expect(modeCount(g.all)).toBe('1 blocks calls · 1 record only');
+    expect(modeCount([lb, { ...lb, id: 'x' }])).toBe('2 block calls · 0 record only');
+    // The lead line leaves out rules that aren't set up.
+    expect(leadCounts([all, lead, other, tools])).toEqual({ total: 3, enforce: 1, watch: 1, off: 1 });
   });
 
-  it('lists a mode in the Add a rule order, spend caps of a kind smallest first', () => {
-    const kw = rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true } });
-    const allow = rule({ ruleType: 'model_allowlist', params: { allowedModels: [] } });
+  it('lists a group in the Add a rule order, spend caps of a kind smallest first', () => {
+    const kw = rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: ['x'], wholeWord: true } });
+    const allow = rule({ ruleType: 'model_allowlist', params: { allowedModels: ['m'] } });
     const loop = rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } });
     const rate = rule({ ruleType: 'call_rate', params: { maxCalls: 60 } });
     const day200 = rule({ params: { dailyCap: 200, scope: 'day', unit: 'dollars' } });
     const day190 = rule({ params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
     const run50k = rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' } });
-    const off = rule({ mode: 'off' });
-    expect(byMode([kw, allow, day200, loop, run50k, off, rate, day190], 'watch')).toEqual([day190, day200, run50k, rate, allow, loop, kw]);
+    expect(ruleGroups([kw, allow, day200, loop, run50k, rate, day190]).all).toEqual([day190, day200, run50k, rate, allow, loop, kw]);
+  });
+
+  it('says when the one rule that blocks acts', () => {
+    expect(blocksWhen(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('only after 100 repeated calls');
+    expect(blocksWhen(rule({ appliesTo: ['lead-agent'] }))).toBe('only over $190 a day, for lead-agent');
+  });
+});
+
+describe('suggestions', () => {
+  it('finds rules that do exactly the same thing', () => {
+    const a = rule({ id: 'a', ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: [] } });
+    const b = { ...a, id: 'b', params: { scope: 'run', ignoreTools: [], threshold: 5 } } as GovernanceRule;
+    const c = { ...a, id: 'c', mode: 'enforce' } as GovernanceRule;
+    const d = { ...a, id: 'd', appliesTo: ['x', 'y'] } as GovernanceRule, e = { ...a, id: 'e', appliesTo: ['y', 'x'] } as GovernanceRule;
+    expect(duplicateRules([a, b, c, d, e]).map((g) => [g.keep.id, g.extra.map((r) => r.id)])).toEqual([['a', ['b']], ['d', ['e']]]);
+    expect(duplicateRules([a, c])).toEqual([]);
+  });
+
+  it('finds Keywords rules that cover only some agents, unless a rule for all agents has the same words', () => {
+    const kw = (over: Partial<GovernanceRule>) => rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: ['password'], wholeWord: true }, appliesTo: ['lead-agent'], ...over });
+    const one = kw({ id: 'one' });
+    expect(keywordGaps([one], ['lead-agent', 'code-reviewer']).map((r) => r.id)).toEqual(['one']);
+    expect(keywordGaps([one], ['lead-agent'])).toEqual([]);
+    expect(keywordGaps([one, kw({ id: 'all', appliesTo: 'all', params: { where: 'both', keywords: ['Password', 'ssn'], wholeWord: true } })], ['lead-agent', 'x'])).toEqual([]);
+    expect(keywordGaps([kw({ mode: 'off' })], ['lead-agent', 'x'])).toEqual([]);
+    expect(keywordGaps([kw({ params: { where: 'incoming', keywords: [], keywordCount: 2, wholeWord: true } })], ['lead-agent', 'x'])).toEqual([]);
+    expect(keywordsShort({ where: 'incoming', keywords: ['a', 'b', 'c', 'd'], wholeWord: true })).toBe('"a", "b" + 2 more');
   });
 });
 
@@ -86,46 +134,51 @@ describe('spend cap overlap', () => {
   });
 });
 
-describe('row status lines', () => {
-  const counts = { spend_cap: { blocked: 3, paused: 0, stopped: 0, toldYou: 1, wouldAct: 7 } };
+describe('row counts and the editor status', () => {
+  const week = (n: Partial<Record<'blocked' | 'wouldAct' | 'toldYou', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });
 
-  it('Enforce: the last 7 days, only when the count belongs to this rule alone', () => {
-    const r = rule({ mode: 'enforce' });
-    expect(rowStat(r, { byRuleType: counts, onlyOfItsType: true })).toBe('3 blocked · last 7 days');
-    expect(rowStat({ ...r, response: 'notify' }, { byRuleType: counts, onlyOfItsType: true })).toBe('1 alerted you · last 7 days');
-    expect(rowStat(r, { byRuleType: counts, onlyOfItsType: false })).toBe('');
-    expect(rowStat(r, { onlyOfItsType: true })).toBe('');
-    // Counts loaded with nothing for this rule type: it acted 0 times.
-    expect(rowStat(rule({ mode: 'enforce', ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }), { byRuleType: counts, onlyOfItsType: true })).toBe('0 blocked · last 7 days');
+  it('Block: the last 7 days, per rule id or when it is the only one of its type', () => {
+    const r = rule({ id: 'gr_1', mode: 'enforce' });
+    expect(rowCount(r, { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false })).toEqual({ text: '4 blocked · 7 days', tone: 'hot' });
+    expect(rowCount(rule({ id: 'gr_2', mode: 'enforce' }), { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false })).toEqual({ text: 'None caught · 7 days', tone: 'plain' });
+    expect(rowCount({ ...r, response: 'notify' }, { byRuleType: { spend_cap: week({ toldYou: 1 }) }, onlyOfItsType: true }).text).toBe('1 alerted you · 7 days');
+    expect(rowCount(r, { byRuleType: { spend_cap: week({ blocked: 4 }) }, onlyOfItsType: false }).text).toBe('');
+    // Viewing one agent: fleet-wide counts aren't that agent's.
+    expect(rowCount(r, { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false, agent: 'lead' }).text).toBe('');
+    expect(rowCount({ ...r, appliesTo: ['lead'] }, { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false, agent: 'lead' }).text).toBe('4 blocked · 7 days');
   });
 
-  it('a Keywords or Tool list rule with nothing picked says it does nothing yet', () => {
-    const kw = rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true } });
-    expect(rowStat(kw, { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Does nothing until you add a keyword');
-    expect(rowStat({ ...kw, mode: 'enforce' }, { byRuleType: counts, onlyOfItsType: true })).toBe('Does nothing until you add a keyword');
-    expect(rowStat({ ...kw, mode: 'off' }, { onlyOfItsType: true })).toBe('');
+  it('Record only: caught in 7 days, else "None since edit" when nothing since its last change', () => {
+    const r = rule({ id: 'w' });
+    expect(rowCount(r, { byRuleId: { w: week({ wouldAct: 60 }) }, onlyOfItsType: false })).toEqual({ text: '60 caught · 7 days', tone: 'hot' });
+    expect(rowCount(r, { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: {} } }).text).toBe('None since edit');
+    expect(rowCount(r, { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: { a: 2 } } }).text).toBe('None caught · 7 days');
+    expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2, b: 3 } } }).text).toBe('5 caught since edit');
+    expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2 } }, agent: 'b' }).text).toBe('None since edit');
+    expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2 }, unversioned: true } }).text).toBe('');
+  });
+
+  it('warns for a cap that never triggers or a rule with nothing picked; nothing for Off', () => {
+    expect(rowCount(rule({}), { onlyOfItsType: false, neverFirst: '$190' })).toEqual({ text: 'Never triggers ($190 cap first)', tone: 'warn' });
+    expect(rowCount(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), { onlyOfItsType: false })).toEqual({ text: 'Does nothing until you add a tool', tone: 'warn' });
     // Keywords hidden from this caller still count as picked.
-    expect(rowStat(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true, keywordCount: 2 } }), { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Hasn’t fired since its last change');
-    expect(rowStat(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Does nothing until you add a tool');
+    expect(rowCount(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true, keywordCount: 2 } }), { onlyOfItsType: false, wouldAct: { byAgent: {} } }).text).toBe('None since edit');
+    expect(rowCount(rule({ mode: 'off' }), { onlyOfItsType: false }).text).toBe('');
   });
 
-  it('viewing one agent: that agent’s would-acts, and an Enforce count only for a rule that covers just them', () => {
-    const w = rule({ mode: 'watch' });
-    expect(rowStat(w, { onlyOfItsType: true, wouldAct: { byAgent: { a: 2, b: 3 } }, agent: 'b' })).toBe('Would have blocked 3 times');
-    expect(rowStat(w, { onlyOfItsType: true, wouldAct: { byAgent: { a: 2 } }, agent: 'b' })).toBe('Hasn’t fired since its last change');
-    expect(rowStat(rule({ mode: 'enforce' }), { byRuleType: counts, onlyOfItsType: true, agent: 'b' })).toBe('');
-    expect(rowStat(rule({ mode: 'enforce', appliesTo: ['b'] }), { byRuleType: counts, onlyOfItsType: true, agent: 'b' })).toBe('3 blocked · last 7 days');
-  });
-
-  it('Watch: what it would have done since its last change', () => {
-    const r = rule({ mode: 'watch' });
-    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: { a: 2, b: 3 } } })).toBe('Would have blocked 5 times');
-    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: { a: 1 } } })).toBe('Would have blocked once');
-    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: {} } })).toBe('Hasn’t fired since its last change');
-    expect(rowStat(r, { onlyOfItsType: true, wouldAct: null })).toBe('');
-    // Counts the engine can't pin to this version say so.
-    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: { a: 4 }, unversioned: true } })).toBe('Would have acted 4 times, some maybe before its last change');
-    expect(rowStat(r, { onlyOfItsType: true, wouldAct: { byAgent: {}, unversioned: true } })).toBe('Hasn’t fired yet');
+  it('says what the rule is doing now, in one sentence', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z');
+    const since = '2026-10-23T12:00:00Z';
+    expect(ruleStatus(rule({ mode: 'enforce' }), { week: week({ blocked: 6 }) })).toBe('Blocking for all agents. Blocked 6 times in the last 7 days.');
+    expect(ruleStatus(rule({ mode: 'enforce', appliesTo: ['lead'] }), { week: week({}) })).toBe('Blocking for lead. Nothing caught in the last 7 days.');
+    expect(ruleStatus(rule({ mode: 'enforce', response: 'notify' }), {})).toBe('Alerting you for all agents.');
+    expect(ruleStatus(rule({}), { wouldAct: { byAgent: { 'code-reviewer': 44 }, since }, now })).toBe('Would have blocked code-reviewer 44 times since it was last changed 4 days ago.');
+    expect(ruleStatus(rule({}), { wouldAct: { byAgent: { a: 1, b: 2 }, since }, now })).toBe('Would have blocked b and a 3 times in all since it was last changed 4 days ago.');
+    expect(ruleStatus(rule({}), { wouldAct: { byAgent: {}, since }, now })).toBe('Record only for all agents. Nothing caught since it was last changed 4 days ago.');
+    expect(ruleStatus(rule({}), { week: week({ wouldAct: 3 }) })).toBe('Record only for all agents. Would have acted 3 times in the last 7 days.');
+    expect(ruleStatus(rule({ mode: 'off' }), {})).toBe('Off. Records nothing.');
+    expect(ruleStatus(rule({}), { neverFirst: '$190' })).toBe('This cap never triggers. The $190 cap covers the same agents and catches it first.');
+    expect(ruleStatus(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), {})).toBe('Does nothing until you add a tool.');
   });
 });
 
@@ -210,31 +263,14 @@ describe('typed numbers, units and responses', () => {
   });
 });
 
-describe('groups and per-rule counts', async () => {
-  const { coverageGroups, stopping, rowStat } = await import('@/lib/controls-view');
-  it('groups by who a rule covers, Block first, Off apart; and counts what can stop calls', () => {
+describe('what can stop calls', async () => {
+  const { stopping } = await import('@/lib/controls-view');
+  it('counts only rules in Block that can act', () => {
     const a = rule({ id: 'a', mode: 'watch' }), b = rule({ id: 'b', mode: 'enforce' }), c = rule({ id: 'c', appliesTo: ['lead'], mode: 'enforce', response: 'notify' }), d = rule({ id: 'd', mode: 'off' });
-    const g = coverageGroups([a, b, c, d]);
-    expect(g.all.map((r) => r.id)).toEqual(['b', 'a']);
-    expect(g.some.map((r) => r.id)).toEqual(['c']);
-    expect(g.off.map((r) => r.id)).toEqual(['d']);
     // An Alert me rule in Block doesn't stop anything.
     expect(stopping([a, b, c, d]).map((r) => r.id)).toEqual(['b']);
     // Nor does one with nothing picked yet (a tool list with no tools acts on nothing).
     expect(stopping([rule({ id: 'e', mode: 'enforce', ruleType: 'tool_list', params: { blockedTools: [] } })])).toEqual([]);
-  });
-
-  it('gives each rule its own count when the engine sends counts per rule, even with two of a type', () => {
-    const one = rule({ id: 'gr_1', mode: 'enforce' });
-    const counts = { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
-    expect(rowStat(one, { byRuleId: { gr_1: counts }, onlyOfItsType: false })).toBe('4 blocked · last 7 days');
-    expect(rowStat(rule({ id: 'gr_2', mode: 'enforce' }), { byRuleId: { gr_1: counts }, onlyOfItsType: false })).toBe('0 blocked · last 7 days');
-    // Without per-rule counts, two of a type can't be told apart: no number; the only one of its type uses the type's.
-    expect(rowStat(one, { byRuleType: { spend_cap: counts }, onlyOfItsType: false })).toBe('');
-    expect(rowStat(one, { byRuleType: { spend_cap: counts }, onlyOfItsType: true })).toBe('4 blocked · last 7 days');
-    // Viewing one agent: a rule for all agents can't show that agent's share from fleet-wide counts.
-    expect(rowStat(one, { byRuleId: { gr_1: counts }, onlyOfItsType: false, agent: 'lead' })).toBe('');
-    expect(rowStat(rule({ id: 'gr_3', mode: 'enforce', appliesTo: ['lead'] }), { byRuleId: { gr_3: counts }, onlyOfItsType: false, agent: 'lead' })).toBe('4 blocked · last 7 days');
   });
 });
 

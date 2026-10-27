@@ -10,12 +10,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl, SelectChip } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceMode, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleWouldActResult, SpendCapParams, ToolListParams,
+  GovernanceHistoryEntry, GovernanceMode, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_EFFECT, RULE_LABELS, responseOptions } from '@/lib/governance';
-import { canAct, watchSummary } from '@/lib/controls-guard';
+import { canAct } from '@/lib/controls-guard';
 import type { ControlActor } from '@/lib/control-actors';
-import { timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, changeResponse, loopActs, changeUnit, draftParams, sendsAlert, type RuleDraft } from '@/lib/controls-view';
@@ -36,9 +35,10 @@ const MODES: { value: GovernanceMode; label: string; dot?: 'bad' }[] = [
   { value: 'off', label: MODE_LABEL.off }, { value: 'watch', label: MODE_LABEL.watch }, { value: 'enforce', label: MODE_LABEL.enforce, dot: 'bad' },
 ];
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
+const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, undoOf, onUndo, fleetDailySpend = null, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, history, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, weekCaught = null, dirty, error, saving, onSave, onDiscard, onClose, onRemove, onAudit }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
@@ -46,8 +46,6 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   govV1: boolean;
   /** Whether the fleet has somewhere to send alerts (Slack or Teams); null while unknown. */
   alertChannel: boolean | null;
-  /** Watch counts for the saved version, when loaded. */
-  wouldAct: RuleWouldActResult | null;
   /** This rule's own history, newest first. */
   history: GovernanceHistoryEntry[];
   /** How to undo a change, or null (lib/rule-history). */
@@ -56,6 +54,14 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   /** The fleet's average daily spend (all agents together) and over how many days, for a dollars-a-day cap; null when unknown. */
   fleetDailySpend?: { perDay: number; days: number } | null;
   actors: ControlActor[];
+  /** Each covered agent's own average daily spend, for a dollars-a-day cap on specific agents. */
+  agentSpend?: { agent: string; perDay: number; days: number }[];
+  /** What the rule is doing now, in a sentence (controls-view ruleStatus). */
+  status: string;
+  /** Calls the rule caught in the last 7 days (rule_actions byRuleId), for the Block note; null when unknown. */
+  weekCaught?: number | null;
+  /** Opens the audit trail check. */
+  onAudit: () => void;
   dirty: boolean;
   error: string | null;
   saving: boolean;
@@ -69,7 +75,6 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const p = draft.params;
   const parsed = draftParams(draft);
   const asRule = { ...rule, mode: draft.mode, response: draft.response, params: 'params' in parsed ? parsed.params : p };
-  const watching = rule.mode === 'watch' && draft.mode === 'watch';
   const [keyword, setKeyword] = useState('');
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
   // How many keywords the engine hid (no dashboard secret on the read), if it did.
@@ -84,17 +89,17 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   };
   // Alert me, Pause and Stop alert; Block does when asked to.
   const alerts = sendsAlert(draft);
-  const seen = watching && wouldAct ? watchSummary({ response: rule.response }, wouldAct) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, flex: '1 0 auto' }}>
       <div className="gov-edhead" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
         <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
-        <h2 className="gov-edhead__title" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>{RULE_LABELS[rule.ruleType]}</h2>
+        <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
         <span className={`gov-edhead__mode${draft.mode === 'enforce' ? ' is-on' : ''}`}>{MODES.find((m) => m.value === draft.mode)?.label}{dirty ? ' · unsaved' : ''}</span>
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
+      <p className="ctl-status">{status}</p>
       {rule.sourceRecommendationId && (
         <p style={{ margin: '-12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           From a Diagnosis suggestion · <Link href={ROUTES.performance} style={{ color: 'var(--brand)', fontWeight: 600 }}>see it in Performance</Link>
@@ -113,8 +118,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               in a
               <InlineSelect label="Limit period" value={(p as SpendCapParams).scope} options={['day', 'run'] as const} onChange={(scope) => setParams({ scope })} />
             </div>
-            {(p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && fleetDailySpend !== null && (
-              <p style={{ ...help, color: 'var(--tx)' }}>Your fleet spends about ${fleetDailySpend.perDay < 10 ? fleetDailySpend.perDay.toFixed(2) : Math.round(fleetDailySpend.perDay).toLocaleString('en-US')} a day, all agents together (last {fleetDailySpend.days === 1 ? 'day' : `${fleetDailySpend.days} days`}).</p>
+            {(p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && agentSpend.map((a) => (
+              <p key={a.agent} style={{ ...help, color: 'var(--tx)' }}><span style={{ fontFamily: FONT_MONO }}>{a.agent}</span> spends about {usd(a.perDay)} a day (last {a.days === 1 ? 'day' : `${a.days} days`}).</p>
+            ))}
+            {(p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && fleetDailySpend !== null && (draft.appliesTo === 'all' || !agentSpend.length) && (
+              <p style={{ ...help, color: 'var(--tx)' }}>Your fleet spends about {usd(fleetDailySpend.perDay)} a day, all agents together (last {fleetDailySpend.days === 1 ? 'day' : `${fleetDailySpend.days} days`}).</p>
             )}
             {(p as SpendCapParams).unit === 'dollars' && (
               <p style={help}>Dollar estimates use a blended rate of $0.003/1K tokens. Actual cost varies by model — see the Performance tab for per-model pricing.</p>
@@ -224,6 +232,9 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="gov-eyebrow">Applies to</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
+        {rule.appliesTo === 'all' && draft.appliesTo !== 'all' && draft.appliesTo.length > 0 && (
+          <p style={help}>When you save, you’ll choose: keep this rule for everyone and add a copy for {draft.appliesTo.join(', ')}, or move it.</p>
+        )}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -235,11 +246,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           {draft.mode === 'off' ? 'Off. Not counting.' : draft.mode === 'watch' ? 'Record only. Records what it would do, never acts.' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[(p as KeywordParams).where] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : ACTS[rule.ruleType]}
           {canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}
         </p>
-        {watching && wouldAct && (
-          <p style={{ ...help, color: seen ? 'var(--warn-tx)' : 'var(--tx2)' }}>
-            {seen ?? 'Record only: it hasn’t matched since its last change.'}
-            {wouldAct.since ? ` Last changed ${timeAgo(wouldAct.since)}.` : ''}
-          </p>
+        {draft.mode === 'enforce' && rule.mode !== 'enforce' && (
+          <p className="ctl-note">When you save, you’ll confirm before it blocks.{weekCaught !== null && ` In the last 7 days it would have caught ${weekCaught ? `${weekCaught.toLocaleString('en-US')} ${weekCaught === 1 ? 'call' : 'calls'}` : 'nothing'}.`}</p>
         )}
       </section>
 
@@ -249,16 +257,16 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       {/* On a phone Remove sits at the end of the rule, and the bar below shows only once something changed. */}
       <div className="gov-remove-row">
-        <Button variant="danger" onClick={onRemove} disabled={saving}>Remove rule</Button>
+        <Button variant="danger" className="ctl-bad" onClick={onRemove} disabled={saving}>Remove rule</Button>
       </div>
       <div className={`gov-actbar${dirty || saving ? ' is-dirty' : ''}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
         <Button variant="primary" onClick={onSave} disabled={!dirty} busy={saving} busyLabel="Saving…" className="gov-actbar__save">Save</Button>
         <Button variant="secondary" onClick={onDiscard} disabled={!dirty || saving} className="gov-actbar__discard">Discard changes</Button>
-        <Button variant="danger" onClick={onRemove} disabled={saving} className="gov-remove" style={{ marginLeft: 'auto' }}>Remove rule</Button>
+        <Button variant="danger" onClick={onRemove} disabled={saving} className="gov-remove ctl-bad" style={{ marginLeft: 'auto' }}>Remove rule</Button>
       </div>
 
       <details className="gov-details">
-        <summary>What the agent gets</summary>
+        <summary>What the agent sees when a call is blocked</summary>
         <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
           {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
         </pre>
@@ -272,7 +280,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           {history.slice(0, 10).map((h) => (
             <HistoryLine key={h.id} entry={h} actors={actors} undo={undoOf(h)} onUndo={onUndo} busy={saving} />
           ))}
-          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
+          <Button size={28} onClick={onAudit} style={{ alignSelf: 'flex-start' }}>Check audit trail</Button>
         </div>
       </details>
     </div>

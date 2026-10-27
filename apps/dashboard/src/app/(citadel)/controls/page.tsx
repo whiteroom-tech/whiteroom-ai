@@ -1,47 +1,48 @@
 "use client";
 
-// Controls (spec Rev 1, D1): rules read as sentences, grouped by what they do
-// now (Acting, Record only, Off), changed in one editor on the right and sent
-// to the engine only on Save. Built from the shared primitives and the
-// dashboard's own words, so it reads like the other tabs.
+// Controls (mockup parity, Oct 27): a lead line and Suggestions on top, rules
+// in cards by who they cover (each row: kind, condition, 7-day count, mode),
+// and the editor as a card on the right. Nothing reaches the engine until
+// Save; every change ends in a toast with Undo.
 
 import { HistoryLine } from "./_components/HistoryLine";
 import { undoFor, type Undo } from "@/lib/rule-history";
-import { MODE_GROUP, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
+import { DOES_TAG, MODE_LABEL } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Banner, Button, FONT_MONO, Panel, SelectChip, StatCard } from "@whiteroom/ui";
-import { PageHeader } from "@/components/citadel/PageChrome";
+import { Banner, Button, FONT_MONO, Toast } from "@whiteroom/ui";
+import { LiveStatus, PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
+import { AuditCheckDialog } from "./_components/AuditCheckDialog";
+import { ChoiceDialog } from "./_components/ChoiceDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   WhiteRoomApiError, alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
-  performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
+  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
-  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, ModelAllowlistParams, RuleActionsResult, RuleWouldActResult, SpendCapParams,
+  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, tallyWords, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
-import { RuleDoesTag } from "@/components/RuleDoesTag";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
 import { canAct, keywordBlockCheck, keywordPhrase, keywordVerb, stopCheck, stopPhrase } from "@/lib/controls-guard";
-import { HELP } from "@/lib/metric-definitions";
-import { timeAgo, HOUR_MS } from "@/lib/format";
+import { fmtDay, HOUR_MS } from "@/lib/format";
 import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, emptyPick, isDirty, money, NO_ACTIONS, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
+  appliesNow, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
-  coverageGroups, stopping,
+  stopping,
   weakenings,
   averageDailySpend,
   sameValue,
+  blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
@@ -66,7 +67,15 @@ type Dialog =
   | { kind: "keyword"; rule: GovernanceRule; next: GovernanceRule }
   | { kind: "remove"; rule: GovernanceRule }
   | { kind: "weaken"; rule: GovernanceRule; next: GovernanceRule; reasons: string[] }
+  | { kind: "downgrade"; rule: GovernanceRule; next: GovernanceRule }
+  /** Narrowing a rule for all agents: keep it and add a copy, or move it. `reasons`: anything else the edit weakens. */
+  | { kind: "narrow"; rule: GovernanceRule; next: GovernanceRule; reasons: string[] }
+  | { kind: "allow"; models: string[] }
+  | { kind: "kwall"; rule: GovernanceRule }
   | { kind: "discard"; label: string; then: () => void };
+
+/** The toast after a change: what happened, and how to undo it. */
+type ToastState = { id: number; message: string; undo?: () => void };
 
 function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; authKey: string | undefined; onAuthError: (msg?: string) => void }) {
   const router = useRouter();
@@ -115,6 +124,24 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [offOpen, setOffOpen] = useState(false);
   /** Whether alerts have somewhere to go (Slack or Teams); null while unknown or unreadable. */
   const [alertChannel, setAlertChannel] = useState<boolean | null>(null);
+  /** When the rules were last read, for the header's "Live · updated". */
+  const [listedAt, setListedAt] = useState<number | null>(null);
+  const [listFailed, setListFailed] = useState(false);
+  const [toast, setToastState] = useState<ToastState | null>(null);
+  const toastId = useRef(0);
+  const showToast = useCallback((message: string, undo?: () => void) => setToastState({ id: ++toastId.current, message, undo }), []);
+  const [auditOpen, setAuditOpen] = useState(false);
+  /** "Also covered by N rules for all agents", while one agent is picked. */
+  const [alsoOpen, setAlsoOpen] = useState(false);
+  /** Each agent's average daily spend (14 days), for a spend cap on specific agents; null: couldn't read. */
+  const [agentSpend, setAgentSpend] = useState<Record<string, { perDay: number; days: number } | null>>({});
+  /** Each agent's calls since a rule's last change, for the Block confirm's "every call" warning. */
+  const [agentCalls, setAgentCalls] = useState<Record<string, number>>({});
+  // Undo of a save goes through Save again (its checks and confirms): set, then run once the editor holds it.
+  const [undoSave, setUndoSave] = useState(false);
+  const undoingRef = useRef(false);
+  // Opening a rule moves focus into the editor on a wide screen (a phone's sheet focuses ‹ Controls).
+  const focusEditor = useRef(false);
 
   // Trusted from the URL until the agents load, then only if it names one.
   const agentFilter = agentParam && (!loaded || agents.includes(agentParam)) ? agentParam : null;
@@ -156,10 +183,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setGovV1(!!d.govV1);
       setLoaded(true);
       setListed(true);
+      setListedAt(Date.now());
+      setListFailed(false);
       return true;
     } catch (e) {
       if (isAuthError(e)) { onAuthError(); return false; }
-      setError("Couldn’t load your rules. Retrying on the next change.");
+      setError("Couldn’t load your rules.");
+      setListFailed(true);
       setLoaded(true);
       return false;
     }
@@ -235,12 +265,21 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       if (suggestionRec) router.replace(withParams({ rec: null }));
       setError(null);
       setNotice(null);
+      undoingRef.current = false;
+      focusEditor.current = !!id;
       setSelectedId(id);
       const r = id ? rules.find((x) => x.id === id) : null;
       setDraft(r ? draftFrom(r) : null);
     });
   };
   openRuleRef.current = openRule;
+  // On a wide screen, focus goes to the editor's title once it shows, so the keyboard lands in it.
+  useEffect(() => {
+    if (!focusEditor.current || !selectedId || !draft) return;
+    focusEditor.current = false;
+    if (window.matchMedia?.('(max-width: 720px)').matches) return;
+    document.getElementById('ctl-ed-title')?.focus({ preventScroll: false });
+  }, [selectedId, draft]);
   // On phones the editor is a sheet over the list: Escape closes it, as ‹ Controls does
   // (an unsaved edit is asked about first). Not while a dialog is open over it.
   const sheetOpen = !!(selected && draft && !suggestionRec);
@@ -259,7 +298,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const phone = window.matchMedia?.('(max-width: 720px)');
     if (!sheetOpen || !phone) return;
     const from = document.activeElement as HTMLElement | null;
-    const behind = [...document.querySelectorAll<HTMLElement>('.citadel-page-header, .gov-list, .wr-tabbar')];
+    const behind = [...document.querySelectorAll<HTMLElement>('.ctl-main, .wr-tabbar')];
     const apply = () => {
       behind.forEach((e) => { e.inert = phone.matches; });
       if (phone.matches) document.querySelector<HTMLElement>('aside.is-sheet .gov-edhead__back')?.focus();
@@ -291,6 +330,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     // Anything that makes the rule weaker is said and confirmed first (the change log can undo it).
     if (!weakenChecked) {
       const reasons = weakenings(selected, next);
+      // Narrowing a rule for all agents asks who it should cover: a copy (the safe choice) or a move.
+      if (selected.appliesTo === "all" && next.appliesTo !== "all" && next.appliesTo.length > 0) {
+        setDialog({ kind: "narrow", rule: selected, next, reasons: reasons.filter((r) => !r.startsWith("Covers only")) });
+        return;
+      }
+      // Only stepping down from Block: "Stop blocking with this rule?"
+      if (reasons.length === 1 && reasons[0].startsWith("Mode:") && selected.mode === "enforce") { setDialog({ kind: "downgrade", rule: selected, next }); return; }
       if (reasons.length) { setDialog({ kind: "weaken", rule: selected, next, reasons }); return; }
     }
     // A rule that would stop agents must have run in Watch for a day, and is confirmed by typing who it covers.
@@ -328,6 +374,45 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     guard(() => void restore(u.rule, entryId));
   };
 
+  // The toast's Undo after a save: the settings from before go back through Save, so
+  // putting back a stronger setting (Block, say) asks first, as any save would.
+  const undoSaved = (before: GovernanceRule) => {
+    guard(() => {
+      const r = rules.find((x) => x.id === before.id);
+      if (!r) return;
+      if (suggestionRec) router.replace(withParams({ rec: null }));
+      undoingRef.current = true;
+      setSelectedId(r.id);
+      setDraft(draftFrom({ ...r, mode: before.mode, response: before.response, alsoNotify: before.alsoNotify, appliesTo: before.appliesTo, params: before.params }));
+      setError(null);
+      setNotice(null);
+      setUndoSave(true);
+    });
+  };
+  useEffect(() => {
+    if (!undoSave || !selected || !draft) return;
+    setUndoSave(false);
+    save();
+  // save reads the draft just set; it runs once per Undo.
+  }, [undoSave, selected, draft]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cancelDialog = () => { undoingRef.current = false; setDialog(null); };
+  // A toast's Undo runs after later renders: through this ref it sees the page as it is then
+  // (an edit made since is asked about first), not as it was when the toast opened.
+  const live = useRef({ undoSaved: (_: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {} });
+
+  /** Undo of something this visit added: removes it again. */
+  const undoAdded = async (ruleId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await governanceDeleteRule(fleetId, ruleId, authKey);
+      setRules((rs) => rs.filter((r) => r.id !== ruleId));
+      if (selectedRef.current === ruleId) { setSelectedId(null); setDraft(null); }
+      showToast("Change undone.");
+    } catch (e) { handleError(e, "undo the change"); }
+    finally { setSaving(false); void fetchData(); }
+  };
+
   const restore = async (rule: Extract<Undo, { kind: "restore" }>["rule"], entryId?: string) => {
     setSaving(true);
     setError(null);
@@ -339,9 +424,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       }, authKey);
       setRules((rs) => [...rs, created]);
       if (entryId) setRestored((s) => new Set(s).add(entryId));
+      focusEditor.current = true;
       setSelectedId(created.id);
       setDraft(draftFrom(created));
-      setNotice(`${RULE_LABELS[rule.ruleType]} is back, in Record only.${rule.mode === "enforce" ? " Turn on Block when you’re ready." : ""}`);
+      showToast(`${RULE_LABELS[rule.ruleType]} is back, in Record only.${rule.mode === "enforce" ? " Turn on Block when you’re ready." : ""}`);
       void fetchData();
     } catch (e) {
       handleError(e, "add the rule back");
@@ -380,7 +466,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => [...rs, created]);
       // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
-      setNotice(`Added a copy for ${agentsPicked.join(", ")}, in Record only. The rule for all agents is unchanged.`);
+      showToast(`Added a ${RULE_LABELS[next.ruleType].toLowerCase()} just for ${agentsPicked.join(", ")}, in Record only. Everyone else keeps the original.`, () => live.current.undoAdded(created.id));
       void fetchData();
     } catch (e) {
       if (fleetRef.current === forFleet) handleError(e, "add the copy");
@@ -392,6 +478,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const commit = async (rule: GovernanceRule, d: RuleDraft) => {
     const changes = draftChanges(d, rule);
     setDialog(null);
+    const undoing = undoingRef.current;
+    undoingRef.current = false;
     if (!changes) return;
     setSaving(true);
     setError(null);
@@ -403,8 +491,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
-      const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "now blocks" : "is now on") : saved.mode === "watch" ? "is in Record only" : "is off";
-      setNotice(`Saved. ${RULE_LABELS[saved.ruleType]} ${how}.`);
+      const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "blocking" : "on") : saved.mode === "watch" ? "record only" : "off";
+      if (undoing) showToast("Change undone.");
+      else showToast(`Saved. ${RULE_LABELS[saved.ruleType]} is ${how} for ${whoFor(saved.appliesTo)}.`, () => live.current.undoSaved(rule));
       void fetchData();
     } catch (e) {
       if (e instanceof WhiteRoomApiError && e.status === 409) {
@@ -421,8 +510,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   };
 
   // Not optimistic: a failed delete keeps the rule, and the person's place, as they were.
-  // Any rule can go, the last of its type too: Add rule brings a type back.
-  const remove = async (rule: GovernanceRule) => {
+  // Any rule can go, the last of its type too: Add rule brings a type back. Undo adds it back in Record only.
+  const remove = async (rule: GovernanceRule, message = `Removed the ${RULE_LABELS[rule.ruleType]} rule.`) => {
     setDialog(null);
     setError(null);
     setSaving(true);
@@ -430,7 +519,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       await governanceDeleteRule(fleetId, rule.id, authKey);
       setRules((rs) => rs.filter((r) => r.id !== rule.id));
       if (selectedRef.current === rule.id) { setSelectedId(null); setDraft(null); }
-      setNotice(`Removed the ${RULE_LABELS[rule.ruleType]} rule.`);
+      showToast(message, () => live.current.restore(rule));
       void fetchData();
     } catch (e) { handleError(e, "remove the rule"); void fetchData(); }
     finally { setSaving(false); }
@@ -445,6 +534,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
       if (suggestionRec) router.replace(withParams({ rec: null }));
+      focusEditor.current = true;
       setSelectedId(rule.id);
       setDraft(draftFrom(rule));
       setNotice(null);
@@ -452,8 +542,32 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     } catch (e) { setAdding("closed"); handleError(e, "add the rule"); void fetchData(); }
   };
 
-  const addSuggestedAllowlist = async (models: string[]) => {
+  // "Cover all agents": a copy of a Keywords rule for every agent, in Record only. The original stays.
+  const coverAll = async (rule: GovernanceRule) => {
+    setDialog(null);
+    setSaving(true);
+    setError(null);
+    try {
+      const { rule: created } = await governanceCreateRule(fleetId, {
+        ruleType: "keyword", mode: "watch", response: rule.response, alsoNotify: rule.alsoNotify, params: rule.params, appliesTo: "all",
+        description: `Added a copy of the ${RULE_LABELS.keyword} rule for all agents`,
+      }, authKey);
+      setRules((rs) => [...rs, created]);
+      showToast(`${keywordsShort(rule.params as KeywordParams)} rule now covers all agents (Record only).`, () => live.current.undoAdded(created.id));
+    } catch (e) { handleError(e, "add the rule for all agents"); }
+    finally { setSaving(false); void fetchData(); }
+  };
+
+  /**
+   * The allowlist suggestion. For all agents: the models go into the fleet-wide
+   * allowlist (a new one in Record only when there's none). For one agent only:
+   * the engine checks every allowlist that covers an agent, so a model is
+   * allowed for one agent by giving that agent its own copy with the model
+   * added, and narrowing the original to the other agents.
+   */
+  const addSuggestedAllowlist = async (models: string[], onlyFor: string | null = null) => {
     if (saving) return;
+    setDialog(null);
     setSaving(true);
     setAddingSuggestion(true);
     setError(null);
@@ -461,21 +575,51 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const description = "Added Model allowlist in Record only (suggested)";
     // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
     const target = suggestedAllowlistTarget(rules);
+    const label = models.join(", ");
     try {
       if (!target) {
-        await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
+        const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
+        showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created.id));
+      } else if (onlyFor) {
+        const prev = (target.params as ModelAllowlistParams).allowedModels;
+        const others = agents.filter((a) => a !== onlyFor);
+        // The copy first, so the agent is never left without an allowlist.
+        const { rule: copy } = await governanceCreateRule(fleetId, {
+          ruleType: "model_allowlist", mode: "watch", response: target.response, alsoNotify: target.alsoNotify,
+          params: { allowedModels: [...prev, ...models.filter((m) => !prev.includes(m))] }, appliesTo: [onlyFor],
+          description: `Added a copy of the ${RULE_LABELS.model_allowlist} rule for ${onlyFor}, also allowing ${label}`,
+        }, authKey);
+        const { rule: narrowed } = await governanceUpdateRule(fleetId, target.id, { appliesTo: others, ifVersion: target.version, description: `Now covers every agent but ${onlyFor}` }, authKey);
+        showToast(`${label} allowed for ${onlyFor}.`, () => void (async () => {
+          setSaving(true);
+          try {
+            await governanceUpdateRule(fleetId, target.id, { appliesTo: "all", ifVersion: narrowed.version }, authKey);
+            await governanceDeleteRule(fleetId, copy.id, authKey);
+            showToast("Change undone.");
+          } catch (e) { handleError(e, "undo the change"); }
+          finally { setSaving(false); void fetchData(); }
+        })());
       } else {
         const prev = (target.params as ModelAllowlistParams).allowedModels;
-        await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
+        const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
+        const added = models.some((m) => !prev.includes(m));
+        showToast(added ? `${label} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => void (async () => {
+          setSaving(true);
+          try {
+            await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version }, authKey);
+            showToast("Change undone.");
+          } catch (e) { handleError(e, "undo the change"); }
+          finally { setSaving(false); void fetchData(); }
+        })());
       }
-      const added = target ? models.some((m) => !(target.params as ModelAllowlistParams).allowedModels.includes(m)) : true;
-      setNotice(!target ? "Added a Model allowlist in Record only." : added ? "Added the models to your Model allowlist, in Record only." : "Turned your Model allowlist on in Record only.");
     } catch (e) { handleError(e, "add the suggested allowlist"); }
-    // Busy until the list reloads and the banner goes, so a second click can't add another rule.
+    // Busy until the list reloads and the suggestion goes, so a second click can't add another rule.
     try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
     // The rule's version moved: an open editor on it reopens from the saved rule.
     if (target && selectedRef.current === target.id) setDraft(null);
   };
+
+  live.current = { undoSaved, restore: (r) => void restore(r), undoAdded: (id) => void undoAdded(id) };
 
   /** Shows one agent's rules (null: all); an open rule that isn't among them closes. */
   const changeAgent = (agent: string | null) => {
@@ -486,209 +630,406 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   // ── What the page shows ─────────────────────────────────────────
   const shown = useMemo(() => rulesFor(rules, agentFilter), [rules, agentFilter]);
-  const enforcing = byMode(shown, "enforce"), watching = byMode(shown, "watch"), off = byMode(shown, "off");
-  const groups = coverageGroups(shown);
+  const groups = useMemo(() => ruleGroups(shown), [shown]);
   const canStop = stopping(shown);
   const overlap = spendOverlap(shown);
+  const neverFirst = (r: GovernanceRule) => (overlap?.never.id === r.id ? money(overlap.first.params as SpendCapParams) : null);
   // Viewing one agent: that agent's rule actions, to match the rules shown.
   const counts = actions ? tallyFromRuleActions(agentFilter ? actions.byAgent[agentFilter] ?? NO_ACTIONS : actions.totals) : null;
-  const countWords = counts ? tallyWords(counts).map((w) => w.text).join(" · ") : "";
+  const typeCount = (t: GovernanceRuleType) => rules.filter((r) => r.ruleType === t).length;
+  /** A rule's own counts over the last 7 days, when the engine sends them. */
+  const weekOf = (r: GovernanceRule): RuleActionCounts | undefined =>
+    actions?.byRuleId ? actions.byRuleId[r.id] ?? NO_ACTIONS : typeCount(r.ruleType) === 1 && actions?.byRule ? actions.byRule[r.ruleType] ?? NO_ACTIONS : undefined;
+  const wouldOf = (r: GovernanceRule) => wouldActs[`${r.id}@${r.version}`] ?? null;
+
+  // Suggestions, each one line with its button.
   const allowlistSuggestion = suggestions.onlyModels && !rules.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
-  // The allowlist the suggestion would add to (see addSuggestedAllowlist), and the models it lacks.
   const allowlistTarget = allowlistSuggestion ? suggestedAllowlistTarget(rules) : undefined;
   const allowlistMissing = allowlistTarget ? allowlistSuggestion!.filter((m) => !(allowlistTarget.params as ModelAllowlistParams).allowedModels.includes(m)) : [];
-  const typeCount = (t: GovernanceRuleType) => rules.filter((r) => r.ruleType === t).length;
+  // Who the allowlist caught since its last change: one agent can have the model just for itself.
+  const allowCaught = allowlistTarget && allowlistTarget.mode === "watch" ? Object.entries(wouldOf(allowlistTarget)?.byAgent ?? {}).filter(([, n]) => n > 0) : [];
+  const allowOnlyFor = allowlistTarget && allowlistMissing.length && allowCaught.length === 1 && agents.length > 1 && agents.includes(allowCaught[0][0]) ? allowCaught[0][0] : null;
+  const dups = duplicateRules(rules);
+  const kwGaps = keywordGaps(rules, agents);
+  const suggestionCount = kwGaps.length + dups.length + (overlap ? 1 : 0) + (allowlistSuggestion ? 1 : 0) + (suggestions.noCaching ? 1 : 0);
 
-  const row = (r: GovernanceRule) => {
-    const s = ruleSentence(r);
-    const scope = scopeLabel(r.appliesTo);
-    const never = overlap?.never.id === r.id;
-    // In Watch neither cap acts, so the overlap is about what they would do.
-    const stat = never
-      ? overlap!.never.mode === "watch"
-        ? `Would never act: the ${money(overlap!.first.params as SpendCapParams)} cap would act first`
-        : `Never acts: the ${money(overlap!.first.params as SpendCapParams)} cap acts first`
-      : rowStat(r, { byRuleType: actions?.byRule, byRuleId: actions?.byRuleId, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldActs[`${r.id}@${r.version}`] ?? null, agent: agentFilter });
+  // Each covered agent's own daily spend, beside a dollars-a-day cap for specific agents.
+  const spendAgents = draft && draft.ruleType === "spend_cap" && (draft.params as SpendCapParams).unit === "dollars" && (draft.params as SpendCapParams).scope === "day" && draft.appliesTo !== "all"
+    ? draft.appliesTo.slice(0, 3) : [];
+  const spendKey = spendAgents.join("\n");
+  // Each agent is read once per fleet; an answer for a fleet no longer shown is dropped.
+  const spendAsked = useRef(new Set<string>());
+  useEffect(() => {
+    for (const a of spendKey ? spendKey.split("\n") : []) {
+      if (spendAsked.current.has(a)) continue;
+      spendAsked.current.add(a);
+      const forFleet = fleetId;
+      performanceAgent(fleetId, a, SUGGESTION_HOURS, authKey)
+        .then((p) => averageDailySpend(p, SUGGESTION_HOURS / 24), () => null)
+        .then((v) => { if (fleetRef.current === forFleet) setAgentSpend((m) => ({ ...m, [a]: v })); });
+    }
+  }, [spendKey, fleetId, authKey]);
+  useEffect(() => { spendAsked.current = new Set(); setAgentSpend({}); setAgentCalls({}); }, [fleetId]);
+
+  // Before Block on an allowlist: each caught agent's calls over the same time, to see if it would lose all of them.
+  const enforceRule = dialog?.kind === "enforce" ? dialog.rule : null;
+  const enforceWould = enforceRule ? wouldOf(enforceRule) : null;
+  useEffect(() => {
+    if (!enforceRule || enforceRule.ruleType !== "model_allowlist" || !enforceWould?.since || enforceWould.unversioned) return;
+    let cancelled = false;
+    const hours = Math.min(SUGGESTION_HOURS, Math.max(1, Math.ceil((Date.now() - Date.parse(enforceWould.since)) / HOUR_MS)));
+    for (const [a, n] of Object.entries(enforceWould.byAgent).slice(0, 5)) {
+      if (!n) continue;
+      performanceAgent(fleetId, a, hours, authKey).then((p) => { if (!cancelled && !p.error) setAgentCalls((m) => ({ ...m, [`${enforceRule.id}:${a}`]: p.totals.calls })); }, () => {});
+    }
+    return () => { cancelled = true; };
+  }, [enforceRule, enforceWould, fleetId, authKey]);
+
+  const modeTag = (r: GovernanceRule) => {
+    if (notSetUp(r)) return <span className="ctl-mtag is-off">Not set up</span>;
+    if (r.mode === "off") return <span className="ctl-mtag is-off">{MODE_LABEL.off}</span>;
+    if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
+    const response = r.response ?? "block";
+    return <span className={`ctl-mtag${response === "notify" ? "" : " is-block"}`}>{response === "block" ? MODE_LABEL.enforce : DOES_TAG[response]}</span>;
+  };
+
+  const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {
+    const c = ruleCondition(r);
+    const count = rowCount(r, { byRuleId: actions?.byRuleId, byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldOf(r), agent: agentFilter, neverFirst: neverFirst(r) });
+    const response = r.response ?? "block";
     return (
-      <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-current={r.id === selectedId || undefined}>
-        <span style={{ minWidth: 0, flex: "1 1 320px" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>
-            {RULE_LABELS[r.ruleType]}
-            <RuleDoesTag rule={r} />
-          </span>
-          {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
+      <button key={key} type="button" className={`ctl-row${r.id === selectedId ? " is-on" : ""}${r.mode === "enforce" ? " is-block" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-pressed={r.id === selectedId}>
+        <span className="ctl-row__main">
+          <span className="ctl-cap">{RULE_LABELS[r.ruleType]}{response !== "block" && ` · ${RESPONSE_LABEL[response]}`}</span>
+          <span>{c.pre}{c.val && <span style={{ fontFamily: FONT_MONO }}>{c.val}</span>}{c.post}</span>
         </span>
-        <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
-          <span>{scope.lead}<span style={{ fontFamily: FONT_MONO, color: "var(--tx)" }}>{scope.agents}</span></span>
-          {stat && <span style={never || emptyPick(r) ? { color: "var(--warn-tx)" } : undefined}>{stat}</span>}
-        </span>
+        {showScope && <span className="ctl-cap">{r.appliesTo === "all" ? "All agents" : r.appliesTo.join(", ")}</span>}
+        {count.text && <span className={`ctl-row__count is-${count.tone}`}>{count.text}</span>}
+        {modeTag(r)}
       </button>
     );
   };
 
-  const group = (title: string, list: GovernanceRule[], empty: string, foldable = false) => (
-    <Panel
-      title={title}
-      count={list.length}
-      bodyPadding={0}
-      actions={foldable && list.length > 0 ? <Button variant="ghost" size={28} onClick={() => setOffOpen((v) => !v)} aria-expanded={offOpen}>{offOpen ? "Hide" : "Show"}</Button> : undefined}
-    >
-      {(!foldable || offOpen || list.length === 0) && (
-        list.length ? <div>{list.map(row)}</div> : <p style={{ margin: 0, padding: "14px 18px", fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>{loaded ? empty : "Loading…"}</p>
-      )}
-    </Panel>
+  const card = (title: React.ReactNode, sub: React.ReactNode, body: React.ReactNode, extra?: React.ReactNode, label?: string) => (
+    <section className="wr-panel ctl-card" aria-label={label}>
+      <div className="ctl-card__head">
+        <div style={{ minWidth: 0 }}>
+          <h2 className="wr-panel__title ctl-card__title">{title}</h2>
+          {sub && <p className="ctl-cap" style={{ margin: "2px 0 0" }}>{sub}</p>}
+        </div>
+        {extra}
+      </div>
+      {body}
+    </section>
   );
 
-  const recent = history.slice(0, 5);
+  const offCount = groups.off.length + groups.unset.length;
+  const offSub = [groups.off.length ? `${groups.off.length} off` : "", groups.unset.length ? `${groups.unset.length} not set up: ${[...new Set(groups.unset.map((r) => RULE_LABELS[r.ruleType].toLowerCase()))].join(", ")}` : ""].filter(Boolean).join(" · ");
+  const offCard = card(
+    <>Off and not set up <span className="wr-panel__count">{offCount}</span></>,
+    offCount ? offSub : "Every rule is on.",
+    offOpen && offCount ? <div>{groups.off.concat(groups.unset).map((r) => row(r, true))}</div> : null,
+    offCount ? <Button size={32} onClick={() => setOffOpen((v) => !v)} aria-expanded={offOpen}>{offOpen ? "Hide" : "Show"}</Button> : undefined,
+  );
+
+  const lists = !agentFilter ? (
+    <>
+      {card("Rules for all agents", groups.all.length ? `${modeCount(groups.all)} · new agents get these too` : "No rules cover every agent.", <div>{groups.all.map((r) => row(r))}</div>)}
+      {card("Rules for specific agents", groups.byAgent.length ? `Only ${groups.byAgent.map((g) => g.agent).join(", ")} ${groups.byAgent.length > 1 ? "have" : "has"} extra rules` : "No agent has extra rules.",
+        groups.byAgent.map((g) => (
+          <div key={g.agent}>
+            <div className="ctl-owner">
+              <Link href={`/agents/${encodeURIComponent(g.agent)}`} style={{ fontFamily: FONT_MONO }}>{g.agent}</Link>
+              <span className="ctl-cap">{g.rules.length} {g.rules.length === 1 ? "rule" : "rules"}</span>
+            </div>
+            {g.rules.map((r) => row(r, false, `${g.agent}:${r.id}`))}
+          </div>
+        )))}
+      {offCard}
+    </>
+  ) : (
+    <>
+      {(() => {
+        const mine = groups.byAgent.find((g) => g.agent === agentFilter)?.rules ?? [];
+        return card(<>Only for <span style={{ fontFamily: FONT_MONO }}>{agentFilter}</span></>, mine.length ? modeCount(mine) : "No extra rules. Covered by the rules for all agents.",
+          mine.length ? <div>{mine.map((r) => row(r))}</div> : (
+            <div className="ctl-row ctl-row--static">
+              <span className="ctl-cap" style={{ flex: "1 1 240px" }}>This agent follows the rules for all agents below.</span>
+              <Button size={32} onClick={() => guard(() => setAdding("open"))}>Add a rule for {agentFilter}</Button>
+            </div>
+          ));
+      })()}
+      <section className="wr-panel ctl-card">
+        <button type="button" className="ctl-disc" aria-expanded={alsoOpen} onClick={() => setAlsoOpen((v) => !v)}>
+          <span className="ctl-disc__chev" aria-hidden="true">›</span>
+          Also covered by {groups.all.length} {groups.all.length === 1 ? "rule" : "rules"} for all agents
+          <span className="ctl-cap" style={{ marginLeft: "auto" }}>{modeCount(groups.all)}</span>
+        </button>
+        {alsoOpen && <div>{groups.all.map((r) => row(r))}</div>}
+      </section>
+      {offCard}
+    </>
+  );
+
+  const lead = leadCounts(shown);
+  const blocked = counts ? counts.blocks + (counts.paused ?? 0) + (counts.stopped ?? 0) : 0;
+  const caught = counts ? blocked + counts.wouldBlocks + (counts.toldYou ?? 0) : 0;
+  const warnIcon = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flex: "none", color: "var(--warn)" }}><path d="M9 2l7.5 13h-15z" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M9 7v4M9 13v.5" stroke="currentColor" strokeWidth="1.6" /></svg>;
+  const infoIcon = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flex: "none", color: "var(--tx2)" }}><circle cx="9" cy="9" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M9 8v5M9 5.5v.5" stroke="currentColor" strokeWidth="1.6" /></svg>;
+  const mono = (t: string) => <span style={{ fontFamily: FONT_MONO }}>{t}</span>;
+  const suggestion = (key: string, icon: React.ReactNode, text: React.ReactNode, action: React.ReactNode) => (
+    <div key={key} className="ctl-row ctl-row--static ctl-sugg">{icon}<span className="ctl-sugg__text">{text}</span>{action}</div>
+  );
+
+  const recent = history.slice(0, 6);
+  const edited = selected && draft ? selected : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, flex: 1 }}>
-      {/* Split like the columns below, so the actions end where the rule list ends. */}
-      <PageHeader title="Controls" fleetId={fleetId} split>
-        <SelectChip
-          label="Agent"
-          value={agentFilter ?? "all"}
-          onChange={(v) => guard(() => changeAgent(v === "all" ? null : v))}
-          options={[{ value: "all", label: "All agents" }, ...(agentFilter && !agents.includes(agentFilter) ? [agentFilter] : []).concat(agents).map((a) => ({ value: a, label: a }))]}
-        />
-        <Button variant="primary" onClick={() => guard(() => setAdding("open"))}>Add rule</Button>
-      </PageHeader>
+      <div className="wr-page-body ctl-body">
+        <div className="ctl-layout">
+          <div className="ctl-main">
+            <PageHeader title="Controls" fleetId={fleetId} badge={listed ? <LiveStatus at={listedAt} failing={listFailed} /> : undefined}>
+              <label className="ctl-cover-label" htmlFor="ctl-cover">Which rules cover</label>
+              <span className="wr-select ctl-cover">
+                <select id="ctl-cover" value={agentFilter ?? "all"} onChange={(e) => { const v = e.target.value; guard(() => changeAgent(v === "all" ? null : v)); }}>
+                  {[{ value: "all", label: "All agents" }, ...(agentFilter && !agents.includes(agentFilter) ? [agentFilter] : []).concat(agents).map((a) => ({ value: a, label: a }))].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </span>
+              <Button variant="primary" size={36} onClick={() => guard(() => setAdding("open"))}>Add rule</Button>
+            </PageHeader>
 
-      <div className="gov-columns">
-        <main className="gov-list">
-          {/* The cards count rules by mode; the list below groups them by who they cover. */}
-          <p className="gov-eyebrow" style={{ margin: 0 }}>By mode</p>
-          <section aria-label="Rules at a glance" className="wr-stat-strip" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 130px), 1fr))", gap: 12 }}>
-            <StatCard variant="card" label={MODE_GROUP.enforce} value={enforcing.length} sub={ruleNames(enforcing)} />
-            <StatCard variant="card" label={MODE_GROUP.watch} hint={`${MODE_MEANING.watch} ${MODE_MEANING.enforce}`} value={watching.length} sub={ruleNames(watching)} />
-            <StatCard variant="card" label="Off" value={off.length} sub={ruleNames(off)} />
-            <StatCard variant="card" label={RULE_ACTIVITY} hint={`${HELP.ruleActions} Last 7 days.`} value={counts ? tallyTotal(counts).toLocaleString() : "—"}
-              sub={!counts ? "last 7 days" : countWords ? `${countWords} · last 7 days` : "none in the last 7 days"} />
-          </section>
+            {!listed ? (
+              error ? (
+                <section className="wr-panel ctl-card ctl-state" role="alert">
+                  <p style={{ margin: 0, fontWeight: 600 }}>Couldn’t load your rules.</p>
+                  <p className="ctl-cap" style={{ margin: 0 }}>Nothing has changed. Check your connection and try again.</p>
+                  <Button onClick={() => { setError(null); setLoaded(false); void fetchData(); }} style={{ alignSelf: "flex-start" }}>Try again</Button>
+                </section>
+              ) : <p className="ctl-cap" role="status" style={{ margin: 0 }}>Loading your rules…</p>
+            ) : (
+              <>
+                {error && !selected && <Banner variant="error" actions={<Button variant="ghost" size={28} onClick={() => setError(null)}>Dismiss</Button>}>{error}</Banner>}
+                {notice && !selected && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
 
-          {error && !selected && <Banner variant="error" actions={<Button variant="ghost" size={28} onClick={() => setError(null)}>Dismiss</Button>}>{error}</Banner>}
-          {notice && !selected && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
+                {rules.length > 0 && (
+                  <div>
+                    <p className="ctl-lead">
+                      {lead.total} {lead.total === 1 ? "rule" : "rules"} · <strong>{lead.enforce}</strong> Block · <strong>{lead.watch}</strong> Record only
+                      {lead.off > 0 && <> · <strong>{lead.off}</strong> Off</>}
+                      {counts && <> · <strong>{caught.toLocaleString("en-US")}</strong> caught this week, <strong>{blocked.toLocaleString("en-US")}</strong> blocked</>}
+                    </p>
+                    {/* Only when some active rule doesn't stop calls: a fleet whose one rule stops calls is fine. */}
+                    {canStop.length <= 1 && shown.some((r) => r.mode !== "off" && !canStop.includes(r)) && (
+                      <p className="ctl-amber">
+                        {canStop.length === 0
+                          ? <><strong>No rule blocks yet</strong>, so every call goes through.</>
+                          : <><strong>Only 1 rule blocks</strong>, and {blocksWhen(canStop[0])}.</>}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-          {/* Only when some active rule doesn't stop calls: a fleet whose one rule stops calls is fine. */}
-          {loaded && canStop.length <= 1 && shown.some((r) => r.mode !== "off" && !canStop.includes(r)) && (
-            <Banner variant="warn">
-              {canStop.length === 0
-                ? <>No rule stops calls yet, so every call goes through.</>
-                : <>Only 1 rule can stop calls ({RULE_LABELS[canStop[0].ruleType]}). The others don&rsquo;t stop calls.</>}
-            </Banner>
-          )}
+                {suggestionCount > 0 && (
+                  <section className="wr-panel ctl-card" aria-labelledby="gov-suggestions">
+                    <div className="ctl-card__head"><h2 id="gov-suggestions" className="wr-panel__title ctl-card__title">Suggestions <span className="wr-panel__count">{suggestionCount}</span></h2></div>
+                    {kwGaps.map((r) => suggestion(`kw:${r.id}`, warnIcon,
+                      <>{keywordsShort(r.params as KeywordParams)} rule covers only {r.appliesTo === "all" ? "" : r.appliesTo.length > 2 ? `${r.appliesTo.length} agents` : r.appliesTo.join(", ")} ({r.appliesTo === "all" ? 0 : r.appliesTo.length} of {agents.length}).</>,
+                      <Button onClick={() => guard(() => setDialog({ kind: "kwall", rule: r }))} disabled={saving}>Cover all agents…</Button>))}
+                    {dups.map((g) => suggestion(`dup:${g.keep.id}`, warnIcon,
+                      <>{g.extra.length === 1 ? "Two" : g.extra.length + 1} identical {RULE_LABELS[g.keep.ruleType].toLowerCase()}s ({ruleConditionText(g.keep).replace(/^./, (c) => c.toLowerCase())}).</>,
+                      <Button onClick={() => guard(() => void remove(g.extra[g.extra.length - 1], `Duplicate ${RULE_LABELS[g.keep.ruleType].toLowerCase()} removed.`))} disabled={saving}>Remove one</Button>))}
+                    {overlap && suggestion("overlap", warnIcon,
+                      <>{mono(money(overlap.never.params as SpendCapParams))} cap never triggers. The {mono(money(overlap.first.params as SpendCapParams))} cap catches it first.</>,
+                      <Button onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))} disabled={saving}>Remove {money(overlap.never.params as SpendCapParams)} cap</Button>)}
+                    {allowlistSuggestion && suggestion("allow", infoIcon,
+                      allowlistTarget && allowlistMissing.length
+                        ? <>Allowlist is missing {mono(allowlistMissing.join(", "))}, used in the last 14 days.</>
+                        : allowlistTarget
+                        ? <>Your Model allowlist is off. It has every model your fleet used in the last 14 days.</>
+                        : <>Your fleet used only {mono(allowlistSuggestion.join(", "))} in the last 14 days. An allowlist with {allowlistSuggestion.length === 1 ? "it" : "them"} would catch any other model.</>,
+                      <Button busy={addingSuggestion} busyLabel="Adding…" disabled={saving} onClick={() => guard(() => setDialog({ kind: "allow", models: allowlistSuggestion }))}>
+                        {allowlistTarget && allowlistMissing.length ? "Add to allowlist…" : allowlistTarget ? "Turn on in Record only…" : "Add allowlist…"}
+                      </Button>)}
+                    {suggestions.noCaching && suggestion("cache", infoIcon,
+                      <>None of your fleet’s input is cached, so agents pay full price for repeated context. Caching is turned on in your client.</>,
+                      <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--secondary wr-btn--h32">How to turn on caching</a>)}
+                  </section>
+                )}
 
-          {(overlap || suggestions.noCaching || allowlistSuggestion) && (
-            <section aria-labelledby="gov-suggestions" style={{ display: "grid", gap: 10 }}>
-              <h2 id="gov-suggestions" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Suggestions</h2>
-              {overlap && (
-                <Banner variant="warn" actions={<Button size={28} onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))}>Remove the {money(overlap.never.params as SpendCapParams)} cap</Button>}>
-                  {overlap.never.mode === "watch"
-                    ? <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap would never act. Both are in Record only, and the <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and would always act first.</>
-                    : <>Your <span style={{ fontFamily: FONT_MONO }}>{money(overlap.never.params as SpendCapParams)}</span> cap will never act. The <span style={{ fontFamily: FONT_MONO }}>{money(overlap.first.params as SpendCapParams)}</span> cap covers the same agents and always acts first.</>}
-                </Banner>
-              )}
-
-              {suggestions.noCaching && (
-                <Banner variant="info" actions={<a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--secondary wr-btn--h28" style={{ textDecoration: "none" }}>How to turn on caching</a>}>
-                  None of your fleet’s input is cached, so agents pay full price for repeated context. Not a rule: caching is turned on in your client.
-                </Banner>
-              )}
-              {allowlistSuggestion && (
-                <Banner variant="info" actions={<Button size={28} busy={addingSuggestion} disabled={saving} busyLabel="Adding…" onClick={() => guard(() => void addSuggestedAllowlist(allowlistSuggestion))}>{!allowlistTarget ? "Add in Record only" : allowlistMissing.length ? "Add to your allowlist" : "Turn on in Record only"}</Button>}>
-                  {allowlistTarget && !allowlistMissing.length
-                    ? <>Your Model allowlist is Off. In Record only, it would have stopped 0 calls in the last 14 days.</>
-                    : allowlistTarget
-                    ? <>Your Model allowlist leaves out <span style={{ fontFamily: FONT_MONO }}>{allowlistMissing.join(", ")}</span>, which your fleet used in the last 14 days. With {allowlistMissing.length === 1 ? "it" : "them"} added, the allowlist would have stopped 0 calls.{allowlistTarget.mode === "off" ? " It goes to Record only." : ""}</>
-                    : <>Your fleet only used <span style={{ fontFamily: FONT_MONO }}>{allowlistSuggestion.join(", ")}</span> in the last 14 days. A Model allowlist with {allowlistSuggestion.length === 1 ? "that model" : "those models"} would have stopped 0 calls.</>}
-                </Banner>
-              )}
-            </section>
-          )}
-
-          {group(agentFilter ? `Rules for all agents (including ${agentFilter})` : "Rules for all agents", groups.all, "No rules cover every agent.")}
-          {group(agentFilter ? `Rules just for ${agentFilter} (or a few agents)` : "Rules for specific agents", groups.some, "No rules for specific agents.")}
-          {group("Off", groups.off, "No rules are off.", true)}
-
-          <p style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flex: "none" }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
-            Rules cover calls through WhiteRoom. Claude Code signed in with OAuth isn’t covered.
-          </p>
-        </main>
-
-        {suggestionRec ? (
-          <SuggestionDraft
-            fleetId={fleetId}
-            authKey={authKey}
-            recId={suggestionRec}
-            existingRule={rules.find((r) => r.sourceRecommendationId === suggestionRec) ?? null}
-            onDone={(ruleId, message) => {
-              setNotice(message || null);
-              router.replace(withParams({ rec: null }));
-              // Select the new rule only once the list that holds it has loaded.
-              void fetchData().then((ok) => { if (ok) { setSelectedId(ruleId); setDraft(null); } });
-            }}
-            onCancel={(ruleCreated) => { router.replace(withParams({ rec: null })); if (ruleCreated) void fetchData(); }}
-          />
-        ) : selected && draft ? (
-          <>
-          {/* Phones only (globals.css): the dimmed list above the sheet; tapping it goes back, as ‹ Controls does. */}
-          <div className="gov-scrim" aria-hidden="true" onClick={() => openRule(null)} />
-          <aside aria-label="Edit rule" className="gov-panel is-sheet">
-            {notice && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
-            <RuleEditor
-              rule={selected}
-              draft={draft}
-              onDraft={(d) => { setDraft(d); setError(null); }}
-              agents={agents}
-              govV1={govV1}
-              alertChannel={alertChannel}
-              wouldAct={wouldActs[`${selected.id}@${selected.version}`] ?? null}
-              history={history.filter((h) => h.ruleId === selected.id)}
-              actors={actors}
-              undoOf={undoOf}
-              fleetDailySpend={dailySpend}
-              onUndo={undo}
-              dirty={dirty}
-              error={error}
-              saving={saving}
-              onSave={() => save()}
-              onDiscard={() => { setDraft(draftFrom(selected)); setError(null); }}
-              onClose={() => openRule(null)}
-              onRemove={() => setDialog({ kind: "remove", rule: selected })}
-            />
-          </aside>
-          </>
-        ) : (
-          <aside aria-label="Rule details" className="gov-panel is-empty">
-            <p style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Pick a rule to change it</p>
-            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: "var(--tx2)" }}>Or use Add rule. New rules start in Record only, so nothing is blocked until you say so.</p>
-            {recent.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <p className="gov-eyebrow" style={{ marginTop: 6 }}>Recent changes</p>
-                {recent.map((h) => (
-                  <HistoryLine key={h.id} entry={h} withRule undo={undoOf(h)} onUndo={undo} busy={saving} />
-                ))}
-                <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
-              </div>
+                {rules.length === 0 ? (
+                  <section className="wr-panel ctl-card ctl-state">
+                    <h2 className="wr-panel__title ctl-card__title">No rules yet</h2>
+                    <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start as Record only, so nothing is blocked until you say so.</p>
+                    <Button variant="primary" onClick={() => guard(() => setAdding("open"))} style={{ alignSelf: "flex-start" }}>Add rule</Button>
+                  </section>
+                ) : lists}
+              </>
             )}
-          </aside>
-        )}
+
+            <p className="ctl-cap" style={{ margin: 0 }}>Not covered: Claude Code signed in with OAuth.</p>
+          </div>
+
+          {suggestionRec ? (
+            <aside aria-label="Suggested rule" className="wr-panel ctl-editor">
+              <SuggestionDraft
+                fleetId={fleetId}
+                authKey={authKey}
+                recId={suggestionRec}
+                existingRule={rules.find((r) => r.sourceRecommendationId === suggestionRec) ?? null}
+                onDone={(ruleId, message) => {
+                  if (message) showToast(message);
+                  router.replace(withParams({ rec: null }));
+                  // Select the new rule only once the list that holds it has loaded.
+                  void fetchData().then((ok) => { if (ok) { setSelectedId(ruleId); setDraft(null); } });
+                }}
+                onCancel={(ruleCreated) => { router.replace(withParams({ rec: null })); if (ruleCreated) void fetchData(); }}
+              />
+            </aside>
+          ) : edited && draft ? (
+            <>
+              {/* Phones only (globals.css): the dimmed list above the sheet; tapping it goes back, as ‹ Controls does. */}
+              <div className="gov-scrim" aria-hidden="true" onClick={() => openRule(null)} />
+              <aside aria-label="Edit rule" className="wr-panel ctl-editor is-sheet">
+                {notice && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
+                <RuleEditor
+                  rule={edited}
+                  draft={draft}
+                  onDraft={(d) => { setDraft(d); setError(null); }}
+                  agents={agents}
+                  govV1={govV1}
+                  alertChannel={alertChannel}
+                  history={history.filter((h) => h.ruleId === edited.id)}
+                  actors={actors}
+                  undoOf={undoOf}
+                  fleetDailySpend={dailySpend}
+                  agentSpend={spendAgents.flatMap((a) => (agentSpend[a] ? [{ agent: a, ...agentSpend[a]! }] : []))}
+                  status={ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
+                  weekCaught={weekOf(edited)?.wouldAct ?? null}
+                  onAudit={() => setAuditOpen(true)}
+                  onUndo={undo}
+                  dirty={dirty}
+                  error={error}
+                  saving={saving}
+                  onSave={() => save()}
+                  onDiscard={() => { setDraft(draftFrom(edited)); setError(null); }}
+                  onClose={() => openRule(null)}
+                  onRemove={() => setDialog({ kind: "remove", rule: edited })}
+                />
+              </aside>
+            </>
+          ) : (
+            <aside aria-label="Rule details" className="wr-panel ctl-editor is-empty">
+              <h2 className="ctl-ed-title">Select a rule to edit it</h2>
+              <p className="ctl-cap" style={{ margin: "-8px 0 8px" }}>New rules start as Record only.</p>
+              {recent.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <p className="gov-eyebrow">Recent changes</p>
+                  {recent.map((h) => (
+                    <HistoryLine key={h.id} entry={h} actors={actors} withRule compact undo={undoOf(h)} onUndo={undo} busy={saving} />
+                  ))}
+                </div>
+              )}
+              <Button onClick={() => setAuditOpen(true)} style={{ alignSelf: "flex-start" }}>Check audit trail</Button>
+            </aside>
+          )}
+        </div>
       </div>
 
-      <AddRuleDialog open={adding !== "closed"} busy={adding === "busy"} onPick={(t) => void add(t)} onCancel={() => setAdding("closed")} />
+      {toast && <Toast key={toast.id} message={toast.message} action={toast.undo ? { label: "Undo", onClick: toast.undo } : undefined} onClose={() => setToastState((t) => (t?.id === toast.id ? null : t))} />}
 
-      <ConfirmDialog
+      <AddRuleDialog open={adding !== "closed"} busy={adding === "busy"} onPick={(t) => void add(t)} onCancel={() => setAdding("closed")} />
+      <AuditCheckDialog open={auditOpen} fleetId={fleetId} onClose={() => setAuditOpen(false)} />
+
+      <ChoiceDialog
         open={dialog?.kind === "enforce"}
-        tone="neutral"
-        title={dialog?.kind === "enforce" ? (dialog.next.response === "notify" ? `Turn on the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : `Turn on Block for the ${RULE_LABELS[dialog.rule.ruleType]} rule?`) : ""}
-        body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldActs[`${dialog.rule.id}@${dialog.rule.version}`] ?? null} /> : null}
-        confirmLabel={dialog?.kind === "enforce" && dialog.next.response === "notify" ? "Turn it on" : "Turn on Block"}
-        cancelLabel={dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep Record only" : "Cancel"}
+        title={dialog?.kind === "enforce" ? (dialog.next.response === "notify" ? "Turn on alerts for this rule?" : dialog.next.response === "block" || !dialog.next.response ? "Start blocking with this rule?" : `Let this rule ${RESPONSE_LABEL[dialog.next.response].toLowerCase()}?`) : ""}
+        body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldOf(dialog.rule)} week={weekOf(dialog.rule)} agentCalls={agentCalls} /> : null}
         busy={saving}
-        onConfirm={() => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); }}
-        onCancel={() => setDialog(null)}
+        cancelLabel={null}
+        choices={[
+          { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep recording only" : "Cancel", onClick: cancelDialog },
+          { label: dialog?.kind === "enforce" && dialog.next.response === "notify" ? "Turn it on" : dialog?.kind === "enforce" && (dialog.next.response ?? "block") !== "block" ? "Turn it on" : "Start blocking", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
+        ]}
+        onCancel={cancelDialog}
+      />
+      <ChoiceDialog
+        open={dialog?.kind === "downgrade"}
+        title="Stop blocking with this rule?"
+        body={dialog?.kind === "downgrade" ? (
+          <>
+            <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
+            <p style={{ margin: 0 }}>Calls that match will go through for {whoFor(dialog.next.appliesTo)}. {dialog.next.mode === "watch" ? "WhiteRoom will still record them." : "Nothing will be recorded."} The change is recorded, and you can undo it.</p>
+          </>
+        ) : null}
+        busy={saving}
+        cancelLabel={null}
+        choices={[
+          { label: "Keep blocking", tone: "primary", onClick: cancelDialog },
+          { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); save(true); } },
+        ]}
+        onCancel={cancelDialog}
+      />
+      <ChoiceDialog
+        open={dialog?.kind === "narrow"}
+        title="Who should this rule cover?"
+        stacked
+        body={dialog?.kind === "narrow" ? (
+          <>
+            <p style={{ margin: "0 0 4px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
+            <p className="ctl-cap" style={{ margin: 0 }}>Today it covers all {agents.length} agents, and new agents get it too.</p>
+            {dialog.reasons.length > 0 && <p className="ctl-cap" style={{ margin: "8px 0 0" }}>Moving it also saves your other changes: {dialog.reasons.join("; ")}.</p>}
+          </>
+        ) : null}
+        busy={saving}
+        choices={dialog?.kind === "narrow" && dialog.next.appliesTo !== "all" ? [
+          { label: <>Keep it for everyone, and add a copy just for {dialog.next.appliesTo.join(", ")}</>, tone: "primary", onClick: () => { if (dialog?.kind === "narrow" && dialog.next.appliesTo !== "all") void copyFor(dialog.rule, dialog.next.appliesTo); } },
+          { label: <>Move it to {dialog.next.appliesTo.join(", ")} only: {Math.max(0, agents.filter((a) => !(dialog.next.appliesTo as string[]).includes(a)).length)} agents will lose this rule</>, tone: "bad", onClick: () => { setDialog(null); save(true); } },
+        ] : []}
+        onCancel={cancelDialog}
+      />
+      <ChoiceDialog
+        open={dialog?.kind === "allow"}
+        title={dialog?.kind === "allow" ? (allowlistTarget && allowlistMissing.length ? `Allow ${allowlistMissing.join(", ")}?` : allowlistTarget ? "Turn on the Model allowlist?" : "Add a Model allowlist?") : ""}
+        body={dialog?.kind === "allow" ? (
+          allowlistTarget && allowlistMissing.length ? (
+            <>
+              <p style={{ margin: "0 0 8px" }}>
+                {allowCaught.length
+                  ? <>Since it was last changed, the allowlist caught {allowCaught.map(([a, n]) => <span key={a}><strong>{n.toLocaleString("en-US")} {n === 1 ? "call" : "calls"}</strong> from {mono(a)}</span>).reduce<React.ReactNode[]>((acc, el, i) => (i ? [...acc, ", ", el] : [el]), [])}. </>
+                  : <>The allowlist hasn’t caught anything since it was last changed. </>}
+                Calls to {mono(allowlistMissing.join(", "))} won’t be caught once {allowlistMissing.length === 1 ? "it’s" : "they’re"} allowed.
+              </p>
+              <p className="ctl-cap" style={{ margin: 0 }}>
+                {allowOnlyFor
+                  ? <>Applies to all agents. Or allow it for {allowOnlyFor} only: {allowOnlyFor} gets its own copy of the allowlist, and agents added later aren’t covered by the allowlist until you add them.</>
+                  : <>Applies to all agents{allowlistTarget.mode === "off" ? ", in Record only" : ""}.</>}
+              </p>
+            </>
+          ) : allowlistTarget
+            ? <p style={{ margin: 0 }}>It goes to Record only: it records calls to any other model and blocks nothing.</p>
+            : <p style={{ margin: 0 }}>A Model allowlist with {mono(dialog.models.join(", "))}, in Record only: it records calls to any other model and blocks nothing.</p>
+        ) : null}
+        busy={saving}
+        choices={dialog?.kind === "allow" ? [
+          ...(allowOnlyFor ? [{ label: `Allow for ${allowOnlyFor} only`, onClick: () => void addSuggestedAllowlist(dialog.models, allowOnlyFor) }] : []),
+          { label: allowlistTarget && allowlistMissing.length ? "Allow for all agents" : allowlistTarget ? "Turn on in Record only" : "Add in Record only", tone: "primary" as const, onClick: () => void addSuggestedAllowlist(dialog.models) },
+        ] : []}
+        onCancel={cancelDialog}
+      />
+      <ChoiceDialog
+        open={dialog?.kind === "kwall"}
+        title={dialog?.kind === "kwall" ? `Cover all agents with the ${keywordsShort(dialog.rule.params as KeywordParams)} rule?` : ""}
+        body={dialog?.kind === "kwall" ? (
+          <>
+            <p style={{ margin: "0 0 8px" }}>It will apply to all {agents.length} agents, in <strong>Record only</strong>. Nothing is blocked until you switch it to Block.</p>
+            <p className="ctl-cap" style={{ margin: 0 }}>{dialog.rule.appliesTo === "all" ? "" : dialog.rule.appliesTo.join(", ")} {dialog.rule.appliesTo !== "all" && dialog.rule.appliesTo.length > 1 ? "keep their" : "keeps its"} own copy, so nothing changes for {dialog.rule.appliesTo !== "all" && dialog.rule.appliesTo.length > 1 ? "them" : "it"}.</p>
+          </>
+        ) : null}
+        busy={saving}
+        choices={[{ label: "Cover all agents", tone: "primary", onClick: () => { if (dialog?.kind === "kwall") void coverAll(dialog.rule); } }]}
+        onCancel={cancelDialog}
       />
       <ConfirmDialog
         open={dialog?.kind === "stop"}
@@ -698,7 +1039,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         confirmPhrase={dialog?.kind === "stop" ? stopPhrase(dialog.next.appliesTo) : "stop"}
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "stop" && draft) void commit(dialog.rule, draft); }}
-        onCancel={() => setDialog(null)}
+        onCancel={cancelDialog}
       />
       <ConfirmDialog
         open={dialog?.kind === "keyword"}
@@ -708,7 +1049,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         confirmPhrase={dialog?.kind === "keyword" ? keywordPhrase(dialog.next.appliesTo, dialog.next.response) : "block"}
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "keyword" && draft) void commit(dialog.rule, draft); }}
-        onCancel={() => setDialog(null)}
+        onCancel={cancelDialog}
       />
       <ConfirmDialog
         open={dialog?.kind === "weaken"}
@@ -716,22 +1057,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "weaken" ? (
           <>
             <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{dialog.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-            The change is recorded, and you can undo it from the change log.
-            {dialog.rule.appliesTo === "all" && dialog.next.appliesTo !== "all" && (
-              <span style={{ display: "block", marginTop: 10 }}>
-                Agents added later won&rsquo;t be covered by a narrowed rule.{" "}
-                {dialog.next.appliesTo.length > 0 && (
-                  <Button size={28} variant="ghost" onClick={() => void copyFor(dialog.rule, dialog.next.appliesTo as string[])}>Keep it for all, and add a copy for {dialog.next.appliesTo.join(", ")}</Button>
-                )}
-              </span>
-            )}
+            The change is recorded, and you can undo it.
           </>
         ) : null}
         confirmLabel="Save the change"
         cancelLabel="Keep it as it is"
         busy={saving}
         onConfirm={() => { setDialog(null); save(true); }}
-        onCancel={() => setDialog(null)}
+        onCancel={cancelDialog}
       />
 
       <ConfirmDialog
@@ -742,7 +1075,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         cancelLabel="Keep rule"
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "remove") void remove(dialog.rule); }}
-        onCancel={() => setDialog(null)}
+        onCancel={cancelDialog}
       />
       <ConfirmDialog
         open={dialog?.kind === "discard"}
@@ -758,7 +1091,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           if (selected) setDraft(draftFrom(selected));
           then();
         }}
-        onCancel={() => setDialog(null)}
+        onCancel={cancelDialog}
       />
     </div>
   );
@@ -769,20 +1102,33 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 const suggestedAllowlistTarget = (rules: GovernanceRule[]) =>
   rules.find((r) => r.ruleType === "model_allowlist" && r.mode !== "enforce" && r.appliesTo === "all");
 
-/** What enforcing would have done, from the rule's time in Watch; and the fleet-wide side effect, when there is one. */
-function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: GovernanceRule; wouldAct: RuleWouldActResult | null }) {
-  const watched = rule.mode === "watch" && wouldAct;
-  const n = watched ? Object.values(wouldAct.byAgent).reduce((a, b) => a + b, 0) : null;
-  const tile = { background: "var(--sunk)", borderRadius: 7, padding: 12 } as const;
-  const big = { display: "block", fontFamily: FONT_MONO, fontSize: 'var(--fs-xl)', fontWeight: 700, color: "var(--tx)" } as const;
+/**
+ * What Block would have done: the last 7 days, and how long it has been
+ * recording since its last change. An allowlist that caught every call an
+ * agent made says so: that agent would stop working.
+ */
+function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
+  rule: GovernanceRule; next: GovernanceRule; wouldAct: RuleWouldActResult | null; week: RuleActionCounts | undefined; agentCalls: Record<string, number>;
+}) {
+  const watched = rule.mode === "watch";
+  const n = watched && week ? week.wouldAct : watched && wouldAct ? Object.values(wouldAct.byAgent).reduce((a, b) => a + b, 0) : null;
+  const since = watched && wouldAct?.since ? fmtDay(wouldAct.since) : null;
+  const all = wouldAct && !wouldAct.unversioned && next.ruleType === "model_allowlist"
+    ? Object.entries(wouldAct.byAgent).filter(([a, c]) => c > 0 && agentCalls[`${rule.id}:${a}`] !== undefined && c >= agentCalls[`${rule.id}:${a}`] && (next.appliesTo === "all" || next.appliesTo.includes(a)))
+    : [];
   return (
     <>
-      {ruleSentenceText(next)} {appliesNow(next.appliesTo)}
-      <span style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
-        <span style={tile}><span style={big}>{n === null ? "—" : n.toLocaleString()}</span>{watched && wouldAct.unversioned ? "times it would have acted, some maybe before its last change" : "times it would have acted"}</span>
-        <span style={tile}><span style={big}>{watched && wouldAct.since ? timeAgo(wouldAct.since).replace(/ ago$/, "") : "—"}</span>{watched ? "in Record only, since its last change" : "Turn on Record only first to see what it would do"}</span>
-      </span>
-      {canAct(next) && <span style={{ display: "block", marginTop: 12 }}>{UNNAMED_CALLS_REFUSED}</span>}
+      <p style={{ margin: "0 0 4px" }}><strong>{RULE_LABELS[next.ruleType]}</strong> · {ruleConditionText(next)}</p>
+      <p className="ctl-cap" style={{ margin: "0 0 14px" }}>Applies to {whoFor(next.appliesTo)}</p>
+      <div className="ctl-tiles">
+        <div className="ctl-tile"><div className="ctl-tile__lbl">Would have blocked</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
+        <div className="ctl-tile"><div className="ctl-tile__lbl">Recording since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Record only first to see what it would do"}</div></div>
+      </div>
+      {all.map(([a, c]) => (
+        <p key={a} className="ctl-warnbox"><strong>This would block every call {a} makes.</strong> None of its {c.toLocaleString("en-US")} {c === 1 ? "call" : "calls"} since the last change used a model on this allowlist. Add its model first if {a} should keep working.</p>
+      ))}
+      <p style={{ margin: "14px 0 0" }}>{next.response === "notify" ? "From now on, a call that matches sends you an alert. The call goes through." : "From now on, a call that matches fails with a plain reason. The agent keeps going."}</p>
+      {canAct(next) && <p className="ctl-cap" style={{ margin: "8px 0 0" }}>{UNNAMED_CALLS_REFUSED}</p>}
     </>
   );
 }
