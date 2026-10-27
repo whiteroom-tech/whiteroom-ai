@@ -6,8 +6,8 @@
 
 import { HistoryLine } from './HistoryLine';
 import type { Undo } from '@/lib/rule-history';
-import { MODE_LABEL } from '@/lib/vocab';
-import { useState } from 'react';
+import { DOES_TAG, MODE_LABEL } from '@/lib/vocab';
+import { useEffect, useState } from 'react';
 import type { GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint } from '@whiteroom/ui';
@@ -20,7 +20,7 @@ import { fmtTime } from '@/lib/format';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseWhatHappens, draftParams, emptyPick, sendsAlert, WHAT_HAPPENS_LABEL, whatHappens, whatHappensOptions, whenSentence, type RuleDraft, type WhatHappens } from '@/lib/controls-view';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseWhatHappens, draftParams, emptyPick, recordAs, responseChoices, sendsAlert, WHAT_HAPPENS_LABEL, whatHappens, whatHappensOptions, whenSentence, type RuleDraft, type WhatHappens } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
@@ -109,15 +109,28 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const whenHint = [timing, WHEN_NOTES[rule.ruleType], where && where !== 'incoming' ? REPLY_NOTE : ''].filter(Boolean).join(' ');
   const choice = whatHappens(draft);
   const choiceLine = choice === 'off' ? 'Does nothing and records nothing.'
-    : choice === 'watch' ? `Records what it would do (${WHAT_HAPPENS_LABEL[draft.response].toLowerCase()}) and lets every call through.`
+    : choice === 'watch' ? 'Records what it would do and lets every call through.'
     : DOES[choice];
-  /** Why an action can't be picked yet (it needs a day in Record only first), with when it can; null when it can. */
-  const waitFor = (o: WhatHappens): string | null => {
+  // Re-read once a waiting period ends, so the option it held back opens on its own.
+  const [, setTick] = useState(0);
+  /** When an action can be picked, if it has to wait (a day in Record only first); null when it can now. */
+  const waitUntil = (o: WhatHappens) => {
+    // The wait is for acting: Off and Record only (whatever it records) never wait.
     if (o === 'off' || o === 'watch' || (rule.mode === 'enforce' && rule.response === o)) return null;
     const needs = stopCheck(rule, { mode: 'enforce', response: o }, ruleHistory).kind === 'blocked'
       || keywordBlockCheck(rule, { mode: 'enforce', response: o, params: asRule.params }, ruleHistory).kind === 'blocked';
-    if (!needs) return null;
-    const from = actionAvailableFrom(rule.id, ruleHistory, rule.mode);
+    return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
+  };
+  const options = whatHappensOptions(govV1, rule.response ?? 'block', draft.response);
+  const nextOpen = Math.min(...options.map(waitUntil).filter((t): t is number => typeof t === 'number'));
+  useEffect(() => {
+    if (!Number.isFinite(nextOpen)) return;
+    const t = setTimeout(() => setTick((n) => n + 1), Math.min(2 ** 31 - 1, Math.max(0, nextOpen - Date.now()) + 1000));
+    return () => clearTimeout(t);
+  }, [nextOpen]);
+  /** Why an action can't be picked yet, with when it can; null when it can. */
+  const waitFor = (o: WhatHappens): string | null => {
+    const from = waitUntil(o);
     if (from === null) return null;
     if (from === 'record-first') return 'needs 24 hours in Record only first';
     if (from === 'unknown') return 'needs 24 hours in Record only first, and its start isn’t on record';
@@ -131,7 +144,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
         <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
         <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
-        <span className={`gov-edhead__mode${draft.mode === 'enforce' ? ' is-on' : ''}`}>{draft.mode === 'enforce' ? MODE_LABEL.enforce : MODE_LABEL[draft.mode]}{dirty ? ' · unsaved' : ''}</span>
+        <span className={`gov-edhead__mode${draft.mode === 'enforce' ? ' is-on' : ''}`}>{draft.mode === 'enforce' ? DOES_TAG[draft.response] : MODE_LABEL[draft.mode]}{dirty ? ' · unsaved' : ''}</span>
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
       <p className="ctl-status">{status}</p>
@@ -245,21 +258,30 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="gov-eyebrow ctl-q" id="ctl-what">What happens{canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}</p>
         <div role="radiogroup" aria-labelledby="ctl-what" className="ctl-choices">
-          {whatHappensOptions(govV1, draft.response).map((o) => {
+          {options.map((o) => {
             const wait = waitFor(o);
             return (
               <label key={o} className={`ctl-choice${choice === o ? ' is-on' : ''}${wait ? ' is-off' : ''}`}>
-                <input type="radio" name={`what-${rule.id}`} value={o} checked={choice === o} disabled={!!wait} onChange={() => onDraft(chooseWhatHappens(draft, o))} />
+                <input type="radio" name={`what-${rule.id}`} value={o} checked={choice === o} disabled={!!wait} onChange={() => onDraft(chooseWhatHappens(draft, o, rule))} />
                 <span>{WHAT_HAPPENS_LABEL[o]}{wait && <span className="ctl-choice__why"> · {wait}</span>}</span>
               </label>
             );
           })}
         </div>
+        {choice === 'watch' && (
+          <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+            Records:
+            <select className="gov-field" aria-label="What Record only records" value={draft.response} onChange={(e) => onDraft(recordAs(draft, e.target.value as GovernanceResponse))}
+              style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
+              {responseChoices(govV1, rule.response ?? 'block', draft.response).map((r) => <option key={r} value={r}>{WHAT_HAPPENS_LABEL[r]}</option>)}
+            </select>
+          </label>
+        )}
         <p style={help}>
           {choiceLine}
           {draft.mode === 'enforce' && rule.mode !== 'enforce' && ' You’ll confirm before it starts.'}
         </p>
-        {draft.mode === 'enforce' && draft.response === 'block' && (
+        {draft.mode !== 'off' && draft.response === 'block' && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-sm)', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
             <input type="checkbox" checked={draft.alsoNotify} onChange={(e) => set({ alsoNotify: e.target.checked })} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
             Also send me an alert

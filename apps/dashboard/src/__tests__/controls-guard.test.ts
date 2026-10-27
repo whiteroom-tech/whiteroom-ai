@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canAct, longestWatchHours, stopBlockedReason, stopCheck, stopPhrase, watchSummary } from '@/lib/controls-guard';
+import { canAct, longestWatchHours, stopBlockedReason, stopCheck, stopPhrase } from '@/lib/controls-guard';
 import { agentMenu } from '@/components/home/AgentActions';
 import type { GovernanceHistoryEntry } from '@/lib/whiteroom/types';
 
@@ -35,23 +35,6 @@ describe('the Stop guard', () => {
   it('asks for the agent names it covers, or "stop all agents"', () => {
     expect(stopPhrase(['lead-agent', 'scout'])).toBe('lead-agent, scout');
     expect(stopPhrase('all')).toBe('stop all agents');
-  });
-});
-
-describe('Watching summary', () => {
-  const rule = { response: 'pause' as const };
-
-  it('names each agent with its count from the engine, busiest first', () => {
-    expect(watchSummary(rule, { byAgent: { scout: 1, 'lead-agent': 15 }, unversioned: false }))
-      .toBe('Record only: would have paused lead-agent 15 times, scout once since its last change.');
-  });
-
-  it('claims no response when older, unversioned events are counted', () => {
-    expect(watchSummary(rule, { byAgent: { 'lead-agent': 2 }, unversioned: true })).toBe('Record only: would have acted on lead-agent 2 times since its last change.');
-  });
-
-  it('is null when the rule has not fired', () => {
-    expect(watchSummary(rule, { byAgent: {}, unversioned: false })).toBeNull();
   });
 });
 
@@ -115,5 +98,32 @@ describe('which rules turn on refusals for unnamed calls (engine fleetHasEnforci
     const withResponse = (response: string) => ({ ...r('spend_cap', 'enforce'), response }) as unknown as R;
     expect(canAct(withResponse('notify'))).toBe(false);
     for (const response of ['block', 'pause', 'stop']) expect(canAct(withResponse(response))).toBe(true);
+  });
+});
+
+describe('Record only time from history snapshots', async () => {
+  const { actionAvailableFrom, keywordBlockCheck } = await import('@/lib/controls-guard');
+  const H = 3_600_000;
+  const t0 = Date.parse('2026-10-20T00:00:00Z');
+  const snap = (mode: 'off' | 'watch' | 'enforce') => ({ mode, response: 'block' as const, alsoNotify: false, appliesTo: 'all' as const, params: { threshold: 5, scope: 'run' as const, ignoreTools: [] } });
+  const entry = (id: string, at: number, description: string, before: ReturnType<typeof snap> | null, after: ReturnType<typeof snap> | null) =>
+    ({ id, ruleId: 'r', ruleType: 'loop_breaker' as const, description, by: 't', time: new Date(at).toISOString(), before, after });
+
+  it('reads an Undo (its own description) as the mode change it is: Stop opens 24 hours later', () => {
+    const history = [
+      entry('a', t0, 'Added new Loop breaker rule', null, snap('watch')),
+      entry('b', t0 + H, 'Watch → Enforce', snap('watch'), snap('enforce')),
+      entry('c', t0 + 2 * H, 'Undid the last change', snap('enforce'), snap('watch')),
+    ];
+    expect(actionAvailableFrom('r', history, 'watch', t0 + 3 * H)).toBe(t0 + 26 * H);
+    expect(actionAvailableFrom('r', history, 'watch', t0 + 27 * H)).toBeNull();
+  });
+
+  it('counts a copied Keywords rule from when it was added, so it can block incoming data a day later', () => {
+    const kw = { id: 'r', ruleType: 'keyword', mode: 'watch', response: 'block' as const, params: { keywords: ['x'], where: 'incoming' as const, wholeWord: true } };
+    const history = [{ id: 'a', ruleId: 'r', ruleType: 'keyword' as const, description: 'Added a copy of the Keywords rule for all agents', by: 't', time: new Date(t0).toISOString(),
+      before: null, after: { mode: 'watch' as const, response: 'block' as const, alsoNotify: false, appliesTo: 'all' as const, params: kw.params } }];
+    expect(keywordBlockCheck(kw, { mode: 'enforce' }, history, t0 + 2 * H).kind).toBe('blocked');
+    expect(keywordBlockCheck(kw, { mode: 'enforce' }, history, t0 + 25 * H).kind).toBe('confirm');
   });
 });

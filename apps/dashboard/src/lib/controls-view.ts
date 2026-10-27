@@ -111,7 +111,8 @@ const covers = (a: GovernanceScope, b: GovernanceScope) => a === 'all' || (b !==
  * $190 cap for one agent.
  */
 export function spendOverlap(rules: readonly GovernanceRule[]): { never: GovernanceRule; first: GovernanceRule } | null {
-  const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode !== 'off');
+  // Only caps that block: in Record only neither acts, and an alert before a block is a warning, not an overlap.
+  const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode === 'enforce' && (r.response ?? 'block') !== 'notify');
   for (let i = 0; i < caps.length; i++) {
     for (let j = i + 1; j < caps.length; j++) {
       const a = caps[i], b = caps[j];
@@ -294,7 +295,7 @@ export function draftProblem(d: RuleDraft): string | null {
 
 // ── Add a rule ──────────────────────────────────────────────────────
 
-/** "Add a rule" choices, by goal, each naming its rule. Also the order rules are listed in on Controls (byMode). */
+/** "Add a rule" choices, by goal, each naming its rule. Also the order rules are listed in on Controls (ruleGroups). */
 export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string; isNew?: boolean }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
   { type: 'call_rate', title: 'Limit calls per minute', desc: 'Block calls once an agent makes too many in a minute.' },
@@ -332,7 +333,9 @@ export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[]
   if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_LABEL[prev.mode]} → ${MODE_LABEL[next.mode]}`);
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
   if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`Then: ${VERB[pr]} → ${VERB[nr]}`);
-  if (prev.alsoNotify && !next.alsoNotify && nr === 'block') out.push('It stops sending you an alert');
+  // Any lost alert, whatever the response: Pause, Stop and Alert me alert; Block does when asked to.
+  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
+  if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
     const dropped = prev.appliesTo.filter((a) => !(next.appliesTo as string[]).includes(a));
@@ -353,7 +356,13 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
     }
     case 'loop_breaker': {
       const p = a as LoopBreakerParams, n = b as LoopBreakerParams;
-      return n.threshold > p.threshold ? [`Acts after ${fmtCount(n.threshold)} repeats instead of ${fmtCount(p.threshold)}`] : [];
+      const out: string[] = [];
+      if (n.threshold > p.threshold) out.push(`Acts after ${fmtCount(n.threshold)} repeats instead of ${fmtCount(p.threshold)}`);
+      // Per day and per run count differently: ask, as for a spend cap's period.
+      if (n.scope !== p.scope) out.push(`Counts repeats in a ${n.scope} instead of a ${p.scope}`);
+      const ignored = n.ignoreTools.filter((t) => !p.ignoreTools.includes(t));
+      if (ignored.length) out.push(`No longer counts calls to ${ignored.join(', ')}`);
+      return out;
     }
     case 'call_rate': {
       const p = a as CallRateParams, n = b as CallRateParams;
@@ -657,16 +666,33 @@ export function whatHappens(d: Pick<RuleDraft, 'mode' | 'response'>): WhatHappen
   return d.mode === 'enforce' ? d.response : d.mode;
 }
 
-/** The draft with a new choice: Off → mode off; Record only → mode watch; an action → Block mode with that response. */
-export function chooseWhatHappens(d: RuleDraft, choice: WhatHappens): RuleDraft {
-  if (choice === 'off' || choice === 'watch') return { ...d, mode: choice };
+/**
+ * The draft with a new choice: Off → mode off; Record only → mode watch; an
+ * action → Block mode with that response. Leaving an action for Off or Record
+ * only puts back the saved rule's response and alert, so clicking through the
+ * actions changes nothing; what Record only records is picked on its own
+ * (recordAs).
+ */
+export function chooseWhatHappens(d: RuleDraft, choice: WhatHappens, saved: Pick<GovernanceRule, 'response' | 'alsoNotify'>): RuleDraft {
+  if (choice === 'off' || choice === 'watch') {
+    return d.mode === 'enforce' ? { ...d, mode: choice, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode: choice };
+  }
   return changeResponse({ ...d, mode: 'enforce' }, choice);
 }
 
-/** The choices in order: Off · Record only · the actions this fleet has (always the rule's own). */
-export function whatHappensOptions(govV1: boolean, current: GovernanceResponse): WhatHappens[] {
-  const actions = (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || r === current);
-  return ['off', 'watch', ...actions];
+/** What a rule in Record only (or Off) records: the action it would take. */
+export function recordAs(d: RuleDraft, response: GovernanceResponse): RuleDraft {
+  return changeResponse(d, response);
+}
+
+/** The actions this fleet has: Pause and Stop only on Gov v1 fleets, but always the ones the rule uses. */
+export function responseChoices(govV1: boolean, ...keep: GovernanceResponse[]): GovernanceResponse[] {
+  return (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || keep.includes(r));
+}
+
+/** The choices in order: Off · Record only · the actions (responseChoices). */
+export function whatHappensOptions(govV1: boolean, ...keep: GovernanceResponse[]): WhatHappens[] {
+  return ['off', 'watch', ...responseChoices(govV1, ...keep)];
 }
 
 export const WHAT_HAPPENS_LABEL: Record<WhatHappens, string> = {

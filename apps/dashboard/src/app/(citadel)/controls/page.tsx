@@ -24,7 +24,7 @@ import {
   performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
 } from "@/lib/whiteroom/client";
 import type {
-  GovernanceHistoryEntry, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
+  GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -360,7 +360,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // back as a new rule in Record only.
   // Removals added back in this visit: hidden at once, before the reload brings the log's own "added" line.
   const [restored, setRestored] = useState<Set<string>>(() => new Set());
-  const undoOf = (h: GovernanceHistoryEntry) => (restored.has(h.id) ? null : undoFor(h, rules, history));
+  const undoOf = (h: GovernanceHistoryEntry) => {
+    const u = restored.has(h.id) ? null : undoFor(h, rules, history);
+    return u?.kind === "restore" && keywordsHidden(u.rule) ? null : u;
+  };
   const undo = (u: Undo, entryId?: string) => {
     if (u.kind === "update") {
       const r = rules.find((x) => x.id === u.ruleId);
@@ -383,9 +386,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // since (another tab, a teammate), nothing is overwritten.
   const undoSaved = (before: GovernanceRule, saved: GovernanceRule) => {
     guard(() => void (async () => {
+      // One Undo at a time: a double click or a second toast's Undo can't send it twice.
+      if (undoBusy.current) return;
       const r = rules.find((x) => x.id === saved.id);
       if (!r) { showToast("That rule isn’t here any more, so there’s nothing to undo."); return; }
       if (r.version !== saved.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
+      undoBusy.current = true;
       setSaving(true);
       setError(null);
       try {
@@ -405,16 +411,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       } catch (e) {
         if (e instanceof WhiteRoomApiError && e.status === 409) showToast("This rule changed again since, so Undo left it as it is.");
         else handleError(e, "undo the change");
-      } finally { setSaving(false); void fetchData(); }
+      } finally { undoBusy.current = false; setSaving(false); void fetchData(); }
     })());
   };
   const cancelDialog = () => setDialog(null);
+  const undoBusy = useRef(false);
   // A toast's Undo runs after later renders: through this ref it sees the page as it is then
   // (an edit made since is asked about first), not as it was when the toast opened.
   const live = useRef({ undoSaved: (_: GovernanceRule, __: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {}, guard: (go: () => void) => go() });
 
   /** Undo of something this visit added: removes it again. */
   const undoAdded = async (ruleId: string) => {
+    if (undoBusy.current) return;
+    undoBusy.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -423,10 +432,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       if (selectedRef.current === ruleId) { setSelectedId(null); setDraft(null); }
       showToast("Change undone.");
     } catch (e) { handleError(e, "undo the change"); }
-    finally { setSaving(false); void fetchData(); }
+    finally { undoBusy.current = false; setSaving(false); void fetchData(); }
   };
 
   const restore = async (rule: Extract<Undo, { kind: "restore" }>["rule"], entryId?: string) => {
+    // A Keywords list the engine hid can't be added back: it would come back with no words.
+    if (keywordsHidden(rule)) { setError("This rule’s keywords are hidden here, so it can’t be added back from this page. Reload the page and try again."); return; }
+    if (undoBusy.current) return;
+    undoBusy.current = true;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -445,6 +458,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     } catch (e) {
       handleError(e, "add the rule back");
     } finally {
+      undoBusy.current = false;
       setSaving(false);
     }
   };
@@ -454,6 +468,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // only like any new rule. The original is left as it was.
   const copyFor = async (rule: GovernanceRule, agentsPicked: string[]) => {
     if (!agentsPicked.length || saving) return;
+    if (keywordsHidden(rule)) {
+      setDialog(null);
+      setError("This rule’s keywords are hidden here, so it can’t be copied. Reload the page and try again.");
+      return;
+    }
     const next = { ...rule, appliesTo: agentsPicked };
     // Already made (say, Save and Copy again): don't add a second, identical rule. Identical means
     // the same type, settings, response, alert and agents, whatever order the settings come in.
@@ -529,7 +548,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       await governanceDeleteRule(fleetId, rule.id, authKey);
       setRules((rs) => rs.filter((r) => r.id !== rule.id));
       if (selectedRef.current === rule.id) { setSelectedId(null); setDraft(null); }
-      showToast(message, () => live.current.restore(rule));
+      // A hidden Keywords list can't be added back, so there's no Undo for it.
+      showToast(message, keywordsHidden(rule) ? undefined : () => live.current.restore(rule));
       void fetchData();
     } catch (e) { handleError(e, "remove the rule"); void fetchData(); }
     finally { setSaving(false); }
@@ -586,13 +606,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const description = "Added Model allowlist in Record only (suggested)";
     // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
     const target = suggestedAllowlistTarget(rules);
+    // An allowlist in Block would still refuse the models: a second one in Record only wouldn't help.
+    if (rules.some((r) => r.ruleType === "model_allowlist" && r.mode === "enforce" && r.appliesTo === "all")) { setSaving(false); setAddingSuggestion(false); return; }
     try {
       if (!target) {
         const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
         showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created.id));
       } else {
         const prev = (target.params as ModelAllowlistParams).allowedModels;
-        const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
+        const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description, ifVersion: target.version }, authKey);
         const added = models.filter((m) => !prev.includes(m));
         showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => live.current.guard(() => void (async () => {
           setSaving(true);
@@ -609,6 +631,18 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     // The rule's version moved: an open editor on it reopens from the saved rule.
     if (target && selectedRef.current === target.id) setDraft(null);
   };
+
+  // An allowlist in Block takes the models through the editor: Save says what it loosens and asks first.
+  const openAllowlistWith = (target: GovernanceRule, models: string[]) => guard(() => {
+    const prev = (target.params as ModelAllowlistParams).allowedModels;
+    const missing = models.filter((m) => !prev.includes(m));
+    if (suggestionRec) router.replace(withParams({ rec: null }));
+    focusEditor.current = true;
+    setSelectedId(target.id);
+    setDraft({ ...draftFrom(target), params: { allowedModels: [...prev, ...missing] } });
+    setError(null);
+    setNotice(`${missing.join(", ")} is added below. Save to allow it; you’ll confirm first.`);
+  });
 
   // Every toast Undo asks about an unsaved edit first, as opening another rule does.
   live.current = { undoSaved, restore: (r) => guard(() => void restore(r)), undoAdded: (id) => guard(() => void undoAdded(id)), guard };
@@ -635,14 +669,17 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const wouldOf = (r: GovernanceRule) => wouldActs[`${r.id}@${r.version}`] ?? null;
 
   // Suggestions, each one line with its button.
-  const allowlistSuggestion = suggestions.onlyModels && !rules.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
+  // One scope for every suggestion: the rules shown (all, or those covering the picked agent).
+  const allowlistSuggestion = suggestions.onlyModels && !shown.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
-  const allowlistTarget = allowlistSuggestion ? suggestedAllowlistTarget(rules) : undefined;
+  // An allowlist in Block that leaves the models out is the one to change (in the editor); else one that isn't blocking.
+  const allowlistBlocking = allowlistSuggestion ? shown.find((r) => r.ruleType === "model_allowlist" && r.mode === "enforce" && r.appliesTo === "all") : undefined;
+  const allowlistTarget = allowlistSuggestion ? allowlistBlocking ?? suggestedAllowlistTarget(shown) : undefined;
   const allowlistMissing = allowlistTarget ? allowlistSuggestion!.filter((m) => !(allowlistTarget.params as ModelAllowlistParams).allowedModels.includes(m)) : [];
   // Who the allowlist caught since its last change: one agent can have the model just for itself.
   const allowCaught = allowlistTarget && allowlistTarget.mode === "watch" ? Object.entries(wouldOf(allowlistTarget)?.byAgent ?? {}).filter(([, n]) => n > 0) : [];
-  const dups = duplicateRules(rules);
-  const kwGaps = keywordGaps(rules, agents);
+  const dups = duplicateRules(shown);
+  const kwGaps = keywordGaps(shown, agents);
   const suggestionCount = kwGaps.length + dups.length + (overlap ? 1 : 0) + (allowlistSuggestion ? 1 : 0) + (suggestions.noCaching ? 1 : 0);
 
   // Each covered agent's own daily spend, beside a dollars-a-day cap for specific agents.
@@ -653,13 +690,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const spendAsked = useRef(new Set<string>());
   useEffect(() => {
     for (const a of spendKey ? spendKey.split("\n") : []) {
-      if (spendAsked.current.has(a)) continue;
-      spendAsked.current.add(a);
+      // Keyed by fleet, so another fleet's agent of the same name is read again.
+      const key = `${fleetId}:${a}`;
+      if (spendAsked.current.has(key)) continue;
+      spendAsked.current.add(key);
       const forFleet = fleetId;
       performanceAgent(fleetId, a, SUGGESTION_HOURS, authKey)
         .then((p) => { if (fleetRef.current === forFleet) setAgentSpend((m) => ({ ...m, [a]: averageDailySpend(p, SUGGESTION_HOURS / 24) })); },
           // A failed read is asked again the next time the rule is opened.
-          () => { if (fleetRef.current === forFleet) spendAsked.current.delete(a); });
+          () => { spendAsked.current.delete(key); });
     }
   }, [spendKey, fleetId, authKey]);
   useEffect(() => { spendAsked.current = new Set(); setAgentSpend({}); setAgentCalls({}); }, [fleetId]);
@@ -841,7 +880,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                         : allowlistTarget
                         ? <>Your Model allowlist is off. It has every model your fleet used in the last 14 days.</>
                         : <>Your fleet used only {mono(allowlistSuggestion.join(", "))} in the last 14 days. An allowlist with {allowlistSuggestion.length === 1 ? "it" : "them"} would catch every other model.</>,
-                      <Button busy={addingSuggestion} busyLabel="Adding…" disabled={saving} onClick={() => guard(() => setDialog({ kind: "allow", models: allowlistSuggestion }))}>
+                      <Button busy={addingSuggestion} busyLabel="Adding…" disabled={saving} onClick={() => (allowlistBlocking ? openAllowlistWith(allowlistBlocking, allowlistSuggestion) : guard(() => setDialog({ kind: "allow", models: allowlistSuggestion })))}>
                         {allowlistTarget && allowlistMissing.length ? "Add to allowlist…" : allowlistTarget ? "Turn on in Record only…" : "Add allowlist…"}
                       </Button>)}
                     {suggestions.noCaching && suggestion("cache", infoIcon,
@@ -938,29 +977,29 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
       <ChoiceDialog
         open={dialog?.kind === "enforce"}
-        title={dialog?.kind === "enforce" ? (dialog.next.response === "notify" ? "Turn on alerts for this rule?" : dialog.next.response === "block" || !dialog.next.response ? "Start blocking with this rule?" : `Let this rule ${RESPONSE_LABEL[dialog.next.response].toLowerCase()}?`) : ""}
+        title={dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].title : ""}
         body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldOf(dialog.rule)} week={weekOf(dialog.rule)} agentCalls={agentCalls} /> : null}
         busy={saving}
         cancelLabel={null}
         choices={[
           { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep recording only" : "Cancel", onClick: cancelDialog },
-          { label: dialog?.kind === "enforce" && (dialog.next.response ?? "block") !== "block" ? "Turn it on" : "Start blocking", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
+          { label: dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].start : "", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
         ]}
         onCancel={cancelDialog}
       />
       <ChoiceDialog
         open={dialog?.kind === "downgrade"}
-        title="Stop blocking with this rule?"
+        title={dialog?.kind === "downgrade" ? ACT_WORDS[dialog.rule.response ?? "block"].stopTitle : ""}
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
-            <p style={{ margin: 0 }}>Calls that match will go through for {whoFor(dialog.next.appliesTo)}. {dialog.next.mode === "watch" ? "WhiteRoom will still record them." : "Nothing will be recorded."} The change is recorded, and you can undo it.</p>
+            <p style={{ margin: 0 }}>{(dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Calls that match will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "WhiteRoom will still record them." : "Nothing will be recorded."} The change is recorded, and you can undo it.</p>
           </>
         ) : null}
         busy={saving}
         cancelLabel={null}
         choices={[
-          { label: "Keep blocking", tone: "primary", onClick: cancelDialog },
+          { label: dialog?.kind === "downgrade" ? ACT_WORDS[dialog.rule.response ?? "block"].keep : "", tone: "primary", onClick: cancelDialog },
           { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); save(true); } },
         ]}
         onCancel={cancelDialog}
@@ -1091,6 +1130,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 /** An agent's call count over the window a rule version's would-acts cover: a newer version or window never reads an older count. */
 const callsKey = (rule: GovernanceRule, since: string, agent: string) => `${rule.id}@${rule.version}@${since}:${agent}`;
 
+/** The Start and Stop confirms, worded by what the rule does. */
+const ACT_WORDS: Record<GovernanceResponse, { title: string; start: string; would: string; effect: string; stopTitle: string; keep: string }> = {
+  block: { title: "Start blocking with this rule?", start: "Start blocking", would: "Would have blocked", effect: "a call that matches fails with a plain reason. The agent keeps going.", stopTitle: "Stop blocking with this rule?", keep: "Keep blocking" },
+  pause: { title: "Start pausing agents with this rule?", start: "Start pausing", would: "Would have paused", effect: "a call that matches ends the agent’s run, and it waits until someone resumes it.", stopTitle: "Stop pausing agents with this rule?", keep: "Keep pausing" },
+  stop: { title: "Start stopping agents with this rule?", start: "Start stopping", would: "Would have stopped", effect: "a call that matches stops the agent until someone resumes it.", stopTitle: "Stop this rule stopping agents?", keep: "Keep stopping" },
+  notify: { title: "Turn on alerts for this rule?", start: "Turn on alerts", would: "Would have alerted you", effect: "a call that matches sends you an alert. The call goes through.", stopTitle: "Turn off alerts from this rule?", keep: "Keep alerts" },
+};
+
 /** "Two identical loop breakers": each kind of rule, more than one. */
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
@@ -1126,13 +1173,13 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
       <p style={{ margin: "0 0 4px" }}><strong>{RULE_LABELS[next.ruleType]}</strong> · {ruleConditionText(next)}</p>
       <p className="ctl-cap" style={{ margin: "0 0 14px" }}>Applies to {whoFor(next.appliesTo)}</p>
       <div className="ctl-tiles">
-        <div className="ctl-tile"><div className="ctl-tile__lbl">Would have blocked</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
+        <div className="ctl-tile"><div className="ctl-tile__lbl">{ACT_WORDS[next.response ?? "block"].would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
         <div className="ctl-tile"><div className="ctl-tile__lbl">Recording since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Record only first to see what it would do"}</div></div>
       </div>
       {all.map(([a, c]) => (
         <p key={a} className="ctl-warnbox"><strong>This would block every call {a} makes.</strong> None of its {c.toLocaleString("en-US")} {c === 1 ? "call" : "calls"} since the last change used a model on this allowlist. Add its model first if {a} should keep working.</p>
       ))}
-      <p style={{ margin: "14px 0 0" }}>{next.response === "notify" ? "From now on, a call that matches sends you an alert. The call goes through." : "From now on, a call that matches fails with a plain reason. The agent keeps going."}</p>
+      <p style={{ margin: "14px 0 0" }}>From now on, {ACT_WORDS[next.response ?? "block"].effect}</p>
       {canAct(next) && <p className="ctl-cap" style={{ margin: "8px 0 0" }}>{UNNAMED_CALLS_REFUSED}</p>}
     </>
   );

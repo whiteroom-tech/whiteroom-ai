@@ -117,25 +117,26 @@ describe('suggestions', () => {
 });
 
 describe('spend cap overlap', () => {
-  it('flags the higher of two caps that do the same thing for the same agents', () => {
-    const lo = rule({}), hi = rule({ params: { dailyCap: 200, scope: 'day', unit: 'dollars' } });
+  it('flags the higher of two blocking caps that do the same thing for the same agents', () => {
+    const lo = rule({ mode: 'enforce' }), hi = rule({ mode: 'enforce', params: { dailyCap: 200, scope: 'day', unit: 'dollars' } });
     expect(spendOverlap([hi, lo])).toEqual({ never: hi, first: lo });
   });
 
-  it('doesn’t flag caps that differ in what they do, when, or for whom', () => {
-    const lo = rule({});
+  it('doesn’t flag caps that differ in what they do, when, or for whom, or that don’t block', () => {
+    const lo = rule({ mode: 'enforce' });
     const hiParams = { dailyCap: 200, scope: 'day', unit: 'dollars' } as const;
-    expect(spendOverlap([lo, rule({ params: hiParams, response: 'notify' })])).toBeNull(); // a warning, then a stop
-    expect(spendOverlap([lo, rule({ params: hiParams, mode: 'enforce' })])).toBeNull(); // only the $200 one acts
-    expect(spendOverlap([lo, rule({ params: { ...hiParams, scope: 'run' } })])).toBeNull();
-    expect(spendOverlap([lo, rule({ params: hiParams, alsoNotify: true })])).toBeNull();
+    expect(spendOverlap([lo, rule({ params: hiParams, mode: 'enforce', response: 'pause' })])).toBeNull();
+    expect(spendOverlap([lo, rule({ params: hiParams, mode: 'watch' })])).toBeNull(); // only the $190 one acts
+    expect(spendOverlap([rule({}), rule({ params: hiParams })])).toBeNull(); // both Record only: neither acts
+    expect(spendOverlap([lo, rule({ params: { ...hiParams, scope: 'run' }, mode: 'enforce' })])).toBeNull();
+    expect(spendOverlap([lo, rule({ params: hiParams, mode: 'enforce', alsoNotify: true })])).toBeNull();
     // A $190 cap for one agent doesn't cover a fleet-wide $200 one.
-    expect(spendOverlap([rule({ appliesTo: ['lead-agent'] }), rule({ params: hiParams })])).toBeNull();
+    expect(spendOverlap([rule({ mode: 'enforce', appliesTo: ['lead-agent'] }), rule({ params: hiParams, mode: 'enforce' })])).toBeNull();
     // A fleet-wide $190 cap covers a $200 one for one agent.
-    expect(spendOverlap([lo, rule({ params: hiParams, appliesTo: ['lead-agent'] })])).not.toBeNull();
-    expect(spendOverlap([lo, rule({ params: hiParams, mode: 'off' })])).toBeNull();
+    expect(spendOverlap([lo, rule({ params: hiParams, mode: 'enforce', appliesTo: ['lead-agent'] })])).not.toBeNull();
   });
 });
+
 
 describe('row counts and the editor status', () => {
   const week = (n: Partial<Record<'blocked' | 'wouldAct' | 'toldYou', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });
@@ -349,38 +350,48 @@ describe('sameValue', async () => {
 });
 
 describe('What happens: one choice for mode and response', async () => {
-  const { whatHappens, chooseWhatHappens, whatHappensOptions, whenSentence, keywordsHidden, duplicateRules, draftFrom } = await import('@/lib/controls-view');
+  const { whatHappens, chooseWhatHappens, recordAs, whatHappensOptions, whenSentence, keywordsHidden, duplicateRules, draftFrom, weakenings, spendOverlap: overlap } = await import('@/lib/controls-view');
   const { actionAvailableFrom } = await import('@/lib/controls-guard');
 
   it('maps each option to a mode and response, and back, losing nothing', () => {
-    const d = draftFrom(rule({ mode: 'watch', response: 'pause', alsoNotify: false }));
+    const saved = rule({ mode: 'watch', response: 'pause', alsoNotify: false });
+    const d = draftFrom(saved);
     expect(whatHappens(d)).toBe('watch');
-    // Off and Record only keep the response, so switching back restores it.
-    const off = chooseWhatHappens(d, 'off');
+    // Off and Record only keep the response.
+    const off = chooseWhatHappens(d, 'off', saved);
     expect([off.mode, off.response]).toEqual(['off', 'pause']);
-    const back = chooseWhatHappens(off, 'watch');
+    const back = chooseWhatHappens(off, 'watch', saved);
     expect([back.mode, back.response]).toEqual(['watch', 'pause']);
     for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
-      const on = chooseWhatHappens(d, r);
+      const on = chooseWhatHappens(d, r, saved);
       expect([on.mode, on.response, whatHappens(on)]).toEqual(['enforce', r, r]);
     }
-    // The alert box belongs to Block: kept through Record only, cleared by another action.
-    const alerting = { ...chooseWhatHappens(d, 'block'), alsoNotify: true };
-    expect(chooseWhatHappens(alerting, 'watch').alsoNotify).toBe(true);
-    expect(chooseWhatHappens(alerting, 'notify').alsoNotify).toBe(false);
-    // Every engine combination is reachable: watch/off with any response, via that action then Record only or Off.
+    // Clicking through the actions and back changes nothing: the saved response and alert return.
+    const alerting = { ...chooseWhatHappens(d, 'block', saved), alsoNotify: true };
+    const returned = chooseWhatHappens(chooseWhatHappens(alerting, 'stop', saved), 'watch', saved);
+    expect([returned.response, returned.alsoNotify]).toEqual(['pause', false]);
+    // What Record only records is picked on its own, and kept through Off.
+    const recordsStop = recordAs(d, 'stop');
+    expect([recordsStop.mode, recordsStop.response]).toEqual(['watch', 'stop']);
+    expect(chooseWhatHappens(recordsStop, 'off', saved).response).toBe('stop');
+    // Every engine combination is reachable.
     for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
       for (const m of ['off', 'watch'] as const) {
-        const x = chooseWhatHappens(chooseWhatHappens(d, r), m);
+        const x = chooseWhatHappens(recordAs(d, r), m, saved);
         expect([x.mode, x.response]).toEqual([m, r]);
       }
+      expect(chooseWhatHappens(d, r, saved).mode).toBe('enforce');
     }
+    const blockAlert = { ...chooseWhatHappens(d, 'block', saved), alsoNotify: true };
+    expect([blockAlert.mode, blockAlert.response, blockAlert.alsoNotify]).toEqual(['enforce', 'block', true]);
   });
 
   it('offers Pause and Stop only where the fleet has them, but always the rule’s own', () => {
     expect(whatHappensOptions(false, 'block')).toEqual(['off', 'watch', 'block', 'notify']);
     expect(whatHappensOptions(true, 'block')).toEqual(['off', 'watch', 'block', 'pause', 'stop', 'notify']);
     expect(whatHappensOptions(false, 'stop')).toEqual(['off', 'watch', 'block', 'stop', 'notify']);
+    // The saved rule's response stays offered whatever the draft has.
+    expect(whatHappensOptions(false, 'pause', 'block')).toEqual(['off', 'watch', 'block', 'pause', 'notify']);
   });
 
   it('says When as one sentence', () => {
@@ -391,6 +402,17 @@ describe('What happens: one choice for mode and response', async () => {
     expect(t(rule({ ruleType: 'call_rate', params: { maxCalls: 60 } }))).toBe('Makes more than 60 calls in a minute');
     expect(t(rule({ ruleType: 'tool_list', params: { blockedTools: ['shell'] } }))).toBe('Is about to run shell');
     expect(t(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: ['password'], wholeWord: true } }))).toBe('Incoming data contains "password"');
+  });
+
+  it('asks before a lost alert, a looser loop breaker, and counts overlap only between blocking caps', () => {
+    const b = rule({ mode: 'enforce', response: 'pause' });
+    expect(weakenings(b, { ...b, response: 'block', alsoNotify: false })).toContain('It stops sending you an alert');
+    const lb = rule({ mode: 'enforce', ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: [] } });
+    expect(weakenings(lb, { ...lb, params: { threshold: 5, scope: 'day', ignoreTools: ['read_file'] } })).toEqual(['Counts repeats in a day instead of a run', 'No longer counts calls to read_file']);
+    const lo = rule({ mode: 'enforce' }), hi = rule({ mode: 'enforce', params: { dailyCap: 200, scope: 'day', unit: 'dollars' } });
+    expect(overlap([lo, hi])).toEqual({ never: hi, first: lo });
+    expect(overlap([{ ...lo, mode: 'watch' }, { ...hi, mode: 'watch' }])).toBeNull();
+    expect(overlap([{ ...lo, response: 'notify' }, { ...hi, response: 'notify' }])).toBeNull();
   });
 
   it('never calls two hidden Keywords lists duplicates', () => {

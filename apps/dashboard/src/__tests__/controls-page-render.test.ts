@@ -128,7 +128,7 @@ describe('Controls page', () => {
   it('reads each rule as its kind and condition, in cards by who it covers, with counts, mode tags and the overlap', async () => {
     const m = await mount();
     const titles = [...m.el.querySelectorAll('.ctl-card__title')].map((t) => t.textContent);
-    expect(titles).toEqual(['Suggestions 1', 'Rules for all agents', 'Rules for specific agents', 'Off and not set up 1']);
+    expect(titles).toEqual(['Rules for all agents', 'Rules for specific agents', 'Off and not set up 1']);
     // Block rules come first in a card, with the one filled tag and the accent; Record only is a hollow dot.
     const all = [...m.el.querySelectorAll('.ctl-card')].find((p) => p.querySelector('.ctl-card__title')?.textContent === 'Rules for all agents')!;
     expect([...all.querySelectorAll('.ctl-row .ctl-mtag')].map((t) => t.textContent)).toEqual(['Block', 'Record only', 'Record only']);
@@ -141,10 +141,9 @@ describe('Controls page', () => {
     // The lead line counts rules that are set up, and the week's rule activity; no number cards.
     expect(m.text()).toContain('5 rules · 2 Block · 3 Record only · 7 caught this week, 2 blocked');
     expect(m.el.querySelector('.wr-stat-card')).toBeNull();
-    // The one Loop breaker gets its own count; the $200 cap never triggers.
+    // The one Loop breaker gets its own count. Two caps in Record only don't overlap: neither acts.
     expect(m.row('100×').textContent).toContain('2 blocked · 7 days');
-    expect(m.row('$200').textContent).toContain('Never triggers ($190 cap first)');
-    expect(m.text()).toContain('$200 cap never triggers. The $190 cap catches it first.');
+    expect(m.row('$200').textContent).not.toContain('Never triggers');
     expect(m.text()).toContain('Select a rule to edit it');
     expect(m.text()).toContain('New rules start as Record only.');
     m.root.unmount();
@@ -187,12 +186,17 @@ describe('Controls page', () => {
   });
 
   it('gathers the tips under Suggestions, and shows no card when there are none', async () => {
+    // Two caps in Block for the same agents: the higher one never triggers.
+    api.saved.r3 = { ...RULES[2], mode: 'enforce' };
+    api.saved.r4 = { ...RULES[3], mode: 'enforce' };
     const m = await mount();
+    expect(m.row('$200').textContent).toContain('Never triggers ($190 cap first)');
     const section = m.el.querySelector('section[aria-labelledby="gov-suggestions"]')!;
     expect(section.querySelector('h2')!.textContent).toBe('Suggestions 1');
     expect(section.textContent).toContain('$200 cap never triggers.');
     m.root.unmount();
     api.saved.r4 = { ...RULES[3], mode: 'off' };
+    delete api.saved.r3;
     const none = await mount();
     expect(none.el.querySelector('section[aria-labelledby="gov-suggestions"]')).toBeNull();
     none.root.unmount();
@@ -330,7 +334,7 @@ describe('Controls page', () => {
     const pill = () => m.el.querySelector('.gov-edhead__mode')!.textContent;
     expect(pill()).toBe('Record only');
     await m.click(m.choice('Block the call'));
-    expect(pill()).toBe('Block · unsaved');
+    expect(pill()).toBe('Blocks · unsaved');
     expect(m.el.querySelector('.gov-actbar')!.classList.contains('is-dirty')).toBe(true);
     await m.click(m.button('‹ Controls'));
     expect(m.text()).toContain('Discard your changes to Model allowlist?');
@@ -420,13 +424,11 @@ describe('Controls page, editing', () => {
     m.root.unmount();
   });
 
-  it('"Also send me an alert" shows for Block, clears for Alert me, and Record only keeps it', async () => {
+  it('"Also send me an alert" shows for Block, clears for Alert me, and leaving the actions puts the saved setting back', async () => {
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
     const m = await mount();
     await m.open('$190');
     const box = () => [...m.el.querySelectorAll('label')].find((l) => l.textContent?.includes('Also send me an alert'))?.querySelector('input') as HTMLInputElement | undefined;
-    // Record only: no box.
-    expect(box()).toBeUndefined();
     await m.click(m.choice('Block the call'));
     await m.click(box());
     await m.click(m.choice('Alert me'));
@@ -434,8 +436,12 @@ describe('Controls page, editing', () => {
     await m.click(m.choice('Block the call'));
     expect(box()!.checked).toBe(false);
     await m.click(box());
-    // Back to Record only: the alert setting is kept, so switching back restores it.
+    // Back to Record only: the saved settings return (nothing set while trying actions sticks)…
     await m.click(m.choice('Record only'));
+    expect(box()!.checked).toBe(false);
+    expect(m.button('Save')!.disabled).toBe(true);
+    // …and the alert for when it blocks can be set in Record only too.
+    await m.click(box());
     await m.click(m.button('Save'));
     expect(api.update).toHaveBeenCalledWith('f1', 'r3', { alsoNotify: true, ifVersion: 1 }, 'k');
     m.root.unmount();
@@ -586,13 +592,14 @@ describe('Controls page, suggestions, removing and filtering', () => {
   });
 
   it('the overlap banner removes the cap that never acts, after asking', async () => {
+    api.saved.r3 = { ...RULES[2], mode: 'enforce' };
+    api.saved.r4 = { ...RULES[3], mode: 'enforce' };
     const m = await mount();
     await m.click(m.button('Remove $200 cap'));
     expect(m.text()).toContain('Remove the Spend cap rule?');
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
     expect(dialog.textContent).toContain('$200');
-    // A cap in Watch isn't acting, so removing it stops only the watching.
-    expect(dialog.textContent).toContain('It stops recording right away.');
+    expect(dialog.textContent).toContain('It stops right away.');
     await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r4', 'k');
     m.root.unmount();
@@ -683,7 +690,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     m.root.unmount();
   });
 
-  it('"Add in Watch" leaves an enforcing allowlist and one for some agents as they are, and adds a new rule', async () => {
+  it('an allowlist in Block takes the model through the editor, where Save asks first; no second allowlist', async () => {
     api.models = ['gpt-4o'];
     api.created.push({ ...base, id: 'r7', ruleType: 'model_allowlist', mode: 'enforce', response: 'block', appliesTo: 'all', params: { allowedModels: ['claude-sonnet-4-5'] } });
     api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => {
@@ -692,11 +699,13 @@ describe('Controls page, suggestions, removing and filtering', () => {
       return { rule };
     });
     const m = await mount();
-    await m.click(m.button('Add allowlist…'));
-    await m.click(m.button('Add in Record only'));
+    await m.click(m.button('Add to allowlist…'));
+    expect(m.el.querySelector('dialog[open]')).toBeNull();
+    expect(m.text()).toContain('gpt-4o is added below. Save to allow it; you’ll confirm first.');
+    await m.click(m.button('Save'));
+    expect([...m.el.querySelectorAll('dialog[open]')].at(-1)!.textContent).toContain('Also allows gpt-4o');
+    expect(api.create).not.toHaveBeenCalled();
     expect(api.update).not.toHaveBeenCalled();
-    expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'model_allowlist', mode: 'watch', params: { allowedModels: ['gpt-4o'] } }), 'k');
-    expect(m.text()).toContain('Added a Model allowlist in Record only.');
     m.root.unmount();
   });
 
@@ -899,7 +908,8 @@ describe('Controls page, change log', () => {
     const m = await mount();
     await m.open('$190');
     const editor = () => m.el.querySelector('aside[aria-label="Edit rule"]')!.textContent ?? '';
-    expect(editor()).toContain('Records what it would do (block the call) and lets every call through.');
+    expect(editor()).toContain('Records what it would do and lets every call through.');
+    expect((m.el.querySelector('select[aria-label="What Record only records"]') as HTMLSelectElement).value).toBe('block');
     await m.click(m.choice('Off'));
     expect(editor()).toContain('Does nothing and records nothing.');
     await m.click(m.choice('Block the call'));
@@ -1062,7 +1072,7 @@ describe('Keywords in the editor', () => {
     await m.click(m.button('Save'));
     expect([...m.el.querySelectorAll('dialog[open]')].at(-1)!.textContent).toContain('Turn on alerts for this rule?');
     expect(m.button('Start blocking')).toBeUndefined();
-    await m.click(m.button('Turn it on'));
+    await m.click(m.button('Turn on alerts'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', expect.objectContaining({ mode: 'enforce' }), 'k');
     expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Saved. Keywords is on for all agents.');
     m.root.unmount();
@@ -1317,6 +1327,67 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('during the wait, Record only can still record what Stop would do', async () => {
+    api.govV1 = true;
+    api.history = [{ id: 'h1', ruleId: 'r2', ruleType: 'model_allowlist', description: 'Added new Model allowlist rule', by: 'test', time: new Date(Date.now() - 60_000).toISOString() }];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.open('Only claude');
+    expect(m.choice('Stop the agent')!.disabled).toBe(true);
+    await choose(m.el.querySelector('select[aria-label="What Record only records"]') as HTMLSelectElement, 'stop');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r2', { response: 'stop', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('words the Start confirm by what the rule does: Pause ends the run', async () => {
+    api.govV1 = true;
+    const m = await mount();
+    await m.open('Only claude');
+    await m.click(m.choice('Pause the agent'));
+    await m.click(m.button('Save'));
+    expect(dlg(m).textContent).toContain('Start pausing agents with this rule?');
+    expect(dlg(m).textContent).toContain('Would have paused');
+    expect(dlg(m).textContent).toContain('ends the agent’s run');
+    expect(dlg(m).textContent).not.toContain('keeps going');
+    m.root.unmount();
+  });
+
+  it('a Keywords rule whose list is hidden: Remove has no Undo, and it can’t be copied', async () => {
+    api.created.push({ ...base, id: 'kh', ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: 'all', params: { keywords: [], where: 'incoming', wholeWord: true, keywordCount: 2 } });
+    const m = await mount();
+    await m.open('2 hidden keywords');
+    await m.click(m.button('Remove rule'));
+    await m.click([...dlg(m).querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Removed the Keywords rule.');
+    expect(m.button('Undo')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('a second click on Undo sends it once', async () => {
+    let finish!: () => void;
+    let calls = 0;
+    api.update.mockImplementation((_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
+      calls++;
+      const { ifVersion, ...rest } = ch;
+      const rule = { ...RULES.find((r) => r.id === id)!, ...rest, version: ifVersion + 1 } as GovernanceRule;
+      api.saved[id] = rule;
+      if (calls === 1) return Promise.resolve({ rule });
+      return new Promise((resolve) => { finish = () => resolve({ rule }); });
+    });
+    const m = await mount();
+    await m.open('$190');
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await m.click(m.button('Save'));
+    const undo = m.button('Undo')!;
+    // Two clicks before the page re-renders (a double click): one Undo.
+    await act(async () => { undo.click(); undo.click(); });
+    expect(calls).toBe(2);
+    await act(async () => { finish(); });
+    await flush();
+    m.root.unmount();
+  });
+
   it('before Block, warns when an allowlist would block every call an agent makes', async () => {
     api.would = { r2: { 'market-researcher': 12 } };
     api.agentCalls = { 'market-researcher': 12 };
@@ -1335,7 +1406,6 @@ describe('Controls page, mockup suggestions and toasts', () => {
     await flush();
     expect(dlg(m).textContent).toContain('Nothing changed or missing');
     expect(dlg(m).textContent).toContain('All 2,045 events checked · just now. Events before tracking started aren’t covered.');
-    expect(dlg(m).textContent).toContain('Not yet anchored outside WhiteRoom.');
     m.root.unmount();
   });
 

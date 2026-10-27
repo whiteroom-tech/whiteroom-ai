@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockedByPhrase, countsFromRuleActions, ruleLabel, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
+import { blockedByPhrase, countsFromRuleActions, ruleLabel, ruleActionsByAgent, tallyTotal, tallyWords,
   convertSpendCap,
   computeSuggestions,
   governanceCounts,
@@ -183,12 +183,6 @@ describe('governanceCounts agent keys', () => {
 });
 
 describe('rule responses and rule actions (P2.3/P2.4)', () => {
-  it('offers Pause and Stop only on Gov v1 fleets, but keeps a rule’s current one', () => {
-    expect(responseOptions(false, 'block').map((o) => o.value)).toEqual(['notify', 'block']);
-    expect(responseOptions(false, 'stop').map((o) => o.value)).toEqual(['notify', 'block', 'stop']);
-    expect(responseOptions(true, 'block').map((o) => o.label)).toEqual(['Alert me', 'Block the call', 'Pause the agent', 'Stop the agent']);
-  });
-
   it('words every action, worst first, and totals them', () => {
     const t = { blocks: 3, wouldBlocks: 2, paused: 1, stopped: 0, toldYou: 4 };
     expect(tallyWords(t).map((w) => w.text)).toEqual(['1 paused', '3 blocked', '4 alerted you', '2 would have acted (Record only)']);

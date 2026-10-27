@@ -1,12 +1,10 @@
 // Controls safety rails that need no engine change (Governance Loop Rev 9
 // §3, "Heavy rungs"): a rule may only stop agents once it has run in Watch
-// for a day, and turning that on means typing who it applies to. Plus the
-// per-rule "Watching: would have…" line from the engine's Watch events.
+// for a day, and turning that on means typing who it applies to.
 
 import { keywordTotal } from '@/lib/controls-view';
 import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
 import { plural, HOUR_MS } from '@/lib/format';
-import { NOTIFY } from '@/lib/vocab';
 
 /**
  * A rule in Enforce that can act, so the proxy refuses calls it can't tie to
@@ -25,30 +23,47 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
 
 export const STOP_WATCH_HOURS = 24;
 
-// Mode changes are read from the engine's history wording, "Off → Watch"
-// (concepts/governance.ts updateRule: `${cap(prev.mode)} → ${cap(mode)}`).
-// The history has no structured mode field. If that wording changes, Watch
-// time reads as 0 and Stop stays blocked (fails closed) with the reason shown;
-// governance-guard tests pin the format. The engine doesn't enforce this guard.
+// Mode changes and creation are read from each history entry's before/after
+// snapshots (engine 0058): before === null is the rule being added, and a
+// different before.mode and after.mode is a mode change, whatever the entry's
+// description says (Undo, copies and suggestions write their own). Older
+// entries without snapshots fall back to the engine's wording, "Off → Watch"
+// and "Added new …". If neither reads, Watch time is 0 and actions that need a
+// day in Record only stay unavailable (fails closed). The engine doesn't
+// enforce this guard.
 const MODE_CHANGE = /^(Off|Watch|Enforce) → (Off|Watch|Enforce)$/;
+const MODE_WORD = { off: 'Off', watch: 'Watch', enforce: 'Enforce' } as const;
+
+type ModeEvent = { at: number; created?: string; from?: string; to?: string };
+
+/** What one history entry says about the rule's mode: added in a mode, a change from one to another, or nothing. */
+function modeEvent(h: GovernanceHistoryEntry): ModeEvent | null {
+  const at = Date.parse(h.time);
+  if (h.before === null && h.after) return { at, created: MODE_WORD[h.after.mode] };
+  if (h.before && h.after) return h.before.mode !== h.after.mode ? { at, from: MODE_WORD[h.before.mode], to: MODE_WORD[h.after.mode] } : null;
+  if (h.before !== undefined || h.after !== undefined) return null;
+  const m = MODE_CHANGE.exec(h.description);
+  if (m) return { at, from: m[1], to: m[2] };
+  return /^Added new /.test(h.description) ? { at, created: '' } : null;
+}
 
 /** The rule's stretches in Watch from its history: the longest (ms) and when the current one began (null: not in Watch). */
 function watchStretches(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number): { best: number; current: number | null } {
-  const entries = history.filter((h) => h.ruleId === ruleId).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
-  if (entries.length === 0) return { best: 0, current: null };
-  const changes = entries.flatMap((h) => {
-    const m = MODE_CHANGE.exec(h.description);
-    return m ? [{ from: m[1], to: m[2], at: Date.parse(h.time) }] : [];
-  });
-  // The mode it was created in: the first change's "from", else today's mode,
-  // but only counted from the engine's own creation entry ("Added new …").
-  const created = /^Added new /.test(entries[0].description);
-  const createdIn = changes[0]?.from ?? (currentMode === 'watch' ? 'Watch' : 'Other');
-  let start: number | null = created && createdIn === 'Watch' ? Date.parse(entries[0].time) : null;
+  const events = history.filter((h) => h.ruleId === ruleId).sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+    .map(modeEvent).filter((e): e is ModeEvent => e !== null);
+  if (events.length === 0) return { best: 0, current: null };
+  let start: number | null = null;
   let best = 0;
-  for (const c of changes) {
-    if (c.from === 'Watch' && start !== null) { best = Math.max(best, c.at - start); start = null; }
-    if (c.to === 'Watch') start = c.at;
+  for (const [i, e] of events.entries()) {
+    if (e.created !== undefined) {
+      // An old creation entry doesn't say the mode: the first change's "from", else today's mode.
+      const next = events.slice(i + 1).find((x) => x.from);
+      const mode = e.created || (next?.from ?? (currentMode === 'watch' ? 'Watch' : 'Other'));
+      start = mode === 'Watch' ? e.at : null;
+      continue;
+    }
+    if (e.from === 'Watch' && start !== null) { best = Math.max(best, e.at - start); start = null; }
+    if (e.to === 'Watch') start = e.at;
   }
   const current = start !== null && currentMode === 'watch' ? start : null;
   if (current !== null) best = Math.max(best, now - current);
@@ -140,20 +155,4 @@ export function stopCheck(
 /** What to type to let a rule stop agents: the agents it covers, by name. */
 export function stopPhrase(scope: GovernanceScope): string {
   return scope === 'all' ? 'stop all agents' : scope.join(', ');
-}
-
-const WOULD_VERB: Record<GovernanceResponse, string> = { notify: `${NOTIFY.done} about`, block: 'blocked', pause: 'paused', stop: 'stopped' };
-
-/**
- * "Record only: would have paused lead-agent 86 times" from the engine's
- * rule_would_act counts for this version of the rule. Null when it hasn't
- * fired since its last change. Events with no recorded version (older
- * engines) are counted, but then the verb can't claim a response.
- */
-export function watchSummary(rule: { response?: GovernanceResponse }, counts: { byAgent: Record<string, number>; unversioned: boolean }): string | null {
-  const entries = Object.entries(counts.byAgent).filter(([, n]) => n > 0);
-  if (entries.length === 0) return null;
-  const parts = entries.sort((a, b) => b[1] - a[1]).map(([a, n]) => `${a || 'an agent'} ${n === 1 ? 'once' : `${n.toLocaleString()} times`}`);
-  const shown = parts.slice(0, 3).join(', ') + (parts.length > 3 ? ` and ${parts.length - 3} more` : '');
-  return `Record only: would have ${counts.unversioned ? 'acted on' : WOULD_VERB[rule.response ?? 'block']} ${shown} since its last change.`;
 }
