@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { fmtCost, fmtTokens } from '@/lib/format';
 import type { PerformanceModelSummary } from '@/lib/whiteroom/types';
 import { FONT_MONO } from '@whiteroom/ui';
-import { CARD, H3 } from './primitives';
+import { CARD, Disclosure } from './primitives';
+import { modelShares } from '@/lib/performance-overview';
 
 type SortDir = 'asc' | 'desc';
 type SortState<K extends string> = { key: K; dir: SortDir } | null;
@@ -41,95 +42,58 @@ export function fmtLatency(ms: number | null): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function fmtPct(rate: number): string {
-  return rate === 0 ? '0%' : `${(rate * 100).toFixed(1)}%`;
-}
-
-export function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
-  const total = models.reduce((s, m) => s + m.costMicros, 0);
-  if (total === 0) return null;
-  const colors = ['var(--brand)', 'var(--ok)', 'var(--warn)', 'var(--ho)', 'var(--info)', 'var(--bad)'];
-  const sz = 140, cx = sz / 2, cy = sz / 2, r = 52, sw = 14;
-  let cum = 0;
-  const arcs = models.map((m, i) => {
-    const pct = m.costMicros / total;
-    const sa = cum * 2 * Math.PI - Math.PI / 2;
-    cum += pct;
-    const ea = cum * 2 * Math.PI - Math.PI / 2;
-    const d = pct >= 0.999
-      ? `M ${cx + r},${cy} A ${r},${r} 0 1,1 ${cx - r},${cy} A ${r},${r} 0 1,1 ${cx + r},${cy}`
-      : `M ${cx + r * Math.cos(sa)},${cy + r * Math.sin(sa)} A ${r},${r} 0 ${pct > 0.5 ? 1 : 0},1 ${cx + r * Math.cos(ea)},${cy + r * Math.sin(ea)}`;
-    return { d, color: colors[i % colors.length], model: m, pct };
-  });
-
+/**
+ * Spend by model, folded by default: each model's share of spend as one
+ * stacked bar, a table of calls, tokens and spend, and the price list's date.
+ */
+export function SpendByModel({ models, pricesNote, trend, stale }: {
+  models: PerformanceModelSummary[];
+  /** "Prices from Oct 19." */
+  pricesNote: string;
+  /** "spend per call ↓21% vs prior 7 days"; null without a prior window. */
+  trend: string | null;
+  /** The price list is old: say so beside its date. */
+  stale?: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const shares = modelShares(models);
+  const colorOf = (i: number) => MODEL_COLORS[i % MODEL_COLORS.length];
+  const note = [`${models.length} ${models.length === 1 ? 'model' : 'models'}`, trend].filter(Boolean).join(' · ');
   return (
-    <div style={CARD}>
-      <h3 style={H3}>Cost breakdown</h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-        <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`}>
-          {arcs.map((a, i) => <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={sw} strokeLinecap="butt" />)}
-          <text x={cx} y={cy - 4} textAnchor="middle" fill="var(--tx)" fontSize="16" fontWeight="700" fontFamily={FONT_MONO}>{fmtCost(total)}</text>
-          <text x={cx} y={cy + 12} textAnchor="middle" fill="var(--tx3)" fontSize="10">total</text>
-        </svg>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {arcs.map((a, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
-              <span style={{ color: 'var(--tx2)', minWidth: 60 }}>{a.model.provider}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
+    <div className="wr-pcard" style={{ overflow: 'hidden' }}>
+      <Disclosure label="Spend by model" note={note} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId} first>
+        <div style={{ padding: '0 20px 20px' }}>
+          {shares.length > 0 && (
+            <div className="wr-models__bar" role="img" aria-label={`Spend by model: ${shares.map((s) => `${s.model.model ?? 'unknown'} ${Math.round(s.share * 100)} percent`).join(', ')}`}>
+              {shares.map((s, i) => <div key={i} style={{ width: `${(s.share * 100).toFixed(2)}%`, background: colorOf(i) }} />)}
             </div>
-          ))}
+          )}
+          <div className="wr-tablebox">
+            <table className="wr-ptable" style={{ minWidth: 520 }}>
+              <thead><tr><th>Model</th><th className="is-r">Calls</th><th className="is-r">Input</th><th className="is-r">Output</th><th className="is-r">Spend</th></tr></thead>
+              <tbody>
+                {(shares.length ? shares.map((s) => s.model) : models).map((m, i) => (
+                  <tr key={i}>
+                    <td><span className="wr-models__key" style={{ background: shares.length ? colorOf(i) : 'var(--tx3)' }} /><span className="wr-agent-name">{m.model ?? 'unknown'}</span></td>
+                    <td className="is-r">{m.calls.toLocaleString()}</td>
+                    <td className="is-r">{fmtTokens(m.inputTokens)}</td>
+                    <td className="is-r">{fmtTokens(m.outputTokens)}</td>
+                    <td className="is-r">{fmtCost(m.costMicros)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="wr-cap" style={{ marginTop: 8 }}>{pricesNote}{stale && <span style={{ color: 'var(--warn-tx)' }}> {stale}</span>}</div>
         </div>
-      </div>
+      </Disclosure>
     </div>
   );
 }
 
-type TrafficSortKey = 'model' | 'calls' | 'input' | 'output' | 'cost';
-
-export function TrafficByModel({ models }: { models: PerformanceModelSummary[] }) {
-  const { sort, toggleSort } = useTableSort<TrafficSortKey>();
-  const sorted = useMemo(() => sortRows(models, sort, {
-    model: m => m.model ?? '',
-    calls: m => m.calls,
-    input: m => m.inputTokens,
-    output: m => m.outputTokens,
-    cost: m => m.costMicros,
-  }), [models, sort]);
-  if (models.length === 0) return null;
-  return (
-    <div style={CARD}>
-      <h3 style={H3}>Traffic by Model</h3>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', fontSize: 'var(--fs-sm)', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-              {([['Model', 'model'], ['Calls', 'calls'], ['Input', 'input'], ['Output', 'output'], ['Cost', 'cost']] as [string, TrafficSortKey][]).map(([h, k]) => (
-                <th key={k} aria-sort={ariaSort(sort, k)} style={{ padding: 0, textAlign: k === 'model' ? 'left' : 'right' }}>
-                  <button onClick={() => toggleSort(k, k === 'model' ? 'asc' : 'desc')} title={`Sort by ${h.toLowerCase()}`} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontWeight: 600, color: sort?.key === k ? 'var(--tx)' : 'var(--tx3)', padding: '6px 8px', textAlign: k === 'model' ? 'left' : 'right' }}>
-                    {h}{sortArrow(sort, k)}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((m, i) => (
-              <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
-                <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{m.model ?? 'unknown'}</td>
-                <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{m.calls.toLocaleString()}</td>
-                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{fmtTokens(m.inputTokens)}</td>
-                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{fmtTokens(m.outputTokens)}</td>
-                <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--brand)' }}>{fmtCost(m.costMicros)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+/** The stacked bar's colours, biggest share first. */
+const MODEL_COLORS = ['var(--brand)', 'var(--tx3)', 'var(--ok)', 'var(--warn)', 'var(--line2)'];
 
 /** A plain figure card for the agent and evidence views: label, value, an optional line, and a warning colour. */
 export function MetricCard({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {

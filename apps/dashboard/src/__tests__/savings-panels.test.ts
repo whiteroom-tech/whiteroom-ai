@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { agentDaySavings, auditSavingsEvent, dailySavings, localDayFromTs } from '@/lib/analytics-metrics';
-import { axisLabel, axisTop, savingsCaption } from '@/components/performance/SavingsPanels';
+import { createElement as h } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { TokensCompare } from '@/components/performance/SavingsPanels';
 
 // Performance's Savings chart and By agent table, moved from Run History,
 // must keep Run History's numbers: same attribution, same per-agent-day math.
@@ -34,26 +36,41 @@ describe('dailySavings', () => {
   });
 });
 
-describe('Savings axis', () => {
-  it('rounds up to a tidy top the tallest bar mostly fills', () => {
-    expect(axisTop(104_600)).toBe(150_000);
-    expect(axisTop(82_000)).toBe(100_000);
-    expect(axisTop(2_100)).toBe(2_500);
-    expect(axisTop(0)).toBe(1);
+describe('Tokens: with WhiteRoom vs without', () => {
+  const days = [
+    { day: '2026-10-21', used: 0, saved: 0 },
+    { day: '2026-10-22', used: 50_100, saved: 1_569_900 },
+    { day: '2026-10-23', used: 1_670_000, saved: 960_000 },
+  ];
+  it('shows the two totals, the difference in words, and each day folded under By day', () => {
+    const html = renderToStaticMarkup(h(TokensCompare, { days, usdByDay: { '2026-10-22': 1_260_000 }, defaultOpen: true }));
+    expect(html).toContain('Without WhiteRoom, est.');
+    expect(html).toContain('>4.25M<');
+    expect(html).toContain('>1.72M<');
+    expect(html).toContain('2.53M fewer tokens · about 60% less');
+    expect(html).toContain('1.57M saved');
+    expect(html).toContain('$1.26');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).not.toContain('font-mono');
   });
-  it('labels without a trailing .0', () => {
-    expect([150_000, 75_000, 0, 1_500_000].map(axisLabel)).toEqual(['150K', '75K', '0', '1.5M']);
-    // Each tick names its own value: the midpoint of a 25K or 2.5M axis isn't rounded to a neighbour.
-    expect([axisTop(24_000) / 2, axisTop(2_400_000) / 2, axisTop(1_400) / 2].map(axisLabel)).toEqual(['12.5K', '1.25M', '750']);
+  it('sizes the bars: the with-bar as its share of the without-bar, days against the busiest day', () => {
+    const html = renderToStaticMarkup(h(TokensCompare, { days, defaultOpen: true }));
+    expect(html).toContain('width:calc((100% - 72px) * 1)');
+    expect(html).toContain('width:calc((100% - 72px) * 0.405)'); // 1.72M of 4.25M
+    // The busiest day (2.63M without) fills the plot; its 1.67M with WhiteRoom is 63 of 100px.
+    expect(html).toContain('height:100px');
+    expect(html).toContain('height:63px');
+    // A tiny day still shows a sliver, never 0px.
+    expect(html).toContain('height:3px');
+  });
+  it('a quiet day shows a dash, and a day without a dollar figure shows only its tokens', () => {
+    const html = renderToStaticMarkup(h(TokensCompare, { days, usdByDay: null, defaultOpen: true }));
+    expect(html).toContain('>—<');
+    expect(html).toContain('960K saved');
+    expect(html).not.toContain('wr-tokens__usd');
+  });
+  it('starts with By day folded, and says so when nothing ran', () => {
+    expect(renderToStaticMarkup(h(TokensCompare, { days }))).toContain('aria-expanded="false"');
+    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]] }))).toContain('No model calls in the last 7 days.');
   });
 });
-
-describe('Savings card caption', () => {
-  it('names every part of the total it sits under', () => {
-    expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, estimated');
-    expect(savingsCaption(0, 12_000)).toBe('cache reads, estimated');
-    expect(savingsCaption(2_000, 12_000)).toBe('2K tokens not spent + cache reads, estimated');
-    expect(savingsCaption(0, 0)).toBe('nothing saved in this range');
-  });
-});
-

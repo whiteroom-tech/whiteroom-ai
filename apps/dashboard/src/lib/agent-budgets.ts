@@ -1,7 +1,6 @@
 // Per-agent daily budgets (Performance › Cost): a planning figure that never
 // stops anything, and the Spend cap rule "Also add a Spend cap at this amount" adds.
-import type { AgentBudgetForecast, GovernanceRule, SpendCapParams } from '@/lib/whiteroom/types';
-import { fmtCount, plural } from '@/lib/format';
+import type { GovernanceRule, SpendCapParams } from '@/lib/whiteroom/types';
 
 export const MAX_AGENT_BUDGET_USD = 1_000_000;
 
@@ -12,13 +11,6 @@ export function parseBudget(text: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
   const n = Number(t);
   return n > 0 && n <= MAX_AGENT_BUDGET_USD ? n : null;
-}
-
-/** The figure under an agent's budget: calls left today, or why there isn't one. */
-export function callsLeftText(f: AgentBudgetForecast): string {
-  if (f.callsLeftReason === 'partial_coverage') return 'Some of today’s calls have no price yet';
-  if (f.callsLeft === null) return 'No priced calls yet to estimate from';
-  return `${fmtCount(f.callsLeft)} ${plural(f.callsLeft, 'call')} left today`;
 }
 
 /** A Spend cap for one agent at this many dollars a day: what "Also add a Spend cap at this amount" adds, in Record only. */
@@ -34,11 +26,6 @@ export function existingCap(rules: GovernanceRule[], agentId: string, usd: numbe
     const p = r.params as SpendCapParams;
     return p.unit === 'dollars' && p.scope === 'day' && p.dailyCap === usd;
   }) ?? null;
-}
-
-/** Total of the agents' daily budgets, in dollars. */
-export function budgetsTotal(budgets: AgentBudgetForecast[]): number {
-  return budgets.reduce((t, b) => t + b.budgetUsd, 0);
 }
 
 /**

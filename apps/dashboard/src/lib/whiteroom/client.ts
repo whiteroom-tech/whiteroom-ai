@@ -18,7 +18,6 @@ import type {
   RunEventsResult,
   FleetDiagnosis,
   AgentInfo,
-  AgentPerformanceResult,
   AuditLogResponse,
   BedrockRoleStatus,
   ClaimFleetResult,
@@ -46,8 +45,6 @@ import type {
   AgentScoresResult,
   PerformanceCostForecastResult,
   AgentBudgetsResult,
-  SetBudgetResult,
-  SetTokenBudgetResult,
   RegisterResult,
   StoreBedrockRoleResult,
   StoreKeyResult,
@@ -470,10 +467,6 @@ export function performanceIndex(fleetId: string, hoursBack?: number, key?: stri
   return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, hours_back: hoursBack ?? 24 }, key);
 }
 
-export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
-  return apiCall<AgentPerformanceResult>({ action: 'performance_agent', fleet_id: fleetId, agent_id: agentId, hours_back: hoursBack ?? 24 }, key);
-}
-
 export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {
   return apiCall<PerformanceEvidenceResult>({ action: 'performance_evidence', fleet_id: fleetId, finding_id: findingId }, key);
 }
@@ -590,22 +583,24 @@ export function performanceCostForecast(fleetId: string, taskType?: string, key?
   return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType, tz: viewerTimeZone() }, key);
 }
 
-export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {
-  return apiCall<SetBudgetResult>({ action: 'set_budget_usd', fleet_id: fleetId, budget_usd: budgetUsd }, key);
+/**
+ * Each agent with a daily budget, against its spend since the viewer's
+ * midnight, with its cost prediction. `allAgents` lists every agent in the
+ * fleet, budget or not (engines without it ignore the flag).
+ */
+export function agentBudgetsGet(fleetId: string, key?: string, opts: { allAgents?: boolean } = {}): Promise<AgentBudgetsResult> {
+  return apiCall<AgentBudgetsResult>({ action: 'agent_budgets_get', fleet_id: fleetId, tz: viewerTimeZone(), ...(opts.allAgents && { all_agents: true }) }, key);
 }
 
-export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {
-  return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
-}
-
-/** Each agent with a daily budget, against its spend since the viewer's midnight. */
-export function agentBudgetsGet(fleetId: string, key?: string): Promise<AgentBudgetsResult> {
-  return apiCall<AgentBudgetsResult>({ action: 'agent_budgets_get', fleet_id: fleetId, tz: viewerTimeZone() }, key);
-}
-
-/** Sets an agent's daily budget; null clears it. The owner's call (dashboard-only on the engine). */
-export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd: number | null, key?: string): Promise<void> {
-  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd }, key));
+/**
+ * Sets an agent's daily budget; null clears it (the token budget with it).
+ * `budgetTokens` left out keeps the stored token budget; null clears it.
+ * The owner's call (dashboard-only on the engine).
+ */
+export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd: number | null, key?: string, budgetTokens?: number | null): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({
+    action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd, ...(budgetTokens !== undefined && { budget_tokens: budgetTokens }),
+  }, key));
 }
 
 // -- Fleet governance rules (Controls page) --

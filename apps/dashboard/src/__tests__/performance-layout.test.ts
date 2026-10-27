@@ -16,11 +16,12 @@ const DATA = {
   priceInfo: { version: '1', ageDays: 1, stale: false, expired: false },
 };
 
-const view = (data: object = DATA, rangeLabel = 'last 24 h') => renderToStaticMarkup(h(IndexView, {
-  data, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: {} },
+const props = (data: object = DATA, rangeLabel = 'last 24 h') => ({
+  data, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: { spend_cap: { blocks: 2, wouldBlocks: 57 } } },
   savingsDays: null, agentIds: null, rangeLabel, fleetId: 'f1', authKey: 'k',
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
-} as never));
+});
+const view = (data: object = DATA, rangeLabel = 'last 24 h') => renderToStaticMarkup(h(IndexView, props(data, rangeLabel) as never));
 
 describe('Performance overview layout', () => {
   it('reads Cost, then Control, then Performance', () => {
@@ -30,32 +31,44 @@ describe('Performance overview layout', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('puts spend, savings, the hourly rate and smaller context under Cost, and rule activity under Control', () => {
-    const html = view();
-    const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
-    for (const label of ['Spend', 'Saved by WhiteRoom', 'Average per hour', 'Smaller context']) expect(cost).toContain(`>${label}<`);
-    expect(cost).toContain('$0.912');
-    const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
-    expect(control).toContain('Rule activity');
-    expect(control).toContain('2 blocked · 57 in Record only');
-    expect(control).toContain('href="/controls"');
-    const perf = html.slice(html.indexOf('id="perf-performance"'));
-    expect(perf).toContain('Failed calls');
-    expect(perf).toContain('Typical response');
+  it('opens with one line for the range, and closes with the link to Home → Agents', () => {
+    const text = view().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    expect(text).toMatch(/Last 24 h: \$0\.912 spent · rules caught 59 calls, 2 blocked · 2 failed calls/);
+    expect(text).toContain('Per-agent numbers and scores are on Home → Agents');
   });
 
-  it('works out the card figures: spend, spend per hour over the range, and the typical response', () => {
+  it('puts spend, savings, the hourly cost and smaller context under Cost, and rule activity under Control', () => {
+    const html = view();
+    const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
+    for (const label of ['Spend', 'Saved by WhiteRoom', 'Hourly cost', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    expect(cost).not.toContain('Average per hour');
+    expect(cost).toContain('$0.912');
+    expect(cost).toContain('99 model calls');
+    expect(cost).toContain('Spend by model');
+    const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
+    expect(control).toContain('Rule activity');
+    expect(control).toMatch(/2<\/strong> blocked · <strong[^>]*>57<\/strong> would have blocked/);
+    expect(control).toContain('All rules and agents');
+    expect(control).toContain('href="/controls"');
+    const perf = html.slice(html.indexOf('id="perf-performance"'));
+    for (const label of ['Failed calls', 'Typical response', 'Model calls']) expect(perf).toContain(`>${label}<`);
+  });
+
+  it('works out the card figures: the working-hour rate, trends against the prior window, and the typical response', () => {
     const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    // $2.40 over 24 hours is $0.100 an hour; the sub-line is the range when nothing makes it inexact.
-    const exact = text(view({ ...DATA, summary: { ...DATA.summary, totalCost: 2_400_000 } }, 'last 24 hours'));
-    expect(exact).toMatch(/Spend .*\$2\.40 last 24 hours/);
-    expect(exact).toMatch(/Average per hour .*\$0\.100 over every hour shown/);
-    expect(exact).toMatch(/Typical response .*1\.9s median time per call/);
-    // Unpriced calls make both a lower bound ("+"), and the Spend sub-line says why.
-    const partial = text(view({ ...DATA, summary: { ...DATA.summary, totalCost: 2_400_000, unpricedAttempts: 3 } }, 'last 24 hours'));
-    expect(partial).toMatch(/\$2\.40\+/);
-    expect(partial).toMatch(/\$0\.100\+/);
-    expect(partial).not.toMatch(/\$2\.40\+ last 24 hours/);
+    const withPrev = text(renderToStaticMarkup(h(IndexView, {
+      ...props(), data: { ...DATA, previous: { period: { start: '', end: '' }, totalCalls: 33, totalCost: 456_000, pricedAttempts: 33, unpricedAttempts: 0, avgLatencyMs: 3800 } },
+      workingHour: { usdPerHour: 0.354, lookbackHours: 336 }, rangeUsedTokens: 1_740_000, govSavings: { tokensSaved: 3_180_000, costSaved: 2.34, partial: false },
+    } as never)));
+    expect(withPrev).toMatch(/Hourly cost .*\$0\.354 an hour while agents work · last 14 days/);
+    expect(withPrev).toMatch(/Model calls .*99 ↑ 200% vs prior 24 h/);
+    expect(withPrev).toMatch(/Typical response .*1\.9s ↓ 50% faster vs prior 24 h/);
+    expect(withPrev).toMatch(/3\.18M fewer tokens · about 65% less · estimated/);
+    // No prior window (older engine): the plain lines.
+    const plain = text(view());
+    expect(plain).toMatch(/Typical response .*1\.9s median time per call/);
+    // Unpriced calls make spend a lower bound ("+").
+    expect(text(view({ ...DATA, summary: { ...DATA.summary, unpricedAttempts: 3 } }))).toMatch(/\$0\.912\+/);
   });
 });
 
@@ -78,7 +91,7 @@ describe('Performance overview, what it leaves out', () => {
 
 describe('Smaller context card', () => {
   it('shows the ratio over all time, nothing saved as —, and unknown as — never 0', () => {
-    expect(smallerContextCard(90.84)).toEqual({ value: '90.8%', sub: 'smaller than full history, all time' });
+    expect(smallerContextCard(90.84)).toEqual({ value: '90.8%', sub: 'less sent to models, on average · all time' });
     expect(smallerContextCard(0)).toEqual({ value: '—', sub: 'nothing saved yet' });
     expect(smallerContextCard(null)).toEqual({ value: '—', sub: 'not available yet' });
   });

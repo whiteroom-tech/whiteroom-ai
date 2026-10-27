@@ -273,9 +273,23 @@ export interface PerformanceIndexResult {
     /** Prompt caching over the window, priced per model (absent on older engines). */
     cache?: CacheSummary;
   };
+  /** The same totals over the window of the same length just before this one (absent on older engines). */
+  previous?: PerformanceWindowTotals;
   recommendations: PerformanceRecommendation[];
   priceInfo: { version: string; ageDays: number; stale: boolean; expired: boolean };
   error?: string;
+}
+
+/** engine performance_index.previous: the "vs prior period" figures. */
+export interface PerformanceWindowTotals {
+  period: { start: string; end: string };
+  totalCalls: number;
+  /** Micros, as summary.totalCost. */
+  totalCost: number;
+  pricedAttempts: number;
+  unpricedAttempts: number;
+  /** Median response time (ms); null without calls. */
+  avgLatencyMs: number | null;
 }
 
 export interface HourlyDataPoint {
@@ -305,27 +319,6 @@ export interface AgentScoresResult {
   fleetId: string;
   period: { start: string; end: string };
   agents: AgentScore[];
-  error?: string;
-}
-
-export interface AgentPerformanceResult {
-  fleetId: string;
-  agentId: string;
-  period: { start: string; end: string };
-  hourly: HourlyDataPoint[];
-  totals: {
-    calls: number;
-    costMicros: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    errorRate: number;
-    /** Calls stopped by a governance rule in Enforce (absent on older engines). */
-    blockedCount?: number;
-    /** The median (p50) call time over the window, despite the name: shown as "Typical response". */
-    avgLatencyMs: number | null;
-  };
   error?: string;
 }
 
@@ -464,42 +457,19 @@ export interface FleetHourlyResult {
   error?: string;
 }
 
+/**
+ * engine performance_cost_forecast, as the dashboard reads it: Hourly cost's
+ * figure. The engine also sends the old fleet-budget fields, which nothing
+ * here shows any more (per-agent budgets are on agent_budgets_get).
+ */
 export interface PerformanceCostForecastResult {
   fleetId: string;
-  budgetUsd: number | null;
-  spendToDateUsd: number;
+  /** Spend per working hour: the average over hours with calls in burnLookbackHours. */
   burnRateUsdPerHour: number;
-  // Legacy combined figure, kept for engines that predate the independent
-  // dollarRemainingTasks/tokenRemainingTasks fields below: dollar-based
-  // normally, token-based (against tokenBudget) when costUnavailable. The
-  // card now reads this only as a fallback (see resolveTasksLeft) — prefer
-  // the independent fields when the engine sends them.
-  remainingTasks: number | null;
-  // true when recent activity used a model with no price-catalog entry —
-  // burnRateUsdPerHour is $0 because it's unpriced, not because it's free.
-  // tokensPerHour/tokenBudget are the fallback signals in that case.
-  costUnavailable: boolean;
-  tokensPerHour: number | null;
-  tokenBudget: number | null;
-  /** Legacy: why remainingTasks is null. Superseded by dollarRemainingTasksReason/tokenRemainingTasksReason below; see resolveTasksLeft. */
-  remainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
-  /** The budget is daily: spend counts from local midnight in budgetTimeZone. */
-  budgetPeriod?: 'day';
-  budgetTimeZone?: string;
-  spentTodayUsd?: number;
-  /** burnRateUsdPerHour averages the hours with calls in this lookback. */
+  /** True when recent calls had no price on file: burnRateUsdPerHour is $0 because it's unpriced, not free. */
+  costUnavailable?: boolean;
   burnLookbackHours?: number;
   burnActiveHours?: number;
-  /**
-   * Dollar and token remaining-tasks, tracked independently (absent on
-   * older engines, which only ever returned the combined remainingTasks
-   * above). A fleet can have both budgets set; one being unavailable
-   * (stale pricing, no task-cost model yet) doesn't hide the other.
-   */
-  dollarRemainingTasks?: number | null;
-  dollarRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
-  tokenRemainingTasks?: number | null;
-  tokenRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'available';
   error?: string;
 }
 
@@ -521,37 +491,43 @@ export interface CacheSummary {
   agentSavedMicros?: number;
 }
 
-/** One agent's daily budget against its spend today (a planning figure, never a limit). */
+/** Why an agent has no tasks-left figure (engine PR 297), checked in this order. */
+export type TasksLeftReason = 'no_task_type' | 'not_enough_tasks' | 'no_budget' | 'partial_coverage';
+
+/** One agent's daily budget against its spend today, and its cost prediction (a planning figure, never a limit). */
 export interface AgentBudgetForecast {
   agentId: string;
-  budgetUsd: number;
+  /** Null for an agent without a budget (listed when all agents are asked for). */
+  budgetUsd: number | null;
+  /** Optional daily token budget beside the dollar one; absent on older engines. */
+  budgetTokens?: number | null;
   spentTodayUsd: number;
+  tokensToday?: number;
   /** Spend per working hour over the last 14 days; null without priced calls. Not shown; newer engines leave it out. */
   burnRateUsdPerHour?: number | null;
   /** Calls the rest of today's budget covers at the agent's own average cost per call. */
   callsLeft: number | null;
-  callsLeftReason: 'available' | 'no_history' | 'partial_coverage';
+  callsLeftReason: 'available' | 'no_history' | 'partial_coverage' | 'no_budget';
+  /** The rest is the cost prediction (engine PR 297); all absent on older engines. */
+  taskType?: string | null;
+  /** Average cost and tokens of one predicted unit (see AgentBudgetsResult.unit); null without priced calls. */
+  costPerTaskUsd?: number | null;
+  tokensPerTask?: number | null;
+  /** Units left today: whichever of the dollar and token budgets runs out first. */
+  tasksLeft?: number | null;
+  limitedBy?: 'usd' | 'tokens' | null;
+  tasksLeftReason?: TasksLeftReason | null;
 }
 
 export interface AgentBudgetsResult {
   fleetId: string;
   budgetPeriod: 'day';
   budgetTimeZone: string;
+  /** What one predicted "task" is: "call" today. Absent on engines without the per-agent prediction. */
+  unit?: string;
+  /** How far back the per-unit averages look, in hours. */
+  rateLookbackHours?: number;
   agents: AgentBudgetForecast[];
-}
-
-export interface SetBudgetResult {
-  success: boolean;
-  fleetId: string;
-  budgetUsd: number | null;
-  error?: string;
-}
-
-export interface SetTokenBudgetResult {
-  success: boolean;
-  fleetId: string;
-  tokenBudget: number | null;
-  error?: string;
 }
 
 export interface PaginatedRecommendationsResult {
@@ -814,6 +790,8 @@ export interface AuditSummaryResult {
   savings?: SavingsTotals;
   /** Each agent's smaller-context savings at its own price, lower-cased ids (engine E1b; absent on older engines). */
   savingsByAgent?: Record<string, { tokens: number; usdMicros: number | null }>;
+  /** The same savings per local day, oldest first, adding up to `savings` (absent on older engines). */
+  savingsByDay?: Array<{ day: string; tokens: number; usdMicros: number; unpricedTokens: number }>;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 

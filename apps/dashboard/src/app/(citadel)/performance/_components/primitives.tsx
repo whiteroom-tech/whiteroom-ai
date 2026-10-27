@@ -44,3 +44,35 @@ export function Btn({ label, onClick, loading, accent }: { label: string; onClic
     }}>{label}</button>
   );
 }
+
+/**
+ * A row that folds a section open (the mockup's disclosure): chevron, label,
+ * and a quiet note on the right. Closed by default; the body follows it.
+ */
+export function Disclosure({ label, note, open, onToggle, controls, first = false, children }: {
+  label: React.ReactNode;
+  note?: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  /** The id of the body it shows. */
+  controls: string;
+  /** The card's first row: no rule above it. */
+  first?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <button type="button" className={first ? 'wr-disc wr-disc--first' : 'wr-disc'} aria-expanded={open} aria-controls={controls} onClick={onToggle}>
+        <span className="wr-disc__chev" aria-hidden="true">›</span>
+        <span>{label}</span>
+        {note && <span className="wr-disc__note">{note}</span>}
+      </button>
+      <div id={controls} hidden={!open}>{open && children}</div>
+    </>
+  );
+}
+
+/** A rule's mode, as Controls shows it: filled "Block", hollow-dot "Record only", dashed "Off". */
+export function ModeTag({ mode }: { mode: 'off' | 'watch' | 'enforce' }) {
+  return <span className={`wr-mtag${mode === 'enforce' ? ' wr-mtag--block' : mode === 'off' ? ' wr-mtag--off' : ''}`}>{mode === 'enforce' ? 'Block' : mode === 'watch' ? 'Record only' : 'Off'}</span>;
+}

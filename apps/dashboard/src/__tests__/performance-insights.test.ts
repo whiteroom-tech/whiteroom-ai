@@ -96,9 +96,9 @@ describe('agent health rows', () => {
     expect(unusualRow({ ...f, count: null, loading: true })).toEqual({ tone: 'muted', text: 'Loading\u2026' });
     expect(unusualRow({ ...f, count: null, failed: true })!.tone).toBe('muted');
     expect(unusualRow({ ...f, count: null })).toBeNull();
-    expect(unusualRow(f)).toEqual({ tone: 'ok', text: 'Nothing unusual this week' });
-    expect(unusualRow({ ...f, count: 1 })).toEqual({ tone: 'warn', text: '1 run flagged this week' });
-    expect(unusualRow({ ...f, count: 1000, atLeast: true })!.text).toBe('1,000+ runs flagged this week');
+    expect(unusualRow(f)).toEqual({ tone: 'ok', text: 'Nothing unusual in the last 7 days' });
+    expect(unusualRow({ ...f, count: 1 })).toEqual({ tone: 'warn', text: '1 run flagged in the last 7 days' });
+    expect(unusualRow({ ...f, count: 1000, atLeast: true })!.text).toBe('1,000+ runs flagged in the last 7 days');
   });
   it('health check before a stored result: short row; the header keeps the full status and its button', () => {
     expect(pendingHealthRow(null)).toBeNull();

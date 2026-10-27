@@ -45,6 +45,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
   error: string | null;
 }) {
   const [howOpen, setHowOpen] = useState(false);
+  const [options, setOptions] = useState(false);
   if (!isDiagnosisDetector(rec.detector) || !rec.measures) return null;
   const detector = rec.detector;
   const m = rec.measures;
@@ -58,15 +59,15 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
   return (
     <article style={{ padding: '16px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>{TITLES[detector]}</span>
-        <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ ...MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>{rec.agentId}</button>
-        <Badge status={rec.status} label={STATUS_LABEL[rec.status]} />
+        <strong style={{ color: 'var(--tx)' }}>{TITLES[detector]}</strong>
+        <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
+        {!open && <Badge status={rec.status} label={STATUS_LABEL[rec.status]} />}
       </div>
       <Sentence parts={findingSentence(detector, m)} />
       {cost && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>{cost}</p>}
       {limitation && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{limitation}</p>}
 
-      <div className="dx-acts" style={{ display: 'flex', gap: '8px 16px', flexWrap: 'wrap', marginTop: 2 }}>
+      <div className="dx-acts" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
         {open && action?.kind === 'rule' && (
           <Link href={`${ROUTES.controls}?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
@@ -79,9 +80,10 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
             background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)',
           }}>{howOpen ? 'Hide how to fix' : 'How to fix'}</button>
         )}
-        {calls > 0 && <button type="button" className="dx-link" onClick={onSelectEvidence}>See the {calls} calls</button>}
-        {open && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('snooze')}>Snooze {SNOOZE_DAYS} days</button>}
-        {open && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('dismiss')}>Dismiss</button>}
+        {calls > 0 && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h32 wr-btn--brand-outline" onClick={onSelectEvidence} aria-label={`See why: the ${calls} ${plural(calls, 'call')}`}>See why</button>}
+        {open && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h32" aria-expanded={options} onClick={() => setOptions((v) => !v)}>Options</button>}
+        {open && options && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('snooze')}>Snooze {SNOOZE_DAYS} days</button>}
+        {open && options && <button type="button" className="dx-link" disabled={busy} onClick={() => void onFeedback('dismiss')}>Dismiss</button>}
       </div>
 
       {open && action?.kind === 'howto' && (

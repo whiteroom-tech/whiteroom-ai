@@ -6,11 +6,11 @@
  */
 import { useState, type ReactNode } from 'react';
 import type { RecommendationDetail } from '@/lib/whiteroom/types';
-import { FONT_MONO, SegmentedControl } from '@whiteroom/ui';
+import { SegmentedControl } from '@whiteroom/ui';
 import { fmtDay, plural } from '@/lib/format';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction, NO_FINDING_NOTE } from '@/lib/performance-insights';
-import { Badge, Btn, CARD, H3 } from './primitives';
+import { Badge, Btn } from './primitives';
 import { DiagnosisRow, isDiagnosisRow } from './Diagnosis';
 
 export const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
@@ -47,15 +47,16 @@ export function RecommendationsCard({
   feedbackError: { recId: string; message: string } | null;
 }) {
   return (
-    <div style={{ ...CARD, marginBottom: 0 }} id="recommendations">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={H3} id="recommendations-heading" tabIndex={-1}>
-          Recommendations
-          {total > 0 && <span style={{ marginLeft: 8, fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}><span style={{ fontFamily: FONT_MONO }}>{total}</span>{recCountSuffix(status)}</span>}
-        </h3>
-        {/* One agent: nothing to filter by. */}
-        {showAgentFilter && <input aria-label="Filter by agent" value={agentFilter} onChange={e => onAgentFilter(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 'var(--fs-sm)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
+    <div className="wr-pcard wr-recs" id="recommendations">
+      <div className="wr-recs__head">
+        <h3 className="wr-pcard__title" id="recommendations-heading" tabIndex={-1}>Recommendations</h3>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* One agent: nothing to filter by. */}
+          {showAgentFilter && <input aria-label="Filter by agent" className="wr-input" value={agentFilter} onChange={e => onAgentFilter(e.target.value)} placeholder="Filter by agent…" style={{ width: 170, fontSize: 'var(--fs-sm)' }} />}
+          <span className="wr-cap">{total > 0 ? `${total.toLocaleString()}${recCountSuffix(status)}` : status === 'open' ? 'none open' : ''}</span>
+        </span>
       </div>
+      <div className="wr-recs__body">
       <div aria-live="polite" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: notice ? '0 0 8px' : 0 }}>{notice}</div>
       {showStatuses && <div style={{ marginBottom: 12 }}>
         <SegmentedControl<string> label="Show recommendations by status" value={status} onChange={onStatus} size={24}
@@ -75,9 +76,9 @@ export function RecommendationsCard({
       ) : (
         <article key={rec.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>{recTitle(rec.detector)}</span>
-            <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{rec.agentId}</button>
-            <Badge status={rec.status} />
+            <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
+            <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
+            {rec.status !== 'open' && <Badge status={rec.status} />}
             {rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
           </div>
           {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
@@ -100,11 +101,6 @@ export function RecommendationsCard({
         </div>
       )}
 
-      {!showStatuses && !error && (
-        <button type="button" className="wr-link" onClick={onShowStatuses} style={{ background: 'none', border: 'none', padding: 0, marginTop: 12, minHeight: 24, cursor: 'pointer', fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
-          Show closed and other statuses
-        </button>
-      )}
 
       {error && (
         <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 'var(--fs-sm)', marginTop: 8 }}>
@@ -120,7 +116,13 @@ export function RecommendationsCard({
           }}>{loading ? 'Loading…' : 'Load more'}</button>
         </div>
       )}
+      </div>
 
+      {!showStatuses && !error && (
+        <div className="wr-recs__foot">
+          <button type="button" className="wr-btn wr-btn--secondary wr-btn--h32" onClick={onShowStatuses}>Show past recommendations</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -129,19 +131,14 @@ export function RecommendationsCard({
 function RecActions({ open, hasFinding, busy, onEvidence, onFeedback }: { open: boolean; hasFinding: boolean; busy: boolean; onEvidence: () => void; onFeedback: (f: Feedback) => void }) {
   const [more, setMore] = useState(false);
   const buttons: Record<RecRowAction, ReactNode> = {
-    evidence: <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
-    toggle: (
-      <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
-        fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-        background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
-      }}>{more ? 'Less' : 'More'}</button>
-    ),
+    evidence: <button key="evidence" type="button" className="wr-btn wr-btn--secondary wr-btn--h32 wr-btn--brand-outline" onClick={onEvidence}>See why</button>,
+    toggle: <button key="toggle" type="button" className="wr-btn wr-btn--secondary wr-btn--h32" aria-expanded={more} onClick={() => setMore((v) => !v)}>Options</button>,
     fixed: <Btn key="fixed" label="Mark as fixed" onClick={() => onFeedback(recFeedback('fixed'))} loading={busy} />,
     snooze: <Btn key="snooze" label={`Snooze ${SNOOZE_DAYS} days`} onClick={() => onFeedback(recFeedback('snooze'))} loading={busy} />,
     dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback(recFeedback('dismiss'))} loading={busy} />,
   };
   return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
       {recRowActions(open, more, hasFinding).map((a) => buttons[a])}
       {open && !hasFinding && <span style={{ alignSelf: 'center', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{NO_FINDING_NOTE}</span>}
     </div>

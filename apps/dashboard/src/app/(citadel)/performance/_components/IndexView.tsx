@@ -1,6 +1,5 @@
 'use client';
 
-import { RULE_ACTIVITY } from '@/lib/vocab';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { fleetReport, performanceRecommendationsList } from '@/lib/whiteroom/client';
 import Link from 'next/link';
@@ -9,20 +8,30 @@ import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
-import { SavingsChart, savingsCaption } from '@/components/performance/SavingsPanels';
-import { fmtCost, fmtTime, HOUR_MS, partialMark } from '@/lib/format';
+import { TokensCompare } from '@/components/performance/SavingsPanels';
+import { fmtCost, fmtCount, fmtKwh, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
-import type { PerformanceIndexResult, RecommendationDetail, FleetHourlyResult } from '@/lib/whiteroom/types';
-import { tallyTotal, tallyShort, type GovernanceCounts } from '@/lib/governance';
+import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
+import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
+import { latencyTrend, lookbackText, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
-import { CostTrackingSection } from './CostTracking';
-import { AgentBudgetsSection } from './AgentBudgets';
+import { CostPredictionSection, type CostPredictionApi } from './CostPrediction';
+import { ControlSummary } from './ControlSummary';
 import { RecommendationsCard } from './Recommendations';
 import { ALREADY_CHANGED_NOTICE, MARKED_FIXED_TOAST } from '@/lib/diagnosis/copy';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
-import { fmtLatency, fmtPct, CostDonut, TrafficByModel } from './perf-utils';
+import { fmtLatency, SpendByModel } from './perf-utils';
+
+/** Hourly cost: the fleet's spend per working hour (engine performance_cost_forecast). */
+export interface WorkingHourRate {
+  usdPerHour: number;
+  lookbackHours: number | null;
+  /** Recent calls had no price on file: the rate is unknown, not $0. */
+  unpriced?: boolean;
+}
 
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 export type FeedbackResult = 'done' | 'closed' | 'failed';
@@ -34,7 +43,8 @@ const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 const REC_PAGE_SIZE = 15;
 const REC_FILTER_DEBOUNCE_MS = 300;
 
-export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
+export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
+  workingHour = null, rules = null, byRuleId, rangeUsedTokens = null, usdByDay = null, showUnnamedNote = false, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
   auditFailed: boolean;
@@ -52,6 +62,20 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<FeedbackResult>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
+  /** Hourly cost's figure; null when it couldn't be read. */
+  workingHour?: WorkingHourRate | null;
+  /** The fleet's rules, for the Control section; null when unknown. */
+  rules?: GovernanceRule[] | null;
+  /** Rule activity per rule id (newer engines). */
+  byRuleId?: Record<string, RuleActionCounts>;
+  /** Tokens the agents used in the range (audit buckets), for "about N% less"; null when unknown. */
+  rangeUsedTokens?: number | null;
+  /** Dollars saved per local day (engine savingsByDay), micros; null on older engines. */
+  usdByDay?: Record<string, number> | null;
+  /** Spend's caption about calls from agents without a name (shown for a month after the change). */
+  showUnnamedNote?: boolean;
+  /** The dev preview's Cost prediction reads and writes. */
+  predictionApi?: CostPredictionApi;
 }) {
   const s = data.summary;
   // Rule decisions, from the same window and ledger as the other action counts.
@@ -137,8 +161,9 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   // Smaller context: the fleet report's compression ratio over all time (it doesn't follow the range; the card says so).
   // null until it loads, if it can't, or if the engine doesn't send it: never shown as 0.
   // Kept with the fleet it came from, so another fleet's figure never shows after a switch.
-  const [compressionFor, setCompressionFor] = useState<{ fleetId: string; value: number | null } | null>(null);
+  const [compressionFor, setCompressionFor] = useState<{ fleetId: string; value: number | null; kwh: number | null } | null>(null);
   const compression = compressionFor?.fleetId === fleetId ? compressionFor.value : null;
+  const energyAllTime = compressionFor?.fleetId === fleetId ? compressionFor.kwh : null;
   // Read again with each page refresh (loadedAt); a failed read keeps the last figure. A read
   // still in flight for this fleet isn't started again (a cached page then a fresh one is one
   // read). An answer for a fleet or key that's no longer current is dropped.
@@ -150,7 +175,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     if (compressionReading.current === reading) return;
     compressionReading.current = reading;
     fleetReport(fleetId, authKey)
-      .then((r) => { if (!r.error && shownReading.current === reading) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null }); }, () => {})
+      .then((r) => { if (!r.error && shownReading.current === reading) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null, kwh: parseFloat(r.energySavings?.estimatedEnergySaved ?? '') || null }); }, () => {})
       .finally(() => { if (compressionReading.current === reading) compressionReading.current = null; });
   }, [fleetId, authKey, loadedAt]);
   const seeFindings = () => {
@@ -167,7 +192,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
   const hourly = hourlyData?.hourly ?? [];
   // The selected range (the second half of the hourly rows), and what the
-  // Spend and Average per hour cards say about completeness.
+  // Spend card says about completeness.
   const { shown: displayHourly, gapLine, partial: spendPartial } = spendSummary(hourly, s.unpricedAttempts);
 
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
@@ -177,78 +202,107 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
       totalMicros: cache.savedMicros + govCostMicros,
       cacheMicros: cache.savedMicros,
       govTokensSaved: govSavings?.tokensSaved ?? 0,
-      govCostMicros,
       // Some saved tokens or cache reads had no price: the dollars are a lower bound.
       partial: !!govSavings?.partial || cache.unpricedReadTokens > 0,
     };
   }, [cache, govSavings]);
 
-  // At least an hour; an unreadable period counts as one.
-  const rangeHours = (Date.parse(data.period.end) - Date.parse(data.period.start)) / HOUR_MS;
-  const hoursInRange = rangeHours >= 1 ? rangeHours : 1;
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
   const ruleTally = { ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked };
-  const ruleSub = tallyShort(ruleTally);
   const ruleTotal = tallyTotal(ruleTally);
-  const sectionTitle = { margin: '8px 0 12px', fontSize: 'var(--fs-card)', fontWeight: 700 } as const;
+  const prior = priorLabel(rangeLabel);
+  const prev = data.previous;
+  const callsTrend = trendText(pctChange(s.totalCalls, prev?.totalCalls), prior);
+  const speed = latencyTrend(s.avgLatencyMs, prev?.avgLatencyMs, prior);
+  const openRecs = recStatus === 'open' && !recError ? recTotal : null;
+  const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
+  const kwh = energyAllTime != null ? fmtKwh(energyAllTime) : null;
+  const rangeName = rangeLabel.charAt(0).toUpperCase() + rangeLabel.slice(1);
+  const toPerformance = () => {
+    document.getElementById('perf-performance')?.scrollIntoView({ block: 'start' });
+    document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
+  };
 
   return (
     <>
-      {/* Cost first, then a read-only Control summary, then Performance. Each follows the page range. */}
+      {/* One line for the whole range, then Cost, Control and Performance. Each follows the page range. */}
+      <p className="wr-perf-lead">
+        {rangeName}: <strong>{fmtCost(s.totalCost)}{partialMark(spendPartial)}</strong> spent
+        {' · '}{auditFailed && !govCounts ? 'rule activity couldn’t load' : rulesCaughtText(ruleTotal, blocked)}
+        {' · '}<strong>{fmtCount(failedCalls)}</strong> failed {failedCalls === 1 ? 'call' : 'calls'}
+        {openRecs != null && openRecs > 0 && <>{' · '}<button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={toPerformance}>{openRecs} {openRecs === 1 ? 'recommendation' : 'recommendations'} ↓</button></>}
+      </p>
+
       <section aria-labelledby="perf-cost">
-        <h2 id="perf-cost" style={sectionTitle}>Cost</h2>
-        <div className="wr-perf-strip">
+        <SectionHeader id="perf-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={rangeLabel} />
+        <div className="wr-perf-strip" style={{ marginBottom: 16 }}>
           <StatCard
             variant="card"
             label="Spend"
             hint={HELP.spend}
             // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
             value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`}
-            sub={(() => {
-              // Whatever makes the figure less than exact, in one warning colour.
-              const notes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
-              return notes.length ? <span style={{ color: 'var(--warn-tx)' }}>{notes.join(' · ')}</span> : rangeLabel;
-            })()}
+            sub={<>
+              {fmtCount(s.totalCalls)} model {s.totalCalls === 1 ? 'call' : 'calls'}
+              {spendNotes.length > 0 && <span style={{ display: 'block', marginTop: 8, color: 'var(--warn-tx)' }}>{spendNotes.join(' · ')}</span>}
+              {showUnnamedNote && <span style={{ display: 'block', marginTop: 8, color: 'var(--tx3)' }}>Includes calls from agents without a name since Oct 19.</span>}
+            </>}
           />
           <StatCard
             variant="card"
             label="Saved by WhiteRoom"
             hint={HELP.savings}
-            value={auditFailed ? '—' : <><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</>}
-            sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
+            value={auditFailed ? '—' : <span style={{ color: savings.totalMicros > 0 ? 'var(--ok)' : undefined }}>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</span>}
+            sub={auditFailed ? UNAVAILABLE : savedCaption(savings.govTokensSaved, rangeUsedTokens, savings.cacheMicros)}
           />
-          <StatCard variant="card" label="Average per hour" hint={HELP.hourlySpend} value={`${fmtCost(s.totalCost / hoursInRange)}${partialMark(spendPartial)}`} sub="over every hour shown, quiet ones too" />
-          <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(compression)} />
+          <StatCard
+            variant="card"
+            label="Hourly cost"
+            hint={HELP.hourlySpend}
+            value={workingHour && !workingHour.unpriced ? fmtCost(Math.round(workingHour.usdPerHour * 1_000_000)) : '—'}
+            sub={!workingHour ? UNAVAILABLE : workingHour.unpriced ? 'recent calls have no price on file yet'
+              : ['an hour while agents work', lookbackText(workingHour.lookbackHours)].filter(Boolean).join(' · ')}
+          />
+          <StatCard
+            variant="card"
+            label="Smaller context"
+            hint={HELP.smallerContext}
+            value={<span style={{ color: compression != null && compression > 0 ? 'var(--ok)' : undefined }}>{smallerContextCard(compression).value}</span>}
+            sub={<>{smallerContextCard(compression).sub}{kwh && <span style={{ display: 'block', marginTop: 8 }}>{kwh} saved all time</span>}</>}
+          />
         </div>
-        {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
-        {/* Each its own full row: Cost prediction (a card with its own bottom margin), then tokens with vs without, then spend by model. */}
-        <CostTrackingSection fleetId={fleetId} authKey={authKey} />
-        <AgentBudgetsSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} />
-        {savingsDays && <div style={{ marginBottom: 24 }}><SavingsChart days={savingsDays} /></div>}
+        {/* Tokens with vs without, then Cost prediction (folded), then Spend by model (folded). */}
+        {savingsDays && <TokensCompare days={savingsDays} usdByDay={usdByDay} />}
+        <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} {...(predictionApi && { api: predictionApi })} />
         {s.models.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))', gap: 16, marginBottom: 24 }}>
-            <CostDonut models={s.models} />
-            <TrafficByModel models={s.models} />
-          </div>
+          <SpendByModel
+            models={s.models}
+            pricesNote={pricesFrom(data.priceInfo.version)}
+            stale={data.priceInfo.stale ? `They are ${data.priceInfo.ageDays} days old.` : null}
+            trend={perCallTrend({ calls: s.totalCalls, cost: s.totalCost }, prev, prior)}
+          />
         )}
       </section>
 
-      <section aria-labelledby="perf-control" style={{ marginBottom: 24 }}>
-        <h2 id="perf-control" style={sectionTitle}>Control</h2>
-        <div className="wr-perf-strip wr-perf-strip--1">
-          <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : ruleTotal.toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
-        </div>
-        <p style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Rules and their changes are on <Link href={ROUTES.controls} className="wr-link">Controls &rarr;</Link></p>
+      <hr className="wr-perf-rule" />
+
+      <section aria-labelledby="perf-control">
+        <SectionHeader id="perf-control" title="Control" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={ROUTES.controls} className="wr-link">Manage rules in Controls →</Link></>} />
+        <ControlSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unavailable={auditFailed} />
       </section>
 
+      <hr className="wr-perf-rule" />
+
       <section aria-labelledby="perf-performance">
-        <h2 id="perf-performance" style={sectionTitle}>Performance</h2>
-        <div className="wr-perf-strip wr-perf-strip--2" style={{ marginBottom: 20 }}>
-          <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
-          <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(s.avgLatencyMs)} sub="median time per call" />
+        <SectionHeader id="perf-performance" title="Performance" sub="How well your agents worked, and what to look at." meta={rangeLabel} />
+        <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
+          <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtCount(failedCalls)} sub={`of ${fmtCount(s.totalCalls)} ${s.totalCalls === 1 ? 'call' : 'calls'} · ${fmtPctShort(s.errorRate)}`} />
+          <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(s.avgLatencyMs)}
+            sub={speed ? <span style={{ color: speed.tone === 'ok' ? 'var(--ok)' : speed.tone === 'warn' ? 'var(--warn-tx)' : undefined }}>{speed.text}</span> : 'median time per call'} />
+          <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={fmtCount(s.totalCalls)} sub={callsTrend ?? (prev ? `none in the ${prior}` : rangeLabel)} />
         </div>
-        {/* Health on the left, what to do about it on the right; stacked below 1100px. */}
-        <div className="wr-perf-row" style={{ marginBottom: 0 }}>
+        {/* Health on the left, what to do about it on the right; stacked when narrow. */}
+        <div className="wr-perf-row">
           <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onReview={seeFindings} />
 
           <RecommendationsCard
@@ -264,13 +318,19 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
           />
         </div>
       </section>
+
+      <p className="wr-cap" style={{ margin: '24px 0 0' }}>Per-agent numbers and scores are on <Link href={ROUTES.home} className="wr-link">Home → Agents</Link>.</p>
     </>
   );
 }
 
+/** "0%", "1.2%": the failed-call share. */
+function fmtPctShort(rate: number): string {
+  return rate === 0 ? '0%' : `${(rate * 100).toFixed(1)}%`;
+}
 /** The Smaller context card's figure and line: unknown is "—", never 0; it covers all time, not the range. */
 export function smallerContextCard(compression: number | null): { value: string; sub: string } {
   if (compression === null) return { value: '—', sub: 'not available yet' };
   if (compression <= 0) return { value: '—', sub: 'nothing saved yet' };
-  return { value: `${compression.toFixed(1)}%`, sub: 'smaller than full history, all time' };
+  return { value: `${compression.toFixed(1)}%`, sub: 'less sent to models, on average · all time' };
 }

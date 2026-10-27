@@ -137,8 +137,8 @@ export function unusualRow(f: { count: number | null; atLeast: boolean; failed: 
   if (f.loading) return { tone: 'muted', text: 'Loading\u2026' };
   if (f.failed) return { tone: 'muted', text: 'Couldn\u2019t load flagged runs. Reload to try again.' };
   if (f.count === null) return null;
-  if (f.count === 0) return { tone: 'ok', text: 'Nothing unusual this week' };
-  return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, 'run', 'runs', f.atLeast)} flagged this week` };
+  if (f.count === 0) return { tone: 'ok', text: 'Nothing unusual in the last 7 days' };
+  return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, 'run', 'runs', f.atLeast)} flagged in the last 7 days` };
 }
 
 /** The health check's row: its summary line (counts only; see diagnosisSummary). */

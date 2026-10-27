@@ -2,28 +2,31 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList } from '@/lib/whiteroom/client';
 import { localDay } from '@/lib/runs';
 import { syncQueryParams } from '@/lib/url';
 import { agentTotalsFromBuckets, dailySavingsFromBuckets, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
-import { readSnapshot, saveSnapshot, updateSnapshot } from '@/lib/performance-snapshot';
+import { NO_EXTRAS, readSnapshot, saveSnapshot, updateSnapshot, type OverviewExtras } from '@/lib/performance-snapshot';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
-import { PageHeader } from '@/components/citadel/PageChrome';
-import type { PerformanceIndexResult, AgentPerformanceResult, PerformanceEvidenceResult, FleetHourlyResult } from '@/lib/whiteroom/types';
+import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
+import type { PerformanceIndexResult, PerformanceEvidenceResult, FleetHourlyResult } from '@/lib/whiteroom/types';
 import { countsFromRuleActions, governanceFromSummary, type GovernanceCounts } from '@/lib/governance';
-import { Banner, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
+import { Banner, SegmentedControl } from '@whiteroom/ui';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 import { IndexView, type FeedbackResult } from './_components/IndexView';
-import { AgentView, EvidenceView } from './_components/AgentEvidence';
+import { EvidenceView } from './_components/AgentEvidence';
 import { HOUR_MS } from '@/lib/format';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
 
-type ViewMode = 'index' | 'agent' | 'evidence';
+type ViewMode = 'index' | 'evidence';
+
+/** An agent's own page: where ?view=agent and agent links now go. */
+const agentPage = (agentId: string) => `/agents/${encodeURIComponent(agentId)}`;
 
 export default function PerformancePage() {
   const auth = useFleetAuth();
@@ -34,13 +37,18 @@ export default function PerformancePage() {
 
   // View, agent, and time window live in the URL (?view=…&agent=…&hours=…) so
   // they survive refresh and can be deep-linked; invalid values fall back to
-  // defaults. The evidence view needs a finding id (not persisted), so a
-  // deep-linked ?view=evidence degrades to the agent view.
-  const [view, setView] = useState<ViewMode>(() => {
+  // defaults. Per-agent numbers live on the agent's own page: an old
+  // ?view=agent link goes there, and so does ?view=evidence, which needs a
+  // finding id that isn't in the URL.
+  // Read once on arrival: the evidence view writes ?view=evidence itself, which mustn't send it away.
+  const [legacyAgent] = useState(() => {
     const v = searchParams.get('view');
-    return (v === 'agent' || v === 'evidence') && searchParams.get('agent') ? 'agent' : 'index';
+    const a = searchParams.get('agent');
+    return (v === 'agent' || v === 'evidence') && a ? a : null;
   });
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(() => searchParams.get('agent'));
+  useEffect(() => { if (legacyAgent) router.replace(agentPage(legacyAgent)); }, [legacyAgent, router]);
+  const [view, setView] = useState<ViewMode>('index');
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
   const [hoursBack, setHoursBack] = useState(() => {
@@ -51,12 +59,16 @@ export default function PerformancePage() {
   // Keep the URL in sync: defaults drop their param; leaving agent/evidence
   // views removes ?agent.
   useEffect(() => {
+    // An old per-agent link is on its way to the agent's page: rewriting this
+    // page's URL now would replace that navigation.
+    if (legacyAgent) return;
     syncQueryParams(router, {
       hours: hoursBack === 168 ? null : String(hoursBack),
       view: view === 'index' ? null : view,
       agent: view === 'index' ? null : selectedAgent,
     });
-  }, [router, hoursBack, view, selectedAgent]);
+  }, [router, hoursBack, view, selectedAgent, legacyAgent]);
+  const openAgent = useCallback((id: string) => router.push(agentPage(id)), [router]);
   // The overview as last shown for this fleet and range: on a return visit it's
   // on screen at once, and the refresh below replaces it.
   const [shown] = useState(() => readSnapshot(fleetId, hoursBack));
@@ -69,7 +81,6 @@ export default function PerformancePage() {
 
   const [indexData, setIndexData] = useState<PerformanceIndexResult | null>(shown?.indexData ?? null);
   const [hourlyData, setHourlyData] = useState<FleetHourlyResult | null>(shown?.hourlyData ?? null);
-  const [agentData, setAgentData] = useState<AgentPerformanceResult | null>(null);
   const [evidenceData, setEvidenceData] = useState<PerformanceEvidenceResult | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<{ recId: string; message: string } | null>(null);
@@ -77,12 +88,12 @@ export default function PerformancePage() {
   const [govCounts, setGovCounts] = useState<GovernanceCounts | null>(shown?.govCounts ?? null);
   const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(shown?.savingsDays ?? null);
   const [agentIds, setAgentIds] = useState<string[] | null>(shown?.agentIds ?? null);
+  const [extra, setExtra] = useState<OverviewExtras>(shown?.extras ?? NO_EXTRAS);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid 24h→3d→7d clicks (or
   // switching agents mid-flight) can't render a stale response.
   const indexReq = useRef(0);
-  const agentReq = useRef(0);
   const evidenceReq = useRef(0);
 
   const fetchIndex = useCallback(async () => {
@@ -98,11 +109,15 @@ export default function PerformancePage() {
       // Totals the engine computes over the whole stored audit trail (Phase 1
       // spec H1): the rolling window for savings and rule counts, and 7
       // calendar days for the chart.
-      const [idx, hourly, audit, week] = await Promise.all([
+      const [idx, hourly, audit, week, forecast, rules] = await Promise.all([
         performanceIndex(fleetId, hoursBack, authKey),
         performanceFleetHourly(fleetId, hoursBack * 2, authKey),
         auditSummary(fleetId, new Date(cutoff), authKey, hoursBack).catch(() => null),
         auditSummary(fleetId, weekStart, authKey).catch(() => null),
+        // Hourly cost: the fleet's rate per working hour, last 14 days.
+        performanceCostForecast(fleetId, undefined, authKey).catch(() => null),
+        // Control: the rules, for their modes and names.
+        governanceList(fleetId, authKey).then((r) => r.rules ?? null, () => null),
       ]);
       if (stale()) return;
       if (idx.error) { setError(idx.error); return; }
@@ -112,6 +127,14 @@ export default function PerformancePage() {
       const daysShown = week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, loadedNow) : null;
       // The engine's savings (audit M07): per agent-day, each agent at its own input price.
       const fromAudit = audit?.savingsBuckets ? governanceFromSummary(audit.governance) : null;
+      const extras: OverviewExtras = {
+        workingHour: forecast && !forecast.error && typeof forecast.burnRateUsdPerHour === 'number'
+          ? { usdPerHour: forecast.burnRateUsdPerHour, lookbackHours: forecast.burnLookbackHours ?? null, unpriced: !!forecast.costUnavailable } : null,
+        rules,
+        byRuleId: undefined,
+        rangeUsedTokens: audit?.savingsBuckets ? audit.savingsBuckets.reduce((n, b) => n + b.used, 0) : null,
+        usdByDay: week?.savingsByDay ? Object.fromEntries(week.savingsByDay.map((d) => [d.day, d.usdMicros])) : null,
+      };
       const snapshot = {
         indexData: idx,
         hourlyData: hourlyShown,
@@ -121,6 +144,7 @@ export default function PerformancePage() {
         agentIds: audit?.savingsBuckets ? agentTotalsFromBuckets(audit.savingsBuckets).map((t) => t.agent) : null,
         auditFailed: !audit?.savingsBuckets,
         loadedAt: loadedNow,
+        extras,
       };
       setIndexData(snapshot.indexData);
       setLoadedAt(snapshot.loadedAt);
@@ -130,6 +154,7 @@ export default function PerformancePage() {
       setGovCounts(snapshot.govCounts);
       setAgentIds(snapshot.agentIds);
       setAuditFailed(snapshot.auditFailed);
+      setExtra(extras);
       saveSnapshot(fleetId, hoursBack, snapshot);
       if (fromAudit) {
         // Durable counts (engine rule_actions) replace the audit log's when they arrive.
@@ -138,7 +163,9 @@ export default function PerformancePage() {
             if (stale() || 'unsupported' in d) return;
             const counts = countsFromRuleActions(d, fromAudit.byRule);
             setGovCounts(counts);
-            updateSnapshot(fleetId, hoursBack, { govCounts: counts });
+            const withIds = { ...extras, byRuleId: d.byRuleId };
+            setExtra(withIds);
+            updateSnapshot(fleetId, hoursBack, { govCounts: counts, extras: withIds });
           },
           () => {},
         );
@@ -159,22 +186,9 @@ export default function PerformancePage() {
     setGovCounts(snap.govCounts);
     setAgentIds(snap.agentIds);
     setAuditFailed(snap.auditFailed);
+    setExtra(snap.extras ?? NO_EXTRAS);
     setLoadedAt(snap.loadedAt);
   };
-
-  const fetchAgent = useCallback(async (agentId: string) => {
-    if (!fleetId) return;
-    const req = ++agentReq.current;
-    const stale = () => agentReq.current !== req;
-    setLoading(true); setError('');
-    try {
-      const data = await performanceAgent(fleetId, agentId, hoursBack, authKey);
-      if (stale()) return;
-      if (data.error) { setError(data.error); return; }
-      setAgentData(data);
-    } catch { if (!stale()) setError('Failed to load agent performance data.'); }
-    finally { if (!stale()) setLoading(false); }
-  }, [fleetId, hoursBack, authKey]);
 
   const fetchEvidence = useCallback(async (findingId: string) => {
     if (!fleetId) return;
@@ -190,7 +204,7 @@ export default function PerformancePage() {
     finally { if (!stale()) setLoading(false); }
   }, [fleetId, authKey]);
 
-  useEffect(() => { if (authenticated && view === 'index') fetchIndex(); }, [authenticated, view, fetchIndex]);
+  useEffect(() => { if (authenticated && view === 'index' && !legacyAgent) fetchIndex(); }, [authenticated, view, fetchIndex, legacyAgent]);
   // The Savings chart is 7 local calendar days: reload just after local
   // midnight so it moves to the new day even when nothing else refreshes.
   const [midnights, setMidnights] = useState(0);
@@ -202,7 +216,6 @@ export default function PerformancePage() {
     const t = setTimeout(() => { fetchIndex(); setMidnights((n) => n + 1); }, next.getTime() - Date.now());
     return () => clearTimeout(t);
   }, [authenticated, view, fetchIndex, midnights]);
-  useEffect(() => { if (authenticated && view === 'agent' && selectedAgent) fetchAgent(selectedAgent); }, [authenticated, view, selectedAgent, fetchAgent]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
   async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> {
@@ -240,28 +253,27 @@ export default function PerformancePage() {
 
   // A refetch is in flight while the previous data is still on screen
   // (e.g. switching 24h→3d, or picking another agent).
-  const refreshing = loading && (view === 'index' ? indexData != null : view === 'agent' ? agentData != null : evidenceData != null);
+  const refreshing = loading && (view === 'index' ? indexData != null : evidenceData != null);
 
   if (auth.status !== 'authenticated') return <FleetLogin auth={auth} />;
+  // An old per-agent link: on its way to the agent's page.
+  if (legacyAgent) return <LoadingLine>Opening {legacyAgent}&hellip;</LoadingLine>;
 
   return (
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
       <PageHeader
         fleetId={fleetId}
-        title={<>
-          {view !== 'index' && (
-            <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} style={{ fontSize: 'var(--fs-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Performance</button>
-          )}
-          {view === 'evidence' && selectedAgent && (
+        badge={view === 'index' ? <LiveStatus at={loadedAt} failing={!!error && !!indexData} /> : undefined}
+        title={view === 'index' ? 'Performance' : <>
+          <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} className="wr-crumb-btn">Performance</button>
+          {selectedAgent && (
             <>
               <span style={{ color: 'var(--tx3)' }}>/</span>
-              <button onClick={() => { setView('agent'); setSelectedFindingId(null); }} style={{ fontSize: 'var(--fs-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{selectedAgent}</button>
+              <button onClick={() => openAgent(selectedAgent)} className="wr-crumb-btn wr-agent-name">{selectedAgent}</button>
             </>
           )}
-          <span style={{ color: 'var(--tx3)' }}>{view !== 'index' ? '/' : ''}</span>
-          <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>
-            {view === 'index' ? 'Performance' : view === 'agent' ? selectedAgent : 'Evidence'}
-          </span>
+          <span style={{ color: 'var(--tx3)' }}>/</span>
+          <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>Evidence</span>
         </>}
       >
         <SegmentedControl<'24' | '72' | '168'>
@@ -271,24 +283,23 @@ export default function PerformancePage() {
           size={26}
           options={[{ value: '24', label: '24h' }, { value: '72', label: '3d' }, { value: '168', label: '7d' }]}
         />
-        <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>rolling, from now</span>
+        <span className="citadel-hide-mobile" style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>to now</span>
       </PageHeader>
 
-      {/* Content — dimmed while a range/agent fetch is in flight over data
-          already on screen, so stale charts read as "refreshing", not current. */}
+      {/* Content — dimmed while a range fetch is in flight over data already
+          on screen, so stale charts read as "refreshing", not current. */}
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, ...(refreshing ? { opacity: 0.55, pointerEvents: 'none' as const, transition: 'opacity 0.15s' } : { transition: 'opacity 0.15s' }) }}>
         {/* With data on screen, a failed refresh keeps it and says so; with
             nothing yet, the error stands alone. */}
-        {error && (view === 'index' ? indexData : view === 'agent' ? agentData : evidenceData)
+        {error && (view === 'index' ? indexData : evidenceData)
           ? <div style={{ marginBottom: 16 }}><RefreshFailed since={view === 'index' ? loadedAt : null} /></div>
           : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
-        {loading && !indexData && !agentData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
+        {loading && !indexData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
-        {view === 'index' && indexData && Date.now() < UNNAMED_CALLS_NOTE_UNTIL && (
-          <div style={{ marginBottom: 16 }}><Banner variant="info">Since Oct 19, these numbers include calls from agents without a name. Saved by WhiteRoom isn&rsquo;t affected.</Banner></div>
-        )}
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey} onSelectAgent={id => { setSelectedAgent(id); setView('agent'); }} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
-        {view === 'agent' && agentData && <AgentView data={agentData} />}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
+          workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} rangeUsedTokens={extra.rangeUsedTokens} usdByDay={extra.usdByDay}
+          showUnnamedNote={Date.now() < UNNAMED_CALLS_NOTE_UNTIL}
+          onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>
 
