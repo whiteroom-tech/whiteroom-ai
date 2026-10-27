@@ -287,6 +287,25 @@ describe('Controls page', () => {
     }
   });
 
+  it('on a phone the sheet is modal: the list behind is inert, focus starts on ‹ Controls and goes back on close', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(max-width: 720px)', media: q, addEventListener() {}, removeEventListener() {} }));
+    const m = await mount();
+    try {
+      const list = m.el.querySelector('.gov-list') as HTMLElement;
+      const row = m.row('Only allow');
+      row.focus();
+      await m.click(row);
+      expect(list.inert).toBe(true);
+      expect(document.activeElement?.textContent).toBe('‹ Controls');
+      await m.click(m.button('‹ Controls'));
+      expect(list.inert).toBe(false);
+      expect(document.activeElement?.textContent).toContain('Only allow');
+    } finally {
+      vi.unstubAllGlobals();
+      m.root.unmount();
+    }
+  });
+
   it('Remove asks first, then deletes', async () => {
     const m = await mount();
     await m.click(m.row('100 times'));

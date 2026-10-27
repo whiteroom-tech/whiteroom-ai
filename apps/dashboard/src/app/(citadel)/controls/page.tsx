@@ -251,6 +251,26 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [sheetOpen, dialog]);
+  // On phones the sheet is modal: what's behind it (header, list, tab bar) is
+  // inert, focus starts on ‹ Controls, and goes back where it was on close.
+  // Follows the layout if the window crosses the phone width meanwhile.
+  useEffect(() => {
+    const phone = window.matchMedia?.('(max-width: 720px)');
+    if (!sheetOpen || !phone) return;
+    const from = document.activeElement as HTMLElement | null;
+    const behind = [...document.querySelectorAll<HTMLElement>('.citadel-page-header, .gov-list, .wr-tabbar')];
+    const apply = () => {
+      behind.forEach((e) => { e.inert = phone.matches; });
+      if (phone.matches) document.querySelector<HTMLElement>('aside.is-sheet .gov-edhead__back')?.focus();
+    };
+    apply();
+    phone.addEventListener('change', apply);
+    return () => {
+      phone.removeEventListener('change', apply);
+      behind.forEach((e) => { e.inert = false; });
+      if (phone.matches && from?.isConnected) from.focus();
+    };
+  }, [sheetOpen]);
 
   /** The current URL with some search params changed (null removes one). */
   const withParams = (changes: Record<string, string | null>) => {
