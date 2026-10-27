@@ -321,6 +321,29 @@ describe('Runs › failures and engine limits', () => {
     m.root.unmount();
   });
 
+  it('says the day counts couldn’t load, rather than draw empty bars, when a new agent’s counts fail', async () => {
+    const today = new Date().toLocaleDateString('en-CA');
+    api.daysFn = async () => ({ days: [{ day: today, runs: 47 }] });
+    api.list.mockImplementation(async () => ({ runs: [run(1)], total: 1, cursor: null }));
+    const m = await mount();
+    api.daysFn = async () => { throw new Error('503'); };
+    const select = m.el.querySelector('select[aria-label="Agent"]') as HTMLSelectElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'lead-agent');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flush();
+    expect(m.text()).toContain('Couldn’t load the runs per day for these days');
+    expect(m.el.querySelector('.wr-strip-scroll')).toBeNull();
+    // The next try loads: the bars come back and the note goes.
+    api.daysFn = async () => ({ days: [{ day: today, runs: 5 }] });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await flush();
+    expect(m.text()).not.toContain('Couldn’t load the runs per day');
+    expect(m.el.querySelector('.wr-runchart__max')?.textContent).toBe('5');
+    m.root.unmount();
+  });
+
   it('shows flagged segments when counted, and none when the engine says it couldn’t count them', async () => {
     const today = new Date().toLocaleDateString('en-CA');
     api.days = { days: [{ day: today, runs: 3, flagged: 1 }] };

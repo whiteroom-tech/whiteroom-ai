@@ -15,7 +15,7 @@ import { barHeight, barLabel, centreBar, tickIndexes } from './strip';
  * engine counts them. Picking a bar shows that day; picking it again goes back.
  * ‹ › page the chart 30 days at a time.
  */
-export function DayStrip({ days, selected, inRange, onPick, title, legend, flaggedKnown, onEarlier, onLater }: {
+export function DayStrip({ days, selected, inRange, onPick, title, legend, flaggedKnown, onEarlier, onLater, note }: {
   days: RunDayCount[];
   selected: string | null;
   inRange: (day: string) => boolean;
@@ -30,6 +30,8 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
   onEarlier?: () => void;
   /** Pages the chart 30 days on; absent when it already ends today. */
   onLater?: () => void;
+  /** In place of the bars: the counts for these days couldn't be loaded. The header (and ‹ ›) stays. */
+  note?: string;
 }) {
   // Phones scroll the chart sideways so each bar stays a tappable width. A new window opens on
   // the picked day, else the newest; picking a day centres it; un-picking leaves the strip where it is.
@@ -69,6 +71,7 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
           </span>
         </span>
       </div>
+      {note ? <p className="wr-runchart__note" style={{ margin: 0 }}>{note}</p> : (
       <div className="wr-strip-scroll" ref={wrap}>
         <div className="wr-runchart__plot">
           {max > 0 && <span className="wr-runchart__max" aria-hidden="true">{max}</span>}
@@ -108,6 +111,7 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
           ))}
         </div>
       </div>
+      )}
     </section>
   );
 }

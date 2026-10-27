@@ -176,6 +176,8 @@ export function RunsTable({ preview, retentionDays }: {
   // Day counts are kept with the agent and window they're for (like the hours), so a new agent's or
   // window's rows never sit under the last one's totals while its own counts load.
   const [dayCountsFor, setDayCountsFor] = useState<{ key: string; days: RunDayCount[] } | null>(null);
+  // The agent and window whose day counts last failed to load (cleared when they load).
+  const [stripFailedFor, setStripFailedFor] = useState<string | null>(null);
   // The engine said it couldn't count flagged runs over this range (too many calls): no amber segment or key.
   const [flaggedUnavailable, setFlaggedUnavailable] = useState(false);
   // How many runs the list shows: a page to start, a page more with each Show more.
@@ -386,10 +388,13 @@ export function RunsTable({ preview, retentionDays }: {
       days = await runDays(fleetId, { fromDay: addDays(stripEnd, 1 - STRIP_DAYS), toDay: stripEnd, agentId: agent === 'all' ? undefined : agent }, authKey);
     } catch (e) {
       // An expired session signs out as the list would; any other failed refresh keeps the last counts (they're extra).
-      if (!stale() && isAuthError(e)) resetSession('Your session expired. Please sign in again.');
+      if (stale()) return;
+      if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      setStripFailedFor(`${agent}|${stripEnd}`);
       return;
     }
     if (stale()) return;
+    setStripFailedFor(null);
     // Only an engine without run_days hides the chart.
     if ('unsupported' in days) { setDayCountsFor(null); setFlaggedUnavailable(false); return; }
     setDayCountsFor({ key: `${agent}|${stripEnd}`, days: days.days });
@@ -535,6 +540,8 @@ export function RunsTable({ preview, retentionDays }: {
             onPick={(d) => changeFilter({ day: d })}
             onEarlier={oldest && stripStart <= oldest ? undefined : () => pinStrip(addDays(stripEnd, -STRIP_DAYS))}
             onLater={stripEnd >= today ? undefined : () => pinStrip(addDays(stripEnd, STRIP_DAYS))}
+            // No counts for these days yet, and the last try failed: say so rather than draw empty bars.
+            note={!dayCounts && stripFailedFor === `${agent}|${stripEnd}` ? 'Couldn’t load the runs per day for these days. Retrying…' : undefined}
           />
         )}
         {day && hoursOk && hours && (
