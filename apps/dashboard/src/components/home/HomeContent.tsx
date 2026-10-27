@@ -10,19 +10,19 @@ import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
 import { tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
-import { AGENT_SORTS, FIND_FROM, homeWeek, loadWeekReads, shownAgents, TABLE_FROM, WEEK_POLL_MS, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
+import { AGENT_SORTS, FIND_FROM, homeWeek, keepLastGood, loadWeekReads, weekFailures, shownAgents, TABLE_FROM, WEEK_POLL_MS, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { CHANGE_TYPES, dayLabel, lastActiveDay, latestChanges, ruleOutcomes, type ChangeRow } from '@/lib/home-changes';
 import { fetchControlActors, oldestTime, type ControlActor } from '@/lib/control-actors';
 import { addDays, ignoresFlagged, localDay, runHref, runsDays, zoneName } from '@/lib/runs';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, runLine, runRest, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
+  afterFanOut, agentState, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, runLine, runRest, todayLeadMinutes, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
 } from '@/lib/home';
 import { LiveFeedPanel } from './LiveFeedPanel';
 import { fmtCount, fmtTokens, partialMark, plural } from '@/lib/format';
 import { RULE_ACTIVITY } from '@/lib/vocab';
 import { SectionHeader } from '@/components/citadel/PageChrome';
-import { AgentActions } from '@/components/home/AgentActions';
+import { AgentActions, type PageToast, type PageToasts } from '@/components/home/AgentActions';
 import { AuditCheckDialog } from '@/components/home/AuditCheckDialog';
 import { HomeFacts } from '@/components/home/HomeFacts';
 import { ScoreRing } from '@/components/home/ScoreRing';
@@ -53,15 +53,16 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // null until the first load, so a report that lands first doesn't say "No changes yet".
   const [changes, setChanges] = useState<ChangeRow[] | null>(null);
   const [changesFailing, setChangesFailing] = useState(false);
-  const [flaggedToday, setFlaggedToday] = useState<number | null>(null);
+  // Today's figures carry the day they were read for, so they're dropped (not shown as today's) after midnight.
+  const [flaggedToday, setFlaggedToday] = useState<{ day: string; count: number } | null>(null);
   const [lastActive, setLastActive] = useState<LastActive | null>(null);
-  const [today, setToday] = useState<{ calls: number; costUsd: number; partial: boolean } | null>(null);
+  const [today, setToday] = useState<{ day: string; calls: number; costUsd: number; partial: boolean } | null>(null);
   const [todayFailing, setTodayFailing] = useState(false);
   const [failing, setFailing] = useState(false);
   // The viewer's pick, if any; without one, big fleets open on the table (TABLE_FROM).
   const [view, setView] = useState<AgentsView | null>(() => { const v = safeGet('wr_home_agents_view'); return v === 'table' || v === 'cards' ? v : null; });
   const [week, setWeek] = useState<HomeWeek | null>(null);
-  const [todayRules, setTodayRules] = useState<GovernanceTally | null>(null);
+  const [todayRules, setTodayRules] = useState<{ day: string; tally: GovernanceTally } | null>(null);
   const fanOutClock = useRef(FANOUT_START);
   const fanOutDetails = useRef<AgentInfo[]>([]);
   // No agents yet (README › Screens › 8): check every 5 s for the first call.
@@ -103,7 +104,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     const res = await performanceFleetHourly(fleetId, hoursSinceLocalMidnight(), authKey);
     if (stale()) return;
     if (res.error || !Array.isArray(res.hourly)) throw new Error('hourly unavailable');
-    setToday(todayTotals(res.hourly));
+    setToday({ day: localDay(), ...todayTotals(res.hourly) });
   }, [fleetId, authKey]);
 
   // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
@@ -112,14 +113,17 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const { refresh: refreshWeek } = usePoll(async (stale) => {
     const { start, audit, scores, rules, hourly } = await loadWeekReads(fleetId, authKey, { hourly: true });
     if (stale()) return;
-    setWeek(homeWeek(audit, scores, rules, hourly, start.getTime()));
+    // A read that failed keeps its last good figures; the others refresh.
+    const next = homeWeek(audit, scores, rules, hourly, start.getTime());
+    setWeek((prev) => keepLastGood(prev, next, weekFailures({ audit, scores, rules, hourly })));
   }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty });
 
   const { refresh: refreshTodayRules } = usePoll(async (stale) => {
     const day = localDay();
     const res = await ruleActions(fleetId, { fromDay: day, toDay: day }, authKey).catch(() => null);
-    if (stale()) return;
-    setTodayRules(res && !('unsupported' in res) ? tallyFromRuleActions(res.totals) : null);
+    // A failed read keeps the last tally; only an engine without rule actions clears it.
+    if (stale() || !res) return;
+    setTodayRules('unsupported' in res ? null : { day, tally: tallyFromRuleActions(res.totals) });
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
   const actorsRef = useRef<ControlActor[]>([]);
@@ -151,7 +155,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     const res = await listRuns(fleetId, { ...runsDays('today'), flagged: true, pageSize: 10 }, authKey).catch(() => null);
     // A failed read keeps the last count; only an engine that can't flag runs clears it.
     if (stale() || !res) return;
-    setFlaggedToday('unsupported' in res || ignoresFlagged(res.runs) ? null : res.total);
+    setFlaggedToday('unsupported' in res || ignoresFlagged(res.runs) ? null : { day: localDay(), count: res.total });
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
   // The last day with runs (up to 30 days back), for the quiet-day box: read only on a quiet day.
@@ -199,6 +203,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   }
 
   if (!report) return <HomeSkeleton failing={failing} />;
+  // Figures read for an earlier day aren't shown as today's; the polls bring today's within a minute.
+  const day = localDay();
   if (empty) return <EmptyHome />;
 
   return (
@@ -207,15 +213,15 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       agents={agents}
       changes={changes}
       changesFailing={changesFailing}
-      flaggedToday={flaggedToday}
+      flaggedToday={flaggedToday?.day === day ? flaggedToday.count : null}
       lastActive={lastActive}
-      today={today}
+      today={today?.day === day ? today : null}
       todayFailing={todayFailing}
       failing={failing}
       view={view}
       onViewChange={changeView}
       week={week}
-      todayRules={todayRules}
+      todayRules={todayRules?.day === day ? todayRules.tally : null}
       liveFeed={<LiveFeedPanel fleetId={fleetId} authKey={authKey} refreshSignal={refreshSignal} />}
       fleet={{ fleetId, authKey }}
       onActed={() => { refresh(); refreshChanges(); }}
@@ -260,6 +266,9 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AgentSort>('attention');
   const [auditOpen, setAuditOpen] = useState(false);
+  // One toast for the page: a Pause on one card replaces another card's toast.
+  const [toast, setToast] = useState<PageToast | null>(null);
+  const toasts: PageToasts = { current: toast, show: setToast, update: (key, t) => setToast((cur) => (cur?.key === key ? t : cur)) };
   const weeks = week?.agents ?? {};
   // Search and sort only while their controls are shown (above FIND_FROM agents): a fleet that shrinks can't stay filtered.
   const finding = agents.length > FIND_FROM;
@@ -272,7 +281,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
   const canAct = (a: AgentInfo) => !!fleet && (report.govV1 || a.govV1);
   const actions = (a: AgentInfo) => canAct(a)
-    ? <AgentActions agent={a} fleetId={fleet!.fleetId} authKey={fleet!.authKey} onChanged={(c) => onActed?.(a.agentId, c?.hold)} onAuthError={onAuthError} preview={fleet!.preview} />
+    ? <AgentActions agent={a} fleetId={fleet!.fleetId} authKey={fleet!.authKey} onChanged={(c) => onActed?.(a.agentId, c?.hold)} onAuthError={onAuthError} preview={fleet!.preview} toasts={toasts} />
     : null;
 
   return (
@@ -282,7 +291,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
         <HomeFacts agents={agents} holds={report.holds} holdsKnown={report.holds !== undefined} flaggedToday={flaggedToday} todayRules={todayRules} fleet={fleet?.preview ? undefined : fleet} onResumed={() => onActed?.()} />
 
         <section aria-labelledby="home-today" className="wr-home-today">
-          <h2 id="home-today" className="wr-home-today__title">Today · since 12:00 am {zoneName()}</h2>
+          <h2 id="home-today" className="wr-home-today__title">Today · since 12:00 am {zoneName()}{todayLeadMinutes() > 0 && <> · may include calls from up to {todayLeadMinutes()} minutes before midnight</>}</h2>
           {quiet && (
             <p className="wr-home-quiet">
               Quiet so far today.
@@ -381,7 +390,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                       <tr key={a.agentId} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,[role=menu],[role=status],[role=alert],dialog')) router.push(agentHref(a.agentId)); }}>
                         <td><Link href={agentHref(a.agentId)} className="wr-home-table__name">{a.agentId}</Link></td>
                         <td><StatusPill state={agentState(a)} /></td>
-                        <td>{line.run !== null && line.tasks ? <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> <span className="wr-home-table__cap">· {line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
+                        <td>{line.tasks ? <>{line.run !== null && <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> </>}<span className="wr-home-table__cap">{line.run !== null ? '· ' : ''}{line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
                         <td className="is-num">{w?.used !== undefined ? fmtTokens(w.used) : '—'}</td>
                         <td className="is-num" style={{ color: w?.saved ? 'var(--ok)' : undefined }} title={w ? savedTitle(w) : undefined}>{w?.saved ? fmtTokens(w.saved) : '—'}</td>
                         <td className="wr-home-table__cap" style={{ color: outcomes ? 'var(--tx)' : undefined }}>{outcomes || '—'}</td>
@@ -428,7 +437,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   );
 }
 
-/** "53.4K tokens · 225.8K saved · 60 would have blocked": only the parts that are known. */
+/** "53.4K tokens · 225.8K saved · 60 would have acted": only the parts that are known. */
 function WeekLine({ w }: { w: AgentWeek }) {
   const outcomes = w.rules ? ruleOutcomes(w.rules) : '';
   const bits: React.ReactNode[] = [];
@@ -444,7 +453,7 @@ function savedTitle(w: AgentWeek): string | undefined {
   return w.saved && w.savedUsd != null ? `${fmtTokens(w.saved)} tokens saved, about ${usd(w.savedUsd)} at this agent's prices (est.)` : undefined;
 }
 
-/** "$3.17 spent, rules would have blocked 120 calls": the spend and the rules each when known; '' when neither is. */
+/** "$3.17 spent, rules would have acted on 120 calls": the spend and the rules each when known; '' when neither is. */
 export function weekSentence(w: HomeWeek): string {
   const parts: string[] = [];
   if (w.costUsd !== null) parts.push(`${usd(w.costUsd)}${partialMark(w.partial)} spent`);
@@ -452,12 +461,12 @@ export function weekSentence(w: HomeWeek): string {
   return parts.join(', ');
 }
 
-/** The week's rules in a sentence: "rules would have blocked 120 calls". */
+/** The week's rules in a sentence: "rules would have acted on 120 calls". */
 export function weekRules(t: GovernanceTally): string {
   const calls = (n: number) => `${fmtCount(n)} ${plural(n, 'call')}`;
   const bits: string[] = [];
   if (t.blocks) bits.push(`blocked ${calls(t.blocks)}`);
-  if (t.wouldBlocks) bits.push(`would have blocked ${calls(t.wouldBlocks)}`);
+  if (t.wouldBlocks) bits.push(`would have acted on ${calls(t.wouldBlocks)}`);
   if (bits.length) return `rules ${bits.join(' and ')}`;
   const n = tallyTotal(t);
   return n ? `rules acted ${fmtCount(n)} ${plural(n, 'time')}` : 'no rule activity';

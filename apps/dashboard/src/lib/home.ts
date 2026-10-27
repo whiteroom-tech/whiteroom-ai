@@ -50,29 +50,25 @@ export const taskWord = (n: number) => `${n} ${plural(n, 'task')}`;
 /**
  * The card's run line in parts, so the run number can link to the run and the
  * table can show just the tasks: "Run #8 · 62 tasks · 9.4 min so far" while
- * working, "Last run #41 · 5 tasks · waiting for work" otherwise. `run` and
- * `tasks` are null when there's no run yet.
+ * working, "Last run #41 · 5 tasks · waiting for work" otherwise. `tasks` is
+ * null when there's no run yet; `run` too, or when the run has no number.
  */
 export function runLine(a: AgentInfo, state: AgentState = agentState(a)): { label: string; run: number | null; tasks: string | null; status: string } {
   const shift = currentShift(a);
   const held = state === 'paused' || state === 'stopped';
   const waiting = held ? 'waiting to be resumed' : 'waiting for work';
   const busy = state === 'working' || state === 'handover';
-  if (shift && busy) return { label: 'Run', run: shift.watchNumber || 1, tasks: taskWord(shift.tasksCompleted), status: `${oneDecimal(shift.minutesWorked)} min so far` };
+  // A run number of 0 (or none) has no run page to link to: the line is said without it.
+  const num = (n: number | undefined) => (n && n > 0 ? n : null);
+  if (shift && busy) return { label: 'Run', run: num(shift.watchNumber), tasks: taskWord(shift.tasksCompleted), status: `${oneDecimal(shift.minutesWorked)} min so far` };
   const last = shift ?? a.lastShift;
   if (!last) return { label: 'No run yet', run: null, tasks: null, status: waiting };
-  return { label: 'Last run', run: last.watchNumber || 1, tasks: taskWord(last.tasksCompleted), status: waiting };
+  return { label: 'Last run', run: num(last.watchNumber), tasks: taskWord(last.tasksCompleted), status: waiting };
 }
 
 /** What follows the run number: "5 tasks · waiting for work". */
 export function runRest(r: ReturnType<typeof runLine>): string {
   return r.tasks ? `${r.tasks} · ${r.status}` : r.status;
-}
-
-/** The run line as text: "Last run #41 · 5 tasks · waiting for work". */
-export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
-  const r = runLine(a, state);
-  return r.run === null ? `${r.label} · ${runRest(r)}` : `${r.label} #${r.run} · ${runRest(r)}`;
 }
 
 // Needs-you items come first once P2 ships; until then working agents lead.
@@ -404,6 +400,17 @@ function localTodayStart(now: number): number {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
   return Math.floor(d.getTime() / HOUR_MS) * HOUR_MS;
+}
+
+/**
+ * Minutes before the viewer's midnight that today's figures can include: 0 in
+ * whole-hour zones, 30 in India, 15 in Nepal. The hour that holds midnight is
+ * counted whole, so a call in it is never dropped and the day is never called
+ * quiet while that hour has calls; Home says so when this is above 0.
+ */
+export function todayLeadMinutes(now: number = Date.now()): number {
+  const midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
+  return Math.round((midnight.getTime() - localTodayStart(now)) / 60_000);
 }
 
 /** Hours to ask for so the window reaches back to the start of the viewer's today. */

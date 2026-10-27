@@ -18,7 +18,8 @@ describe('Latest changes', () => {
     const e = (type: string, x: Partial<AuditEntry> = {}): AuditEntry => ({ id: type, type, timestamp: at('2026-10-25T09:00:00'), agentId: 'keyword-test', ...x });
     expect(changeRow(e('deregister'), [], NOW)).toMatchObject({ time: 'Oct 25', text: 'keyword-test left the fleet', href: '/agents/keyword-test' });
     expect(changeRow(e('register'), [], NOW)!.text).toBe('keyword-test joined the fleet');
-    expect(changeRow(e('agent_paused', { by: 'rule:gr_1' }), [], NOW)!.text).toBe('keyword-test paused by a rule');
+    // A rule's hold writes no event yet; one that did would not be credited to anyone.
+    expect(changeRow(e('agent_paused', { by: 'rule:gr_1' }), [], NOW)!.text).toBe('keyword-test paused');
     expect(changeRow(e('agent_resumed', { by: 'user:u1' }), actors, NOW)!.text).toBe('keyword-test resumed by R Haque');
     expect(changeRow(e('agent_stopped', { by: 'user:u9' }), actors, NOW)!.text).toBe('keyword-test stopped by a teammate');
     expect(changeRow(e('agent_stopped', { by: 'dashboard' }), [], NOW)!.text).toBe('keyword-test stopped from the dashboard');
@@ -28,10 +29,17 @@ describe('Latest changes', () => {
     expect(changeRow(e('deregister'), rows, NOW)!.text).toBe('keyword-test was removed by Sam Lee');
     expect(changeRow(e('agent_stopped', { by: 'dashboard' }), rows, NOW)!.text).toBe('keyword-test stopped from the dashboard');
     // A rule's or the API's pause is never credited to someone who paused nearby.
-    expect(changeRow(e('agent_paused', { by: 'rule:gr_1' }), rows, NOW)!.text).toBe('keyword-test paused by a rule');
+    expect(changeRow(e('agent_paused', { by: 'rule:gr_1' }), rows, NOW)!.text).toBe('keyword-test paused');
     expect(changeRow(e('agent_paused', { by: 'api' }), rows, NOW)!.text).toBe('keyword-test paused through the API');
     expect(changeRow(e('task_complete'), [], NOW)).toBeNull();
     expect(changeRow(e('rest_start'), [], NOW)).toBeNull();
+  });
+
+  it('credits each dashboard row to one change at most', () => {
+    const rows = [{ action: 'pause_agent', agentId: 'a1', ruleId: null, userId: 'u2', by: 'Sam Lee', at: at('2026-10-27T09:00:30') }];
+    const ev = (id: string, ts: string): AuditEntry => ({ id, type: 'agent_paused', timestamp: at(ts), agentId: 'a1', by: 'dashboard' });
+    const out = latestChanges([ev('p1', '2026-10-27T09:00:00'), ev('p2', '2026-10-27T09:01:00')], rows, 4, NOW).map((r) => r.text);
+    expect(out).toEqual(['a1 paused by Sam Lee', 'a1 paused from the dashboard']);
   });
 
   it('links a rule change with no rule id to Controls', () => {
@@ -55,10 +63,10 @@ describe('quiet day', () => {
   });
 
   it('says rule outcomes in the outcome words', () => {
-    expect(ruleOutcomes({ blocks: 2, wouldBlocks: 60, paused: 0, stopped: 0, toldYou: 0 })).toBe('2 blocked · 60 would have blocked');
+    expect(ruleOutcomes({ blocks: 2, wouldBlocks: 60, paused: 0, stopped: 0, toldYou: 0 })).toBe('2 blocked · 60 would have acted');
     expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 })).toBe('');
-    expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 }, true)).toBe('0 blocked · 0 would have blocked');
-    expect(ruleOutcomes({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 3 }, true)).toBe('2 paused · 1 blocked · 3 alerts · 0 would have blocked');
+    expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 }, true)).toBe('0 blocked · 0 would have acted');
+    expect(ruleOutcomes({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 3 }, true)).toBe('2 paused · 1 blocked · 3 alerts · 0 would have acted');
     expect(ruleOutcomes({ blocks: 1200, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 })).toBe('1,200 blocked');
   });
 });

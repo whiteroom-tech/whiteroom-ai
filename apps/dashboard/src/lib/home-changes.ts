@@ -23,17 +23,16 @@ export interface ChangeRow {
 
 const agentHref = (id: string) => `/agents/${encodeURIComponent(id)}`;
 
-/** " by R Haque", " by a rule", " from the dashboard", " through the API", or '' when nobody is recorded. */
+/** " by R Haque", " from the dashboard", " through the API", or '' when nobody is recorded. */
 function actorPhrase(by: unknown, at: string, ruleId: string, actions: ControlActor[]): string {
   if (typeof by !== 'string' || !by) return '';
-  if (by.startsWith('rule:')) return ' by a rule';
   if (by === 'api') return ' through the API';
   const who = historyWho({ ruleId, time: at, by }, actions);
   return who.startsWith('from ') ? ` ${who}` : ` by ${who}`;
 }
 
 /** One rule or agent change in plain words, or null for any other event. */
-export function changeRow(e: AuditEntry, actions: ControlActor[] = [], now: number = Date.now()): ChangeRow | null {
+export function changeRow(e: AuditEntry, actions: ControlActor[] = [], now: number = Date.now(), used?: Set<ControlActor>): ChangeRow | null {
   const at = String(e.timestamp ?? '');
   const agent = String(e.agentId ?? '').trim();
   const base = { key: String(e.id ?? `${e.type}-${at}`), time: fmtWhen(at, now) };
@@ -51,12 +50,12 @@ export function changeRow(e: AuditEntry, actions: ControlActor[] = [], now: numb
   // What the dashboard records for each change, to name the person behind an older "dashboard" record.
   const ACTION: Record<string, string> = { agent_paused: 'pause_agent', agent_stopped: 'stop_agent', agent_resumed: 'resume_agent', deregister: 'deregister_agent' };
   const by = typeof e.by === 'string' ? e.by : undefined;
-  const person = ACTION[type] ? agentChangeWho({ agentId: agent, action: ACTION[type], time: at, by }, actions) : null;
+  const person = ACTION[type] ? agentChangeWho({ agentId: agent, action: ACTION[type], time: at, by }, actions, used) : null;
   const done = (verb: string) => {
+    // Holds a rule makes write no audit event yet (engine follow-up), so every one here was made by a person or the API.
     if (person) return ` ${verb} by ${person}`;
-    if (by?.startsWith('rule:')) return ` ${verb} by a rule`;
     if (by === 'api') return ` ${verb} through the API`;
-    if (by) return ` ${verb} from the dashboard`;
+    if (by === 'dashboard' || by?.startsWith('user:')) return ` ${verb} from the dashboard`;
     return ` ${verb}`;
   };
   const said: Record<string, string> = {
@@ -77,9 +76,13 @@ export function latestChanges(entries: AuditEntry[], actions: ControlActor[] = [
   const seen = new Set<string>();
   const t = (e: AuditEntry) => Date.parse(String(e.timestamp ?? '')) || 0;
   const rows: ChangeRow[] = [];
+  // A dashboard row that named one change can't name another (newest change first).
+  const used = new Set<ControlActor>();
   for (const e of [...entries].sort((a, b) => t(b) - t(a))) {
-    const r = changeRow(e, actions, now);
-    if (!r || seen.has(r.key)) continue;
+    const key = String(e.id ?? `${e.type}-${String(e.timestamp ?? '')}`);
+    if (seen.has(key)) continue;
+    const r = changeRow(e, actions, now, used);
+    if (!r) continue;
     seen.add(r.key);
     rows.push(r);
     if (rows.length === n) break;
@@ -101,9 +104,10 @@ export function dayLabel(day: string): string {
 }
 
 /**
- * A tally in the outcome words: "2 blocked · 60 would have blocked". '' for
- * none, unless `always`, which keeps "0 blocked · 0 would have blocked" (the
- * Rule activity card, where a zero is the answer).
+ * A tally in the outcome words: "2 blocked · 60 would have acted". A Record-only
+ * hit can be a would-be pause, stop or alert as well as a block, so it says
+ * "acted" (as tallyShort does). '' for none, unless `always`, which keeps
+ * "0 blocked · 0 would have acted" (the Rule activity card, where a zero is the answer).
  */
 export function ruleOutcomes(t: GovernanceTally, always = false): string {
   const bits: string[] = [];
@@ -111,6 +115,6 @@ export function ruleOutcomes(t: GovernanceTally, always = false): string {
   if (t.paused) bits.push(`${fmtCount(t.paused)} paused`);
   if (t.blocks || always) bits.push(`${fmtCount(t.blocks)} blocked`);
   if (t.toldYou) bits.push(`${fmtCount(t.toldYou)} ${plural(t.toldYou, 'alert')}`);
-  if (t.wouldBlocks || always) bits.push(`${fmtCount(t.wouldBlocks)} would have blocked`);
+  if (t.wouldBlocks || always) bits.push(`${fmtCount(t.wouldBlocks)} would have acted`);
   return bits.join(' · ');
 }

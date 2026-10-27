@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
-  overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, runLine, runRest, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
 
 const agent = (id: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo => ({ agentId: id, status, ...x });
+/** The run line as the card says it, from runLine's parts. */
+const progressLine = (a: AgentInfo) => { const r = runLine(a); return r.run === null ? `${r.label} · ${runRest(r)}` : `${r.label} #${r.run} · ${runRest(r)}`; };
 
 describe('agents', () => {
   it('maps engine statuses onto the pill states', () => {
@@ -22,6 +24,12 @@ describe('agents', () => {
     expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Last run #5 · 1 task · waiting for work');
     expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run yet · waiting for work');
     expect(progressLine(agent('a', 'idle', { hold: { state: 'paused', by: 'x', reason: null, at: '' }, currentShift: null, lastShift: { watchNumber: 2, tasksCompleted: 3, tokensUsed: 0, minutesWorked: 0 } }))).toBe('Last run #2 · 3 tasks · waiting to be resumed');
+  });
+
+  it('gives the run line in parts, with no run number (so no link) for run 0', () => {
+    expect(runLine(agent('a', 'idle', { currentShift: null, lastShift: { watchNumber: 4, tasksCompleted: 6, tokensUsed: 0, minutesWorked: 0 } }))).toEqual({ label: 'Last run', run: 4, tasks: '6 tasks', status: 'waiting for work' });
+    expect(runLine(agent('a', 'idle', { currentShift: null, lastShift: { watchNumber: 0, tasksCompleted: 1, tokensUsed: 0, minutesWorked: 0 } }))).toEqual({ label: 'Last run', run: null, tasks: '1 task', status: 'waiting for work' });
+    expect(runRest({ label: 'No run yet', run: null, tasks: null, status: 'waiting for work' })).toBe('waiting for work');
   });
 
   it('shows the last shift, not lifetime, once a shift has ended (M14)', () => {

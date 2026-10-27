@@ -45,7 +45,7 @@ describe("Home (mockup parity)", () => {
   });
 
   it("shows the quiet-day box with the last active day", () => {
-    expect(text(home())).toContain("Quiet so far today. Last activity Sat, Oct 24: 47 runs. This week: $3.17 spent, rules would have blocked 120 calls. View runs →");
+    expect(text(home())).toContain("Quiet so far today. Last activity Sat, Oct 24: 47 runs. This week: $3.17 spent, rules would have acted on 120 calls. View runs →");
   });
 
   it("an agent card has a score ring, a link to its last run, and its week", () => {
@@ -53,7 +53,7 @@ describe("Home (mockup parity)", () => {
     expect(html).toContain('aria-label="Score 8 out of 10"');
     expect(html).toContain('href="/runs/code-reviewer~4"');
     expect(text(html)).toContain("Last run #4 · 6 tasks · waiting for work");
-    expect(text(html)).toContain("53.4K tokens · 226K saved · 60 would have blocked");
+    expect(text(html)).toContain("53.4K tokens · 226K saved · 60 would have acted");
     expect(text(html)).toContain("Waiting");
   });
 
@@ -86,7 +86,7 @@ describe("Home (mockup parity)", () => {
     expect(weekRules(tally(2, 0))).toBe("rules blocked 2 calls");
     expect(weekRules(tally(0, 0))).toBe("no rule activity");
     // Spend and rules are said each when known.
-    expect(weekSentence({ ...WEEK, costUsd: null })).toBe("rules would have blocked 120 calls");
+    expect(weekSentence({ ...WEEK, costUsd: null })).toBe("rules would have acted on 120 calls");
     expect(weekSentence({ ...WEEK, rules: null })).toBe("$3.17 spent");
     expect(weekSentence({ ...WEEK, costUsd: null, rules: null })).toBe("");
     expect(weekRules({ blocks: 0, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 1 })).toBe("rules acted 3 times");

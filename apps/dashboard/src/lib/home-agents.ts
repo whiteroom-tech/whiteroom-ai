@@ -123,6 +123,45 @@ export function homeWeek(
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
+/** Which of the week's reads failed (null or an error); an engine that doesn't support a read hasn't failed. */
+export interface WeekFailures { audit: boolean; scores: boolean; rules: boolean; hourly: boolean }
+
+export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null }): WeekFailures {
+  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error };
+}
+
+/**
+ * The week after a refresh, keeping the last good figures for any read that
+ * failed this time, field by field: a failed scores read keeps each agent's
+ * score while new tokens and rules come in. Only a read that worked replaces
+ * (or clears) its fields.
+ */
+export function keepLastGood(prev: HomeWeek | null, next: HomeWeek, failed: WeekFailures): HomeWeek {
+  if (!prev) return next;
+  const agents: Record<string, AgentWeek> = {};
+  for (const id of new Set([...Object.keys(prev.agents), ...Object.keys(next.agents)])) {
+    const p = prev.agents[id] ?? {};
+    const n = next.agents[id] ?? {};
+    const w: AgentWeek = {};
+    const from = failed.audit ? p : n;
+    if (from.used !== undefined) w.used = from.used;
+    if (from.saved !== undefined) w.saved = from.saved;
+    if (from.savedUsd !== undefined) w.savedUsd = from.savedUsd;
+    const rules = failed.rules ? p.rules : n.rules;
+    if (rules) w.rules = rules;
+    const score = failed.scores ? p.score : n.score;
+    if (score) w.score = score;
+    if (Object.keys(w).length) agents[id] = w;
+  }
+  return {
+    agents,
+    calls: failed.hourly ? prev.calls : next.calls,
+    costUsd: failed.hourly ? prev.costUsd : next.costUsd,
+    partial: failed.hourly ? prev.partial : next.partial,
+    rules: failed.rules ? prev.rules : next.rules,
+  };
+}
+
 /**
  * One agent's week for its own page, from the same reads as Home. A read that
  * worked but doesn't mention the agent means none: 0 tokens, no rule activity.

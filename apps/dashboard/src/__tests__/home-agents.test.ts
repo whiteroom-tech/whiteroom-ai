@@ -75,7 +75,7 @@ describe('Home view', () => {
   it('says the day starts at the viewer’s midnight, and leads a quiet day with the week', () => {
     const html = view({ week: { agents: {}, calls: 1234, costUsd: 3.17, partial: false, rules: tally({ wouldBlocks: 120 }) } });
     expect(html).toMatch(/Today.*since 12:00 am/);
-    expect(textOf(html)).toContain('Quiet so far today. This week: $3.17 spent, rules would have blocked 120 calls. View runs');
+    expect(textOf(html)).toContain('Quiet so far today. This week: $3.17 spent, rules would have acted on 120 calls. View runs');
     // A lower bound says so.
     expect(view({ week: { agents: {}, calls: 3, costUsd: 1, partial: true, rules: null } })).toContain('$1.00+ spent');
   });
@@ -83,7 +83,7 @@ describe('Home view', () => {
   it('shows today’s rule activity, linking to those runs', () => {
     const html = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: tally({ blocks: 2, wouldBlocks: 3 }) });
     expect(html).toContain('Rule activity');
-    expect(html).toContain('2 blocked · 3 would have blocked');
+    expect(html).toContain('2 blocked · 3 would have acted');
     expect(html).toContain('/runs?show=rules&amp;day=');
     expect(html).not.toContain('Quiet so far today');
     expect(html).not.toContain('Smaller context');
@@ -93,7 +93,7 @@ describe('Home view', () => {
     const unknown = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: null });
     expect(unknown).toContain('not available yet');
     const none = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: tally({}) });
-    expect(none).toContain('0 blocked · 0 would have blocked');
+    expect(none).toContain('0 blocked · 0 would have acted');
     expect(none).not.toContain('/runs?show=rules');
   });
 

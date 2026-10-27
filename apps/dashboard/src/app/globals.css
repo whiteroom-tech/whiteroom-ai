@@ -808,7 +808,9 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-home-section { container-type: inline-size; }
 @container (min-width: 900px) { .wr-home-tablebox { overflow: visible; } }
 /* Narrower, the table scrolls: the last rows' menus open upward, inside the box. */
-.wr-home-table tbody tr:nth-last-child(-n+2):not(:nth-child(-n+2)) .wr-agent-actions__menu { top: auto; bottom: calc(100% + 4px); }
+.wr-home-table tbody tr:nth-last-child(-n+2):not(:nth-child(-n+2)) :is(.wr-agent-actions__menu, .wr-agent-actions__error) { top: auto; bottom: calc(100% + 4px); }
+/* With one or two rows there's no room above either: the scrolling box keeps room below for a menu or a note. */
+@container (max-width: 899px) { .wr-home-tablebox:has(tbody > tr:last-child:nth-child(-n+2)) { padding-bottom: 132px; } }
 .wr-home-table { width: 100%; min-width: 880px; border-collapse: collapse; font-size: var(--fs-md); }
 .wr-home-table th { padding: 10px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
 .wr-home-table td { padding: 16px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
@@ -816,7 +818,7 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-home-table tbody tr:last-child td { border-bottom: 0; }
 .wr-home-table tbody tr { cursor: pointer; }
 /* The ⋯'s Stop dialog and its menu live in the last cell: they don't take the cell's nowrap or right alignment. */
-.wr-home-table .wr-agent-actions dialog, .wr-home-table .wr-agent-actions__menu, .wr-home-table .wr-agent-actions__error { white-space: normal; text-align: left; cursor: auto; }
+.wr-home-table .wr-agent-actions dialog, .wr-home-table .wr-agent-actions__menu, .wr-home-table .wr-agent-actions__error, .wr-home-table .wr-toast { white-space: normal; text-align: left; cursor: auto; }
 .wr-home-table tbody tr:hover { background: var(--sunk); }
 .wr-home-table .is-num { text-align: right; font-variant-numeric: tabular-nums; }
 .wr-home-table td:first-child, .wr-home-table th:first-child { position: sticky; left: 0; z-index: 1; background: var(--card); }

@@ -93,7 +93,7 @@ describe('Home polls', () => {
     m.root.unmount();
   });
 
-  it('a failed today read clears today’s rule activity and keeps the week', async () => {
+  it('a failed today read keeps today’s rule activity; an engine without rule actions clears it', async () => {
     const m = await mount();
     expect(m.text()).toContain('Rule activity2');
     expect(m.text()).toContain('1K tokens · 5 blocked');
@@ -102,8 +102,27 @@ describe('Home polls', () => {
       return { fleetId: 'f1', totals: counts(5), byAgent: { 'lead-agent': counts(5) } };
     });
     await m.advance(60_000);
+    expect(m.text()).toContain('Rule activity2');
+    api.rules.mockImplementation(async (_f: string, q: { fromDay: string; toDay: string }) => (isToday(q)
+      ? { unsupported: true }
+      : { fleetId: 'f1', totals: counts(5), byAgent: { 'lead-agent': counts(5) } }));
+    await m.advance(60_000);
     expect(m.text()).toContain('Rule activity—not available yet');
     expect(m.text()).toContain('1K tokens · 5 blocked');
+    m.root.unmount();
+  });
+
+  it('a failed week read keeps its own figures and lets the others refresh', async () => {
+    const m = await mount();
+    expect(m.text()).toContain('1K tokens · 5 blocked');
+    // Rules fail; tokens move on.
+    api.rules.mockImplementation(async (_f: string, q: { fromDay: string; toDay: string }) => {
+      if (!isToday(q)) throw new Error('down');
+      return { fleetId: 'f1', totals: counts(2), byAgent: { 'lead-agent': counts(2) } };
+    });
+    api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [{ day: '2026-10-26', agent: 'lead-agent', used: 3000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 0 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
+    await m.advance(5 * 60_000);
+    expect(m.text()).toContain('3K tokens · 5 blocked');
     m.root.unmount();
   });
 });
@@ -183,6 +202,22 @@ describe('Home last active day', () => {
     await m.advance(5 * 60_000);
     expect(api.days.mock.calls.length).toBeGreaterThan(1);
     expect(m.text()).toContain('Last activity Sat, Oct 24: 47 runs.');
+    m.root.unmount();
+  });
+});
+
+describe('Home after midnight', () => {
+  it('drops today’s figures read for yesterday until today’s arrive', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'], now: new Date('2026-10-27T23:59:00') });
+    api.hourly.mockResolvedValue({ hourly: [] });
+    const m = await mountWith();
+    expect(m.text()).toContain('Rule activity2');
+    expect(m.text()).toContain('Model calls0');
+    // Past midnight, before any poll: yesterday's figures aren't shown as today's.
+    vi.setSystemTime(new Date('2026-10-28T00:00:30'));
+    await m.render(0);
+    expect(m.text()).toContain('Rule activity—');
+    expect(m.text()).toContain('Model calls—');
     m.root.unmount();
   });
 });

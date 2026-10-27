@@ -338,3 +338,90 @@ describe('Pause in the /dev/home preview', () => {
     expect([api.pause, api.resume, api.check].every((f) => f.mock.calls.length === 0)).toBe(true);
   });
 });
+
+describe('Pause results the engine reports', () => {
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+  const pause = async () => {
+    await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+  };
+
+  it('offers no Undo for a pause that replaced an earlier hold (since ≠ at)', async () => {
+    api.pause.mockResolvedValue({ success: true, hold: { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z', since: '2026-10-27T09:00:00.000Z' } });
+    await pause();
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer was already held, so there’s nothing to undo.');
+    expect(button('Undo')).toBeUndefined();
+  });
+
+  it('says a stopped agent stays stopped, with no Undo', async () => {
+    api.pause.mockResolvedValue({ success: true, hold: { state: 'stopped', by: 'rule:gr_1', reason: null, at: '2026-10-27T09:00:00.000Z' } });
+    await pause();
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer is stopped; Pause didn’t change that.');
+    expect(button('Undo')).toBeUndefined();
+  });
+
+  it('puts focus back on the ⋯ after Pause, and Undo is the next control', async () => {
+    api.pause.mockResolvedValue({ success: true, hold: { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z' } });
+    await pause();
+    const trigger = el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement;
+    expect(document.activeElement).toBe(trigger);
+    const focusable = [...el.querySelectorAll('button')];
+    expect(focusable[focusable.indexOf(trigger) + 1]?.textContent).toBe('Undo');
+  });
+});
+
+describe('Agent ⋯ menu from the keyboard', () => {
+  const trigger = () => el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement;
+  const key = (k: string) => act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); });
+
+  it('focuses the first item, moves with arrows, Home and End, and Escape returns to the ⋯', async () => {
+    await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { trigger().click(); });
+    expect(document.activeElement?.textContent).toBe('Pause');
+    await key('ArrowDown');
+    expect(document.activeElement?.textContent).toBe('Stop…');
+    await key('ArrowDown');
+    expect(document.activeElement?.textContent).toBe('Pause');
+    await key('ArrowUp');
+    expect(document.activeElement?.textContent).toBe('Stop…');
+    await key('Home');
+    expect(document.activeElement?.textContent).toBe('Pause');
+    await key('End');
+    expect(document.activeElement?.textContent).toBe('Stop…');
+    await key('Escape');
+    expect(el.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('returns focus to the ⋯ when the Stop dialog is cancelled', async () => {
+    await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { trigger().click(); });
+    await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'Stop…') as HTMLButtonElement).click(); });
+    const cancel = [...el.querySelectorAll('button')].find((b) => /cancel|keep/i.test(b.textContent ?? '')) as HTMLButtonElement;
+    await act(async () => { cancel.click(); });
+    expect(document.activeElement).toBe(trigger());
+  });
+});
+
+describe('One toast for the page', () => {
+  it('a Pause on a second agent replaces the first agent’s toast', async () => {
+    api.pause.mockImplementation(async (_f: string, id: string) => ({ success: true, hold: { state: 'paused', by: 'user:u1', reason: null, at: `2026-10-27T10:00:0${id.length % 10}.000Z` } }));
+    const { useState } = await import('react');
+    function Page() {
+      const [toast, setToast] = useState<import('@/components/home/AgentActions').PageToast | null>(null);
+      const toasts = { current: toast, show: setToast, update: (k: string, t: typeof toast) => setToast((c) => (c?.key === k ? t : c)) };
+      return h('div', null, h(AgentActions, { agent: { agentId: 'alpha', status: 'idle' }, fleetId: 'f1', onChanged: () => {}, toasts }), h(AgentActions, { agent: { agentId: 'beta', status: 'idle' }, fleetId: 'f1', onChanged: () => {}, toasts }));
+    }
+    await render(h(Page));
+    for (const id of ['alpha', 'beta']) {
+      await act(async () => { (el.querySelector(`[aria-label="Actions for ${id}"]`) as HTMLButtonElement).click(); });
+      await act(async () => { ([...el.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent === 'Pause') as HTMLButtonElement).click(); });
+      await flush();
+    }
+    const toasts = el.querySelectorAll('.wr-toast');
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].textContent).toContain('beta paused.');
+  });
+});
