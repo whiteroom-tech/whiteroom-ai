@@ -394,27 +394,7 @@
 .wr-table__group strong { color: var(--tx); font-weight: 600; }
 /* A row's detail, open directly beneath it (DataTable renderExpanded). */
 .wr-table__expanded { border-bottom: 1px solid var(--line); }
-.wr-daystrip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; height: 5.5rem; }
-.wr-hourstrip { grid-template-columns: repeat(24, minmax(0, 1fr)); height: 4.5rem; }
-.wr-daystrip__day:disabled { cursor: default; }
-.wr-daystrip__day:disabled:hover { background: transparent; }
-/* Phones: the day and hour charts scroll sideways in their own box, so each bar stays a tappable width (≥24px). */
-@media (max-width: 600px) {
-  .wr-strip-scroll { overflow-x: auto; }
-  .wr-strip-scroll > * { min-width: 50rem; }
-  .wr-strip-scroll.is-hours > * { min-width: 40rem; }
-}
-.wr-daystrip__day { position: relative; display: flex; align-items: flex-end; padding: 0; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
-.wr-daystrip__day:hover { background: var(--brand-dim); }
-.wr-daystrip__day:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
-.wr-daystrip__bar { display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--line2); }
-.wr-daystrip__day.is-in .wr-daystrip__bar { background: var(--tx3); }
-.wr-daystrip__day.is-selected .wr-daystrip__bar { background: var(--brand); }
-.wr-daystrip__legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 2px 0 0; font-size: var(--fs-sm); color: var(--tx2); }
-.wr-daystrip__legend > span { display: inline-flex; align-items: center; gap: 6px; }
-.wr-daystrip__key { width: 10px; height: 10px; border-radius: 2px; background: var(--line2); flex: none; }
-.wr-daystrip__key.is-in { background: var(--tx3); }
-.wr-daystrip__key.is-selected { background: var(--brand); }
+.wr-clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .wr-date { min-height: 2rem; padding: 0 10px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-size: var(--fs-sm); color-scheme: inherit; }
 .wr-date:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 /* Settings: a section that has nothing to show (an empty anchor wrapper) takes no gap. */
@@ -830,6 +810,133 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
   .ctl-editor.is-sheet { position: fixed; left: 0; right: 0; bottom: 0; top: 40px; z-index: 40; max-height: none; overflow-y: auto; border: 1px solid var(--line2); border-bottom: 0; border-radius: 16px 16px 0 0; padding: 0 16px env(safe-area-inset-bottom, 0px); box-shadow: 0 -8px 24px var(--shadow); animation: gov-sheet-up .2s ease-out; }
   .gov-scrim { display: block; position: fixed; inset: 0; z-index: 39; background: var(--overlay); }
   .ctl-tiles { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Mockup parity: Runs and Run ── */
+/* Runs › filters: Show, Agent, "Jump to day" with a clear chip. */
+.wr-runs-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wr-runs-filters__dates { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+.wr-runs-filters .wr-date { min-height: 2.25rem; }
+.wr-runs-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 2.25rem; padding: 0 10px; border: 1px solid var(--brand); border-radius: 999px; background: var(--brand-dim); color: var(--tx); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
+.wr-runs-chip:hover { border-color: var(--tx2); }
+.wr-runs-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Runs per day / by hour: a card with a title, a legend, the busiest count and true bar heights. */
+.wr-runchart { padding: 16px 20px 12px; }
+.wr-runchart__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
+.wr-runchart .wr-panel__title { white-space: normal; }
+.wr-runchart__legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+.wr-runchart__legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.wr-runchart__legend.is-foot { margin-top: 10px; }
+.wr-runchart__key { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--tx3) 60%, var(--card)); flex: none; }
+.wr-runchart__key.is-in { background: var(--brand); }
+.wr-runchart__key.is-flag { background: var(--warn); }
+.wr-runchart__key.is-rule { height: 4px; background: var(--warn); }
+.wr-runchart__paging { display: inline-flex; gap: 2px; }
+.wr-runchart__paging [aria-disabled="true"] { opacity: .4; cursor: default; }
+.wr-runchart .wr-panel__title:focus { outline: none; }
+.wr-runchart .wr-panel__title:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
+.wr-runchart__actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wr-runchart__note { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+.wr-runchart__plot { position: relative; }
+.wr-runchart__max { position: absolute; left: 0; top: -2px; font-size: var(--fs-sm); color: var(--tx3); font-variant-numeric: tabular-nums; pointer-events: none; }
+.wr-runchart__bars { display: grid; gap: 2px; align-items: end; height: 72px; border-bottom: 1px solid var(--line2); }
+.wr-runchart__bars.is-hours { grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 3px; height: 84px; }
+.wr-runchart__day { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; padding: 0; border: 0; border-radius: 3px 3px 0 0; background: transparent; cursor: pointer; min-width: 0; }
+.wr-runchart__day:disabled { cursor: default; }
+.wr-runchart__day:not(:disabled):hover { background: var(--brand-dim); }
+.wr-runchart__day:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.wr-runchart__day.is-selected { outline: 2px solid var(--tx); outline-offset: 1px; }
+.wr-runchart__bar { position: relative; display: block; width: 100%; border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--tx3) 60%, var(--card)); overflow: hidden; }
+.wr-runchart__day.is-in .wr-runchart__bar { background: var(--brand); }
+.wr-runchart__day.is-selected .wr-runchart__bar { background: var(--tx); }
+.wr-runchart__day:disabled .wr-runchart__bar { background: var(--line2); }
+.wr-runchart__bar.has-rule { box-shadow: inset 0 3px 0 var(--warn); }
+.wr-runchart__flag { position: absolute; left: 0; right: 0; bottom: 0; background: var(--warn); }
+.wr-runchart__count { font-size: var(--fs-sm); line-height: 1.3; color: var(--tx2); font-variant-numeric: tabular-nums; }
+.wr-runchart__ticks { display: grid; margin-top: 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); white-space: nowrap; }
+.wr-runchart__hticks { display: grid; grid-template-columns: repeat(8, 1fr); margin-top: 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+
+/* Runs table: one link per run, "What stood out" with its icon, rows dimmed while a new filter loads. */
+.wr-runs-body { transition: opacity .15s; }
+.wr-runs-body.is-loading { opacity: .5; pointer-events: none; }
+.wr-runlink { color: var(--tx); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
+.wr-runlink:hover { text-decoration: underline; }
+.wr-runlink:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
+.wr-runlink__n { color: var(--tx2); }
+.wr-standout { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.wr-standout__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-runs-list .wr-standout__text { white-space: normal; }
+.wr-runs-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 16px 20px; font-size: var(--fs-md); color: var(--tx2); }
+section[aria-labelledby="runs-table-title"] .wr-panel__title { white-space: normal; }
+
+/* Runs dialogs: Export runs and Audit trail check. */
+.wr-runs-dialog { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
+.wr-runs-dialog__title { margin: 0; font-family: var(--font-display); font-size: var(--fs-section); line-height: 1.3; font-weight: 600; color: var(--tx); }
+.wr-runs-dialog__label { font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
+.wr-runs-dialog__sub { font-size: var(--fs-sm); color: var(--tx2); line-height: 1.5; }
+.wr-runs-dialog__set { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: 0; }
+.wr-runs-dialog__set legend { margin-bottom: 8px; padding: 0; }
+.wr-runs-dialog__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.wr-runs-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: var(--fs-md); color: var(--tx); cursor: pointer; }
+.wr-runs-opt:has(input:checked) { border-color: var(--brand); background: var(--brand-dim); }
+.wr-runs-opt input { margin-top: 5px; accent-color: var(--brand); }
+.wr-runs-auditbox { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; font-size: var(--fs-md); color: var(--tx); }
+
+/* Runs and Run: the header lines up with the 1480px content column below it, as in the mockup. */
+.wr-runs-page .wr-page-body > .wr-refresh-failed { margin-inline: auto; }
+.wr-runs-page { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+@media (min-width: 721px) {
+  .wr-runs-page > .citadel-page-header, .wr-runs-page > .wr-run-crumb { padding-inline: max(24px, calc((100% - 1480px) / 2)) !important; }
+}
+
+/* Run page: crumb above the title, the summary line, Rule activity and the timeline marks. */
+.wr-run-crumb { padding: 14px 24px 0; }
+.wr-run-crumb + .citadel-page-header { min-height: 3.5rem !important; }
+.wr-run-summary { margin-block: 0; font-size: var(--fs-card); line-height: 1.5; color: var(--tx); }
+.wr-run-summary strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wr-run-summary__model { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
+.wr-run-flags { display: flex; align-items: flex-start; gap: 8px; margin-block: 0; font-size: var(--fs-sm); color: var(--tx2); }
+.wr-run-flags strong { color: var(--tx); font-weight: 600; }
+.wr-run-mtag { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; font-weight: 500; white-space: nowrap; color: var(--tx2); }
+.wr-run-mtag::before { content: ""; width: 8px; height: 8px; border-radius: 99px; border: 1.5px solid currentColor; }
+.wr-run-mtag.is-block { padding: 2px 10px; border-radius: 6px; background: var(--brand); color: var(--on-brand); font-weight: 600; }
+.wr-run-mtag.is-block::before { border-color: var(--on-brand); background: var(--on-brand); }
+.wr-run-ra { margin: 0; padding: 0; list-style: none; }
+.wr-run-ra > li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: var(--fs-md); }
+.wr-run-ra__time { min-width: 64px; font-size: var(--fs-sm); color: var(--tx2); font-variant-numeric: tabular-nums; }
+.wr-run-ra__text { flex: 1 1 260px; min-width: 0; }
+.wr-run-ra__text strong { font-weight: 600; }
+.wr-run-ra__foot { margin: 0; padding: 10px 20px; font-size: var(--fs-sm); color: var(--tx2); }
+section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labelledby="run-rule-activity"] .wr-panel__title { gap: 8px; white-space: normal; flex-wrap: wrap; }
+.wr-timeline > li { padding: 9px 20px; }
+.wr-timeline > li:focus { outline: none; }
+.wr-timeline > li:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.wr-timeline > li.is-shaded { background: var(--brand-dim); }
+.wr-timeline > li.is-highlighted { box-shadow: inset 3px 0 0 var(--brand); }
+.wr-timeline__time { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.wr-timeline__glyph { width: 18px; text-align: center; font-size: var(--fs-sm); color: var(--tx2); }
+.wr-timeline__glyph.is-done { color: var(--ok); }
+.wr-timeline__glyph.is-bad { color: var(--bad); }
+.wr-timeline__glyph.is-start { color: var(--tx); }
+.wr-timeline__text { font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere; }
+.wr-timeline__rule { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; font-size: var(--fs-sm); color: var(--tx); }
+.wr-timeline__legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 10px 20px; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--tx2); }
+.wr-timeline__legend .is-bad { color: var(--bad); }
+@media (max-width: 720px) {
+  .wr-run-crumb { padding: 12px 16px 0; }
+  .wr-run-summary { font-size: var(--fs-md); }
+  .wr-timeline__rule { justify-content: flex-start; }
+  .wr-run-crumb + .citadel-page-header h1 { max-width: 100% !important; }
+  .wr-timeline > li { grid-template-columns: 4.25rem 16px minmax(0, 1fr); padding-inline: 16px; }
+  .wr-timeline__time { white-space: nowrap; }
+}
+.wr-panel__title > .wr-panel__count { font-weight: 500; }
+/* Phones: the charts scroll sideways in their own box, so each bar stays a tappable width (≥24px). */
+@media (max-width: 600px) {
+  .wr-strip-scroll { overflow-x: auto; }
+  .wr-strip-scroll > * { min-width: 46rem; }
+  .wr-strip-scroll.is-hours > * { min-width: 38rem; }
 }
 
 /* ── Mockup parity: agent page (components/agent) ── */
