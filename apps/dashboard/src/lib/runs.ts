@@ -179,7 +179,7 @@ export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blocke
   // wouldActCalls counts every Record only rule action (a would-block, pause, stop or alert), so it's
   // worded as acting, never as blocking.
   const would = run.wouldActCalls ?? 0;
-  if (run.blockedCalls > 0) return { tone: 'blocked', text: `Blocked ${counted(run.blockedCalls, 'call')}${would ? ` · ${wouldActText(would, false)}` : ''}` };
+  if (run.blockedCalls > 0) return { tone: 'blocked', text: `Blocked ${counted(run.blockedCalls, 'call')}${would ? ` · ${wouldActText(would)}` : ''}` };
   if (would > 0) return { tone: 'rule', text: wouldActText(would) };
   if (run.failedCalls > 0) return { tone: 'failed', text: `${counted(run.failedCalls, 'call')} failed` };
   const { calls, checked } = run.coverage;
@@ -189,9 +189,12 @@ export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blocke
   return { tone: 'clean', text: 'Nothing unusual' };
 }
 
-/** "A Record only rule would have acted ×3": Record only rule actions when what they'd have done isn't known. */
-export function wouldActText(n: number, capital = true): string {
-  return `${capital ? 'A' : 'a'} Record only rule would have acted ×${n}`;
+/**
+ * "3 would have acted (Record only)": Record only rule actions when what they'd have done isn't known.
+ * The same words as Home's and the agent page's rule tallies.
+ */
+export function wouldActText(n: number): string {
+  return `${n} would have acted (Record only)`;
 }
 
 /** "-05:00": the viewer's UTC offset at `d`, so an export's times are unambiguous in a daylight-saving fall-back hour. */

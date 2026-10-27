@@ -18,7 +18,7 @@ const { SANDBOX_CHECKS } = await import('@/lib/sandbox/report');
 const JARGON = /hand(s|ed)?[ -]?over|\bshifts?\b|\bwatch(es)?\b|context|compress/i;
 
 describe('Demo walkthrough matches the demo', () => {
-  // The engine's demo: demo-agent works, then passes its work to demo-agent-b with a summary.
+  // The engine's demo: demo-agent works, then its work goes on in demo-agent-b.
   const demo = {
     sandboxId: 'd', mode: 'demo' as const,
     agents: [{ agentId: 'demo-agent', totalTasks: 1 }, { agentId: 'demo-agent-b', totalTasks: 1 }],
@@ -29,25 +29,17 @@ describe('Demo walkthrough matches the demo', () => {
     expect(DEMO_STORY.map((s) => s.title)).toEqual(SANDBOX_CHECKS.map((c) => c.label));
   });
 
-  it('says the work goes to a second demo agent, in the step and in its check', () => {
-    expect(DEMO_STORY[1].text).toBe('Its memory fills up. WhiteRoom saves a short summary and passes the work to a second demo agent, which keeps going.');
+  it('says the work kept going on the long task, in the step and in its check, never how', () => {
+    expect(DEMO_STORY[1].text).toBe('The demo task runs long, and the work keeps going without losing its place.');
     const memory = checkGuidance('core.handoff', 'observed', demo, 'anthropic').detail;
     expect(memory).toBe(DEMO_STORY[1].detail);
-    for (const words of [DEMO_STORY[1].text, memory]) {
-      expect(words).toMatch(/short summary/);
-      expect(words).toMatch(/second demo agent/);
-    }
-    // Not the live wording, which reads as one agent keeping its memory.
-    expect(memory).not.toMatch(/Kept its/);
+    for (const words of [DEMO_STORY[1].text, memory]) expect(words).not.toMatch(/summary|second demo agent|memory/);
   });
 
-  it('says the second agent picks up and finishes the next task, in the step and in its check', () => {
+  it('says the next call went through and finished the next task, in the step and in its check', () => {
     const resume = checkGuidance('core.resume', 'observed', demo, 'anthropic').detail;
     expect(resume).toBe(DEMO_STORY[2].detail);
-    for (const words of [DEMO_STORY[2].text, resume]) {
-      expect(words).toMatch(/second demo agent/);
-      expect(words).toMatch(/next task/);
-    }
+    for (const words of [DEMO_STORY[2].text, resume]) expect(words).toMatch(/next task/);
   });
 
   it('counts the demo calls like a live test', () => {
@@ -60,8 +52,8 @@ describe('Demo walkthrough matches the demo', () => {
 
   it('leaves the live wording alone', () => {
     const live = { mode: 'connected' as const, auditLog: [{ id: 'h', timestamp: '2026-10-12T10:00:00Z', type: 'self_handover', agentId: 'a' }] };
-    expect(checkGuidance('core.handoff', 'observed', live, 'anthropic').detail).toBe('Saved a summary once and kept its context.');
-    expect(checkGuidance('core.resume', 'observed', live, 'anthropic').detail).toBe('Its next call after the summary worked.');
+    expect(checkGuidance('core.handoff', 'observed', live, 'anthropic').detail).toBe('Kept going once as the task ran long.');
+    expect(checkGuidance('core.resume', 'observed', live, 'anthropic').detail).toBe('Its next call went through normally.');
   });
 });
 

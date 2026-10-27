@@ -2,8 +2,8 @@
 // last 7 days (audit_summary tokens and savings, rule_actions, scores), and
 // the search and sort that keep a big fleet usable.
 
-import { hourTotals, sortAgents } from '@/lib/home';
-import { ruleActionsByAgent, tallyFromRuleActions, type GovernanceTally } from '@/lib/governance';
+import { agentState, hourTotals, sortAgents } from '@/lib/home';
+import { ruleActionsByAgent, tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
 import { HOUR_MS } from '@/lib/format';
 import { localDay } from '@/lib/runs';
@@ -34,7 +34,7 @@ export const AGENT_SORTS: { value: AgentSort; label: string }[] = [
 export const TABLE_FROM = 12;
 
 /** Above this many agents, Home shows Find and Sort. */
-export const FIND_FROM = 6;
+export const FIND_FROM = 12;
 
 /** Agents whose id contains the search (any case), in the chosen order. Ties keep needs-attention order. */
 export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<string, AgentWeek>, search: string, sort: AgentSort): T[] {
@@ -44,7 +44,13 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   if (sort === 'name') return [...base].sort((x, y) => x.agentId.localeCompare(y.agentId));
   if (sort === 'used') return [...base].sort((x, y) => (week(y)?.used ?? 0) - (week(x)?.used ?? 0));
   if (sort === 'saved') return [...base].sort((x, y) => (week(y)?.saved ?? 0) - (week(x)?.saved ?? 0));
-  return base;
+  // Needs attention (mockup): held and silent agents first, then agents with
+  // rule activity this week whatever their state, then sortAgents' order
+  // (working before waiting, then by name).
+  const caught = (a: T) => (week(a)?.rules && tallyTotal(week(a)!.rules!) > 0 ? 0 : 1);
+  const rank = new Map(base.map((a, i) => [a, i]));
+  const held = (a: T) => (['paused', 'stopped', 'stale', 'disconnected'].includes(agentState(a)) ? 0 : 1);
+  return [...base].sort((x, y) => held(x) - held(y) || caught(x) - caught(y) || rank.get(x)! - rank.get(y)!);
 }
 
 /**
@@ -115,6 +121,45 @@ export function homeWeek(
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
   const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / HOUR_MS) * HOUR_MS) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
+}
+
+/** Which of the week's reads failed (null or an error); an engine that doesn't support a read hasn't failed. */
+export interface WeekFailures { audit: boolean; scores: boolean; rules: boolean; hourly: boolean }
+
+export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null }): WeekFailures {
+  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error };
+}
+
+/**
+ * The week after a refresh, keeping the last good figures for any read that
+ * failed this time, field by field: a failed scores read keeps each agent's
+ * score while new tokens and rules come in. Only a read that worked replaces
+ * (or clears) its fields.
+ */
+export function keepLastGood(prev: HomeWeek | null, next: HomeWeek, failed: WeekFailures): HomeWeek {
+  if (!prev) return next;
+  const agents: Record<string, AgentWeek> = {};
+  for (const id of new Set([...Object.keys(prev.agents), ...Object.keys(next.agents)])) {
+    const p = prev.agents[id] ?? {};
+    const n = next.agents[id] ?? {};
+    const w: AgentWeek = {};
+    const from = failed.audit ? p : n;
+    if (from.used !== undefined) w.used = from.used;
+    if (from.saved !== undefined) w.saved = from.saved;
+    if (from.savedUsd !== undefined) w.savedUsd = from.savedUsd;
+    const rules = failed.rules ? p.rules : n.rules;
+    if (rules) w.rules = rules;
+    const score = failed.scores ? p.score : n.score;
+    if (score) w.score = score;
+    if (Object.keys(w).length) agents[id] = w;
+  }
+  return {
+    agents,
+    calls: failed.hourly ? prev.calls : next.calls,
+    costUsd: failed.hourly ? prev.costUsd : next.costUsd,
+    partial: failed.hourly ? prev.partial : next.partial,
+    rules: failed.rules ? prev.rules : next.rules,
+  };
 }
 
 /**

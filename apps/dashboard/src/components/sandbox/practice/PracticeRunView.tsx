@@ -97,7 +97,6 @@ export function PracticeRunView({ run, code, keyChoice = null, now, busy, headin
   const title = run.lifecycle === 'draft' ? 'Run it from your computer' : run.lifecycle === 'finalizing' ? 'Working out the result' : 'Practice test running';
   return (
     <div className={p.wrap}>
-      <div className={s.eyebrow}>WHITEROOM / SANDBOX / PRACTICE TEST</div>
       <h2 ref={heading} className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>{title}</h2>
       {run.lifecycle === 'draft' ? <>
         <p className={s.pageSub}>On the computer where your agent runs. This page updates on its own once the test starts.</p>

@@ -87,3 +87,48 @@ describe('shift wording', () => {
     expect(userFacingWatch(src)).toEqual([]);
   });
 });
+
+// The agent page, Settings, Fleet key and Sandbox say what WhiteRoom does,
+// never how it keeps an agent going: no breaks, progress notes, summaries,
+// "carries forward" or "picks up where it left off" (IP rule, gap audit A12).
+const HOW_FILES = [
+  '../components/agent/AgentDetail.tsx',
+  '../components/agent/AgentWeekCard.tsx',
+  '../components/agent/RecentRuns.tsx',
+  '../components/agent/RulesOnAgent.tsx',
+  '../lib/agent-detail.ts',
+  '../lib/agent-scores.ts',
+  '../lib/activity.ts',
+  '../app/settings/settings-view.tsx',
+  '../components/settings/DataPrivacySection.tsx',
+  '../components/settings/SmallerHandoversSection.tsx',
+  '../components/settings/AlertsSection.tsx',
+  '../components/settings/AuditIntegritySection.tsx',
+  '../lib/smaller-handovers.ts',
+  '../app/fleet-key/onboarding.tsx',
+  '../app/fleet-key/page.tsx',
+  '../app/fleet-key/rotate.tsx',
+  '../components/citadel/FleetLogin.tsx',
+  '../components/sandbox/TestRunFlow.tsx',
+  '../components/sandbox/PastTests.tsx',
+  '../components/sandbox/CloudProviderParts.tsx',
+  '../components/sandbox/practice/PracticeCard.tsx',
+  '../components/sandbox/practice/PracticeSetup.tsx',
+  '../components/sandbox/practice/PracticeResults.tsx',
+  '../components/sandbox/practice/PracticeRunView.tsx',
+  '../lib/sandbox/practice/model.ts',
+  '../lib/sandbox/report.ts',
+];
+
+const HOW_IT_WORKS = /\bbreaks?\b|\bnotes?\b|\bsummar(y|ies|ise|ize)\b|carr(y|ies|ied) forward|where it left off|context limit/i;
+
+describe('how-it-works wording', () => {
+  it.each(HOW_FILES)('%s says what WhiteRoom does, not how', (rel) => {
+    const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const strings = (code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? []).map((s) => s.replace(/\$\{[^}]*\}/g, ''));
+    const jsxText = rel.endsWith('.tsx') ? (code.replace(/\s*\n\s*/g, ' ').match(/(?<=[>}])[^<>{}]+(?=[<{])/g) ?? []).filter((s) => !/[;=]|\bimport\b|^\s*,/.test(s)) : [];
+    // Sentences only (a space inside), so identifiers like 'handover_notes_resealed' pass.
+    expect([...strings.filter((s) => /[a-z] [a-z]/i.test(s)), ...jsxText].filter((s) => HOW_IT_WORKS.test(s))).toEqual([]);
+  });
+});

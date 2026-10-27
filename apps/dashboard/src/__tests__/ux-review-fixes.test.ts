@@ -62,7 +62,6 @@ describe('Block colour in the stylesheet', () => {
   it.each([
     ['.gov-edhead__mode.is-on', { background: 'var(--bad-bg)', color: 'var(--bad)' }],
     ['.wr-dot--bad', { background: 'var(--bad)' }],
-    ['.wr-chip-block', { background: 'var(--bad-bg)', color: 'var(--bad)' }],
   ] as const)('%s is red, and no later rule turns it amber', (selector, want) => {
     const rules = rulesFor(selector);
     expect(rules.length).toBeGreaterThan(0);

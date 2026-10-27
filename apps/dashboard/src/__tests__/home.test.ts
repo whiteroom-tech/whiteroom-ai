@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
-  overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, runLine, runRest, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
 
 const agent = (id: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo => ({ agentId: id, status, ...x });
+/** The run line as the card says it, from runLine's parts. */
+const progressLine = (a: AgentInfo) => { const r = runLine(a); return r.run === null ? `${r.label} · ${runRest(r)}` : `${r.label} #${r.run} · ${runRest(r)}`; };
 
 describe('agents', () => {
   it('maps engine statuses onto the pill states', () => {
@@ -17,17 +19,24 @@ describe('agents', () => {
     expect(agentState(agent('a', 'something-new'))).toBe('idle');
   });
 
-  it('writes the progress line in shifts, never "watch"', () => {
-    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Run 8 · 62 tasks · 9.4 min worked');
-    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Rest after run 5 · 1 task');
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run in progress · waiting for work');
+  it('writes the run line in runs, never "watch", "rest" or "break"', () => {
+    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Run #8 · 62 tasks · 9.4 min so far');
+    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Last run #5 · 1 task · waiting for work');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run yet · waiting for work');
+    expect(progressLine(agent('a', 'idle', { hold: { state: 'paused', by: 'x', reason: null, at: '' }, currentShift: null, lastShift: { watchNumber: 2, tasksCompleted: 3, tokensUsed: 0, minutesWorked: 0 } }))).toBe('Last run #2 · 3 tasks · waiting to be resumed');
+  });
+
+  it('gives the run line in parts, with no run number (so no link) for run 0', () => {
+    expect(runLine(agent('a', 'idle', { currentShift: null, lastShift: { watchNumber: 4, tasksCompleted: 6, tokensUsed: 0, minutesWorked: 0 } }))).toEqual({ label: 'Last run', run: 4, tasks: '6 tasks', status: 'waiting for work' });
+    expect(runLine(agent('a', 'idle', { currentShift: null, lastShift: { watchNumber: 0, tasksCompleted: 1, tokensUsed: 0, minutesWorked: 0 } }))).toEqual({ label: 'Last run', run: null, tasks: '1 task', status: 'waiting for work' });
+    expect(runRest({ label: 'No run yet', run: null, tasks: null, status: 'waiting for work' })).toBe('waiting for work');
   });
 
   it('shows the last shift, not lifetime, once a shift has ended (M14)', () => {
     const last = { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 };
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run 41 · 5 tasks · waiting for work');
-    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Rest after run 41 · 5 tasks');
-    expect(progressLine(agent('a', 'working', { currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Run 42 · 2 tasks · 1.3 min worked');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run #41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run #41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'working', { minutesRemaining: 3, currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Run #42 · 2 tasks · 1.3 min so far');
   });
 
   it('sorts problems first, then working, resting, idle, then by id', () => {
@@ -42,7 +51,8 @@ describe('agents', () => {
   });
 
   it('summarises the non-working states for the strip', () => {
-    expect(stateSummary([agent('a', 'resting'), agent('b', 'idle'), agent('c', 'resting'), agent('d', 'working', { minutesRemaining: 1 })])).toBe('2 resting · 1 idle');
+    expect(stateSummary([agent('a', 'resting'), agent('b', 'idle'), agent('c', 'resting'), agent('d', 'working', { minutesRemaining: 1 })])).toBe('3 waiting for work');
+    expect(stateSummary([agent('a', 'idle', { hold: { state: 'stopped', by: 'x', reason: null, at: '' } }), agent('b', 'idle')])).toBe('1 on hold · 1 waiting for work');
     expect(stateSummary([agent('d', 'working', { minutesRemaining: 1 })])).toBe('');
   });
 });
@@ -57,9 +67,9 @@ describe('activity', () => {
 
   it('tags handovers, pauses and blocks', () => {
     expect(activityRow(e('self_handover', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Smaller context', tone: 'ho' });
-    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z', { toAgent: 'writer' }), now).tag).toEqual({ label: 'Passed work', tone: 'ho' });
-    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Passed work', tone: 'ho' });
-    expect(activityRow(e('handover_in', '2026-09-30T14:00:00Z', { fromAgent: 'lead' }), now).tag).toEqual({ label: 'Took over', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z', { toAgent: 'writer' }), now).tag).toEqual({ label: 'Saved progress', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Saved progress', tone: 'ho' });
+    expect(activityRow(e('handover_in', '2026-09-30T14:00:00Z', { fromAgent: 'lead' }), now).tag).toEqual({ label: 'Continued', tone: 'ho' });
     expect(activityRow(e('agent_paused', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Paused', tone: 'warn' });
     expect(activityRow(e('governance_block', '2026-09-30T14:00:00Z', { ruleType: 'spend_cap' }), now).tag?.label).toBe('Blocked');
     expect(activityRow(e('task_complete', '2026-09-30T14:00:00Z', { taskName: 'x' }), now).tag).toBeUndefined();

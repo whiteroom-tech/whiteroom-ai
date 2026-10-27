@@ -272,7 +272,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           {history.slice(0, 10).map((h) => (
             <HistoryLine key={h.id} entry={h} actors={actors} undo={undoOf(h)} onUndo={onUndo} busy={saving} />
           ))}
-          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)' }}>Audit integrity →</Link>
+          <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)' }}>Audit trail →</Link>
         </div>
       </details>
     </div>

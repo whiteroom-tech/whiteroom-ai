@@ -76,7 +76,7 @@ beforeEach(() => {
 describe('Runs › Show › Rule activity', () => {
   it('asks the engine for runs with rule activity and keeps the choice in the URL', async () => {
     const m = await mount();
-    expect(m.text()).toContain('A Record only rule would have acted ×2');
+    expect(m.text()).toContain('2 would have acted (Record only)');
     await m.click(m.radio('Rule activity'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ ruleActivity: true, flagged: false }), 'k');
     expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('show=rules'), { scroll: false });
@@ -122,7 +122,7 @@ describe('Runs › phones', () => {
     expect(rows).toHaveLength(1);
     const [top, stood, figures] = [...rows[0].children].map((c) => c.textContent ?? '');
     expect(top).toMatch(/^lead-agent#1\d{1,2}:\d{2} (am|pm)$/);
-    expect(stood).toContain('A Record only rule would have acted ×2');
+    expect(stood).toContain('2 would have acted (Record only)');
     expect(figures).toBe('23:00 · $1.92');
     expect(rows[0].getAttribute('href')).toBe('/runs/lead-agent~1');
     // The desktop table is still there for wide screens; CSS picks one. Its run is one real link.

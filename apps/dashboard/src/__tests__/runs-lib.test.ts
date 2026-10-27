@@ -87,8 +87,8 @@ describe('what stood out', () => {
     expect(standOut(run({ failedCalls: 2 }))).toEqual({ tone: 'failed', text: '2 calls failed' });
     // A Record only rule's would-acts are evidence too, and never read as a block.
     // wouldActCalls counts any Record only action (pause, stop, alert too), so it never claims a block.
-    expect(standOut({ ...run({}), wouldActCalls: 6 })).toEqual({ tone: 'rule', text: 'A Record only rule would have acted ×6' });
-    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('Blocked 2 calls · a Record only rule would have acted ×1');
+    expect(standOut({ ...run({}), wouldActCalls: 6 })).toEqual({ tone: 'rule', text: '6 would have acted (Record only)' });
+    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('Blocked 2 calls · 1 would have acted (Record only)');
     // An engine that doesn't count them (no field) can't be filtered by them.
     expect(ignoresRuleActivity([{}, {}])).toBe(true);
     expect(ignoresRuleActivity([{ wouldActCalls: 0 }])).toBe(false);

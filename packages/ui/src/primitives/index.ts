@@ -10,3 +10,4 @@ export * from './Toggle';
 export * from './Hint';
 export * from './DataTable';
 export * from './Toast';
+export * from './ScoreRing';

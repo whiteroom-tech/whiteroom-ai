@@ -9,7 +9,11 @@ export interface ToolDetail {
 }
 
 /** A durable pause or stop (engine gov-state.ts): the agent refuses calls until resumed. */
-export interface AgentHold { state: 'paused' | 'stopped'; by: string; reason: string | null; at: string }
+export interface AgentHold {
+  state: 'paused' | 'stopped'; by: string; reason: string | null; at: string;
+  /** When the agent was first held, if this hold replaced an earlier one (engine applyHold keeps it). */
+  since?: string;
+}
 
 export interface AgentInfo {
   agentId: string;
@@ -156,14 +160,6 @@ export interface TokenLoginResult {
 
 export interface ListFleetsResult {
   fleets?: Array<{ fleetId: string; agentCount?: number; agents?: string[] }>;
-  error?: string;
-}
-
-export interface GetHandoverResult {
-  /** Pending, single-use: the agent gets it on its next call, then it's cleared. */
-  handoverDoc?: HandoverDoc;
-  /** The last doc already delivered, kept for people to read (engine #94). */
-  lastHandoverDoc?: HandoverDoc | null;
   error?: string;
 }
 
@@ -840,7 +836,7 @@ export interface RuleWouldActResult {
   since?: string | null;
 }
 
-/** Settings › Audit integrity (engine audit_integrity, Phase 1 spec H2). */
+/** Settings › Audit trail (engine audit_integrity, Phase 1 spec H2). */
 export interface AuditIntegrity {
   fleetId: string;
   mode: 'legacy' | 'sequenced';

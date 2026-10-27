@@ -68,13 +68,13 @@ const EVENT_COPY: Record<string, EventCopy> = {
   task_complete: { icon: '✅', tone: 'task', code: 'TSK', say: (e) => `finished "${e.taskName || 'a task'}"` },
   watch_start: { icon: '▶', tone: 'start', code: 'ON', say: () => 'started a run' },
   watch_end: { icon: '⏹', tone: 'start', code: 'OFF', say: () => 'ended the run' },
-  handover_out: { icon: '🔄', tone: 'handover', code: 'H/O', say: (e) => (e.toAgent ? `passed work to ${agentName(e.toAgent)}` : 'passed work on') },
-  handover_in: { icon: '🔄', tone: 'handover', code: 'H/I', say: (e) => `took over${e.fromAgent ? ` from ${agentName(e.fromAgent)}` : ''}` },
-  handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: (e) => (e.toAgent ? `passed work to ${agentName(e.toAgent)}` : 'passed work on') },
+  handover_out: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'saved its progress' },
+  handover_in: { icon: '🔄', tone: 'handover', code: 'H/I', say: () => 'continued its work' },
+  handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'saved its progress' },
   self_handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'made its context smaller' },
-  rest_start: { icon: '💤', tone: 'rest', code: 'RST', say: () => 'went on break' },
-  rest_end: { icon: '☀', tone: 'rest', code: 'UP', say: () => 'came back from break' },
-  alarm: { icon: '⏰', tone: 'rest', code: 'BEL', say: () => 'finished its break' },
+  rest_start: { icon: '💤', tone: 'rest', code: 'RST', say: () => 'paused for a moment' },
+  rest_end: { icon: '☀', tone: 'rest', code: 'UP', say: () => 'started again' },
+  alarm: { icon: '⏰', tone: 'rest', code: 'BEL', say: () => 'started again' },
   register: { icon: '➕', tone: 'idle', code: 'REG', say: () => 'joined the fleet' },
   agent_paused: { icon: '⏸', tone: 'rest', code: 'PAU', say: () => 'was paused' },
   agent_resumed: { icon: '▶', tone: 'start', code: 'RES', say: () => 'was resumed' },
@@ -94,10 +94,10 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '🔁', tone: 'wouldBlock', code: 'H/L',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      const to = limit !== null ? ` to ${fmtCount(limit)} tokens` : '';
+      const to = limit !== null ? ` (up to ${fmtCount(limit)} tokens)` : '';
       return String(e.reason ?? '') === 'repeated_work'
-        ? `kept redoing work it had already done, so WhiteRoom raised its context limit${to} to give it room to finish`
-        : `filled its context after a call or two, so WhiteRoom raised its context limit${to} to keep it working`;
+        ? `kept redoing work it had already done, so WhiteRoom gave it more room${to} to finish`
+        : `ran out of room after a call or two, so WhiteRoom gave it more room${to} to keep working`;
     },
   },
   handover_deferred: {
@@ -111,12 +111,12 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '↘', tone: 'idle', code: 'H/R',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      return `stopped redoing earlier work, so WhiteRoom lowered its context limit${limit !== null ? ` to ${fmtCount(limit)} tokens` : ''}`;
+      return `stopped redoing earlier work, so WhiteRoom gave it less room${limit !== null ? ` (${fmtCount(limit)} tokens)` : ''}`;
     },
   },
   handover_summary_failed: {
     icon: '⚠', tone: 'wouldBlock', code: 'SUM',
-    say: () => "couldn't save its full progress, so it continued from a short note",
+    say: () => "couldn't save all of its progress",
   },
   handover_results_truncated: {
     icon: '✂', tone: 'wouldBlock', code: 'CUT',
@@ -128,15 +128,15 @@ const EVENT_COPY: Record<string, EventCopy> = {
   // Handover delivery and goals (compression spec §6.3, §6.5, §14.4).
   handover_delivery_abandoned: {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
-    say: () => 'had progress notes too large to deliver, so WhiteRoom sent a short version',
+    say: () => 'had too much saved progress to send in full, so some was left out',
   },
   handover_notes_resealed: {
     icon: '•', tone: 'idle', code: 'NTS',
-    say: () => 'had its saved progress notes cleaned and re-secured by WhiteRoom',
+    say: () => 'had its saved progress cleaned and re-secured by WhiteRoom',
   },
   handover_chain_abandoned: {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
-    say: () => "couldn't receive its progress notes, so it carried on without them",
+    say: () => "couldn't get its saved progress back",
   },
   goal_set: {
     icon: '◎', tone: 'idle', code: 'GOL',
@@ -161,7 +161,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
     say: (e) => `caught up after a database interruption (${windowText(e, 'range')})`,
   },
   lost_completion: { icon: '⚠', tone: 'wouldBlock', code: 'LST', say: () => "had a call finish during an update that couldn't be counted" },
-  handover_unrecorded: { icon: '🔄', tone: 'handover', code: 'H/U', say: () => "passed work on while records couldn't be saved; it was recorded later" },
+  handover_unrecorded: { icon: '🔄', tone: 'handover', code: 'H/U', say: () => "saved its progress while records couldn't be written; it was recorded later" },
   observations_batch: {
     icon: '✅', tone: 'task', code: 'TSK',
     say: (e) => { const n = positiveCount(e.count); return `finished ${n === null ? 'several' : n} calls (grouped during a slowdown)`; },

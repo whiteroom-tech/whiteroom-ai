@@ -18,6 +18,7 @@ import type {
   RunHourCount,
   RunEventsResult,
   FleetDiagnosis,
+  AgentHold,
   AgentInfo,
   AuditLogResponse,
   BedrockRoleStatus,
@@ -25,7 +26,6 @@ import type {
   DeleteBedrockRoleResult,
   DeleteKeyResult,
   FleetReport,
-  GetHandoverResult,
   GovernanceListResult,
   GovernanceMode,
   GovernanceParams,
@@ -341,10 +341,6 @@ export async function checkWatch(agentId: string, fleetId: string, key?: string)
   return 'hold' in agent ? { ...agent, hold: activeHold(agent.hold) } : agent;
 }
 
-export function getHandover(agentId: string, fleetId: string, key?: string): Promise<GetHandoverResult> {
-  return apiCall<GetHandoverResult>({ action: 'get_handover', agent_id: agentId, fleet_id: fleetId }, key);
-}
-
 export function auditLog(
   opts: { fleetId: string; agentId?: string; type?: string; search?: string; limit?: number },
   key?: string,
@@ -444,8 +440,9 @@ export function deleteBedrockRole(auth: FleetAuth): Promise<DeleteBedrockRoleRes
 
 // -- Agent control --
 
-export async function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
+/** Pause. Gov v1 engines return the hold they set, which Home's Undo uses to resume only that pause. */
+export async function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string; hold?: AgentHold | null }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string; hold?: AgentHold | null }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
 /** Stop (Gov v1 fleets): the agent refuses every call until resumed, even after a restart. */
@@ -709,7 +706,7 @@ export function listRuns(
   }, key);
 }
 
-/** Settings › Audit integrity: how much of the chain is verified, and recorded gaps. */
+/** Settings › Audit trail: how much of the chain is verified, and recorded gaps. */
 export function auditIntegrity(fleetId: string, key?: string): Promise<AuditIntegrity> {
   return apiCall({ action: 'audit_integrity', fleet_id: fleetId }, key);
 }

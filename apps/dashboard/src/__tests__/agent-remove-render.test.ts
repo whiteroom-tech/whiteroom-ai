@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Agent detail's Remove: a typed-name confirm, then deregister_agent and back
+// Agent detail's Remove (in the header's ⋯ menu): a typed-name confirm, then deregister_agent and back
 // to Home; a failure stays on the page with a retry.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, createElement as h } from 'react';
@@ -16,7 +16,8 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   checkWatch: async () => ({ status: 'idle', watchNumber: 1, govV1: true }),
   auditLog: async () => ({ entries: [] }),
-  getHandover: async () => ({}),
+  listRuns: async () => ({ runs: [] }),
+  getDiagnosis: async () => { throw new Error('off'); },
   removeAgent: api.remove,
 }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
@@ -25,7 +26,7 @@ vi.mock('@/components/agent/AgentWeekCard', () => ({ AgentWeekCard: () => null }
 vi.mock('@/components/agent/RulesOnAgent', () => ({ RulesOnAgent: () => null }));
 vi.mock('@/components/citadel/PageChrome', async () => {
   const { createElement } = await import('react');
-  return { PageHeader: ({ children }: { children?: React.ReactNode }) => createElement('header', null, children) };
+  return { PageHeader: ({ children }: { children?: React.ReactNode }) => createElement('header', null, children), LiveStatus: () => null };
 });
 
 import { AgentDetail } from '@/components/agent/AgentDetail';
@@ -51,12 +52,16 @@ async function mount(extra: Partial<Parameters<typeof AgentDetail>[0]> = {}) {
     });
     await flush();
   };
-  const confirmRemove = async () => {
+  const openRemove = async () => {
+    await click(el.querySelector('[aria-label="More actions"]') ?? undefined);
     await click(button('Remove…'));
+  };
+  const confirmRemove = async () => {
+    await openRemove();
     await typeName('scout');
     await click([...dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Remove agent'));
   };
-  return { el, root, button, click, dialog, typeName, confirmRemove };
+  return { el, root, button, click, dialog, typeName, openRemove, confirmRemove };
 }
 
 beforeEach(() => { nav.push.mockClear(); api.remove.mockReset(); document.body.innerHTML = ''; });
@@ -65,7 +70,7 @@ describe('Agent detail: Remove', () => {
   it('asks for the agent’s name, says what stays, then removes it and goes Home', async () => {
     api.remove.mockResolvedValue({ success: true });
     const m = await mount();
-    await m.click(m.button('Remove…'));
+    await m.openRemove();
     expect(m.dialog()!.textContent).toContain('Remove scout?');
     expect(m.dialog()!.textContent).toContain('Its audit trail, rule history and rule actions stay.');
     const confirm = () => [...m.dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Remove agent') as HTMLButtonElement;
@@ -81,7 +86,7 @@ describe('Agent detail: Remove', () => {
   it('a failed remove stays on the page, says nothing changed, and can be retried', async () => {
     api.remove.mockRejectedValueOnce(new Error('Network error')).mockResolvedValueOnce({ success: true });
     const m = await mount();
-    await m.click(m.button('Remove…'));
+    await m.openRemove();
     await m.typeName('scout');
     await m.click([...m.dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Remove agent'));
     expect(m.el.textContent).toContain('Couldn’t remove scout. Network error Nothing changed.');
@@ -114,7 +119,7 @@ describe('Agent detail: Remove', () => {
 
   it('Cancel closes the dialog and removes nothing', async () => {
     const m = await mount();
-    await m.click(m.button('Remove…'));
+    await m.openRemove();
     await m.click([...m.dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Cancel'));
     expect(m.dialog()).toBeUndefined();
     expect(api.remove).not.toHaveBeenCalled();
@@ -123,7 +128,7 @@ describe('Agent detail: Remove', () => {
 
   it('the preview removes nothing', async () => {
     const agent = { agentId: 'scout', status: 'idle', watchNumber: 1 } as AgentInfo;
-    const m = await mount({ preview: { agent, handover: null, entries: [] } });
+    const m = await mount({ preview: { agent, entries: [] } });
     await m.confirmRemove();
     expect(api.remove).not.toHaveBeenCalled();
     expect(nav.push).not.toHaveBeenCalled();

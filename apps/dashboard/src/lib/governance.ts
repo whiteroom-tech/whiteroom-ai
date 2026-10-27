@@ -155,22 +155,6 @@ export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Re
   return out;
 }
 
-/** Recent enforced blocks shows as a badge on Overview. */
-export const RECENT_BLOCK_MS = 15 * 60_000;
-
-/** Newest governance_block per agent within `windowMs` of `now`. */
-export function recentBlocksByAgent(entries: AuditEntry[], now = Date.now(), windowMs = RECENT_BLOCK_MS): Record<string, AuditEntry> {
-  const out: Record<string, AuditEntry> = {};
-  for (const e of entries) {
-    if (e.type !== GOVERNANCE_BLOCK || !e.agentId) continue;
-    const t = new Date(e.timestamp).getTime();
-    if (!Number.isFinite(t) || now - t > windowMs) continue;
-    const prev = out[e.agentId];
-    if (!prev || new Date(prev.timestamp).getTime() < t) out[e.agentId] = e;
-  }
-  return out;
-}
-
 export interface GovernanceSuggestions {
   /** Input traffic exists but nothing was ever read from or written to cache. */
   noCaching: boolean;
@@ -254,9 +238,25 @@ export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'w
   return out;
 }
 
-/** The same tally, short enough for a card line: "2 blocked · 47 in Record only". */
+/**
+ * The same tally as counts and words, short enough for a card line: 2
+ * "blocked", 47 "would have acted". Record-only counts cover every response
+ * (block, pause, stop, alert) and the engine doesn't split them, so they
+ * can't honestly be called "would have blocked".
+ */
+export function tallyParts(t: GovernanceTally): { count: number; word: string }[] {
+  const out: { count: number; word: string }[] = [];
+  if (t.stopped) out.push({ count: t.stopped, word: 'stopped' });
+  if (t.paused) out.push({ count: t.paused, word: 'paused' });
+  if (t.blocks) out.push({ count: t.blocks, word: 'blocked' });
+  if (t.toldYou) out.push({ count: t.toldYou, word: NOTIFY.done });
+  if (t.wouldBlocks) out.push({ count: t.wouldBlocks, word: 'would have acted' });
+  return out;
+}
+
+/** The tally as one card line: "2 blocked · 47 would have acted". */
 export function tallyShort(t: GovernanceTally): string {
-  return tallyWords(t).map((w) => w.text.replace(/ would have acted \(Record only\)$/, ' in Record only')).join(' · ');
+  return tallyParts(t).map((p) => `${p.count} ${p.word}`).join(' · ');
 }
 
 export function tallyTotal(t: GovernanceTally): number {

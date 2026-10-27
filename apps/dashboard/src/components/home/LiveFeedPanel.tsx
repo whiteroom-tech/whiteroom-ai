@@ -26,14 +26,16 @@ const FILTERS: LiveFilter[] = ['all', 'web', 'tools', 'replies'];
  * Never fetched until revealed, because it holds customer content; hidden
  * again on every visit. The kind filter is remembered per browser.
  */
-export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
+export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview, previewOpen = true }: {
   fleetId: string;
   authKey?: string;
   refreshSignal: number;
-  /** Sample rows for /dev/home: starts open and never fetches. */
+  /** Sample rows for /dev/home: never fetches. */
   preview?: AuditEntry[];
+  /** Whether a preview starts open (default) or closed, as a real page does. */
+  previewOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(!!preview);
+  const [open, setOpen] = useState(!!preview && previewOpen);
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>(preview ?? []);
   const [total, setTotal] = useState(preview?.length ?? 0);
@@ -92,23 +94,22 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const pageRows = win.rows;
 
   function reveal() { setOpen(true); load(); }
-  function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
+  function hide() { request.current += 1; setOpen(false); setEntries(preview ?? []); setTotal(preview?.length ?? 0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
   function toggle(key: string) { setExpanded((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 
   const title = <>Live feed<Hint text={liveFeedHelp(ttlHours)} /></>;
 
   if (!open) {
+    // Collapsed: one card with a line on what it holds (mockup). Nothing is fetched until Show.
     return (
-      <Panel
-        title={title}
-        bodyPadding="14px 18px"
-        actions={<Button size={28} className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>}
-      >
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' }}>
-          What agents actually said and did: their replies, the tools they called and the pages they visited, with credentials removed. Kept {ttlHours} hours, then deleted; never part of the audit record.
-        </p>
-      </Panel>
+      <section className="wr-home-livefeed" aria-labelledby="home-live-feed">
+        <div style={{ minWidth: 0 }}>
+          <h2 id="home-live-feed" className="wr-home-livefeed__title">Live feed<Hint text={liveFeedHelp(ttlHours)} /></h2>
+          <p className="wr-home-livefeed__sub">What agents said and did. Kept {ttlHours} hours, not part of the audit record.</p>
+        </div>
+        <Button className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>
+      </section>
     );
   }
 
