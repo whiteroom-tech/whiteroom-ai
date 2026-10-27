@@ -180,6 +180,14 @@ describe('full audit export', () => {
     await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');
   });
 
+  it('refuses an "empty" signature for a history whose head is past its start', async () => {
+    const fetchPage = vi.fn(async () => ({
+      fleetId: 'f1', fromSeq: 1, firstSeq: 1, toSeq: 500, events: [], nextFromSeq: null,
+      manifest: { format: 'whiteroom-audit-export', firstSeq: 1, headSeq: 500, headHash: 'h500', count: 0, signature: 'sig' },
+    }));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');
+  });
+
   it('refuses a last event whose content isn’t the one signed for', async () => {
     const fetchPage = tampered((p) => (p.manifest ? { ...p, events: p.events.map((e) => (e.seq === HEAD ? { ...e, hash: 'swapped' } : e)) } : p));
     await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');

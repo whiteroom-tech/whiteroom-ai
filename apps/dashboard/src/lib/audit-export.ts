@@ -98,7 +98,9 @@ export async function buildAuditExport(
   // 409 for a fleet with no stored events instead, which falls back above.
   const empty = done === 0 && m.count === 0;
   // The signed head hash is the last event's: content swapped in under the right seq doesn't pass.
-  if (m.firstSeq !== page.firstSeq || m.headSeq !== pinned || m.count !== done || (!empty && (m.headSeq !== expect - 1 || m.headHash !== lastHash))) {
+  // An empty one's head sits just before its first seq and has no hash.
+  const headOk = empty ? m.headSeq === m.firstSeq - 1 && m.headHash === null : m.headSeq === expect - 1 && m.headHash === lastHash;
+  if (m.firstSeq !== page.firstSeq || m.headSeq !== pinned || m.count !== done || !headOk) {
     throw new Error('The export doesn’t match its signature.');
   }
   parts.push(`\n],"manifest":${JSON.stringify(m, null, 2)}}\n`);
