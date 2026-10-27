@@ -34,7 +34,8 @@ export function PageHeader({
 }) {
   const content = (
     <>
-      <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-page)', lineHeight: 1.2, fontWeight: 700, color: 'var(--tx)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, whiteSpace: 'nowrap' }}>
+      {/* The title keeps its width (only the fleet ID yields); a very long agent name wraps instead of overlapping. */}
+      <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-page)', lineHeight: 1.2, fontWeight: 700, color: 'var(--tx)', margin: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, flexShrink: 0, maxWidth: '60%', overflowWrap: 'anywhere' }}>
         {title}
       </h1>
       {fleetId && (

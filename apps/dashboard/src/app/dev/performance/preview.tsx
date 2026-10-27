@@ -16,9 +16,11 @@ import { dailySavings } from '@/lib/analytics-metrics';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { statusLine } from '@/lib/diagnosis/model';
-import type { DiagnosisFinding, FleetDiagnosis, PerformanceCostForecastResult, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
+import type { AgentBudgetForecast, DiagnosisFinding, FleetDiagnosis, PerformanceCostForecastResult, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
 import { CostTrackingSection } from '@/app/(citadel)/performance/_components/CostTracking';
+import { AgentBudgetsSection, type AgentBudgetsApi } from '@/app/(citadel)/performance/_components/AgentBudgets';
+import { capRuleFor } from '@/lib/agent-budgets';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
   runId: `${agentId}~${daysAgo}`, agentId, shift: 10 - daysAgo, startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), endedAt: new Date().toISOString(),
@@ -137,17 +139,18 @@ export function PerformancePreview() {
             <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
               <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub="last 24 h" />
               <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>{fmtCost(CARDS.savedMicros)}</>} sub={savingsCaption(CARDS.savedTokens, 0)} />
-              <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value={fmtCost(CARDS.spendMicros / CARDS.hours)} sub="spend per hour, on average" />
+              <StatCard variant="card" label="Average per hour" hint={HELP.hourlySpend} value={fmtCost(CARDS.spendMicros / CARDS.hours)} sub="over every hour shown, quiet ones too" />
               <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(CARDS.compression)} />
             </div>
           )}
           {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
+          {sample !== 'empty' && <div style={{ marginTop: 24, marginBottom: -24 }}><AgentBudgetsSection key={sample} fleetId="acme-claims-prod" agentIds={['lead-agent', 'code-reviewer', 'writer-agent']} api={previewBudgetsApi()} /></div>}
           <SavingsChart days={dailySavings(sample === 'empty' ? [] : ENTRIES, 7, Date.now())} />
         </section>
         {sample !== 'empty' && (
           <section aria-labelledby="pv-control" style={{ display: 'grid', gap: 12 }}>
             <h2 id="pv-control" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Control</h2>
-            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+            <div className="wr-perf-strip wr-perf-strip--1" style={{ marginBottom: 0 }}>
               <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={tallyTotal(CARDS.rules).toLocaleString()} sub={tallyShort(CARDS.rules)} />
             </div>
           </section>
@@ -155,7 +158,7 @@ export function PerformancePreview() {
         {sample !== 'empty' && (
           <section aria-labelledby="pv-performance" style={{ display: 'grid', gap: 16 }}>
             <h2 id="pv-performance" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Performance</h2>
-            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+            <div className="wr-perf-strip wr-perf-strip--2" style={{ marginBottom: 0 }}>
               <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(CARDS.failed / CARDS.calls)} sub={`${CARDS.failed} of ${CARDS.calls}`} />
               <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub="median time per call" />
             </div>
@@ -167,4 +170,21 @@ export function PerformancePreview() {
       </div>
     </AppShell>
   );
+}
+
+/** Sample budgets for the preview: kept in the page, never sent anywhere. */
+function previewBudgetsApi(): AgentBudgetsApi {
+  let agents: AgentBudgetForecast[] = [
+    { agentId: 'lead-agent', budgetUsd: 20, spentTodayUsd: 6.42, burnRateUsdPerHour: 1.1, callsLeft: 214, callsLeftReason: 'available' },
+    { agentId: 'code-reviewer', budgetUsd: 5, spentTodayUsd: 5.31, burnRateUsdPerHour: 0.6, callsLeft: 0, callsLeftReason: 'available' },
+  ];
+  return {
+    list: async (fleetId) => ({ fleetId, budgetPeriod: 'day', budgetTimeZone: 'UTC', agents }),
+    set: async (_f, agentId, usd) => {
+      agents = agents.filter((a) => a.agentId !== agentId);
+      if (usd !== null) agents.push({ agentId, budgetUsd: usd, spentTodayUsd: 0, burnRateUsdPerHour: null, callsLeft: null, callsLeftReason: 'no_history' });
+    },
+    rules: async () => [],
+    addCap: async (_f, agentId, usd) => ({ id: 'gr_preview', fleetId: 'acme-claims-prod', version: 1, changedBy: 'preview', changedAt: new Date().toISOString(), ...capRuleFor(agentId, usd) }),
+  };
 }

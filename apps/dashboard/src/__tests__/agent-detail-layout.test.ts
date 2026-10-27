@@ -50,6 +50,21 @@ describe('agent page, what it leaves out', () => {
   });
 });
 
+describe('agent page, Current run', () => {
+  it('keeps the header to the run number and puts its figures in the card', () => {
+    const html = renderToStaticMarkup(h(AgentDetail, {
+      fleetId: 'f', agentId: 'lead-agent', from: 'home',
+      preview: {
+        agent: { agentId: 'lead-agent', status: 'working', watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.4, tokensUsed: 12_400 },
+        handover: null, entries: [], rules: [],
+      },
+    }));
+    const panel = html.slice(html.indexOf('Current run'), html.indexOf('Progress notes'));
+    expect(panel).toMatch(/class="wr-panel__count">#8<\/span>/);
+    expect(panel).toMatch(/<p[^>]*>62 tasks · 9\.4 min worked · 12(\.4)?K tokens<\/p>/);
+  });
+});
+
 describe('weekWindow', () => {
   it('starts at local midnight six days ago and counts whole hours back to it', () => {
     const now = new Date(2026, 9, 27, 15, 30).getTime();

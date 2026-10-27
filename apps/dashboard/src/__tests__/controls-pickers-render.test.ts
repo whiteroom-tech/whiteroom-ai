@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GroupPicker, ScopeField, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
+import { GroupPicker, InlineSelect, ScopeField, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -77,7 +77,7 @@ describe('ScopeField', () => {
     await choose(el.querySelector('select[aria-label="Which agents this rule applies to"]')!, 'some');
     expect(onChange).toHaveBeenLastCalledWith([]);
     await act(async () => { root.render(h(ScopeField, { scope: ['a1'], agents: ['a1', 'a2'], onChange })); });
-    expect([...el.querySelectorAll('select[aria-label="Add an agent"] option')].map((o) => o.textContent)).toEqual(['+ add agent', 'a2', 'Other (type an agent name)…']);
+    expect([...el.querySelectorAll('select[aria-label="Add an agent"] option')].map((o) => o.textContent)).toEqual(['+ Add agent', 'a2', 'Other (type an agent name)…']);
     await choose(el.querySelector('select[aria-label="Add an agent"]')!, 'a2');
     expect(onChange).toHaveBeenLastCalledWith(['a1', 'a2']);
     await act(async () => { (el.querySelector('button[aria-label="Remove a1"]') as HTMLButtonElement).click(); });
@@ -116,6 +116,35 @@ describe('ScopeField with no agents yet', () => {
     await type(el.querySelector('input[aria-label="Other (type an agent name)…"]') as HTMLInputElement, ' keyword-test ');
     await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'Add') as HTMLButtonElement).click(); });
     expect(onChange).toHaveBeenLastCalledWith(['keyword-test']);
+    root.unmount();
+  });
+});
+
+describe('Editor controls look like buttons and selects, and stay real controls', () => {
+  it('shows "+ Add tool" as a button over a labelled, usable native menu', async () => {
+    const onChange = vi.fn();
+    const { el, root } = await mount(h(GroupPicker, { values: [], onChange, groups: GROUPS, addLabel: '+ Add tool', ariaLabel: 'Add a tool', otherLabel: 'Other…', placeholder: 'tool' }));
+    const button = el.querySelector('.gov-addpick')!;
+    expect(button.classList.contains('wr-btn')).toBe(true);
+    expect(button.querySelector('[aria-hidden="true"]')?.textContent).toBe('+ Add tool');
+    const select = button.querySelector('select')!;
+    expect(select.getAttribute('aria-label')).toBe('Add a tool');
+    expect(select.disabled).toBe(false);
+    expect(select.tabIndex).not.toBe(-1);
+    await choose(select, 'm-a');
+    expect(onChange).toHaveBeenLastCalledWith(['m-a']);
+    root.unmount();
+  });
+
+  it('dresses a native select in the shared select style, with its label', async () => {
+    const onChange = vi.fn();
+    const { el, root } = await mount(h(InlineSelect<'run' | 'day'>, { label: 'Limit period', value: 'run', options: ['run', 'day'], onChange }));
+    const wrap = el.querySelector('.wr-select.gov-select')!;
+    const select = wrap.querySelector('select')!;
+    expect(select.getAttribute('aria-label')).toBe('Limit period');
+    expect(wrap.querySelector('svg')).not.toBeNull();
+    await choose(select, 'day');
+    expect(onChange).toHaveBeenLastCalledWith('day');
     root.unmount();
   });
 });
