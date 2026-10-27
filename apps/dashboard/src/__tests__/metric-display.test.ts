@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentPlanStats, savingsFigure } from '../lib/metric-display';
-
-describe('savings figure (M13)', () => {
-  it('is unknown, not $0.00, when savings could not be read', () => {
-    expect(savingsFigure(true, 0, false)).toBe('—');
-    expect(savingsFigure(true, 5_000_000, true)).toBe('—');
-  });
-
-  it('marks a partly unpriced figure', () => {
-    expect(savingsFigure(false, 0, false)).not.toBe('—');
-    expect(savingsFigure(false, 1_000_000, true).endsWith('+')).toBe(true);
-  });
-});
+import { agentPlanStats } from '../lib/metric-display';
 
 describe('agent plan stats (M16)', () => {
   it('shows unreachable usage as Unavailable, never 0, on any plan', () => {

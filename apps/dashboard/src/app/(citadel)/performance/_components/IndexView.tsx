@@ -131,14 +131,15 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   const flagged = useFlaggedRuns(fleetId, authKey);
   // Smaller context: the fleet report's compression ratio over all time (it doesn't follow the range; the card says so).
   // null until it loads, if it can't, or if the engine doesn't send it: never shown as 0.
-  const [compression, setCompression] = useState<number | null>(null);
+  // Kept with the fleet it came from, so another fleet's figure never shows after a switch.
+  const [compressionFor, setCompressionFor] = useState<{ fleetId: string; value: number | null } | null>(null);
+  const compression = compressionFor?.fleetId === fleetId ? compressionFor.value : null;
   // Read again with each page refresh (loadedAt); a failed read keeps the last figure.
   useEffect(() => {
     let live = true;
-    fleetReport(fleetId, authKey).then((r) => { if (live && !r.error) setCompression(r.energySavings?.compressionRatio ?? null); }, () => {});
+    fleetReport(fleetId, authKey).then((r) => { if (live && !r.error) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null }); }, () => {});
     return () => { live = false; };
   }, [fleetId, authKey, loadedAt]);
-  useEffect(() => { setCompression(null); }, [fleetId]);
   const seeFindings = () => {
     setDiagnosisNotice(null);
     setRecStatus('open');
