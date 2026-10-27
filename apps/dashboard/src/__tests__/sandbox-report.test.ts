@@ -21,6 +21,9 @@ function run(over: Partial<RunStatusResult> = {}): RunStatusResult {
   };
 }
 
+/** The report's readable text, above the technical details (which keep raw engine types). */
+const readable = (html: string) => { const body = html.replace(/<style>[\s\S]*?<\/style>/, ''); return body.slice(0, body.indexOf('Technical details')).replace(/<[^>]+>/g, ' '); };
+
 describe('sandbox test report', () => {
   it('reads the checks from the same live evidence the page shows', () => {
     const r = buildTestReport(run());
@@ -31,10 +34,10 @@ describe('sandbox test report', () => {
 
   it('says only what the passed checks support, in plain words', () => {
     expect(summaryText(buildTestReport(run()))).toBe(
-      'demo-agent made 20 calls through WhiteRoom over 5 min 4 s, and they came back normally. When its memory filled up, WhiteRoom saved a summary once, keeping its context compact. The agent carried on from where it left off.');
+      'demo-agent made 20 calls through WhiteRoom over 5 min 4 s, and they came back normally. When the task ran long, it kept going. Its next call went through normally.');
     const early = buildTestReport(run({ controls: [control('core.connect', 25), control('core.handoff', null), control('core.resume', null)] as unknown as RunStatusResult['controls'] }));
     expect(early.passed).toBe(1);
-    expect(summaryText(early)).toContain('saving a summary wasn’t checked');
+    expect(summaryText(early)).toContain('The task hadn’t run long by the time of this report, so that wasn’t checked.');
     expect(summaryText(buildTestReport(run({ controls: [], agents: [], auditLog: [] })))).toContain('hasn’t completed a call');
   });
 
@@ -47,7 +50,8 @@ describe('sandbox test report', () => {
     const html = reportHtml(buildTestReport(run({ agents: [{ ...run().agents![0], agentId: '<b>x</b>' }] })));
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('All 3 checks passed');
-    expect(html).toContain('It keeps working');
+    expect(html).toContain('It keeps going on long tasks');
+    expect(readable(html)).not.toMatch(/summar|memory|where it left off|break/i);
     expect(html).not.toContain('<b>x</b>');
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
     expect(html).not.toMatch(/<script|https?:\/\/(?!www\.w3)/);
@@ -67,8 +71,8 @@ describe('sandbox test report', () => {
     const noConnect = withControls([failed('core.connect', 'upstream 401')]);
     expect(noConnect.checks[0]).toMatchObject({ result: 'failed', detail: 'upstream 401' });
     expect(summaryText(noConnect)).toBe('demo-agent reached WhiteRoom, but its calls didn’t come back normally (upstream 401).');
-    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('saving a summary didn’t complete (no handover doc)');
-    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call after the summary didn’t work (next call failed)');
+    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('When the task ran long, it lost its place (no handover doc).');
+    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call didn’t work (next call failed)');
     const html = reportHtml(noConnect);
     expect(html).toContain('<td class="bad">Failed');
     expect(html).toMatch(/<h1 class="bad">0 of 3 checks passed/);
@@ -97,18 +101,16 @@ describe('sandbox test report', () => {
     expect(reportHtml(r)).toContain('first to last call');
   });
 
-  it('counts summaries and hand-offs to another agent apart, and words them apart', () => {
+  it('counts every time it kept going, and never says how', () => {
     const extra = (type: string, i: number) => ({ id: `x${i}`, timestamp: t(200 + i), type, agentId: 'demo-agent' });
     const both = buildTestReport(run({ auditLog: [...run().auditLog!, extra('paired_handover', 1), extra('handover', 2)] }));
     expect(both).toMatchObject({ handovers: 1, partnerHandoffs: 2 });
-    expect(summaryText(both)).toContain('WhiteRoom saved a summary once, keeping its context compact. It passed work to another agent 2 times.');
-    expect(both.events.filter((e) => e.text === 'passed its work to another agent')).toHaveLength(2);
-    expect(reportHtml(both)).toContain('passed to another agent');
+    expect(summaryText(both)).toContain('When the task ran long, it kept going (3 times).');
+    expect(both.events.filter((e) => e.text === 'saved its progress and kept going')).toHaveLength(3);
+    expect(readable(reportHtml(both))).not.toMatch(/another agent|summar/);
     const partnerOnly = buildTestReport(run({ auditLog: run().auditLog!.filter((e) => e.type !== 'self_handover').concat(extra('paired_handover', 1)) }));
     expect(partnerOnly).toMatchObject({ handovers: 0, partnerHandoffs: 1 });
-    expect(summaryText(partnerOnly)).toContain('It passed work to another agent once, keeping its context compact.');
-    expect(summaryText(partnerOnly)).not.toContain('saved a summary');
-    expect(reportHtml(buildTestReport(run()))).not.toContain('passed to another agent');
+    expect(summaryText(partnerOnly)).toContain('When the task ran long, it kept going.');
   });
 
   it('keeps engine notes out of passed checks, and in the technical details', () => {

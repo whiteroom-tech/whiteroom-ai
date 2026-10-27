@@ -873,3 +873,4 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-setup-page .wr-key-field { flex: 1 1 260px; min-height: 2.5rem; background: var(--card); border-color: var(--line2); border-radius: 8px; }
 .wr-setup-page .wr-key-list > li { background: none; padding: 10px 12px 10px 20px; border-radius: 10px; }
 .wr-setup-page .wr-scard__body .wr-seg { justify-self: start; }
+.wr-setup-leadwrap .wr-page-lead { margin: 0 0 24px; font-size: var(--fs-card); line-height: 1.55; color: var(--tx); max-width: none; }

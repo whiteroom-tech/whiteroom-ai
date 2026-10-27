@@ -1,6 +1,6 @@
 // Sandbox polish from walking the flow as a new user: Connect offers "No code
 // change" only where it works, says what to put in x-whiteroom-agent, the
-// Start form asks for the API key first (fleet token as a side note) and says
+// Start form asks for the provider key first (fleet token as a side note) and says
 // where to find it, and the remembered provider is tagged "Last used".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,10 +70,10 @@ describe('Start your test: the key field', () => {
   const field = (credential = '', provider: 'anthropic' | 'openai' = 'anthropic') =>
     renderToStaticMarkup(createElement(KeyField, { credential, showKey: false, provider, onChange: noop, onToggleShow: noop }));
 
-  it('asks for the API key, with the fleet token as a side note', () => {
+  it('asks for the provider key, with the fleet token as a side note', () => {
     const empty = field();
     expect(empty).toContain('<label class="');
-    expect(empty).toMatch(/for="sandbox-key">Your agent’s API key<\/label>/);
+    expect(empty).toMatch(/for="sandbox-key">Your agent’s provider key<\/label>/);
     expect(empty).not.toContain('or a WhiteRoom fleet token');
     expect(empty).toContain('Have a WhiteRoom fleet token? Paste it instead.');
     // Placeholder prefixes stay.

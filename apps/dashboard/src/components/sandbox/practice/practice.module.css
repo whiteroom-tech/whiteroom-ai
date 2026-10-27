@@ -1,7 +1,6 @@
 /* Practice tests: only what guided.module.css doesn't already have. */
 
-.entryCard { max-width:640px; margin-top:20px; }
-.entryCard h2 { font-size: var(--fs-md); }
+.entryCard { margin: 24px 0 16px; }
 
 .wrap { max-width:720px; }
 .list { margin:6px 0 0; padding-left:18px; font-size: var(--fs-sm); color:var(--tx2); line-height:1.7; }

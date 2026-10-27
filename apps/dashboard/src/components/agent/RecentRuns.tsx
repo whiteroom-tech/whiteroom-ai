@@ -20,7 +20,7 @@ export function RecentRuns({ agentId, state }: { agentId: string; state: RecentR
   const note = (text: string) => <p style={{ margin: 0, padding: '14px 20px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{text}</p>;
   return (
     <Panel title="Recent runs" bodyPadding={0} actions={all}>
-      {state.kind === 'unsupported' ? note('Run summaries aren’t available yet. Runs shows this agent’s events.')
+      {state.kind === 'unsupported' ? note('Recent runs aren’t available yet. Runs shows this agent’s events.')
         : state.kind === 'loading' ? note('Loading…')
           : state.kind === 'failed' ? note('Couldn’t load recent runs. Reload to try again.')
             : state.runs.length === 0 ? note('No runs in the last 7 days.')

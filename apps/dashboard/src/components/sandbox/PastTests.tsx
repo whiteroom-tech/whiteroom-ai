@@ -182,7 +182,7 @@ export function PastTests({ preview, onDemo, previewOpen, practice }: {
             expandedKey={open ?? undefined}
             renderExpanded={(r) => (r.test ? <PastTestDetail test={r.test} onClose={close} /> : <PracticePastDetail row={r.practice} onClose={close} />)}
             columns={[
-              { key: 'when', header: 'Ended', width: '150px', render: (r) => <span style={{ fontFamily: FONT_MONO, color: 'var(--tx2)' }}>{ended(r.at)}</span> },
+              { key: 'when', header: 'Ended', width: '150px', render: (r) => <span style={{ color: 'var(--tx)' }}>{ended(r.at)}</span> },
               { key: 'result', header: 'Result', width: 'minmax(160px, 1fr)', render: (r) => {
                 const shown = r.test ? RESULT[pastResult(r.test)] : practiceResult(r.practice);
                 return <Tag tone={shown?.tone ?? 'muted'}>{shown?.label ?? r.test?.overall}</Tag>;

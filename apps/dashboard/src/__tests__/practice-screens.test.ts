@@ -291,7 +291,7 @@ describe('the Sandbox screens practice tests are added to', () => {
   it('the start screen card, only once practice tests answered', () => {
     expect(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: null, open: null } }))).toBe('');
     expect(text(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: [], open: null } }))))
-      .toContain('Try your agent on practice tasks 5 practice tasks and a check of your controls, about 5–10 min for one run, about 50 model calls on your key. Set up a practice test →');
+      .toContain('Try your agent on practice tasks 5 practice tasks and a check of your rules · about 5–10 min · about 50 model calls on your key Set up a practice test →');
   });
 
   it('Ready to go live gains one line, only when practice tests are available', () => {

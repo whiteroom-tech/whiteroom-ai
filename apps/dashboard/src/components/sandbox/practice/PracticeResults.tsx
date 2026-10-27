@@ -86,7 +86,6 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
 
   return (
     <div className={p.wrap}>
-      <div className={s.eyebrow}>WHITEROOM / SANDBOX / PRACTICE TEST</div>
       <div className={`${s.summary} ${tone}`}>
         <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)' }}>{head}</h2>
         <div>{[run.sourceFleetId, who, model, run.endedAt && when(run.endedAt)].filter(Boolean).join(' · ')}</div>
