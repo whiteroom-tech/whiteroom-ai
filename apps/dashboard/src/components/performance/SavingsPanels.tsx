@@ -51,7 +51,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
   const energy = fmtEnergy(days.reduce((n, d) => n + d.saved, 0));
 
   return (
-    <Panel title={<>Savings<Hint text={HELP.savings} /></>} count={energy ? `last 7 days · ${energy} saved` : 'last 7 days'}>
+    <Panel title={<>Savings<Hint text={HELP.savingsChart} /></>} count={energy ? `last 7 days · ${energy} saved` : 'last 7 days'}>
       {empty ? (
         <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No model calls in the last 7 days.</p>
       ) : (

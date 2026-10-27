@@ -27,10 +27,10 @@ export function StatCard({ label, value, variant = 'tile', hint, suffix, sub, su
       </div>
     );
   }
-  const subStyle: React.CSSProperties = { display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs, 0.875rem)', marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  // The caption wraps as far as it needs and is never cut, so a key figure always reads whole.
+  const subStyle: React.CSSProperties = { display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs, 0.875rem)', marginTop: 6, overflowWrap: 'anywhere' };
   return (
-    // wr-stat-card / wr-stat-sub: the dashboard's stat strips line the cards'
-    // rows up and let the caption wrap on phones (globals.css).
+    // wr-stat-card: the dashboard's stat strips line the cards' rows up (globals.css).
     <div className="wr-stat-card" style={{ background: color.card, border: `1px solid ${color.line}`, borderRadius: 14, padding: '16px 18px', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', fontSize: 'var(--fs-sm, 0.96875rem)', fontWeight: 500, color: color.tx2 }}>
         {label}{hint && <Hint text={hint} />}

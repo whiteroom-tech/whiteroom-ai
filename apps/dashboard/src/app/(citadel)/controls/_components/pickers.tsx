@@ -5,7 +5,7 @@
 // line2 border, 7px corners).
 
 import { useState } from 'react';
-import { FONT_MONO } from '@whiteroom/ui';
+import { FONT_MONO, Icon } from '@whiteroom/ui';
 import type { GovernanceScope } from '@/lib/whiteroom/types';
 
 export const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 'var(--fs-sm)', minHeight: '1.875rem', boxSizing: 'border-box' } as const;
@@ -70,20 +70,22 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
         {values.map((v) => <Chip key={v} label={labelOf(v)} onRemove={() => onChange(values.filter((x) => x !== v))} />)}
-        <select
-          className="gov-field"
-          aria-label={ariaLabel}
-          value=""
-          onChange={(e) => { const v = e.target.value; if (v === '__other__') setOther(''); else if (v) add(v); }}
-          style={{ ...field, padding: '0 8px', color: 'var(--tx2)', cursor: 'pointer' }}
-        >
+        {/* Looks like a button; the native menu under it keeps the keyboard and screen readers working. */}
+        <span className="wr-btn wr-btn--secondary wr-btn--h28 gov-addpick">
+          <span aria-hidden="true">{addLabel}</span>
+          <select
+            aria-label={ariaLabel}
+            value=""
+            onChange={(e) => { const v = e.target.value; if (v === '__other__') setOther(''); else if (v) add(v); }}
+          >
           <option value="">{addLabel}</option>
           {groups.map((g) => {
             const left = g.options.filter((o) => !values.includes(o.id));
             return left.length ? <optgroup key={g.label} label={g.label}>{left.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</optgroup> : null;
           })}
           <option value="__other__">{otherLabel}</option>
-        </select>
+          </select>
+        </span>
       </div>
       {other !== null && (
         <div style={{ display: 'flex', gap: 6 }}>
@@ -109,21 +111,15 @@ export function ScopeField({ scope, agents, onChange }: { scope: GovernanceScope
   const chosen = scope === 'all' ? [] : scope;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <select
-        className="gov-field"
-        aria-label="Which agents this rule applies to"
-        value={scope === 'all' ? 'all' : 'some'}
-        onChange={(e) => onChange(e.target.value === 'all' ? 'all' : [])}
-        style={{ ...field, padding: '0 8px', cursor: 'pointer', alignSelf: 'flex-start' }}
-      >
+      <FieldSelect label="Which agents this rule applies to" value={scope === 'all' ? 'all' : 'some'} onChange={(v) => onChange(v === 'all' ? 'all' : [])} style={{ alignSelf: 'flex-start' }}>
         <option value="all">All agents</option>
         <option value="some">Specific agents</option>
-      </select>
+      </FieldSelect>
       {scope !== 'all' && (
         <>
           {/* Agents the fleet has seen, or any name typed in: a rule can cover an agent before its first call. */}
           <GroupPicker values={chosen} onChange={onChange} groups={agents.length ? [{ label: 'Agents', options: agents.map((a) => ({ id: a, label: a })) }] : []}
-            addLabel="+ add agent" ariaLabel="Add an agent" otherLabel="Other (type an agent name)…" placeholder="agent name" />
+            addLabel="+ Add agent" ariaLabel="Add an agent" otherLabel="Other (type an agent name)…" placeholder="agent name" />
           {agents.length === 0 && (
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' }}>No agents have made a call yet. Pick Other to type an agent’s name.</p>
           )}
@@ -148,11 +144,21 @@ export function NumberField({ value, onChange, label }: { value: string; onChang
   );
 }
 
+/** A native select in the shared select style (the chevron SelectChip uses). */
+function FieldSelect({ label, value, onChange, style, children }: { label: string; value: string; onChange: (v: string) => void; style?: React.CSSProperties; children: React.ReactNode }) {
+  return (
+    <span className="wr-select gov-select" style={style}>
+      <select className="gov-field" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>{children}</select>
+      <Icon name="chevronDown" size={10} strokeWidth={2.5} />
+    </span>
+  );
+}
+
 /** A small select in a sentence (unit, period). */
 export function InlineSelect<V extends string>({ value, onChange, options, label }: { value: V; onChange: (v: V) => void; options: V[]; label: string }) {
   return (
-    <select className="gov-field" aria-label={label} value={value} onChange={(e) => onChange(e.target.value as V)} style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
+    <FieldSelect label={label} value={value} onChange={(v) => onChange(v as V)}>
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
+    </FieldSelect>
   );
 }

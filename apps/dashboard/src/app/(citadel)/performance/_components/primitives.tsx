@@ -9,7 +9,8 @@ export const H3: React.CSSProperties = { fontSize: 'var(--fs-md)', fontWeight: 7
 
 export function Badge({ status, size = 'normal', label }: { status: string; size?: 'normal' | 'small'; label?: string }) {
   const map: Record<string, { bg: string; tx: string }> = {
-    open: { bg: 'var(--ok-bg)', tx: 'var(--ok)' },
+    // Open is neutral: a recommendation still to look at isn't good news.
+    open: { bg: 'var(--raised)', tx: 'var(--tx2)' },
     snoozed: { bg: 'var(--warn-bg)', tx: 'var(--warn)' },
     dismissed: { bg: 'var(--line)', tx: 'var(--tx3)' },
     reported_implemented: { bg: 'var(--info-bg)', tx: 'var(--info)' },

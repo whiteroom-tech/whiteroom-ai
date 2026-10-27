@@ -286,7 +286,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                       {w && weekLine(w) && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{weekLine(w)}</div>}
                       {block && (
                         <div>
-                          <span className="wr-chip-warn">
+                          <span className="wr-chip-block">
                             <Icon name="alert" size={12} strokeWidth={2.2} />
                             Blocked by {blockedByPhrase(block.ruleType, block.reason, false)} at {clock(block.timestamp)}
                           </span>

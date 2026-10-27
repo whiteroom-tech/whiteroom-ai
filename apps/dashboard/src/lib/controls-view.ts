@@ -8,7 +8,7 @@ import type {
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
-import { DAY_MS } from '@/lib/format';
+import { DAY_MS, ordinal } from '@/lib/format';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
@@ -231,6 +231,15 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
+
+/**
+ * When a Loop breaker acts, from the number being typed: "Acts on the 100th
+ * same call." Until that's a whole number, the saved threshold.
+ */
+export function loopActs(typed: string, saved: number | undefined): string {
+  const n = /^\d+$/.test(typed.trim()) && Number(typed) > 0 ? Number(typed) : saved;
+  return n && n > 0 ? `Acts on the ${ordinal(n)} same call.` : 'Acts on the call that reaches the limit.';
+}
 
 /** A rule being edited. Numbers stay text while typed, so "1,0" isn't forced into 10. */
 export interface RuleDraft {

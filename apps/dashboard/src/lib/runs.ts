@@ -1,11 +1,11 @@
 // Pure helpers for Runs (README › Screens › 2a / 2b). A run is one agent's
 // shift; the engine's list_runs / get_run_events serve them.
 
-import type { AuditEntry, RunEvent, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
+import type { AuditEntry, RunEvent, RunEventsResult, RunFlag, RunRuleAction, RunSummary } from '@/lib/whiteroom/types';
 import type { Sheet } from '@/lib/xlsx';
 import type { IconName, TagTone } from '@whiteroom/ui';
 import { activityRow, clock } from '@/lib/home';
-import { counted, fmtTime, DAY_MS } from '@/lib/format';
+import { counted, fmtTime, DAY_MS, plural } from '@/lib/format';
 
 export type RunsPreset = 'today' | '7d' | '30d';
 export type RunsRange = RunsPreset | 'custom';
@@ -260,7 +260,7 @@ export interface TimelineRow {
 const CALL_OUTCOME: Record<string, { label: string; tone: TagTone } | undefined> = {
   upstream_error: { label: 'Failed', tone: 'warn' },
   stream_interrupted: { label: 'Interrupted', tone: 'warn' },
-  governance_blocked: { label: 'Blocked', tone: 'muted' },
+  governance_blocked: { label: 'Blocked', tone: 'block' },
   client_cancelled: { label: 'Cancelled', tone: 'muted' },
   unknown: { label: 'Status unknown', tone: 'muted' },
 };
@@ -316,6 +316,24 @@ export function runMeta(run: { startedAt: string; endedAt: string; shift: number
   const { date, time } = dateAndTime(run.startedAt);
   const length = fmtLength((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000);
   return `${date} · started ${time} ${zoneName(Date.parse(run.startedAt))} · ${length} · run ${run.shift}`;
+}
+
+/**
+ * The last words of a run's flags banner. Flags never block, but a rule may
+ * have, so the banner points there rather than saying nothing was blocked.
+ */
+export function flagsNote(actions: RunRuleAction[] | undefined): string {
+  const acted = (actions ?? []).filter((a) => a.mode === 'enforce');
+  if (acted.some((a) => a.response === 'block')) return 'Flags only point things out. Blocks are listed under Rule activity.';
+  if (acted.length) return 'Flags only point things out. What rules did is listed under Rule activity.';
+  return 'Flags only point things out; they don’t block anything.';
+}
+
+/** The Rule activity header on a run: "2 rules · 4 times". */
+export function ruleActivityCount(actions: RunRuleAction[]): string {
+  const rules = new Set(actions.map((a) => a.ruleId)).size;
+  const times = actions.reduce((n, a) => n + a.occurrences, 0);
+  return `${rules} ${plural(rules, 'rule')} · ${times} ${plural(times, 'time')}`;
 }
 
 export type RunKind = 'all' | 'events';

@@ -104,6 +104,34 @@ describe('Runs › Show › Rule activity, in the preview (no engine)', () => {
   });
 });
 
+describe('Runs › phones', () => {
+  it('lists each run as a stacked row: run · agent · time, what stood out, then length and spend', async () => {
+    const m = await mount([run(1, { lengthSeconds: 1380, spendMicros: 1_920_000, wouldActCalls: 2 })]);
+    const rows = [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')];
+    expect(rows).toHaveLength(1);
+    const [top, stood, figures] = [...rows[0].children].map((c) => c.textContent ?? '');
+    expect(top).toMatch(/^#1·lead-agent\d{1,2}:\d{2} (am|pm)$/);
+    expect(stood).toContain('A Record only rule would have acted 2 times');
+    expect(figures).toBe('23 min · $1.92');
+    expect(rows[0].getAttribute('href')).toBe('/runs/lead-agent~1');
+    // The desktop table is still there for wide screens; CSS picks one.
+    expect(m.el.querySelector('.wr-runs-table [role="grid"]')).not.toBeNull();
+    m.root.unmount();
+  });
+
+  it('lists the same runs in both views, with one pager under them', async () => {
+    api.list.mockImplementation(async () => ({ runs: [run(1), run(2), run(3)], total: 60, cursor: 'next-page' }));
+    const m = await mount();
+    const phone = [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')].map((a) => a.getAttribute('href'));
+    const table = [...m.el.querySelectorAll('.wr-runs-table [role="row"]')].map((r) => r.textContent?.match(/#(\d+)/)?.[1]).filter(Boolean).map((n) => `/runs/lead-agent~${n}`);
+    expect(phone).toEqual(['/runs/lead-agent~1', '/runs/lead-agent~2', '/runs/lead-agent~3']);
+    expect(table).toEqual(phone);
+    expect([...m.el.querySelectorAll('button')].filter((b) => b.textContent?.includes('Older'))).toHaveLength(1);
+    expect(m.text().match(/1–3 of 60/g)).toHaveLength(1);
+    m.root.unmount();
+  });
+});
+
 describe('Runs › a day by hour', () => {
   const day = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
   const at = (h: number) => { const d = new Date(`${day}T00:00:00`); d.setHours(h, 15); return d.toISOString(); };

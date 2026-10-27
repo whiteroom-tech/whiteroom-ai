@@ -115,7 +115,7 @@ export function SettingsView({
     <AppShell>
       <PageHeader title="Settings" fleetId={account.email} fleetTitle="Signed in as" />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <div ref={sections} style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+        <div ref={sections} className="wr-settings-stack" style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
 
           {banner && (
             <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined}>{banner.text}</Banner>
@@ -197,9 +197,9 @@ function ProfileSection({
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
-          {/* M15: dashboard dates follow the browser; say so rather than imply this setting moves them. */}
+          {/* M15: dashboard dates follow the browser whatever is picked here; say exactly that. */}
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', margin: '6px 0 0' }}>
-            Saved with your profile. Dashboard dates and day boundaries use this browser&apos;s time zone ({browserZone}).
+            The dashboard always shows dates and days in this browser&apos;s time zone ({browserZone}). What you pick here is only saved with your profile.
           </p>
         </div>
         <div>
