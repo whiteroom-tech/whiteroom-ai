@@ -126,6 +126,11 @@ describe('chart scrolling (phones)', () => {
     expect(wrap.scrollLeft).toBe(40);
     await render('Tue, Oct 27', [{ hour: 6, runs: 3 }]);
     expect((el.querySelector('.wr-strip-scroll') as HTMLElement).scrollLeft).toBe((6.5 / 24) * 960 - 160);
+    // A day with no runs yet waits, then opens on its first busy hour once one arrives.
+    await render('Wed, Oct 28', []);
+    expect(el.querySelector('.wr-strip-scroll')).toBeNull();
+    await render('Wed, Oct 28', [{ hour: 12, runs: 1 }]);
+    expect((el.querySelector('.wr-strip-scroll') as HTMLElement).scrollLeft).toBe((12.5 / 24) * 960 - 160);
     await act(async () => root.unmount());
     el.remove();
   });

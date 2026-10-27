@@ -343,6 +343,8 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
 }
 
 const START_EVENT = /^(watch_start|run_started)$/;
+// A rule that really acted (a Record only "would block" is not one).
+const BAD_EVENT = /^governance_(block|blocked|pause|stop)$/;
 // The run's own end; a finished task within the run stays a plain event.
 const DONE_EVENT = /^(watch_end|run_ended|run_finished)$/;
 
@@ -371,7 +373,7 @@ export function timelineRow(e: RunEvent, prevModel: string | null = null): Timel
   // be the previous run's; the Rule activity card above counts this run exactly.
   const detail = isRule ? { ...(e.detail ?? {}), occurrences: undefined } : e.detail;
   const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0]);
-  const glyph: TimelineGlyph = START_EVENT.test(e.type) ? 'start' : DONE_EVENT.test(e.type) ? 'done' : /block|refus|stop/.test(e.type) ? 'bad' : 'event';
+  const glyph: TimelineGlyph = START_EVENT.test(e.type) ? 'start' : DONE_EVENT.test(e.type) ? 'done' : BAD_EVENT.test(e.type) ? 'bad' : 'event';
   return { id: e.id, time: row.time, sameTime: false, text: glyph === 'start' ? 'Run started' : row.text, tag: row.tag, glyph };
 }
 

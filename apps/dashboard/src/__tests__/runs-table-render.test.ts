@@ -149,6 +149,19 @@ describe('Runs › phones', () => {
     m.root.unmount();
   });
 
+  it('frees Show more when the load it asked for fails', async () => {
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
+      const from = Number(o.cursor ?? 0);
+      return { runs: Array.from({ length: Math.min(o.pageSize, 25) }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + 25) };
+    });
+    const m = await mount();
+    api.list.mockRejectedValue(new Error('503'));
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs'));
+    const more = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs');
+    expect(more?.disabled).toBe(false);
+    m.root.unmount();
+  });
+
   it('keeps the old rows, dimmed, while a new filter loads, and offers 30 days when a range is empty', async () => {
     const m = await mount();
     let release: () => void = () => {};

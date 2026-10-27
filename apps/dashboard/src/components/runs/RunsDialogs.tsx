@@ -5,7 +5,7 @@ import { Button, SelectChip } from '@whiteroom/ui';
 import { DialogFrame } from '@/components/citadel/DialogFrame';
 import { fmtCount } from '@/lib/format';
 import { saveBlob } from '@/lib/download';
-import { auditIntegrity, verifyAudit } from '@/lib/whiteroom/client';
+import { auditIntegrity, isAuthError, verifyAudit } from '@/lib/whiteroom/client';
 import type { AuditIntegrity, VerifyAuditResult } from '@/lib/whiteroom/types';
 import { dayLabel, exportDays, zoneName, type ExportSpan } from '@/lib/runs';
 
@@ -78,12 +78,14 @@ type AuditCheck =
  * Check audit trail: runs the engine's chain check when opened and says what
  * it found, plainly. Download proof saves the check's result as a file.
  */
-export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded, preview }: {
+export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded, onAuthError, preview }: {
   open: boolean;
   fleetId: string | null;
   authKey?: string;
   onClose: () => void;
   onDownloaded: () => void;
+  /** The session expired: the page signs out, as its own loads do. */
+  onAuthError?: () => void;
   /** /dev/runs: a sample result; nothing is fetched. */
   preview?: { result: VerifyAuditResult; info: AuditIntegrity | null };
 }) {
@@ -100,8 +102,10 @@ export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded
       const result = await verifyAudit(fleetId, authKey);
       const info = await auditIntegrity(fleetId, authKey).catch(() => null);
       if (live()) setCheck({ state: 'done', result, info, at: Date.now() });
-    } catch {
-      if (live()) setCheck({ state: 'failed' });
+    } catch (e) {
+      if (!live()) return;
+      if (isAuthError(e)) { onAuthError?.(); return; }
+      setCheck({ state: 'failed' });
     }
   }
   function close() {

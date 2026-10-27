@@ -85,6 +85,21 @@ describe('Check audit trail dialog', () => {
   });
 });
 
+describe('Check audit trail dialog › expired session', () => {
+  it('hands an expired session to the page instead of saying the check failed', async () => {
+    const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
+    api.verify.mockRejectedValue(new WhiteRoomApiError('HTTP 401', 401));
+    const onAuthError = vi.fn();
+    const props = { fleetId: 'f1', onClose: () => {}, onDownloaded: () => {}, onAuthError };
+    const m = await mount(h(AuditCheckDialog, { ...props, open: false }));
+    await m.render(h(AuditCheckDialog, { ...props, open: true }));
+    await flush();
+    expect(onAuthError).toHaveBeenCalled();
+    expect(m.el.textContent).not.toContain('The check didn’t run.');
+    m.root.unmount();
+  });
+});
+
 describe('Export runs dialog', () => {
   it('offers what’s shown first when given, else the last 7 days, and hands back days and agent', async () => {
     const onDownload = vi.fn();

@@ -129,6 +129,9 @@ describe('run detail rows', () => {
     expect(timelineRow({ id: 'e1', kind: 'event', at, type: 'watch_end', detail: { agentId: 'a' } }).glyph).toBe('done');
     // A finished task is part of the run, not its end.
     expect(timelineRow({ id: 'e3', kind: 'event', at, type: 'task_complete', detail: { agentId: 'a' } }).glyph).toBe('event');
+    // A Record only rule's would-block, or a stop that isn't a rule's, is no ✕.
+    expect(timelineRow({ id: 'e4', kind: 'event', at, type: 'governance_would_block', detail: { agentId: 'a', ruleType: 'spend_cap' } }).glyph).toBe('event');
+    expect(timelineRow({ id: 'e5', kind: 'event', at, type: 'agent_stopped', detail: { agentId: 'a' } }).glyph).toBe('event');
     expect(timelineRow({ id: 'e2', kind: 'event', at, type: 'governance_block', detail: { agentId: 'a', ruleType: 'spend_cap' } }).glyph).toBe('bad');
   });
   it('shows the model only when it changes, and quiets a repeated time', () => {

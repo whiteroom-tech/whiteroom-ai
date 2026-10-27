@@ -177,6 +177,8 @@ export function RunsTable({ preview, retentionDays }: {
   const [total, setTotal] = useState(preview?.runs.length ?? 0);
   // A new filter keeps the old rows on screen, dimmed, until its own arrive.
   const [loading, setLoading] = useState(false);
+  // Show more's own wait: cleared when its load lands or fails, so the button never sticks.
+  const [moreBusy, setMoreBusy] = useState(false);
   const [agents, setAgents] = useState<string[]>(() => (preview ? [...new Set(preview.runs.map((r) => r.agentId))].sort() : []));
   const [unsupported, setUnsupported] = useState(false);
   const [failing, setFailing] = useState(false);
@@ -270,6 +272,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (got.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
       setTotal(count);
       setLoading(false);
+      setMoreBusy(false);
       setFailing(false);
       setUpdatedAt(Date.now());
     } catch (e) {
@@ -277,6 +280,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       // The old rows stay usable (not dimmed) under the refresh-failed note; the poll retries.
       setLoading(false);
+      setMoreBusy(false);
       setFailing(true);
     }
   }, [fleetId, authKey, range, day, hour, from, to, agent, flaggedOnly, rulesOnly, limit, resetSession, preview]);
@@ -508,7 +512,7 @@ export function RunsTable({ preview, retentionDays }: {
               </div>
               {more && (
                 <div className="wr-table__foot">
-                  <Button size={32} busy={!preview && !!runs && runs.length < limit && runs.length < total} busyLabel="Loading…" onClick={() => setLimit((l) => l + PAGE)}>Show more runs</Button>
+                  <Button size={32} busy={moreBusy} busyLabel="Loading…" onClick={() => { if (!preview) setMoreBusy(true); setLimit((l) => l + PAGE); }}>Show more runs</Button>
                 </div>
               )}
               </>
@@ -522,7 +526,7 @@ export function RunsTable({ preview, retentionDays }: {
       </div>
 
       <ExportRunsDialog open={exportOpen} agents={agents} initialAgent={agent} shown={exportShown} busy={exporting} error={exportError} onDownload={(c) => void exportRuns(c)} onCancel={() => setExportOpen(false)} />
-      <AuditCheckDialog open={auditOpen} fleetId={fleetId} authKey={authKey} preview={preview?.audit} onClose={() => setAuditOpen(false)} onDownloaded={() => { setAuditOpen(false); setToast('Downloaded the audit check report.'); }} />
+      <AuditCheckDialog open={auditOpen} fleetId={fleetId} authKey={authKey} preview={preview?.audit} onClose={() => setAuditOpen(false)} onDownloaded={() => { setAuditOpen(false); setToast('Downloaded the audit check report.'); }} onAuthError={() => { setAuditOpen(false); resetSession('Your session expired. Please sign in again.'); }} />
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   );
