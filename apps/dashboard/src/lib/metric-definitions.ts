@@ -19,7 +19,7 @@ export const HELP = {
   smallerHandovers: "How much smaller WhiteRoom keeps each agent's context than its full history, on average.",
   savings: `An estimate of money not spent. WhiteRoom keeps each agent's context small, so later calls send fewer tokens. When an agent has to redo work, the tokens it spent redoing it are taken off. Each agent's saved tokens are valued at the input price it actually pays, cache discounts included. Prompt caching counts only where WhiteRoom added it: what those cache reads saved, less what the cache writes cost. Caching your agents already do on their own isn't counted. A "+" means some tokens had no price on file. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, also an estimate.`,
   agentsWorking: 'Agents doing a task right now, out of all the agents connected to this fleet.',
-  modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight UTC.',
+  modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight in your time zone.',
   spendToday: "What today's model calls cost, at your AI provider's prices.",
   needsYou: 'Things only a person can decide: an agent that was paused or stopped, or a run that did something unusual. When this is empty, nothing needs you.',
   agents: 'Every agent connected to this fleet. Working: doing a task. Resting: a short planned break. Idle: waiting for work. Paused or Stopped: held by a rule or a person.',

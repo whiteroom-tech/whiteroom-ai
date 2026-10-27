@@ -51,7 +51,7 @@ const LIVE: AuditEntry[] = [
 const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks, paused: 0, stopped: 0, toldYou: 0 });
 const score = (agentId: string, s: number, completeRate: number, speedScore: number | null) => ({ agentId, calls: 40, completeRate, costDiligence: null, speedScore, score: s });
 const WEEK = {
-  calls: 1180, costUsd: 14.2, rules: tally(2, 47),
+  calls: 1180, costUsd: 14.2, partial: false, rules: tally(2, 47),
   agents: {
     'lead-agent': { used: 182_000, saved: 61_000, savedUsd: 1.83, rules: tally(2, 5), score: score('lead-agent', 9, 96, 88) },
     'writer-agent': { used: 94_000, saved: 30_500, savedUsd: 0.92, score: score('writer-agent', 8, 92, 70) },

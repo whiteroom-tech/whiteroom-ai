@@ -41,7 +41,7 @@ describe('Home agents: one list', () => {
     // The hourly read failed: no week totals, never zeros.
     expect(w.calls).toBeNull();
     expect(w.costUsd).toBeNull();
-    expect(homeWeek(null, null, { unsupported: true }, null)).toEqual({ agents: {}, calls: null, costUsd: null, rules: null });
+    expect(homeWeek(null, null, { unsupported: true }, null)).toEqual({ agents: {}, calls: null, costUsd: null, partial: false, rules: null });
     // Week totals count only hours from the week's start, the same 7 days as the rest.
     const h = (hour: string, calls: number) => ({ hour, calls, costMicros: calls * 10_000 });
     const since = Date.parse('2026-10-20T04:00:00Z');
@@ -68,9 +68,11 @@ describe('Home view', () => {
   } as never));
 
   it('says the day starts at the viewer’s midnight, and leads a quiet day with the week', () => {
-    const html = view({ week: { agents: {}, calls: 1234, costUsd: 3.17, rules: tally({ wouldBlocks: 120 }) } });
+    const html = view({ week: { agents: {}, calls: 1234, costUsd: 3.17, partial: false, rules: tally({ wouldBlocks: 120 }) } });
     expect(html).toMatch(/Today.*since 12:00 am/);
     expect(html).toContain('Quiet so far today. This week: 1,234 model calls, $3.17 spent; rules: 120 would have acted (Record only).');
+    // A lower bound says so.
+    expect(view({ week: { agents: {}, calls: 3, costUsd: 1, partial: true, rules: null } })).toContain('$1.00+ spent');
   });
 
   it('shows today’s rule activity, linking to those runs', () => {
@@ -83,7 +85,7 @@ describe('Home view', () => {
   });
 
   it('never cuts a name off, and shows each agent’s last 7 days', () => {
-    const html = view({ week: { agents: { 'lead-agent': { used: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, rules: null } });
+    const html = view({ week: { agents: { 'lead-agent': { used: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).toContain('a-very-long-agent-name-that-must-not-be-cut-off');
     expect(html).toContain('overflow-wrap:anywhere');
     expect(html).toContain('Last 7 days: 120K tokens · saved $1.20 · 2 blocked');
@@ -94,12 +96,13 @@ describe('Home view', () => {
     const big = view({ report: REPORT(many.length), agents: many });
     expect(big).toContain('role="grid"');
     expect(big).toContain('aria-label="Find an agent"');
+    expect(big).toContain('Agents that need attention are listed first.');
     expect(view({ report: REPORT(many.length), agents: many, view: 'cards' })).not.toContain('role="grid"');
     expect(view({})).not.toContain('aria-label="Find an agent"');
   });
 
   it('shows – for tokens it couldn’t read, never 0', () => {
-    const html = view({ view: 'table', week: { agents: { 'lead-agent': { rules: tally({ blocks: 1 }) } }, calls: null, costUsd: null, rules: null } });
+    const html = view({ view: 'table', week: { agents: { 'lead-agent': { rules: tally({ blocks: 1 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).not.toMatch(/Last 7 days: 0 tokens/);
     expect(html).toContain('1 blocked');
   });

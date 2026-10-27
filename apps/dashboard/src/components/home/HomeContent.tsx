@@ -234,7 +234,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           <h2 id="home-today" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Today <span style={{ fontWeight: 400, color: 'var(--tx2)' }}>· since 12:00 am {zoneName()}</span></h2>
           {quiet && (
             <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx2)' }}>
-              Quiet so far today.{week && week.calls !== null && <> This week: {week.calls.toLocaleString('en-US')} model call{week.calls === 1 ? '' : 's'}{week.costUsd !== null && <>, {usd(week.costUsd)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
+              Quiet so far today.{week && week.calls !== null && <> This week: {week.calls.toLocaleString('en-US')} model call{week.calls === 1 ? '' : 's'}{week.costUsd !== null && <>, {usd(week.costUsd)}{partialMark(week.partial)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
             </p>
           )}
         <div className="wr-home-strip">
@@ -319,7 +319,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             />
           )}
           <p style={{ margin: 0, padding: '10px 18px 14px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', borderTop: '1px solid var(--line)' }}>
-            Agents that need attention are listed first. Score is out of 10: the average of clean calls, speed and (once a task type is set) cost.
+            {sort === 'attention' || !finding ? 'Agents that need attention are listed first. ' : ''}Score is out of 10: the average of clean calls, speed and (once a task type is set) cost.
           </p>
         </Panel>
 
@@ -364,6 +364,8 @@ export interface HomeWeek {
   agents: Record<string, AgentWeek>;
   calls: number | null;
   costUsd: number | null;
+  /** Some calls had no price on file, or were dropped: the spend is a lower bound. */
+  partial: boolean;
   rules: GovernanceTally | null;
 }
 
@@ -389,7 +391,7 @@ export function homeWeek(
   if (okRules) for (const [id, c] of Object.entries(okRules.byAgent)) (agents[key(id)] ??= {}).rules = tallyFromRuleActions(c);
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
   const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
-  return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
+  return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
 /** "Last 7 days: 120K tokens · saved $1.20 · 2 blocked · score 8". */
