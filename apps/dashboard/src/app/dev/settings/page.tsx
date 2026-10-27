@@ -9,6 +9,7 @@ export default function Page() {
   if (process.env.NODE_ENV === 'production') notFound();
   return (
     <SettingsView
+      closing={null}
       account={{
         id: 'preview', email: 'preview@example.com', name: 'R. Haque', image: null, timezone: 'America/New_York', emailVerified: true,
         methods: [

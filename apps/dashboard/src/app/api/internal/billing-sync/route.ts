@@ -4,7 +4,7 @@ import { countAgents } from '@/lib/entitlements';
 import { billableAgents, planItem } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
 import { syncSecretMatches } from '@/lib/sync-secret';
-import { finishDeletedAccounts } from '@/lib/account-closing';
+import { cancelClosedSubscriptions, finishDeletedAccounts } from '@/lib/account-closing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,8 +40,9 @@ const AGENT_COUNT_TIMEOUT_MS = 5_000;
  *    bills and corrects Stripe when they differ. Stripe prorates the change
  *    onto the next invoice.
  *
- * 3. Deleted accounts. Once an account's 14-day deletion window has run out
- *    and the engine has its closing time, its dashboard rows go.
+ * 3. Closed accounts. Once an account's fleet has closed, any Stripe
+ *    subscription that can still bill is cancelled; a deleted account's
+ *    dashboard rows go once its removal date has passed.
  */
 export async function POST(req: Request): Promise<Response> {
   if (!syncSecretMatches(req.headers.get('x-wr-sync-secret'))) {
@@ -52,18 +53,29 @@ export async function POST(req: Request): Promise<Response> {
   const pro = process.env.STRIPE_SECRET_KEY
     ? await syncProQuantities()
     : { checked: 0, updated: 0, skipped: 0, deferred: 0 };
-  // Accounts whose 14-day deletion window has run out (lib/account-closing.ts).
+  // Closed fleets bill nothing: their Stripe subscriptions are cancelled
+  // first, so no account is removed while one can still charge.
+  // A subscription that fails to cancel is logged and retried next run.
+  const closedSubscriptions = process.env.STRIPE_SECRET_KEY
+    ? await cancelClosedSubscriptions().catch((err) => {
+        console.error('[billing-sync] could not cancel closed accounts\' subscriptions:', err instanceof Error ? err.message : err);
+        return null;
+      })
+    : { cancelled: 0, failed: 0 };
+  // Accounts whose deletion window has run out (lib/account-closing.ts).
   const deletions = await finishDeletedAccounts().catch((err) => {
     console.error('[billing-sync] could not finish deleted accounts:', err instanceof Error ? err.message : err);
     return null;
   });
 
-  // A failed trial or deletion pass is a 500 so Cloud Scheduler records the
+  // A failed trial, cancel or deletion pass is a 500 so Cloud Scheduler records the
   // failure and retries. The other passes still ran; none depends on another.
-  if (trials === null || deletions === null) {
-    return Response.json({ error: trials === null ? 'Could not queue expired trials.' : 'Could not finish deleted accounts.', pro, deletions }, { status: 500 });
-  }
-  return Response.json({ trialsQueued: trials, pro, deletions });
+  const failed = trials === null ? 'Could not queue expired trials.'
+    : closedSubscriptions === null ? "Could not cancel closed accounts' subscriptions."
+    : deletions === null ? 'Could not finish deleted accounts.'
+    : null;
+  if (failed) return Response.json({ error: failed, pro, closedSubscriptions, deletions }, { status: 500 });
+  return Response.json({ trialsQueued: trials, pro, closedSubscriptions, deletions });
 }
 
 /** Number of trials queued, or null if the database refused. */

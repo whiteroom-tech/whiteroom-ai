@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Phase 7c on screen: Delete account's confirm step says what happens and
+// On screen: Delete account's confirm step says what happens and
 // starts the 14-day window; while it runs, Settings and the banner on every
 // page offer Cancel deletion; a lapsed plan's banner offers Choose a plan.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +9,7 @@ import { createRoot } from 'react-dom/client';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const api = vi.hoisted(() => ({
-  closing: null as { reason: 'deleted' | 'lapsed'; closesAt: string; blocked?: { reason: string; kind: 'subscription' | 'organization' } } | null,
+  closing: null as import('@/lib/closing-shared').ClosingState,
   deleteAccount: vi.fn(async () => ({ ok: true }) as { ok: true } | { ok: false; error: string }),
   cancel: vi.fn(async () => ({ ok: true }) as { ok: true } | { ok: false; error: string }),
   refresh: vi.fn(),
@@ -25,7 +25,9 @@ vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
 
-const { AccountClosingBanner, closingMessage, daysLeft } = await import('@/components/AccountClosingBanner');
+const { AccountClosingBanner, closingMessage } = await import('@/components/AccountClosingBanner');
+const { daysLeft, closingDate } = await import('@/lib/closing-shared');
+const { AUDIT_KEPT } = await import('@/lib/plans');
 const { DangerSection } = await import('@/app/settings/settings-view');
 
 const DAY = 86_400_000;
@@ -63,7 +65,7 @@ describe('the closing banner', () => {
     const m = await mount(h(AccountClosingBanner));
     expect(m.text()).toContain('Your account will be deleted on');
     expect(m.text()).toContain('in 14 days');
-    expect(m.text()).toContain('Your fleet keeps working until then.');
+    expect(m.text()).toContain('Your fleet keeps working until then. After that, your WhiteRoom fleet key stops working.');
     expect(m.link('Download export')?.getAttribute('href')).toBe('/settings#audit-integrity');
 
     api.cancel.mockImplementation(async () => { api.closing = null; return { ok: true }; });
@@ -90,16 +92,49 @@ describe('the closing banner', () => {
     expect(m.button('Cancel deletion')).toBeUndefined();
   });
 
+  it('the date and the days left are counted in the same zone, so they never disagree', () => {
+    // 20:00 UTC on the 27th is 16:00 in New York; 03:00 UTC on the 28th is 23:00 on the 27th there.
+    const now = Date.parse('2026-10-27T20:00:00Z');
+    const at = '2026-10-28T03:00:00Z';
+    expect([closingDate(at, 'America/New_York'), daysLeft(at, now, 'America/New_York')]).toEqual(['October 27, 2026', 0]);
+    expect([closingDate(at, 'UTC'), daysLeft(at, now, 'UTC')]).toEqual(['October 28, 2026', 1]);
+    expect(closingMessage({ reason: 'lapsed', closesAt: at }, now, 'America/New_York')).toContain('until October 27, 2026 (today).');
+    expect(closingMessage({ reason: 'lapsed', closesAt: at }, now, 'UTC')).toContain('until October 28, 2026, in 1 day.');
+  });
+
+  it('after a lapse closed the fleet: Download export and Contact support', async () => {
+    api.closing = { reason: 'lapsed', closesAt: new Date(Date.now() - DAY).toISOString() };
+    const m = await mount(h(AccountClosingBanner));
+    expect(m.text()).toContain('Your fleet closed on');
+    expect(m.link('Download export')?.getAttribute('href')).toBe('/settings#audit-integrity');
+    expect(m.link('Contact support')?.getAttribute('href')).toBe('mailto:info@whiteroom.tech');
+    expect(m.link('Choose a plan')).toBeUndefined();
+  });
+
+  it('a state that could not be read keeps what the banner already shows', async () => {
+    api.closing = { reason: 'deleted', closesAt: new Date(Date.now() + 3 * DAY).toISOString() };
+    const m = await mount(h(AccountClosingBanner));
+    expect(m.text()).toContain('Your account will be deleted on');
+    api.closing = 'unknown';
+    await act(async () => { window.dispatchEvent(new Event('wr:account-closing-changed')); });
+    await flush();
+    expect(m.text()).toContain('Your account will be deleted on');
+  });
+
   it('words for each state, plain and short', () => {
     const now = Date.parse('2026-10-27T12:00:00Z');
     expect(daysLeft('2026-11-10T12:00:00Z', now)).toBe(14);
-    expect(daysLeft('2026-10-27T13:00:00Z', now)).toBe(1);
+    expect(daysLeft('2026-10-27T13:00:00Z', now)).toBe(0); // later today: calendar days, so 0, said as "today"
+    expect(daysLeft('2026-10-28T01:00:00Z', now)).toBe(1);
     expect(daysLeft('2026-10-26T12:00:00Z', now)).toBe(0);
     expect(closingMessage({ reason: 'deleted', closesAt: '2026-11-10T12:00:00Z' }, now))
-      .toBe('Your account will be deleted on November 10, 2026, in 14 days. Your fleet keeps working until then.');
+      .toBe('Your account will be deleted on November 10, 2026, in 14 days. Your fleet keeps working until then. After that, your WhiteRoom fleet key stops working.');
     expect(closingMessage({ reason: 'lapsed', closesAt: '2026-10-28T12:00:00Z' }, now)).toContain('in 1 day.');
     expect(closingMessage({ reason: 'lapsed', closesAt: '2026-10-20T12:00:00Z' }, now))
-      .toBe('Your fleet closed on October 20, 2026. Its audit trail is kept for 12 months.');
+      .toBe(`Your fleet closed on October 20, 2026. Its audit trail is kept for ${AUDIT_KEPT}.`);
+    // A deletion over a running lapse: the fleet closes first, the account later.
+    expect(closingMessage({ reason: 'deleted', closesAt: '2026-10-30T12:00:00Z', deleteAfter: '2026-11-10T12:00:00Z' }, now))
+      .toBe('Your account will be deleted. Your fleet keeps working until October 30, 2026, in 3 days. After that, your WhiteRoom fleet key stops working. Your account is removed on November 10, 2026.');
     for (const reason of ['deleted', 'lapsed'] as const) {
       expect(closingMessage({ reason, closesAt: '2026-11-10T12:00:00Z' }, now)).not.toMatch(/API key|whoever holds/i);
     }
@@ -113,9 +148,12 @@ describe('Settings › Delete account', () => {
     await m.click(m.button('Delete my account')!);
     expect(m.text()).toContain('For the next 14 days your fleet keeps working');
     expect(m.text()).toContain('WhiteRoom fleet key stops working and calls through it are refused');
-    expect(m.text()).toContain('The audit trail is kept for 12 months.');
+    expect(m.text()).toContain(`The audit trail is kept for ${AUDIT_KEPT}.`);
+    expect(m.el.querySelectorAll('ul li')).toHaveLength(3);
+    expect(m.link('download your data')?.getAttribute('href')).toBe('#audit-integrity');
 
     const go = m.button('Delete in 14 days')!;
+    expect(go.className).toContain('wr-btn--danger-fill');
     expect(go.disabled).toBe(true);
     const input = m.el.querySelector('#confirmDelete') as HTMLInputElement;
     await act(async () => {
@@ -131,6 +169,27 @@ describe('Settings › Delete account', () => {
     expect(changed).toHaveBeenCalled();
     expect(api.refresh).toHaveBeenCalled();
     window.removeEventListener('wr:account-closing-changed', changed);
+  });
+
+  it('says fleets for an account with more than one', async () => {
+    const m = await mount(h(DangerSection, { account: { ...ACCOUNT, fleetCount: 3 }, closing: null, pending: false }));
+    expect(m.text()).toContain('closes your fleets');
+    await m.click(m.button('Delete my account')!);
+    expect(m.text()).toContain('For the next 14 days your fleets keep working');
+  });
+
+  it("says when the account's state couldn't be read, rather than offering Delete", async () => {
+    const m = await mount(h(DangerSection, { account: ACCOUNT, closing: 'unknown', pending: false }));
+    expect(m.text()).toContain("Couldn't check your account status");
+    expect(m.button('Delete my account')).toBeUndefined();
+  });
+
+  it('after the fleet closed, before the account goes: the removal date and Keep my account', async () => {
+    const closing = { reason: 'deleted' as const, closesAt: new Date(Date.now() - DAY).toISOString(), deleteAfter: new Date(Date.now() + 10 * DAY).toISOString() };
+    const m = await mount(h(DangerSection, { account: ACCOUNT, closing, pending: false }));
+    expect(m.text()).toContain('Your fleet is closed. Your account is removed on');
+    await m.click(m.button('Keep my account')!);
+    expect(api.cancel).toHaveBeenCalledTimes(1);
   });
 
   it('shows a refusal (a live subscription) and starts nothing', async () => {
@@ -150,7 +209,8 @@ describe('Settings › Delete account', () => {
   it('while a deletion runs: the date and Cancel deletion', async () => {
     const closing = { reason: 'deleted' as const, closesAt: '2026-11-10T12:00:00Z' };
     const m = await mount(h(DangerSection, { account: ACCOUNT, closing, pending: false }));
-    expect(m.text()).toContain('Your account will be deleted on November 10, 2026.');
+    expect(m.text()).toContain('Your account will be deleted on November 10, 2026');
+    expect(m.link('download your data')?.getAttribute('href')).toBe('#audit-integrity');
     expect(m.button('Delete my account')).toBeUndefined();
     await m.click(m.button('Cancel deletion')!);
     expect(api.cancel).toHaveBeenCalledTimes(1);
@@ -159,15 +219,14 @@ describe('Settings › Delete account', () => {
 });
 
 describe('a blocked deletion (the window ended, something stops the removal)', () => {
-  const SUB = 'Cancel your subscription in Manage billing before deleting your account.';
-  const ORG = "You're the only owner of Acme. Make someone else an owner before deleting your account.";
+  const SUB = 'your subscription is still active (cancel it in Manage billing)';
+  const ORG = "you're the only owner of Acme (make someone else an owner)";
   const past = new Date(Date.now() - DAY).toISOString();
 
   it('the banner says why, links to the fix and offers Keep my account', async () => {
     api.closing = { reason: 'deleted', closesAt: past, blocked: { kind: 'subscription', reason: SUB } };
     const m = await mount(h(AccountClosingBanner));
-    expect(m.text()).toContain(`Your account can't be deleted yet: ${SUB}`);
-    expect(m.text()).toContain('Or keep your account.');
+    expect(m.text()).toContain(`We can't delete your account yet: ${SUB}. Fix that and we'll finish. Your fleet is already closed.`);
     expect(m.link('Manage billing')?.getAttribute('href')).toBe('/settings#plan');
     api.cancel.mockImplementation(async () => { api.closing = { reason: 'lapsed', closesAt: past }; return { ok: true }; });
     await m.click(m.button('Keep my account')!);
@@ -186,7 +245,7 @@ describe('a blocked deletion (the window ended, something stops the removal)', (
   it('Settings shows the same message, the fix and Keep my account', async () => {
     const closing = { reason: 'deleted' as const, closesAt: past, blocked: { kind: 'subscription' as const, reason: SUB } };
     const m = await mount(h(DangerSection, { account: ACCOUNT, closing, pending: false }));
-    expect(m.text()).toContain(`Your account can't be deleted yet: ${SUB}`);
+    expect(m.text()).toContain(`We can't delete your account yet: ${SUB}.`);
     expect(m.link('Manage billing')).toBeTruthy();
     expect(m.button('Cancel deletion')).toBeUndefined();
     await m.click(m.button('Keep my account')!);

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   retrieve: vi.fn(),
   updateItem: vi.fn(),
   finishDeleted: vi.fn(),
+  cancelClosed: vi.fn(),
 }));
 
 const connectFails = vi.hoisted(() => ({ current: false }));
@@ -21,7 +22,7 @@ vi.mock('@/lib/db', () => ({
   }),
 }));
 vi.mock('@/lib/entitlements', () => ({ countAgents: mocks.countAgents }));
-vi.mock('@/lib/account-closing', () => ({ finishDeletedAccounts: mocks.finishDeleted }));
+vi.mock('@/lib/account-closing', () => ({ finishDeletedAccounts: mocks.finishDeleted, cancelClosedSubscriptions: mocks.cancelClosed }));
 vi.mock('@/lib/stripe', () => ({
   stripe: () => ({
     subscriptions: { retrieve: mocks.retrieve },
@@ -54,6 +55,7 @@ beforeEach(() => {
   mocks.retrieve.mockReset();
   mocks.updateItem.mockReset();
   mocks.finishDeleted.mockReset().mockResolvedValue({ deleted: 0, skipped: 0, blocked: 0 });
+  mocks.cancelClosed.mockReset().mockResolvedValue({ cancelled: 0, failed: 0 });
 });
 
 describe('billing sync', () => {
@@ -298,5 +300,34 @@ describe('billing sync: deleted accounts', () => {
   it('is not run without the sync secret', async () => {
     expect((await run()).status).toBe(401);
     expect(mocks.finishDeleted).not.toHaveBeenCalled();
+    expect(mocks.cancelClosed).not.toHaveBeenCalled();
+  });
+});
+
+describe('billing sync: closed accounts\' subscriptions', () => {
+  it('cancels them before any deleted account is removed, and reports it', async () => {
+    const order: string[] = [];
+    mocks.cancelClosed.mockImplementation(async () => { order.push('cancel'); return { cancelled: 1, failed: 0 }; });
+    mocks.finishDeleted.mockImplementation(async () => { order.push('finish'); return { deleted: 0, skipped: 0, blocked: 0 }; });
+    const res = await run(SECRET);
+    expect(res.status).toBe(200);
+    expect((await res.json()).closedSubscriptions).toEqual({ cancelled: 1, failed: 0 });
+    expect(order).toEqual(['cancel', 'finish']);
+  });
+
+  it('returns 500 when that pass fails, so the scheduler retries; the deletion pass still runs', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.cancelClosed.mockRejectedValue(new Error('database refused'));
+    const res = await run(SECRET);
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("Could not cancel closed accounts' subscriptions.");
+    expect(mocks.finishDeleted).toHaveBeenCalledTimes(1);
+  });
+
+  it('is skipped without Stripe configured', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const res = await run(SECRET);
+    expect(res.status).toBe(200);
+    expect(mocks.cancelClosed).not.toHaveBeenCalled();
   });
 });

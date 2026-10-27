@@ -65,9 +65,7 @@ const ERRORS: Record<string, string> = {
 
 // Outcomes that land here deliberately, rather than failures. Settings
 // redirects to /sign-in after ending every session, and without this the
-// page would just look like an ordinary sign-out. (Deleting an account no
-// longer signs out: it starts a 14-day window, and the account is removed
-// later by the billing sync, with nobody signed in to redirect.)
+// page would just look like an ordinary sign-out.
 const OUTCOMES: Record<string, string> = {
   'signedOut=all': 'Signed out on every device. Sign in again to continue.',
 };

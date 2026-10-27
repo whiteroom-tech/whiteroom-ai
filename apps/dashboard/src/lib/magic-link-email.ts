@@ -1,4 +1,5 @@
-import { blockedMessage } from '@/lib/closing-shared';
+import { blockedMessage, type CloseReason } from '@/lib/closing-shared';
+import { AUDIT_KEPT } from '@/lib/plans';
 
 // Table-based and fully inline-styled on purpose: the major email clients drop
 // <style> blocks and have no flexbox, so the layout has to survive on
@@ -93,21 +94,25 @@ export function emailChangeEmail(url: string, currentEmail: string): { html: str
  * lapsed). Says what happens and when, never how WhiteRoom does it.
  */
 export function accountClosingEmail(
-  reason: 'deleted' | 'lapsed',
+  reason: CloseReason,
   date: string,
   settingsUrl: string,
+  /** A deletion whose account goes later than its fleet closes: that later date. */
+  removedOn?: string,
 ): { subject: string; html: string; text: string } {
   const email = reason === 'deleted'
     ? transactionalEmail({
         heading: 'Your account will be deleted',
-        body: `Your WhiteRoom account and fleet will be deleted on ${date}. Until then your fleet keeps working, and you can download your data or cancel the deletion in Settings. After that, your WhiteRoom fleet key stops working and calls through it are refused. The audit trail is kept for 12 months.`,
+        body: removedOn
+          ? `Your fleet keeps working until ${date}. Then it closes and your WhiteRoom fleet key stops working. Your account is deleted on ${removedOn}. Until then you can download your data or cancel in Settings. The audit trail is kept for ${AUDIT_KEPT}.`
+          : `Your fleet keeps working until ${date}. Then it closes: your WhiteRoom fleet key stops working and your account is deleted. Until then you can download your data or cancel in Settings. The audit trail is kept for ${AUDIT_KEPT}.`,
         cta: 'Open Settings',
         url: settingsUrl,
         footer: "If you didn't ask for this, cancel the deletion in Settings and sign out everywhere.",
       })
     : transactionalEmail({
         heading: 'Your WhiteRoom plan has ended',
-        body: `Your fleet keeps working until ${date}. After that, your WhiteRoom fleet key stops working and calls through it are refused. Choose a plan before then to keep your fleet, or download your data from Settings. The audit trail is kept for 12 months.`,
+        body: `Your fleet keeps working until ${date}. Then it closes and your WhiteRoom fleet key stops working. Choose a plan before then to keep it, or download your data in Settings. The audit trail is kept for ${AUDIT_KEPT}.`,
         cta: 'Choose a plan',
         url: settingsUrl,
         footer: 'Choosing a plan before that date keeps everything as it is.',

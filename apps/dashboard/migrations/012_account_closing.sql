@@ -1,27 +1,10 @@
--- Account deletion and plan lapse (redesign Phase 7c, decision Q4).
---
--- Deleting an account, or its plan lapsing, starts a 14-day window instead
--- of acting at once. closes_at is when it ends; close_reason says which of
--- the two started it. During the window the fleets keep working and the
--- owner can export their data or cancel. At closes_at the engine closes the
--- account's fleets (it is sent the time with every entitlement push), and a
--- deleted account's rows are removed by the billing sync. NULL means the
--- account isn't closing, the common case.
---
--- Apply BEFORE deploying the dashboard that reads these columns, and deploy
--- the engine that understands closesAt before either.
---
--- Idempotent: safe to re-run, same as 001-011.
+-- Account deletion and plan lapse: the closing window and its bookkeeping (see src/lib/account-closing.ts). Idempotent; apply before deploying the dashboard that reads it.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS closes_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_reason text;
--- Set when a deletion that has run out can't finish (a subscription, an
--- organization the account alone owns): the owner is told once, and the
--- billing sync only looks again once that may have changed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS delete_after timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_email_sent_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_at timestamptz;
--- When the owner was told about the block. Set only after a send that
--- worked, so a failed email is tried again and a sent one never repeats.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_notified_at timestamptz;
--- Failed sends of that email so far; it is given up after a few.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_email_attempts integer NOT NULL DEFAULT 0;
 
 DO $$
@@ -32,5 +15,4 @@ BEGIN
   END IF;
 END $$;
 
--- The billing sync looks for deletions that have run out.
 CREATE INDEX IF NOT EXISTS users_closes_at_idx ON users (closes_at) WHERE closes_at IS NOT NULL;

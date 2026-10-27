@@ -26,3 +26,6 @@ export function db(): Pool {
   }
   return pool;
 }
+
+/** Anything that runs a query: the pool, or a transaction's client. */
+export type Queryable = Pick<Pool, 'query'>;

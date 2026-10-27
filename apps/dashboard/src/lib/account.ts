@@ -6,7 +6,17 @@ import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
-import { cancelClosing, deletionBlocker, findDeletionBlocker, getClosing, lapsedPaidPlan, sendClosingEmail, startClosing, type Closing } from '@/lib/account-closing';
+import {
+  cancelClosing,
+  findDeletionBlocker,
+  getClosing,
+  keepClosedAccount,
+  lapsedPaidPlan,
+  lapseToDeletion,
+  sendClosingEmail,
+  startClosing,
+} from '@/lib/account-closing';
+import { CANCEL_CUTOFF_MS, isClosingOpen, type Closing, type ClosingState } from '@/lib/closing-shared';
 import { enqueueEntitlementSync, resolvePlan, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { HOUR_MS } from '@/lib/format';
 
@@ -341,16 +351,17 @@ export async function confirmEmailChange(token: string): Promise<
 // -- Deletion --
 
 /**
- * Starts deleting the account (decision Q4): a 14-day window, not an
- * immediate delete. During it the fleets keep working and the owner can
- * export or cancel. When it ends the engine closes every fleet the account
- * owns (calls refused, WhiteRoom fleet key revoked, audit trail kept) and the
- * billing sync removes the account (finishDeletedAccounts).
+ * Starts deleting the account: a 14-day window, not an immediate delete.
+ * During it the fleets keep working and the owner can export or cancel. When
+ * it ends the engine closes every fleet the account owns (calls refused,
+ * WhiteRoom fleet key revoked, audit trail kept) and the billing sync
+ * removes the account (finishDeletedAccounts).
  *
- * A lapse window still running becomes a deletion with the same end date; a
- * window that has run out is replaced by a fresh 14 days, so a click never
- * removes an account without its window. Asking again while a deletion runs
- * (a double submit, a second tab) changes nothing and sends no second email.
+ * A running lapse becomes a deletion: its fleet still closes when the lapse
+ * ends, but the account is removed no sooner than 14 days from now. A window
+ * that has run out is replaced by a fresh 14 days. Asking again while a
+ * deletion runs (a double submit, a second tab) changes nothing and sends no
+ * second email.
  */
 export async function deleteAccount(confirmEmail: string): Promise<ActionResult> {
   const userId = await requireUserId();
@@ -367,24 +378,18 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
   try {
     await client.query('BEGIN');
 
-    const blocked = await deletionBlocker(client, userId);
+    const blocked = await findDeletionBlocker(client, userId, true);
     if (blocked) {
       await client.query('ROLLBACK');
-      return { ok: false, error: blocked };
+      return { ok: false, error: blocked.message };
     }
 
     // Locked, so two requests can't both decide they started it.
     const current = await getClosing(userId, client, { lock: true });
-    const open = !!current && new Date(current.closesAt).getTime() > Date.now();
-    if (!open) {
+    if (!current || !isClosingOpen(current)) {
       changed = await startClosing(client, userId, 'deleted', { replaceEnded: true });
-    } else if (current!.reason === 'lapsed') {
-      const res = await client.query(
-        `UPDATE users SET close_reason = 'deleted', updated_at = now()
-         WHERE id = $1 AND close_reason = 'lapsed' AND closes_at > now()`,
-        [userId],
-      );
-      if ((res.rowCount ?? 0) > 0) changed = { reason: 'deleted', closesAt: current!.closesAt };
+    } else if (current.reason === 'lapsed') {
+      changed = await lapseToDeletion(client, userId);
     }
     // Same transaction: the engine hears about the closing time even if the
     // push below fails (the sweep delivers it).
@@ -406,36 +411,33 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
 }
 
 /**
- * Cancels a deletion that hasn't run out: back to normal. If a paid plan
- * has lapsed meanwhile, the window carries on as a lapse, same date.
+ * Cancels a deletion. While its window runs: back to normal, or back to the
+ * lapse if a paid plan has lapsed meanwhile (same date). After the fleet
+ * closed (a blocked deletion, or one waiting to remove the account): keeps
+ * the account, with its fleet closed. Not in the last minutes before the
+ * fleet closes.
  */
 export async function cancelAccountDeletion(): Promise<ActionResult> {
   const userId = await requireUserId();
 
   const client = await db().connect();
   let changed = false;
+  let current: Closing | null = null;
   try {
     await client.query('BEGIN');
     // The user row is locked first and the plan read after it, on this
     // transaction's client: a lapse that a webhook records meanwhile waits on
     // this lock and reconciles against what this commits.
-    await getClosing(userId, client, { lock: true });
+    current = await getClosing(userId, client, { lock: true });
     const { plan, sub } = await resolvePlan(userId, client);
-    // A deletion whose window ended but couldn't finish (blocked): keeping
-    // the account ends the deletion. The fleet closed when the window ended
-    // and closing is final, so the account stays with its fleet closed (the
-    // ended window is kept as 'lapsed', which is what refuses a new plan).
-    const kept = await client.query(
-      `UPDATE users SET close_reason = 'lapsed', close_blocked_at = NULL, close_blocked_notified_at = NULL,
-                        close_blocked_email_attempts = 0, updated_at = now()
-       WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() AND close_blocked_at IS NOT NULL`,
-      [userId],
-    );
-    if ((kept.rowCount ?? 0) > 0) {
+    if (await keepClosedAccount(client, userId)) {
       changed = true;
+    } else if (current?.reason === 'deleted' && !isClosingOpen(current, Date.now() + CANCEL_CUTOFF_MS)) {
+      // In its last minutes the engine may already be closing the fleet.
+      changed = false;
     } else if (lapsedPaidPlan(plan, sub)) {
       const res = await client.query(
-        `UPDATE users SET close_reason = 'lapsed', updated_at = now()
+        `UPDATE users SET close_reason = 'lapsed', delete_after = NULL, updated_at = now()
          WHERE id = $1 AND close_reason = 'deleted' AND closes_at > now()`,
         [userId],
       );
@@ -453,28 +455,34 @@ export async function cancelAccountDeletion(): Promise<ActionResult> {
     client.release();
   }
 
-  if (!changed) return { ok: false, error: 'There is no deletion to cancel.' };
+  if (!changed) {
+    if (current?.reason === 'deleted' && isClosingOpen(current)) {
+      return { ok: false, error: 'Your fleet closes in the next few minutes, so the deletion can no longer be cancelled.' };
+    }
+    return { ok: false, error: 'There is no deletion to cancel.' };
+  }
   await syncEntitlementsToEngine(userId);
   return { ok: true };
 }
 
 /**
- * What the closing banner and Settings show: the signed-in account's window,
- * or null, with why a deletion is blocked once the billing sync has found it
- * so. Never throws.
+ * What the closing banner and Settings show: the signed-in account's window
+ * (with why a deletion is blocked once the billing sync has found it so), or
+ * null. 'unknown' when it couldn't be read: never "not closing" on an error.
  */
-export async function getAccountClosing(): Promise<Closing | null> {
+export async function getAccountClosing(): Promise<ClosingState> {
   try {
     const session = await auth();
     if (!session?.user?.id) return null;
     const userId = session.user.id;
     const closing = await getClosing(userId);
-    if (closing?.reason !== 'deleted' || new Date(closing.closesAt).getTime() > Date.now()) return closing;
+    if (closing?.reason !== 'deleted' || isClosingOpen(closing)) return closing;
     const { rows } = await db().query(`SELECT close_blocked_at FROM users WHERE id = $1`, [userId]);
     if (!rows[0]?.close_blocked_at) return closing;
     const blocked = await findDeletionBlocker(db(), userId, false);
-    return blocked ? { ...closing, blocked } : closing;
-  } catch {
-    return null;
+    return blocked ? { ...closing, blocked: { kind: blocked.kind, reason: blocked.reason } } : closing;
+  } catch (err) {
+    console.error('[account] couldn\'t read the closing state:', err instanceof Error ? err.message : 'unknown error');
+    return 'unknown';
   }
 }

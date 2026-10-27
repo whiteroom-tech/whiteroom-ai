@@ -20,13 +20,14 @@ import {
   unlinkProvider,
   updateProfile,
   type AccountOverview,
+  type ActionResult,
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
-import { CLOSE_WINDOW_DAYS, blockedMessage, closingDate, type Closing } from '@/lib/closing-shared';
-import { BlockedFix, CLOSING_CHANGED } from '@/components/AccountClosingBanner';
+import { CLOSE_WINDOW_DAYS, isClosingOpen, type ClosingState } from '@/lib/closing-shared';
+import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
 import { plural, DAY_MS } from '@/lib/format';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -34,7 +35,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   email: 'Email link',
 };
 
-type Notice = { tone: 'ok' | 'bad'; text: string } | null;
+/** `support`: only support can resolve it, so the banner offers a way to reach them. */
+type Notice = { tone: 'ok' | 'bad'; text: string; support?: boolean } | null;
 
 function Section({
   title,
@@ -80,14 +82,14 @@ export function SettingsView({
   entitlement,
   purchasablePlans,
   billingResult,
-  closing = null,
+  closing,
 }: {
   account: AccountOverview;
   entitlement: Entitlement;
   purchasablePlans: PlanId[];
   billingResult: string | null;
-  /** The account's closing window (deleted or plan lapsed), or null. */
-  closing?: Closing | null;
+  /** The account's closing window (deleted or plan lapsed), null, or 'unknown' when it couldn't be read. */
+  closing: ClosingState;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -124,7 +126,7 @@ export function SettingsView({
         <div ref={sections} className="wr-settings-stack" style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
 
           {banner && (
-            <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined}>{banner.text}</Banner>
+            <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined} actions={banner.support ? <SupportLink /> : undefined}>{banner.text}</Banner>
           )}
 
           <ProfileSection account={account} pending={pending} run={run} />
@@ -246,14 +248,14 @@ function PlanSection({
   const [busy, setBusy] = useState<string | null>(null);
   const { plan, limits, usage, subscription } = entitlement;
 
-  async function go(action: () => Promise<{ ok: boolean; url?: string; error?: string }>, key: string) {
+  async function go(action: () => Promise<{ ok: boolean; url?: string; error?: string; support?: boolean }>, key: string) {
     setBusy(key);
     try {
       const res = await action();
       // Stripe's hosted pages are a full navigation, not a fetch — assigning
       // location is the handoff.
       if (res.ok && res.url) window.location.href = res.url;
-      else setBanner({ tone: 'bad', text: res.error ?? 'Could not reach Stripe.' });
+      else setBanner({ tone: 'bad', text: res.error ?? 'Could not reach Stripe.', support: res.support });
     } catch (err) {
       setBanner({ tone: 'bad', text: err instanceof Error ? err.message : 'Could not reach Stripe.' });
     } finally {
@@ -588,18 +590,24 @@ function SessionsSection({ pending }: { pending: boolean }) {
 
 // -- Danger --
 
-export function DangerSection({ account, closing, pending }: { account: AccountOverview; closing: Closing | null; pending: boolean }) {
+export function DangerSection({ account, closing, pending }: { account: AccountOverview; closing: ClosingState; pending: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [deleting, setDeleting] = useState<Closing | null>(closing?.reason === 'deleted' ? closing : null);
-  useEffect(() => { setDeleting(closing?.reason === 'deleted' ? closing : null); }, [closing]);
+  // The viewer's zone, read after mount so server and browser render alike;
+  // the banner counts in the same one.
+  const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
+  useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
 
   const matches = confirm.trim().toLowerCase() === (account.email ?? '').toLowerCase();
+  const fleets = plural(account.fleetCount, 'fleet');
+  const exportLink = <a href="#audit-integrity" style={{ color: 'var(--brand)' }}>download your data</a>;
+  const errorLine = error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '0 0 12px' }}>{error}</p>;
+  const text = (t: React.ReactNode) => <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>{t}</p>;
 
-  async function act(action: () => Promise<{ ok: true } | { ok: false; error: string }>, failure: string) {
+  async function act(action: () => Promise<ActionResult>, failure: string) {
     setBusy(true);
     setError('');
     try {
@@ -616,16 +624,31 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
     }
   }
 
-  if (deleting && new Date(deleting.closesAt).getTime() <= Date.now()) {
+  if (closing === 'unknown') {
     return (
-      <Section title="Delete account" tone="danger" description={deleting.blocked ? blockedMessage(deleting.blocked.reason) : 'Your account is being deleted.'}>
-        {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '0 0 12px' }}>{error}</p>}
-        {deleting.blocked && (
+      <Section title="Delete account" tone="danger">
+        {text("Couldn't check your account status. Reload the page to try again.")}
+      </Section>
+    );
+  }
+
+  const deleting = closing?.reason === 'deleted' ? closing : null;
+  const keep = (
+    <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not keep the account.')}>
+      {busy ? 'Keeping…' : 'Keep my account'}
+    </Button>
+  );
+
+  if (deleting && !isClosingOpen(deleting)) {
+    const waiting = !!deleting.deleteAfter && new Date(deleting.deleteAfter).getTime() > Date.now();
+    return (
+      <Section title="Delete account" tone="danger">
+        {text(closingMessage(deleting, Date.now(), timeZone))}
+        {errorLine}
+        {(deleting.blocked || waiting) && (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <BlockedFix kind={deleting.blocked.kind} />
-            <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not keep the account.')}>
-              {busy ? 'Keeping…' : 'Keep my account'}
-            </Button>
+            {deleting.blocked && <BlockedFix kind={deleting.blocked.kind} />}
+            {keep}
           </div>
         )}
       </Section>
@@ -634,12 +657,9 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
 
   if (deleting) {
     return (
-      <Section
-        title="Delete account"
-        tone="danger"
-        description={`Your account will be deleted on ${closingDate(deleting.closesAt)}. Until then your fleet keeps working, and you can download your data or cancel. After that, your WhiteRoom fleet key stops working and calls through it are refused. The audit trail is kept for 12 months.`}
-      >
-        {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '0 0 12px' }}>{error}</p>}
+      <Section title="Delete account" tone="danger">
+        {text(<>{closingMessage(deleting, Date.now(), timeZone)} Until then you can {exportLink} or cancel. The audit trail is kept for {AUDIT_KEPT}.</>)}
+        {errorLine}
         <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not cancel the deletion.')}>
           {busy ? 'Cancelling…' : 'Cancel deletion'}
         </Button>
@@ -651,7 +671,7 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
     <Section
       title="Delete account"
       tone="danger"
-      description={`Deletes your account and fleet after ${CLOSE_WINDOW_DAYS} days. Cancel any paid subscription first, and hand over any organization you solely own.`}
+      description={`Deletes your account after ${CLOSE_WINDOW_DAYS} days and closes your ${fleets}. Cancel any paid subscription first, and hand over any organization you solely own.`}
     >
       {!open ? (
         <Button variant="danger" disabled={pending} onClick={() => setOpen(true)}>
@@ -661,10 +681,10 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '62ch' }}>
             <p style={{ margin: '0 0 6px' }}>What happens:</p>
-            <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
-              <li>For the next {CLOSE_WINDOW_DAYS} days your fleet keeps working. You can download your data or cancel at any time.</li>
+            <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc', display: 'grid', gap: 4 }}>
+              <li>For the next {CLOSE_WINDOW_DAYS} days your {fleets} keep{account.fleetCount === 1 ? 's' : ''} working. You can {exportLink} or cancel at any time.</li>
               <li>After {CLOSE_WINDOW_DAYS} days your WhiteRoom fleet key stops working and calls through it are refused. Your account is removed.</li>
-              <li>The audit trail is kept for 12 months.</li>
+              <li>The audit trail is kept for {AUDIT_KEPT}.</li>
             </ul>
           </div>
           <div>
@@ -682,7 +702,7 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
           {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: 0 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Button
-              variant="danger"
+              variant="danger-fill"
               disabled={!matches || busy}
               onClick={() => void act(() => deleteAccount(confirm), 'Could not delete the account.')}
             >

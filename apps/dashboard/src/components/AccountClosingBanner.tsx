@@ -4,29 +4,45 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button } from '@whiteroom/ui';
 import { cancelAccountDeletion, getAccountClosing } from '@/lib/account';
-import { blockedMessage, closingDate as day, type Closing } from '@/lib/closing-shared';
+import {
+  blockedMessage,
+  closingDate,
+  daysLeft,
+  isClosingOpen,
+  SUPPORT_EMAIL,
+  type Closing,
+} from '@/lib/closing-shared';
+import { AUDIT_KEPT } from '@/lib/plans';
 import { ROUTES } from '@/lib/routes';
-import { DAY_MS, plural } from '@/lib/format';
+import { plural } from '@/lib/format';
 
 /** Fired after a deletion starts or is cancelled, so every banner on the page re-reads. */
 export const CLOSING_CHANGED = 'wr:account-closing-changed';
 
-/** Whole days left, counting a part day as a day; 0 once the time has passed. */
-export function daysLeft(closesAt: string, now = Date.now()): number {
-  return Math.max(0, Math.ceil((new Date(closesAt).getTime() - now) / DAY_MS));
-}
-
-/** The banner's words for a closing window. */
-export function closingMessage(c: Closing, now = Date.now()): string {
-  const left = daysLeft(c.closesAt, now);
-  const when = `${day(c.closesAt)}, in ${left} ${plural(left, 'day')}`;
+/**
+ * The banner's words for a closing window. Dates and days left are counted
+ * in `timeZone` (the viewer's), so "November 10" and "in 3 days" agree.
+ */
+export function closingMessage(c: Closing, now = Date.now(), timeZone?: string): string {
+  const left = daysLeft(c.closesAt, now, timeZone);
+  const date = closingDate(c.closesAt, timeZone);
+  const until = `${date}${left === 0 ? ' (today)' : `, in ${left} ${plural(left, 'day')}`}`;
+  const keyStops = 'After that, your WhiteRoom fleet key stops working.';
   if (c.reason === 'deleted') {
-    if (left > 0) return `Your account will be deleted on ${when}. Your fleet keeps working until then.`;
-    return c.blocked ? blockedMessage(c.blocked.reason) : 'Your account is being deleted.';
+    const removed = c.deleteAfter && c.deleteAfter !== c.closesAt ? c.deleteAfter : null;
+    if (isClosingOpen(c, now)) {
+      return removed
+        ? `Your account will be deleted. Your fleet keeps working until ${until}. ${keyStops} Your account is removed on ${closingDate(removed, timeZone)}.`
+        : `Your account will be deleted on ${until}. Your fleet keeps working until then. ${keyStops}`;
+    }
+    if (c.blocked) return blockedMessage(c.blocked.reason);
+    return removed && new Date(removed).getTime() > now
+      ? `Your fleet is closed. Your account is removed on ${closingDate(removed, timeZone)}.`
+      : 'Your account is being deleted.';
   }
-  return left > 0
-    ? `Your plan has ended. Your fleet keeps working until ${when}. Then it closes and your WhiteRoom fleet key stops working.`
-    : `Your fleet closed on ${day(c.closesAt)}. Its audit trail is kept for 12 months.`;
+  return isClosingOpen(c, now)
+    ? `Your plan has ended. Your fleet keeps working until ${until}. ${keyStops}`
+    : `Your fleet closed on ${date}. Its audit trail is kept for ${AUDIT_KEPT}.`;
 }
 
 const linkClass = 'wr-btn wr-btn--secondary wr-btn--h28';
@@ -34,23 +50,41 @@ const linkClass = 'wr-btn wr-btn--secondary wr-btn--h28';
 /** The fix a blocked deletion needs, as a link: Manage billing, or the organization. */
 export function BlockedFix({ kind }: { kind: 'subscription' | 'organization' }) {
   return kind === 'subscription'
-    ? <Link href={`${ROUTES.settings}#plan`} className={linkClass} style={{ textDecoration: 'none' }}>Manage billing</Link>
-    : <Link href={ROUTES.organization} className={linkClass} style={{ textDecoration: 'none' }}>Open organization</Link>;
+    ? <Link href={`${ROUTES.settings}#plan`} className={linkClass}>Manage billing</Link>
+    : <Link href={ROUTES.organization} className={linkClass}>Open organization</Link>;
+}
+
+/** The way back to the full export, while the account can still download it. */
+function ExportLink() {
+  return <Link href={`${ROUTES.settings}#audit-integrity`} className={linkClass}>Download export</Link>;
+}
+
+/** A mailto link to support, for what only support can resolve. */
+export function SupportLink() {
+  return <a href={`mailto:${SUPPORT_EMAIL}`} className={linkClass}>Contact support</a>;
 }
 
 /**
  * Every signed-in page, while the account is closing (deleted, or plan
- * lapsed): days left, a way to the export, and Cancel deletion or Choose a
- * plan. A deletion that ended but can't finish (blocked) says why, with the
- * fix and Keep my account. Renders nothing otherwise.
+ * lapsed): when, a way to the export, and Cancel deletion or Choose a plan.
+ * A deletion that ended but can't finish (blocked) says why, with the fix
+ * and Keep my account. A closed fleet offers the export and support.
+ * Renders nothing otherwise. A state that couldn't be read keeps what was
+ * already shown rather than clearing it.
  */
 export function AccountClosingBanner() {
   const [closing, setClosing] = useState<Closing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The viewer's zone, read after mount so server and browser render alike.
+  const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
+  useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
 
   const load = useCallback(() => {
-    getAccountClosing().then(setClosing, () => setClosing(null));
+    getAccountClosing().then(
+      (state) => { if (state !== 'unknown') setClosing(state); },
+      () => {},
+    );
   }, []);
 
   useEffect(() => {
@@ -60,7 +94,7 @@ export function AccountClosingBanner() {
   }, [load]);
 
   if (!closing) return null;
-  const open = daysLeft(closing.closesAt) > 0;
+  const open = isClosingOpen(closing);
 
   async function cancel() {
     setBusy(true);
@@ -76,24 +110,43 @@ export function AccountClosingBanner() {
     }
   }
 
-  const actions = open ? (
-    <>
-      <Link href={`${ROUTES.settings}#audit-integrity`} className={linkClass} style={{ textDecoration: 'none' }}>Download export</Link>
-      {closing.reason === 'deleted'
-        ? <Button size={28} busy={busy} busyLabel="Cancelling…" onClick={() => void cancel()}>Cancel deletion</Button>
-        : <Link href={`${ROUTES.settings}#plan`} className={linkClass} style={{ textDecoration: 'none' }}>Choose a plan</Link>}
-    </>
-  ) : closing.blocked ? (
-    <>
-      <BlockedFix kind={closing.blocked.kind} />
-      <Button size={28} busy={busy} busyLabel="Keeping…" onClick={() => void cancel()}>Keep my account</Button>
-    </>
-  ) : undefined;
+  let actions: React.ReactNode;
+  if (open) {
+    actions = (
+      <>
+        <ExportLink />
+        {closing.reason === 'deleted'
+          ? <Button size={28} busy={busy} busyLabel="Cancelling…" onClick={() => void cancel()}>Cancel deletion</Button>
+          : <Link href={`${ROUTES.settings}#plan`} className={linkClass}>Choose a plan</Link>}
+      </>
+    );
+  } else if (closing.blocked) {
+    actions = (
+      <>
+        <BlockedFix kind={closing.blocked.kind} />
+        <Button size={28} busy={busy} busyLabel="Keeping…" onClick={() => void cancel()}>Keep my account</Button>
+      </>
+    );
+  } else if (closing.reason === 'deleted' && closing.deleteAfter && new Date(closing.deleteAfter).getTime() > Date.now()) {
+    actions = (
+      <>
+        <ExportLink />
+        <Button size={28} busy={busy} busyLabel="Keeping…" onClick={() => void cancel()}>Keep my account</Button>
+      </>
+    );
+  } else if (closing.reason === 'lapsed') {
+    actions = (
+      <>
+        <ExportLink />
+        <SupportLink />
+      </>
+    );
+  }
 
   return (
     <div style={{ padding: '12px 16px 0' }} data-testid="account-closing-banner">
       <Banner variant="warn" actions={actions}>
-        {closingMessage(closing)}
+        {closingMessage(closing, Date.now(), timeZone)}
         {error && <span role="alert" style={{ display: 'block', color: 'var(--bad)', marginTop: 4 }}>{error}</span>}
       </Banner>
     </div>

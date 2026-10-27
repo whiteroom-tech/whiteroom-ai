@@ -4,10 +4,21 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   constructEvent: vi.fn(),
   sync: vi.fn(),
+  getClosing: vi.fn(),
+  cancelClosing: vi.fn(),
+  cancelStripe: vi.fn(),
+  refund: vi.fn(),
+  enqueue: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
-vi.mock('@/lib/entitlements', () => ({ syncEntitlementsToEngine: mocks.sync }));
+vi.mock('@/lib/entitlements', () => ({ syncEntitlementsToEngine: mocks.sync, enqueueEntitlementSync: mocks.enqueue }));
+vi.mock('@/lib/account-closing', () => ({
+  getClosing: mocks.getClosing,
+  cancelClosing: mocks.cancelClosing,
+  cancelStripeSubscription: mocks.cancelStripe,
+  reportRefundNeeded: mocks.refund,
+}));
 vi.mock('@/lib/stripe', () => ({
   stripe: () => ({ webhooks: { constructEventAsync: mocks.constructEvent } }),
 }));
@@ -60,6 +71,10 @@ beforeEach(() => {
   // rowCount 1 means the idempotency claim succeeds; everything else is a write.
   mocks.query.mockResolvedValue({ rowCount: 1, rows: [] });
   mocks.sync.mockResolvedValue(true);
+  mocks.getClosing.mockResolvedValue(null);
+  mocks.cancelClosing.mockResolvedValue(true);
+  mocks.cancelStripe.mockResolvedValue('canceled');
+  mocks.refund.mockResolvedValue(undefined);
 });
 
 describe('stripe webhook: subscription upsert', () => {
@@ -91,5 +106,49 @@ describe('stripe webhook: subscription upsert', () => {
   it('pushes the new limits to the engine', async () => {
     await deliver(subscription([{ price: 'price_pro', quantity: 9 }]));
     expect(mocks.sync).toHaveBeenCalledWith('u1');
+  });
+});
+
+describe('stripe webhook: a subscription on a closing account', () => {
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+  const LATER = new Date(Date.now() + 5 * 86_400_000).toISOString();
+
+  it('after the fleet closed: cancels it at Stripe, records that, reports a refund, refunds nothing itself', async () => {
+    mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: PAST });
+    expect((await deliver(subscription([{ price: 'price_starter', quantity: 1 }]))).status).toBe(200);
+    expect(mocks.cancelStripe).toHaveBeenCalledWith('sub_1');
+    const recorded = mocks.query.mock.calls.find((c) => String(c[0]).startsWith('UPDATE subscriptions SET status'));
+    expect(recorded?.[1]).toEqual(['u1', 'canceled', 'sub_1']);
+    expect(mocks.refund).toHaveBeenCalledWith('u1', 'sub_1', 'became active');
+    expect(mocks.cancelClosing).not.toHaveBeenCalled();
+    expect(mocks.sync).toHaveBeenCalledWith('u1');
+  });
+
+  it('a cancel Stripe refuses fails the delivery, so Stripe retries it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: PAST });
+    mocks.cancelStripe.mockRejectedValue(new Error('stripe down'));
+    expect((await deliver(subscription([{ price: 'price_starter', quantity: 1 }]))).status).toBeGreaterThanOrEqual(500);
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
+  it('during a deletion window: the deletion is cancelled and the engine told; nothing is cancelled at Stripe', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: LATER });
+    await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
+    expect(mocks.cancelClosing).toHaveBeenCalledWith(expect.anything(), 'u1', 'deleted');
+    // Queued as well as pushed: a failed push still reaches the engine.
+    expect(mocks.enqueue).toHaveBeenCalledWith(expect.anything(), 'u1', 'account_closing_cancelled');
+    expect(mocks.cancelStripe).not.toHaveBeenCalled();
+    expect(mocks.sync).toHaveBeenCalledWith('u1');
+  });
+
+  it('during a lapse window, or for a subscription that is not active, leaves both alone', async () => {
+    mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: LATER });
+    await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
+    mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: PAST });
+    await deliver({ ...subscription([{ price: 'price_starter', quantity: 1 }]), status: 'canceled' });
+    expect(mocks.cancelClosing).not.toHaveBeenCalled();
+    expect(mocks.cancelStripe).not.toHaveBeenCalled();
   });
 });

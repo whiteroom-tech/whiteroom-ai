@@ -1,8 +1,10 @@
 import type Stripe from 'stripe';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
-import { syncEntitlementsToEngine } from '@/lib/entitlements';
-import { planItem } from '@/lib/plans';
+import { enqueueEntitlementSync, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { isActiveStatus, planItem } from '@/lib/plans';
+import { cancelClosing, cancelStripeSubscription, getClosing, reportRefundNeeded } from '@/lib/account-closing';
+import { isClosingOpen } from '@/lib/closing-shared';
 
 // Signature verification runs over the exact bytes Stripe signed, and the
 // Node crypto it uses isn't available on the edge runtime.
@@ -173,11 +175,45 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
     ],
   );
 
+  await guardClosedAccount(userId, sub);
+
   // Push the new limits through to the engine. Deliberately awaited: if this
   // is going to fail we want it in the same log line as the event that caused
   // it, and syncEntitlementsToEngine already swallows its own errors so it
   // can't turn a successful payment into a retried webhook.
   await syncEntitlementsToEngine(userId);
+}
+
+/**
+ * A subscription that becomes active on an account that is closing.
+ *
+ * - The fleet has already closed (closing is final): nothing should bill for
+ *   it, so the subscription is cancelled now, without proration or a final
+ *   invoice. Any charge already taken is NOT refunded automatically
+ *   (reportRefundNeeded: a person refunds it). If cancelling fails the
+ *   handler throws, and Stripe's retry runs it again.
+ * - A deletion window is still running: they chose to pay, so the deletion
+ *   is cancelled and the account carries on. (In its last minutes it can't
+ *   be; the fleet then closes and the case above applies.)
+ */
+async function guardClosedAccount(userId: string, sub: Stripe.Subscription): Promise<void> {
+  if (!isActiveStatus(sub.status)) return;
+  const closing = await getClosing(userId);
+  if (!closing) return;
+  if (isClosingOpen(closing)) {
+    if (closing.reason === 'deleted') {
+      // Queued first, so the engine hears of the cancel even if the push
+      // below fails; a queued push with nothing cancelled just resends today's state.
+      await enqueueEntitlementSync(db(), userId, 'account_closing_cancelled');
+      if (await cancelClosing(db(), userId, 'deleted')) {
+        console.warn(`[stripe] user ${userId} subscribed during their deletion window; deletion cancelled`);
+      }
+    }
+    return;
+  }
+  const status = await cancelStripeSubscription(sub.id);
+  await db().query(`UPDATE subscriptions SET status = $2, updated_at = now() WHERE user_id = $1 AND stripe_subscription_id = $3`, [userId, status, sub.id]);
+  await reportRefundNeeded(userId, sub.id, `became ${sub.status}`);
 }
 
 /**

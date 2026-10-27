@@ -13,12 +13,13 @@
 import 'server-only';
 
 import { auth } from '@/auth';
-import { db } from '@/lib/db';
+import { db, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
-import { lapsedPaidPlan, reconcileLapse, type Closing } from '@/lib/account-closing';
+import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
+import { isClosingOpen, type Closing } from '@/lib/closing-shared';
 
 export interface SubscriptionRow {
   plan: string;
@@ -45,9 +46,6 @@ export interface Entitlement {
   /** `agents` is null when the engine couldn't be reached. */
   usage: { fleets: number; agents: number | null };
 }
-
-/** Anything that runs a query: the pool, or a transaction's client. */
-type Queryable = Pick<ReturnType<typeof db>, 'query'>;
 
 export async function getSubscriptionRow(userId: string, q: Queryable = db()): Promise<SubscriptionRow | null> {
   const { rows } = await q.query(
@@ -256,7 +254,7 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
   // During the window the fleets keep working: a lapsed paid plan runs on
   // the plan it had until the window ends. An ended free period stays off,
   // window or not (a trial account that deletes isn't switched back on).
-  const windowOpen = !!closing && new Date(closing.closesAt).getTime() > Date.now();
+  const windowOpen = !!closing && isClosingOpen(closing);
   const applied: PlanId = (windowOpen && lapsedPaidPlan(plan, sub)) || plan;
   const limits = limitsFor(applied);
 
@@ -288,15 +286,20 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
       return false;
     }
+    const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
+    const closed = Array.isArray(body?.closed) ? body.closed : null;
     // An engine that answers without `closed` doesn't know about closing and
     // dropped the time: not delivered, so the outbox keeps it until one does.
     // Otherwise a deleted account could be removed with its fleets still open.
-    if (closing) {
-      const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
-      if (!Array.isArray(body?.closed)) {
-        console.error('[entitlements] engine did not take the closing time; leaving pending');
-        return false;
-      }
+    if (closing && !closed) {
+      console.error('[entitlements] engine did not take the closing time; leaving pending');
+      return false;
+    }
+    // The engine has the final say on closing: a fleet it reports closed
+    // while this side thinks it open (a cancel that came too late) is
+    // recorded closed, so checkout refuses and the banner tells the truth.
+    if (closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
+      if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
     }
     return true;
   } catch (err) {

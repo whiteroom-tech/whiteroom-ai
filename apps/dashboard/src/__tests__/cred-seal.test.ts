@@ -153,10 +153,10 @@ describe('instrumentation register', () => {
     await expect(register()).rejects.toThrow('exit');
     expect(errors).toHaveBeenCalledWith(expect.stringMatching(/apply migration 012/));
 
-    // Both columns there: it starts.
+    // Every column there: it starts.
     exit.mockClear();
     query.mockReset();
-    query.mockResolvedValueOnce({ rows: [{ is_nullable: 'YES' }] }).mockResolvedValueOnce({ rows: [{ n: 5 }] }).mockResolvedValue({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [{ is_nullable: 'YES' }] }).mockResolvedValueOnce({ rows: [{ n: 7 }] }).mockResolvedValue({ rows: [] });
     await register();
     expect(exit).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(5));
