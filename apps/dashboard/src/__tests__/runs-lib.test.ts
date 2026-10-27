@@ -152,6 +152,12 @@ describe('run detail rows', () => {
     const blocked = timelineRow({ id: 'c2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [{ ruleId: 'r', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' }] });
     expect(blocked.rule).toEqual({ text: 'blocked: over the spend cap', mode: 'enforce' });
     expect(blocked.tag).toBeUndefined();
+    // A rule that acted leads a Record only one on the same call.
+    const both = timelineRow({ id: 'c3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [
+      { ruleId: 'w', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' },
+      { ruleId: 'e', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' },
+    ] });
+    expect(both.rule).toEqual({ text: 'blocked: over the spend cap (+1 more)', mode: 'enforce' });
   });
   it('writes the summary line, from the run or else from the runs list', () => {
     vi.stubEnv('TZ', 'America/New_York');
@@ -159,7 +165,10 @@ describe('run detail rows', () => {
     expect(runSummary({ ...head, calls: 6, spendMicros: 50_000, failedCalls: 0, blockedCalls: 0, wouldBlockCalls: 6, models: ['claude-sonnet-4-5'] }))
       .toEqual({ started: 'Oct 24, 8:45 pm EDT', length: '24 s', calls: 6, spend: '$0.05', failed: 0, blocked: 0, wouldBlock: 6, models: ['claude-sonnet-4-5'] });
     const old = runSummary(head, { calls: 6, failedCalls: 1, blockedCalls: 0, spendMicros: 50_000, unpricedAttempts: 1, wouldActCalls: 2 });
-    expect(old).toMatchObject({ calls: 6, failed: 1, spend: '$0.05+', wouldBlock: 2, models: [] });
+    expect(old).toMatchObject({ calls: 6, failed: 1, spend: 'at least $0.05', wouldBlock: 2, models: [] });
+    // The linked count when the engine can tell, else its list_runs figure.
+    expect(runSummary({ ...head, wouldBlockCalls: null, wouldActCalls: 3 }).wouldBlock).toBe(3);
+    expect(runSummary({ ...head, wouldBlockCalls: 0, wouldActCalls: 3 }).wouldBlock).toBe(0);
     expect(runSummary(head)).toMatchObject({ calls: undefined, spend: undefined });
   });
   it('never says nothing was blocked when a rule blocked', () => {

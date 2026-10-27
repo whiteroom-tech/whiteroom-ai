@@ -227,6 +227,9 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
           </p>
         )}
         {failing && data && <RefreshFailed since={updatedAt} />}
+        {run?.ruleActionsUnavailable && actions.length === 0 && (
+          <p className="wr-run-flags">Rule activity for this run couldn&rsquo;t be read just now.</p>
+        )}
         {actions.length > 0 && link && (
           <section className="wr-panel" aria-labelledby="run-rule-activity" style={{ overflow: 'hidden' }}>
             <div className="wr-panel__head">

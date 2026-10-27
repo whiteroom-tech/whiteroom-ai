@@ -64,6 +64,22 @@ describe('run page totals fallback', () => {
   });
 });
 
+describe('run page when rule actions can’t be read', () => {
+  it('says so instead of showing no rule activity', async () => {
+    api.events.mockImplementation(async (): Promise<RunEventsResult> => ({
+      fleetId: 'f1', run: { runId: 'a~4', agentId: 'a', shift: 4, startedAt: now, endedAt: now, calls: 1, ruleActions: [], ruleActionsUnavailable: true }, events: [], page: 0, pages: 1, total: 0, eventFound: null,
+    }));
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
+    await flush();
+    expect(el.textContent).toContain('Rule activity for this run couldn’t be read just now.');
+    await act(async () => root.unmount());
+    el.remove();
+  });
+});
+
 describe('run page exports and links', () => {
   const page = (n: number, x: Partial<RunEventsResult> = {}): RunEventsResult => ({
     fleetId: 'f1',

@@ -167,6 +167,21 @@ describe('Runs › phones', () => {
     m.root.unmount();
   });
 
+  it('keeps rows Show more added when a poll that started before it lands later', async () => {
+    const page = (from: number, size: number) => ({ runs: Array.from({ length: size }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + size) });
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => page(Number(o.cursor ?? 0), o.pageSize));
+    const m = await mount();
+    let landPoll: () => void = () => {};
+    api.list.mockImplementationOnce(() => new Promise((res) => { landPoll = () => res(page(0, 25)); }));
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs'));
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')).toHaveLength(50);
+    await act(async () => { landPoll(); });
+    await flush();
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')).toHaveLength(50);
+    m.root.unmount();
+  });
+
   it('frees Show more when the load it asked for fails', async () => {
     api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
       const from = Number(o.cursor ?? 0);

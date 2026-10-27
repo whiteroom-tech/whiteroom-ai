@@ -719,6 +719,10 @@ export interface RunRuleAction {
   at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number;
   /** Timeline ids of the calls it was for, in timeline order (engine PR 298; empty on older rows, absent on older engines). */
   eventIds?: string[];
+  /** eventIds stops at a cap; the row covered more calls. */
+  callIdsCapped?: boolean;
+  ruleName?: string | null;
+  outcome?: CallRuleAction['outcome'];
   /** The decision's reason code (model_not_allowed, …). Absent on older engines. */
   reason?: string | null;
 }
@@ -798,8 +802,12 @@ export interface RunHeader {
   unpricedAttempts?: number;
   failedCalls?: number;
   blockedCalls?: number;
-  /** Times a Record-only rule would have acted (list_runs' wouldActCalls). */
-  wouldBlockCalls?: number;
+  /** Calls a Record-only rule would have blocked (distinct linked calls, a lower bound); null when it can't be told. */
+  wouldBlockCalls?: number | null;
+  /** list_runs' figure for the run (times a Record-only rule would have acted): the fallback for older runs. */
+  wouldActCalls?: number;
+  /** The run's rule actions couldn't be read: Rule activity is unknown, not empty. */
+  ruleActionsUnavailable?: boolean;
   /** Distinct models, in order of first use. */
   models?: string[];
 }

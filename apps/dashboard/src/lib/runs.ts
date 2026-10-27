@@ -337,8 +337,11 @@ const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
 
 /** A call's rule note: "would have been blocked: model not on the allowlist". */
 function callRule(e: RunEvent): TimelineRow['rule'] {
-  const [a, ...more] = e.ruleActions ?? [];
+  const all = e.ruleActions ?? [];
+  // A rule that acted leads; else a Record only rule that would have blocked; else whatever came first.
+  const a = all.find((x) => x.mode === 'enforce') ?? all.find((x) => x.outcome === 'would_block') ?? all[0];
   if (!a) return undefined;
+  const more = all.filter((x) => x !== a);
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
   return { text: `${CALL_OUTCOME_TEXT[a.outcome] ?? 'a rule acted'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
 }
@@ -409,10 +412,12 @@ export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
     started: `${fmtStarted(run.startedAt)} ${zoneName(t)}`,
     length: fmtLength((Date.parse(run.endedAt) - t) / 1000),
     calls: run.calls ?? fallback?.calls,
-    spend: micros === undefined ? undefined : `${usd(micros / 1e6)}${unpriced ? '+' : ''}`,
+    // Some calls had no price: the spend is a lower bound.
+    spend: micros === undefined ? undefined : `${unpriced ? 'at least ' : ''}${usd(micros / 1e6)}`,
     failed: run.failedCalls ?? fallback?.failedCalls,
     blocked: run.blockedCalls ?? fallback?.blockedCalls,
-    wouldBlock: run.wouldBlockCalls ?? fallback?.wouldActCalls,
+    // The linked count when the engine could tell; else list_runs' figure (older runs).
+    wouldBlock: run.wouldBlockCalls ?? run.wouldActCalls ?? fallback?.wouldActCalls,
     models: run.models ?? [],
   };
 }
@@ -489,7 +494,8 @@ export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTota
   });
   return [
     { name: 'Run', header: ['Field', 'Value'], rows: summary },
-    { name: 'What happened', header: [`Time (${zoneName(Date.parse(run.startedAt))})`, 'Kind', 'What', 'Model', 'Outcome', 'Rule'], rows },
+    // Rows are in the viewer's zone, named by its IANA name, which holds across a daylight-saving change.
+    { name: 'What happened', header: [`Time (${viewerTimeZone()})`, 'Kind', 'What', 'Model', 'Outcome', 'Rule'], rows },
   ];
 }
 

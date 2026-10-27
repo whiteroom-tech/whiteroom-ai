@@ -177,6 +177,8 @@ export function RunsTable({ preview, retentionDays }: {
   // Where Show more continues from, and whether it has added rows (polls then refresh only the first page).
   const [next, setNext] = useState<string | null>(null);
   const expanded = useRef(false);
+  // Bumped by Show more: a load already in flight with the shorter list is dropped when it lands.
+  const listGen = useRef(0);
   const shownCount = useRef(0);
   // The filter a Show more belongs to: a page that lands after the filter changed is dropped.
   const filterKey = `${range}|${day}|${hour}|${from}|${to}|${agent}|${show}`;
@@ -261,6 +263,7 @@ export function RunsTable({ preview, retentionDays }: {
   // the rows already open, in pages of 50, so every shown row stays current.
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
+    const gen = listGen.current;
     try {
       const want = expanded.current ? Math.max(PAGE, shownCount.current) : PAGE;
       const got: RunSummary[] = [];
@@ -268,7 +271,7 @@ export function RunsTable({ preview, retentionDays }: {
       let count = 0;
       for (let first = true; got.length < want; first = false) {
         const res = await listRuns(fleetId, { ...listQuery(), cursor, pageSize: Math.min(50, want - got.length) }, authKey);
-        if (stale()) return;
+        if (stale() || gen !== listGen.current) return;
         if ('unsupported' in res) { setUnsupported(true); return; }
         if (first) {
           // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
@@ -291,7 +294,7 @@ export function RunsTable({ preview, retentionDays }: {
       setFailing(false);
       setUpdatedAt(Date.now());
     } catch (e) {
-      if (stale()) return;
+      if (stale() || gen !== listGen.current) return;
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       // The old rows stay usable (not dimmed) under the refresh-failed note; the poll retries.
       setLoading(false);
@@ -304,6 +307,7 @@ export function RunsTable({ preview, retentionDays }: {
     if (preview) { setPreviewLimit((l) => l + PAGE); return; }
     if (!fleetId || !next) return;
     const forFilter = filterKey;
+    listGen.current++;
     setMoreBusy(true);
     try {
       const res = await listRuns(fleetId, { ...listQuery(), cursor: next, pageSize: PAGE }, authKey);
