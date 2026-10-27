@@ -57,7 +57,7 @@ describe('the unnamed-call warnings', () => {
       expect(line).toMatch(/refused/);
       expect(line).toMatch(/fleet/);
     }
-    expect(UNNAMED_CALLS_ENFORCE).toMatch(/Enforce/);
+    expect(UNNAMED_CALLS_ENFORCE).toMatch(/Block-mode rule/);
   });
 });
 

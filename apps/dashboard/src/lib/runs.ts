@@ -290,7 +290,7 @@ export function timelineRow(e: RunEvent): TimelineRow {
 export function runMeta(run: { startedAt: string; endedAt: string; shift: number }): string {
   const { date, time } = dateAndTime(run.startedAt);
   const length = fmtLength((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000);
-  return `${date} · started ${time} ${zoneName(Date.parse(run.startedAt))} · ${length} · shift ${run.shift}`;
+  return `${date} · started ${time} ${zoneName(Date.parse(run.startedAt))} · ${length} · run ${run.shift}`;
 }
 
 export type RunKind = 'all' | 'events';
@@ -317,7 +317,7 @@ export async function loadRunPage(
 
 /** The old event feed's export: every event, and the finished tasks alone. */
 export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
-  const header = ['Time', 'Agent', 'Shift', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
+  const header = ['Time', 'Agent', 'Run number', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
   const row = (e: AuditEntry) => [
     new Date(e.timestamp).toLocaleString('en-US', { hour12: false }), e.agentId || '', e.watchNumber, e.type || '',
     e.type === 'task_complete' ? e.taskName || '' : '', e.tokensUsed, e.minutesSpent, e.remaining,
@@ -330,7 +330,7 @@ export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
 }
 
 /** Runs export: spend is a lower bound when some calls had no price, so that count gets its own column. */
-export const RUNS_EXPORT_HEADER = ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'Unpriced calls', 'What stood out'];
+export const RUNS_EXPORT_HEADER = ['Run', 'Agent', 'Run number', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'Unpriced calls', 'What stood out'];
 export function runsExportRow(r: RunSummary): (string | number)[] {
   return [r.runId, r.agentId, r.shift, r.startedAt, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, standOut(r).text];
 }

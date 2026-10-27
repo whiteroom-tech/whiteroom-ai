@@ -18,16 +18,16 @@ describe('agents', () => {
   });
 
   it('writes the progress line in shifts, never "watch"', () => {
-    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Shift 8 · 62 tasks · 9.4 min worked');
-    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Rest after shift 5 · 1 task');
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No shift running · waiting for work');
+    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Run 8 · 62 tasks · 9.4 min worked');
+    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Rest after run 5 · 1 task');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run in progress · waiting for work');
   });
 
   it('shows the last shift, not lifetime, once a shift has ended (M14)', () => {
     const last = { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 };
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last shift 41 · 5 tasks · waiting for work');
-    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Rest after shift 41 · 5 tasks');
-    expect(progressLine(agent('a', 'working', { currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Shift 42 · 2 tasks · 1.3 min worked');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run 41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Rest after run 41 · 5 tasks');
+    expect(progressLine(agent('a', 'working', { currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Run 42 · 2 tasks · 1.3 min worked');
   });
 
   it('sorts problems first, then working, resting, idle, then by id', () => {
@@ -52,11 +52,14 @@ describe('activity', () => {
   const e = (type: string, ts: string, x: Partial<AuditEntry> = {}): AuditEntry => ({ id: `${type}-${ts}`, type, timestamp: ts, agentId: 'lead-agent', ...x });
 
   it('keeps agent ids exactly as stored', () => {
-    expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now).text).toBe('lead-agent started a shift');
+    expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now).text).toBe('lead-agent started a run');
   });
 
   it('tags handovers, pauses and blocks', () => {
-    expect(activityRow(e('self_handover', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Handover', tone: 'ho' });
+    expect(activityRow(e('self_handover', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Smaller context', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z', { toAgent: 'writer' }), now).tag).toEqual({ label: 'Passed work', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Passed work', tone: 'ho' });
+    expect(activityRow(e('handover_in', '2026-09-30T14:00:00Z', { fromAgent: 'lead' }), now).tag).toEqual({ label: 'Took over', tone: 'ho' });
     expect(activityRow(e('agent_paused', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Paused', tone: 'warn' });
     expect(activityRow(e('governance_block', '2026-09-30T14:00:00Z', { ruleType: 'spend_cap' }), now).tag?.label).toBe('Blocked');
     expect(activityRow(e('task_complete', '2026-09-30T14:00:00Z', { taskName: 'x' }), now).tag).toBeUndefined();
@@ -82,7 +85,7 @@ describe('activity', () => {
     const epoch = { ...e('watch_start', ''), timestamp: Date.parse('2026-10-03T09:15:00') } as unknown as AuditEntry;
     const mixed = latestActivity([e('agent_paused', '2026-10-03T08:00:00'), epoch, e('rest_start', '2026-10-03T07:00:00')], 4, today);
     expect(mixed.map((r) => r.time)).toEqual(['9:15 am', '8:00 am', '7:00 am']);
-    expect(lastEventByAgent([e('agent_paused', '2026-10-03T08:00:00'), epoch], today)['lead-agent']).toEqual({ time: '9:15 am', text: 'started a shift' });
+    expect(lastEventByAgent([e('agent_paused', '2026-10-03T08:00:00'), epoch], today)['lead-agent']).toEqual({ time: '9:15 am', text: 'started a run' });
   });
 
   it('keeps the latest event per agent', () => {
@@ -216,15 +219,15 @@ describe('formatting', () => {
   it('the ⓘ parts add up to the shown total, whatever the rounding', () => {
     // Live Oct 12: $8.984 + $2.094 = $11.078 read "$11.08 = $8.98 + $2.09".
     expect(savedByWhiteRoomHint({ usd: 11.078, handover: 8.984, cache: 2.094, partial: false, agentCache: null }))
-      .toContain('est. $11.08 = $8.98 from smaller handovers + $2.10 from caching WhiteRoom added');
+      .toContain('est. $11.08 = $8.98 from smaller context + $2.10 from caching WhiteRoom added');
   });
   it('explains saved by WhiteRoom in the Spend card ⓘ, keeping the agents\' own caching out', () => {
     expect(savedByWhiteRoomHint({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false, agentCache: null }))
-      .toBe('Saved by WhiteRoom: est. $6.14 = $4.22 from smaller handovers + $1.92 from caching WhiteRoom added, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');
+      .toBe('Saved by WhiteRoom: est. $6.14 = $4.22 from smaller context + $1.92 from caching WhiteRoom added, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');
     expect(savedByWhiteRoomHint({ usd: 4.22, handover: 4.22, cache: 0, partial: false, agentCache: 2.5 }))
-      .toBe('Saved by WhiteRoom: est. $4.22 = $4.22 from smaller handovers, across everything stored. Your agents\' own caching saved a further $2.50, which isn\'t counted. Performance shows the same sum for the last 24h, 3d or 7d.');
+      .toBe('Saved by WhiteRoom: est. $4.22 = $4.22 from smaller context, across everything stored. Your agents\' own caching saved a further $2.50, which isn\'t counted. Performance shows the same sum for the last 24h, 3d or 7d.');
     expect(savedByWhiteRoomHint({ usd: 4.22, handover: 4.22, cache: null, partial: true, agentCache: null }))
-      .toBe('Saved by WhiteRoom: est. $4.22+ = $4.22 from smaller handovers, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d. "+" means some tokens had no price on file.');
+      .toBe('Saved by WhiteRoom: est. $4.22+ = $4.22 from smaller context, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d. "+" means some tokens had no price on file.');
   });
 });
 

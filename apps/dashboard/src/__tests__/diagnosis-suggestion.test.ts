@@ -24,7 +24,7 @@ describe('reading a suggestion', () => {
     const s = readSuggestion(result(loopRec()))!;
     expect(s.ruleType).toBe('loop_breaker');
     expect(s.suggested).toBe(5);
-    expect(s.sentence).toBe('search ran with the same request 9 times in shift 3, and this happened in 2 shifts this week. The agent may be stuck in a loop.');
+    expect(s.sentence).toBe('search ran with the same request 9 times in run 3, and this happened in 2 runs this week. The agent may be stuck in a loop.');
   });
 
   it("labels the amount from the suggested rule's scope and unit", () => {

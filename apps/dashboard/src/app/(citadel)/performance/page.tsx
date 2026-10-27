@@ -1,5 +1,6 @@
 'use client';
 
+import { RULE_ACTIVITY } from '@/lib/vocab';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
@@ -438,7 +439,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
         <h3 style={H3}>Saved by WhiteRoom</h3>
-        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from handover compression (handovers and context offloads) and the prompt caching WhiteRoom added, each at the input prices your agents actually pay. Caching your agents already do on their own isn&apos;t counted.</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>Estimated savings from smaller context and the prompt caching WhiteRoom added, each at the input prices your agents actually pay. Caching your agents already do on their own isn&apos;t counted.</div>
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{ minWidth: 120 }}>
@@ -450,7 +451,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{fmtCost(cacheMicros)}</div>
           </div>
           <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Handover compression</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 2 }}>Smaller context</div>
             <div style={{ fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, fontWeight: 700, color: 'var(--tx)' }}>{savingsFigure(!!auditFailed, govCostMicros, !!govSavings?.partial)}</div>
           </div>
         </div>
@@ -485,7 +486,7 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
         )}
         {totalCacheRead === 0 && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginBottom: 16 }}>No cache activity in the selected time window.</div>}
 
-        <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Handover compression savings</div>
+        <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 8 }}>Smaller context savings</div>
         {govTokens > 0 ? (
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
             {[
@@ -499,11 +500,11 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No handover compression savings yet. Handovers and context offloads reduce redundant token processing.</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No smaller-context savings yet.</div>
         )}
         {govTokens > 0 && (
           <div style={{ background: 'var(--sunk)', borderRadius: 8, padding: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-            These savings come from handovers and context offloads — when agents transfer work or compress context, they avoid re-processing <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model. Each agent&apos;s tokens are valued at the input price it pays, cache discounts included.
+            These savings come from WhiteRoom keeping each agent&apos;s context small, so agents avoid re-sending <strong>{fmtTokens(govTokens)}</strong> tokens that would otherwise be sent to the model. Each agent&apos;s tokens are valued at the input price it pays, cache discounts included.
           </div>
         )}
       </div>
@@ -515,9 +516,9 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const agents = counts ? Object.entries(counts.byAgent).sort(([, a], [, b]) => (b.blocks - a.blocks) || (b.wouldBlocks - a.wouldBlocks)) : [];
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Rule actions</h3>
+        <h3 style={H3}>{RULE_ACTIVITY}</h3>
         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>
-          Calls stopped by rules on the Controls page. Blocked = Enforce stopped the call; would-block = a Watch rule matched but the call went through. Per-rule and per-agent counts come from recent audit events.
+          Calls stopped by rules on the Controls page. Blocked = a Block rule stopped the call; would have acted = a Record only rule matched and the call went through. Per-rule and per-agent counts come from recent audit events.
         </div>
         {!counts || (counts.blocks === 0 && counts.wouldBlocks === 0 && !blockedCount) ? (
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No governance rule fired in the selected time window.</div>
@@ -730,7 +731,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
-        <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
+        <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
       </div>
 
       <div style={{ margin: '10px 0 24px' }}>
@@ -744,10 +745,10 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           <div style={{ display: 'flex', gap: 12, marginBottom: expandedMetric ? 0 : 24, flexWrap: 'wrap' }}>
             <MetricCard label="Model calls" value={s.totalCalls.toLocaleString()} sparklineData={displayHourly.map(h => h.calls)} trend={trends.calls} onClick={() => toggleMetric('requests')} active={expandedMetric === 'requests'} />
             <MetricCard label="Spend" value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`} sub={data.priceInfo.stale ? `Prices ${data.priceInfo.ageDays}d old` : `v${data.priceInfo.version}`} warn={data.priceInfo.stale} sparklineData={displayHourly.map(h => h.costMicros)} sparklineColor="var(--ok)" trend={trends.cost} trendInvert onClick={() => toggleMetric('spend')} active={expandedMetric === 'spend'} />
-            <MetricCard label="Saved by WhiteRoom, est." value={savingsFigure(auditFailed, savings.totalMicros, savings.partial)} sub={auditFailed ? UNAVAILABLE : savings.totalMicros > 0 ? 'handovers + caching WhiteRoom added' : undefined} onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
+            <MetricCard label="Saved by WhiteRoom, est." value={savingsFigure(auditFailed, savings.totalMicros, savings.partial)} sub={auditFailed ? UNAVAILABLE : savings.totalMicros > 0 ? 'smaller context + caching WhiteRoom added' : undefined} onClick={() => toggleMetric('savings')} active={expandedMetric === 'savings'} />
             <MetricCard label="Median response" value={fmtLatency(s.avgLatencyMs)} sparklineData={displayHourly.map(h => h.latencyP50Ms)} sparklineColor="var(--ho)" trend={trends.latency} trendInvert onClick={() => toggleMetric('latency')} active={expandedMetric === 'latency'} />
             <MetricCard label="Failed calls" value={fmtPct(s.errorRate)} warn={s.errorRate > 0.05} sparklineData={displayHourly.map(h => h.calls > 0 ? (h.errorCount / h.calls) * 100 : null)} sparklineColor="var(--bad)" trend={trends.errorRate} trendInvert trendUnit="pp" onClick={() => toggleMetric('errors')} active={expandedMetric === 'errors'} />
-            <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would-block (Watch)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
+            <MetricCard label="Refused by rules" value={blocked.toLocaleString()} warn={blocked > 0} sub={govCounts && govCounts.wouldBlocks > 0 ? `${govCounts.wouldBlocks.toLocaleString()} would have acted (Record only)` : undefined} onClick={() => toggleMetric('governance')} active={expandedMetric === 'governance'} />
           </div>
 
           {expandedMetric && <div style={{ marginTop: 12 }}><MetricDrillDown metric={expandedMetric} models={s.models} hourly={displayHourly} govSavings={govSavings} govCounts={govCounts} blockedCount={blocked} cache={cache} auditFailed={auditFailed} /></div>}
@@ -943,7 +944,7 @@ function EvidenceView({ data, fleetId, recommendationId, authKey }: { data: Perf
               <table style={{ width: '100%', fontSize: 'var(--fs-sm)', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--tx3)', fontWeight: 600, textAlign: 'left' }}>
-                    {((diagDetector ? ['Call ID', 'Model', 'Shift', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
+                    {((diagDetector ? ['Call ID', 'Model', 'Run', 'Status', 'Time'] : ['Call ID', 'Model', ['Tools', 'tools'], ['Schema chars', 'schema'], 'Status', 'Time']) as (string | [string, 'tools' | 'schema'])[]).map(h => {
                       if (typeof h === 'string') return <th key={h} style={{ padding: '6px 8px', textAlign: 'left' }}>{h}</th>;
                       const [label, k] = h;
                       return (

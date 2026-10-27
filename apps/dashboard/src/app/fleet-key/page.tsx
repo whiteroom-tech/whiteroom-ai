@@ -46,7 +46,7 @@ export default function DashboardPage() {
       // A key that's stored but can't be decrypted right now must never be
       // replaced: minting a new one would cut off every agent using the old one.
       if (provisioning.apiKeyUnreadable) {
-        setProvisionError('We couldn’t load your API key right now. Your agents are not affected. Try again in a few minutes.');
+        setProvisionError('We couldn’t load your fleet key right now. Your agents are not affected. Try again in a few minutes.');
         setLoading(false);
         return;
       }

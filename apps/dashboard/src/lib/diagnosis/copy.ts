@@ -21,7 +21,7 @@ export function isDiagnosisDetector(detector: string): detector is DiagnosisDete
 }
 
 export const TITLES: Record<DiagnosisDetectorId, string> = {
-  review_handover_churn: 'Handing over too often',
+  review_handover_churn: 'Runs fill up too fast',
   review_tool_loops: 'Repeating the same call',
   review_spend_outliers: 'Unusually expensive days',
   review_tool_errors: 'A tool keeps failing',
@@ -32,7 +32,7 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
 export const SNOOZE_DAYS = 7;
 
-export const WATCH_DEFINITION = 'A shift is one stretch of work. When it gets too long or too full, the agent hands over to a fresh shift.';
+export const WATCH_DEFINITION = 'A run is one stretch of work by one agent.';
 
 const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
 const has = (m: DiagnosisMeasures, k: string) => m[k] !== undefined && m[k] !== null && m[k] !== '';
@@ -56,19 +56,18 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       const parts = churnRepeatLed(m)
         ? [
             t('Redid '), v(m.repeatedSharePct), t('% of the work it had already done, '),
-            ...count(m.longestRepeatStreak, 'shift', 'shifts'), t(' in a row. It likely lost track of what it had found when it handed over, so it did the work again. To fix: have its tools send back shorter answers, or have it save its progress as it goes.'),
+            ...count(m.longestRepeatStreak, 'run', 'runs'), t(' in a row. It likely lost track of what it had found, so it did the work again. To fix: have its tools send back shorter answers, or have it save its progress as it goes.'),
           ]
         : [
-            t('Handed over after '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
-            ...count(m.longestStreak, 'shift', 'shifts'), t(' in a row. Its tools likely send back too much at once, which fills each shift fast. To fix: have its tools send back shorter answers.'),
+            ...(Number(m.longestStreak) > 1 ? [t('Its last '), ...count(m.longestStreak, 'run', 'runs')] : [t('Its runs')]), t(' lasted only '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' each on average. Its tools likely send back too much at once, which fills each run fast. To fix: have its tools send back shorter answers.'),
           ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;
     }
     case 'review_tool_loops':
       return [
-        code(m.toolName), t(' ran with the same request '), ...count(m.maxRepeats, 'time', 'times'), t(' in shift '), v(m.worstWatch), t(', and this happened in '),
-        ...count(m.watchesAffected, 'shift', 'shifts'), t(' this week. The agent may be stuck in a loop.'),
+        code(m.toolName), t(' ran with the same request '), ...count(m.maxRepeats, 'time', 'times'), t(' in run '), v(m.worstWatch), t(', and this happened in '),
+        ...count(m.watchesAffected, 'run', 'runs'), t(' this week. The agent may be stuck in a loop.'),
       ];
     case 'review_spend_outliers': {
       const one = Number(m.flaggedDays) === 1;
@@ -137,7 +136,7 @@ export function notMeasuredShort(code: string, reason: string): string {
     return more > 0 ? build(more) : engineText();
   });
   switch (code) {
-    case 'few_watches': return left(/has (\d+)/, 5, (m) => `needs ${m} more ${m === 1 ? 'shift' : 'shifts'}`);
+    case 'few_watches': return left(/has (\d+)/, 5, (m) => `needs ${m} more ${m === 1 ? 'run' : 'runs'}`);
     case 'short_history': return left(/has (\d+)/, 14, (m) => `starts in about ${m} ${m === 1 ? 'day' : 'days'}`);
     case 'low_coverage': return n(/for (\d+)%/, (x) => `can only see ${x}% of its tool calls`);
     case 'hashing_off':
@@ -161,8 +160,8 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
     case 'handover_churn':
       return [
         'Have the agent’s tools send back short answers, not everything at once: a few results at a time, plain text instead of whole web pages, a summary instead of a full document.',
-        'Or have the agent write down its progress after each step, so the next shift can pick up where the last one stopped.',
-        churnRepeatLed(m) ? 'Open the calls to see what was done twice.' : 'Open the calls to see what each shift did before it handed over.',
+        'Or have the agent write down its progress after each step, so the next run can continue from there.',
+        churnRepeatLed(m) ? 'Open the calls to see what was done twice.' : 'Open the calls to see what each run did.',
       ];
     case 'tool_errors':
       return [

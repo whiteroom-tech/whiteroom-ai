@@ -29,9 +29,9 @@ describe('By agent', () => {
     const lead = c.slice(0, c.indexOf('writer-agent'));
     const writer = c.slice(c.indexOf('writer-agent'));
     expect(lead).toContain('87.4K');
-    expect(lead).toContain('59 would act');
+    expect(lead).toContain('59 would have acted');
     expect(lead).toContain('aria-label="Performance score 10 of 10');
-    expect(writer).not.toContain('Rule actions');
+    expect(writer).not.toContain('Rule activity');
     expect(writer).not.toContain('Performance score');
   });
 

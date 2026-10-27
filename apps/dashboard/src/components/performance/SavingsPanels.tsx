@@ -128,7 +128,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
 export function ByAgentTable({ rows, scope, ruleActions, scores }: {
   rows: AgentTotals[];
   scope: string;
-  /** Controls blocks (Enforce) and would-blocks (Watch only) per agent id, lower-cased. */
+  /** Controls blocks (Block) and would-blocks (Record only) per agent id, lower-cased. */
   ruleActions?: Record<string, GovernanceTally>;
   /** Task success / cost diligence / speed, per agent id (absent on older engines, or while still loading). */
   scores?: Record<string, AgentScore>;
@@ -142,7 +142,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
     const words = ruleWords(r);
     if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
     return (
-      <span title="What Controls rules did for this agent (Enforce), and would have done (Watch only)">
+      <span title="What Controls rules did for this agent (Block), and would have done (Record only)">
         {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
       </span>
     );
@@ -168,7 +168,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
                 { key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)', render: name },
                 { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
                 { key: 'saved', header: 'Saved, est.', width: '120px', numeric: true, render: saved },
-                { key: 'rules', header: 'Rule actions', width: 'minmax(180px, 280px)', numeric: true, render: rules },
+                { key: 'rules', header: 'Rule activity', width: 'minmax(180px, 280px)', numeric: true, render: rules },
                 { key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)', render: score },
               ]}
             />
@@ -181,7 +181,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
                 <dl>
                   <div><dt>Tokens</dt><dd>{fmtTokens(r.used)}</dd></div>
                   <div><dt>Saved, est.</dt><dd>{saved(r)}</dd></div>
-                  {ruleWords(r).length > 0 && <div className="wr-byagent-cards__wide"><dt>Rule actions</dt><dd>{rules(r)}</dd></div>}
+                  {ruleWords(r).length > 0 && <div className="wr-byagent-cards__wide"><dt>Rule activity</dt><dd>{rules(r)}</dd></div>}
                   {scores?.[r.agent] && <div className="wr-byagent-cards__wide"><dt>Performance<Hint text={HELP.agentPerformance} /></dt><dd>{score(r)}</dd></div>}
                 </dl>
               </li>

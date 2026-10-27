@@ -70,7 +70,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
           <Link href={`${ROUTES.controls}?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
             background: 'var(--brand)', color: 'var(--bg)', border: '1px solid var(--brand)', textDecoration: 'none',
-          }}>Add {RULE_LABEL[action.rule]} in Watch</Link>
+          }}>Add {RULE_LABEL[action.rule]} in Record only</Link>
         )}
         {open && action?.kind === 'howto' && (
           <button type="button" className="dx-main-btn" aria-expanded={howOpen} aria-controls={howId} onClick={() => setHowOpen((v) => !v)} style={{
@@ -112,7 +112,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
               border: `1px solid ${w.calls <= 2 ? 'var(--warn-line)' : 'var(--line2)'}`,
               background: w.calls <= 2 ? 'var(--warn-bg)' : 'transparent',
               color: w.calls <= 2 ? 'var(--warn-tx)' : 'var(--tx2)',
-            }}>shift {w.watch} · {w.calls} {w.calls === 1 ? 'call' : 'calls'}</span>
+            }}>run {w.watch} · {w.calls} {w.calls === 1 ? 'call' : 'calls'}</span>
           ))}
         </div>
       </div>

@@ -205,7 +205,7 @@ export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
 
 /** What each response does, under the select (README › Screen 5). */
 export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
-  notify: 'You get an alert in your alert channel (Settings › Alerts) with a link to the run, and it shows in Rule actions. The agent keeps going.',
+  notify: 'You get an alert in your alert channel (Settings › Alerts) with a link to the run, and it shows in Rule activity. The agent keeps going.',
   block: 'That one call fails with a plain reason. The agent keeps going.',
   pause: 'Its current run ends. It can’t make calls until someone resumes it, even after a restart.',
   stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',
@@ -242,14 +242,14 @@ export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: Go
   return { ...tallyFromRuleActions(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tallyFromRuleActions(c)])) };
 }
 
-/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would act (Watch only)". */
+/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would have acted (Record only)". */
 export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'warn' | 'tx2' }[] {
   const out: { text: string; tone: 'bad' | 'warn' | 'tx2' }[] = [];
   if (t.stopped) out.push({ text: `${t.stopped} stopped`, tone: 'bad' });
   if (t.paused) out.push({ text: `${t.paused} paused`, tone: 'bad' });
   if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
   if (t.toldYou) out.push({ text: `${t.toldYou} told you`, tone: 'tx2' });
-  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would act (Watch only)`, tone: 'warn' });
+  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (Record only)`, tone: 'warn' });
   return out;
 }
 

@@ -91,7 +91,7 @@ describe('run detail rows', () => {
     expect(timelineRow({ id: 'call:2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete' }).tag).toBeUndefined();
     // A rule event's ×N can include the run before's repeats; Rule actions has this run's exact count.
     const rule = timelineRow({ id: 'ev:1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'governance_would_block', detail: { ruleType: 'spend_cap', reason: 'budget_exceeded', occurrences: 10, agentId: 'lead-agent' } } as Parameters<typeof timelineRow>[0]);
-    expect(rule.text).toBe('lead-agent would have been blocked by the spend cap (budget exceeded) (Watch only)');
+    expect(rule.text).toBe('lead-agent would have been blocked by the spend cap (budget exceeded) (Record only)');
     expect(timelineRow({ id: 'call:3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', requestedTools: ['persist_lead', 'persist_lead', 'persist_lead', 'notify'] }).text)
       .toBe('Model call · asked for persist_lead ×3, notify');
   });
@@ -112,7 +112,7 @@ describe('run detail rows', () => {
   it('writes the meta line with the shift', () => {
     vi.stubEnv('TZ', 'America/Los_Angeles');
     expect(runMeta({ startedAt: '2026-09-30T20:52:00Z', endedAt: '2026-09-30T21:15:00Z', shift: 8 }))
-      .toBe('Sep 30 · started 1:52 pm PDT · 23 min · shift 8');
+      .toBe('Sep 30 · started 1:52 pm PDT · 23 min · run 8');
   });
 });
 

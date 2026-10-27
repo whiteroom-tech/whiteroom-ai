@@ -34,7 +34,7 @@ describe('Agent health, rendered', () => {
     const html = renderToStaticMarkup(h(AgentHealth, { flagged: flags(runs), diagnosis: diag([finding]), line, onCheck: noop, onReview: noop }));
     expect(html).toContain('lead-agent needs a look');
     expect(html.match(/<details open=""/g)).toHaveLength(2);
-    expect(html).toContain('Handing over too often');
+    expect(html).toContain('Runs fill up too fast');
     expect(html).toContain('See the fix');
     expect(html).toContain('1 problem · 1 passed');
   });

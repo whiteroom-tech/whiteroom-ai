@@ -130,11 +130,11 @@ describe('activity feed governance rows', () => {
     expect(technicalLine(m)).toContain('reason budget_exceeded');
   });
 
-  it('marks would-blocks as Watch only', () => {
+  it('marks would-blocks as Record only', () => {
     const m = eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'model_allowlist', reason: 'model_not_allowed', model: 'gpt-4o' }), NOW);
     expect(m.code).toBe('W/B');
-    expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed) (Watch only)');
-    expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule (Watch only)');
+    expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed) (Record only)');
+    expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule (Record only)');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found', occurrences: 3 })).said).toBe('was blocked by the Keywords rule ×3');
     // The Home chip says the same.
@@ -191,7 +191,7 @@ describe('rule responses and rule actions (P2.3/P2.4)', () => {
 
   it('words every action, worst first, and totals them', () => {
     const t = { blocks: 3, wouldBlocks: 2, paused: 1, stopped: 0, toldYou: 4 };
-    expect(tallyWords(t).map((w) => w.text)).toEqual(['1 paused', '3 blocked', '4 told you', '2 would act (Watch only)']);
+    expect(tallyWords(t).map((w) => w.text)).toEqual(['1 paused', '3 blocked', '4 told you', '2 would have acted (Record only)']);
     expect(tallyTotal(t)).toBe(10);
     expect(tallyWords({ blocks: 0, wouldBlocks: 0 })).toEqual([]);
   });

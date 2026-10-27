@@ -205,7 +205,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
             sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved by WhiteRoom →` : todaySub}
             subHref={saved && !todayFailing ? ROUTES.performance : undefined}
           />
-          <StatCard variant="card" label="Smaller handovers" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? (energyOverall ? `${energyOverall} saved overall` : undefined) : 'no handovers yet'} />
+          <StatCard variant="card" label="Smaller context" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? (energyOverall ? `${energyOverall} saved overall` : undefined) : 'nothing saved yet'} />
         </div>
 
         <Panel
@@ -253,7 +253,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               columns={[
                 { key: 'agent', header: 'Agent', width: 'minmax(140px,1.2fr)', render: (a) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{a.agentId}</span> },
                 { key: 'status', header: 'Status', width: '150px', render: (a) => <StatusPill state={agentState(a)} /> },
-                { key: 'shift', header: 'Shift', width: '72px', numeric: true, render: (a) => String(a.watchNumber || 1) },
+                { key: 'shift', header: 'Run', width: '72px', numeric: true, render: (a) => String(a.watchNumber || 1) },
                 {
                   key: 'last', header: 'Last event', width: 'minmax(200px,2fr)',
                   render: (a) => {

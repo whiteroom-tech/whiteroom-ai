@@ -47,7 +47,7 @@ describe('sandbox test report', () => {
     const html = reportHtml(buildTestReport(run({ agents: [{ ...run().agents![0], agentId: '<b>x</b>' }] })));
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('All 3 checks passed');
-    expect(html).toContain('It picks up where it left off');
+    expect(html).toContain('It keeps working');
     expect(html).not.toContain('<b>x</b>');
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
     expect(html).not.toMatch(/<script|https?:\/\/(?!www\.w3)/);

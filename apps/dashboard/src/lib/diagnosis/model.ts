@@ -228,7 +228,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
       const counts = new Map<number, number>();
       for (const c of calls) if (typeof c.watchNumber === 'number') counts.set(c.watchNumber, (counts.get(c.watchNumber) ?? 0) + 1);
       const watches = [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([watch, n]) => ({ watch, calls: n }));
-      return { kind: 'watches', caption: 'Calls in each shift before it handed over', watches };
+      return { kind: 'watches', caption: 'Calls in each run', watches };
     }
     case 'review_tool_loops': {
       const groups = new Map<string, { name: string; hash: string; watch: string; calls: number }>();
@@ -244,17 +244,17 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         }
       }
       const rows = [...groups.values()].sort((a, b) => b.calls - a.calls).slice(0, 5).map((g) => [g.name, `same · ${g.hash}`, String(g.calls), g.watch]);
-      return { kind: 'table', caption: 'Calls grouped by repeated call', columns: ['Tool', 'Arguments', 'Calls', 'Shift'], rows,
+      return { kind: 'table', caption: 'Calls grouped by repeated call', columns: ['Tool', 'Arguments', 'Calls', 'Run'], rows,
         note: '"Same" means identical arguments. WhiteRoom stores a fingerprint, never the arguments themselves.' };
     }
     case 'review_tool_silence':
       return {
-        kind: 'table', caption: `Offered ${tool} vs called, most recent calls`, columns: ['Time', 'Shift', `Offered ${tool}`, 'Called'],
+        kind: 'table', caption: `Offered ${tool} vs called, most recent calls`, columns: ['Time', 'Run', `Offered ${tool}`, 'Called'],
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.toolNames).includes(tool) ? 'yes' : 'no', list(c.requestedToolNames).join(', ') || '(none)']),
       };
     case 'review_tool_errors':
       return {
-        kind: 'table', caption: 'Tool results and errors, newest first', columns: ['Time', 'Shift', 'Tool results', 'Reported errors'],
+        kind: 'table', caption: 'Tool results and errors, newest first', columns: ['Time', 'Run', 'Tool results', 'Reported errors'],
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), String(c.toolResults ?? '—'), list(c.toolErrorNames).join(', ') || '—']),
         note: 'WhiteRoom records which tool reported an error, not the error text. The cause is in your agent’s logs.',
       };

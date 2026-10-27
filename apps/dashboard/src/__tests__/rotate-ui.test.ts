@@ -79,7 +79,7 @@ describe('RotationResult', () => {
     const out = html({ ok: true, apiKey: 'sk-wr-' + 'b'.repeat(64), proxyKeys: [KEY], disconnected: [] });
     expect(out).toContain(`https://proxy.whiteroom.tech/${KEY.wrKey}`);
     expect(out).toContain('ANTHROPIC_BASE_URL');
-    expect(out).toContain('New API key (hidden)');
+    expect(out).toContain('New fleet key (hidden)');
     expect(out).not.toContain('b'.repeat(64));
     expect(out).toContain('I’ve copied them');
   });

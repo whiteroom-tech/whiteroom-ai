@@ -97,9 +97,9 @@ export const DEMO_STORY: { title: string; text: string; detail?: string }[] = [
     detail: 'WhiteRoom saved a short summary and passed the work to a second demo agent.',
   },
   {
-    title: 'It picks up where it left off',
+    title: 'It keeps working',
     text: 'The second demo agent starts from the summary instead of the full history, and finishes the next task.',
-    detail: 'The second demo agent picked up from the summary and finished the next task.',
+    detail: 'The second demo agent continued from the summary and finished the next task.',
   },
 ];
 
@@ -1147,7 +1147,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {/* ── Setup tab ── */}
         <WorkspacePanel tab="setup" active={wsTab === 'setup'}>
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your API key stays where it is.</p>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your agent’s API key stays where it is.</p>
           <div className={s.selectRow}>
             {isDemo ? <>
               <button className={`${s.selectPill} ${directProvider === 'anthropic' ? s.selectPillOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>

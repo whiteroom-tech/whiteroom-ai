@@ -61,7 +61,7 @@ export function stopBlockedReason(ruleId: string, history: GovernanceHistoryEntr
   const h = longestWatchHours(ruleId, history, currentMode, now);
   if (h >= STOP_WATCH_HOURS) return null;
   const ran = h < 1 ? 'less than an hour' : `${Math.floor(h)} ${Math.floor(h) === 1 ? 'hour' : 'hours'}`;
-  return `Run this rule in Watch for ${STOP_WATCH_HOURS} hours before it can ${what}, so you can see what it would have done. It has run in Watch for ${ran}.`;
+  return `Run this rule in Record only for ${STOP_WATCH_HOURS} hours before it can ${what}, so you can see what it would have done. It has run in Record only for ${ran}.`;
 }
 
 /**
@@ -124,7 +124,7 @@ export function stopPhrase(scope: GovernanceScope): string {
 const WOULD_VERB: Record<GovernanceResponse, string> = { notify: 'told you about', block: 'blocked', pause: 'paused', stop: 'stopped' };
 
 /**
- * "Watching: would have paused lead-agent 86 times" from the engine's
+ * "Record only: would have paused lead-agent 86 times" from the engine's
  * rule_would_act counts for this version of the rule. Null when it hasn't
  * fired since its last change. Events with no recorded version (older
  * engines) are counted, but then the verb can't claim a response.
@@ -134,5 +134,5 @@ export function watchSummary(rule: { response?: GovernanceResponse }, counts: { 
   if (entries.length === 0) return null;
   const parts = entries.sort((a, b) => b[1] - a[1]).map(([a, n]) => `${a || 'an agent'} ${n === 1 ? 'once' : `${n.toLocaleString()} times`}`);
   const shown = parts.slice(0, 3).join(', ') + (parts.length > 3 ? ` and ${parts.length - 3} more` : '');
-  return `Watching: would have ${counts.unversioned ? 'acted on' : WOULD_VERB[rule.response ?? 'block']} ${shown} since its last change.`;
+  return `Record only: would have ${counts.unversioned ? 'acted on' : WOULD_VERB[rule.response ?? 'block']} ${shown} since its last change.`;
 }
