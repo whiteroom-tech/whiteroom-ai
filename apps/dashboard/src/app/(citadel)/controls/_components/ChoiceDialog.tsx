@@ -4,6 +4,7 @@
 // for everyone, and add a copy" first, the risky one in red outline. Shares
 // the frame with ConfirmDialog.
 
+import { useId } from 'react';
 import { Button } from '@whiteroom/ui';
 import { DialogFrame } from '@/components/citadel/DialogFrame';
 
@@ -21,6 +22,8 @@ export function ChoiceDialog({ open, title, body, choices, stacked = false, busy
   /** Null: no separate cancel button (one of the choices is it). */
   cancelLabel?: string | null;
 }) {
+  // Several of these are mounted at once: each needs its own title id.
+  const titleId = useId();
   const btn = (c: Choice, i: number) => (
     <Button key={i} variant={c.tone === 'primary' ? 'primary' : c.tone === 'bad' ? 'danger' : 'secondary'} size={36} disabled={busy}
       className={`${c.tone === 'bad' ? 'ctl-bad' : ''}${stacked ? ' ctl-dlg__wide' : ''}`} onClick={c.onClick}>
@@ -28,9 +31,9 @@ export function ChoiceDialog({ open, title, body, choices, stacked = false, busy
     </Button>
   );
   return (
-    <DialogFrame open={open} busy={busy} onCancel={onCancel} labelledBy="choice-dialog-title">
+    <DialogFrame open={open} busy={busy} onCancel={onCancel} labelledBy={titleId}>
       <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <h2 id="choice-dialog-title" className="ctl-dlg__title">{title}</h2>
+        <h2 id={titleId} className="ctl-dlg__title">{title}</h2>
         <div className="ctl-dlg__body">{body}</div>
         {stacked ? (
           <>

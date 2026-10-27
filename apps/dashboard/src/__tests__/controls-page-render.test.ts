@@ -84,6 +84,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 }));
 
 const { default: ControlsPage } = await import('@/app/(citadel)/controls/page');
+const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 
 const flush = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
 async function mount() {
@@ -295,7 +296,8 @@ describe('Controls page', () => {
     // Undo puts the settings from before straight back, over the version the save made: no second confirm.
     await m.click(m.button('Undo'));
     expect(m.el.querySelector('dialog[open]')).toBeNull();
-    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', response: 'block', appliesTo: ['market-researcher'], ifVersion: 2 }), 'k');
+    // Only what the save changed goes back, over the version it made.
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', ifVersion: 2, description: 'Undid the last change' }, 'k');
     expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Undone. Model allowlist is record only again.');
     expect(m.row('Only claude').querySelector('.ctl-mtag')!.textContent).toBe('Record only');
     m.root.unmount();
@@ -1221,6 +1223,67 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('an Undo the engine refuses (changed meanwhile) leaves the rule and says so', async () => {
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
+      if (api.update.mock.calls.length > 1) throw new WhiteRoomApiError('changed', 409);
+      const { ifVersion, ...rest } = ch;
+      const rule = { ...RULES.find((r) => r.id === id)!, ...rest, version: ifVersion + 1 } as GovernanceRule;
+      api.saved[id] = rule;
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await m.click(m.button('Save'));
+    await m.click(m.button('Undo'));
+    expect(api.update).toHaveBeenCalledTimes(2);
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('This rule changed again since, so Undo left it as it is.');
+    m.root.unmount();
+  });
+
+  it('an Undo for a rule removed meanwhile says there is nothing to undo', async () => {
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
+      const { ifVersion, ...rest } = ch;
+      // Removed somewhere else straight after the save: the reload no longer has it.
+      api.empty = true;
+      return { rule: { ...RULES.find((r) => r.id === id)!, ...rest, version: ifVersion + 1 } as GovernanceRule };
+    });
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await m.click(m.button('Save'));
+    await m.click(m.button('Undo'));
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('That rule isn’t here any more, so there’s nothing to undo.');
+    m.root.unmount();
+  });
+
+  it('the allowlist toast Undo puts the old list back over the version it made', async () => {
+    api.models = ['gpt-4o'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 5 } }));
+    const m = await mount();
+    await m.click(m.button('Add to allowlist…'));
+    await m.click(m.button('Allow for all agents'));
+    await m.click(m.button('Undo'));
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] }, ifVersion: 5 }, 'k');
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Change undone.');
+    m.root.unmount();
+  });
+
+  it('narrowing: Move it saves the narrowed rule, with what else the edit weakens', async () => {
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
+    await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
+    await m.click(m.button('Save'));
+    await m.click([...dlg(m).querySelectorAll('button')].find((b) => b.textContent?.startsWith('Move it to lead-agent only')));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r3', { appliesTo: ['lead-agent'], ifVersion: 1 }, 'k');
+    expect(api.create).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
   it('before Block, warns when an allowlist would block every call an agent makes', async () => {
     api.would = { r2: { 'market-researcher': 12 } };
     api.agentCalls = { 'market-researcher': 12 };
@@ -1240,6 +1303,26 @@ describe('Controls page, mockup suggestions and toasts', () => {
     expect(dlg(m).textContent).toContain('Nothing changed or missing');
     expect(dlg(m).textContent).toContain('All 2,045 events checked · just now. Events before tracking started aren’t covered.');
     expect(dlg(m).textContent).toContain('Not yet anchored outside WhiteRoom.');
+    m.root.unmount();
+  });
+
+  it('Check audit trail says when tracking hasn’t started, and when the check didn’t run', async () => {
+    const client = await import('@/lib/whiteroom/client');
+    const integrity = vi.spyOn(client, 'auditIntegrity');
+    integrity.mockResolvedValueOnce({ fleetId: 'f1', mode: 'legacy', headSeq: 0, verifiedThroughSeq: 0, verifiedAt: null, prunedBeforeTracking: false, legacyEvents: 3, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } });
+    const m = await mount();
+    await m.click(m.button('Check audit trail'));
+    await flush();
+    expect(dlg(m).textContent).toContain('History tracking hasn’t started for this fleet yet.');
+    await m.click(m.button('Done'));
+    integrity.mockRejectedValueOnce(new Error('down'));
+    await m.click(m.button('Check audit trail'));
+    await flush();
+    expect(dlg(m).textContent).toContain('The check didn’t run. Try again.');
+    await m.click(m.button('Check again'));
+    await flush();
+    expect(dlg(m).textContent).toContain('Nothing changed or missing');
+    integrity.mockRestore();
     m.root.unmount();
   });
 

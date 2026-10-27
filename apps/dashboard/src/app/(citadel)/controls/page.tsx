@@ -387,10 +387,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setSaving(true);
       setError(null);
       try {
-        const { rule: back } = await governanceUpdateRule(fleetId, r.id, {
-          mode: before.mode, response: before.response ?? "block", alsoNotify: !!before.alsoNotify, appliesTo: before.appliesTo, params: before.params,
-          ifVersion: saved.version, description: "Undid the last change",
-        }, authKey);
+        // Only what that save changed, as Save sends: a list the engine hid (Keywords) is never written back empty.
+        const changes = {
+          ...(before.mode !== saved.mode && { mode: before.mode }),
+          ...((before.response ?? "block") !== (saved.response ?? "block") && { response: before.response ?? "block" }),
+          ...(!!before.alsoNotify !== !!saved.alsoNotify && { alsoNotify: !!before.alsoNotify }),
+          ...(!sameValue(before.appliesTo, saved.appliesTo) && { appliesTo: before.appliesTo }),
+          ...(!sameValue(before.params, saved.params) && { params: before.params }),
+        };
+        const { rule: back } = await governanceUpdateRule(fleetId, r.id, { ...changes, ifVersion: saved.version, description: "Undid the last change" }, authKey);
         setRules((rs) => rs.map((x) => (x.id === back.id && back.version >= x.version ? back : x)));
         if (selectedRef.current === back.id) setDraft(draftFrom(back));
         showToast(`Undone. ${RULE_LABELS[back.ruleType]} is ${MODE_LABEL[back.mode].toLowerCase()} again.`);
@@ -648,8 +653,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       spendAsked.current.add(a);
       const forFleet = fleetId;
       performanceAgent(fleetId, a, SUGGESTION_HOURS, authKey)
-        .then((p) => averageDailySpend(p, SUGGESTION_HOURS / 24), () => null)
-        .then((v) => { if (fleetRef.current === forFleet) setAgentSpend((m) => ({ ...m, [a]: v })); });
+        .then((p) => { if (fleetRef.current === forFleet) setAgentSpend((m) => ({ ...m, [a]: averageDailySpend(p, SUGGESTION_HOURS / 24) })); },
+          // A failed read is asked again the next time the rule is opened.
+          () => { if (fleetRef.current === forFleet) spendAsked.current.delete(a); });
     }
   }, [spendKey, fleetId, authKey]);
   useEffect(() => { spendAsked.current = new Set(); setAgentSpend({}); setAgentCalls({}); }, [fleetId]);
