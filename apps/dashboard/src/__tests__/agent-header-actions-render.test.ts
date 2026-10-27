@@ -116,3 +116,21 @@ describe('Agent detail header', () => {
     m.root.unmount();
   });
 });
+
+describe('Agent detail ⋯ menu keyboard', () => {
+  it('focuses the first item, moves with the arrow keys, and Escape returns focus to ⋯', async () => {
+    api.watch.mockResolvedValue({ status: 'idle', watchNumber: 1, govV1: true });
+    const m = await mount();
+    await m.click(m.more());
+    const items = [...m.menu()!.querySelectorAll('[role="menuitem"]')];
+    expect(document.activeElement).toBe(items[0]);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' })); });
+    expect(document.activeElement).toBe(items[1]);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' })); });
+    expect(document.activeElement).toBe(items[0]);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+    expect(m.menu()).toBeNull();
+    expect(document.activeElement).toBe(m.more());
+    m.root.unmount();
+  });
+});

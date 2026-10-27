@@ -7,7 +7,7 @@
 
 import type { AgentInfo, AuditEntry, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
 import type { AgentState } from '@whiteroom/ui';
-import type { GovernanceTally } from '@/lib/governance';
+import { tallyParts, type GovernanceTally } from '@/lib/governance';
 import { TITLES, isDiagnosisDetector } from '@/lib/diagnosis/copy';
 import { fmtTokens, plural, timeAgo } from '@/lib/format';
 import { agentState, currentShift, taskWord } from '@/lib/home';
@@ -102,14 +102,9 @@ export function nowCard(a: AgentInfo, runs: RunSummary[] | null, fmtDate: (iso: 
   return { status, run, runId: match?.runId ?? null, runDate: match ? fmtDate(match.startedAt) : null, allTime };
 }
 
-/** Rule activity on the Last 7 days card: "2 blocked · 58 would have blocked". */
+/** Rule activity on the Last 7 days card: Home's words ("2 blocked · 58 would have blocked"), or "0 caught". */
 export function weekRuleWords(t: GovernanceTally): { count: number; word: string }[] {
-  const out: { count: number; word: string }[] = [];
-  if (t.blocks > 0) out.push({ count: t.blocks, word: 'blocked' });
-  if (t.wouldBlocks > 0) out.push({ count: t.wouldBlocks, word: 'would have blocked' });
-  if (t.paused) out.push({ count: t.paused, word: 'paused' });
-  if (t.stopped) out.push({ count: t.stopped, word: 'stopped' });
-  if (t.toldYou) out.push({ count: t.toldYou, word: 'alerted you' });
+  const out = tallyParts(t);
   return out.length ? out : [{ count: 0, word: 'caught' }];
 }
 

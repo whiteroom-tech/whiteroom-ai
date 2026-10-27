@@ -66,6 +66,8 @@ describe('Last 7 days on the agent page', () => {
     expect(scoreWorking([{ value: 100 }, { value: 57 }, { value: null }])).toEqual({ sum: '(10 + 5.7) ÷ 2 = 7.85 → 8', score: 8 });
     expect(scoreWorking([{ value: 40 }])).toEqual({ sum: '4 → 4', score: 4 });
     expect(scoreWorking([{ value: null }])).toBeNull();
+    // Unrounded parts, so the sum ends on the score the ring shows (8.46 → 8, not 8.5 → 9).
+    expect(scoreWorking([{ value: 84.6 }, { value: 84.6 }])).toEqual({ sum: '(8.46 + 8.46) ÷ 2 = 8.46 → 8', score: 8 });
   });
 });
 

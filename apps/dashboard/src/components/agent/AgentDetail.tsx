@@ -59,6 +59,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRoot = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const taskInput = useRef<HTMLDivElement>(null);
   const [runs, setRuns] = useState<RecentRunsState>(preview ? { kind: 'ok', runs: preview.runs ?? [] } : { kind: 'loading' });
   const [diagnosis, setDiagnosis] = useState<FleetDiagnosis | null>(preview?.diagnosis ?? null);
@@ -149,11 +150,26 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     return () => { live = false; clearInterval(id); };
   }, [fleetId, authKey, preview]);
 
-  // The ⋯ menu closes on Escape or a click outside it.
+  // The ⋯ menu, as a menu: focus moves to its first item on open, arrow keys
+  // move between items, Escape closes it and returns focus to ⋯; a click
+  // outside closes it.
   useEffect(() => {
     if (!menuOpen) return;
+    const items = () => [...(menuRoot.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+    items()[0]?.focus();
     const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !menuRoot.current?.contains(e.target as Node)) setMenuOpen(false);
+      if (e instanceof KeyboardEvent) {
+        if (e.key === 'Escape') { setMenuOpen(false); menuButton.current?.focus(); return; }
+        if (e.key === 'Tab') { setMenuOpen(false); return; }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const list = items();
+          const at = list.indexOf(document.activeElement as HTMLButtonElement);
+          list[(at + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
+        }
+        return;
+      }
+      if (!menuRoot.current?.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
@@ -349,7 +365,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           {action === 'resume' ? 'Resume' : 'Pause'}
         </Button>
         <div ref={menuRoot} className="wr-agent-menu">
-          <Button aria-label="More actions" aria-haspopup="menu" aria-expanded={menuOpen} disabled={!agent || !!pending} onClick={() => setMenuOpen((o) => !o)}>&#x22EF;</Button>
+          <Button ref={menuButton} aria-label="More actions" aria-haspopup="menu" aria-expanded={menuOpen} disabled={!agent || !!pending} onClick={() => setMenuOpen((o) => !o)}>&#x22EF;</Button>
           {menuOpen && (
             <div role="menu" className="wr-agent-menu__list">
               {agent?.govV1 && <button type="button" role="menuitem" className="wr-agent-menu__item" disabled={!stopGate} onClick={() => { setMenuOpen(false); setConfirmStop(true); }}>Stop&hellip;</button>}

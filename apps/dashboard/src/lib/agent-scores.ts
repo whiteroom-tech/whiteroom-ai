@@ -101,11 +101,13 @@ export function scoreSummary(parts: Pick<ScorePart, 'label' | 'value'>[]): strin
  * the average of the parts that have data, rounded. Null with none scored.
  */
 export function scoreWorking(parts: Pick<ScorePart, 'value'>[]): { sum: string; score: number } | null {
-  const scored = parts.filter((p): p is { value: number } => p.value != null).map((p) => Math.round(p.value) / 10);
+  // From the unrounded parts, as the engine averages them, so the sum ends on
+  // the score the ring shows; parts print to two places only when they need it.
+  const scored = parts.filter((p): p is { value: number } => p.value != null).map((p) => p.value / 10);
   if (scored.length === 0) return null;
   const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
-  const shown = +mean.toFixed(2);
+  const two = (v: number) => String(+v.toFixed(2));
   const score = Math.round(mean);
-  if (scored.length === 1) return { sum: `${shown} → ${score}`, score };
-  return { sum: `(${scored.map((v) => String(v)).join(' + ')}) ÷ ${scored.length} = ${shown} → ${score}`, score };
+  if (scored.length === 1) return { sum: `${two(mean)} → ${score}`, score };
+  return { sum: `(${scored.map(two).join(' + ')}) ÷ ${scored.length} = ${two(mean)} → ${score}`, score };
 }
