@@ -589,6 +589,22 @@ describe('Controls page, change log', () => {
     await m.click(m.button('Add it back'));
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', response: 'block', params: { dailyCap: 500, scope: 'day', unit: 'dollars' }, appliesTo: 'all' }), 'k');
     expect(m.text()).toContain('Spend cap is back, in Record only. Turn on Block when you’re ready.');
+    // Gone at once, before the log's own "added" line arrives: it can't be added twice.
+    expect(m.button('Add it back')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('the editor says a Record only or Off rule’s Then doesn’t happen yet', async () => {
+    const m = await mount();
+    await m.click(m.row('$190'));
+    const editor = () => m.el.querySelector('aside[aria-label="Edit rule"]')!.textContent ?? '';
+    expect(editor()).toContain('Record only: this doesn’t happen yet. WhiteRoom records it and lets the call through. It happens in Block.');
+    expect(editor()).toContain('In Block: That one call fails');
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Off')));
+    expect(editor()).toContain('Off: this doesn’t happen. It happens in Block.');
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
+    expect(editor()).not.toContain('doesn’t happen');
+    expect(editor()).not.toContain('In Block:');
     m.root.unmount();
   });
 });

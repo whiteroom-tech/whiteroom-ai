@@ -28,7 +28,7 @@ export type Undo =
 /**
  * How to undo this change, or null when it can't be done safely:
  * - a removal: the rule as it was, to add back (in Record only), only on
- *   its newest removal and until the log shows it added again;
+ *   its newest removal and until the log shows the same rule added since;
  * - an update: only what this change touched, and only while the rule still
  *   looks exactly as the change left it (otherwise a later change would be
  *   overwritten);
@@ -42,8 +42,10 @@ export function undoFor(entry: GovernanceHistoryEntry, rules: GovernanceRule[], 
   if (hidden(before)) return null;
   if (after === null) {
     if (rules.some((r) => r.id === entry.ruleId)) return null;
-    // From the log, not from look-alike rules: once it's been added again (a new id), or
+    // From the log: once a rule with these settings and scope has been added since (the
+    // added-back copy, or an identical one made by hand, which would be redundant), or
     // removed again later, this entry no longer offers it, so it can't come back twice.
+    // An identical rule that's simply there, with no later add in the log, doesn't hide it.
     const sameRule = (s: GovernanceRuleSnapshot | null | undefined) => !!s && same(s.params, before.params) && same(s.appliesTo, before.appliesTo);
     const later = history.filter((h) => h.id !== entry.id && h.ruleType === entry.ruleType && Date.parse(h.time) > Date.parse(entry.time));
     if (later.some((h) => (h.before === null && sameRule(h.after)) || (h.after === null && sameRule(h.before)))) return null;
