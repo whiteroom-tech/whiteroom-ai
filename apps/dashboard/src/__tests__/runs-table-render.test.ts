@@ -3,7 +3,7 @@
 // asks the engine for runs with rule activity, keeps it in the URL, hides day
 // totals, and falls back to All on an engine that doesn't count rule actions.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, createElement as h } from 'react';
+import { act, createElement as h, type FC } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
 
@@ -33,7 +33,9 @@ async function mount(preview?: RunSummary[]) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => { root.render(h(RunsTable, preview ? { preview } : {})); });
+  // RunsTable's props default to {}, which createElement's overloads can't infer.
+  const Table = RunsTable as FC<{ preview?: RunSummary[] }>;
+  await act(async () => { root.render(h(Table, { preview })); });
   await flush();
   const radio = (label: string) => [...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
   const click = async (b: Element | undefined) => { await act(async () => { (b as HTMLElement).click(); }); await flush(); };
