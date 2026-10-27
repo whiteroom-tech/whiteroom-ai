@@ -21,8 +21,8 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
 vi.mock('@/components/agent/RecentRuns', () => ({ RecentRuns: () => null }));
-vi.mock('@/components/agent/GoalPanel', () => ({ GoalPanel: () => null }));
-vi.mock('@/components/agent/HandoverQualityPanel', () => ({ HandoverQualityPanel: () => null }));
+vi.mock('@/components/agent/AgentWeekCard', () => ({ AgentWeekCard: () => null }));
+vi.mock('@/components/agent/RulesOnAgent', () => ({ RulesOnAgent: () => null }));
 vi.mock('@/components/citadel/PageChrome', async () => {
   const { createElement } = await import('react');
   return { PageHeader: ({ children }: { children?: React.ReactNode }) => createElement('header', null, children) };

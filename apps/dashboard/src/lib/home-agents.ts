@@ -2,8 +2,10 @@
 // last 7 days (audit_summary tokens and savings, rule_actions, scores), and
 // the search and sort that keep a big fleet usable.
 
-import { sortAgents } from '@/lib/home';
-import type { GovernanceTally } from '@/lib/governance';
+import { hourTotals, sortAgents } from '@/lib/home';
+import { ruleActionsByAgent, tallyFromRuleActions, type GovernanceTally } from '@/lib/governance';
+import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
+import type { auditSummary, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
 import type { AgentInfo, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
@@ -48,4 +50,81 @@ export function shortTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
   return String(Math.round(n));
+}
+
+/**
+ * The last 7 days as Home and the agent page read them: from local midnight
+ * six days ago, plus that window in whole hours for the engine's hourly
+ * reads. Its windows are whole UTC hours ending at the next hour boundary,
+ * so the hour count starts exactly at the hour holding that midnight (in a
+ * half-hour zone, up to 30 minutes before it).
+ */
+export function weekWindow(now: number = Date.now()): { start: Date; hours: number } {
+  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
+  const HOUR = 3_600_000;
+  return { start, hours: (Math.floor(now / HOUR) + 1) - Math.floor(start.getTime() / HOUR) };
+}
+
+/** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
+export interface HomeWeek {
+  agents: Record<string, AgentWeek>;
+  calls: number | null;
+  costUsd: number | null;
+  /** Some calls had no price on file, or were dropped: the spend is a lower bound. */
+  partial: boolean;
+  rules: GovernanceTally | null;
+}
+
+/** The week from what came back; anything that failed is left out, never shown as zero. */
+export function homeWeek(
+  audit: Awaited<ReturnType<typeof auditSummary>> | null,
+  scores: Awaited<ReturnType<typeof performanceAgentScores>> | null,
+  rules: Awaited<ReturnType<typeof ruleActions>> | null,
+  hourly: Awaited<ReturnType<typeof performanceFleetHourly>> | null,
+  /** Where the 7 days start (local midnight six days ago); hourly points before it are left out. */
+  since = 0,
+): HomeWeek {
+  const agents: Record<string, AgentWeek> = {};
+  const key = (id: string) => id.toLowerCase();
+  if (audit?.savingsBuckets) {
+    for (const t of agentTotalsFromBuckets(audit.savingsBuckets)) {
+      if (!t.agent) continue;
+      const micros = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
+      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
+    }
+  }
+  const okRules = rules && !('unsupported' in rules) ? rules : null;
+  // Agent ids that differ only in case are one agent: their counts add up (ruleActionsByAgent), never overwrite.
+  if (okRules) {
+    const merged = ruleActionsByAgent(Object.fromEntries(Object.entries(okRules.byAgent).map(([id, c]) => [id, tallyFromRuleActions(c)])));
+    for (const [id, t] of Object.entries(merged)) if (id) (agents[id] ??= {}).rules = t;
+  }
+  if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
+  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
+  return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
+}
+
+/**
+ * One agent's week for its own page, from the same reads as Home. A read that
+ * worked but doesn't mention the agent means none: 0 tokens, no rule activity.
+ * A read that failed keeps what `prev` had, so a bad refresh never blanks
+ * figures that loaded. Unknown stays absent (shown as —), never 0.
+ */
+export function agentWeekFrom(
+  prev: AgentWeek | undefined,
+  agentId: string,
+  audit: Parameters<typeof homeWeek>[0],
+  scores: Parameters<typeof homeWeek>[1],
+  rules: Parameters<typeof homeWeek>[2],
+): AgentWeek {
+  const w = homeWeek(audit, scores, rules, null).agents[agentId.toLowerCase()];
+  const out: AgentWeek = {};
+  if (audit?.savingsBuckets) Object.assign(out, { used: w?.used ?? 0, saved: w?.saved ?? 0 }, w?.savedUsd !== undefined && { savedUsd: w.savedUsd });
+  else Object.assign(out, prev?.used !== undefined && { used: prev.used, saved: prev.saved }, prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd });
+  const rulesOk = rules && !('unsupported' in rules);
+  const tally = rulesOk ? (w?.rules ?? { blocks: 0, wouldBlocks: 0 }) : prev?.rules;
+  if (tally) out.rules = tally;
+  const score = scores && !scores.error ? w?.score : prev?.score;
+  if (score) out.score = score;
+  return out;
 }

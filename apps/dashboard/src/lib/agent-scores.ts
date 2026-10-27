@@ -27,8 +27,8 @@ export interface ScoreWedge {
 /** The wheel's three equal wedges, fixed order, each colored by its own 0-100 value. */
 export function scoreWedges(a: Pick<AgentScore, 'completeRate' | 'costDiligence' | 'speedScore'>): ScoreWedge[] {
   return [
-    { label: 'Task success', short: 'Tasks', value: a.completeRate, color: tierColor(a.completeRate, 100) },
-    { label: 'Cost diligence', short: 'Cost', value: a.costDiligence, color: tierColor(a.costDiligence, 100) },
+    { label: 'Clean calls', short: 'Clean', value: a.completeRate, color: tierColor(a.completeRate, 100) },
+    { label: 'Cost', short: 'Cost', value: a.costDiligence, color: tierColor(a.costDiligence, 100) },
     { label: 'Speed', short: 'Speed', value: a.speedScore, color: tierColor(a.speedScore, 100) },
   ];
 }
@@ -60,4 +60,24 @@ export function wedgeStroke(w: Pick<ScoreWedge, 'value' | 'color'>): string {
 /** One line for the wheel's title attribute: what each wedge is, in order. */
 export function wedgeSummary(wedges: Pick<ScoreWedge, 'label' | 'value'>[]): string {
   return wedges.map((w) => `${w.label}: ${w.value == null ? 'no data' : `${w.value}/100`}`).join(' · ');
+}
+
+/** One row of the agent page's "How is the score worked out?" table. */
+export interface ScorePart {
+  label: string;
+  /** 0-100, or null when the part isn't scored. */
+  value: number | null;
+  measures: string;
+  /** Why a part isn't scored, when it isn't. */
+  missing?: string;
+}
+
+/** The score's three parts, in the wheel's order and with its labels. */
+export function scoreParts(a: Pick<AgentScore, 'completeRate' | 'costDiligence' | 'speedScore'>): ScorePart[] {
+  const [clean, cost, speed] = scoreWedges(a);
+  return [
+    { label: clean.label, value: clean.value, measures: 'Share of its calls that finished cleanly: not failed, blocked, cancelled or cut off.', missing: 'No calls in the last 7 days.' },
+    { label: cost.label, value: cost.value, measures: 'What it spends compared with the typical cost for its task type. 100 at or under; lower the more it overspends.', missing: 'Needs a task type and a finished call.' },
+    { label: speed.label, value: speed.value, measures: 'Its typical response time compared with your fleet’s. 100 means as fast or faster; lower the slower it is.', missing: 'Too few calls to time.' },
+  ];
 }

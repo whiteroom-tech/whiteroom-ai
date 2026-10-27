@@ -1,5 +1,5 @@
 // A watch-face per agent row in the By-agent table (audit M12): three equal
-// ring segments (task success, cost diligence, speed) in their tier colors,
+// ring segments (clean calls, cost, speed) in their tier colors,
 // the 0-10 score in the center, and a small legend that names each part with
 // a bar and its value, so it reads without hovering. A part with no data is a
 // faint track, not gray. No click handler — it's connected to the row it's in.

@@ -4,8 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
-import { HomeView, homeWeek } from '@/components/home/HomeContent';
-import { shortTokens, shownAgents, TABLE_FROM } from '@/lib/home-agents';
+import { HomeView } from '@/components/home/HomeContent';
+import { homeWeek, shortTokens, shownAgents, TABLE_FROM } from '@/lib/home-agents';
 import type { AgentInfo, FleetReport } from '@/lib/whiteroom/types';
 
 const agent = (agentId: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo =>

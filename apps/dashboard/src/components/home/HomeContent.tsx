@@ -9,14 +9,13 @@ import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
-import { blockedByPhrase, recentBlocksByAgent, ruleActionsByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
-import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
-import { AGENT_SORTS, FIND_FROM, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek } from '@/lib/home-agents';
+import { blockedByPhrase, recentBlocksByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
+import { AGENT_SORTS, FIND_FROM, homeWeek, shortTokens, shownAgents, TABLE_FROM, weekWindow, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { localDay, zoneName } from '@/lib/runs';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, hourTotals, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
+  afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
@@ -111,12 +110,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // activity: extra, so a failure hides them rather than failing the page, and once a minute is enough.
   const { refresh: refreshWeek } = usePoll(async (stale) => {
     const todayDay = localDay();
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
-    // The engine's windows are whole UTC hours ending at the next hour boundary, so this many hours
-    // starts exactly at the hour holding local midnight six days ago, the same start the hourly
-    // totals are trimmed to (in a half-hour zone, up to 30 minutes before that midnight).
-    const HOUR = 3_600_000;
-    const weekHours = (Math.floor(Date.now() / HOUR) + 1) - Math.floor(start.getTime() / HOUR);
+    const { start, hours: weekHours } = weekWindow();
     const [audit, scores, weekRules, dayRules, hourly] = await Promise.all([
       auditSummary(fleetId, start, authKey).catch(() => null),
       performanceAgentScores(fleetId, weekHours, authKey).catch(() => null),
@@ -361,45 +355,6 @@ function HomeSkeleton({ failing }: { failing: boolean }) {
 /** Agent detail for one agent. */
 function agentHref(agentId: string): string {
   return `/agents/${encodeURIComponent(agentId)}`;
-}
-
-/** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
-export interface HomeWeek {
-  agents: Record<string, AgentWeek>;
-  calls: number | null;
-  costUsd: number | null;
-  /** Some calls had no price on file, or were dropped: the spend is a lower bound. */
-  partial: boolean;
-  rules: GovernanceTally | null;
-}
-
-/** The week from what came back; anything that failed is left out, never shown as zero. */
-export function homeWeek(
-  audit: Awaited<ReturnType<typeof auditSummary>> | null,
-  scores: Awaited<ReturnType<typeof performanceAgentScores>> | null,
-  rules: Awaited<ReturnType<typeof ruleActions>> | null,
-  hourly: Awaited<ReturnType<typeof performanceFleetHourly>> | null,
-  /** Where the 7 days start (local midnight six days ago); hourly points before it are left out. */
-  since = 0,
-): HomeWeek {
-  const agents: Record<string, AgentWeek> = {};
-  const key = (id: string) => id.toLowerCase();
-  if (audit?.savingsBuckets) {
-    for (const t of agentTotalsFromBuckets(audit.savingsBuckets)) {
-      if (!t.agent) continue;
-      const micros = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
-      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
-    }
-  }
-  const okRules = rules && !('unsupported' in rules) ? rules : null;
-  // Agent ids that differ only in case are one agent: their counts add up (ruleActionsByAgent), never overwrite.
-  if (okRules) {
-    const merged = ruleActionsByAgent(Object.fromEntries(Object.entries(okRules.byAgent).map(([id, c]) => [id, tallyFromRuleActions(c)])));
-    for (const [id, t] of Object.entries(merged)) if (id) (agents[id] ??= {}).rules = t;
-  }
-  if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
-  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
-  return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
 /** "Last 7 days: 120K tokens · saved $1.20 · 2 blocked · score 8". */
