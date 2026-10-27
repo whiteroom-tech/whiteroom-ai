@@ -133,6 +133,18 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
+  it('says when no rule stops calls, and says nothing when every rule is off', async () => {
+    api.saved.r1 = { ...RULES[0], mode: 'watch' };
+    api.saved.r5 = { ...RULES[4], response: 'notify' };
+    const m = await mount();
+    expect(m.text()).toContain('No rule stops calls yet. Your rules only record or alert, so every call goes through.');
+    m.root.unmount();
+    for (const r of RULES) api.saved[r.id] = { ...r, mode: 'off' };
+    const off = await mount();
+    expect(off.text()).not.toContain('stop calls');
+    off.root.unmount();
+  });
+
   it('tags a Block-mode rule by what it does: an alert-only rule is never a red Block', async () => {
     api.saved.r1 = { ...RULES[0], response: 'notify' };
     const m = await mount();
@@ -147,6 +159,7 @@ describe('Controls page', () => {
     const m = await mount();
     const row = [...m.el.querySelectorAll('.gov-row')].find((r) => r.textContent?.includes('Tool list'))!;
     expect(row.querySelector('.wr-tag')!.className).not.toContain('wr-tag--block');
+    expect(row.querySelector('.wr-tag')!.textContent).toBe('Not set up');
     m.root.unmount();
   });
 
@@ -162,7 +175,7 @@ describe('Controls page', () => {
   it('warns when at most one rule can actually stop calls', async () => {
     api.saved.r5 = { ...RULES[4], mode: 'watch' };
     const m = await mount();
-    expect(m.text()).toContain('Only 1 rule can stop calls (Loop breaker). The rest record what they would have done and let calls through.');
+    expect(m.text()).toContain('Only 1 rule can stop calls (Loop breaker). The rest only record or alert; they don’t stop calls.');
     m.root.unmount();
   });
 

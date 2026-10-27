@@ -428,7 +428,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             {RULE_LABELS[r.ruleType]}
             {r.mode === "watch" && <Tag tone="muted">{MODE_LABEL.watch}</Tag>}
             {/* Filled only when it really stops calls (stopping()): an alert-only rule, or one with nothing picked yet, isn't. */}
-            {r.mode === "enforce" && <Tag tone={stopping([r]).length ? "block" : (r.response ?? "block") === "notify" ? "brand" : "muted"}>{DOES_TAG[r.response ?? "block"]}</Tag>}
+            {r.mode === "enforce" && (emptyPick(r)
+              ? <Tag tone="muted">Not set up</Tag>
+              : <Tag tone={stopping([r]).length ? "block" : "brand"}>{DOES_TAG[r.response ?? "block"]}</Tag>)}
           </span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
         </span>
@@ -484,8 +486,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           {loaded && shown.some((r) => r.mode !== "off") && canStop.length <= 1 && (
             <Banner variant="warn">
               {canStop.length === 0
-                ? <>No rule stops calls yet. Rules in Record only record what they would have done and let every call through.</>
-                : <>Only 1 rule can stop calls ({RULE_LABELS[canStop[0].ruleType]}). The rest record what they would have done and let calls through.</>}
+                ? <>No rule stops calls yet. Your rules only record or alert, so every call goes through.</>
+                : <>Only 1 rule can stop calls ({RULE_LABELS[canStop[0].ruleType]}). The rest only record or alert; they don&rsquo;t stop calls.</>}
             </Banner>
           )}
 
