@@ -104,6 +104,20 @@ describe('Agent detail header', () => {
     m.root.unmount();
   });
 
+  it('on its short pause, offers Resume only where the header shows Resume', async () => {
+    api.watch.mockResolvedValue({ status: 'resting', watchNumber: 1, govV1: true });
+    const v1 = await mount();
+    expect(v1.button('Pause')).toBeTruthy();
+    expect(v1.el.textContent).toContain('It starts again on its own.');
+    expect(v1.el.textContent).not.toContain('resume it now');
+    v1.root.unmount();
+    api.watch.mockResolvedValue({ status: 'resting', watchNumber: 1, govV1: false });
+    const old = await mount();
+    expect(old.button('Resume')).toBeTruthy();
+    expect(old.el.textContent).toContain('you can also resume it now');
+    old.root.unmount();
+  });
+
   it('the ⋯ menu closes on Escape and on a click outside it', async () => {
     api.watch.mockResolvedValue({ status: 'idle', watchNumber: 1, govV1: true });
     const m = await mount();

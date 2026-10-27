@@ -425,7 +425,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           )}
           {state === 'resting' && (
             <Banner variant="info" icon="clock">
-              {agentId} is paused{breakEnd ? ` until ${clock(breakEnd)}` : ' for a moment'}. It starts again on its own{resumeGate.allowed ? '; you can also resume it now.' : '.'}
+              {agentId} is paused{breakEnd ? ` until ${clock(breakEnd)}` : ' for a moment'}. It starts again on its own{action === 'resume' && resumeGate.allowed ? '; you can also resume it now.' : '.'}
             </Banner>
           )}
 
