@@ -39,7 +39,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
   byAgent: AgentTotals[] | null;
-  /** Task success / cost diligence / speed, per agent id, for the By-agent table's wheel column. */
   /** "last 24 h", for panels that follow the range. */
   rangeLabel: string;
   onSelectAgent: (id: string) => void;
@@ -133,12 +132,13 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   // Smaller context: the fleet report's compression ratio over all time (it doesn't follow the range; the card says so).
   // null until it loads, if it can't, or if the engine doesn't send it: never shown as 0.
   const [compression, setCompression] = useState<number | null>(null);
+  // Read again with each page refresh (loadedAt); a failed read keeps the last figure.
   useEffect(() => {
     let live = true;
-    setCompression(null);
     fleetReport(fleetId, authKey).then((r) => { if (live && !r.error) setCompression(r.energySavings?.compressionRatio ?? null); }, () => {});
     return () => { live = false; };
-  }, [fleetId, authKey]);
+  }, [fleetId, authKey, loadedAt]);
+  useEffect(() => { setCompression(null); }, [fleetId]);
   const seeFindings = () => {
     setDiagnosisNotice(null);
     setRecStatus('open');
@@ -204,7 +204,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
             sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
           />
           <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value={`${fmtCost(s.totalCost / hoursInRange)}${partialMark(spendPartial)}`} sub="spend per hour, on average" />
-          <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={compression === null ? '—' : compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression === null ? UNAVAILABLE : compression > 0 ? 'smaller than full history, all time' : 'nothing saved yet'} />
+          <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} {...smallerContextCard(compression)} />
         </div>
         {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
         {/* Each its own full row: Cost prediction (a card with its own bottom margin), then tokens with vs without, then spend by model. */}
@@ -253,3 +253,10 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   );
 }
 
+
+/** The Smaller context card's figure and line: unknown is "—", never 0; it covers all time, not the range. */
+export function smallerContextCard(compression: number | null): { value: string; sub: string } {
+  if (compression === null) return { value: '—', sub: 'not available yet' };
+  if (compression <= 0) return { value: '—', sub: 'nothing saved yet' };
+  return { value: `${compression.toFixed(1)}%`, sub: 'smaller than full history, all time' };
+}

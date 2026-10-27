@@ -130,7 +130,7 @@ export function PerformancePreview() {
               <StatCard variant="card" label="Spend" hint={HELP.spend} value="$0.909" sub="last 24 h" />
               <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
               <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value="$0.0379" sub="spend per hour, on average" />
-              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value="90.8%" sub="smaller than full history, on average" />
+              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value="90.8%" sub="smaller than full history, all time" />
             </div>
           )}
           {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}

@@ -234,7 +234,7 @@ export default function PerformancePage() {
     finally { setFeedbackLoading(null); }
   }
 
-  // Savings is always the last 7 days; By agent follows the range.
+  // Savings is always the last 7 days.
   const rangeLabel = hoursBack === 24 ? 'last 24 h' : hoursBack === 72 ? 'last 3 days' : 'last 7 days';
 
   // A refetch is in flight while the previous data is still on screen

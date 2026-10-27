@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
 
-const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
+const { IndexView, smallerContextCard } = await import('@/app/(citadel)/performance/_components/IndexView');
 
 const DATA = {
   fleetId: 'f1',
@@ -49,5 +49,13 @@ describe('Performance overview layout', () => {
     expect(html).not.toContain('More detail');
     expect(html).not.toContain('Calls per hour');
     expect(html).not.toContain('By agent');
+  });
+});
+
+describe('Smaller context card', () => {
+  it('shows the ratio over all time, nothing saved as —, and unknown as — never 0', () => {
+    expect(smallerContextCard(90.84)).toEqual({ value: '90.8%', sub: 'smaller than full history, all time' });
+    expect(smallerContextCard(0)).toEqual({ value: '—', sub: 'nothing saved yet' });
+    expect(smallerContextCard(null)).toEqual({ value: '—', sub: 'not available yet' });
   });
 });
