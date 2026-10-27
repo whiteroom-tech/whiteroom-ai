@@ -27,6 +27,8 @@ const run = (shift: number, x: Partial<RunSummary> = {}): RunSummary => ({
   lengthSeconds: 60, calls: 3, failedCalls: 0, blockedCalls: 0, spendMicros: 0, unpricedAttempts: 0, coverage: { calls: 3, checked: 3 }, flags: [], ...x,
 });
 
+vi.mock('@/lib/xlsx', async (orig) => ({ ...(await orig<typeof import('@/lib/xlsx')>()), downloadWorkbook: vi.fn() }));
+
 const { RunsTable } = await import('@/components/runs/RunsTable');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 
@@ -116,6 +118,15 @@ describe('Runs › a day by hour', () => {
     expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('hour=9'), { scroll: false });
     await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'All hours'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    m.root.unmount();
+  });
+
+  it('exports just the picked hour, as the table shows', async () => {
+    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
+    const m = await mount();
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Export .xlsx'));
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ pageSize: 50, hour: 9, fromDay: day, toDay: day }), 'k');
     m.root.unmount();
   });
 
