@@ -6,6 +6,7 @@ import { auditIntegrity, exportAuditSigned, verifyAudit } from '@/lib/whiteroom/
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { fmtTime, timeAgo } from '@/lib/format';
+import { AUDIT_KEPT } from '@/lib/plans';
 
 /**
  * Settings › Audit integrity (Phase 1 spec H2): how much of the fleet's
@@ -78,7 +79,7 @@ export function AuditIntegritySection() {
   return (
     <Panel title="Audit integrity">
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
-        Every event in this fleet’s history is linked to the one before it, so a changed or deleted event shows up when the history is checked. Kept for at least 12 months on every plan.
+        Every event in this fleet’s history is linked to the one before it, so a changed or deleted event shows up when the history is checked. Kept for {AUDIT_KEPT}.
       </p>
       {tracked ? (
         <p id="audit-integrity-status" style={{ fontSize: 'var(--fs-md)', margin: '0 0 6px' }}>{checked} · {gaps}</p>
