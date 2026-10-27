@@ -584,6 +584,14 @@ describe('Controls page, links in', () => {
     await act(async () => { m.root.render(h(ControlsPage)); });
     await flush();
     expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('200');
+    // Leaving the link and following the first one again opens it again.
+    nav.params = new URLSearchParams();
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    nav.params = new URLSearchParams('rule=r3');
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
     nav.params = new URLSearchParams();
     m.root.unmount();
   });

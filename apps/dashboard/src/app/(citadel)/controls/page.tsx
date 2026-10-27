@@ -89,7 +89,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const ruleOpened = useRef<string | null>(null);
   const openRuleRef = useRef<(id: string | null) => void>(() => {});
   useEffect(() => {
-    if (!ruleParam || ruleOpened.current === ruleParam || !listed) return;
+    // A link that's gone (or a new visit) can open the same rule again later.
+    if (!ruleParam) { ruleOpened.current = null; return; }
+    if (ruleOpened.current === ruleParam || !listed) return;
     ruleOpened.current = ruleParam;
     // A run can name a rule that's since been removed: say so rather than land silently.
     // Through openRule, so an unsaved edit to another rule is asked about first.
