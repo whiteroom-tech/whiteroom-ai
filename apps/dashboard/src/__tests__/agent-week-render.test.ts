@@ -58,7 +58,7 @@ describe('Last 7 days on the agent page', () => {
   it('names the parts as the wheel does, scored ones first, on a 0-10 scale', () => {
     const parts = scoreParts({ completeRate: 1, costDiligence: 2, speedScore: 3 });
     expect(parts.map((p) => [p.label, p.value])).toEqual([['Clean calls', 1], ['Speed', 3], ['Cost', 2]]);
-    expect([outOfTen(100), outOfTen(57), outOfTen(0), outOfTen(84.6)]).toEqual(['10', '5.7', '0', '8.5']);
+    expect([outOfTen(100), outOfTen(57), outOfTen(0), outOfTen(84.6)]).toEqual(['10', '5.7', '0', '8.46']);
     expect(scoreSummary([{ label: 'Clean calls', value: 100 }, { label: 'Cost', value: null }])).toBe('Clean calls 10 · Cost not scored yet');
   });
 

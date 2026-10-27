@@ -85,10 +85,9 @@ export function scoreParts(a: Pick<AgentScore, 'completeRate' | 'costDiligence' 
   ];
 }
 
-/** A 0-100 part on the score's 0-10 scale: 100 → "10", 57 → "5.7". */
+/** A 0-100 part on the score's 0-10 scale, to two places only when it needs them: 100 → "10", 57 → "5.7", 84.6 → "8.46". The table and the worked sum both use it. */
 export function outOfTen(value: number): string {
-  const v = Math.round(value) / 10;
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return String(+(value / 10).toFixed(2));
 }
 
 /** The closed row of "How is the score worked out?": "Clean calls 10 · Speed 5.7 · Cost not scored yet". */
@@ -106,7 +105,7 @@ export function scoreWorking(parts: Pick<ScorePart, 'value'>[]): { sum: string; 
   const scored = parts.filter((p): p is { value: number } => p.value != null).map((p) => p.value / 10);
   if (scored.length === 0) return null;
   const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
-  const two = (v: number) => String(+v.toFixed(2));
+  const two = (v: number) => outOfTen(v * 10);
   const score = Math.round(mean);
   if (scored.length === 1) return { sum: `${two(mean)} → ${score}`, score };
   return { sum: `(${scored.map(two).join(' + ')}) ÷ ${scored.length} = ${two(mean)} → ${score}`, score };
