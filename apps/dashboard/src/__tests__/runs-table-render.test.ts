@@ -148,7 +148,8 @@ describe('Runs › phones', () => {
     expect(m.text()).toContain('Showing 50 of 60 runs');
     // Show more asked for just the next page, after the rows shown.
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: '25', pageSize: 25 }), 'k');
-    // A new run starts; a poll reads the first page only, and the run it pushed down stays listed.
+    // A new run starts; a poll re-reads the rows shown (in pages of 50), so each stays current
+    // and the run pushed down moves to where Show more continues.
     api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
       const from = Number(o.cursor ?? 0);
       return { runs: Array.from({ length: o.pageSize }, (_, i) => run(from + i)), total: 61, cursor: String(from + o.pageSize) };
@@ -157,10 +158,12 @@ describe('Runs › phones', () => {
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     await flush();
     expect(api.list.mock.calls.length).toBe(before + 1);
-    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: null, pageSize: 25 }), 'k');
-    expect(phone()).toHaveLength(51);
-    expect(phone()).toContain('/runs/lead-agent~25');
-    expect(m.text()).toContain('Showing 51 of 61 runs');
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: null, pageSize: 50 }), 'k');
+    expect(phone()).toHaveLength(50);
+    expect(phone()[0]).toBe('/runs/lead-agent~0');
+    expect(m.text()).toContain('Showing 50 of 61 runs');
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs'));
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: '50', pageSize: 25 }), 'k');
     m.root.unmount();
   });
 
@@ -210,6 +213,20 @@ describe('Runs › failures and engine limits', () => {
     await m.click(m.radio('7 days'));
     expect(m.el.querySelector('.wr-runs-body.is-loading')).toBeNull();
     expect(api.list.mock.calls.length).toBe(calls);
+    m.root.unmount();
+  });
+
+  it('pages the day chart back and forth 30 days at a time', async () => {
+    const m = await mount();
+    const btn = (label: string) => m.el.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
+    // runDays answers with no days, so the chart still draws 30 empty days.
+    expect(m.text()).toContain('Runs per day · last 30 days');
+    expect(btn('Later 30 days').disabled).toBe(true);
+    await m.click(btn('Earlier 30 days'));
+    expect(m.text()).not.toContain('Runs per day · last 30 days');
+    expect(btn('Later 30 days').disabled).toBe(false);
+    await m.click(btn('Later 30 days'));
+    expect(m.text()).toContain('Runs per day · last 30 days');
     m.root.unmount();
   });
 

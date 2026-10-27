@@ -164,8 +164,8 @@ export function flagText(f: RunFlag): string {
 /**
  * The run table's "What stood out", from what the run's record shows. A flag
  * leads, then a block, a Record-only "would have blocked", or failed calls.
- * Otherwise coverage: "—" (nothing stood out) only when every call could be
- * read, never a clean answer for something that wasn't measured.
+ * Otherwise coverage: "Nothing unusual" (a dash in the table) only when every
+ * call could be read, never a clean answer for something that wasn't measured.
  */
 export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'> & Partial<Pick<RunSummary, 'wouldActCalls'>>): { tone: StandOutTone; text: string } {
   const [first, ...more] = run.flags ?? [];
@@ -177,7 +177,8 @@ export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blocke
   const { calls, checked } = run.coverage;
   if (calls > 0 && checked === 0) return { tone: 'coverage', text: 'Not assessed: none of its calls could be read' };
   if (checked < calls) return { tone: 'coverage', text: `Partly checked: ${checked} of ${calls} calls could be read` };
-  return { tone: 'clean', text: '—' };
+  // The table shows a clean run as "—"; text-only places (an agent's recent runs, exports) use these words.
+  return { tone: 'clean', text: 'Nothing unusual' };
 }
 
 /** "0:24", "12:05", "1:02:09": a run's length as a clock, for the Runs table. */
@@ -417,6 +418,17 @@ export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
 }
 
 const RESPONSE_DONE: Record<string, string> = { pause: 'paused the agent', stop: 'stopped the agent', notify: NOTIFY.done };
+
+/**
+ * The run page's flags note. Flags never block, but a rule may have, so the
+ * note points to Rule activity rather than saying nothing was blocked.
+ */
+export function flagsNote(actions: RunRuleAction[] | undefined): string {
+  const acted = (actions ?? []).filter((a) => a.mode === 'enforce');
+  if (acted.some((a) => a.response === 'block')) return 'Flags only point things out. Blocks are listed under Rule activity.';
+  if (acted.length) return 'Flags only point things out. What rules did is listed under Rule activity.';
+  return 'Flags only point things out; they don’t block anything.';
+}
 
 /** A Rule activity row: "Model allowlist would have blocked |5| calls: model not on the allowlist" (count bold). */
 export function ruleActivityRow(a: RunRuleAction): { lead: string; count: number | null; tail: string } {

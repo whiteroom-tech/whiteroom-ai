@@ -45,7 +45,7 @@ describe('day chart', () => {
     expect(el.querySelector('.wr-runchart__max')?.textContent).toBe('47');
     expect(el.querySelectorAll('.wr-runchart__flag')).toHaveLength(1);
     expect(el.querySelectorAll('.wr-runchart__day.is-in')).toHaveLength(7);
-    const busiest = el.querySelectorAll('button')[20];
+    const busiest = el.querySelectorAll('.wr-runchart__day')[20];
     expect(busiest.getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs, 4 flagged');
     await act(async () => { (busiest as HTMLButtonElement).click(); });
     expect(pick).toHaveBeenCalledWith('2026-09-21');
@@ -55,7 +55,7 @@ describe('day chart', () => {
     const { el, done } = await mount(h(DayStrip, { days: days(true), selected: null, inRange: () => false, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false }));
     expect(el.textContent).not.toContain('Flagged');
     // Nor do the bar labels claim a flagged count the chart doesn't draw.
-    expect(el.querySelectorAll('button')[20].getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs');
+    expect(el.querySelectorAll('.wr-runchart__day')[20].getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs');
     expect(el.querySelector('.wr-runchart__flag')).toBeNull();
     await done();
   });

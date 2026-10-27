@@ -22,6 +22,8 @@ const RUNS: RunSummary[] = [
   run('archive-agent', 2, 2900, 1, { lengthSeconds: 45, calls: 1, coverage: { calls: 1, checked: 1 } }),
   // Older days, so the day strip has shape.
   ...[3, 3, 4, 6, 6, 6, 6, 9, 12, 12, 15, 19, 19, 19, 22, 26].map((d, i) => run(i % 3 ? 'lead-agent' : 'writer-agent', 40 - i, d * 1440 + i * 37, 9 + (i % 5))),
+  // A busy day, so 30 days needs Show more.
+  ...Array.from({ length: 14 }, (_, i) => run('scout-agent', 30 - i, 8 * 1440 + i * 50, 4 + (i % 3))),
 ];
 
 /** Sample runs standing in for the engine: listed, counted per day and per hour as it would. */
@@ -32,7 +34,7 @@ export function samplePreview(runs: RunSummary[]): RunsSample {
     runs,
     // Flagged runs and rule activity per day and hour, as engine PR 298 counts them.
     dayCounts: count(runs.map(dayOf)).map(([day, n]) => ({ day, runs: n, flagged: runs.filter((r) => dayOf(r) === day && r.flags?.length).length, ruleActivity: runs.filter((r) => dayOf(r) === day).reduce((a, r) => a + r.blockedCalls + (r.wouldActCalls ?? 0), 0) })),
-    list: (q) => runs.filter((r) => dayOf(r) >= q.fromDay && dayOf(r) <= q.toDay
+    list: (q) => runs.filter((r) => dayOf(r) >= q.fromDay && dayOf(r) <= q.toDay && (!q.agentId || r.agentId === q.agentId)
       && (!q.flagged || !!r.flags?.length)
       && (!q.ruleActivity || r.blockedCalls > 0 || (r.wouldActCalls ?? 0) > 0)
       && (q.hour === null || localHour(r.startedAt) === q.hour)),

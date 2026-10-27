@@ -12,7 +12,7 @@ import { ROUTES } from '@/lib/routes';
 import { clock } from '@/lib/home';
 import { fmtCount } from '@/lib/format';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
-import { collectRunEvents, collectRuns, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
+import { collectRunEvents, collectRuns, flagsNote, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
@@ -40,7 +40,11 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
 }) {
   const [kind, setKind] = useState<RunKind>('all');
   const [cursor, setCursor] = useState<string | null>(null);
-  const [data, setData] = useState<RunEventsResult | null>(preview ?? null);
+  const [loaded, setData] = useState<RunEventsResult | null>(preview ?? null);
+  // /dev/run filters its sample itself for Events only, as the engine would.
+  const data = preview && loaded && kind === 'events'
+    ? { ...loaded, events: loaded.events.filter((e) => e.kind === 'event'), total: loaded.events.filter((e) => e.kind === 'event').length }
+    : loaded;
   const [missing, setMissing] = useState(false);
   const [failing, setFailing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(preview ? Date.now() : null);
@@ -219,7 +223,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         {!!run?.flags?.length && (
           <p className="wr-run-flags">
             <span style={{ display: 'flex', color: 'var(--warn)' }}><Icon name="alert" size={14} /></span>
-            <span><strong>Stood out:</strong> {run.flags.map(flagText).join(' · ')}. Flags only point things out; they don&rsquo;t block anything.</span>
+            <span><strong>Stood out:</strong> {run.flags.map(flagText).join(' · ')}. {flagsNote(run.ruleActions)}</span>
           </p>
         )}
         {failing && data && <RefreshFailed since={updatedAt} />}

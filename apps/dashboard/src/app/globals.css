@@ -784,6 +784,7 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-runchart__key.is-in { background: var(--brand); }
 .wr-runchart__key.is-flag { background: var(--warn); }
 .wr-runchart__key.is-rule { height: 4px; background: var(--warn); }
+.wr-runchart__paging { display: inline-flex; gap: 2px; }
 .wr-runchart__actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wr-runchart__note { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .wr-runchart__plot { position: relative; }

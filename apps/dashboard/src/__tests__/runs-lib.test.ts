@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, fmtClockLength, spanLabel, exportDays, runName, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, flagsNote, fmtClockLength, spanLabel, exportDays, runName, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 
@@ -97,7 +97,7 @@ describe('what stood out', () => {
   it('never reports a clean result for calls that weren’t read', () => {
     expect(standOut(run({ checked: 4 })).text).toBe('Partly checked: 4 of 6 calls could be read');
     expect(standOut(run({ checked: 0 })).text).toBe('Not assessed: none of its calls could be read');
-    expect(standOut(run({}))).toEqual({ tone: 'clean', text: '—' });
+    expect(standOut(run({}))).toEqual({ tone: 'clean', text: 'Nothing unusual' });
   });
 });
 
@@ -161,6 +161,13 @@ describe('run detail rows', () => {
     const old = runSummary(head, { calls: 6, failedCalls: 1, blockedCalls: 0, spendMicros: 50_000, unpricedAttempts: 1, wouldActCalls: 2 });
     expect(old).toMatchObject({ calls: 6, failed: 1, spend: '$0.05+', wouldBlock: 2, models: [] });
     expect(runSummary(head)).toMatchObject({ calls: undefined, spend: undefined });
+  });
+  it('never says nothing was blocked when a rule blocked', () => {
+    const act = (x: Partial<Parameters<typeof flagsNote>[0] extends (infer A)[] | undefined ? A : never>) => ({ at: '2026-10-27T09:04:00Z', ruleId: 'r1', ruleType: 'model_allowlist' as const, response: 'block' as const, mode: 'enforce' as const, occurrences: 1, ...x });
+    expect(flagsNote([act({})])).toBe('Flags only point things out. Blocks are listed under Rule activity.');
+    expect(flagsNote([act({ response: 'notify' })])).toBe('Flags only point things out. What rules did is listed under Rule activity.');
+    expect(flagsNote([act({ mode: 'watch' })])).toBe('Flags only point things out; they don’t block anything.');
+    expect(flagsNote(undefined)).toBe('Flags only point things out; they don’t block anything.');
   });
   it('words Rule activity rows, footer and header link', () => {
     const a = { at: '2026-10-25T00:45:00Z', ruleId: 'gr_1', ruleType: 'model_allowlist' as const, response: 'block' as const, mode: 'watch' as const, occurrences: 5, reason: 'model_not_allowed' };

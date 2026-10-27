@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { Button } from '@whiteroom/ui';
 import type { RunDayCount } from '@/lib/whiteroom/types';
 import { dayLabel, localDay } from '@/lib/runs';
 import { barHeight, barLabel, centreBar, tickIndexes } from './strip';
@@ -11,8 +12,9 @@ import { barHeight, barLabel, centreBar, tickIndexes } from './strip';
  * days listed below are brand-coloured, the picked day is solid text colour,
  * and flagged runs show as an amber segment at the foot of a bar when the
  * engine counts them. Picking a bar shows that day; picking it again goes back.
+ * ‹ › page the chart 30 days at a time.
  */
-export function DayStrip({ days, selected, inRange, onPick, title, legend, flaggedKnown }: {
+export function DayStrip({ days, selected, inRange, onPick, title, legend, flaggedKnown, onEarlier, onLater }: {
   days: RunDayCount[];
   selected: string | null;
   inRange: (day: string) => boolean;
@@ -23,6 +25,10 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
   legend: string;
   /** The engine sent per-day flagged counts: the amber segment and its key show. */
   flaggedKnown: boolean;
+  /** Pages the chart 30 days back; absent when the plan keeps nothing earlier. */
+  onEarlier?: () => void;
+  /** Pages the chart 30 days on; absent when it already ends today. */
+  onLater?: () => void;
 }) {
   // Phones scroll the chart sideways so each bar stays a tappable width. A new window opens on
   // the picked day, else the newest; picking a day centres it; un-picking leaves the strip where it is.
@@ -52,6 +58,10 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
         <span className="wr-runchart__legend">
           <span><span className="wr-runchart__key is-in" aria-hidden="true" />{legend}</span>
           {flaggedKnown && <span><span className="wr-runchart__key is-flag" aria-hidden="true" />Flagged</span>}
+          <span className="wr-runchart__paging">
+            <Button variant="ghost" size={28} aria-label="Earlier 30 days" title="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
+            <Button variant="ghost" size={28} aria-label="Later 30 days" title="Later 30 days" disabled={!onLater} onClick={onLater}>&rsaquo;</Button>
+          </span>
         </span>
       </div>
       <div className="wr-strip-scroll" ref={wrap}>
