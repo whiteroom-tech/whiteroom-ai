@@ -44,9 +44,13 @@ describe('run page', () => {
     expect(button().textContent).toBe('Link copied');
     await act(async () => { button().click(); });
     expect(button().textContent).toBe('Couldn’t copy');
-    // A browser with no clipboard at all says so too.
+    root.unmount();
+  });
+
+  it('says it couldn’t copy in a browser with no clipboard at all', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
-    await act(async () => { await new Promise((r) => setTimeout(r, 2100)); });
+    const { el, root } = await mount();
+    const button = () => [...el.querySelectorAll('button')].find((b) => /Copy link|Couldn’t copy/.test(b.textContent ?? ''))!;
     await act(async () => { button().click(); });
     expect(button().textContent).toBe('Couldn’t copy');
     root.unmount();
