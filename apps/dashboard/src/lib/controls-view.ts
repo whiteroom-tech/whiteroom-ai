@@ -453,3 +453,11 @@ export function averageDailySpend(hourly: { error?: string; hourly?: { hour?: st
   const days = Math.min(maxDays, Math.max(1, Math.ceil(spanDays)));
   return { perDay: hourly.hourly.reduce((n, h) => n + (h.costMicros || 0), 0) / 1e6 / days, days };
 }
+
+/** Deep equality that ignores object key order (the engine and the draft may order params differently). */
+export function sameValue(a: unknown, b: unknown): boolean {
+  const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+    : v ?? null);
+  return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+}

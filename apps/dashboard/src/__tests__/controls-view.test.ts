@@ -299,3 +299,12 @@ describe('fleet daily spend beside a spend cap', async () => {
     expect(averageDailySpend({ hourly: [{ hour: new Date().toISOString(), costMicros: 1 }] }, 0)).toBeNull();
   });
 });
+
+describe('sameValue', async () => {
+  const { sameValue } = await import('@/lib/controls-view');
+  it('ignores key order but not values', () => {
+    expect(sameValue({ dailyCap: 1, unit: 'dollars', scope: 'day' }, { scope: 'day', dailyCap: 1, unit: 'dollars' })).toBe(true);
+    expect(sameValue({ dailyCap: 1 }, { dailyCap: 2 })).toBe(false);
+    expect(sameValue(['a', 'b'], ['b', 'a'])).toBe(false);
+  });
+});

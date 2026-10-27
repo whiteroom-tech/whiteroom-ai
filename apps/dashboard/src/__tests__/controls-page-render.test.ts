@@ -794,6 +794,15 @@ describe('Controls page, weakening a rule', () => {
     await m3.click(m3.row('$190'));
     expect(m3.text()).toContain('Your fleet spends about $3.50 a day, all agents together (last 2 days).');
     m3.root.unmount();
+    // Only beside a dollars-a-day cap: not per run, not in tokens.
+    const m4 = await mount();
+    await m4.click(m4.row('$190'));
+    await choose(m4.el.querySelector('select[aria-label="Limit period"]') as HTMLSelectElement, 'run');
+    expect(m4.text()).not.toContain('Your fleet spends about');
+    await choose(m4.el.querySelector('select[aria-label="Limit period"]') as HTMLSelectElement, 'day');
+    await choose(m4.el.querySelector('select[aria-label="Limit unit"]') as HTMLSelectElement, 'tokens');
+    expect(m4.text()).not.toContain('Your fleet spends about');
+    m4.root.unmount();
   });
 
   it('narrowing a rule for all agents can keep it and add a copy just for them', async () => {

@@ -40,6 +40,7 @@ import {
   coverageGroups, stopping,
   weakenings,
   averageDailySpend,
+  sameValue,
 } from "@/lib/controls-view";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
@@ -323,9 +324,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const copyFor = async (rule: GovernanceRule, agentsPicked: string[]) => {
     if (!agentsPicked.length || saving) return;
     const next = { ...rule, appliesTo: agentsPicked };
-    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-    // Already made (say, Save and Copy again): don't add a second, identical rule.
-    if (rules.some((r) => r.ruleType === next.ruleType && same(r.params, next.params) && same(r.appliesTo, agentsPicked))) {
+    // Already made (say, Save and Copy again): don't add a second, identical rule. Identical means
+    // the same type, settings, response, alert and agents, whatever order the settings come in.
+    if (rules.some((r) => r.ruleType === next.ruleType && sameValue(r.params, next.params) && sameValue(r.appliesTo, agentsPicked)
+      && (r.response ?? "block") === (next.response ?? "block") && !!r.alsoNotify === !!next.alsoNotify)) {
       setDialog(null);
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
       setNotice(`There's already a copy for ${agentsPicked.join(", ")}. The rule for all agents is unchanged.`);
