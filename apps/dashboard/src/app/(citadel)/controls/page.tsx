@@ -355,10 +355,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     return (
       <button key={r.id} type="button" className={`gov-row${r.id === selectedId ? " is-on" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-current={r.id === selectedId || undefined}>
         <span style={{ minWidth: 0, flex: "1 1 320px" }}>
-          <span style={{ display: "block", fontSize: 12.5, color: "var(--tx2)", marginBottom: 2 }}>{RULE_LABELS[r.ruleType]}</span>
+          <span style={{ display: "block", fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>{RULE_LABELS[r.ruleType]}</span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
         </span>
-        <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 12.5, color: "var(--tx2)" }}>
+        <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
           <span>{scope.lead}<span style={{ fontFamily: FONT_MONO, color: "var(--tx)" }}>{scope.agents}</span></span>
           {stat && <span style={never || emptyPick(r) ? { color: "var(--warn-tx)" } : undefined}>{stat}</span>}
         </span>
@@ -374,7 +374,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       actions={foldable && list.length > 0 ? <Button variant="ghost" size={28} onClick={() => setOffOpen((v) => !v)} aria-expanded={offOpen}>{offOpen ? "Hide" : "Show"}</Button> : undefined}
     >
       {(!foldable || offOpen || list.length === 0) && (
-        list.length ? <div>{list.map(row)}</div> : <p style={{ margin: 0, padding: "14px 18px", fontSize: 12.5, color: "var(--tx2)" }}>{loaded ? empty : "Loading…"}</p>
+        list.length ? <div>{list.map(row)}</div> : <p style={{ margin: 0, padding: "14px 18px", fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>{loaded ? empty : "Loading…"}</p>
       )}
     </Panel>
   );
@@ -434,7 +434,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           {group("Watching", watching, "No rules are watching.")}
           {group("Off", off, "No rules are off.", true)}
 
-          <p style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: 12.5, color: "var(--tx2)" }}>
+          <p style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: 'var(--fs-sm)', color: "var(--tx2)" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flex: "none" }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
             Rules cover calls through WhiteRoom. Claude Code signed in with OAuth isn’t covered.
           </p>
@@ -478,18 +478,18 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           </aside>
         ) : (
           <aside aria-label="Rule details" className="gov-panel is-empty">
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Pick a rule to change it</p>
-            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: "var(--tx2)" }}>Or use Add rule. New rules start in Watch only, so nothing is blocked until you say so.</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Pick a rule to change it</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: "var(--tx2)" }}>Or use Add rule. New rules start in Watch only, so nothing is blocked until you say so.</p>
             {recent.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <p className="gov-eyebrow" style={{ marginTop: 6 }}>Recent changes</p>
                 {recent.map((h) => (
-                  <div key={h.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5 }}>
+                  <div key={h.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 'var(--fs-sm)' }}>
                     <span>{RULE_LABELS[h.ruleType]} · {h.description}</span>
                     <span style={{ color: "var(--tx2)", flex: "none" }}>{timeAgo(h.time)}</span>
                   </div>
                 ))}
-                <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
+                <Link href={`${ROUTES.settings}#audit-integrity`} style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--brand)" }}>Audit integrity →</Link>
               </div>
             )}
           </aside>
@@ -569,7 +569,7 @@ function EnforcePreview({ rule, next, wouldAct }: { rule: GovernanceRule; next: 
   const watched = rule.mode === "watch" && wouldAct;
   const n = watched ? Object.values(wouldAct.byAgent).reduce((a, b) => a + b, 0) : null;
   const tile = { background: "var(--sunk)", borderRadius: 7, padding: 12 } as const;
-  const big = { display: "block", fontFamily: FONT_MONO, fontSize: 24, fontWeight: 700, color: "var(--tx)" } as const;
+  const big = { display: "block", fontFamily: FONT_MONO, fontSize: 'var(--fs-xl)', fontWeight: 700, color: "var(--tx)" } as const;
   return (
     <>
       {ruleSentenceText(next)} {appliesNow(next.appliesTo)}

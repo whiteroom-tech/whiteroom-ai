@@ -16,7 +16,7 @@ const STATES: AgentState[] = ['working', 'resting', 'idle', 'paused', 'stopped',
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0,1fr)', gap: 16, alignItems: 'center' }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>{children}</div>
     </div>
   );

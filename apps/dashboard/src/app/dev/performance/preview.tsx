@@ -118,7 +118,7 @@ export function PerformancePreview() {
   const [sample, setSample] = useState<Sample>('quiet');
   return (
     <AppShell>
-      <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>}>
+      <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Preview with sample data</span>}>
         <SegmentedControl<Sample> label="Sample week" value={sample} onChange={setSample} options={[{ value: 'quiet', label: 'Quiet week' }, { value: 'problem', label: 'Has a problem', dot: 'warn' }, { value: 'empty', label: 'No data' }]} />
       </PageHeader>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start', gridAutoRows: 'max-content' }}>
@@ -126,7 +126,7 @@ export function PerformancePreview() {
           // The four numbers at the top of Performance, with sample values (the real ones follow the page range).
           <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
             <StatCard variant="card" label="Spend" hint={HELP.spend} value="$0.909" sub="$0.0054 / h" />
-            <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
+            <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
             <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value="0%" sub="0 of 99" />
             <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value="59" sub="59 would act (Watch only)" />
           </div>

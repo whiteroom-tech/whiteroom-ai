@@ -31,7 +31,7 @@ export function CopyChip({ text, display, label }: { text: string; display?: Rea
   const name = label ?? `Copy ${text.split('\n')[0]}`;
   return (
     <div className="wr-copy-chip">
-      <code style={{ fontFamily: FONT_MONO, fontSize: 12, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{display ?? text}</code>
+      <code style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{display ?? text}</code>
       <button type="button" onClick={copy} aria-label={name} title="Copy">
         <Icon name={copied ? 'check' : 'copy'} size={13} />
       </button>

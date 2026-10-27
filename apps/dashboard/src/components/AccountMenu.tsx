@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { SegmentedControl } from '@whiteroom/ui';
 import { chooseTheme, storedTheme, type ThemeChoice } from '@/lib/theme';
 import { ROUTES } from '@/lib/routes';
+import { TextSizeControl } from '@/components/TextSizeControl';
 
 /**
  * The ⋯ menu on the sidebar's account row: theme, the organization link and
@@ -51,7 +52,7 @@ export function AccountMenu({ organization, invitations }: { organization: strin
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        title="Theme, organization, sign out"
+        title="Theme, text size, organization, sign out"
         className="wr-account-btn"
         onClick={() => setOpen((v) => !v)}
       >
@@ -68,6 +69,8 @@ export function AccountMenu({ organization, invitations }: { organization: strin
             size={24}
             options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]}
           />
+          <div className="wr-account-menu__label" style={{ marginTop: 6 }}>Text size</div>
+          <TextSizeControl size={24} />
           {organization !== null && (
             <Link href={ROUTES.organization} className="wr-account-menu__item" onClick={() => setOpen(false)}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{organization || 'Organization'}</span>

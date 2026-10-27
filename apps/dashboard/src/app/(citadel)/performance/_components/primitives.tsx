@@ -5,7 +5,7 @@
 import type React from 'react';
 
 export const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
-export const H3: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--tx)', margin: 0 };
+export const H3: React.CSSProperties = { fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--tx)', margin: 0 };
 
 export function Badge({ status, size = 'normal', label }: { status: string; size?: 'normal' | 'small'; label?: string }) {
   const map: Record<string, { bg: string; tx: string }> = {
@@ -28,7 +28,7 @@ export function Badge({ status, size = 'normal', label }: { status: string; size
   const c = map[status] ?? { bg: 'var(--line)', tx: 'var(--tx3)' };
   const small = size === 'small';
   return (
-    <span style={{ fontSize: small ? 10 : 11, fontWeight: 600, padding: small ? '1px 6px' : '2px 8px', borderRadius: 99, background: c.bg, color: c.tx }}>
+    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: small ? '1px 6px' : '2px 8px', borderRadius: 99, background: c.bg, color: c.tx }}>
       {label ?? status.replace(/_/g, ' ')}
     </span>
   );
@@ -37,7 +37,7 @@ export function Badge({ status, size = 'normal', label }: { status: string; size
 export function Btn({ label, onClick, loading, accent }: { label: string; onClick: () => void; loading: boolean; accent?: boolean }) {
   return (
     <button onClick={onClick} disabled={loading} style={{
-      fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
+      fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
       background: accent ? 'var(--brand-dim)' : 'transparent', color: accent ? 'var(--brand)' : 'var(--tx3)',
       border: `1px solid ${accent ? 'var(--brand)' : 'var(--line)'}`, opacity: loading ? 0.5 : 1,
     }}>{label}</button>

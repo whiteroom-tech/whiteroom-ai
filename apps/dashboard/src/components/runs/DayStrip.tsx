@@ -43,7 +43,7 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
           );
         })}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
         <Button variant="ghost" size={28} aria-label="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
         <span>{first ? dayLabel(first, Date.now(), false) : ''}</span>
         <span style={{ marginLeft: 'auto' }}>{last ? (last === localDay() ? 'Today' : dayLabel(last, Date.now(), false)) : ''}</span>

@@ -43,8 +43,8 @@ export function Panel({
     <section style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '20px 22px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
-          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: 'var(--tx)', margin: 0 }}>{title}</h2>
-          {subtitle && <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '5px 0 0', maxWidth: '68ch' }}>{subtitle}</p>}
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--tx)', margin: 0 }}>{title}</h2>
+          {subtitle && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '5px 0 0', maxWidth: '68ch' }}>{subtitle}</p>}
         </div>
         {action}
       </div>
@@ -56,9 +56,9 @@ export function Panel({
 export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '14px 16px', minWidth: 0 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: 'var(--tx3)' }}>{label}</div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 20, fontWeight: 600, color: 'var(--tx)', marginTop: 6 }}>{value}</div>
-      {hint && <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 3 }}>{hint}</div>}
+      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: 'var(--tx3)' }}>{label}</div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-card)', fontWeight: 600, color: 'var(--tx)', marginTop: 6 }}>{value}</div>
+      {hint && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
@@ -85,13 +85,13 @@ export function OrgSummary({ org }: { org: OrgDetail }) {
 }
 
 const th: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 700,
+  textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700,
   letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)',
   background: 'var(--sunk)', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
 };
 
 const td: React.CSSProperties = {
-  padding: '11px 14px', borderBottom: '1px solid var(--line)', verticalAlign: 'middle', fontSize: 13.5,
+  padding: '11px 14px', borderBottom: '1px solid var(--line)', verticalAlign: 'middle', fontSize: 'var(--fs-md)',
 };
 
 export function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'ho' | 'muted'; children: React.ReactNode }) {
@@ -99,7 +99,7 @@ export function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'ho' | 
   return (
     <span
       style={{
-        fontSize: 10.5, fontWeight: 600, padding: '1px 7px', borderRadius: 99, whiteSpace: 'nowrap',
+        fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '1px 7px', borderRadius: 99, whiteSpace: 'nowrap',
         background: muted ? 'var(--line)' : `var(--${tone}-bg)`, color: muted ? 'var(--tx2)' : `var(--${tone})`,
       }}
     >
@@ -125,7 +125,7 @@ function Table({ head, minWidth, children }: { head: string[]; minWidth: number;
 
 export function button(variant: 'primary' | 'ghost' | 'danger', disabled = false): React.CSSProperties {
   const base: React.CSSProperties = {
-    fontSize: 13, fontWeight: 600, padding: '7px 13px', borderRadius: 7,
+    fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '7px 13px', borderRadius: 7,
     cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
     fontFamily: 'inherit', whiteSpace: 'nowrap',
   };
@@ -136,7 +136,7 @@ export function button(variant: 'primary' | 'ghost' | 'danger', disabled = false
 
 const field: React.CSSProperties = {
   background: 'var(--sunk)', border: '1px solid var(--line)', borderRadius: 7,
-  padding: '8px 10px', color: 'var(--tx)', fontSize: 13.5, fontFamily: 'inherit',
+  padding: '8px 10px', color: 'var(--tx)', fontSize: 'var(--fs-md)', fontFamily: 'inherit',
 };
 
 /** Runs a server action, refreshes the page on success, and reports the outcome. */
@@ -169,7 +169,7 @@ export function useAction() {
 export function StatusLine({ message }: { message: { tone: 'ok' | 'bad'; text: string } | null }) {
   if (!message) return null;
   return (
-    <p role="status" style={{ fontSize: 13, margin: '12px 0 0', color: message.tone === 'ok' ? 'var(--ok)' : 'var(--bad)' }}>
+    <p role="status" style={{ fontSize: 'var(--fs-sm)', margin: '12px 0 0', color: message.tone === 'ok' ? 'var(--ok)' : 'var(--bad)' }}>
       {message.text}
     </p>
   );
@@ -216,7 +216,7 @@ export function MembersPanel({
                   {m.email ?? <span style={{ color: 'var(--tx3)' }}>no email</span>}
                   {m.userId === viewerId && <span style={{ color: 'var(--tx3)', fontWeight: 500 }}> (you)</span>}
                 </div>
-                {m.name && <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 2 }}>{m.name}</div>}
+                {m.name && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 2 }}>{m.name}</div>}
               </td>
               <td style={td}>
                 {canEdit ? (
@@ -240,7 +240,7 @@ export function MembersPanel({
               </td>
               <td style={td}>
                 {m.status === 'active' ? (
-                  <span style={{ fontSize: 12.5, color: 'var(--tx2)' }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                     Joined <span style={{ fontFamily: FONT_MONO }}>{(m.acceptedAt ?? m.invitedAt).slice(0, 10)}</span>
                   </span>
                 ) : (
@@ -298,7 +298,7 @@ export function MembersPanel({
         </form>
       )}
       {editable && (
-        <p style={{ fontSize: 12.5, color: 'var(--tx3)', margin: '8px 0 0' }}>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', margin: '8px 0 0' }}>
           {addHint ?? 'They need a WhiteRoom account first — ask them to sign in once, then invite them.'}
         </p>
       )}
@@ -337,14 +337,14 @@ export function FleetsPanel({ fleets, windowDays }: { fleets: OrgFleetRow[]; win
       }
     >
       {fleets.length === 0 ? (
-        <p style={{ fontSize: 13.5, color: 'var(--tx3)', margin: 0 }}>No member has a fleet yet.</p>
+        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--tx3)', margin: 0 }}>No member has a fleet yet.</p>
       ) : (
         <Table head={['Fleet', 'Member', 'Agents', 'Status', 'Calls', 'Tokens', 'Est. spend', 'Last seen']} minWidth={900}>
           {shown.map((f) => (
             <tr key={`${f.ownerUserId}:${f.fleetId}`}>
               <td style={td}>
-                <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 600 }}>{f.fleetId}</div>
-                {f.label && <div style={{ fontSize: 11.5, color: 'var(--tx3)', marginTop: 2 }}>{f.label}</div>}
+                <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{f.fleetId}</div>
+                {f.label && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 2 }}>{f.label}</div>}
               </td>
               <td style={{ ...td, color: 'var(--tx2)' }}>{f.ownerEmail ?? f.ownerUserId}</td>
               {f.exists ? (
@@ -366,10 +366,10 @@ export function FleetsPanel({ fleets, windowDays }: { fleets: OrgFleetRow[]; win
                   <td style={{ ...td, fontFamily: FONT_MONO }}>{fmtTokens(f.spend?.calls ?? 0)}</td>
                   <td style={{ ...td, fontFamily: FONT_MONO }}>{fmtTokens((f.spend?.inputTokens ?? 0) + (f.spend?.outputTokens ?? 0))}</td>
                   <td style={{ ...td, fontFamily: FONT_MONO }}>{fmtCost(f.spend?.costMicros ?? 0)}</td>
-                  <td style={{ ...td, fontSize: 12.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>{ago(f.lastHeartbeat)}</td>
+                  <td style={{ ...td, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>{ago(f.lastHeartbeat)}</td>
                 </>
               ) : (
-                <td colSpan={6} style={{ ...td, color: 'var(--tx3)', fontSize: 12.5 }}>
+                <td colSpan={6} style={{ ...td, color: 'var(--tx3)', fontSize: 'var(--fs-sm)' }}>
                   {windowDays === null ? 'Usage unavailable' : 'No activity recorded on the engine yet'}
                 </td>
               )}
@@ -397,7 +397,7 @@ export function AuditPanel({ audit }: { audit: OrgAuditEntry[] }) {
   return (
     <Panel title="Membership activity" subtitle="Who joined, left, or changed roles, most recent first.">
       {audit.length === 0 ? (
-        <p style={{ fontSize: 13.5, color: 'var(--tx3)', margin: 0 }}>Nothing yet.</p>
+        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--tx3)', margin: 0 }}>Nothing yet.</p>
       ) : (
         <div style={{ display: 'grid', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
           {audit.map((e) => {
@@ -405,8 +405,8 @@ export function AuditPanel({ audit }: { audit: OrgAuditEntry[] }) {
             const role = e.details && typeof e.details.to === 'string' ? ` → ${e.details.to}` : '';
             const staff = e.details?.by === 'whiteroom_admin';
             return (
-              <div key={e.id} style={{ background: 'var(--sunk)', padding: '10px 14px', fontSize: 13, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+              <div key={e.id} style={{ background: 'var(--sunk)', padding: '10px 14px', fontSize: 'var(--fs-sm)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                   {e.createdAt.slice(0, 16).replace('T', ' ')}
                 </span>
                 <span style={{ color: 'var(--tx)' }}>{e.actorEmail ?? 'someone'}</span>

@@ -78,25 +78,25 @@ export function AuditIntegritySection() {
 
   return (
     <Panel title="Audit integrity">
-      <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
         Every event in this fleet’s history is linked to the one before it, so a changed or deleted event shows up when the history is checked.
       </p>
       {tracked ? (
-        <p id="audit-integrity-status" style={{ fontSize: 13.5, margin: '0 0 6px' }}>{checked} · {gaps}</p>
+        <p id="audit-integrity-status" style={{ fontSize: 'var(--fs-md)', margin: '0 0 6px' }}>{checked} · {gaps}</p>
       ) : (
-        <p style={{ fontSize: 13.5, margin: '0 0 6px' }}>History tracking hasn’t started for this fleet yet.</p>
+        <p style={{ fontSize: 'var(--fs-md)', margin: '0 0 6px' }}>History tracking hasn’t started for this fleet yet.</p>
       )}
       {info.gaps.recent.length > 0 && (
-        <ul style={{ margin: '0 0 6px', paddingLeft: 18, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <ul style={{ margin: '0 0 6px', paddingLeft: 18, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           {info.gaps.recent.map((g, i) => (
             <li key={i}>{g.from && g.to ? `${fmtTime(g.from)} – ${fmtTime(g.to)}` : 'Time unknown'}: events may be missing</li>
           ))}
         </ul>
       )}
       {info.prunedBeforeTracking && (
-        <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 6px' }}>Older events were removed before tracking started, so the check begins after them.</p>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px' }}>Older events were removed before tracking started, so the check begins after them.</p>
       )}
-      <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 14px', maxWidth: '62ch' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 14px', maxWidth: '62ch' }}>
         Not yet anchored outside WhiteRoom: a check shows any change to the stored history, but can’t yet prove it to someone who doesn’t trust WhiteRoom’s records.
       </p>
       {tracked && (
@@ -105,7 +105,7 @@ export function AuditIntegritySection() {
           <Button variant="ghost" size={28} busy={busy === 'export'} busyLabel="Preparing…" onClick={() => void download()}>Download signed export</Button>
         </div>
       )}
-      {note && <p role="status" style={{ margin: '10px 0 0', fontSize: 12.5, color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
+      {note && <p role="status" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
     </Panel>
   );
 }

@@ -55,11 +55,11 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
   return (
     <Panel title={<>Savings<Hint text={HELP.savings} /></>} count={energy ? `last 7 days · ${energy} saved` : 'last 7 days'}>
       {empty ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No model calls in the last 7 days.</p>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No model calls in the last 7 days.</p>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8 }}>
-            <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>
+            <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
               {[top, top / 2, 0].map((v, i) => (
                 <span key={i} style={{ position: 'absolute', right: 0, top: `${(i / 2) * 100}%`, transform: 'translateY(-50%)' }}>{axisLabel(v)}</span>
               ))}
@@ -91,13 +91,13 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
                         <div style={{ width: 12, height: h(d.used), background: 'var(--brand)', borderRadius: '2px 2px 0 0' }} />
                         <div style={{ width: 12, height: h(without), background: 'var(--line2)', borderRadius: '2px 2px 0 0' }} />
                       </div>
-                      <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>{weekday(d.day)}</div>
+                      <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{weekday(d.day)}</div>
                       {/* Two lines, so neighbouring days' figures never run into each other. */}
-                      <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx)', whiteSpace: 'nowrap' }}>
+                      <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)', whiteSpace: 'nowrap' }}>
                         {without ? fmtTokens(d.used) : '–'}
                       </div>
                       {without > 0 && (
-                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                           / {fmtTokens(without)}
                         </div>
                       )}
@@ -107,10 +107,10 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, fontSize: 12, color: 'var(--tx2)', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--brand)' }} />With WhiteRoom</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--line2)' }} />Without, est.</span>
-            <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx)' }}>
+            <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>
               {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, est. ${fmtTokens(shown.used + shown.saved)} without` : ''}
             </span>
           </div>
@@ -155,7 +155,7 @@ export function ByAgentTable({ rows, scope, ruleActions, scores }: {
   return (
     <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
       {rows.length === 0 ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>No agent activity in this range.</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No agent activity in this range.</p>
       ) : (
         <>
           <div className="wr-byagent-table">

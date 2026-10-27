@@ -31,7 +31,7 @@ export function AgentPreview() {
   const [which, setWhich] = useState('working');
   return (
     <AppShell>
-      <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--tx2)' }}>
+      <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         Preview with sample data
         <SegmentedControl label="Sample state" value={which} onChange={setWhich} size={24} options={[{ value: 'working', label: 'Working' }, { value: 'resting', label: 'On a break' }, { value: 'idle', label: 'Idle, no notes' }, { value: 'paused', label: 'Paused (Gov v1)' }]} />
       </div>

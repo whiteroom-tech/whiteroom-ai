@@ -36,14 +36,14 @@ export function UserSearch({ initialQuery }: { initialQuery: string }) {
           borderRadius: 7,
           padding: '9px 12px',
           color: 'var(--tx)',
-          fontSize: 14,
+          fontSize: 'var(--fs-md)',
           fontFamily: 'inherit',
         }}
       />
       <button
         type="submit"
         style={{
-          fontSize: 13.5, fontWeight: 600, padding: '8px 16px', borderRadius: 7,
+          fontSize: 'var(--fs-md)', fontWeight: 600, padding: '8px 16px', borderRadius: 7,
           background: 'var(--brand)', color: 'var(--bg)', border: '1px solid var(--brand)',
           cursor: 'pointer', fontFamily: 'inherit',
         }}
@@ -55,7 +55,7 @@ export function UserSearch({ initialQuery }: { initialQuery: string }) {
           type="button"
           onClick={() => { setValue(''); router.push('/'); }}
           style={{
-            fontSize: 13.5, fontWeight: 600, padding: '8px 16px', borderRadius: 7,
+            fontSize: 'var(--fs-md)', fontWeight: 600, padding: '8px 16px', borderRadius: 7,
             background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)',
             cursor: 'pointer', fontFamily: 'inherit',
           }}

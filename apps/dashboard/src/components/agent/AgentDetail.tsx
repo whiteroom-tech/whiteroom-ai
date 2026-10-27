@@ -259,7 +259,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const title = (
     <>
       {back}
-      <span aria-hidden="true" style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', fontWeight: 400 }}>/</span>
+      <span aria-hidden="true" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', fontWeight: 400 }}>/</span>
       <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>
     </>
   );
@@ -270,7 +270,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         <PageHeader title={title} fleetId={fleetId} />
         <div style={{ padding: 24 }}>
           <Panel title="Agent not found">
-            <p style={{ margin: 0, fontSize: 13.5, color: 'var(--tx2)' }}>
+            <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx2)' }}>
               There’s no agent called <span style={{ fontFamily: FONT_MONO, color: 'var(--tx)' }}>{agentId}</span> in this fleet. <Link href={ROUTES.home} className="wr-link">Back to Home &rarr;</Link>
             </p>
           </Panel>
@@ -301,7 +301,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
         badge={state && (
           <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <StatusPill state={state} />
-            {model && <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{model}</span>}
+            {model && <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{model}</span>}
           </span>
         )}
       >
@@ -341,13 +341,13 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
                 <Panel title={<>Current shift<Hint text={HELP.currentShift} /></>} count={shiftSummary(agent, fmtTokens)}>
                   {!progress && shiftAside(agent, fmtTokens).length > 0 && (
-                    <div style={{ display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--tx2)' }}>
+                    <div style={{ display: 'grid', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {shiftAside(agent, fmtTokens).map((line) => <div key={line}>{line}</div>)}
                     </div>
                   )}
                   {progress && (
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-sm)', marginBottom: 6 }}>
                         <span style={{ color: 'var(--tx2)' }}>{progress.onBreak ? 'Break progress' : 'Shift progress'}</span>
                         <span style={{ fontFamily: FONT_MONO }}>{progress.label}</span>
                       </div>
@@ -365,17 +365,17 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                   actions={notesState === 'current' && handover?.session_stats ? <Tag tone="ho">{handover.session_stats.tasks_completed} tasks → notes</Tag> : undefined}
                 >
                   {notesState !== 'current' ? (
-                    <p role={notesState === 'failed' ? 'status' : undefined} style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+                    <p role={notesState === 'failed' ? 'status' : undefined} style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {notesState === 'failed' ? 'Couldn’t load this shift’s notes. Retrying…' : 'Loading notes…'}
                     </p>
                   ) : notes.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+                    <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                       {(agent.watchNumber ?? 1) > 1
                         ? 'No handover notes saved for this agent.'
                         : 'No handover yet. Notes appear here after this agent’s first shift ends.'}
                     </p>
                   ) : (
-                    <div style={{ display: 'grid', gap: 8, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
+                    <div style={{ display: 'grid', gap: 8, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' }}>
                       {handover?.fallback && (
                         <p role="note" style={{ margin: 0, padding: '8px 10px', borderRadius: 10, background: 'var(--info-bg)', color: 'var(--tx)' }}>
                           The full notes couldn’t be delivered, so the agent gets this short version instead.
@@ -388,7 +388,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                         </div>
                       ))}
                       {notesLong && (
-                        <button type="button" className="wr-link" aria-expanded={notesOpen} onClick={() => setNotesOpen((o) => !o)} style={{ justifySelf: 'start', background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 12.5 }}>
+                        <button type="button" className="wr-link" aria-expanded={notesOpen} onClick={() => setNotesOpen((o) => !o)} style={{ justifySelf: 'start', background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
                           {notesOpen ? 'Show less' : 'Show full notes'}
                         </button>
                       )}
@@ -411,7 +411,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     </div>
                     <Button variant="primary" disabled={taskDraft === null || !taskDraft.trim()} busy={taskSaving} busyLabel="Saving…" onClick={saveTaskType}>Save</Button>
                   </div>
-                  <p style={{ margin: '8px 0 0', fontSize: 12, color: taskNote ? (taskNote.ok ? 'var(--ok)' : 'var(--bad)') : 'var(--tx2)' }} role={taskNote ? 'status' : undefined}>
+                  <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-sm)', color: taskNote ? (taskNote.ok ? 'var(--ok)' : 'var(--bad)') : 'var(--tx2)' }} role={taskNote ? 'status' : undefined}>
                     {taskNote ? taskNote.text : 'Keys the per-task cost estimate on Performance.'}
                   </p>
                 </Panel>

@@ -1038,7 +1038,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     const limit = activityExpanded ? allEntries.length : 20;
     const entries = allEntries.slice(0, limit);
     const hasMore = allEntries.length > limit;
-    if (!entries.length) return <p style={{ fontSize: 13, color: 'var(--tx3)', textAlign: 'center', padding: '32px 0' }}>{phase === 'workspace' && !isDemo ? 'Nothing yet. Events appear here as soon as your agent makes a call.' : 'Demo events are made up to show the flow.'}</p>;
+    if (!entries.length) return <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', textAlign: 'center', padding: '32px 0' }}>{phase === 'workspace' && !isDemo ? 'Nothing yet. Events appear here as soon as your agent makes a call.' : 'Demo events are made up to show the flow.'}</p>;
     return (
       <><ul className={s.activity}>{entries.map(e => {
         const type = e.type;
@@ -1056,7 +1056,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           </li>
         );
       })}</ul>
-      {hasMore && <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setActivityExpanded(true)} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>Show all {allEntries.length} events</button>}
+      {hasMore && <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setActivityExpanded(true)} style={{ width: '100%', marginTop: 8, fontSize: 'var(--fs-sm)' }}>Show all {allEntries.length} events</button>}
       </>
     );
   };
@@ -1071,15 +1071,15 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
     {/* ── Header (start/setup only) ── */}
     {phase !== 'workspace' && (
-      <PageHeader title="Sandbox" badge={<span style={{ fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Test runs never count toward your fleet&rsquo;s numbers.</span>} />
+      <PageHeader title="Sandbox" badge={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Test runs never count toward your fleet&rsquo;s numbers.</span>} />
     )}
 
     <main className={s.content}>
       <div className={s.layout}>
       <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
       <div className={s.body}>
-      {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Retry</button></div>}
-      {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Check now</button></div>}
+      {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Retry</button></div>}
+      {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Check now</button></div>}
 
       {booting ? <p>Checking for an existing test…</p> : phase === 'start' ? <>
         {/* ═══ START ═══ */}
@@ -1147,7 +1147,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {/* ── Setup tab ── */}
         <WorkspacePanel tab="setup" active={wsTab === 'setup'}>
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
-          <p style={{ fontSize: 12.5, color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your API key stays where it is.</p>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your API key stays where it is.</p>
           <div className={s.selectRow}>
             {isDemo ? <>
               <button className={`${s.selectPill} ${directProvider === 'anthropic' ? s.selectPillOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
@@ -1177,7 +1177,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
           {!isDemo && <>
             <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY, marginTop: 20 }}>2. Run your agent</h3>
-            <p style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Run one normal task. This updates as soon as its calls arrive.</p>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Run one normal task. This updates as soon as its calls arrive.</p>
             <div className={s.diag}>
               {[
                 { label: 'WhiteRoom is ready', sub: stage >= 1 ? 'Ready for your agent' : 'Checking…', at: 1 },
@@ -1201,9 +1201,9 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               ))}
             </div>
 
-            <details open={help.open} onToggle={e => helpDispatch({ type: 'toggle', open: e.currentTarget.open })} style={{ marginTop: 12, fontSize: 12.5, color: 'var(--tx2)' }}>
+            <details open={help.open} onToggle={e => helpDispatch({ type: 'toggle', open: e.currentTarget.open })} style={{ marginTop: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Nothing happening?</summary>
-              <ul style={{ paddingLeft: 18, marginTop: 8, fontSize: 12, color: 'var(--tx3)', lineHeight: 1.7 }}>
+              <ul style={{ paddingLeft: 18, marginTop: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', lineHeight: 1.7 }}>
                 {liveCloud ? <CloudTroubleshooting provider={liveCloud} endpointHost={run?.endpointHost} /> : <>
                 <li>Make sure your agent uses the same API key you pasted to start this test.</li>
                 <li>Every call needs both headers from the code above: <code>x-whiteroom-fleet</code> and <code>x-whiteroom-agent</code>.</li>
@@ -1223,9 +1223,9 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               <h2 style={{ fontFamily: FONT_DISPLAY }}>{DEMO_STORY[scene].title}</h2>
               <p>{DEMO_STORY[scene].text}</p>
               <div className={s.btnRow}>
-                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === 0} onClick={() => setScene(v => v - 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Previous</button>
+                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === 0} onClick={() => setScene(v => v - 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 'var(--fs-sm)' }}>Previous</button>
                 <span className={s.small} style={{ alignSelf: 'center' }}>Step {scene + 1} of {DEMO_STORY.length}</span>
-                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === DEMO_STORY.length - 1} onClick={() => setScene(v => v + 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 12 }}>Next</button>
+                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === DEMO_STORY.length - 1} onClick={() => setScene(v => v + 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 'var(--fs-sm)' }}>Next</button>
               </div>
             </div>
           )}
@@ -1247,7 +1247,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               </>}
               <div className={s.btnRow} style={{ marginTop: 8 }}>
                 {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)} />}
-                <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>
+                <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>
               </div>
               {practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: {PRACTICE_SUMMARY}.</p>}
             </div>
@@ -1262,7 +1262,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
               clearSandboxToken();
               setRun(null); setConfirmEnd(false);
               setPhase('setup');
-            })} disabled={busy} style={{ fontSize: 12 }}>Now test my agent →</button>
+            })} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Now test my agent →</button>
           </div>}
 
           <p className={s.small} style={{ marginTop: 12 }}>These checks show your agent works through WhiteRoom. They don’t check that its answers are correct. Use them to help decide, not as a certificate.</p>
@@ -1270,13 +1270,13 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
         {/* ── Activity tab ── */}
         <WorkspacePanel tab="activity" active={wsTab === 'activity'}>
-          {activityHeader && <p style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 12 }}>{activityHeader}</p>}
+          {activityHeader && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginBottom: 12 }}>{activityHeader}</p>}
           {renderActivity()}
         </WorkspacePanel>
 
         {/* Test actions, on every tab. On Checks, a passed live test's card already offers the report. */}
         {run && <div className={s.btnRow}>
-          {!(allPassed && !isDemo && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 12 }}>Download report</button>}
+          {!(allPassed && !isDemo && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>}
           <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
         </div>}
 

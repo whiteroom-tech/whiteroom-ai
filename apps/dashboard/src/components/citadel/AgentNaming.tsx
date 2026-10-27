@@ -25,7 +25,7 @@ export function AgentNaming({ provider, claudeCode = true }: { provider?: 'anthr
   const [lang, setLang] = useState<Lang>('python');
   const sdks = provider ? [provider] : (['anthropic', 'openai'] as const);
   return (
-    <details style={{ fontSize: 12.5, color: 'var(--tx2)' }}>
+    <details style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
       <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{AGENT_NAME_TITLE}</summary>
       <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
         <span>{AGENT_NAME_WHY}</span>

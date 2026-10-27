@@ -68,7 +68,7 @@ export default async function ConfirmEmailPage({
 }
 
 const text: React.CSSProperties = {
-  fontSize: 14,
+  fontSize: 'var(--fs-md)',
   lineHeight: 1.6,
   color: 'var(--tx2)',
   margin: '0 0 24px',
@@ -81,7 +81,7 @@ const linkButton: React.CSSProperties = {
   border: '1px solid var(--line)',
   borderRadius: 8,
   padding: '10px 20px',
-  fontSize: 14,
+  fontSize: 'var(--fs-md)',
   fontWeight: 600,
   textDecoration: 'none',
 };
@@ -111,7 +111,7 @@ function Shell({ heading, children }: { heading: string; children: React.ReactNo
         <h1
           style={{
             fontFamily: "'Chakra Petch', sans-serif",
-            fontSize: 20,
+            fontSize: 'var(--fs-card)',
             fontWeight: 700,
             color: 'var(--tx)',
             margin: '0 0 10px',

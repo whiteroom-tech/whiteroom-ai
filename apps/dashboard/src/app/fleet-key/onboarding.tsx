@@ -126,7 +126,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
       ) : undefined}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           Each key gets its own proxy URL. WhiteRoom stores only a hash; the key stays yours.
         </p>
 
@@ -144,15 +144,15 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
         )}
 
         {keys === null ? (
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading connected keys&hellip;</p>
+          <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Loading connected keys&hellip;</p>
         ) : keys.length > 0 && (
           <ul className="wr-key-list">
             {keys.map((k) => (
               <li key={`${k.wrKey}-${k.createdAt}`}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
-                <span style={{ fontSize: 12, color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
-                <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
+                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
+                <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
                 <Button variant="danger" size={28} disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>
             ))}
@@ -162,7 +162,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
         {/* key={tab}: each tab takes a different kind of key and second field
             (Azure URL, AWS region), so switching remounts the form empty. */}
         {showForm && <KeyForm key={tab} tab={tab} onConnect={connect} onCancel={adding ? () => setAdding(false) : undefined} />}
-        {removeError && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{removeError}</p>}
+        {removeError && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{removeError}</p>}
       </div>
 
       <ConfirmDialog
@@ -243,7 +243,7 @@ function KeyForm({ tab, onConnect, onCancel }: {
         <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
         {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
-      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{msg}</p>}
     </div>
   );
 }
@@ -321,13 +321,13 @@ function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; flee
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
         {role === null && statusError ? (
           <div style={{ display: 'grid', gap: 8 }}>
-            <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>Couldn&rsquo;t load role status: {statusError}</p>
+            <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>Couldn&rsquo;t load role status: {statusError}</p>
             <Button size={28} onClick={() => void safeRefresh()} style={{ justifySelf: 'start' }}>Retry</Button>
           </div>
         ) : role === null ? (
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Loading role status&hellip;</p>
+          <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Loading role status&hellip;</p>
         ) : role.configured && !adding && (
-          <div style={{ display: 'grid', gap: 6, fontSize: 12.5, color: 'var(--tx2)' }}>
+          <div style={{ display: 'grid', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             <span><strong style={{ color: 'var(--tx)' }}>Account</strong> {role.awsAccountId}</span>
             <span style={{ fontFamily: FONT_MONO }}>{role.roleArn}</span>
             <span><strong style={{ color: 'var(--tx)' }}>Region</strong> {role.region}</span>
@@ -337,7 +337,7 @@ function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; flee
         )}
 
         {showForm && <RoleForm onConnect={connect} onCancel={role?.configured ? () => setAdding(false) : undefined} />}
-        {removeError && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{removeError}</p>}
+        {removeError && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{removeError}</p>}
       </div>
 
       <ConfirmDialog
@@ -379,7 +379,7 @@ function RoleForm({ onConnect, onCancel }: {
 
   return (
     <div style={{ display: 'grid', gap: 8 }}>
-      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         Create a role in your AWS account first (see the trust policy below), then paste its ARN and the external ID you put in it.
       </p>
       <input
@@ -424,7 +424,7 @@ function RoleForm({ onConnect, onCancel }: {
         <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
         {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
-      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: 'var(--bad)' }}>{msg}</p>}
+      {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{msg}</p>}
     </div>
   );
 }
@@ -483,7 +483,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                 {/* Reveal first: copying a secret you can't see is easy to do by accident. */}
                 <CopyValueButton text={apiKey} what="your API key" disabled={!showKey} title={showKey ? undefined : 'Reveal the key to copy it'} />
               </div>}
-              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+              <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                 Use this key to authenticate CLI commands and API requests. Keep it private; anyone with it can act on this fleet. If it leaks, rotate it.
               </p>
             </div>
@@ -495,7 +495,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
               <SegmentedControl<ProviderTab> label="Provider" value={tab} onChange={setTab} options={PROVIDER_TABS} />
               {tab === 'direct' ? (
                 <>
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. No code changes for agents with a system prompt; run your agent exactly as before.</p>
+                  <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. No code changes for agents with a system prompt; run your agent exactly as before.</p>
                   <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                   <AgentNaming />
@@ -507,7 +507,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                 </>
               ) : (
                 <>
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+                  <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                     Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under Provider keys below. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
                   </p>
                   <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_ORIGIN}/<your-proxy-key>`} />
@@ -526,7 +526,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
             <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} previewKeys={previewKeys} />
           )}
 
-          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <a href={SETUP_GUIDE_URL} className="wr-link">Setup guide</a>
             <a href="https://whiteroom.tech/openapi.yaml" className="wr-link">OpenAPI</a>
             <a href={ROUTES.sandbox} className="wr-link">Test in Sandbox &rarr;</a>
@@ -540,7 +540,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
 function RecipeStep({ label, code }: { label: string; code: string }) {
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <span style={{ fontSize: 12, color: 'var(--tx2)' }}>{label}</span>
+      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{label}</span>
       <CopyChip text={code} label={`Copy: ${label}`} />
     </div>
   );
@@ -558,10 +558,10 @@ function BedrockRecipe() {
   const [lang, setLang] = useState<Lang>('python');
   return (
     <>
-      <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         Add your Bedrock API key and the region your Claude models run in under Provider keys below. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock and keep your Bedrock API key.
       </p>
-      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, fontSize: 12.5, color: 'var(--tx2)' }}>
+      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         <li>{BEDROCK_NOTES.key}</li>
         <li>{BEDROCK_NOTES.region}</li>
         <li>{BEDROCK_NOTES.custody}</li>
@@ -570,7 +570,7 @@ function BedrockRecipe() {
       <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={BEDROCK_LINES.baseUrl} />
       <RecipeStep label={`Use your Bedrock API key (${BEDROCK_KEY_ENV}) as the API key`} code={BEDROCK_LINES.apiKey} />
       <div style={{ display: 'grid', gap: 6 }}>
-        <span style={{ fontSize: 12, color: 'var(--tx2)' }}>Or set both on the client</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Or set both on the client</span>
         <SegmentedControl<Lang> label="Language" value={lang} onChange={setLang} options={LANGS} size={24} />
         <CopyChip text={BEDROCK_LINES[lang]} label={`Copy the Bedrock ${lang === 'python' ? 'Python' : 'TypeScript'} client`} />
       </div>
@@ -587,7 +587,7 @@ function BedrockRecipe() {
 function BedrockRoleRecipe() {
   return (
     <>
-      <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         Create an IAM role in your AWS account that trusts WhiteRoom, then connect it under Cross-account role below. No API key — your agent authenticates with its own AWS credentials; WhiteRoom verifies the call and assumes this role to reach Bedrock on its behalf.
       </p>
       <RecipeStep
@@ -598,8 +598,8 @@ function BedrockRoleRecipe() {
       <RecipeStep label="3. Install the client shim" code={BEDROCK_ROLE_LINES.pythonInstall} />
       <RecipeStep label="4. Point boto3 at WhiteRoom (JS/TS coming soon)" code={BEDROCK_ROLE_LINES.python('<your-region>')} />
       <div style={{ display: 'grid', gap: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>Supported models</span>
-        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 2, fontSize: 12, color: 'var(--tx2)' }}>
+        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>Supported models</span>
+        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 2, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           {BEDROCK_ROLE_SUPPORT.map((line) => <li key={line}>{line}</li>)}
         </ul>
       </div>

@@ -214,9 +214,9 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
           bodyPadding={view === 'cards' ? '16px 18px' : 0}
           actions={<SegmentedControl<AgentsView> label="Agents view" value={view} onChange={onViewChange} size={24} options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]} />}
         >
-          {nameNote && <p style={{ margin: view === 'cards' ? '0 0 12px' : '12px 18px', fontSize: 13, color: 'var(--tx2)' }}>{nameNote}</p>}
+          {nameNote && <p style={{ margin: view === 'cards' ? '0 0 12px' : '12px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{nameNote}</p>}
           {agents.length === 0 ? (
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No agents connected yet. They appear here on their first call through WhiteRoom.</p>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No agents connected yet. They appear here on their first call through WhiteRoom.</p>
           ) : view === 'cards' ? (
             <div className="wr-home-agents">
               {sorted.map((a) => {
@@ -225,10 +225,10 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                   <div key={a.agentId} className="wr-agent-card-wrap">
                     <Link href={agentHref(a.agentId)} className="wr-agent-card">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                        <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
                         <StatusPill state={agentState(a)} />
                       </div>
-                      <div style={{ fontSize: 13, color: 'var(--tx2)' }}>{progressLine(a)}</div>
+                      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{progressLine(a)}</div>
                       {block && (
                         <div>
                           <span className="wr-chip-warn">
@@ -258,7 +258,7 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
                   key: 'last', header: 'Last event', width: 'minmax(200px,2fr)',
                   render: (a) => {
                     const ev = lastEvents[a.agentId];
-                    return ev ? <span><span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', marginRight: 10 }}>{ev.time}</span>{ev.text}</span> : <span style={{ color: 'var(--tx2)' }}>—</span>;
+                    return ev ? <span><span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginRight: 10 }}>{ev.time}</span>{ev.text}</span> : <span style={{ color: 'var(--tx2)' }}>—</span>;
                   },
                 },
               ]}
@@ -283,7 +283,7 @@ function HomeSkeleton({ failing }: { failing: boolean }) {
   const block = (w: string, h: number) => <div style={{ width: w, height: h, borderRadius: 5, background: 'var(--sunk)' }} />;
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }} aria-busy="true">
-      {failing && <p role="status" style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>Couldn&rsquo;t load the fleet yet. Retrying&hellip;</p>}
+      {failing && <p role="status" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Couldn&rsquo;t load the fleet yet. Retrying&hellip;</p>}
       <div className="wr-home-strip">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '16px 18px', display: 'grid', gap: 8 }}>

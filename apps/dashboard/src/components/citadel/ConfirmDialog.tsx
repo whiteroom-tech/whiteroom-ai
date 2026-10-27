@@ -44,17 +44,17 @@ export function ConfirmDialog({
         onSubmit={(e) => { e.preventDefault(); if (ready) onConfirm(); }}
         style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}
       >
-        <h2 id="confirm-dialog-title" style={{ margin: 0, fontSize: 16, fontWeight: 700, color: tone === 'danger' ? 'var(--bad)' : 'var(--tx)' }}>{title}</h2>
-        <div style={{ fontSize: 13.5, lineHeight: 1.55, color: 'var(--tx2)' }}>{body}</div>
+        <h2 id="confirm-dialog-title" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 700, color: tone === 'danger' ? 'var(--bad)' : 'var(--tx)' }}>{title}</h2>
+        <div style={{ fontSize: 'var(--fs-md)', lineHeight: 1.55, color: 'var(--tx2)' }}>{body}</div>
         {confirmPhrase && (
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, color: 'var(--tx2)' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             <span>Type <b style={{ color: 'var(--tx)' }}>{confirmPhrase}</b> to confirm</span>
             <input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               autoComplete="off"
               autoFocus
-              style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', color: 'var(--tx)', fontSize: 13.5 }}
+              style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', color: 'var(--tx)', fontSize: 'var(--fs-md)' }}
             />
           </label>
         )}
@@ -62,7 +62,7 @@ export function ConfirmDialog({
           <button type="button" onClick={onCancel} disabled={busy} style={dialogCancelStyle}>
             {cancelLabel}
           </button>
-          <button type="submit" disabled={!ready} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'transparent', color: ready ? 'var(--on-brand)' : 'var(--tx2)', border: `1px solid ${ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'var(--line2)'}`, cursor: ready ? 'pointer' : 'not-allowed' }}>
+          <button type="submit" disabled={!ready} style={{ padding: '8px 14px', borderRadius: 6, fontSize: 'var(--fs-sm)', fontWeight: 600, background: ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'transparent', color: ready ? 'var(--on-brand)' : 'var(--tx2)', border: `1px solid ${ready ? (tone === 'danger' ? 'var(--bad)' : 'var(--brand)') : 'var(--line2)'}`, cursor: ready ? 'pointer' : 'not-allowed' }}>
             {busy ? 'Working…' : confirmLabel}
           </button>
         </div>

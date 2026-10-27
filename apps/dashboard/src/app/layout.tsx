@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   },
 };
 
-const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark'||t==='system')document.documentElement.setAttribute('data-wr-theme',t)}catch(e){}";
+const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark'||t==='system')document.documentElement.setAttribute('data-wr-theme',t);var s=localStorage.getItem('wr_text');if(s==='lg'||s==='xl')document.documentElement.setAttribute('data-wr-text',s)}catch(e){}";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -26,8 +26,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* Before first paint: pin the stored theme so no page flashes the
-            other one while React hydrates (see globals.css). */}
+        {/* Before first paint: pin the stored theme and text size so no page
+            flashes the other one while React hydrates (see globals.css). */}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

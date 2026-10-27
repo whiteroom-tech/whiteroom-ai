@@ -25,11 +25,11 @@ export function isDiagnosisRow(rec: RecommendationDetail): boolean {
 
 function Sentence({ parts }: { parts: SentencePart[] }) {
   return (
-    <p style={{ fontSize: 14, lineHeight: 1.55, margin: 0, maxWidth: '80ch', color: 'var(--tx)' }}>
+    <p style={{ fontSize: 'var(--fs-md)', lineHeight: 1.55, margin: 0, maxWidth: '80ch', color: 'var(--tx)' }}>
       {parts.map((p, i) => 'text' in p
         ? <span key={i}>{p.text}</span>
         : p.code
-          ? <code key={i} style={{ ...MONO, fontSize: 12.5, background: 'var(--sunk)', padding: '1px 5px', borderRadius: 4 }}>{p.value}</code>
+          ? <code key={i} style={{ ...MONO, fontSize: 'var(--fs-sm)', background: 'var(--sunk)', padding: '1px 5px', borderRadius: 4 }}>{p.value}</code>
           : <span key={i} style={MONO}>{p.value}</span>)}
     </p>
   );
@@ -57,24 +57,24 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
   return (
     <article style={{ padding: '16px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>{TITLES[detector]}</span>
-        <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ ...MONO, fontSize: 12.5, fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>{rec.agentId}</button>
+        <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: 'var(--tx)' }}>{TITLES[detector]}</span>
+        <button type="button" onClick={() => onSelectAgent(rec.agentId)} style={{ ...MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--brand)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>{rec.agentId}</button>
         <Badge status={rec.status} label={STATUS_LABEL[rec.status]} />
       </div>
       <Sentence parts={findingSentence(detector, m)} />
-      {cost && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--warn-tx)' }}>{cost}</p>}
-      {limitation && <p style={{ margin: 0, fontSize: 12, color: 'var(--tx2)' }}>{limitation}</p>}
+      {cost && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>{cost}</p>}
+      {limitation && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{limitation}</p>}
 
       <div className="dx-acts" style={{ display: 'flex', gap: '8px 16px', flexWrap: 'wrap', marginTop: 2 }}>
         {open && action?.kind === 'rule' && (
           <Link href={`${ROUTES.controls}?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
-            display: 'inline-flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, padding: '6px 14px', borderRadius: 6,
+            display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
             background: 'var(--brand)', color: 'var(--bg)', border: '1px solid var(--brand)', textDecoration: 'none',
           }}>Add {RULE_LABEL[action.rule]} in Watch</Link>
         )}
         {open && action?.kind === 'howto' && (
           <button type="button" className="dx-main-btn" aria-expanded={howOpen} aria-controls={howId} onClick={() => setHowOpen((v) => !v)} style={{
-            fontSize: 12.5, fontWeight: 600, padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
+            fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
             background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)',
           }}>{howOpen ? 'Hide how to fix' : 'How to fix'}</button>
         )}
@@ -84,12 +84,12 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
       </div>
 
       {open && action?.kind === 'howto' && (
-        <div id={howId} hidden={!howOpen} style={{ borderLeft: '2px solid var(--line2)', padding: '4px 0 4px 12px', fontSize: 13, color: 'var(--tx2)', lineHeight: 1.55, maxWidth: '78ch' }}>
+        <div id={howId} hidden={!howOpen} style={{ borderLeft: '2px solid var(--line2)', padding: '4px 0 4px 12px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', lineHeight: 1.55, maxWidth: '78ch' }}>
           {howtoParagraphs(action.howtoId, m).map((p, i) => <p key={i} style={{ margin: '0 0 6px' }}>{p}</p>)}
           <button type="button" className="dx-link dx-strong" disabled={busy} onClick={() => void onFeedback('implemented')}>Mark as fixed</button>
         </div>
       )}
-      {error && <div role="alert" style={{ fontSize: 11.5, color: 'var(--bad)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--bad)' }}>{error}</div>}
     </article>
   );
 }
@@ -100,7 +100,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
   const h = evidenceHeader(detector, calls, measures);
   if (!h) return null;
   const box = CARD;
-  const caption = <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx2)', marginBottom: 10 }}>{h.caption}</div>;
+  const caption = <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)', marginBottom: 10 }}>{h.caption}</div>;
   if (h.kind === 'watches') {
     return (
       <div style={box}>
@@ -108,7 +108,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {h.watches.map((w) => (
             <span key={w.watch} style={{
-              ...MONO, fontSize: 11, padding: '2px 6px', borderRadius: 4,
+              ...MONO, fontSize: 'var(--fs-xs)', padding: '2px 6px', borderRadius: 4,
               border: `1px solid ${w.calls <= 2 ? 'var(--warn-line)' : 'var(--line2)'}`,
               background: w.calls <= 2 ? 'var(--warn-bg)' : 'transparent',
               color: w.calls <= 2 ? 'var(--warn-tx)' : 'var(--tx2)',
@@ -122,9 +122,9 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
     <div style={box}>
       {caption}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', minWidth: 420, borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <table style={{ width: '100%', minWidth: 420, borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
           <thead>
-            <tr>{h.columns.map((c) => <th key={c} style={{ textAlign: 'left', fontSize: 11.5, fontWeight: 600, color: 'var(--tx2)', padding: '6px 8px', borderBottom: '1px solid var(--line)' }}>{c}</th>)}</tr>
+            <tr>{h.columns.map((c) => <th key={c} style={{ textAlign: 'left', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx2)', padding: '6px 8px', borderBottom: '1px solid var(--line)' }}>{c}</th>)}</tr>
           </thead>
           <tbody>
             {h.rows.map((r, i) => (
@@ -133,7 +133,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
           </tbody>
         </table>
       </div>
-      {h.note && <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--tx2)' }}>{h.note}</p>}
+      {h.note && <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{h.note}</p>}
     </div>
   );
 }

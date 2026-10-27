@@ -87,7 +87,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
     <div className={p.wrap}>
       <div className={s.eyebrow}>WHITEROOM / SANDBOX / PRACTICE TEST</div>
       <div className={`${s.summary} ${tone}`}>
-        <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 18 }}>{head}</h2>
+        <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)' }}>{head}</h2>
         <div>{[run.sourceFleetId, who, model, run.endedAt && when(run.endedAt)].filter(Boolean).join(' · ')}</div>
         {caveat && <div style={{ marginTop: 4 }}>{caveat}</div>}
         {!ended && run.endReason && <div style={{ marginTop: 4 }}>{endedBecause(run.endReason)}</div>}

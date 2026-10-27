@@ -77,7 +77,7 @@ export function SmallerHandoversSection() {
 
   return (
     <Panel title="Smaller handovers">
-      <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
         Changes that make handover notes cheaper to send, tried one at a time. For fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -88,20 +88,20 @@ export function SmallerHandoversSection() {
             if (mode === 'on') setConfirmOn(true);
             else void save(mode);
           }} />
-        {busy && !confirmOn && <span role="status" style={{ fontSize: 12.5, color: 'var(--tx2)' }}>Saving…</span>}
+        {busy && !confirmOn && <span role="status" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Saving…</span>}
       </div>
-      <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--tx2)', maxWidth: '62ch' }}>{modeText(preview)}</p>
-      {note && <p role="alert" style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--bad)' }}>{note}</p>}
+      <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '62ch' }}>{modeText(preview)}</p>
+      {note && <p role="alert" style={{ margin: '8px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{note}</p>}
 
       <div style={{ marginTop: 12 }}>
         {shownItems(preview).map((item, i) => (
           <div key={item.id} style={{ padding: '10px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{item.title}</span>
+              <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{item.title}</span>
               {preview.compression_mode === 'on' && preview.cleared.includes(item.id) && <Tag tone="brand">Applies</Tag>}
             </div>
-            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--tx2)', maxWidth: '62ch' }}>{item.text}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--tx3)' }}>{itemLine(preview, item.id)}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '62ch' }}>{item.text}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{itemLine(preview, item.id)}</p>
           </div>
         ))}
       </div>

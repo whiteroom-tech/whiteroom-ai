@@ -78,7 +78,7 @@ export function ProxyKeyNotice({ disabled, onRecover }: { disabled?: boolean; on
   return (
     <div className={s.notice} style={{ marginTop: 10 }}>
       This tab doesn’t have this test’s proxy URL, so the code shows a placeholder.{' '}
-      <button className={`${s.btn} ${s.btnSecondary}`} onClick={onRecover} disabled={disabled} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Get a new proxy URL</button>
+      <button className={`${s.btn} ${s.btnSecondary}`} onClick={onRecover} disabled={disabled} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Get a new proxy URL</button>
       <span className={s.small} style={{ display: 'block', marginTop: 6 }}>Your agent’s current URL stops working as soon as you do.</span>
     </div>
   );

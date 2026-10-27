@@ -42,16 +42,16 @@ export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; ag
   return (
     <Panel
       title={<>Handover quality<Hint text={HELP.handoverQuality} /></>}
-      actions={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Last 7 days · {q.handovers} handover{q.handovers === 1 ? '' : 's'}</span>}
+      actions={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Last 7 days · {q.handovers} handover{q.handovers === 1 ? '' : 's'}</span>}
     >
       <div style={{ display: 'grid' }}>
         {qualityRows(q).map((r, i) => (
           <div key={r.label} style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', padding: '10px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
             <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.label}</div>
-              <div style={{ fontSize: 12.5, color: r.state === 'partly' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{r.detail}</div>
+              <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{r.label}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: r.state === 'partly' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{r.detail}</div>
             </div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: r.state === 'measured' ? 'var(--tx)' : 'var(--tx2)' }}>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-card)', fontWeight: 700, color: r.state === 'measured' ? 'var(--tx)' : 'var(--tx2)' }}>
               {/* The dash says nothing to a screen reader; the words do. */}
               {r.state === 'none' ? <><span aria-hidden="true">{r.value}</span><span className="sr-only">Not measured</span></> : r.value}
             </div>

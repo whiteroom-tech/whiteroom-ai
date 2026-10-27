@@ -34,11 +34,11 @@ export function PageHeader({
 }) {
   const content = (
     <>
-      <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: 'var(--tx)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, whiteSpace: 'nowrap' }}>
+      <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-page)', lineHeight: 1.2, fontWeight: 700, color: 'var(--tx)', margin: 0, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, whiteSpace: 'nowrap' }}>
         {title}
       </h1>
       {fleetId && (
-        <span className="citadel-page-fleet" title={fleetTitle} style={{ fontFamily: FONT_MONO, fontSize: 12, color: 'var(--tx2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+        <span className="citadel-page-fleet" title={fleetTitle} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
           / {fleetId}
         </span>
       )}
@@ -50,7 +50,7 @@ export function PageHeader({
   return (
     <header
       className={split ? 'citadel-page-header citadel-page-header--split' : 'citadel-page-header'}
-      style={{ height: 56, flexShrink: 0, display: 'flex', borderBottom: '1px solid var(--line)', minWidth: 0, ...(split ? { alignItems: 'stretch' } : { alignItems: 'center', gap: 12, padding: '0 24px' }) }}
+      style={{ minHeight: '4.5rem', flexShrink: 0, display: 'flex', borderBottom: '1px solid var(--line)', minWidth: 0, ...(split ? { alignItems: 'stretch' } : { alignItems: 'center', gap: 12, padding: '0 24px' }) }}
     >
       {split ? <><div className="citadel-page-header__main">{content}</div><div className="citadel-page-header__side" aria-hidden="true" /></> : content}
     </header>

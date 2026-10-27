@@ -39,7 +39,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
         <div style={{ flex: '1 1 200px' }}>
           <label
             htmlFor="override"
-            style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 6 }}
+            style={{ display: 'block', fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 6 }}
           >
             Comp a plan
           </label>
@@ -49,7 +49,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
             onChange={(e) => setChoice(e.target.value)}
             style={{
               width: '100%', background: 'var(--sunk)', border: '1px solid var(--line)',
-              borderRadius: 7, padding: '9px 11px', color: 'var(--tx)', fontSize: 14, fontFamily: 'inherit',
+              borderRadius: 7, padding: '9px 11px', color: 'var(--tx)', fontSize: 'var(--fs-md)', fontFamily: 'inherit',
             }}
           >
             <option value="">No override — follow Stripe</option>
@@ -81,7 +81,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
         </button>
       </div>
 
-      <p style={{ fontSize: 12.5, color: 'var(--tx3)', margin: '10px 0 0', maxWidth: '62ch' }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', margin: '10px 0 0', maxWidth: '62ch' }}>
         A comp overrides Stripe in both directions and survives the next webhook. Re-sync is for
         when a customer&apos;s limits don&apos;t match what they&apos;re paying for — the push is
         best-effort and can miss during an engine deploy.
@@ -91,7 +91,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
         <p
           role="status"
           style={{
-            fontSize: 13, margin: '12px 0 0',
+            fontSize: 'var(--fs-sm)', margin: '12px 0 0',
             color: message.tone === 'ok' ? 'var(--ok)' : 'var(--bad)',
           }}
         >
@@ -104,7 +104,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
 
 function btn(variant: 'primary' | 'ghost', disabled: boolean): React.CSSProperties {
   return {
-    fontSize: 13.5,
+    fontSize: 'var(--fs-md)',
     fontWeight: 600,
     padding: '9px 16px',
     borderRadius: 7,

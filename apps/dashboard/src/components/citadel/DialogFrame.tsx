@@ -43,4 +43,4 @@ export function DialogFrame({ open, busy, onCancel, onOpen, labelledBy, children
 }
 
 /** A dialog's cancel button: names what staying put keeps. */
-export const dialogCancelStyle = { padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' } as const;
+export const dialogCancelStyle = { padding: '8px 14px', borderRadius: 6, fontSize: 'var(--fs-sm)', fontWeight: 600, background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line2)', cursor: 'pointer' } as const;
