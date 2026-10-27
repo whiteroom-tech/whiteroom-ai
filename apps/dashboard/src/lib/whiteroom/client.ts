@@ -6,6 +6,7 @@
 //   - no key -> unauthenticated (e.g. token_login)
 
 import type {
+  AuditExportPage,
   AuditIntegrity,
   VerifyAuditResult,
   AuditSummaryResult,
@@ -711,6 +712,21 @@ export function verifyAudit(fleetId: string, key?: string): Promise<VerifyAuditR
 /** The redacted audit trail with its chain check, signed (Ed25519) by WhiteRoom. */
 export function exportAuditSigned(fleetId: string, key?: string): Promise<Record<string, unknown>> {
   return apiCall({ action: 'export_audit_signed', fleet_id: fleetId }, key);
+}
+
+/**
+ * One page of the full signed export (engine export_audit_full). The first
+ * call pins the newest event (toSeq); pass it back with fromSeq for the rest.
+ */
+export function exportAuditFullPage(
+  fleetId: string,
+  cursor?: { fromSeq: number; toSeq: number },
+  key?: string,
+): Promise<AuditExportPage> {
+  return apiCall({
+    action: 'export_audit_full', fleet_id: fleetId,
+    ...(cursor ? { from_seq: cursor.fromSeq, to_seq: cursor.toSeq } : {}),
+  }, key);
 }
 
 /** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
