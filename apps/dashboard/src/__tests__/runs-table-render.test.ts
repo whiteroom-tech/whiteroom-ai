@@ -170,4 +170,14 @@ describe('Runs › a day by hour', () => {
     expect(m.text()).not.toContain('by hour');
     m.root.unmount();
   });
+
+  it('stops filtering by a linked hour on an engine without run_hours', async () => {
+    api.hours.mockResolvedValue({ unsupported: true });
+    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
+    const m = await mount();
+    expect(m.text()).not.toContain('by hour');
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    m.root.unmount();
+  });
 });
