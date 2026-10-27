@@ -37,7 +37,7 @@ export function usualMinutes(runs: number): string {
   return `${lo * runs}–${hi * runs} min`;
 }
 
-/** What a practice test is, for the ways into it: "5 practice tasks and a check of your controls, about 5–10 min for one run". */
+/** What a practice test is, for the ways into it: "5 practice tasks and a check of your rules · about 5–10 min". */
 export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)}`;
 
 /** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
@@ -281,7 +281,7 @@ export function headline(r: PracticeReport): string {
 /** What a passed result doesn't prove (Appendix D), or null. */
 export function passCaveat(r: PracticeReport): string | null {
   if (r.verdict !== 'passed') return null;
-  if (r.sample) return 'This was WhiteRoom’s sample agent: it checks your controls and this setup, not your own agent.';
+  if (r.sample) return 'This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.';
   if (r.runs === 1) return 'One run shows your agent can pass. Run it 3 times to see that it passes every time.';
   return null;
 }

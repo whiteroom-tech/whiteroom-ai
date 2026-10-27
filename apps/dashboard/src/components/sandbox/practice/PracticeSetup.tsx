@@ -152,7 +152,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   return (
     <div className={p.wrap}>
       <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Set up a practice test</h2>
-      <p className={s.pageSub}>Your agent works through {PRACTICE_TASKS} practice tasks while WhiteRoom checks the results and your controls. A run usually takes {usualMinutes(1)}. You start it from your computer with one command.</p>
+      <p className={s.pageSub}>Your agent works through {PRACTICE_TASKS} practice tasks while WhiteRoom checks the results and your rules. A run usually takes {usualMinutes(1)}. You start it from your computer with one command.</p>
 
       {blocked && (
         <div className={s.notice} role="status">
