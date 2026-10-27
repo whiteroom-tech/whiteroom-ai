@@ -124,19 +124,24 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   // Recent runs, also the Now card's link to the last run: read again when the
   // agent's run number changes, so a new run shows up with its link and date.
-  // Another agent starts from Loading, never with the last one's runs.
-  const runNumber = agent ? (agent.currentShift?.watchNumber ?? agent.lastShift?.watchNumber ?? agent.watchNumber ?? null) : null;
+  // Another agent starts from Loading, never with the last one's runs. Waits
+  // for the agent's status, so a visit reads the list once, not twice.
+  const runNumber = agent ? (agent.currentShift?.watchNumber ?? agent.lastShift?.watchNumber ?? agent.watchNumber ?? null) : undefined;
   const runsFor = useRef<string | null>(null);
   useEffect(() => {
-    if (preview) return;
+    if (preview || runNumber === undefined) return;
     if (runsFor.current !== `${fleetId}/${agentId}`) { runsFor.current = `${fleetId}/${agentId}`; setRuns({ kind: 'loading' }); }
     let live = true;
     listRuns(fleetId, { ...runsDays('7d'), agentId, pageSize: 5 }, authKey).then(
       (res) => { if (live) setRuns('unsupported' in res ? { kind: 'unsupported' } : { kind: 'ok', runs: res.runs }); },
-      () => { if (live) setRuns((r) => (r.kind === 'ok' ? r : { kind: 'failed' })); },
+      (e: unknown) => {
+        if (!live) return;
+        if (isAuthError(e)) { onAuthError?.('Session expired. Please sign in again.'); return; }
+        setRuns((r) => (r.kind === 'ok' ? r : { kind: 'failed' }));
+      },
     );
     return () => { live = false; };
-  }, [fleetId, authKey, agentId, preview, runNumber]);
+  }, [fleetId, authKey, agentId, preview, runNumber, onAuthError]);
 
   // The fleet health check, read again on the same 5-minute cadence as
   // Performance. A check that's off or fails shows nothing.
