@@ -59,6 +59,23 @@ describe('Performance overview layout', () => {
   });
 });
 
+describe('Performance overview, what it leaves out', () => {
+  // With data that would fill them (several agents, hourly rows, models), so this can't pass on empty markup.
+  it('has no More detail toggle, Calls per hour chart or By agent table, but does show its sections', () => {
+    const html = renderToStaticMarkup(h(IndexView, {
+      data: DATA, hourlyData: { hourly: Array.from({ length: 48 }, (_, i) => ({ hour: new Date(Date.UTC(2026, 9, 25, i)).toISOString(), calls: 4, costMicros: 19_000, errors: 0 })) },
+      auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: { 'lead-agent': { blocks: 2, wouldBlocks: 0 }, writer: { blocks: 0, wouldBlocks: 57 } }, byRule: {} },
+      savingsDays: null, agentIds: ['lead-agent', 'writer'], rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
+      onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
+    } as never));
+    expect(html).toContain('id="perf-performance"');
+    expect(html).toContain('>Spend<');
+    expect(html).not.toContain('More detail');
+    expect(html).not.toContain('Calls per hour');
+    expect(html).not.toContain('By agent');
+  });
+});
+
 describe('Smaller context card', () => {
   it('shows the ratio over all time, nothing saved as —, and unknown as — never 0', () => {
     expect(smallerContextCard(90.84)).toEqual({ value: '90.8%', sub: 'smaller than full history, all time' });
