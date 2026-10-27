@@ -15,7 +15,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { addDays, clampSpan, ignoresFlagged, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, ignoresFlagged, ignoresRuleActivity, type RunsShow, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
 import { DayStrip } from '@/components/runs/DayStrip';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
@@ -50,9 +50,12 @@ export function RunsTable({ preview, retentionDays }: {
 
   const [range, setRange] = useState<RunsRange>(() => { const r = params.get('range'); return isRange(r) ? r : '7d'; });
   const [agent, setAgent] = useState(() => params.get('agent') ?? 'all');
-  const [flaggedOnly, setFlaggedOnly] = useState(() => params.get('show') === 'flagged');
-  // The All / Flagged control shows once the engine reports flags (P2.1).
+  const [show, setShow] = useState<RunsShow>(() => { const s = params.get('show'); return s === 'flagged' || s === 'rules' ? s : 'all'; });
+  const flaggedOnly = show === 'flagged';
+  const rulesOnly = show === 'rules';
+  // Flagged shows once the engine reports flags (P2.1); Rule activity once it counts each run's rule actions (E1a).
   const [flagsKnown, setFlagsKnown] = useState(() => !!preview?.some((r) => r.flags));
+  const [rulesKnown, setRulesKnown] = useState(() => !!preview?.some((r) => r.wouldActCalls !== undefined));
   const oldest = oldestKept(retentionDays);
   // One picked day (the viewer's local day) overrides the range.
   // A shared link can name a day the plan no longer keeps: start at the oldest kept.
@@ -91,18 +94,18 @@ export function RunsTable({ preview, retentionDays }: {
     const sp = new URLSearchParams(window.location.search);
     if (range === '7d') sp.delete('range'); else sp.set('range', range);
     if (agent === 'all') sp.delete('agent'); else sp.set('agent', agent);
-    if (flaggedOnly) sp.set('show', 'flagged'); else sp.delete('show');
+    if (show !== 'all') sp.set('show', show); else sp.delete('show');
     if (day) sp.set('day', day); else sp.delete('day');
     if (range === 'custom' && from && to) { sp.set('from', from); sp.set('to', to); } else { sp.delete('from'); sp.delete('to'); }
     const qs = sp.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     if (url !== `${window.location.pathname}${window.location.search}`) router.replace(url, { scroll: false });
-  }, [range, agent, flaggedOnly, day, from, to, router]);
+  }, [range, agent, show, day, from, to, router]);
 
   // A new filter starts from the first page with nothing shown, in one
   // update, so no request ever pairs the new filter with an old cursor and
   // the count never mixes the old total with the new range.
-  function changeFilter(change: { range?: RunsRange; agent?: string; flagged?: boolean; day?: string | null; from?: string; to?: string }) {
+  function changeFilter(change: { range?: RunsRange; agent?: string; show?: RunsShow; day?: string | null; from?: string; to?: string }) {
     const today = localDay();
     const nextView: RunsView = { range, day, from, to };
     if (change.range !== undefined) {
@@ -124,22 +127,24 @@ export function RunsTable({ preview, retentionDays }: {
     setTo(nextView.to ?? null);
     pinStrip(stripEndFor(runsWindow(nextView), stripEnd, STRIP_DAYS));
     if (change.agent !== undefined) setAgent(change.agent);
-    if (change.flagged !== undefined) setFlaggedOnly(change.flagged);
+    if (change.show !== undefined) setShow(change.show);
     setCursors([null]);
-    setRuns(null);
+    // The preview fetches nothing: it keeps its sample and filters it below.
+    setRuns(preview ?? null);
     setNext(null);
   }
 
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
     try {
-      const res = await listRuns(fleetId, { ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, cursor: cursors[cursors.length - 1], pageSize: PAGE, flagged: flaggedOnly }, authKey);
+      const res = await listRuns(fleetId, { ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, cursor: cursors[cursors.length - 1], pageSize: PAGE, flagged: flaggedOnly, ruleActivity: rulesOnly }, authKey);
       if (stale()) return;
       if ('unsupported' in res) { setUnsupported(true); return; }
-      // An engine without flags ignores `flagged` and lists every run: show All.
-      if (flaggedOnly && ignoresFlagged(res.runs)) { setFlaggedOnly(false); return; }
+      // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
+      if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { setShow('all'); return; }
       setRuns(res.runs);
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
+      if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
       setTotal(res.total);
       setNext(res.cursor);
       setFailing(false);
@@ -149,7 +154,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       setFailing(true);
     }
-  }, [fleetId, authKey, range, day, from, to, agent, flaggedOnly, cursors, resetSession]);
+  }, [fleetId, authKey, range, day, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
 
   const { refresh } = usePoll(load, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   // usePoll fetches on mount; refetch only when the filter or page changes.
@@ -157,7 +162,7 @@ export function RunsTable({ preview, retentionDays }: {
   useEffect(() => {
     if (firstQuery.current) { firstQuery.current = false; return; }
     refresh();
-  }, [range, day, from, to, agent, flaggedOnly, cursors, refresh]);
+  }, [range, day, from, to, agent, show, cursors, refresh]);
 
   // The strip depends only on the agent and its own 30 days, so it loads on
   // its own: paging the list or picking a day on it doesn't refetch it, and a slow strip never holds up the
@@ -198,7 +203,7 @@ export function RunsTable({ preview, retentionDays }: {
     try {
       const { fromDay, toDay } = runsWindow(view);
       const got = await collectRuns(
-        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50, flagged: flaggedOnly }, authKey),
+        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50, flagged: flaggedOnly, ruleActivity: rulesOnly }, authKey),
         EXPORT_MAX_PAGES,
       );
       if ('unsupported' in got) { setExportNote({ ok: false, text: 'This engine can’t list runs yet, so there’s nothing to export.' }); return; }
@@ -222,13 +227,13 @@ export function RunsTable({ preview, retentionDays }: {
   const counts = new Map(dayCounts?.map((c) => [c.day, c.runs]));
   const groupOf = (r: RunSummary) => {
     const d = localDay(Date.parse(r.startedAt));
-    // Day totals count every run, so they'd mislead under Flagged.
-    const n = flaggedOnly ? undefined : counts.get(d);
+    // Day totals count every run, so they'd mislead under Flagged or Rule activity.
+    const n = show !== 'all' ? undefined : counts.get(d);
     return { key: d, label: <><strong>{dayLabel(d)}</strong>{n !== undefined && <>&nbsp;·&nbsp;{n} run{n === 1 ? '' : 's'}</>}</> };
   };
   const today = localDay();
   // /dev/runs fetches nothing, so it filters its sample to the shown days.
-  const shown = preview && runs ? runs.filter((r) => inSpan(localDay(Date.parse(r.startedAt))) && (!flaggedOnly || !!r.flags?.length)) : runs;
+  const shown = preview && runs ? runs.filter((r) => inSpan(localDay(Date.parse(r.startedAt))) && (!flaggedOnly || !!r.flags?.length) && (!rulesOnly || r.blockedCalls > 0 || (r.wouldActCalls ?? 0) > 0)) : runs;
 
   if (auth.status !== 'authenticated' && !preview) return <FleetLogin auth={auth} />;
   if (unsupported) return <EventFeedRuns />;
@@ -243,8 +248,12 @@ export function RunsTable({ preview, retentionDays }: {
 
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {(flagsKnown || flaggedOnly) && (
-            <SegmentedControl<'all' | 'flagged'> label="Show" value={flaggedOnly ? 'flagged' : 'all'} onChange={(v) => changeFilter({ flagged: v === 'flagged' })} size={26} options={[{ value: 'all', label: 'All' }, { value: 'flagged', label: 'Flagged', dot: 'warn' }]} />
+          {(flagsKnown || rulesKnown || show !== 'all') && (
+            <SegmentedControl<RunsShow> label="Show" value={show} onChange={(v) => changeFilter({ show: v })} size={26} options={[
+              { value: 'all', label: 'All' },
+              ...(flagsKnown || flaggedOnly ? [{ value: 'flagged' as const, label: 'Flagged', dot: 'warn' as const }] : []),
+              ...(rulesKnown || rulesOnly ? [{ value: 'rules' as const, label: 'Rule activity' }] : []),
+            ]} />
           )}
           <SelectChip label="Agent" value={agent} onChange={(a) => changeFilter({ agent: a })} options={agentOptions} />
           {range === 'custom' && !day ? (
@@ -279,7 +288,7 @@ export function RunsTable({ preview, retentionDays }: {
           {!shown ? (
             failing ? <LoadingLine>Couldn&rsquo;t load runs yet. Retrying&hellip;</LoadingLine> : <LoadingLine />
           ) : shown.length === 0 ? (
-            <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No {flaggedOnly ? 'flagged runs' : 'runs'} {day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}{agent !== 'all' ? ` for ${agent}` : ''}.{flaggedOnly ? ' A run is flagged when it repeats the same call or fails several calls in a row.' : ' A run appears once an agent makes calls.'}</p>
+            <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No {flaggedOnly ? 'flagged runs' : rulesOnly ? 'runs with rule activity' : 'runs'} {day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}{agent !== 'all' ? ` for ${agent}` : ''}.{flaggedOnly ? ' A run is flagged when it repeats the same call or fails several calls in a row.' : rulesOnly ? ' A run shows here when a rule blocked a call or, in Record only, would have.' : ' A run appears once an agent makes calls.'}</p>
           ) : (
             <DataTable<RunSummary>
               caption="Runs, newest first"

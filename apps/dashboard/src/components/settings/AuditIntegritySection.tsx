@@ -16,7 +16,7 @@ export function AuditIntegritySection() {
   const { fleetId, status: authStatus } = useFleetAuth();
   const [info, setInfo] = useState<AuditIntegrity | null>(null);
   const [busy, setBusy] = useState<'check' | 'export' | null>(null);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [note, setNote] = useState<{ tone: 'ok' | 'bad' | 'neutral'; text: string } | null>(null);
 
   // After a check, unless the fleet changed meanwhile.
   const reload = useCallback(async (id: string) => {
@@ -39,12 +39,13 @@ export function AuditIntegritySection() {
     setNote(null);
     try {
       const r = await verifyAudit(fleetId!);
-      if (r.valid === true) setNote({ ok: true, text: `All ${r.eventsVerified.toLocaleString('en-US')} events check out${r.cached ? ' (checked in the last minute)' : ''}.` });
-      else if (r.valid === false) setNote({ ok: false, text: `A problem was found: ${r.message}` });
-      else setNote({ ok: true, text: `${r.eventsVerified.toLocaleString('en-US')} events checked so far. Run the check again to continue.` });
+      if (r.valid === true) setNote({ tone: 'ok', text: `All ${r.eventsVerified.toLocaleString('en-US')} events check out${r.cached ? ' (checked in the last minute)' : ''}.` });
+      else if (r.valid === false) setNote({ tone: 'bad', text: `A problem was found: ${r.message}` });
+      // Part-way isn't a pass: no green until every event is checked.
+      else setNote({ tone: 'neutral', text: `${r.eventsVerified.toLocaleString('en-US')} events checked so far. Run the check again to continue.` });
       await reload(fleetId!);
     } catch {
-      setNote({ ok: false, text: 'The check didn’t run. Try again.' });
+      setNote({ tone: 'bad', text: 'The check didn’t run. Try again.' });
     } finally {
       setBusy(null);
     }
@@ -62,16 +63,14 @@ export function AuditIntegritySection() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      setNote({ ok: false, text: 'The export didn’t download. Try again.' });
+      setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
     } finally {
       setBusy(null);
     }
   }
 
   const tracked = info.mode === 'sequenced';
-  const checked = info.verifiedAt
-    ? `Verified through event ${info.verifiedThroughSeq.toLocaleString('en-US')} of ${info.headSeq.toLocaleString('en-US')} · ${timeAgo(info.verifiedAt)}`
-    : 'Not checked yet';
+  const checked = coverageLine(info.verifiedThroughSeq, info.headSeq, info.verifiedAt ? timeAgo(info.verifiedAt) : null);
   const gaps = info.gaps.count === 0
     ? 'nothing recorded missing'
     : `${info.gaps.count} gap${info.gaps.count === 1 ? '' : 's'} recorded where events may be missing`;
@@ -105,7 +104,20 @@ export function AuditIntegritySection() {
           <Button variant="ghost" size={28} busy={busy === 'export'} busyLabel="Preparing…" onClick={() => void download()}>Download signed export</Button>
         </div>
       )}
-      {note && <p role="status" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
+      {note && <p role="status" style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: note.tone === 'ok' ? 'var(--ok)' : note.tone === 'bad' ? 'var(--bad)' : 'var(--tx2)' }}>{note.text}</p>}
     </Panel>
   );
+}
+
+/**
+ * How much of the history the last complete check covered: "939 of 2,045
+ * events checked (45%) · 2 hours ago". "All" only when it reached the newest
+ * event, so a partial check never reads as a pass.
+ */
+export function coverageLine(verifiedThrough: number, head: number, when: string | null): string {
+  if (!when) return 'Not checked yet';
+  const n = (x: number) => x.toLocaleString('en-US');
+  if (verifiedThrough >= head) return head > 0 ? `All ${n(head)} events checked · ${when}` : `Checked · nothing recorded yet · ${when}`;
+  const pct = Math.min(99, Math.floor((verifiedThrough / Math.max(1, head)) * 100));
+  return `${n(verifiedThrough)} of ${n(head)} events checked (${pct}%) · ${when}`;
 }

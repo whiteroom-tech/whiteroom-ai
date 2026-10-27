@@ -22,8 +22,14 @@ let rules: GovernanceRule[] = [
 ];
 const AGENTS = ['lead-agent', 'support-triage', 'invoice-reconciler', 'code-reviewer', 'market-researcher-with-a-long-name'];
 const history = [
-  { id: 'h1', ruleId: 'r1', ruleType: 'loop_breaker', description: 'Off → Enforce', by: 'R. Haque', time: day(1) },
-  { id: 'h2', ruleId: 'r3', ruleType: 'spend_cap', description: 'Settings updated', by: 'R. Haque', time: day(1) },
+  { id: 'h1', ruleId: 'r1', ruleType: 'loop_breaker', description: 'Off → Enforce', by: 'R. Haque', time: day(1),
+    before: { mode: 'off', response: 'block', alsoNotify: false, appliesTo: 'all', params: { threshold: 100, scope: 'run', ignoreTools: [] } },
+    after: { mode: 'enforce', response: 'block', alsoNotify: false, appliesTo: 'all', params: { threshold: 100, scope: 'run', ignoreTools: [] } } },
+  { id: 'h2', ruleId: 'r3', ruleType: 'spend_cap', description: 'Settings updated', by: 'R. Haque', time: day(1),
+    before: { mode: 'watch', response: 'block', alsoNotify: false, appliesTo: 'all', params: { dailyCap: 250, scope: 'day', unit: 'dollars' } },
+    after: { mode: 'watch', response: 'block', alsoNotify: false, appliesTo: 'all', params: { dailyCap: 200, scope: 'day', unit: 'dollars' } } },
+  { id: 'h4', ruleId: 'r8', ruleType: 'spend_cap', description: 'Removed Spend cap rule', by: 'R. Haque', time: day(1),
+    before: { mode: 'enforce', response: 'block', alsoNotify: false, appliesTo: ['code-reviewer'], params: { dailyCap: 20, scope: 'day', unit: 'dollars' } }, after: null },
   { id: 'h3', ruleId: 'r5', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'R. Haque', time: day(2) },
 ];
 const counts = (n: Partial<Record<'blocked' | 'paused' | 'stopped' | 'toldYou' | 'wouldAct', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });

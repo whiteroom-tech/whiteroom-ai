@@ -686,6 +686,15 @@ export interface GovernanceRule {
   sourceRecommendationId?: string;
 }
 
+/** What a rule was set to (engine 0058): enough to show old → new and to put it back. */
+export interface GovernanceRuleSnapshot {
+  mode: GovernanceMode;
+  response?: GovernanceResponse;
+  alsoNotify?: boolean;
+  appliesTo: GovernanceScope;
+  params: GovernanceParams;
+}
+
 export interface GovernanceHistoryEntry {
   id: string;
   ruleId: string;
@@ -693,6 +702,9 @@ export interface GovernanceHistoryEntry {
   description: string;
   by: string;
   time: string;
+  /** Null before an add and after a removal; absent on older entries and older engines. */
+  before?: GovernanceRuleSnapshot | null;
+  after?: GovernanceRuleSnapshot | null;
 }
 
 export interface GovernanceListResult {
@@ -726,6 +738,8 @@ export interface RunSummary {
   coverage: { calls: number; checked: number };
   /** What stood out (engine P2.1). Absent from older engines. */
   flags?: RunFlag[];
+  /** Times a Record-only rule would have acted in this run (engine E1a). Absent from older engines. */
+  wouldActCalls?: number;
 }
 
 /** A run flag: flags only, nothing was blocked. */

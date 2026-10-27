@@ -602,7 +602,7 @@ export function governanceList(fleetId: string, key?: string): Promise<Governanc
 export function governanceCreateRule(
   fleetId: string,
   rule: {
-    ruleType: GovernanceRuleType; mode?: GovernanceMode; response?: GovernanceResponse; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
+    ruleType: GovernanceRuleType; mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
     /** The Diagnosis recommendation it comes from; the engine makes at most one rule per suggestion. */
     sourceRecommendationId?: string;
   },
@@ -614,6 +614,7 @@ export function governanceCreateRule(
     rule_type: rule.ruleType,
     mode: rule.mode,
     response: rule.response,
+    also_notify: rule.alsoNotify,
     params: rule.params,
     applies_to: rule.appliesTo,
     description: rule.description,
@@ -685,13 +686,14 @@ async function runsAction<T>(action: string, fleetId: string, q: RunsQuery, extr
 /** Runs that started in a range of the viewer's days, newest first; `unsupported` sends Runs to the event feed. */
 export function listRuns(
   fleetId: string,
-  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean },
+  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean; ruleActivity?: boolean },
   key?: string,
 ): Promise<ListRunsResult | { unsupported: true }> {
   return runsAction<ListRunsResult>('list_runs', fleetId, opts, {
     ...(opts.cursor ? { cursor: opts.cursor } : {}),
     ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
     ...(opts.flagged ? { flagged: true } : {}),
+    ...(opts.ruleActivity ? { rule_activity: true } : {}),
   }, key);
 }
 

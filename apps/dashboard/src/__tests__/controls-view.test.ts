@@ -12,16 +12,19 @@ const rule = (over: Partial<GovernanceRule>): GovernanceRule => ({
 
 describe('rule sentences', () => {
   it('reads each rule type as one sentence, with the values apart', () => {
-    expect(ruleSentence(rule({}))).toEqual({ pre: 'When an agent spends more than ', val: '$190', post: ' in a day, block the call.' });
-    expect(ruleSentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, tell me.');
-    expect(ruleSentenceText(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('When an agent makes the same call 100 times in a run, block the call.');
-    expect(ruleSentenceText(rule({ ruleType: 'call_rate', params: { maxCalls: 60 }, response: 'pause' }))).toBe('When an agent makes more than 60 calls in a minute, pause the agent.');
-    expect(ruleSentenceText(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Only allow claude-haiku-4-5. For any other model, block the call.');
+    expect(ruleSentence(rule({}))).toEqual({ pre: 'When an agent spends more than ', val: '$190', post: ' in a day, it would block the call.' });
+    // Only a rule in Block does it; Record only and Off say what it would do.
+    expect(ruleSentenceText(rule({ mode: 'enforce' }))).toBe('When an agent spends more than $190 in a day, block the call.');
+    expect(ruleSentenceText(rule({ mode: 'off', response: 'notify' }))).toBe('When an agent spends more than $190 in a day, it would tell me.');
+    expect(ruleSentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, it would tell me.');
+    expect(ruleSentenceText(rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } }))).toBe('When an agent makes the same call 100 times in a run, it would block the call.');
+    expect(ruleSentenceText(rule({ ruleType: 'call_rate', params: { maxCalls: 60 }, response: 'pause' }))).toBe('When an agent makes more than 60 calls in a minute, it would pause the agent.');
+    expect(ruleSentenceText(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Only allow claude-haiku-4-5. For any other model, it would block the call.');
     expect(ruleSentenceText(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }))).toBe('No tools picked yet.');
   });
 
   it('says "and tell me" when Block also alerts', () => {
-    expect(ruleSentenceText(rule({ alsoNotify: true }))).toBe('When an agent spends more than $190 in a day, block the call and tell me.');
+    expect(ruleSentenceText(rule({ alsoNotify: true, mode: 'enforce' }))).toBe('When an agent spends more than $190 in a day, block the call and tell me.');
     expect(ruleSentenceText(rule({ alsoNotify: true, response: 'stop' }))).toMatch(/stop the agent\.$/);
   });
 
