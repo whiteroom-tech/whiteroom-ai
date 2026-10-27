@@ -130,10 +130,10 @@ describe('Runs › phones', () => {
   });
 
   it('lists the same runs in both views, with one Show more under them that adds the next runs', async () => {
-    // The engine pages by offset: "3" is the cursor after three runs.
+    // The engine pages by offset: the cursor is how many runs came before.
     api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
       const from = Number(o.cursor ?? 0);
-      return { runs: Array.from({ length: Math.min(o.pageSize, 3) }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + 3) };
+      return { runs: Array.from({ length: o.pageSize }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + o.pageSize) };
     });
     const m = await mount();
     const phone = () => [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')].map((a) => a.getAttribute('href'));
@@ -146,6 +146,8 @@ describe('Runs › phones', () => {
     await m.click(more[0]);
     expect(phone()).toHaveLength(50);
     expect(m.text()).toContain('Showing 50 of 60 runs');
+    // Show more asked for just the next page, after the rows shown.
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: '25', pageSize: 25 }), 'k');
     m.root.unmount();
   });
 
@@ -159,6 +161,7 @@ describe('Runs › phones', () => {
     await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs'));
     const more = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs');
     expect(more?.disabled).toBe(false);
+    expect(m.text()).toContain('Couldn’t load more runs. Try again.');
     m.root.unmount();
   });
 

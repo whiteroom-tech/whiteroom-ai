@@ -52,8 +52,10 @@ describe('day chart', () => {
     await done();
   });
   it('leaves out the flagged key and segments on engines that don’t count them', async () => {
-    const { el, done } = await mount(h(DayStrip, { days: days(false), selected: null, inRange: () => false, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false }));
+    const { el, done } = await mount(h(DayStrip, { days: days(true), selected: null, inRange: () => false, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false }));
     expect(el.textContent).not.toContain('Flagged');
+    // Nor do the bar labels claim a flagged count the chart doesn't draw.
+    expect(el.querySelectorAll('button')[20].getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs');
     expect(el.querySelector('.wr-runchart__flag')).toBeNull();
     await done();
   });

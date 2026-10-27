@@ -64,7 +64,7 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
             style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
           >
             {days.map((d) => {
-              const label = barLabel(dayLabel(d.day), d.runs, { flagged: d.flagged });
+              const label = barLabel(dayLabel(d.day), d.runs, { flagged: flaggedKnown ? d.flagged : undefined });
               const on = d.day === selected;
               const flagged = flaggedKnown && d.flagged ? Math.min(d.flagged, d.runs) : 0;
               return (

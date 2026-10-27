@@ -172,7 +172,15 @@ export function RunsTable({ preview, retentionDays }: {
   // The engine said it couldn't count flagged runs over this range (too many calls): no amber segment or key.
   const [flaggedUnavailable, setFlaggedUnavailable] = useState(false);
   // How many runs the list shows: a page to start, a page more with each Show more.
-  const [limit, setLimit] = useState(PAGE);
+  // /dev/runs only: how many sample rows Show more has revealed.
+  const [previewLimit, setPreviewLimit] = useState(PAGE);
+  // Where Show more continues from, and whether it has added rows (polls then refresh only the first page).
+  const [next, setNext] = useState<string | null>(null);
+  const expanded = useRef(false);
+  // The filter a Show more belongs to: a page that lands after the filter changed is dropped.
+  const filterKey = `${range}|${day}|${hour}|${from}|${to}|${agent}|${show}`;
+  const currentFilter = useRef(filterKey);
+  currentFilter.current = filterKey;
   const [runs, setRuns] = useState<RunSummary[] | null>(preview?.runs ?? null);
   const [total, setTotal] = useState(preview?.runs.length ?? 0);
   // A new filter keeps the old rows on screen, dimmed, until its own arrive.
@@ -239,40 +247,34 @@ export function RunsTable({ preview, retentionDays }: {
     // An hour belongs to its day: a different day (or none) drops it, and a new day or agent asks for hours again.
     setHour(nextHour);
     if (nextView.day !== day || change.agent !== undefined) { setHoursOk(true); setHourPickOk(true); }
-    setLimit(PAGE);
+    setPreviewLimit(PAGE);
+    expanded.current = false;
     // The preview fetches nothing: it keeps its sample, and lists it below.
     if (!preview) setLoading(true);
   }
 
+  const listQuery = useCallback(() => ({ ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, flagged: flaggedOnly, ruleActivity: rulesOnly, hour: day ? hour : null }),
+    [range, day, from, to, agent, flaggedOnly, rulesOnly, hour]);
+
+  // Each load (and poll) reads the first page only. Rows Show more added stay, after it, so a poll
+  // costs one request however far the list was opened.
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
     try {
-      const q = { ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, flagged: flaggedOnly, ruleActivity: rulesOnly, hour: day ? hour : null };
-      // Show more asks for more rows: read pages of up to 50 until there are enough.
-      const got: RunSummary[] = [];
-      let cursor: string | null = null;
-      let count = 0;
-      for (let first = true; got.length < limit; first = false) {
-        const res = await listRuns(fleetId, { ...q, cursor, pageSize: Math.min(50, limit - got.length) }, authKey);
-        if (stale()) return;
-        if ('unsupported' in res) { setUnsupported(true); return; }
-        if (first) {
-          // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
-          if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { setShow('all'); return; }
-          // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
-          if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHourPickOk(false); return; }
-          count = res.total;
-        }
-        got.push(...res.runs);
-        cursor = res.cursor;
-        if (!cursor || res.runs.length === 0) break;
-      }
-      setRuns(got);
-      if (got.some((r) => r.flags)) setFlagsKnown(true);
-      if (got.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
-      setTotal(count);
+      const res = await listRuns(fleetId, { ...listQuery(), cursor: null, pageSize: PAGE }, authKey);
+      if (stale()) return;
+      if ('unsupported' in res) { setUnsupported(true); return; }
+      // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
+      if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { setShow('all'); return; }
+      // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
+      if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHourPickOk(false); return; }
+      const head = new Set(res.runs.map((r) => r.runId));
+      setRuns((prev) => (expanded.current && prev ? [...res.runs, ...prev.slice(PAGE).filter((r) => !head.has(r.runId))] : res.runs));
+      if (!expanded.current) setNext(res.cursor);
+      if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
+      if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
+      setTotal(res.total);
       setLoading(false);
-      setMoreBusy(false);
       setFailing(false);
       setUpdatedAt(Date.now());
     } catch (e) {
@@ -280,10 +282,30 @@ export function RunsTable({ preview, retentionDays }: {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       // The old rows stay usable (not dimmed) under the refresh-failed note; the poll retries.
       setLoading(false);
-      setMoreBusy(false);
       setFailing(true);
     }
-  }, [fleetId, authKey, range, day, hour, from, to, agent, flaggedOnly, rulesOnly, limit, resetSession, preview]);
+  }, [fleetId, authKey, listQuery, day, hour, flaggedOnly, rulesOnly, resetSession, preview]);
+
+  /** Show more: the next page after the rows shown, appended. */
+  async function showMore() {
+    if (preview) { setPreviewLimit((l) => l + PAGE); return; }
+    if (!fleetId || !next) return;
+    const forFilter = filterKey;
+    setMoreBusy(true);
+    try {
+      const res = await listRuns(fleetId, { ...listQuery(), cursor: next, pageSize: PAGE }, authKey);
+      if (currentFilter.current !== forFilter || 'unsupported' in res) return;
+      expanded.current = true;
+      setRuns((prev) => { const have = new Set((prev ?? []).map((r) => r.runId)); return [...(prev ?? []), ...res.runs.filter((r) => !have.has(r.runId))]; });
+      setNext(res.cursor);
+      setTotal(res.total);
+    } catch (e) {
+      if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      if (currentFilter.current === forFilter) setToast('Couldn’t load more runs. Try again.');
+    } finally {
+      setMoreBusy(false);
+    }
+  }
 
   const { refresh } = usePoll(load, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   // usePoll fetches on mount; refetch only when the filter or page changes.
@@ -291,7 +313,7 @@ export function RunsTable({ preview, retentionDays }: {
   useEffect(() => {
     if (firstQuery.current) { firstQuery.current = false; return; }
     refresh();
-  }, [range, day, hour, from, to, agent, show, limit, refresh]);
+  }, [range, day, hour, from, to, agent, show, refresh]);
 
   // The picked day's hours load on their own poll, keyed on the day and agent only: paging the
   // list or picking an hour doesn't refetch them, and a poll keeps a new run's hour current. A
@@ -373,7 +395,7 @@ export function RunsTable({ preview, retentionDays }: {
       downloadWorkbook(buildWorkbook([{ name: 'Runs', header: runsExportHeader(), rows: all.map((r) => runsExportRow(r, window.location.origin)) }]),
         `whiteroom-runs-${fromDay}-to-${toDay}${agentId ? `-${agentId}` : ''}${truncated ? `-newest-${all.length}` : ''}.xlsx`);
       setExportOpen(false);
-      const days = shownView ? spanLabel(view) : choice.span === 'yesterday' ? 'yesterday' : choice.span === '7d' ? 'the last 7 days' : 'the last 30 days';
+      const days = shownView ? exportShown ?? spanLabel(view) : choice.span === 'yesterday' ? 'yesterday' : choice.span === '7d' ? 'the last 7 days' : 'the last 30 days';
       setToast(truncated
         ? `Downloaded the newest ${fmtCount(all.length)} runs for ${days}. Pick one agent for the rest.`
         : `Downloaded ${counted(all.length, 'run')} for ${days} · ${agentId ?? 'all agents'} · times in ${zoneName()}.`);
@@ -397,9 +419,9 @@ export function RunsTable({ preview, retentionDays }: {
   const today = localDay();
   // /dev/runs fetches nothing: its sample lists what the filter shows.
   const listed = preview && runs ? preview.list({ ...span, flagged: flaggedOnly, ruleActivity: rulesOnly, hour }) : runs;
-  const shown = preview && listed ? listed.slice(0, limit) : listed;
+  const shown = preview && listed ? listed.slice(0, previewLimit) : listed;
   const shownTotal = preview && listed ? listed.length : total;
-  const more = !!shown && shown.length < shownTotal;
+  const more = !!shown && shown.length < shownTotal && (!!preview || !!next);
 
   // The chart: its days, what the brand bars cover, and that span's run count when it's all on the chart.
   const strip = dayCounts ? stripDays(dayCounts, STRIP_DAYS, stripEnd) : null;
@@ -512,7 +534,7 @@ export function RunsTable({ preview, retentionDays }: {
               </div>
               {more && (
                 <div className="wr-table__foot">
-                  <Button size={32} busy={moreBusy} busyLabel="Loading…" onClick={() => { if (!preview) setMoreBusy(true); setLimit((l) => l + PAGE); }}>Show more runs</Button>
+                  <Button size={32} busy={moreBusy} busyLabel="Loading…" onClick={() => void showMore()}>Show more runs</Button>
                 </div>
               )}
               </>
