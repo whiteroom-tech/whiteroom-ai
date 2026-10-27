@@ -16,7 +16,7 @@ export const HELP = {
   agentsWorking: 'Agents doing a task right now, out of all the agents connected to this fleet.',
   modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight in your time zone.',
   spendToday: "What today's model calls cost, at your AI provider's prices.",
-  agents: 'Every agent connected to this fleet. Working: doing a task. Resting: a short planned break. Idle: waiting for work. Paused or Stopped: held by a rule or a person.',
+  agents: 'Every agent connected to this fleet. Working: making calls now. Waiting: connected, waiting for work. Paused or Stopped: held by a rule or a person until someone resumes it.',
   runs: 'A run is one stretch of work by one agent, from when it starts until it stops. Each row is one run.',
   whatStoodOut: 'The one thing worth knowing about this run: something unusual, a rule stepping in, or a person stopping it.',
   whatHappened: 'Every step of this run in order: the model calls, tools used, rules that stepped in, and when it saved progress.',

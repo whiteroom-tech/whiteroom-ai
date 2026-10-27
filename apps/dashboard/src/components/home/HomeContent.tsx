@@ -152,13 +152,13 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     setFlaggedToday(!res || 'unsupported' in res || ignoresFlagged(res.runs) ? null : res.total);
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
-  // The last day with runs (up to 30 days back), for the quiet-day box.
+  // The last day with runs (up to 30 days back), for the quiet-day box: read only on a quiet day.
   const { refresh: refreshLastActive } = usePoll(async (stale) => {
     const today = localDay();
     const res = await runDays(fleetId, { fromDay: addDays(today, -29), toDay: today }, authKey).catch(() => null);
     if (stale()) return;
     setLastActive(res && !('unsupported' in res) ? lastActiveDay(res, today) : null);
-  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty });
+  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty && today?.calls === 0 });
 
   const { refresh } = usePoll(async (stale) => {
     try {
@@ -371,7 +371,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                     const speed = w?.score?.speedScore;
                     return (
                       // The name is the row's link; a click anywhere else on the row (not on a link or button) opens it too.
-                      <tr key={a.agentId} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,[role=menu],dialog')) router.push(agentHref(a.agentId)); }}>
+                      <tr key={a.agentId} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,[role=menu],[role=status],[role=alert],dialog')) router.push(agentHref(a.agentId)); }}>
                         <td><Link href={agentHref(a.agentId)} className="wr-home-table__name">{a.agentId}</Link></td>
                         <td><StatusPill state={agentState(a)} /></td>
                         <td>{line.run !== null && line.tasks ? <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> <span className="wr-home-table__cap">· {line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
