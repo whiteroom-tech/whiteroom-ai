@@ -61,4 +61,3 @@ describe('day strip legend', () => {
     el.remove();
   });
 });
-
