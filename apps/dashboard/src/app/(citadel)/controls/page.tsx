@@ -486,8 +486,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           {loaded && shown.some((r) => r.mode !== "off") && canStop.length <= 1 && (
             <Banner variant="warn">
               {canStop.length === 0
-                ? <>No rule stops calls yet. Your rules only record or alert, so every call goes through.</>
-                : <>Only 1 rule can stop calls ({RULE_LABELS[canStop[0].ruleType]}). The rest only record or alert; they don&rsquo;t stop calls.</>}
+                ? <>No rule stops calls yet, so every call goes through.</>
+                : <>Only 1 rule can stop calls ({RULE_LABELS[canStop[0].ruleType]}). The others don&rsquo;t stop calls.</>}
             </Banner>
           )}
 

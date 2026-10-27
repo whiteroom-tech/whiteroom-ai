@@ -137,7 +137,7 @@ describe('Controls page', () => {
     api.saved.r1 = { ...RULES[0], mode: 'watch' };
     api.saved.r5 = { ...RULES[4], response: 'notify' };
     const m = await mount();
-    expect(m.text()).toContain('No rule stops calls yet. Your rules only record or alert, so every call goes through.');
+    expect(m.text()).toContain('No rule stops calls yet, so every call goes through.');
     m.root.unmount();
     for (const r of RULES) api.saved[r.id] = { ...r, mode: 'off' };
     const off = await mount();
@@ -175,7 +175,7 @@ describe('Controls page', () => {
   it('warns when at most one rule can actually stop calls', async () => {
     api.saved.r5 = { ...RULES[4], mode: 'watch' };
     const m = await mount();
-    expect(m.text()).toContain('Only 1 rule can stop calls (Loop breaker). The rest only record or alert; they don’t stop calls.');
+    expect(m.text()).toContain('Only 1 rule can stop calls (Loop breaker). The others don’t stop calls.');
     m.root.unmount();
   });
 
