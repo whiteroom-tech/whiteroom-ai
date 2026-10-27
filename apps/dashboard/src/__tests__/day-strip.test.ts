@@ -42,3 +42,23 @@ describe('day strip scrolling', () => {
     root.unmount();
   });
 });
+
+describe('day strip legend', () => {
+  it('says what each bar shade means, and names the picked day once there is one', async () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    const props = { days: days(), selected: null as string | null, inRange: () => true, onPick: () => {} };
+    await act(async () => { root.render(h(DayStrip, props)); });
+    const legend = () => el.querySelector('.wr-daystrip__legend') as HTMLElement;
+    expect(legend().textContent).toBe('Days listed belowOther days');
+    expect(legend().querySelector('.wr-daystrip__key.is-in')).toBeTruthy();
+    await act(async () => { root.render(h(DayStrip, { ...props, selected: '2026-10-10' })); });
+    expect(legend().textContent).toBe('Picked dayOther days');
+    expect(legend().querySelector('.wr-daystrip__key.is-selected')).toBeTruthy();
+    expect(legend().querySelector('.wr-daystrip__key.is-in')).toBeNull();
+    await act(async () => { root.unmount(); });
+    el.remove();
+  });
+});
+
