@@ -138,7 +138,7 @@ describe('Runs › a day by hour', () => {
     const calls = api.hours.mock.calls.length;
     await m.click(m.el.querySelector('button[aria-label="Previous day"]') ?? undefined);
     expect(m.text()).toContain('by hour');
-    // Every list load brings the hours too, so a poll keeps the bars current.
+    // The hours load again for the new day (they have their own poll, keyed on day and agent).
     expect(api.hours.mock.calls.length).toBeGreaterThan(calls);
     m.root.unmount();
   });

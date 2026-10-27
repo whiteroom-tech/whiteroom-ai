@@ -189,10 +189,17 @@ export function RunsTable({ preview, retentionDays }: {
   }, [day, agent, preview]);
   const loadHours = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview || !day || !hoursOk) return;
-    const h = await runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey).catch(() => null);
-    if (stale() || !h) return;
+    let h: Awaited<ReturnType<typeof runHours>> | null = null;
+    try {
+      h = await runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey);
+    } catch (e) {
+      // An expired session signs out here as the list would; anything else keeps the last counts.
+      if (!stale() && isAuthError(e)) resetSession('Your session expired. Please sign in again.');
+      return;
+    }
+    if (stale()) return;
     if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours);
-  }, [fleetId, authKey, preview, day, agent, hoursOk]);
+  }, [fleetId, authKey, preview, day, agent, hoursOk, resetSession]);
   const { refresh: refreshHours } = usePoll(loadHours, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview && !!day && hoursOk });
   const firstHours = useRef(true);
   useEffect(() => {
