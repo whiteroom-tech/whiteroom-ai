@@ -305,6 +305,10 @@ describe('exports', () => {
     // Each time carries its UTC offset, so the daylight-saving fall-back hour is unambiguous.
     expect(row[header.indexOf('Started (America/New_York)')]).toBe('2026-09-30 16:00 -04:00');
     expect(header).toContain('Record only rule actions');
+    // A zone the browser doesn't name (or names oddly) is called local time, never UTC.
+    const spy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({ timeZone: '' } as Intl.ResolvedDateTimeFormatOptions);
+    expect(runsExportHeader()).toContain('Started (local time)');
+    spy.mockRestore();
     expect(row[header.indexOf('Link')]).toBe('https://app.example/runs/a~2');
     expect(row[header.indexOf('What stood out')]).toBe('');
     expect(header).not.toContain('Started (UTC)');

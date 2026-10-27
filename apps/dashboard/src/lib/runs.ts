@@ -26,6 +26,12 @@ export const TIME_ZONE_NAME = /^[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/;
  * names; if one ever didn't fit, days here stay local while the engine would
  * read UTC, so that (unseen) case falls back to UTC rather than a 400.
  */
+/** The column name for the viewer's zone in exports: its IANA name, or "local time" when the browser doesn't give one we trust. */
+export function exportZoneLabel(): string {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return tz && TIME_ZONE_NAME.test(tz) ? tz : 'local time';
+}
+
 export function viewerTimeZone(): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return tz && TIME_ZONE_NAME.test(tz) ? tz : 'UTC';
@@ -525,7 +531,7 @@ export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTota
   return [
     { name: 'Run', header: ['Field', 'Value'], rows: summary },
     // Rows are in the viewer's zone, named by its IANA name; each time carries its UTC offset, so the fall-back hour is unambiguous.
-    { name: 'What happened', header: [`Time (${viewerTimeZone()})`, 'Kind', 'What', 'Model', 'Outcome', 'Rule'], rows },
+    { name: 'What happened', header: [`Time (${exportZoneLabel()})`, 'Kind', 'What', 'Model', 'Outcome', 'Rule'], rows },
   ];
 }
 
@@ -571,7 +577,7 @@ export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
  * link that opens the run. Spend is a lower bound when some calls
  * had no price, so that count gets its own column.
  */
-export function runsExportHeader(zone: string = viewerTimeZone()): string[] {
+export function runsExportHeader(zone: string = exportZoneLabel()): string[] {
   return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Record only rule actions', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
 }
 export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {

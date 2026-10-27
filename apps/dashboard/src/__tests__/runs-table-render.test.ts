@@ -13,11 +13,11 @@ const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(),
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace, push: nav.push }), useSearchParams: () => nav.params }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
 
-const api = vi.hoisted(() => ({ list: vi.fn(), counted: true, hours: vi.fn(), days: { days: [] } as { days: { day: string; runs: number; flagged?: number }[]; flaggedUnavailable?: boolean } }));
+const api = vi.hoisted(() => ({ list: vi.fn(), counted: true, hours: vi.fn(), days: { days: [] } as { days: { day: string; runs: number; flagged?: number }[]; flaggedUnavailable?: boolean }, daysFn: null as null | ((...a: unknown[]) => Promise<unknown>) }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   listRuns: api.list,
-  runDays: async () => api.days,
+  runDays: (...args: unknown[]) => (api.daysFn ? api.daysFn(...args) : Promise.resolve(api.days)),
   runHours: api.hours,
   fleetReport: async () => ({ error: 'no' }),
 }));
@@ -70,6 +70,7 @@ beforeEach(() => {
   });
   api.counted = true;
   api.days = { days: [] };
+  api.daysFn = null;
 });
 
 describe('Runs › Show › Rule activity', () => {
@@ -281,6 +282,27 @@ describe('Runs › failures and engine limits', () => {
     m.root.unmount();
   });
 
+  it('never puts one agent’s day totals over another agent’s rows', async () => {
+    const today = new Date().toLocaleDateString('en-CA');
+    api.daysFn = async () => ({ days: [{ day: today, runs: 47 }] });
+    api.list.mockImplementation(async () => ({ runs: [run(1)], total: 1, cursor: null }));
+    const m = await mount();
+    const group = () => m.el.querySelector('.wr-runs-table .wr-table__group')?.textContent ?? '';
+    expect(group()).toContain('47 runs');
+    // The new agent's day counts haven't come back yet: no total rather than the old agent's.
+    api.daysFn = () => new Promise(() => {});
+    const select = m.el.querySelector('select[aria-label="Agent"]') as HTMLSelectElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'lead-agent');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flush();
+    expect(group()).not.toMatch(/runs?$/);
+    // The chart stays, with empty bars, rather than the old agent's.
+    expect(m.el.querySelector('.wr-runchart__max')).toBeNull();
+    m.root.unmount();
+  });
+
   it('shows flagged segments when counted, and none when the engine says it couldn’t count them', async () => {
     const today = new Date().toLocaleDateString('en-CA');
     api.days = { days: [{ day: today, runs: 3, flagged: 1 }] };
@@ -433,6 +455,8 @@ describe('Runs › a day by hour', () => {
     expect(document.activeElement?.id).toBe('runs-by-hour');
     await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Back to 30 days'));
     expect(document.activeElement?.id).toBe('runs-per-day');
+    // Back to 30 days means it: the range is 30 days, whatever it was before the day was picked.
+    expect(m.radio('30 days')?.getAttribute('aria-checked')).toBe('true');
     await m.jump(day);
     await m.click(m.el.querySelector('.wr-runs-chip') ?? undefined);
     expect(document.activeElement?.id).toBe('runs-day');

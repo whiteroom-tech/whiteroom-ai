@@ -173,7 +173,9 @@ export function RunsTable({ preview, retentionDays }: {
   const [stripPin, setStripPin] = useState<string | null>(() => { const end = runsWindow(view).toDay; return end === localDay() ? null : end; });
   const stripEnd = stripPin ?? localDay();
   const pinStrip = (end: string) => setStripPin(end >= localDay() ? null : end);
-  const [dayCounts, setDayCounts] = useState<RunDayCount[] | null>(() => preview?.dayCounts ?? null);
+  // Day counts are kept with the agent and window they're for (like the hours), so a new agent's or
+  // window's rows never sit under the last one's totals while its own counts load.
+  const [dayCountsFor, setDayCountsFor] = useState<{ key: string; days: RunDayCount[] } | null>(null);
   // The engine said it couldn't count flagged runs over this range (too many calls): no amber segment or key.
   const [flaggedUnavailable, setFlaggedUnavailable] = useState(false);
   // How many runs the list shows: a page to start, a page more with each Show more.
@@ -382,7 +384,7 @@ export function RunsTable({ preview, retentionDays }: {
     const days = await runDays(fleetId, { fromDay: addDays(stripEnd, 1 - STRIP_DAYS), toDay: stripEnd, agentId: agent === 'all' ? undefined : agent }, authKey).catch(() => null);
     if (stale()) return;
     const got = days && !('unsupported' in days) ? days : null;
-    setDayCounts(got?.days ?? null);
+    setDayCountsFor(got ? { key: `${agent}|${stripEnd}`, days: got.days } : null);
     setFlaggedUnavailable(!!got?.flaggedUnavailable);
   }, [fleetId, authKey, agent, stripEnd, preview]);
   const { refresh: refreshStrip } = usePoll(loadStrip, { intervalMs: 60_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
@@ -440,6 +442,8 @@ export function RunsTable({ preview, retentionDays }: {
 
   const span = runsWindow(view);
   const inSpan = (d: string) => d >= span.fromDay && d <= span.toDay;
+  // /dev/runs counts its whole sample, whatever the agent.
+  const dayCounts = preview ? preview.dayCounts : dayCountsFor?.key === `${agent}|${stripEnd}` ? dayCountsFor.days : null;
   const counts = new Map(dayCounts?.map((c) => [c.day, c.runs]));
   const groupOf = (r: RunSummary) => {
     const d = localDay(Date.parse(r.startedAt));
@@ -455,10 +459,12 @@ export function RunsTable({ preview, retentionDays }: {
   const more = !!shown && shown.length < shownTotal && (!!preview || !!next);
 
   // The chart: its days, what the brand bars cover, and that span's run count when it's all on the chart.
-  const strip = dayCounts ? stripDays(dayCounts, STRIP_DAYS, stripEnd) : null;
+  // While a new agent's or window's counts load, the chart stays (so focus on ‹ › isn't lost) with empty
+  // bars rather than the last counts; it hides only when the engine has no run_days.
+  const strip = dayCounts ? stripDays(dayCounts, STRIP_DAYS, stripEnd) : dayCountsFor ? stripDays([], STRIP_DAYS, stripEnd) : null;
   const stripStart = addDays(stripEnd, 1 - STRIP_DAYS);
   const spanOnStrip = span.fromDay >= stripStart && span.toDay <= stripEnd;
-  const spanRuns = strip && spanOnStrip ? strip.filter((d) => inSpan(d.day)).reduce((n, d) => n + d.runs, 0) : null;
+  const spanRuns = dayCounts && strip && spanOnStrip ? strip.filter((d) => inSpan(d.day)).reduce((n, d) => n + d.runs, 0) : null;
   const spanName = spanLabel(view);
   const legend = `${spanName.charAt(0).toUpperCase()}${spanName.slice(1)}${spanRuns !== null ? ` · ${counted(spanRuns, 'run')}` : ''}${hoursOk ? ' · select a day to see its hours' : ''}`;
   const md = (d: string) => (d === today ? 'today' : dayLabel(d, Date.now(), false).replace(/^\w+, /, ''));
@@ -524,7 +530,7 @@ export function RunsTable({ preview, retentionDays }: {
           />
         )}
         {day && hoursOk && hours && (
-          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={hourPickOk ? (h) => changeFilter({ hour: h }) : undefined} onBack={() => { changeFilter({ day: null }); focusSoon('runs-per-day'); }} />
+          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={hourPickOk ? (h) => changeFilter({ hour: h }) : undefined} onBack={() => { changeFilter({ range: '30d' }); focusSoon('runs-per-day'); }} />
         )}
         {failing && runs && <RefreshFailed since={updatedAt} />}
 
