@@ -45,9 +45,14 @@ afterEach(() => { vi.useRealTimers(); for (const f of Object.values(api)) f.mock
 
 async function mount() {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  api.hourly.mockResolvedValue({ hourly: [] });
+  return mountWith();
+}
+
+/** Mounts Home with the engine mocks in place; a test may set api.hourly first. */
+async function mountWith() {
   api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [{ day: '2026-10-26', agent: 'lead-agent', used: 1000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 0 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
   api.scores.mockResolvedValue({ fleetId: 'f1', agents: [] });
-  api.hourly.mockResolvedValue({ hourly: [] });
   if (!api.log.getMockImplementation()) api.log.mockImplementation(async ({ type }: { type?: string }) => ({ entries: type === 'governance_rule_changed' ? [{ id: 'g1', type, timestamp: new Date().toISOString(), ruleId: 'gr_1', ruleType: 'spend_cap', message: 'Spend cap: Added new Spend cap rule', by: 'api' }] : [] }));
   if (!api.runs.getMockImplementation()) api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1', flags: [] }], total: 3, cursor: null });
   if (!api.days.getMockImplementation()) api.days.mockResolvedValue({ fleetId: 'f1', days: [{ day: '2026-10-24', runs: 47 }] });
@@ -139,6 +144,26 @@ describe('Home fact line, last active day and latest changes', () => {
     await act(async () => { acted.click(); });
     await flush();
     expect(api.log.mock.calls.length).toBe(before + 6);
+    m.root.unmount();
+  });
+});
+
+describe('Home conditional polls', () => {
+  it('reads the last active day only on a quiet day', async () => {
+    api.hourly.mockResolvedValue({ hourly: [{ hour: new Date().toISOString().slice(0, 13) + ':00:00Z', calls: 7, costMicros: 0 }] });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const busy = await mountWith();
+    expect(api.days).not.toHaveBeenCalled();
+    expect(busy.text()).not.toContain('Last activity');
+    busy.root.unmount();
+  });
+
+  it('drops the flagged count when the engine stops flagging runs', async () => {
+    const m = await mount();
+    expect(m.text()).toContain('3 flagged runs today');
+    api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1' }], total: 1, cursor: null });
+    await m.advance(60_000);
+    expect(m.text()).not.toContain('flagged');
     m.root.unmount();
   });
 });

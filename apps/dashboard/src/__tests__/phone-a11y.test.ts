@@ -225,6 +225,24 @@ describe('Home fact line', () => {
     expect(onResumed).toHaveBeenCalled();
   });
 
+  it('lists live and removed held agents together, and holds other Resumes while one runs', async () => {
+    let finish: () => void = () => {};
+    api.resume.mockImplementation(() => new Promise<void>((r) => { finish = r; }));
+    const paused = { state: 'paused' as const, by: 'user:u1', reason: null, at: '2026-10-27T09:00:00Z' };
+    await render(h(HomeFacts, {
+      agents: [{ agentId: 'code-reviewer', status: 'idle', hold: paused }],
+      holds: { 'code-reviewer': paused, 'old-scraper': hold, 'gone-too': { ...hold, at: '2026-10-27T11:00:00Z' } },
+      holdsKnown: true, flaggedToday: null, todayRules: null, fleet: { fleetId: 'f1' },
+    }));
+    expect(el.textContent).toContain('3 agents on hold: code-reviewer (paused), old-scraper (removed, stopped) Resume, gone-too (removed, stopped) Resume');
+    const resumes = () => [...el.querySelectorAll('button')].filter((b) => /Resum/.test(b.textContent ?? '')) as HTMLButtonElement[];
+    await act(async () => { resumes()[0].click(); });
+    expect(resumes().map((b) => [b.textContent, b.disabled])).toEqual([['Resuming…', true], ['Resume', true]]);
+    await act(async () => { finish(); });
+    await flush();
+    expect(resumes().every((b) => !b.disabled)).toBe(true);
+  });
+
   it.each([
     [new ControlDeniedError('Only owners can resume agents.'), 'Only owners can resume agents.'],
     [new WhiteRoomApiError('expired', 401), 'Your session expired. Reload the page to sign in again.'],
