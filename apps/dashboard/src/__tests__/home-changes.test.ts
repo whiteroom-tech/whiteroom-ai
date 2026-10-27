@@ -20,8 +20,15 @@ describe('Latest changes', () => {
     expect(changeRow(e('register'), [], NOW)!.text).toBe('keyword-test joined the fleet');
     expect(changeRow(e('agent_paused', { by: 'rule:gr_1' }), [], NOW)!.text).toBe('keyword-test paused by a rule');
     expect(changeRow(e('agent_resumed', { by: 'user:u1' }), actors, NOW)!.text).toBe('keyword-test resumed by R Haque');
+    expect(changeRow(e('agent_stopped', { by: 'user:u9' }), actors, NOW)!.text).toBe('keyword-test stopped by a teammate');
+    expect(changeRow(e('agent_stopped', { by: 'dashboard' }), [], NOW)!.text).toBe('keyword-test stopped from the dashboard');
     expect(changeRow(e('task_complete'), [], NOW)).toBeNull();
     expect(changeRow(e('rest_start'), [], NOW)).toBeNull();
+  });
+
+  it('links a rule change with no rule id to Controls', () => {
+    const r = changeRow({ id: 'x', type: 'governance_rule_changed', timestamp: at('2026-10-27T09:00:00'), ruleType: 'spend_cap', message: 'Spend cap: Settings updated' }, [], NOW)!;
+    expect(r).toMatchObject({ text: 'Spend cap: Settings updated', href: '/controls' });
   });
 
   it('keeps the newest four, once each', () => {
@@ -42,5 +49,15 @@ describe('quiet day', () => {
   it('says rule outcomes in the outcome words', () => {
     expect(ruleOutcomes({ blocks: 2, wouldBlocks: 60, paused: 0, stopped: 0, toldYou: 0 })).toBe('2 blocked · 60 would have blocked');
     expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 })).toBe('');
+  });
+});
+
+describe('needs-attention order', () => {
+  it('puts held and silent agents first, then agents with rule activity, then the usual order', async () => {
+    const { shownAgents } = await import('@/lib/home-agents');
+    const a = (agentId: string, x: Record<string, unknown> = {}) => ({ agentId, status: 'idle', ...x });
+    const agents = [a('alpha'), a('beta'), a('gamma', { hold: { state: 'paused', by: 'x', reason: null, at: '' } }), a('delta')];
+    const weeks = { delta: { rules: { blocks: 0, wouldBlocks: 3, paused: 0, stopped: 0, toldYou: 0 } } };
+    expect(shownAgents(agents, weeks, '', 'attention').map((x) => x.agentId)).toEqual(['gamma', 'delta', 'alpha', 'beta']);
   });
 });

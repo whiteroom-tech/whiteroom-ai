@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Window } from "happy-dom";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
@@ -26,7 +27,8 @@ const home = (over: Partial<Parameters<typeof HomeView>[0]> = {}) => renderToSta
   report: REPORT, agents: [AGENT], changes: [], today: { calls: 0, costUsd: 0 }, failing: false, view: "cards", onViewChange: () => {}, liveFeed: null,
   week: WEEK, todayRules: tally(0, 0), flaggedToday: 0, lastActive: { day: "2026-10-24", runs: 47 }, ...over,
 })).replace(/<!-- -->/g, "");
-const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&#x27;|&rsquo;/g, "’");
+/** The rendered text, as a reader sees it (parsed, not regex-stripped). */
+const text = (html: string) => { const el = new Window().document.createElement("div"); el.innerHTML = html; return el.textContent ?? ""; };
 
 describe("Home (mockup parity)", () => {
   it("opens with the fact line, not Needs you", () => {

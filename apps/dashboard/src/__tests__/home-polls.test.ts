@@ -12,7 +12,10 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 vi.mock('@/components/home/LiveFeedPanel', () => ({ LiveFeedPanel: () => null }));
 
 const counts = (blocked: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 });
-const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn() }));
+const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), runs: vi.fn(), days: vi.fn() }));
+vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
+// The ⋯ stand-in reports an act straight away, as a successful Pause would.
+vi.mock('@/components/home/AgentActions', () => ({ AgentActions: ({ onChanged }: { onChanged: () => void }) => h('button', { type: 'button', onClick: onChanged }, 'acted') }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   fleetReport: async () => ({
@@ -21,10 +24,11 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
     totals: { workMinutes: 0, tokens: 0, tasks: 0, handovers: 0 },
     energySavings: { compressionRatio: 0, estimatedTokensSaved: 0, estimatedCostSaved: '$0', estimatedEnergySaved: '0 kWh', formula: '' },
     compliance: { allAgentsWithinLimits: true, restingAgentsCount: 0, laborScore: '100%' },
+    holds: {}, govV1: true,
   }),
-  auditLog: async () => ({ entries: [] }),
-  listRuns: async () => ({ unsupported: true }),
-  runDays: async () => ({ unsupported: true }),
+  auditLog: api.log,
+  listRuns: api.runs,
+  runDays: api.days,
   auditSummary: api.audit,
   performanceAgentScores: api.scores,
   performanceFleetHourly: api.hourly,
@@ -44,6 +48,9 @@ async function mount() {
   api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [{ day: '2026-10-26', agent: 'lead-agent', used: 1000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 0 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
   api.scores.mockResolvedValue({ fleetId: 'f1', agents: [] });
   api.hourly.mockResolvedValue({ hourly: [] });
+  if (!api.log.getMockImplementation()) api.log.mockImplementation(async ({ type }: { type?: string }) => ({ entries: type === 'governance_rule_changed' ? [{ id: 'g1', type, timestamp: new Date().toISOString(), ruleId: 'gr_1', ruleType: 'spend_cap', message: 'Spend cap: Added new Spend cap rule', by: 'api' }] : [] }));
+  if (!api.runs.getMockImplementation()) api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1', flags: [] }], total: 3, cursor: null });
+  if (!api.days.getMockImplementation()) api.days.mockResolvedValue({ fleetId: 'f1', days: [{ day: '2026-10-24', runs: 47 }] });
   // The week has 5 blocks for lead-agent; today has 2.
   api.rules.mockImplementation(async (_f: string, q: { fromDay: string; toDay: string }) => (isToday(q)
     ? { fleetId: 'f1', totals: counts(2), byAgent: { 'lead-agent': counts(2) } }
@@ -92,6 +99,46 @@ describe('Home polls', () => {
     await m.advance(60_000);
     expect(m.text()).toContain('Rule activity—not available yet');
     expect(m.text()).toContain('1K tokens · 5 blocked');
+    m.root.unmount();
+  });
+});
+
+describe('Home fact line, last active day and latest changes', () => {
+  it('reads changes by type, the flagged count and the last active day', async () => {
+    const m = await mount();
+    const types = api.log.mock.calls.map(([q]) => q.type).sort();
+    expect(types).toEqual(['agent_paused', 'agent_resumed', 'agent_stopped', 'deregister', 'governance_rule_changed', 'register']);
+    expect(m.text()).toContain('Spend cap rule added through the API');
+    expect(m.text()).toContain('3 flagged runs today');
+    expect(m.text()).toContain('Last activity Sat, Oct 24: 47 runs.');
+    m.root.unmount();
+  });
+
+  it('keeps the last list and says so when one type fails to read', async () => {
+    const m = await mount();
+    api.log.mockImplementation(async ({ type }: { type?: string }) => { if (type === 'register') throw new Error('down'); return { entries: [] }; });
+    await m.advance(60_000);
+    expect(m.text()).toContain('Spend cap rule added through the API');
+    expect(m.text()).toContain('Couldn’t refresh changes.');
+    api.log.mockReset();
+    m.root.unmount();
+  });
+
+  it('hides the flagged count for engines that don’t flag runs', async () => {
+    api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1' }], total: 1, cursor: null });
+    const m = await mount();
+    expect(m.text()).not.toContain('flagged');
+    api.runs.mockReset();
+    m.root.unmount();
+  });
+
+  it('rereads latest changes after a Pause, Stop or Resume', async () => {
+    const m = await mount();
+    const before = api.log.mock.calls.length;
+    const acted = [...document.querySelectorAll('button')].find((b) => b.textContent === 'acted')!;
+    await act(async () => { acted.click(); });
+    await flush();
+    expect(api.log.mock.calls.length).toBe(before + 6);
     m.root.unmount();
   });
 });

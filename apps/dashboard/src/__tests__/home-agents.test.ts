@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Window } from 'happy-dom';
+
+const textOf = (html: string) => { const el = new Window().document.createElement('div'); el.innerHTML = html; return el.textContent ?? ''; };
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
@@ -72,7 +75,7 @@ describe('Home view', () => {
   it('says the day starts at the viewer’s midnight, and leads a quiet day with the week', () => {
     const html = view({ week: { agents: {}, calls: 1234, costUsd: 3.17, partial: false, rules: tally({ wouldBlocks: 120 }) } });
     expect(html).toMatch(/Today.*since 12:00 am/);
-    expect(html.replace(/<[^>]+>/g, '')).toContain('Quiet so far today. This week: $3.17 spent, rules would have blocked 120 calls. View runs');
+    expect(textOf(html)).toContain('Quiet so far today. This week: $3.17 spent, rules would have blocked 120 calls. View runs');
     // A lower bound says so.
     expect(view({ week: { agents: {}, calls: 3, costUsd: 1, partial: true, rules: null } })).toContain('$1.00+ spent');
   });
@@ -98,7 +101,7 @@ describe('Home view', () => {
     const html = view({ week: { agents: { 'lead-agent': { used: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).toContain('a-very-long-agent-name-that-must-not-be-cut-off');
     expect(html).toContain('class="wr-agent-card__name"');
-    expect(html.replace(/<[^>]+>/g, '')).toContain('120K tokens · 40K saved · 2 blocked');
+    expect(textOf(html)).toContain('120K tokens · 40K saved · 2 blocked');
   });
 
   it('opens on the table for a big fleet unless the viewer picked cards, with search and sort', () => {

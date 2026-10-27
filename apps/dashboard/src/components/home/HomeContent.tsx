@@ -16,7 +16,7 @@ import { fetchControlActors } from '@/lib/control-actors';
 import { addDays, ignoresFlagged, localDay, runHref, runsDays, zoneName } from '@/lib/runs';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, runLine, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
+  afterFanOut, agentState, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, runLine, runRest, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
 } from '@/lib/home';
 import { LiveFeedPanel } from './LiveFeedPanel';
 import { fmtCount, fmtTokens, partialMark, plural } from '@/lib/format';
@@ -126,9 +126,10 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const { refresh: refreshChanges } = usePoll(async (stale) => {
     const reads = await Promise.all(CHANGE_TYPES.map((type) => auditLog({ fleetId, type, limit: 5 }, authKey).catch(() => null)));
     if (stale()) return;
-    const ok = reads.filter((r) => r && !('error' in r) && Array.isArray(r.entries));
-    if (ok.length === 0) { setChangesFailing(true); return; }
-    const entries = ok.flatMap((r) => r!.entries);
+    // One type missing would quietly drop its changes: a partial read is a
+    // failed refresh, so the last good list stays and the card says so.
+    if (reads.some((r) => !r || 'error' in r || !Array.isArray(r.entries))) { setChangesFailing(true); return; }
+    const entries = reads.flatMap((r) => r!.entries);
     const actors = await fetchControlActors(fleetId);
     if (stale()) return;
     setChanges(latestChanges(entries, actors, 4));
@@ -335,7 +336,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                       </span>
                     </div>
                     <div className="wr-agent-card__line">
-                      {line.label}{line.run !== null && <> <Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link></>} · {line.rest}
+                      {line.label}{line.run !== null && <> <Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link></>} · {runRest(line)}
                     </div>
                     {w && <WeekLine w={w} />}
                   </div>
@@ -364,7 +365,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                       <tr key={a.agentId} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,[role=menu],dialog')) router.push(agentHref(a.agentId)); }}>
                         <td><Link href={agentHref(a.agentId)} className="wr-home-table__name">{a.agentId}</Link></td>
                         <td><StatusPill state={agentState(a)} /></td>
-                        <td>{line.run !== null ? <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> <span className="wr-home-table__cap">· {line.rest.split(' · ')[0]}</span></> : <span className="wr-home-muted">—</span>}</td>
+                        <td>{line.run !== null && line.tasks ? <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> <span className="wr-home-table__cap">· {line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
                         <td className="is-num">{w?.used !== undefined ? fmtTokens(w.used) : '—'}</td>
                         <td className="is-num" style={{ color: w?.saved ? 'var(--ok)' : undefined }}>{w?.saved ? fmtTokens(w.saved) : '—'}</td>
                         <td className="wr-home-table__cap" style={{ color: outcomes ? 'var(--tx)' : undefined }}>{outcomes || '—'}</td>
@@ -385,6 +386,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
         <section aria-labelledby="home-changes" className="wr-home-section">
           <SectionHeader id="home-changes" title="Latest changes" sub="Rule and agent changes, newest first." />
           <div className="wr-home-card wr-home-changes">
+            {changes !== null && changesFailing && <p role="status" className="wr-home-empty">Couldn&rsquo;t refresh changes. Showing the last ones loaded; retrying&hellip;</p>}
             {changes === null
               ? <LoadingLine>{changesFailing ? 'Couldn’t load changes. Retrying…' : 'Loading…'}</LoadingLine>
               : changes.length === 0

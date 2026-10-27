@@ -24,6 +24,8 @@ const { PhoneTabBar, TABS, MORE } = await import('@/components/PhoneTabBar');
 const { AppShell } = await import('@/components/AppShell');
 const { SegmentedControl } = await import('@whiteroom/ui');
 const { AgentActions } = await import('@/components/home/AgentActions');
+const { HomeFacts } = await import('@/components/home/HomeFacts');
+const { ControlDeniedError, WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 let el: HTMLDivElement;
@@ -181,5 +183,54 @@ describe('Pause from Home', () => {
     expect(el.querySelector('[role="alert"]')).not.toBeNull();
     await act(async () => { (el.querySelector('[aria-label="Dismiss"]') as HTMLButtonElement).click(); });
     expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+describe('Undo after a Pause', () => {
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+  it('is withdrawn once the agent is held some other way', async () => {
+    api.pause.mockResolvedValue({});
+    const agent = { agentId: 'code-reviewer', status: 'idle' };
+    await render(h(AgentActions, { agent, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    // The refresh shows the pause: Undo stays.
+    await render(h(AgentActions, { agent: { ...agent, hold: { state: 'paused', by: 'user:u1', reason: null, at: '' } }, fleetId: 'f1', onChanged: () => {} }));
+    expect(button('Undo')).toBeDefined();
+    // A rule then stops it: Undo would lift a hold it didn't make.
+    await render(h(AgentActions, { agent: { ...agent, hold: { state: 'stopped', by: 'rule:gr_1', reason: null, at: '' } }, fleetId: 'f1', onChanged: () => {} }));
+    expect(button('Undo')).toBeUndefined();
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer paused.');
+  });
+});
+
+describe('Home fact line', () => {
+  const hold = { state: 'stopped' as const, by: 'user:u1', reason: null, at: '2026-10-27T10:00:00Z' };
+  const facts = (onResumed = () => {}) => h(HomeFacts, { agents: [], holds: { 'old-scraper': hold }, holdsKnown: true, flaggedToday: 2, todayRules: null, fleet: { fleetId: 'f1' }, onResumed });
+  const resumeButton = () => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Resume') as HTMLButtonElement;
+
+  it('resumes an agent removed while held, and says so', async () => {
+    api.resume.mockResolvedValue({});
+    const onResumed = vi.fn();
+    await render(facts(onResumed));
+    expect(el.textContent).toContain('1 agent on hold: old-scraper (removed, stopped)');
+    expect(el.querySelector('a[href="/runs?show=flagged&range=today"]')?.textContent).toBe('2 flagged runs today');
+    await act(async () => { resumeButton().click(); });
+    await flush();
+    expect(api.resume).toHaveBeenCalledWith('f1', 'old-scraper', undefined);
+    expect(onResumed).toHaveBeenCalled();
+  });
+
+  it.each([
+    [new ControlDeniedError('Only owners can resume agents.'), 'Only owners can resume agents.'],
+    [new WhiteRoomApiError('expired', 401), 'Your session expired. Reload the page to sign in again.'],
+    [new Error('down'), 'Couldn’t resume old-scraper. Nothing changed; try again.'],
+  ])('says why a Resume failed (%s)', async (err, words) => {
+    api.resume.mockRejectedValue(err);
+    await render(facts());
+    await act(async () => { resumeButton().click(); });
+    await flush();
+    expect(el.querySelector('[role="alert"]')?.textContent).toBe(words);
   });
 });

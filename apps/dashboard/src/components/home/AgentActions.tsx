@@ -75,6 +75,17 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     }
   }
 
+  // Undo puts back only the pause this toast is about. Once a refresh shows
+  // the agent in any other state (stopped by a rule, resumed by someone
+  // else), Undo would lift a hold it didn't make, so it's withdrawn.
+  const holdState = agent.hold?.state ?? null;
+  const sawPause = useRef(false);
+  useEffect(() => {
+    if (toast?.undo !== 'resume') { sawPause.current = false; return; }
+    if (holdState === 'paused') sawPause.current = true;
+    else if (holdState !== null || sawPause.current) setToast((t) => (t ? { message: t.message } : t));
+  }, [holdState, toast?.undo]);
+
   const items = agentMenu(agent);
 
   return (

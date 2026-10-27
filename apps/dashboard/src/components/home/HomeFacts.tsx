@@ -90,11 +90,11 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
   parts.push(<Link key="week" href={ROUTES.performance} className="wr-link">Last 7 days &rarr;</Link>);
 
   return (
-    <>
-      <p className="wr-home-facts">
+    <div className="wr-home-facts">
+      <p className="wr-home-facts__line">
         {parts.map((p, i) => <Fragment key={i}>{i > 0 && ' · '}{p}</Fragment>)}
       </p>
-      {error && <p role="alert" style={{ margin: '-20px 0 24px', color: 'var(--bad)', fontSize: 'var(--fs-sm)' }}>{error}</p>}
-    </>
+      {error && <p role="alert" className="wr-home-facts__error">{error}</p>}
+    </div>
   );
 }

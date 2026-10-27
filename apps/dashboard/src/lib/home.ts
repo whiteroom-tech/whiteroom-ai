@@ -48,25 +48,31 @@ export function currentShift(a: AgentInfo): ShiftMeasures | null {
 export const taskWord = (n: number) => `${n} ${plural(n, 'task')}`;
 
 /**
- * The card's run line in parts, so the run number can link to the run:
- * "Run #8 · 62 tasks · 9.4 min so far" while working, "Last run #41 · 5 tasks ·
- * waiting for work" otherwise. `run` is null when there's no run yet.
+ * The card's run line in parts, so the run number can link to the run and the
+ * table can show just the tasks: "Run #8 · 62 tasks · 9.4 min so far" while
+ * working, "Last run #41 · 5 tasks · waiting for work" otherwise. `run` and
+ * `tasks` are null when there's no run yet.
  */
-export function runLine(a: AgentInfo, state: AgentState = agentState(a)): { label: string; run: number | null; rest: string } {
+export function runLine(a: AgentInfo, state: AgentState = agentState(a)): { label: string; run: number | null; tasks: string | null; status: string } {
   const shift = currentShift(a);
   const held = state === 'paused' || state === 'stopped';
   const waiting = held ? 'waiting to be resumed' : 'waiting for work';
   const busy = state === 'working' || state === 'handover';
-  if (shift && busy) return { label: 'Run', run: shift.watchNumber || 1, rest: `${taskWord(shift.tasksCompleted)} · ${oneDecimal(shift.minutesWorked)} min so far` };
+  if (shift && busy) return { label: 'Run', run: shift.watchNumber || 1, tasks: taskWord(shift.tasksCompleted), status: `${oneDecimal(shift.minutesWorked)} min so far` };
   const last = shift ?? a.lastShift;
-  if (!last) return { label: 'No run yet', run: null, rest: waiting };
-  return { label: 'Last run', run: last.watchNumber || 1, rest: `${taskWord(last.tasksCompleted)} · ${waiting}` };
+  if (!last) return { label: 'No run yet', run: null, tasks: null, status: waiting };
+  return { label: 'Last run', run: last.watchNumber || 1, tasks: taskWord(last.tasksCompleted), status: waiting };
+}
+
+/** What follows the run number: "5 tasks · waiting for work". */
+export function runRest(r: ReturnType<typeof runLine>): string {
+  return r.tasks ? `${r.tasks} · ${r.status}` : r.status;
 }
 
 /** The run line as text: "Last run #41 · 5 tasks · waiting for work". */
 export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
   const r = runLine(a, state);
-  return r.run === null ? `${r.label} · ${r.rest}` : `${r.label} #${r.run} · ${r.rest}`;
+  return r.run === null ? `${r.label} · ${runRest(r)}` : `${r.label} #${r.run} · ${runRest(r)}`;
 }
 
 // Needs-you items come first once P2 ships; until then working agents lead.
