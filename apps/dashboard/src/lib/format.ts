@@ -37,6 +37,11 @@ export function fmtTokens(n: number): string {
   return String(Math.round(n));
 }
 
+/** A plain count with thousands separators, the same in every locale: "12,345", or "12,345+" for a lower bound. */
+export function fmtCount(n: number, atLeast = false): string {
+  return `${n.toLocaleString('en-US')}${atLeast ? '+' : ''}`;
+}
+
 /** One hour and one day in milliseconds. */
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 86_400_000;

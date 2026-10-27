@@ -7,17 +7,21 @@ import { createRoot } from 'react-dom/client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const auth = vi.hoisted(() => ({ fleetId: 'f1' }));
-vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: auth.fleetId }) }));
-const api = vi.hoisted(() => ({ verify: vi.fn(), build: vi.fn(), save: vi.fn() }));
-vi.mock('@/lib/audit-export', () => ({ buildAuditExport: api.build, saveBlob: api.save }));
+const auth = vi.hoisted(() => ({ fleetId: 'f1' as string | null, status: 'authenticated' }));
+vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: auth.status, fleetId: auth.fleetId }) }));
+const api = vi.hoisted(() => ({ verify: vi.fn(), build: vi.fn(), save: vi.fn(), integrity: vi.fn() }));
+vi.mock('@/lib/audit-export', async (orig) => ({ ...(await orig<typeof import('@/lib/audit-export')>()), buildAuditExport: api.build }));
+vi.mock('@/lib/download', () => ({ saveBlob: api.save }));
+const INFO = () => ({ fleetId: 'f1', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date(Date.now() - 3600_000).toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } });
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  auditIntegrity: async () => ({ fleetId: 'f1', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date(Date.now() - 3600_000).toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } }),
+  auditIntegrity: api.integrity,
   verifyAudit: api.verify,
 }));
 
 const { AuditIntegritySection } = await import('@/components/settings/AuditIntegritySection');
+const { AuditExportProblem } = await import('@/lib/audit-export');
+const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 
 async function mount() {
@@ -31,7 +35,12 @@ async function mount() {
   return { el, root, run, note };
 }
 
-beforeEach(() => { auth.fleetId = 'f1'; api.verify.mockReset(); api.build.mockReset(); api.save.mockReset(); });
+beforeEach(() => {
+  auth.fleetId = 'f1'; auth.status = 'authenticated';
+  api.verify.mockReset(); api.build.mockReset(); api.save.mockReset();
+  api.integrity.mockReset(); api.integrity.mockImplementation(async () => INFO());
+});
+const downloadButton = (el: HTMLElement) => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Download signed export') as HTMLButtonElement;
 
 describe('audit integrity', () => {
   it('leads with coverage, never a pass below 100%', async () => {
@@ -61,19 +70,24 @@ describe('audit integrity', () => {
     let finish!: (v: unknown) => void;
     let report!: (done: number, total: number) => void;
     api.build.mockImplementationOnce((_id: string, onProgress: typeof report) => { report = onProgress; return new Promise((r) => { finish = r; }); });
-    const button = () => [...m.el.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Download') || b.textContent?.startsWith('Preparing')) as HTMLButtonElement;
-    await act(async () => { button().click(); });
+    await act(async () => { downloadButton(m.el).click(); });
     await flush();
     expect(api.build).toHaveBeenCalledWith('f1', expect.any(Function), expect.objectContaining({ isCancelled: expect.any(Function) }));
-    expect(button().textContent).toContain('Preparing…');
+    // The button keeps its label (and width); progress is its own status line.
+    expect(downloadButton(m.el).disabled).toBe(true);
+    const progress = () => m.el.querySelector('.wr-audit-progress');
+    expect(progress()!.getAttribute('role')).toBe('status');
+    expect(progress()!.textContent).toBe('Preparing…');
     await act(async () => { report(5000, 12345); });
-    expect(button().textContent).toContain('Preparing… 5,000 of 12,345 events');
+    expect(progress()!.textContent).toBe('Preparing… 5,000 of 12,345 events');
     const blob = new Blob(['{}']);
     await act(async () => { finish({ blob, events: 12345 }); });
     await flush();
     expect(api.save).toHaveBeenCalledWith(blob, expect.stringMatching(/^whiteroom-audit-f1-\d{4}-\d{2}-\d{2}\.json$/));
+    expect(progress()).toBeNull();
     expect(m.note()!.textContent).toBe('Downloaded 12,345 events, signed by WhiteRoom.');
-    expect(button().textContent).toBe('Download signed export');
+    expect(m.note()!.style.color).toBe('var(--ok)');
+    expect(downloadButton(m.el).disabled).toBe(false);
     m.root.unmount();
   });
 
@@ -84,6 +98,54 @@ describe('audit integrity', () => {
     await flush();
     expect(api.save).not.toHaveBeenCalled();
     expect(m.note()!.textContent).toBe('The export didn’t download. Try again.');
+    m.root.unmount();
+  });
+
+  it('a history that doesn’t add up is a problem with the audit trail, not a retry, and offers a check', async () => {
+    const m = await mount();
+    api.build.mockRejectedValueOnce(new AuditExportProblem('The export is missing events.', 'some events are missing'));
+    await act(async () => { downloadButton(m.el).click(); });
+    await flush();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(m.note()!.textContent).toBe('The export found a problem with the audit trail: some events are missing. Run check now.');
+    expect(m.note()!.style.color).toBe('var(--bad)');
+    expect(m.note()!.textContent).not.toContain('Try again');
+    api.verify.mockResolvedValueOnce({ valid: true, eventsVerified: 2045 });
+    await act(async () => { (m.note()!.querySelector('button') as HTMLButtonElement).click(); });
+    await flush();
+    expect(api.verify).toHaveBeenCalledWith('f1');
+    m.root.unmount();
+  });
+
+  it('Cancel stops a download: nothing is saved and the button is free again', async () => {
+    const m = await mount();
+    const ctl = await startDownload(m);
+    const cancel = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Cancel') as HTMLButtonElement;
+    await act(async () => { cancel.click(); });
+    expect(ctl.isCancelled()).toBe(true);
+    expect(m.el.querySelector('.wr-audit-progress')).toBeNull();
+    expect([...m.el.querySelectorAll('button')].some((b) => b.textContent === 'Cancel')).toBe(false);
+    expect(downloadButton(m.el).disabled).toBe(false);
+    await act(async () => { ctl.finish({ blob: new Blob(['{}']), events: 3 }); });
+    await flush();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(m.note()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('is always there for a link to land on: sign in without a fleet, a loading line before the data', async () => {
+    auth.status = 'unauthenticated'; auth.fleetId = null;
+    let m = await mount();
+    expect(m.el.textContent).toContain('Sign in to your fleet to download the audit trail.');
+    m.root.unmount();
+    auth.status = 'authenticated'; auth.fleetId = 'f1';
+    api.integrity.mockImplementation(() => new Promise(() => {}));
+    m = await mount();
+    expect(m.el.textContent).toContain('Loading the audit trail…');
+    m.root.unmount();
+    api.integrity.mockRejectedValue(new Error('HTTP 503'));
+    m = await mount();
+    expect(m.el.textContent).toContain('Couldn’t load the audit trail.');
     m.root.unmount();
   });
 
@@ -127,14 +189,28 @@ describe('audit integrity', () => {
     expect(api.save).not.toHaveBeenCalled();
   });
 
-  it('saves the older export from an older engine without a count note', async () => {
+  it('saves the older export and says it holds only the most recent events', async () => {
     const m = await mount();
     const ctl = await startDownload(m);
     const blob = new Blob(['{}']);
     await act(async () => { ctl.finish({ blob, events: null }); });
     await flush();
     expect(api.save).toHaveBeenCalledWith(blob, expect.any(String));
-    expect(m.note()).toBeNull();
+    expect(m.note()!.textContent).toBe('Downloaded the shorter signed export, with the most recent events only.');
+    m.root.unmount();
+  });
+
+  it('stays hidden on an engine without audit integrity, rather than asking for a reload', async () => {
+    api.integrity.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 400', 400, 'Unknown action.'));
+    const m = await mount();
+    expect(m.el.textContent).toBe('');
+    m.root.unmount();
+  });
+
+  it('a failed load says so and offers a reload', async () => {
+    api.integrity.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 503', 503));
+    const m = await mount();
+    expect(m.el.textContent).toContain('Couldn’t load the audit trail. Reload the page to try again.');
     m.root.unmount();
   });
 

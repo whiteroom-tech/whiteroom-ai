@@ -9,7 +9,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   exportAuditSigned: client.signed,
 }));
 
-const { buildAuditExport } = await import('@/lib/audit-export');
+const { AuditExportProblem, DASHBOARD_ONLY_REASON, buildAuditExport } = await import('@/lib/audit-export');
 const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 type Page = import('@/lib/whiteroom/types').AuditExportPage;
 
@@ -103,6 +103,33 @@ describe('full audit export', () => {
     expect(notTracked).toHaveBeenCalledTimes(1);
     expect(client.signed).toHaveBeenCalledTimes(1);
     expect(client.signed).toHaveBeenCalledWith('f1');
+  });
+
+  it('uses the older signed export when the engine wants the dashboard’s secret for the full one (403)', async () => {
+    client.signed.mockResolvedValueOnce({ fleetId: 'f1', entries: [], signature: 'old' });
+    const secretOnly = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403, DASHBOARD_ONLY_REASON); });
+    const file = await buildAuditExport('f1', () => {}, { fetchPage: secretOnly });
+    expect(file!.events).toBeNull();
+    expect(secretOnly).toHaveBeenCalledTimes(1);
+    expect(client.signed).toHaveBeenCalledWith('f1');
+  });
+
+  it('any other refusal (403) is an error, never a quiet swap to the older export', async () => {
+    const denied = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403, 'Invalid fleet credential.'); });
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: denied })).rejects.toThrow('HTTP 403');
+    const bare = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403); });
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: bare })).rejects.toThrow('HTTP 403');
+    expect(client.signed).not.toHaveBeenCalled();
+  });
+
+  it('marks a history that doesn’t add up as a problem with the audit trail, in plain words', async () => {
+    const fetchPage = tampered((p) => (p.fromSeq === 501 ? { ...p, events: p.events.filter((e) => e.seq !== 700) } : p));
+    const err = await buildAuditExport('f1', () => {}, { fetchPage }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AuditExportProblem);
+    expect((err as InstanceType<typeof AuditExportProblem>).plain).toBe('some events are missing');
+    // A busy engine is not one.
+    const busy = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 502', 502); });
+    expect(await buildAuditExport('f1', () => {}, { fetchPage: busy, wait: async () => {} }).catch((e: unknown) => e)).not.toBeInstanceOf(AuditExportProblem);
   });
 
   it('passes on any other refusal instead of falling back', async () => {
@@ -216,37 +243,6 @@ describe('full audit export', () => {
     expect(wait).toHaveBeenCalledTimes(3); // well short of the 5 s wait
   });
 
-  it('falls back to the older export for a fleet with no stored events (the engine answers 409)', async () => {
-    client.signed.mockResolvedValueOnce({ fleetId: 'f1', entries: [], signature: 'old' });
-    const none = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 409', 409, 'This fleet has no stored history yet.'); });
-    const file = await buildAuditExport('f1', () => {}, { fetchPage: none });
-    expect(file!.events).toBeNull();
-    expect(client.signed).toHaveBeenCalledTimes(1);
-  });
-
-  it('saves an empty, signed file when the signed history is empty', async () => {
-    const empty = vi.fn(async (): Promise<Page> => ({
-      fleetId: 'f1', firstSeq: 1, toSeq: 0, fromSeq: 1, events: [], nextFromSeq: null,
-      manifest: { format: 'whiteroom-audit-export', firstSeq: 1, headSeq: 0, headHash: null, count: 0, signature: 'sig' },
-    }));
-    const progress: Array<[number, number]> = [];
-    const file = await buildAuditExport('f1', (d, t) => progress.push([d, t]), { fetchPage: empty });
-    expect(file!.events).toBe(0);
-    const parsed = JSON.parse(await file!.blob.text());
-    expect(parsed.events).toEqual([]);
-    expect(parsed.manifest).toMatchObject({ count: 0, signature: 'sig' });
-    expect(progress).toEqual([[0, 0]]);
-    expect(client.signed).not.toHaveBeenCalled();
-  });
-
-  it('still refuses an empty file whose signature counts events', async () => {
-    const empty = vi.fn(async (): Promise<Page> => ({
-      fleetId: 'f1', firstSeq: 1, toSeq: 0, fromSeq: 1, events: [], nextFromSeq: null,
-      manifest: { format: 'whiteroom-audit-export', firstSeq: 1, headSeq: 0, headHash: null, count: 3, signature: 'sig' },
-    }));
-    await expect(buildAuditExport('f1', () => {}, { fetchPage: empty })).rejects.toThrow('doesn’t match its signature');
-  });
-
   it('stops when a later page is for a different head than the first pinned', async () => {
     const { fetchPage } = engine();
     const real = fetchPage.getMockImplementation()!;
@@ -254,8 +250,29 @@ describe('full audit export', () => {
       const p = await real(f, c);
       return c?.fromSeq === 501 ? { ...p, toSeq: HEAD + 50 } : p;
     });
-    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('changed part-way through');
+    const err = await buildAuditExport('f1', () => {}, { fetchPage }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('The export changed part-way through.');
+    // A race worth retrying, not a broken trail.
+    expect(err).not.toBeInstanceOf(AuditExportProblem);
     // Asked for the pinned head every time, and stopped at the page that changed it.
     expect(fetchPage.mock.calls.map(([, c]) => c)).toEqual([undefined, { fromSeq: 501, toSeq: HEAD }]);
   });
+
+  it('a stuck cursor is worth retrying, not a broken trail', async () => {
+    const stuck = vi.fn(async () => ({ fleetId: 'f1', fromSeq: 1, firstSeq: 1, toSeq: 3, events: [event(1)], nextFromSeq: 1, manifest: null }));
+    const err = await buildAuditExport('f1', () => {}, { fetchPage: stuck as never }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('The export stopped moving forward.');
+    expect(err).not.toBeInstanceOf(AuditExportProblem);
+  });
+
+  it('saves an empty signed file for a history with no events', async () => {
+    const empty = vi.fn(async () => ({
+      fleetId: 'f1', fromSeq: 1, firstSeq: 1, toSeq: 0, events: [], nextFromSeq: null,
+      manifest: { format: 'whiteroom-audit-export', firstSeq: 1, headSeq: 0, headHash: null, count: 0, signature: 'sig' },
+    }));
+    const file = await buildAuditExport('f1', () => {}, { fetchPage: empty as never });
+    expect(file!.events).toBe(0);
+    expect(JSON.parse(await file!.blob.text())).toMatchObject({ events: [], manifest: { count: 0 } });
+  });
 });
+

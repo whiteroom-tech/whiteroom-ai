@@ -23,7 +23,7 @@ vi.mock('@/lib/fleet-session', () => ({
 import { randomBytes } from 'node:crypto';
 import { sealCred } from '@/lib/cred-seal';
 import { recordLegacyFleetIds } from '@/lib/control-auth';
-import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner } from '@/lib/control-auth';
+import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner, SECRET_READ_ACTIONS, secretReadFleet } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
 
@@ -67,6 +67,19 @@ describe('controlActionOf', () => {
     expect(controlActionOf(body({ action: 'fleet_report', fleet_id: 'f1' }))).toBeNull();
     expect(controlActionOf('not json')).toBeNull();
     expect(controlActionOf(body({ action: 'governance_create_rule' }))).toEqual({ action: 'governance_create_rule', fleetId: null });
+  });
+});
+
+describe('secretReadFleet', () => {
+  it('names the fleet for the reads that carry the secret: rule lists and the full audit export', () => {
+    expect([...SECRET_READ_ACTIONS].sort()).toEqual(['export_audit_full', 'governance_list']);
+    expect(secretReadFleet(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toBe('f1');
+    expect(secretReadFleet(body({ action: 'governance_list', fleet_id: 'f1' }))).toBe('f1');
+    // Any holder of the fleet may read it, so it isn't an owner-only control action.
+    expect(controlActionOf(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toBeNull();
+    expect(secretReadFleet(body({ action: 'export_audit', fleet_id: 'f1' }))).toBeNull();
+    expect(secretReadFleet(body({ action: 'export_audit_full' }))).toBeNull();
+    expect(secretReadFleet('not json')).toBeNull();
   });
 });
 

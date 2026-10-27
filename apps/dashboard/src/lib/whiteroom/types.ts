@@ -526,8 +526,8 @@ export interface AgentBudgetForecast {
   agentId: string;
   budgetUsd: number;
   spentTodayUsd: number;
-  /** Spend per working hour over the last 14 days; null without priced calls. */
-  burnRateUsdPerHour: number | null;
+  /** Spend per working hour over the last 14 days; null without priced calls. Not shown; newer engines leave it out. */
+  burnRateUsdPerHour?: number | null;
   /** Calls the rest of today's budget covers at the agent's own average cost per call. */
   callsLeft: number | null;
   callsLeftReason: 'available' | 'no_history' | 'partial_coverage';

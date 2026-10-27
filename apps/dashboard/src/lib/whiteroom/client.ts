@@ -205,6 +205,9 @@ async function apiCall<T>(
     if (res.status === 403) {
       const denied = await res.json().catch(() => null);
       if (denied?.code === CONTROL_DENIED && typeof denied.error === 'string') throw new ControlDeniedError(denied.error);
+      // The engine's own reason for a refusal, so a caller can tell its cases apart.
+      const reason = typeof denied?.error === 'string' && denied.error.length <= 300 ? denied.error : undefined;
+      throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status, reason);
     }
     // A request the engine understood and refused says why ("That looks like a key or password…").
     if (res.status === 400 || res.status === 409 || res.status === 422) {

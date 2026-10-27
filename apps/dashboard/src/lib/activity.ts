@@ -13,7 +13,7 @@
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
-import { timeAgo, plural, HOUR_MS, DAY_MS } from '@/lib/format';
+import { DAY_MS, fmtCount, HOUR_MS, plural, timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 
 export type { AuditEntry, ToolDetail };
@@ -94,7 +94,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '🔁', tone: 'wouldBlock', code: 'H/L',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      const to = limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : '';
+      const to = limit !== null ? ` to ${fmtCount(limit)} tokens` : '';
       return String(e.reason ?? '') === 'repeated_work'
         ? `kept redoing work it had already done, so WhiteRoom raised its context limit${to} to give it room to finish`
         : `filled its context after a call or two, so WhiteRoom raised its context limit${to} to keep it working`;
@@ -111,7 +111,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '↘', tone: 'idle', code: 'H/R',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      return `stopped redoing earlier work, so WhiteRoom lowered its context limit${limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : ''}`;
+      return `stopped redoing earlier work, so WhiteRoom lowered its context limit${limit !== null ? ` to ${fmtCount(limit)} tokens` : ''}`;
     },
   },
   handover_summary_failed: {

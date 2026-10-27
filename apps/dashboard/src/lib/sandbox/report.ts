@@ -5,7 +5,8 @@
 import { eventModel } from '@/lib/activity';
 import type { AuditEntry } from '@/lib/whiteroom/types';
 import { withRunMode, type RunStatusResult } from './api';
-import { plural } from '@/lib/format';
+import { fmtCount, plural } from '@/lib/format';
+import { saveBlob } from '@/lib/download';
 
 /** The agent saved a summary of its own work and kept going. */
 export const SUMMARY_TYPES = new Set(['self_handover']);
@@ -164,7 +165,7 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 <p>${esc(summaryText(r))}</p>
 <div class="stats">
 <div class="stat"><b>${r.calls}</b><span class="muted">calls</span></div>
-<div class="stat"><b>${r.tokens.toLocaleString('en-US')}</b><span class="muted">tokens</span></div>
+<div class="stat"><b>${fmtCount(r.tokens)}</b><span class="muted">tokens</span></div>
 <div class="stat"><b>${r.handovers}</b><span class="muted">${plural(r.handovers, 'summary', 'summaries')} saved</span></div>
 ${r.partnerHandoffs ? `<div class="stat"><b>${r.partnerHandoffs}</b><span class="muted">passed to another agent</span></div>` : ''}
 <div class="stat"><b>${esc(r.calls > 1 ? spanText(r.firstCallAt, r.lastCallAt) : '—')}</b><span class="muted">first to last call</span></div>
@@ -195,7 +196,7 @@ ${r.checks.map((c) => `<tr><th>${esc(c.id)}</th><td class="mono">${esc(c.result)
 </tbody></table>
 <h2>Agents</h2>
 <table><thead><tr><th>Agent (x-whiteroom-agent)</th><th>Calls</th><th>Tokens</th><th>Work periods</th><th>Period length</th></tr></thead><tbody>
-${r.agents.map((a) => `<tr><td class="mono">${esc(a.agentId)}</td><td>${a.calls}</td><td>${a.tokens.toLocaleString('en-US')}</td><td>${a.shifts}</td><td>${a.shiftMinutes} min</td></tr>`).join('\n') || '<tr><td colspan="5" class="muted">No agents connected.</td></tr>'}
+${r.agents.map((a) => `<tr><td class="mono">${esc(a.agentId)}</td><td>${a.calls}</td><td>${fmtCount(a.tokens)}</td><td>${a.shifts}</td><td>${a.shiftMinutes} min</td></tr>`).join('\n') || '<tr><td colspan="5" class="muted">No agents connected.</td></tr>'}
 </tbody></table>
 <details><summary>Every event (${r.events.length})</summary>
 <table><thead><tr><th>Time (UTC)</th><th>Type</th><th>Agent</th></tr></thead><tbody>
@@ -225,7 +226,5 @@ export function pastTestReport(kept: { report?: RunStatusResult & { endedAt?: st
 
 /** Saves the report as its HTML file. Browser only. */
 export function saveReportFile(r: TestReport): void {
-  const url = URL.createObjectURL(new Blob([reportHtml(r)], { type: 'text/html' }));
-  const a = document.createElement('a'); a.href = url; a.download = reportFileName(r); a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveBlob(new Blob([reportHtml(r)], { type: 'text/html' }), reportFileName(r));
 }

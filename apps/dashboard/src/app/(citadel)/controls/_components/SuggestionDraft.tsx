@@ -14,6 +14,7 @@ import { feedbackOrThrow } from '@/lib/diagnosis/feedback';
 import { RULE_LABEL, RULE_TITLE, STATUS_LABEL } from '@/lib/diagnosis/copy';
 import { FIELD, isRecId, readAmount, readSuggestion, type Suggestion } from '@/lib/diagnosis/suggestion';
 import { MONO } from '@/lib/diagnosis/ui';
+import { fmtCount } from '@/lib/format';
 import { SegmentedControl } from '@whiteroom/ui';
 
 const panel = { width: 420, borderLeft: '1px solid var(--line)', overflowY: 'auto', padding: 24, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 } as const;
@@ -123,8 +124,8 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
           {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{loaded.text.suffix}</span>
-          {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {field.max.toLocaleString('en-US')}.</span>}
-          {farAbove && !existingRule && <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {loaded.suggested.toLocaleString('en-US')}.</span>}
+          {amount !== '' && !valid && <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--bad)', marginTop: 6 }}>Enter a whole number from 1 to {fmtCount(field.max)}.</span>}
+          {farAbove && !existingRule && <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>That&apos;s over 10× the suggested {fmtCount(loaded.suggested)}.</span>}
           {existingRule && <span id="suggestion-existing" style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>This suggestion already has a rule. Its number is changed on the rule itself.</span>}
         </dd>
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>

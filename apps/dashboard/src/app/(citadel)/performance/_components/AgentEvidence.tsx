@@ -9,6 +9,7 @@ import { Badge, CARD, H3 } from './primitives';
 import { DiagnosisEvidence } from './Diagnosis';
 import { isDiagnosisDetector, limitationText, TITLES } from '@/lib/diagnosis/copy';
 import { useTableSort, sortRows, ariaSort, sortArrow, fmtLatency, fmtPct, MetricCard } from './perf-utils';
+import { saveBlob } from '@/lib/download';
 
 
 export function AgentView({ data }: { data: AgentPerformanceResult }) {
@@ -86,11 +87,7 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
         setBriefCopied(true);
         setTimeout(() => setBriefCopied(false), 2000);
       } else {
-        const blob = new Blob([result.markdown], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `recommendation-${recommendationId}.md`; a.click();
-        URL.revokeObjectURL(url);
+        saveBlob(new Blob([result.markdown], { type: 'text/markdown' }), `recommendation-${recommendationId}.md`);
       }
     } catch {
       setBriefCopied(false);

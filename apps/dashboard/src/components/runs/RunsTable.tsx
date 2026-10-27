@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Banner, Button, DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
-import { fmtTime, plural } from '@/lib/format';
+import { fmtCount, fmtTime, plural } from '@/lib/format';
 import { fleetReport, isAuthError, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
@@ -323,7 +323,7 @@ export function RunsTable({ preview, retentionDays }: {
         header: RUNS_EXPORT_HEADER,
         rows: all.map(runsExportRow),
       }]), `whiteroom-runs-${fromDay}-to-${toDay}${truncated ? `-newest-${all.length}` : ''}.xlsx`);
-      if (truncated) setExportNote({ ok: true, text: `Exported the newest ${all.length.toLocaleString('en-US')} runs. Pick a shorter range or one agent for the rest.` });
+      if (truncated) setExportNote({ ok: true, text: `Exported the newest ${fmtCount(all.length)} runs. Pick a shorter range or one agent for the rest.` });
     } catch (e) {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       setExportNote({ ok: false, text: 'Couldn’t export runs. Try again.' });

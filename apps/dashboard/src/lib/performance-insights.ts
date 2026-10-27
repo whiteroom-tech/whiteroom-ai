@@ -4,7 +4,7 @@
  * Pure, so the wording can be tested without rendering.
  */
 import { flaggedInWindow, UNUSUAL_SIGNALS } from '@/lib/runs';
-import { plural } from '@/lib/format';
+import { fmtCount, plural } from '@/lib/format';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { humanizeDetector, type DiagnosisSummary } from '@/lib/diagnosis/model';
 
@@ -44,11 +44,6 @@ export function insightsVerdict(i: VerdictInput): Verdict | null {
   if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${plural(flagged, 'run looked', 'runs looked', i.flaggedAtLeast)} unusual` };
   if (i.flagsPending || i.healthPending) return null;
   return { tone: 'ok', title: 'Your agents look fine' };
-}
-
-/** A count, with "+" when it's a lower bound. */
-export function fmtCount(n: number, atLeast = false): string {
-  return `${n.toLocaleString('en-US')}${atLeast ? '+' : ''}`;
 }
 
 /** The signals Unusual behaviour can't see yet, for its "Not tracked yet" line. */

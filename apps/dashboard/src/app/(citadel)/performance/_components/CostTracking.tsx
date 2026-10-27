@@ -11,7 +11,7 @@ import type { PerformanceCostForecastResult, SetBudgetResult, SetTokenBudgetResu
 import { budgetNotice, burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '@/lib/cost-tracking';
 import Link from 'next/link';
 import { ROUTES } from '@/lib/routes';
-import { fmtCost } from '@/lib/format';
+import { fmtCost, fmtCount } from '@/lib/format';
 import { HELP } from '@/lib/metric-definitions';
 import { usePoll } from '@/hooks/usePoll';
 import { CARD, H3 } from './primitives';
@@ -118,7 +118,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
       setBudgetSaveError(null);
       refreshForecast();
     } catch {
-      const saved = forecast?.tokenBudget != null ? `${forecast.tokenBudget.toLocaleString()} tokens` : 'not set';
+      const saved = forecast?.tokenBudget != null ? `${fmtCount(forecast.tokenBudget)} tokens` : 'not set';
       setBudgetSaveError(`Token budget not saved — it is still ${saved}. Press Enter to retry.`);
     }
   }
@@ -145,21 +145,24 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
             tracked independently, so a fleet can set either or both, and
             which one is actually usable can change as pricing coverage does. */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2" title="Used to estimate calls remaining. It does not stop spending — add a spend cap on the Controls page for that.">
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>BUDGET PER DAY</span>
-            <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>$</span>
-            <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
+          <div className="flex items-center gap-2 flex-wrap" title="Used to estimate calls remaining. It never stops spending; to set a limit, add a Spend cap in Controls.">
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>FLEET BUDGET PER DAY</span>
+            {/* "$" and the amount stay together at any text size. */}
+            <span className="inline-flex items-center gap-2" style={{ flexWrap: 'nowrap' }}>
+              <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>$</span>
+              <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
+            </span>
           </div>
-          <div className="flex items-center gap-2" title="For a model with no $/token price on file yet — tracks calls left in tokens instead of dollars.">
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>TOKENS PER DAY</span>
+          <div className="flex items-center gap-2 flex-wrap" title="For a model with no $/token price on file yet — tracks calls left in tokens instead of dollars.">
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>FLEET TOKENS PER DAY</span>
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         </div>
       </div>
       {/* Always said: these numbers track spending, they don't limit it. */}
       <p style={{ margin: '-4px 0 14px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-        Budgets are for tracking only. They don&rsquo;t stop your agents. To set a limit,{' '}
-        <Link href={ROUTES.controls} className="wr-link" style={{ fontWeight: 600 }}>add a spend cap in Controls →</Link>
+        The fleet&rsquo;s budget is for tracking only. It never stops your agents. To set a limit,{' '}
+        <Link href={ROUTES.controls} className="wr-link" style={{ fontWeight: 600 }}>add a Spend cap in Controls →</Link>
       </p>
       {(() => {
         const notice = budgetNotice(forecast);

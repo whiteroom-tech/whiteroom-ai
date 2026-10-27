@@ -1,18 +1,18 @@
 // @vitest-environment happy-dom
-// Performance › Budgets per agent: the helpers, and the card's flows with a
-// stand-in engine — set a budget, "Also block at this amount" adds a Spend
-// cap in Record only (once), remove, and refusals said plainly.
+// Performance › Agent budgets: the helpers, and the card's flows with a
+// stand-in engine — set a budget, "Also add a Spend cap at this amount" adds
+// a Spend cap in Record only (once), remove and undo, and refusals said plainly.
 import { describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AgentBudgetForecast, GovernanceRule } from '@/lib/whiteroom/types';
-import { callsLeftText, capRuleFor, existingCap, parseBudget } from '@/lib/agent-budgets';
+import { budgetsTotal, callsLeftText, capRuleFor, existingCap, parseBudget, refusalText } from '@/lib/agent-budgets';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const { AgentBudgetsSection } = await import('@/app/(citadel)/performance/_components/AgentBudgets');
 
-const forecast = (o: Partial<AgentBudgetForecast> = {}): AgentBudgetForecast => ({ agentId: 'lead-agent', budgetUsd: 10, spentTodayUsd: 2, burnRateUsdPerHour: 1, callsLeft: 8, callsLeftReason: 'available', ...o });
+const forecast = (o: Partial<AgentBudgetForecast> = {}): AgentBudgetForecast => ({ agentId: 'lead-agent', budgetUsd: 10, spentTodayUsd: 2, callsLeft: 8, callsLeftReason: 'available', ...o });
 const cap = (appliesTo: string[] | 'all', dailyCap: number, unit: 'dollars' | 'tokens' = 'dollars') =>
   ({ id: `gr_${dailyCap}`, ruleType: 'spend_cap', mode: 'watch', response: 'block', appliesTo, params: { dailyCap, scope: 'day', unit } }) as unknown as GovernanceRule;
 
@@ -37,6 +37,19 @@ describe('agent budget helpers', () => {
     expect(existingCap([cap(['lead-agent'], 10)], 'lead-agent', 10)?.id).toBe('gr_10');
     // Not the same cap: other amount, other agents too, fleet-wide, or in tokens.
     expect(existingCap([cap(['lead-agent'], 20), cap(['lead-agent', 'writer'], 10), cap('all', 10), cap(['lead-agent'], 10, 'tokens')], 'lead-agent', 10)).toBeNull();
+  });
+
+  it('says the engine’s refusals a person can act on in plain words, and never its own text', () => {
+    expect(refusalText('There’s no agent lead-agent in this fleet.')).toBe('That agent isn’t in this fleet.');
+    expect(refusalText("There's no agent a-1 in this fleet.")).toBe('That agent isn’t in this fleet.');
+    expect(refusalText('A fleet can have at most 30 rules.')).toBe('This fleet already has the most rules it can have. Remove one in Controls first.');
+    expect(refusalText('budget_usd must be a number above 0 and at most 1000000, or null to clear it.')).toBeNull();
+    expect(refusalText(undefined)).toBeNull();
+  });
+
+  it('adds up the agents’ budgets', () => {
+    expect(budgetsTotal([forecast({ budgetUsd: 20 }), forecast({ agentId: 'w', budgetUsd: 5.5 })])).toBe(25.5);
+    expect(budgetsTotal([])).toBe(0);
   });
 });
 
@@ -82,7 +95,7 @@ async function mount(api: ReturnType<typeof fakeApi>, agentIds: string[] = ['lea
   return { el, root, type, pick, check, submit, note };
 }
 
-describe('Budgets per agent card', () => {
+describe('Agent budgets card', () => {
   it('lists each budget against today’s spend, with the calls left', async () => {
     const m = await mount(fakeApi([forecast(), forecast({ agentId: 'writer', budgetUsd: 1, spentTodayUsd: 1.5, callsLeft: 0 })]));
     const rows = [...m.el.querySelectorAll('.wr-agent-budget')].map((r) => r.textContent);
@@ -90,6 +103,7 @@ describe('Budgets per agent card', () => {
     expect(rows[0]).toContain('of $10.00 today');
     expect(rows[0]).toContain('8 calls left today');
     expect(rows[1]).toContain('Over today’s budget');
+    expect(m.el.querySelector('.wr-agent-budgets-total')!.textContent).toBe('Agent budgets add up to $11.00 a day.');
     m.root.unmount();
   });
 
@@ -106,7 +120,17 @@ describe('Budgets per agent card', () => {
     m.root.unmount();
   });
 
-  it('"Also block at this amount" adds a Spend cap for that agent in Record only, and links to it', async () => {
+  it('shows no total before any budget is set, and says the cap starts in Record only', async () => {
+    const m = await mount(fakeApi());
+    expect(m.el.querySelector('.wr-agent-budgets-total')).toBeNull();
+    const box = m.el.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(box.closest('label')!.textContent).toBe('Also add a Spend cap at this amount');
+    expect(document.getElementById(box.getAttribute('aria-describedby')!)!.textContent).toBe('Starts in Record only. Turn on Block in Controls.');
+    expect(m.el.textContent).toContain('It never stops the agent; a Spend cap does.');
+    m.root.unmount();
+  });
+
+  it('"Also add a Spend cap at this amount" adds a Spend cap for that agent in Record only, and links to it', async () => {
     const api = fakeApi();
     const m = await mount(api);
     await m.type('10');
@@ -129,17 +153,35 @@ describe('Budgets per agent card', () => {
     m.root.unmount();
   });
 
-  it('refuses a bad amount without asking the engine, and says why a refused save failed', async () => {
+  it('refuses a bad amount without asking the engine: marks the field, links the note, and puts focus back', async () => {
     const api = fakeApi();
     const m = await mount(api);
     await m.type('abc');
     await m.submit();
     expect(api.set).not.toHaveBeenCalled();
     expect(m.note()).toContain('Enter an amount in dollars');
+    const input = m.el.querySelector('input[aria-label="Daily budget in dollars"]') as HTMLInputElement;
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(document.getElementById(input.getAttribute('aria-describedby')!)!.textContent).toContain('Enter an amount in dollars');
+    expect(document.activeElement).toBe(input);
+    // Typing again clears the mark.
+    await m.type('5');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(input.getAttribute('aria-describedby')).toBeNull();
+    m.root.unmount();
+  });
+
+  it('says a refused save in plain words, never the engine’s own text', async () => {
+    const api = fakeApi();
+    const m = await mount(api);
     api.set.mockRejectedValueOnce(Object.assign(new Error('HTTP 400'), { reason: 'There’s no agent lead-agent in this fleet.' }));
     await m.type('5');
     await m.submit();
-    expect(m.note()).toBe('Not saved: There’s no agent lead-agent in this fleet.');
+    expect(m.note()).toBe('Not saved. That agent isn’t in this fleet.');
+    api.set.mockRejectedValueOnce(Object.assign(new Error('HTTP 400'), { reason: 'budget_usd must be a number above 0 and at most 1000000, or null to clear it.' }));
+    await m.type('5');
+    await m.submit();
+    expect(m.note()).toBe('Not saved. Try again.');
     m.root.unmount();
   });
 
@@ -150,6 +192,20 @@ describe('Budgets per agent card', () => {
     await flush();
     expect(api.set).toHaveBeenCalledWith('f1', 'lead-agent', null, undefined);
     expect(m.note()).toContain('Any Spend cap for it stays in Controls.');
+    m.root.unmount();
+  });
+
+  it('Undo puts a removed budget back at its amount', async () => {
+    const api = fakeApi([forecast({ budgetUsd: 12.5 })]);
+    const m = await mount(api);
+    await act(async () => { (m.el.querySelector('button[aria-label="Remove the budget for lead-agent"]') as HTMLButtonElement).click(); });
+    await flush();
+    const undo = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Undo') as HTMLButtonElement;
+    await act(async () => { undo.click(); });
+    await flush();
+    expect(api.set).toHaveBeenLastCalledWith('f1', 'lead-agent', 12.5, undefined);
+    expect(m.note()).toBe('Budget for lead-agent set back to $12.50 a day.');
+    expect(m.el.querySelector('.wr-agent-budget')?.textContent).toContain('lead-agent');
     m.root.unmount();
   });
 
@@ -177,7 +233,7 @@ describe('Budgets per agent card', () => {
     await m.check();
     await m.submit();
     expect(api.set).toHaveBeenCalledWith('f1', 'lead-agent', 10, undefined);
-    expect(m.note()).toBe('Budget for lead-agent set to $10.00 a day. The Spend cap wasn’t added: A fleet can have at most 30 rules. Add it in Controls, or set the budget again with the box ticked.');
+    expect(m.note()).toBe('Budget for lead-agent set to $10.00 a day. The Spend cap wasn’t added. This fleet already has the most rules it can have. Remove one in Controls first.');
     expect(m.note()).not.toContain('Not saved');
     m.root.unmount();
   });

@@ -6,7 +6,7 @@
  * checked.
  */
 import type { DiagnosisDetectorId, DiagnosisMeasures } from '@/lib/whiteroom/types';
-import { plural } from '@/lib/format';
+import { fmtCount, plural } from '@/lib/format';
 
 export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_handover_churn',
@@ -35,7 +35,7 @@ export const SNOOZE_DAYS = 7;
 
 export const WATCH_DEFINITION = 'A run is one stretch of work by one agent.';
 
-const num = (v: unknown): string => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v ?? '—'));
+const num = (v: unknown): string => (typeof v === 'number' ? fmtCount(v) : String(v ?? '—'));
 const has = (m: DiagnosisMeasures, k: string) => m[k] !== undefined && m[k] !== null && m[k] !== '';
 
 /** A part of a sentence: plain text, or a value from measures (shown in mono). */
@@ -109,7 +109,7 @@ export const sentenceText = (parts: SentencePart[]) => parts.map((p) => ('text' 
 export function costLine(estWastedTokens: number | null | undefined, estWastedCostMicros: number | null | undefined): string | null {
   if (estWastedTokens == null) return null;
   const cost = estWastedCostMicros != null ? ` (≈ $${(estWastedCostMicros / 1_000_000).toFixed(2)})` : '';
-  return `About ${estWastedTokens.toLocaleString('en-US')} tokens${cost} went to this in the last 7 days.`;
+  return `About ${fmtCount(estWastedTokens)} tokens${cost} went to this in the last 7 days.`;
 }
 
 /** Engine limitations, reworded where the engine's text is technical. */
