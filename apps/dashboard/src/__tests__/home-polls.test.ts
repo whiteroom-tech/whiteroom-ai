@@ -174,3 +174,15 @@ describe('Home conditional polls', () => {
     m.root.unmount();
   });
 });
+
+describe('Home last active day', () => {
+  it('keeps the last day through a failed read', async () => {
+    const m = await mount();
+    expect(m.text()).toContain('Last activity Sat, Oct 24: 47 runs.');
+    api.days.mockRejectedValue(new Error('down'));
+    await m.advance(5 * 60_000);
+    expect(api.days.mock.calls.length).toBeGreaterThan(1);
+    expect(m.text()).toContain('Last activity Sat, Oct 24: 47 runs.');
+    m.root.unmount();
+  });
+});

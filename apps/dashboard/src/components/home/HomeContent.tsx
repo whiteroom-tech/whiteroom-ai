@@ -158,8 +158,9 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const { refresh: refreshLastActive } = usePoll(async (stale) => {
     const today = localDay();
     const res = await runDays(fleetId, { fromDay: addDays(today, -29), toDay: today }, authKey).catch(() => null);
-    if (stale()) return;
-    setLastActive(res && !('unsupported' in res) ? lastActiveDay(res, today) : null);
+    // A failed read keeps the last day; only an engine without run_days clears it.
+    if (stale() || !res) return;
+    setLastActive('unsupported' in res ? null : lastActiveDay(res, today));
   }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty && today?.calls === 0 });
 
   const { refresh } = usePoll(async (stale) => {
