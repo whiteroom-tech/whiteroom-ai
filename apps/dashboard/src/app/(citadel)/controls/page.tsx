@@ -183,6 +183,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
     let cancelled = false;
+    // Another fleet, or a failed read: never the last fleet's spend beside this one's cap.
+    setDailySpend(null);
     Promise.all([performanceIndex(fleetId, SUGGESTION_HOURS, authKey), performanceFleetHourly(fleetId, SUGGESTION_HOURS, authKey)])
       .then(([index, hourly]) => {
         if (cancelled) return;
@@ -330,7 +332,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         description: `Added a copy of the ${RULE_LABELS[next.ruleType]} rule for ${agentsPicked.join(", ")}`,
       }, authKey);
       setRules((rs) => [...rs, created]);
-      if (selected) setDraft(draftFrom(selected));
+      // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
+      setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
       setNotice(`Added a copy for ${agentsPicked.join(", ")}, in Record only. The rule for all agents is unchanged.`);
       void fetchData();
     } catch (e) {

@@ -811,6 +811,9 @@ describe('Controls page, weakening a rule', () => {
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
     expect(api.update).not.toHaveBeenCalled();
     expect(m.text()).toContain('Added a copy for lead-agent, in Record only. The rule for all agents is unchanged.');
+    // The limit edit is kept; only the narrowing is undone in the editor.
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('500');
+    expect((m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement).value).toBe('all');
     m.root.unmount();
   });
 
