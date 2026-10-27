@@ -105,6 +105,23 @@ describe('phone menu (AppShell)', () => {
     expect(open()).toBe(false);
   });
 
+  it('closes when the window widens past the phone layout, so the page isn’t left inert', async () => {
+    const listeners: Array<() => void> = [];
+    const wide = { matches: false, addEventListener: (_: string, f: () => void) => { listeners.push(f); }, removeEventListener() {} };
+    vi.stubGlobal('matchMedia', () => wide);
+    try {
+      await render(shell());
+      await act(async () => { more().click(); });
+      expect(open()).toBe(true);
+      wide.matches = true;
+      await act(async () => { listeners.forEach((f) => f()); });
+      expect(open()).toBe(false);
+      expect(el.querySelector('main')!.parentElement!.inert).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('the sidebar it opens is the one More controls', async () => {
     await render(shell());
     expect(el.querySelector('#wr-main-nav')).toBeTruthy();

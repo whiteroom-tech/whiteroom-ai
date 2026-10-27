@@ -21,12 +21,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // page); Escape and the scrim close it and return focus to More. While it's
   // open, focus starts in it and the page behind is inert.
   useEffect(() => { setMenuOpen(false); }, [pathname]);
+  // Widening past the phone layout (a rotated tablet, a resized window) hides
+  // the tab bar and scrim, so the menu closes too, and nothing stays inert.
+  useEffect(() => {
+    const wide = window.matchMedia?.('(min-width: 721px)');
+    if (!wide) return;
+    const onChange = () => { if (wide.matches) setMenuOpen(false); };
+    wide.addEventListener('change', onChange);
+    return () => wide.removeEventListener('change', onChange);
+  }, []);
   const more = () => shell.current?.querySelector<HTMLButtonElement>('.wr-tabbar [aria-controls="wr-main-nav"]');
   const closeMenu = () => { setMenuOpen(false); more()?.focus(); };
   useEffect(() => {
     if (!menuOpen) return;
     shell.current?.querySelector<HTMLElement>('#wr-main-nav a, #wr-main-nav button')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenuOpen(false); more()?.focus(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu(); };
     const nav = shell.current?.querySelector('#wr-main-nav');
     const onLink = (e: Event) => { if ((e.target as Element).closest('a')) setMenuOpen(false); };
     window.addEventListener('keydown', onKey);
