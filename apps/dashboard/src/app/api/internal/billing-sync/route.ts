@@ -70,7 +70,10 @@ export async function POST(req: Request): Promise<Response> {
 
   // A failed trial, cancel or deletion pass, or any subscription that didn't
   // cancel, is a 500 so Cloud Scheduler records the failure and retries. The
-  // other passes still ran; none depends on another.
+  // other passes still ran; none depends on another. A subscription Stripe
+  // keeps refusing to cancel stays a 500 on every run, on purpose: that
+  // account is never removed while it can bill, so a person has to look.
+  // Each run still cancels the rest (the failing one goes to the back).
   const failed = trials === null ? 'Could not queue expired trials.'
     : closedSubscriptions === null ? "Could not cancel closed accounts' subscriptions."
     : closedSubscriptions.failed > 0 ? `Could not cancel ${closedSubscriptions.failed} closed account subscription(s).`
