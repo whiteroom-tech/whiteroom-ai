@@ -128,7 +128,7 @@ describe('Controls page', () => {
     expect([...all.querySelectorAll('.ctl-row .ctl-mtag')].map((t) => t.textContent)).toEqual(['Block', 'Record only', 'Record only']);
     expect(all.querySelector('.ctl-mtag.is-block')?.textContent).toBe('Block');
     expect(all.querySelector('.ctl-row.is-block')?.textContent).toContain('Same call 100× in a run');
-    expect(all.textContent).toContain('1 blocks calls · 2 record only · new agents get these too');
+    expect(all.textContent).toContain('1 Block · 2 Record only · new agents get these too');
     // Specific agents are grouped under each agent's name.
     expect(m.text()).toContain('Only lead-agent, market-researcher have extra rules');
     expect([...m.el.querySelectorAll('.ctl-owner')].map((o) => o.textContent)).toEqual(['lead-agent1 rule', 'market-researcher1 rule']);
@@ -180,7 +180,7 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
-  it('gathers the tips under Suggestions, and shows no card without any', async () => {
+  it('gathers the tips under Suggestions, and shows no card when there are none', async () => {
     const m = await mount();
     const section = m.el.querySelector('section[aria-labelledby="gov-suggestions"]')!;
     expect(section.querySelector('h2')!.textContent).toBe('Suggestions 1');
@@ -982,7 +982,7 @@ describe('Controls page, weakening a rule', () => {
     // Copy is the main choice; moving is the risky one and says who loses the rule.
     const copy = [...dialog.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Keep it for everyone, and add a copy just for lead-agent'))!;
     expect(copy.className).toContain('wr-btn--primary');
-    expect([...dialog.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Move it to lead-agent only'))!.textContent).toContain('1 agents will lose this rule');
+    expect([...dialog.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Move it to lead-agent only'))!.textContent).toContain('1 agent will lose this rule');
     await m.click(copy);
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
     expect(api.update).not.toHaveBeenCalled();
@@ -1209,6 +1209,44 @@ describe('Controls page, mockup suggestions and toasts', () => {
     await m.click(m.button('Undo'));
     expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { appliesTo: 'all', ifVersion: 2 }, 'k');
     expect(api.remove).toHaveBeenCalledWith('f1', 'c0', 'k');
+    m.root.unmount();
+  });
+
+  it('allowing for one agent: if narrowing the original fails, the copy is taken away again', async () => {
+    api.models = ['claude-sonnet-4-5'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
+    api.would = { r2: { 'lead-agent': 44 } };
+    created();
+    api.update.mockRejectedValue(new Error('down'));
+    const m = await mount();
+    await m.click(m.button('Add to allowlist…'));
+    await m.click(m.button('Allow for lead-agent only'));
+    expect(api.create).toHaveBeenCalledTimes(1);
+    expect(api.remove).toHaveBeenCalledWith('f1', 'c0', 'k');
+    expect(m.text()).toMatch(/Couldn’t add the suggested allowlist/);
+    expect(m.el.querySelector('.wr-toast')).toBeNull();
+    m.root.unmount();
+  });
+
+  it('an Undo that is cancelled leaves the next save an ordinary one', async () => {
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
+      const { ifVersion, ...rest } = ch;
+      const rule = { ...(api.saved[id] ?? RULES.find((r) => r.id === id)!), ...rest, version: ifVersion + 1 } as GovernanceRule;
+      api.saved[id] = rule;
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await m.click(m.button('Save'));
+    // Undo raises the limit again: that's weaker, so it asks; Keep it as it is stops the Undo.
+    await m.click(m.button('Undo'));
+    expect([...m.el.querySelectorAll('dialog[open]')].at(-1)!.textContent).toContain('Make the Spend cap rule weaker?');
+    await m.click(m.button('Keep it as it is'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '120');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledTimes(2);
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Saved. Spend cap is record only for all agents.');
     m.root.unmount();
   });
 

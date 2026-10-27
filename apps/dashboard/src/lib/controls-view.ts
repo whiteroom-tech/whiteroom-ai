@@ -466,10 +466,10 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
 }
 const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
 
-/** A group's sub-line: "1 blocks calls · 6 record only". */
+/** A group's sub-line, worded like the lead line: "1 Block · 6 Record only". */
 export function modeCount(rules: readonly GovernanceRule[]): string {
   const e = rules.filter((r) => r.mode === 'enforce').length, w = rules.filter((r) => r.mode === 'watch').length;
-  return `${e} ${e === 1 ? 'blocks' : 'block'} calls · ${w} record only`;
+  return `${e} Block · ${w} Record only`;
 }
 
 /** The page's lead line, counting only rules that are set up. */
