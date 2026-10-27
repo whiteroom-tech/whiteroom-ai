@@ -40,8 +40,8 @@ export function samplePreview(runs: RunSummary[]): RunsSample {
       hour, runs: n, ruleActivity: runs.filter((r) => dayOf(r) === day && localHour(r.startedAt) === hour).reduce((a, r) => a + r.blockedCalls + (r.wouldActCalls ?? 0), 0),
     })),
     audit: {
-      result: { valid: true, complete: true, eventsVerified: 939, message: 'ok' },
-      info: { fleetId: 'demo-fleet', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } },
+      result: { valid: true, complete: true, eventsVerified: 2045, message: 'ok' },
+      info: { fleetId: 'demo-fleet', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } },
     },
   };
 }

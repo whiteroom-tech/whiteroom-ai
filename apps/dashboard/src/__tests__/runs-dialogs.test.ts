@@ -20,12 +20,17 @@ const info = (x: Partial<AuditIntegrity> = {}): AuditIntegrity => ({
 });
 
 describe('audit check wording', () => {
-  it('says nothing changed or missing only when the check passed with no recorded gaps', () => {
-    expect(auditCheckText({ valid: true, eventsVerified: 939, message: '' }, info())).toEqual({
-      tone: 'ok', title: 'Nothing changed or missing', detail: 'Verified through event 939 of 2,045. Events before tracking started aren’t covered.',
+  it('says nothing changed or missing only for a whole check with no recorded gaps', () => {
+    expect(auditCheckText({ valid: true, complete: true, eventsVerified: 2045, message: '' }, info({ verifiedThroughSeq: 2045 }))).toEqual({
+      tone: 'ok', title: 'Nothing changed or missing', detail: 'All 2,045 events verified. Events before tracking started aren’t covered.',
     });
-    expect(auditCheckText({ valid: true, eventsVerified: 939, message: '' }, info({ gaps: { count: 2, recent: [] }, prunedBeforeTracking: false })))
-      .toEqual({ tone: 'neutral', title: 'Nothing changed', detail: 'Verified through event 939 of 2,045. 2 recorded gaps where events may be missing.' });
+    expect(auditCheckText({ valid: true, eventsVerified: 2045, message: '' }, info({ verifiedThroughSeq: 2045, gaps: { count: 2, recent: [] }, prunedBeforeTracking: false })))
+      .toEqual({ tone: 'neutral', title: 'Nothing changed', detail: 'All 2,045 events verified. 2 recorded gaps where events may be missing.' });
+  });
+  it('says only what a partial check covered', () => {
+    expect(auditCheckText({ valid: true, eventsVerified: 939, message: '' }, info())).toEqual({
+      tone: 'neutral', title: 'Nothing changed in the events checked', detail: 'Verified through event 939 of 2,045. Events before tracking started aren’t covered. The rest hasn’t been checked yet.',
+    });
   });
   it('names a problem, and never passes a partial check', () => {
     expect(auditCheckText({ valid: false, eventsVerified: 10, message: 'Event 11 was changed.' }, null)).toEqual({ tone: 'bad', title: 'A problem was found', detail: 'Event 11 was changed.' });
@@ -46,7 +51,7 @@ async function mount(node: React.ReactElement) {
 }
 
 describe('Check audit trail dialog', () => {
-  const ok: VerifyAuditResult = { valid: true, complete: true, eventsVerified: 939, message: '' };
+  const ok: VerifyAuditResult = { valid: true, complete: true, eventsVerified: 2045, message: '' };
   it('runs the check when opened and shows what it found', async () => {
     api.verify.mockResolvedValue(ok);
     api.integrity.mockResolvedValue(info());

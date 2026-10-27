@@ -873,8 +873,9 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
   .wr-timeline__time { white-space: nowrap; }
 }
 .wr-panel__title > .wr-panel__count { font-weight: 500; }
+/* Phones: the charts scroll sideways in their own box, so each bar stays a tappable width (≥24px). */
 @media (max-width: 600px) {
-  .wr-runchart__hticks { grid-template-columns: repeat(4, 1fr); }
-  .wr-runchart__hticks > :nth-child(even) { display: none; }
-  .wr-runchart__ticks > :nth-child(2), .wr-runchart__ticks > :nth-child(4) { visibility: hidden; }
+  .wr-strip-scroll { overflow-x: auto; }
+  .wr-strip-scroll > * { min-width: 46rem; }
+  .wr-strip-scroll.is-hours > * { min-width: 38rem; }
 }

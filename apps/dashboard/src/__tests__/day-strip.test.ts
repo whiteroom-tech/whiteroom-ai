@@ -2,7 +2,9 @@
 // Runs' charts as the mockup draws them: a titled day card with true bar
 // heights, the busiest count, date ticks and flagged segments; and the hour
 // card with counts, the rule-activity mark, "Showing …" and Back to 30 days.
-import { describe, expect, it, vi } from 'vitest';
+// On phones both scroll sideways (bars stay tappable): where they open, and
+// that a poll never moves the person.
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DayStrip } from '@/components/runs/DayStrip';
@@ -81,5 +83,50 @@ describe('hour chart', () => {
     const second = await mount(h(HourStrip, { dayName: 'Sun, Oct 25', hours: [{ hour: 3, runs: 1 }], selected: null, onBack: () => {} }));
     expect(second.el.textContent).not.toContain('rule activity');
     await second.done();
+  });
+});
+
+describe('chart scrolling (phones)', () => {
+  const sizes: Record<string, PropertyDescriptor | undefined> = {};
+  beforeAll(() => {
+    for (const [k, v] of [['scrollWidth', 960], ['clientWidth', 320]] as const) {
+      sizes[k] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, k);
+      Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => v });
+    }
+  });
+  afterAll(() => { for (const k of Object.keys(sizes)) if (sizes[k]) Object.defineProperty(HTMLElement.prototype, k, sizes[k]!); });
+
+  it('opens the day chart on the newest day, centres a pick, and stays put across polls', async () => {
+    const props = (selected: string | null = null) => ({ days: days(false), selected, inRange: () => true, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false });
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => root.render(h(DayStrip, props())));
+    const strip = el.querySelector('.wr-strip-scroll') as HTMLElement;
+    expect(strip.scrollLeft).toBe(960);
+    strip.scrollLeft = 120;
+    await act(async () => root.render(h(DayStrip, props())));
+    expect(strip.scrollLeft).toBe(120);
+    await act(async () => root.render(h(DayStrip, props('2026-09-10'))));
+    expect(strip.scrollLeft).toBe((9.5 / 30) * 960 - 160);
+    await act(async () => root.unmount());
+    el.remove();
+  });
+
+  it('opens the hour chart on the busiest hour once per day', async () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    const render = (dayName: string, hours: { hour: number; runs: number }[]) => act(async () => { root.render(h(HourStrip, { dayName, hours, selected: null, onPick: () => {}, onBack: () => {} })); });
+    await render('Mon, Oct 26', [{ hour: 18, runs: 5 }, { hour: 9, runs: 1 }]);
+    const wrap = el.querySelector('.wr-strip-scroll') as HTMLElement;
+    expect(wrap.scrollLeft).toBe((18.5 / 24) * 960 - 160);
+    wrap.scrollLeft = 40;
+    await render('Mon, Oct 26', [{ hour: 18, runs: 5 }, { hour: 9, runs: 9 }]);
+    expect(wrap.scrollLeft).toBe(40);
+    await render('Tue, Oct 27', [{ hour: 6, runs: 3 }]);
+    expect((el.querySelector('.wr-strip-scroll') as HTMLElement).scrollLeft).toBe((6.5 / 24) * 960 - 160);
+    await act(async () => root.unmount());
+    el.remove();
   });
 });

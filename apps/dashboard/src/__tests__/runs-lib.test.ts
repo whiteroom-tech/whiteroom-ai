@@ -169,9 +169,13 @@ describe('run detail rows', () => {
   });
   it('collects a run’s events page by page, and stops at the cap', async () => {
     const get = vi.fn(async (cursor: string | null) => ({ fleetId: 'f', run: { runId: 'a~1', agentId: 'a', shift: 1, startedAt: '', endedAt: '' }, events: [{ id: `e${cursor ?? 0}`, kind: 'event' as const, at: '', type: 'x' }], page: Number(cursor ?? 0), pages: 3, total: 3, eventFound: null }));
-    expect((await collectRunEvents(get)).map((e) => e.id)).toEqual(['e0', 'e1', 'e2']);
+    const all = await collectRunEvents(get);
+    expect(all.events.map((e) => e.id)).toEqual(['e0', 'e1', 'e2']);
+    expect(all.truncated).toBe(false);
     expect(get.mock.calls.map((c) => c[0])).toEqual([null, '1', '2']);
-    expect(await collectRunEvents(get, 2)).toHaveLength(2);
+    const capped = await collectRunEvents(get, 2);
+    expect(capped.events).toHaveLength(2);
+    expect(capped.truncated).toBe(true);
   });
   it('never says blocked for a rule outcome it doesn’t know, and marks only real finish events', () => {
     const odd = timelineRow({ id: 'c', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'r', ruleType: 'keyword', mode: 'enforce', response: 'redact', outcome: 'redacted' as never, reason: 'keyword_found' }] });

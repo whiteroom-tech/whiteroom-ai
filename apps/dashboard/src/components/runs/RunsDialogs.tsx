@@ -148,13 +148,17 @@ export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded
 
 /** What a chain check found, in words: "Nothing changed or missing" only when every event checked out. */
 export function auditCheckText(r: VerifyAuditResult, info: AuditIntegrity | null): { tone: 'ok' | 'bad' | 'neutral'; title: string; detail: string } {
-  const head = info?.headSeq;
-  const through = head ? `Verified through event ${fmtCount(info!.verifiedThroughSeq || r.eventsVerified)} of ${fmtCount(head)}.` : `${fmtCount(r.eventsVerified)} events verified.`;
+  if (r.valid === false) return { tone: 'bad', title: 'A problem was found', detail: r.message };
   const before = info && (info.prunedBeforeTracking || info.legacyEvents > 0) ? ' Events before tracking started aren’t covered.' : '';
   const gaps = info && info.gaps.count > 0 ? ` ${info.gaps.count} recorded ${info.gaps.count === 1 ? 'gap' : 'gaps'} where events may be missing.` : '';
-  if (r.valid === false) return { tone: 'bad', title: 'A problem was found', detail: r.message };
-  // Green only for a whole check whose coverage is known: a partial one, or one whose extent couldn't be read, says less.
-  if (r.valid === true && r.complete !== false && info) return { tone: gaps ? 'neutral' : 'ok', title: gaps ? 'Nothing changed' : 'Nothing changed or missing', detail: `${through}${before}${gaps}` };
-  if (r.valid === true && r.complete !== false) return { tone: 'neutral', title: 'Nothing changed in the events checked', detail: `${through} How much of the trail that covers couldn’t be read just now.` };
+  // Green only for a whole check: the engine says complete, or every recorded event is verified.
+  const whole = r.valid === true && (r.complete === true || (!!info && info.headSeq > 0 && info.verifiedThroughSeq >= info.headSeq));
+  if (whole) {
+    const all = info?.headSeq ? `All ${fmtCount(info.headSeq)} events verified.` : `All ${fmtCount(r.eventsVerified)} events verified.`;
+    return { tone: gaps ? 'neutral' : 'ok', title: gaps ? 'Nothing changed' : 'Nothing changed or missing', detail: `${all}${before}${gaps}` };
+  }
+  // A partial check says only what it covered.
+  const through = info?.headSeq ? `Verified through event ${fmtCount(info.verifiedThroughSeq || r.eventsVerified)} of ${fmtCount(info.headSeq)}.` : `${fmtCount(r.eventsVerified)} events verified.`;
+  if (r.valid === true) return { tone: 'neutral', title: 'Nothing changed in the events checked', detail: `${through}${before} The rest hasn’t been checked yet.` };
   return { tone: 'neutral', title: 'Checked part of the trail', detail: `${fmtCount(r.eventsVerified)} events checked so far. Open this again to continue.` };
 }

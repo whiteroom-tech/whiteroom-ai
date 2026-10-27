@@ -441,15 +441,15 @@ export function ruleActivityLink(actions: RunRuleAction[]): { href: string; text
   return { href: '/controls', text: 'Open Controls' };
 }
 
-/** Every event of a run, for Export this run: page after page, up to `maxPages`. */
-export async function collectRunEvents(get: (cursor: string | null) => Promise<RunEventsResult>, maxPages = 100): Promise<RunEvent[]> {
-  const all: RunEvent[] = [];
+/** Every event of a run, for Export this run: page after page, up to `maxPages`; `truncated` when there were more. */
+export async function collectRunEvents(get: (cursor: string | null) => Promise<RunEventsResult>, maxPages = 100): Promise<{ events: RunEvent[]; truncated: boolean }> {
+  const events: RunEvent[] = [];
   for (let page = 0; page < maxPages; page++) {
     const res = await get(page === 0 ? null : String(page));
-    all.push(...res.events);
-    if (res.page + 1 >= res.pages) break;
+    events.push(...res.events);
+    if (res.page + 1 >= res.pages) return { events, truncated: false };
   }
-  return all;
+  return { events, truncated: true };
 }
 
 /** Export this run: the summary, then every call and event in order, times in the run's zone. */

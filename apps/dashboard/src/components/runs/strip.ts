@@ -1,4 +1,5 @@
-// What the day and hour charts on Runs share: bar heights, bar labels and date ticks.
+// What the day and hour charts on Runs share: bar heights, bar labels, date ticks, and
+// centring a bar where the chart scrolls sideways (phones).
 
 import { plural } from '@/lib/format';
 
@@ -19,4 +20,9 @@ export function tickIndexes(n: number, every = 7): number[] {
   for (let i = 0; i < n - 3; i += every) out.push(i);
   out.push(n - 1);
   return out;
+}
+
+/** Scrolls `el` so bar `i` of `count` sits in the middle of the view. */
+export function centreBar(el: HTMLElement, i: number, count: number): void {
+  el.scrollLeft = Math.max(0, ((i + 0.5) / count) * el.scrollWidth - el.clientWidth / 2);
 }

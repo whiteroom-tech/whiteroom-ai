@@ -88,6 +88,20 @@ describe('run page exports and links', () => {
     el.remove();
   });
 
+  it('says when See in timeline can’t find the call', async () => {
+    api.events.mockImplementation(async (_f: string, _r: string, q: { cursor?: string | null; eventId?: string | null }) => (q.eventId ? page(0, { eventFound: false }) : page(Number(q.cursor ?? 0))));
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
+    await flush();
+    await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'See in timeline') as HTMLElement).click(); });
+    await flush();
+    expect(el.textContent).toContain('Couldn’t find that call in this run.');
+    await act(async () => root.unmount());
+    el.remove();
+  });
+
   it('opens the page holding a call on another page, from See in timeline', async () => {
     api.events.mockImplementation(async (_f: string, _r: string, q: { cursor?: string | null; eventId?: string | null }) => (q.eventId === 'call:2' ? page(1, { eventFound: true }) : page(Number(q.cursor ?? 0))));
     const el = document.createElement('div');

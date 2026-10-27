@@ -10,6 +10,7 @@ import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { ROUTES } from '@/lib/routes';
 import { clock } from '@/lib/home';
+import { fmtCount } from '@/lib/format';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 import { collectRunEvents, collectRuns, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
@@ -50,6 +51,10 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   const [toast, setToast] = useState<string | null>(null);
   // The deep link applies to the first load only; paging after it is normal.
   const pendingEvent = useRef(eventId ?? null);
+  // A See in timeline jump waiting on its page: say so if the engine can't find the call.
+  const jumping = useRef(false);
+  // Bumped on each jump, so the same row can be jumped to again.
+  const [jumpSeq, setJumpSeq] = useState(0);
   const [backHref, setBackHref] = useState<string>(ROUTES.runs);
   useEffect(() => { setBackHref(safeSessionGet(RUNS_LIST_URL_KEY) ?? ROUTES.runs); }, []);
 
@@ -68,6 +73,8 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         setKind(got.kind);
         setCursor(got.cursor);
         setHighlight(got.highlight);
+        if (jumping.current && !got.highlight) setToast('Couldn’t find that call in this run.');
+        jumping.current = false;
       }
     } catch (e) {
       if (stale()) return;
@@ -124,13 +131,14 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     }
     const t = setTimeout(() => setHighlight(null), 4000);
     return () => clearTimeout(t);
-  }, [highlight]);
+  }, [highlight, jumpSeq]);
 
   /** See in timeline: the row if it's on this page, else the page holding it. */
   function jumpTo(id: string) {
-    if (data?.events.some((e) => e.id === id)) { setHighlight(null); setTimeout(() => setHighlight(id), 0); return; }
+    if (data?.events.some((e) => e.id === id)) { setHighlight(id); setJumpSeq((n) => n + 1); return; }
     if (preview) return;
     pendingEvent.current = id;
+    jumping.current = true;
     if (kind === 'all') refresh(); else setKind('all');
   }
 
@@ -138,9 +146,11 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     if (!data) return;
     setExporting(true);
     try {
-      const events = preview ? data.events : await collectRunEvents((c) => getRunEvents(fleetId, runId, { cursor: c, kind: 'all' }, authKey));
-      downloadWorkbook(buildWorkbook(runSheets(data.run, events, totals)), `whiteroom-run-${data.run.agentId}-${data.run.shift}.xlsx`);
-      setToast(`Downloaded run ${data.run.shift}.`);
+      const got = preview ? { events: data.events, truncated: false } : await collectRunEvents((c) => getRunEvents(fleetId, runId, { cursor: c, kind: 'all' }, authKey));
+      downloadWorkbook(buildWorkbook(runSheets(data.run, got.events, totals)), `whiteroom-run-${data.run.agentId}-${data.run.shift}${got.truncated ? `-first-${got.events.length}` : ''}.xlsx`);
+      setToast(got.truncated
+        ? `Downloaded the first ${fmtCount(got.events.length)} calls and events of run ${data.run.shift}; it has more than one file holds.`
+        : `Downloaded run ${data.run.shift}.`);
     } catch (e) {
       if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }
       setToast('Couldn’t export this run. Try again.');
