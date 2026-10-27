@@ -70,11 +70,11 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
         </span>
       </div>
       {score && (
-        <details className="wr-disc">
+        <details className="wr-agent-disc">
           <summary>
-            <span className="wr-disc__chev" aria-hidden="true">›</span>
+            <span className="wr-agent-disc__chev" aria-hidden="true">›</span>
             <span>How is the score worked out?</span>
-            <span className="wr-disc__meta">{scoreSummary(parts)}</span>
+            <span className="wr-agent-disc__meta">{scoreSummary(parts)}</span>
           </summary>
           <div style={{ padding: '0 20px 18px' }}>
             <div className="wr-agent-week__scroll">
