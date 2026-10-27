@@ -148,6 +148,19 @@ describe('Runs › phones', () => {
     expect(m.text()).toContain('Showing 50 of 60 runs');
     // Show more asked for just the next page, after the rows shown.
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: '25', pageSize: 25 }), 'k');
+    // A new run starts; a poll reads the first page only, and the run it pushed down stays listed.
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
+      const from = Number(o.cursor ?? 0);
+      return { runs: Array.from({ length: o.pageSize }, (_, i) => run(from + i)), total: 61, cursor: String(from + o.pageSize) };
+    });
+    const before = api.list.mock.calls.length;
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await flush();
+    expect(api.list.mock.calls.length).toBe(before + 1);
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: null, pageSize: 25 }), 'k');
+    expect(phone()).toHaveLength(51);
+    expect(phone()).toContain('/runs/lead-agent~25');
+    expect(m.text()).toContain('Showing 51 of 61 runs');
     m.root.unmount();
   });
 

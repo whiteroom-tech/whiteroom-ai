@@ -268,14 +268,14 @@ describe('exports', () => {
       calls: 4, failedCalls: 0, blockedCalls: 0, spendMicros: 1_234_567, unpricedAttempts: 2, coverage: { calls: 4, checked: 4 },
     };
     vi.stubEnv('TZ', 'America/New_York');
-    const header = runsExportHeader('EDT');
+    const header = runsExportHeader();
     const row = runsExportRow(r, 'https://app.example');
     expect(row).toHaveLength(header.length);
     expect(row[header.indexOf('Spend (USD)')]).toBe(1.234567);
     expect(row[header.indexOf('Unpriced calls')]).toBe(2);
     // A run name and a link replace the raw id; the start is in the viewer's zone, named in the header.
     expect(row[header.indexOf('Run')]).toBe('a #2');
-    expect(row[header.indexOf('Started (EDT)')]).toBe('2026-09-30 16:00');
+    expect(row[header.indexOf('Started (America/New_York)')]).toBe('2026-09-30 16:00');
     expect(row[header.indexOf('Link')]).toBe('https://app.example/runs/a~2');
     expect(row[header.indexOf('What stood out')]).toBe('');
     expect(header).not.toContain('Started (UTC)');

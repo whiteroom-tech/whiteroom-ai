@@ -519,10 +519,11 @@ export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
 
 /**
  * Runs export: one row per run, times in the viewer's zone (named in the
- * header), a link that opens the run. Spend is a lower bound when some calls
+ * header by its IANA name, which holds across a daylight-saving change), a
+ * link that opens the run. Spend is a lower bound when some calls
  * had no price, so that count gets its own column.
  */
-export function runsExportHeader(zone: string = zoneName()): string[] {
+export function runsExportHeader(zone: string = viewerTimeZone()): string[] {
   return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Would have blocked', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
 }
 export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {

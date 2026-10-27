@@ -269,7 +269,8 @@ export function RunsTable({ preview, retentionDays }: {
       // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
       if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHourPickOk(false); return; }
       const head = new Set(res.runs.map((r) => r.runId));
-      setRuns((prev) => (expanded.current && prev ? [...res.runs, ...prev.slice(PAGE).filter((r) => !head.has(r.runId))] : res.runs));
+      // Merged by run, not by position: a run a new one pushed off the first page stays, right after it.
+      setRuns((prev) => (expanded.current && prev ? [...res.runs, ...prev.filter((r) => !head.has(r.runId))] : res.runs));
       if (!expanded.current) setNext(res.cursor);
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);

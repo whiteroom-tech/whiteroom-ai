@@ -9,7 +9,8 @@ import { createRoot } from 'react-dom/client';
 import type { AuditIntegrity, VerifyAuditResult } from '@/lib/whiteroom/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const api = vi.hoisted(() => ({ verify: vi.fn(), integrity: vi.fn() }));
+const api = vi.hoisted(() => ({ verify: vi.fn(), integrity: vi.fn(), save: vi.fn() }));
+vi.mock('@/lib/download', () => ({ saveBlob: api.save }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), verifyAudit: api.verify, auditIntegrity: api.integrity }));
 const { auditCheckText, AuditCheckDialog, ExportRunsDialog } = await import('@/components/runs/RunsDialogs');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
@@ -81,6 +82,32 @@ describe('Check audit trail dialog', () => {
     await act(async () => { first(ok); });
     await flush();
     expect(m.el.textContent).toContain('The check didn’t run.');
+    m.root.unmount();
+  });
+});
+
+describe('Check audit trail dialog › Download proof', () => {
+  it('saves the check’s result once it’s done, then tells the page', async () => {
+    let answer: (r: VerifyAuditResult) => void = () => {};
+    api.verify.mockImplementation(() => new Promise((res) => { answer = res; }));
+    api.integrity.mockResolvedValue(info({ verifiedThroughSeq: 2045 }));
+    api.save.mockClear();
+    const onDownloaded = vi.fn();
+    const props = { fleetId: 'f1', onClose: () => {}, onDownloaded };
+    const m = await mount(h(AuditCheckDialog, { ...props, open: false }));
+    await m.render(h(AuditCheckDialog, { ...props, open: true }));
+    const proof = () => [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Download proof') as HTMLButtonElement;
+    expect(proof().disabled).toBe(true);
+    await act(async () => { answer({ valid: true, complete: true, eventsVerified: 2045, message: '' }); });
+    await flush();
+    await act(async () => { proof().click(); });
+    expect(api.save).toHaveBeenCalledTimes(1);
+    const [blob, name] = api.save.mock.calls[0] as [Blob, string];
+    expect(name).toMatch(/^whiteroom-audit-check-\d{4}-\d{2}-\d{2}\.json$/);
+    const report = JSON.parse(await blob.text());
+    expect(report).toMatchObject({ fleetId: 'f1', result: { valid: true, eventsVerified: 2045 }, integrity: { headSeq: 2045 } });
+    expect(typeof report.checkedAt).toBe('string');
+    expect(onDownloaded).toHaveBeenCalled();
     m.root.unmount();
   });
 });
