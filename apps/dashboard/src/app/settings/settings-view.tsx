@@ -22,7 +22,7 @@ import {
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
-import { PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
+import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -328,7 +328,7 @@ function PlanSection({
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '-8px 0 20px' }}>
-        History kept covers call records and run history. Handover notes have their own limit under Data and privacy.
+        History kept covers call records and run history. The audit trail is kept for {AUDIT_KEPT}. Progress notes have their own limit under Data and privacy.
       </p>
 
       {offers.length > 0 && (

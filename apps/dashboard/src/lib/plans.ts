@@ -68,6 +68,15 @@ export interface Plan {
   features: string[];
 }
 
+/**
+ * How long the audit trail is kept, on every plan (redesign decision Q3). Not
+ * a plan limit: the engine never prunes audit_events (only perf_calls and
+ * perf_hourly expire, per retentionDays). The only deletes are a Sandbox reset
+ * and the purge of a legacy, untracked fleet. Change this if the engine ever
+ * starts pruning audit events.
+ */
+export const AUDIT_KEPT = 'at least 12 months on every plan';
+
 // Prices, agent counts and retention are the ones published at
 // whiteroom.tech/#pricing. Change them there and here together.
 export const PLANS: Record<PlanId, Plan> = {
