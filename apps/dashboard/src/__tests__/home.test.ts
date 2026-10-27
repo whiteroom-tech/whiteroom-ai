@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -169,23 +169,34 @@ describe('live feed rows', () => {
   });
 });
 
-describe('today (UTC)', () => {
-  const now = Date.parse('2026-09-30T14:20:00Z');
+describe('today (the viewer’s midnight)', () => {
+  const now = Date.parse('2026-09-30T14:20:00Z'); // 10:20 am in New York
+  afterEach(() => vi.unstubAllEnvs());
 
-  it('asks for enough hours to reach 00:00 UTC', () => {
-    expect(hoursSinceUtcMidnight(now)).toBe(15);
-    expect(hoursSinceUtcMidnight(Date.parse('2026-09-30T00:05:00Z'))).toBe(1);
+  it('asks for enough hours to reach the viewer’s midnight', () => {
+    vi.stubEnv('TZ', 'America/New_York');
+    expect(hoursSinceLocalMidnight(now)).toBe(11);
+    expect(hoursSinceLocalMidnight(Date.parse('2026-09-30T04:05:00Z'))).toBe(1);
   });
 
-  it('adds up only today\'s hours', () => {
+  it('adds up only today’s hours, in the viewer’s day', () => {
+    vi.stubEnv('TZ', 'America/New_York');
     const h = (hour: string, calls: number, costMicros: number) => ({ hour, calls, costMicros } as FleetHourlyDataPoint);
-    expect(todayTotals([h('2026-09-29T23:00:00.000Z', 50, 9_000_000), h('2026-09-30T00:00:00.000Z', 10, 1_500_000), h('2026-09-30T13:00:00.000Z', 5, 870_000)], now))
+    // 03:00 UTC is 11 pm yesterday in New York; 04:00 UTC is midnight.
+    expect(todayTotals([h('2026-09-30T03:00:00.000Z', 50, 9_000_000), h('2026-09-30T04:00:00.000Z', 10, 1_500_000), h('2026-09-30T13:00:00.000Z', 5, 870_000)], now))
       .toEqual({ calls: 15, costUsd: 2.37, partial: false });
     // Some calls with no price on file: the total is a lower bound.
     expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), unpricedAttempts: 2 }], now).partial).toBe(true);
     // Dropped calls aren't in the spend at all.
     expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(true);
-    expect(todayTotals([{ ...h('2026-09-29T23:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(false);
+    expect(todayTotals([{ ...h('2026-09-30T03:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(false);
+  });
+
+  it('starts a half-hour zone’s day at the top of the hour holding its midnight', () => {
+    vi.stubEnv('TZ', 'Asia/Kolkata');
+    const h = (hour: string, calls: number) => ({ hour, calls, costMicros: 0 } as FleetHourlyDataPoint);
+    // Midnight in India is 18:30 UTC the day before: the 18:00 UTC hour counts, 17:00 doesn't.
+    expect(todayTotals([h('2026-09-29T17:00:00.000Z', 7), h('2026-09-29T18:00:00.000Z', 3), h('2026-09-30T02:00:00.000Z', 1)], now).calls).toBe(4);
   });
 });
 

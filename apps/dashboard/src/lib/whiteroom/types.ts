@@ -792,6 +792,8 @@ export interface AuditSummaryResult {
   savingsBuckets: Array<{ day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number; redoTokens?: number }>;
   /** The buckets' modelled savings, each agent's at its cache-aware input price (absent on older engines). */
   savings?: SavingsTotals;
+  /** Each agent's smaller-context savings at its own price, lower-cased ids (engine E1b; absent on older engines). */
+  savingsByAgent?: Record<string, { tokens: number; usdMicros: number | null }>;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 
