@@ -767,10 +767,13 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .ctl-main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .ctl-main > * { flex-shrink: 0; }
 .ctl-main > .citadel-page-header { padding: 16px 0 !important; min-height: 0 !important; flex-wrap: wrap; row-gap: 12px; margin-bottom: 8px; }
-.ctl-main .citadel-page-actions { flex: 1 1 100%; margin-left: 0 !important; justify-content: flex-start; flex-wrap: wrap; }
+.ctl-main .citadel-page-actions { flex-wrap: wrap; justify-content: flex-end; }
+/* The fleet ID gives way before the actions leave the title's row: it ellipsizes, and goes where there's no room for it. */
+.ctl-main .citadel-page-fleet { flex: 1 1 0; max-width: max-content; min-width: 0; }
+@media (max-width: 1599px) { .ctl-main .citadel-page-fleet { display: none; } }
 .ctl-cover-label { font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
 .ctl-cover { height: 2.25rem; min-width: 0; }
-.ctl-cover select { font-size: var(--fs-md); min-width: 12rem; max-width: 100%; text-overflow: ellipsis; }
+.ctl-cover select { font-size: var(--fs-md); width: 10rem; max-width: 100%; text-overflow: ellipsis; }
 .ctl-cap { font-size: var(--fs-sm); line-height: 1.5; font-weight: 500; color: var(--tx2); }
 .ctl-lead { margin: 0 0 12px; font-size: var(--fs-card); line-height: 1.55; color: var(--tx); }
 .ctl-amber { margin: 0; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 10px; color: var(--tx); }
@@ -784,7 +787,7 @@ button.ctl-row { cursor: pointer; transition: background-color .12s; }
 button.ctl-row:hover { background: var(--sunk); }
 button.ctl-row:disabled { cursor: progress; }
 button.ctl-row:focus-visible, .ctl-disc:focus-visible, .ctl-ed-title:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
-.ctl-row.is-on { background: var(--brand-dim); }
+button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim); }
 .ctl-row.is-block { box-shadow: inset 3px 0 0 var(--brand); }
 .ctl-row__main { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .ctl-row__count { font-size: var(--fs-sm); color: var(--tx2); }
@@ -828,6 +831,7 @@ button.ctl-row:focus-visible, .ctl-disc:focus-visible, .ctl-ed-title:focus-visib
   .ctl-body { padding: 0 16px 32px; }
   .ctl-layout { gap: 16px; }
   .ctl-main > .citadel-page-header { padding: 12px 0 !important; }
+  .ctl-main .citadel-page-actions { flex: 1 1 100%; margin-left: 0 !important; justify-content: flex-start; }
   .ctl-main .citadel-page-actions > .ctl-cover { flex: 1 1 10rem; }
   .ctl-cover select { min-width: 0; width: 100%; }
   .ctl-row { padding: 12px 16px; }

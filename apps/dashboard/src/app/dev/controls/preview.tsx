@@ -66,8 +66,9 @@ function engine(body: Record<string, unknown>): unknown {
     }
     case 'governance_delete_rule': rules = rules.filter((r) => r.id !== body.rule_id); return { success: true };
     case 'rule_would_act': return { fleetId: base.fleetId, ruleId: body.rule_id, byAgent: body.rule_id === 'r2' ? { 'code-reviewer': 44 } : {}, unversioned: false, since: day(4) };
-    case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 120 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 60 }) },
-      byRule: { model_allowlist: counts({ wouldAct: 60 }), loop_breaker: counts({ wouldAct: 60 }) }, byRuleId: { r2: counts({ wouldAct: 60 }), r9: counts({ wouldAct: 60 }) } };
+    // Sample counts: the allowlist caught 60 calls from code-reviewer; one loop breaker caught 12 from lead-agent.
+    case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 72 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 12 }) },
+      byRule: { model_allowlist: counts({ wouldAct: 60 }), loop_breaker: counts({ wouldAct: 12 }) }, byRuleId: { r2: counts({ wouldAct: 60 }), r9: counts({ wouldAct: 12 }) } };
     case 'performance_agent': return { fleetId: base.fleetId, agentId: body.agent_id, hourly: [{ hour: day(10), calls: 60, costMicros: 31_000_000 }], totals: { calls: body.agent_id === 'code-reviewer' ? 44 : 120, costMicros: 31_000_000, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, errorRate: 0, avgLatencyMs: null } };
     case 'audit_integrity': return { fleetId: base.fleetId, mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } };
     case 'verify_audit': return { valid: true, eventsVerified: 2045, message: 'ok' };

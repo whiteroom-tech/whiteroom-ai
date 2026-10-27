@@ -16,6 +16,7 @@ const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(),
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: nav.replace, push: nav.push }),
   useSearchParams: () => nav.params,
+  usePathname: () => '/controls',
 }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
 // The Diagnosis suggestion draft, stood in for: it finishes by calling onDone, as the real one does.
@@ -269,7 +270,7 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
-  it('Save sends only what changed, after the Enforce preview, and Undo asks before stepping back', async () => {
+  it('Save sends only what changed, after the Enforce preview, and Undo reverts it at once', async () => {
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
       const { ifVersion, ...rest } = ch;
       const rule = { ...(api.saved[id] ?? RULES.find((r) => r.id === id)!), ...rest, version: ifVersion + 1 } as GovernanceRule;
@@ -291,12 +292,12 @@ describe('Controls page', () => {
     await m.click(m.button('Start blocking'));
     expect(api.update).toHaveBeenCalledWith('f1', 'r2', { mode: 'enforce', ifVersion: 1 }, 'k');
     expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Saved. Model allowlist is blocking for market-researcher.');
-    // Undo goes back through Save: stepping down from Block asks first.
+    // Undo puts the settings from before straight back, over the version the save made: no second confirm.
     await m.click(m.button('Undo'));
-    expect([...m.el.querySelectorAll('dialog[open]')].at(-1)!.textContent).toContain('Stop blocking with this rule?');
-    await m.click(m.button('Switch to Record only'));
-    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', ifVersion: 2 }, 'k');
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Change undone.');
+    expect(m.el.querySelector('dialog[open]')).toBeNull();
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', expect.objectContaining({ mode: 'watch', response: 'block', appliesTo: ['market-researcher'], ifVersion: 2 }), 'k');
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Undone. Model allowlist is record only again.');
+    expect(m.row('Only claude').querySelector('.ctl-mtag')!.textContent).toBe('Record only');
     m.root.unmount();
   });
 
@@ -986,7 +987,7 @@ describe('Controls page, weakening a rule', () => {
     await m.click(copy);
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
     expect(api.update).not.toHaveBeenCalled();
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Added a spend cap just for lead-agent, in Record only. Everyone else keeps the original.');
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Added a Spend cap rule just for lead-agent, in Record only. Everyone else keeps the original.');
     // Copying again doesn't add a second, identical rule.
     await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
     await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
@@ -1169,7 +1170,7 @@ describe('Controls page, mockup suggestions and toasts', () => {
     expect(m.text()).toContain('Two identical spend caps (over $190 a day).');
     await m.click(m.button('Remove one'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r3b', 'k');
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Duplicate spend cap removed.');
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Duplicate Spend cap rule removed.');
     await m.click(m.button('Undo'));
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
     m.root.unmount();
@@ -1228,25 +1229,21 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
-  it('an Undo that is cancelled leaves the next save an ordinary one', async () => {
+  it('an Undo after the rule changed again somewhere else leaves it alone', async () => {
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
       const { ifVersion, ...rest } = ch;
       const rule = { ...(api.saved[id] ?? RULES.find((r) => r.id === id)!), ...rest, version: ifVersion + 1 } as GovernanceRule;
-      api.saved[id] = rule;
+      // Someone else changes it straight after: the reload brings a newer version.
+      api.saved[id] = { ...rule, version: rule.version + 1 };
       return { rule };
     });
     const m = await mount();
     await m.click(m.row('$190'));
     await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
     await m.click(m.button('Save'));
-    // Undo raises the limit again: that's weaker, so it asks; Keep it as it is stops the Undo.
     await m.click(m.button('Undo'));
-    expect([...m.el.querySelectorAll('dialog[open]')].at(-1)!.textContent).toContain('Make the Spend cap rule weaker?');
-    await m.click(m.button('Keep it as it is'));
-    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '120');
-    await m.click(m.button('Save'));
-    expect(api.update).toHaveBeenCalledTimes(2);
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Saved. Spend cap is record only for all agents.');
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('This rule changed again since, so Undo left it as it is.');
     m.root.unmount();
   });
 

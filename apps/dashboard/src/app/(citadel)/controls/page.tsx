@@ -10,7 +10,7 @@ import { undoFor, type Undo } from "@/lib/rule-history";
 import { DOES_TAG, MODE_LABEL } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Banner, Button, FONT_MONO, Toast } from "@whiteroom/ui";
 import { LiveStatus, PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
@@ -80,6 +80,8 @@ type ToastState = { id: number; message: string; undo?: () => void };
 function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; authKey: string | undefined; onAuthError: (msg?: string) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // The page's own path (the dev preview lives elsewhere), so ?agent= and ?rec= stay on it.
+  const pathname = usePathname() ?? ROUTES.controls;
   const suggestionRec = searchParams.get("rec");
   const agentParam = searchParams.get("agent");
   // ?rule=gr_…: a link from elsewhere (a run's Rule activity) opens that rule.
@@ -137,9 +139,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [agentSpend, setAgentSpend] = useState<Record<string, { perDay: number; days: number } | null>>({});
   /** Each agent's calls since a rule's last change, for the Block confirm's "every call" warning. */
   const [agentCalls, setAgentCalls] = useState<Record<string, number>>({});
-  // Undo of a save goes through Save again (its checks and confirms): set, then run once the editor holds it.
-  const [undoSave, setUndoSave] = useState(false);
-  const undoingRef = useRef(false);
   // Opening a rule moves focus into the editor on a wide screen (a phone's sheet focuses ‹ Controls).
   const focusEditor = useRef(false);
 
@@ -265,7 +264,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       if (suggestionRec) router.replace(withParams({ rec: null }));
       setError(null);
       setNotice(null);
-      undoingRef.current = false;
       focusEditor.current = !!id;
       setSelectedId(id);
       const r = id ? rules.find((x) => x.id === id) : null;
@@ -317,18 +315,18 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const q = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(changes)) { if (v === null) q.delete(k); else q.set(k, v); }
     const s = q.toString();
-    return s ? `${ROUTES.controls}?${s}` : ROUTES.controls;
+    return s ? `${pathname}?${s}` : pathname;
   };
 
   // ── Save ────────────────────────────────────────────────────────
-  /** Saves the draft, or asks first. "asked": a dialog is open; "sent": on its way; "stopped": nothing happens. */
-  const save = (weakenChecked = false): "asked" | "sent" | "stopped" => {
-    if (!selected || !draft || !dirty) return "stopped";
+  /** Saves the draft, or asks first. */
+  const save = (weakenChecked = false) => {
+    if (!selected || !draft || !dirty) return;
     const problem = draftProblem(draft);
-    if (problem) { setError(problem); return "stopped"; }
+    if (problem) { setError(problem); return; }
     const parsed = draftParams(draft);
     const next: GovernanceRule = { ...selected, mode: draft.mode, response: draft.response, alsoNotify: draft.alsoNotify, appliesTo: draft.appliesTo, params: "params" in parsed ? parsed.params : selected.params };
-    const ask = (d: Dialog) => { setDialog(d); return "asked" as const; };
+    const ask = (d: Dialog) => setDialog(d);
     // Anything that makes the rule weaker is said and confirmed first (the change log can undo it).
     if (!weakenChecked) {
       const reasons = weakenings(selected, next);
@@ -344,20 +342,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     }
     // A rule that would stop agents must have run in Watch for a day, and is confirmed by typing who it covers.
     const stop = stopCheck(selected, { mode: draft.mode, response: draft.response }, history);
-    if (stop.kind === "blocked") { setError(stop.reason); return "stopped"; }
+    if (stop.kind === "blocked") { setError(stop.reason); return; }
     if (stop.kind === "confirm") return ask({ kind: "stop", rule: selected, next });
     // A Keywords rule that stops incoming data ends the run: the same day in Watch and typed confirmation.
     const kw = keywordBlockCheck(selected, { mode: draft.mode, response: draft.response, params: next.params }, history);
-    if (kw.kind === "blocked") { setError(kw.reason); return "stopped"; }
+    if (kw.kind === "blocked") { setError(kw.reason); return; }
     if (kw.kind === "confirm") return ask({ kind: "keyword", rule: selected, next });
     if (draft.mode === "enforce" && selected.mode !== "enforce") return ask({ kind: "enforce", rule: selected, next });
     void commit(selected, draft);
-    return "sent";
   };
-  const saveRef = useRef(save);
-  saveRef.current = save;
-  /** Save after a weakening was confirmed; an Undo that stops there stops for good. */
-  const saveConfirmed = () => { if (save(true) === "stopped") undoingRef.current = false; };
 
   // ── Undo (lib/rule-history) ─────────────────────────────────────
   // Never edits the log: an update's old settings go into the editor and are
@@ -382,31 +375,35 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     guard(() => void restore(u.rule, entryId));
   };
 
-  // The toast's Undo after a save: the settings from before go back through Save, so
-  // putting back a stronger setting (Block, say) asks first, as every save does.
-  const undoSaved = (before: GovernanceRule) => {
-    guard(() => {
-      const r = rules.find((x) => x.id === before.id);
+  // The toast's Undo after a save puts the settings from before straight back: the person
+  // just made that change and is taking it back, so it isn't asked about again. It's a new
+  // entry in the change log, over the version that save made: if the rule changed again
+  // since (another tab, a teammate), nothing is overwritten.
+  const undoSaved = (before: GovernanceRule, saved: GovernanceRule) => {
+    guard(() => void (async () => {
+      const r = rules.find((x) => x.id === saved.id);
       if (!r) { showToast("That rule isn’t here any more, so there’s nothing to undo."); return; }
-      if (suggestionRec) router.replace(withParams({ rec: null }));
-      undoingRef.current = true;
-      setSelectedId(r.id);
-      setDraft(draftFrom({ ...r, mode: before.mode, response: before.response, alsoNotify: before.alsoNotify, appliesTo: before.appliesTo, params: before.params }));
+      if (r.version !== saved.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
+      setSaving(true);
       setError(null);
-      setNotice(null);
-      setUndoSave(true);
-    });
+      try {
+        const { rule: back } = await governanceUpdateRule(fleetId, r.id, {
+          mode: before.mode, response: before.response ?? "block", alsoNotify: !!before.alsoNotify, appliesTo: before.appliesTo, params: before.params,
+          ifVersion: saved.version, description: "Undid the last change",
+        }, authKey);
+        setRules((rs) => rs.map((x) => (x.id === back.id && back.version >= x.version ? back : x)));
+        if (selectedRef.current === back.id) setDraft(draftFrom(back));
+        showToast(`Undone. ${RULE_LABELS[back.ruleType]} is ${MODE_LABEL[back.mode].toLowerCase()} again.`);
+      } catch (e) {
+        if (e instanceof WhiteRoomApiError && e.status === 409) showToast("This rule changed again since, so Undo left it as it is.");
+        else handleError(e, "undo the change");
+      } finally { setSaving(false); void fetchData(); }
+    })());
   };
-  // Once per Undo, with the draft just set; if Save stops (nothing to change, a problem), so does the Undo.
-  useEffect(() => {
-    if (!undoSave || !selected || !draft) return;
-    setUndoSave(false);
-    if (saveRef.current() === "stopped") undoingRef.current = false;
-  }, [undoSave, selected, draft]);
-  const cancelDialog = () => { undoingRef.current = false; setDialog(null); };
+  const cancelDialog = () => setDialog(null);
   // A toast's Undo runs after later renders: through this ref it sees the page as it is then
   // (an edit made since is asked about first), not as it was when the toast opened.
-  const live = useRef({ undoSaved: (_: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {} });
+  const live = useRef({ undoSaved: (_: GovernanceRule, __: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {} });
 
   /** Undo of something this visit added: removes it again. */
   const undoAdded = async (ruleId: string) => {
@@ -474,7 +471,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => [...rs, created]);
       // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
-      showToast(`Added a ${RULE_LABELS[next.ruleType].toLowerCase()} just for ${agentsPicked.join(", ")}, in Record only. Everyone else keeps the original.`, () => live.current.undoAdded(created.id));
+      showToast(`Added a ${RULE_LABELS[next.ruleType]} rule just for ${agentsPicked.join(", ")}, in Record only. Everyone else keeps the original.`, () => live.current.undoAdded(created.id));
       void fetchData();
     } catch (e) {
       if (fleetRef.current === forFleet) handleError(e, "add the copy");
@@ -486,8 +483,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const commit = async (rule: GovernanceRule, d: RuleDraft) => {
     const changes = draftChanges(d, rule);
     setDialog(null);
-    const undoing = undoingRef.current;
-    undoingRef.current = false;
     if (!changes) return;
     setSaving(true);
     setError(null);
@@ -500,8 +495,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
       const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "blocking" : "on") : saved.mode === "watch" ? "record only" : "off";
-      if (undoing) showToast("Change undone.");
-      else showToast(`Saved. ${RULE_LABELS[saved.ruleType]} is ${how} for ${whoFor(saved.appliesTo)}.`, () => live.current.undoSaved(rule));
+      showToast(`Saved. ${RULE_LABELS[saved.ruleType]} is ${how} for ${whoFor(saved.appliesTo)}.`, () => live.current.undoSaved(rule, saved));
       void fetchData();
     } catch (e) {
       if (e instanceof WhiteRoomApiError && e.status === 409) {
@@ -859,8 +853,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                       <>{keywordsShort(r.params as KeywordParams)} rule covers only {r.appliesTo === "all" ? "" : r.appliesTo.length > 2 ? `${r.appliesTo.length} agents` : r.appliesTo.join(", ")} ({r.appliesTo === "all" ? 0 : r.appliesTo.length} of {agents.length}).</>,
                       <Button onClick={() => guard(() => setDialog({ kind: "kwall", rule: r }))} disabled={saving}>Cover all agents…</Button>))}
                     {dups.map((g) => suggestion(`dup:${g.keep.id}`, warnIcon,
-                      <>{g.extra.length === 1 ? "Two" : g.extra.length + 1} identical {RULE_LABELS[g.keep.ruleType].toLowerCase()}s ({ruleConditionText(g.keep).replace(/^./, (c) => c.toLowerCase())}).</>,
-                      <Button onClick={() => guard(() => void remove(g.extra[g.extra.length - 1], `Duplicate ${RULE_LABELS[g.keep.ruleType].toLowerCase()} removed.`))} disabled={saving}>Remove one</Button>))}
+                      <>{g.extra.length === 1 ? "Two" : g.extra.length + 1} identical {RULE_PLURAL[g.keep.ruleType]} ({ruleConditionText(g.keep).replace(/^./, (c) => c.toLowerCase())}).</>,
+                      <Button onClick={() => guard(() => void remove(g.extra[g.extra.length - 1], `Duplicate ${RULE_LABELS[g.keep.ruleType]} rule removed.`))} disabled={saving}>Remove one</Button>))}
                     {overlap && suggestion("overlap", warnIcon,
                       <>{mono(money(overlap.never.params as SpendCapParams))} cap never triggers. The {mono(money(overlap.first.params as SpendCapParams))} cap catches it first.</>,
                       <Button onClick={() => guard(() => setDialog({ kind: "remove", rule: overlap.never }))} disabled={saving}>Remove {money(overlap.never.params as SpendCapParams)} cap</Button>)}
@@ -988,7 +982,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         cancelLabel={null}
         choices={[
           { label: "Keep blocking", tone: "primary", onClick: cancelDialog },
-          { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); saveConfirmed(); } },
+          { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); save(true); } },
         ]}
         onCancel={cancelDialog}
       />
@@ -1006,7 +1000,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         busy={saving}
         choices={dialog?.kind === "narrow" && dialog.next.appliesTo !== "all" ? [
           { label: <>Keep it for everyone, and add a copy just for {dialog.next.appliesTo.join(", ")}</>, tone: "primary", onClick: () => { if (dialog?.kind === "narrow" && dialog.next.appliesTo !== "all") void copyFor(dialog.rule, dialog.next.appliesTo); } },
-          { label: <>Move it to {dialog.next.appliesTo.join(", ")} only: {loseCount(agents, dialog.next.appliesTo)}</>, tone: "bad", onClick: () => { setDialog(null); saveConfirmed(); } },
+          { label: <>Move it to {dialog.next.appliesTo.join(", ")} only: {loseCount(agents, dialog.next.appliesTo)}</>, tone: "bad", onClick: () => { setDialog(null); save(true); } },
         ] : []}
         onCancel={cancelDialog}
       />
@@ -1084,7 +1078,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         confirmLabel="Save the change"
         cancelLabel="Keep it as it is"
         busy={saving}
-        onConfirm={() => { setDialog(null); saveConfirmed(); }}
+        onConfirm={() => { setDialog(null); save(true); }}
         onCancel={cancelDialog}
       />
 
@@ -1117,6 +1111,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     </div>
   );
 }
+
+/** "Two identical loop breakers": each kind of rule, more than one. */
+const RULE_PLURAL: Record<GovernanceRuleType, string> = {
+  spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
+};
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */
 const loseCount = (agents: string[], kept: string[]) => {

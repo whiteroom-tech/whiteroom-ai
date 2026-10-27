@@ -125,7 +125,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               <p style={{ ...help, color: 'var(--tx)' }}>Your fleet spends about {usd(fleetDailySpend.perDay)} a day, all agents together (last {fleetDailySpend.days === 1 ? 'day' : `${fleetDailySpend.days} days`}).</p>
             )}
             {(p as SpendCapParams).unit === 'dollars' && (
-              <p style={help}>Dollar estimates use a blended rate of $0.003/1K tokens. Actual cost varies by model — see the Performance tab for per-model pricing.</p>
+              <p style={help}>Dollar limits are estimates.</p>
             )}
           </>
         )}
