@@ -134,11 +134,19 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   // Kept with the fleet it came from, so another fleet's figure never shows after a switch.
   const [compressionFor, setCompressionFor] = useState<{ fleetId: string; value: number | null } | null>(null);
   const compression = compressionFor?.fleetId === fleetId ? compressionFor.value : null;
-  // Read again with each page refresh (loadedAt); a failed read keeps the last figure.
+  // Read again with each page refresh (loadedAt); a failed read keeps the last figure. A read
+  // still in flight for this fleet isn't started again (a cached page then a fresh one is one
+  // read). An answer for a fleet that's no longer shown is dropped.
+  const compressionReading = useRef<string | null>(null);
+  const shownFleet = useRef(fleetId);
+  useEffect(() => { shownFleet.current = fleetId; }, [fleetId]);
   useEffect(() => {
-    let live = true;
-    fleetReport(fleetId, authKey).then((r) => { if (live && !r.error) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null }); }, () => {});
-    return () => { live = false; };
+    const reading = `${fleetId}|${authKey ?? ''}`;
+    if (compressionReading.current === reading) return;
+    compressionReading.current = reading;
+    fleetReport(fleetId, authKey)
+      .then((r) => { if (!r.error && shownFleet.current === fleetId) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null }); }, () => {})
+      .finally(() => { if (compressionReading.current === reading) compressionReading.current = null; });
   }, [fleetId, authKey, loadedAt]);
   const seeFindings = () => {
     setDiagnosisNotice(null);

@@ -52,4 +52,24 @@ describe('Smaller context on Performance', () => {
     expect(card(el)).not.toContain('90.8%');
     root.unmount();
   });
+
+  it('reads once while a read is in flight, and drops a late answer for a fleet no longer shown', async () => {
+    let answerF1!: (v: unknown) => void;
+    api.report.mockImplementationOnce(() => new Promise((r) => { answerF1 = r; }));
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    // A cached page, then the fresh one, while the first read is still out: one read.
+    await act(async () => { root.render(h(IndexView, props('f1', 1))); });
+    await act(async () => { root.render(h(IndexView, props('f1', 2))); });
+    expect(api.report).toHaveBeenCalledTimes(1);
+    // Switch fleets; f2 answers first, then f1's late answer arrives and is dropped.
+    api.report.mockResolvedValueOnce({ energySavings: { compressionRatio: 40 } });
+    await act(async () => { root.render(h(IndexView, props('f2', 3))); });
+    await flush();
+    await act(async () => { answerF1({ energySavings: { compressionRatio: 90.8 } }); });
+    await flush();
+    expect(card(el)).toContain('40.0%');
+    root.unmount();
+  });
 });
