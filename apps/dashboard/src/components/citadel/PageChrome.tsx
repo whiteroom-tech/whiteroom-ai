@@ -1,8 +1,8 @@
 'use client';
 
-// The shared page header for every signed-in page (README › Header patterns).
-// Theme and sign out moved to the account menu in the sidebar, and the footer
-// is gone; the version now sits on the sidebar's account row.
+// The shared page header for every signed-in page (README › Header patterns),
+// and the pieces pages build their heads from. Theme, text size and sign out
+// sit in the sidebar (SidebarPreferences); the version is on its account row.
 
 import { FONT_DISPLAY, Icon } from '@whiteroom/ui';
 import { fmtTime } from '@/lib/format';
