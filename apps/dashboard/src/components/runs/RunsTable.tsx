@@ -160,11 +160,6 @@ export function RunsTable({ preview, retentionDays }: {
       // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
       if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHoursOk(false); return; }
       setRuns(res.runs);
-      // The picked day's hours refresh with the list, so a new run's hour shows; a failed refresh keeps the last counts.
-      if (day && hoursOk) void runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey).then((h) => {
-        if (stale()) return;
-        if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours);
-      }, () => {});
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
       setTotal(res.total);
@@ -176,7 +171,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       setFailing(true);
     }
-  }, [fleetId, authKey, range, day, hour, hoursOk, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
+  }, [fleetId, authKey, range, day, hour, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
 
   const { refresh } = usePoll(load, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   // usePoll fetches on mount; refetch only when the filter or page changes.
@@ -186,10 +181,24 @@ export function RunsTable({ preview, retentionDays }: {
     refresh();
   }, [range, day, hour, from, to, agent, show, cursors, refresh]);
 
-  // A new day or agent starts without hours until they load with the list (load above); the preview counts its own sample.
+  // The picked day's hours load on their own poll, keyed on the day and agent only: paging the
+  // list or picking an hour doesn't refetch them, and a poll keeps a new run's hour current. A
+  // failed refresh keeps the last counts (they're extra); the preview counts its own sample.
   useEffect(() => {
     setHours(preview && day ? hoursFromRuns(preview, day) : null);
   }, [day, agent, preview]);
+  const loadHours = useCallback(async (stale: () => boolean) => {
+    if (!fleetId || preview || !day || !hoursOk) return;
+    const h = await runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey).catch(() => null);
+    if (stale() || !h) return;
+    if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours);
+  }, [fleetId, authKey, preview, day, agent, hoursOk]);
+  const { refresh: refreshHours } = usePoll(loadHours, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview && !!day && hoursOk });
+  const firstHours = useRef(true);
+  useEffect(() => {
+    if (firstHours.current) { firstHours.current = false; return; }
+    refreshHours();
+  }, [day, agent, hoursOk, refreshHours]);
 
   // The strip depends only on the agent and its own 30 days, so it loads on
   // its own: paging the list or picking a day on it doesn't refetch it, and a slow strip never holds up the

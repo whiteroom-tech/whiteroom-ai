@@ -18,12 +18,14 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
   const max = Math.max(1, ...hours.map((h) => h.runs));
   // Where the strip scrolls (phones), open on the busiest hour rather than midnight.
   const wrap = useRef<HTMLDivElement>(null);
-  const busiest = hours.reduce<{ hour: number; runs: number } | null>((b, h) => (!b || h.runs > b.runs ? h : b), null)?.hour ?? null;
+  // Once per day: a poll that changes the busiest hour never pulls the person away from where they scrolled.
+  const busiest = useRef<number | null>(null);
+  busiest.current = hours.reduce<{ hour: number; runs: number } | null>((b, h) => (!b || h.runs > b.runs ? h : b), null)?.hour ?? null;
   useEffect(() => {
     const el = wrap.current;
-    if (!el || busiest === null || el.scrollWidth <= el.clientWidth) return;
-    el.scrollLeft = Math.max(0, (busiest / 24) * el.scrollWidth - el.clientWidth / 2);
-  }, [busiest, dayName]);
+    if (!el || busiest.current === null || el.scrollWidth <= el.clientWidth) return;
+    el.scrollLeft = Math.max(0, (busiest.current / 24) * el.scrollWidth - el.clientWidth / 2);
+  }, [dayName]);
   return (
     <section aria-label={`${dayName} by hour`} style={{ display: 'grid', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
@@ -34,22 +36,22 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
       </div>
       {/* Phones scroll the hours sideways in here, so every bar stays tappable. */}
       <div className="wr-hourstrip-wrap" ref={wrap}>
-      <div className="wr-daystrip wr-hourstrip" role="group" aria-label={`Runs per hour, ${dayName}`}>
-        {Array.from({ length: 24 }, (_, h) => {
-          const n = byHour.get(h) ?? 0;
-          const on = h === selected;
-          const label = `${hourLabel(h)}: ${n} run${n === 1 ? '' : 's'}`;
-          return (
-            <button key={h} type="button" className={`wr-daystrip__day${on ? ' is-selected' : ''}${selected === null ? ' is-in' : ''}`}
-              aria-pressed={on} aria-label={label} title={label} disabled={n === 0 && !on} onClick={() => onPick(on ? null : h)}>
-              <span className="wr-daystrip__bar" style={{ height: n ? `${Math.max(14, (n / max) * 100)}%` : 2 }} />
-            </button>
-          );
-        })}
-      </div>
-      <div aria-hidden className="wr-hourstrip-axis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
-        {[0, 6, 12, 18].map((h) => <span key={h}>{hourLabel(h)}</span>)}
-      </div>
+        <div className="wr-daystrip wr-hourstrip" role="group" aria-label={`Runs per hour, ${dayName}`}>
+          {Array.from({ length: 24 }, (_, h) => {
+            const n = byHour.get(h) ?? 0;
+            const on = h === selected;
+            const label = `${hourLabel(h)}: ${n} run${n === 1 ? '' : 's'}`;
+            return (
+              <button key={h} type="button" className={`wr-daystrip__day${on ? ' is-selected' : ''}${selected === null ? ' is-in' : ''}`}
+                aria-pressed={on} aria-label={label} title={label} disabled={n === 0 && !on} onClick={() => onPick(on ? null : h)}>
+                <span className="wr-daystrip__bar" style={{ height: n ? `${Math.max(14, (n / max) * 100)}%` : 2 }} />
+              </button>
+            );
+          })}
+        </div>
+        <div aria-hidden className="wr-hourstrip-axis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
+          {[0, 6, 12, 18].map((h) => <span key={h}>{hourLabel(h)}</span>)}
+        </div>
       </div>
     </section>
   );

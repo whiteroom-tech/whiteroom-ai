@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildWorkbook } from '@/lib/xlsx';
-import { governanceCreateRule, listRuns, runDays } from '@/lib/whiteroom/client';
+import { governanceCreateRule, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
 
 // The writer stores files uncompressed, so their XML is readable in the bytes.
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -51,6 +51,24 @@ describe('listRuns', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ action: 'list_runs', rule_activity: true });
     await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01' }, 'sk-key');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('rule_activity');
+  });
+
+  it('sends an hour only when one is picked', async () => {
+    fetchMock.mockImplementation(async () => reply({ fleetId: 'f', runs: [], total: 0, cursor: null }));
+    await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01', hour: 9 }, 'sk-key');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ action: 'list_runs', hour: 9 });
+    await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01', hour: 0 }, 'sk-key');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ hour: 0 });
+    await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01', hour: null }, 'sk-key');
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).not.toHaveProperty('hour');
+  });
+
+  it('asks run_hours for one day (and agent), and reports an engine without it', async () => {
+    fetchMock.mockImplementation(async () => reply({ fleetId: 'f', hours: [{ hour: 9, runs: 2 }] }));
+    expect(await runHours('f', { day: '2026-10-01', agentId: 'lead-agent' }, 'sk-key')).toMatchObject({ hours: [{ hour: 9, runs: 2 }] });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ action: 'run_hours', day: '2026-10-01', from_day: '2026-10-01', to_day: '2026-10-01', agent_id: 'lead-agent' });
+    fetchMock.mockImplementation(async () => reply({ error: 'Unknown action: run_hours' }, 400));
+    expect(await runHours('f', { day: '2026-10-01' }, 'sk-key')).toEqual({ unsupported: true });
   });
 
   it('sends Also alert when adding a rule back', async () => {

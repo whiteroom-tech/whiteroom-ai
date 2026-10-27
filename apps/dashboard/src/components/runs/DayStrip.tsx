@@ -36,25 +36,25 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
   return (
     <div>
       <div className="wr-strip-scroll" ref={wrap}>
-      <div className="wr-daystrip" role="group" aria-label="Runs per day">
-        {days.map((d) => {
-          const label = `${dayLabel(d.day)}: ${d.runs} run${d.runs === 1 ? '' : 's'}`;
-          const on = d.day === selected;
-          return (
-            <button
-              key={d.day}
-              type="button"
-              className={`wr-daystrip__day${on ? ' is-selected' : ''}${inRange(d.day) ? ' is-in' : ''}`}
-              aria-pressed={on}
-              aria-label={label}
-              title={label}
-              onClick={() => onPick(on ? null : d.day)}
-            >
-              <span className="wr-daystrip__bar" style={{ height: d.runs ? `${Math.max(14, (d.runs / max) * 100)}%` : 2 }} />
-            </button>
-          );
-        })}
-      </div>
+        <div className="wr-daystrip" role="group" aria-label="Runs per day">
+          {days.map((d) => {
+            const label = `${dayLabel(d.day)}: ${d.runs} run${d.runs === 1 ? '' : 's'}`;
+            const on = d.day === selected;
+            return (
+              <button
+                key={d.day}
+                type="button"
+                className={`wr-daystrip__day${on ? ' is-selected' : ''}${inRange(d.day) ? ' is-in' : ''}`}
+                aria-pressed={on}
+                aria-label={label}
+                title={label}
+                onClick={() => onPick(on ? null : d.day)}
+              >
+                <span className="wr-daystrip__bar" style={{ height: d.runs ? `${Math.max(14, (d.runs / max) * 100)}%` : 2 }} />
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
         <Button variant="ghost" size={28} aria-label="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
