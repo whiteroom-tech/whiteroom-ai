@@ -61,12 +61,16 @@ export function historyWho(entry: { ruleId: string; time: string; by: string }, 
 
 /**
  * The person behind an agent change (pause, stop, removal): a "user:<id>" by
- * name, else the dashboard row for that agent and action closest in time.
+ * name, else, for a "dashboard" record or none, the dashboard row for that
+ * agent and action closest in time.
  * Null when nobody can be named.
  */
 export function agentChangeWho(change: { agentId: string; action: string; time: string; by?: string }, actions: ControlActor[]): string | null {
   const named = change.by ? userName(change.by, actions) : null;
   if (named) return named;
+  // Only a dashboard change (or one with no "by", like a removal) is matched by time:
+  // a rule's or the API's change is never credited to someone who acted nearby.
+  if (change.by && change.by !== 'dashboard') return null;
   return closest(actions.filter((a) => a.agentId === change.agentId && a.action === change.action), change.time)?.by ?? null;
 }
 

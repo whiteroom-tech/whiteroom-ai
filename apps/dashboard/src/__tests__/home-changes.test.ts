@@ -27,6 +27,9 @@ describe('Latest changes', () => {
     expect(changeRow(e('agent_paused', { by: 'dashboard' }), rows, NOW)!.text).toBe('keyword-test paused by Sam Lee');
     expect(changeRow(e('deregister'), rows, NOW)!.text).toBe('keyword-test was removed by Sam Lee');
     expect(changeRow(e('agent_stopped', { by: 'dashboard' }), rows, NOW)!.text).toBe('keyword-test stopped from the dashboard');
+    // A rule's or the API's pause is never credited to someone who paused nearby.
+    expect(changeRow(e('agent_paused', { by: 'rule:gr_1' }), rows, NOW)!.text).toBe('keyword-test paused by a rule');
+    expect(changeRow(e('agent_paused', { by: 'api' }), rows, NOW)!.text).toBe('keyword-test paused through the API');
     expect(changeRow(e('task_complete'), [], NOW)).toBeNull();
     expect(changeRow(e('rest_start'), [], NOW)).toBeNull();
   });
