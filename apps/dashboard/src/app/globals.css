@@ -533,6 +533,10 @@
   .wr-needs-row { display: flex !important; flex-wrap: wrap; gap: 8px 12px !important; }
   .wr-needs-row > :nth-child(2) { flex: 1 1 200px; }
 }
+/* Performance › Budgets per agent: agent, spend of budget, calls left, Remove; stacked on phones. */
+.wr-agent-budget { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.4fr) auto; align-items: center; gap: 6px 16px; padding: 10px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); }
+.wr-agent-budget:first-child { border-top: 0; }
+@media (max-width: 720px) { .wr-agent-budget { grid-template-columns: minmax(0, 1fr) auto; } .wr-agent-budget > :nth-child(3) { grid-column: 1; } .wr-agent-budget > :nth-child(4) { grid-column: 2; grid-row: 1; } }
 .wr-agent-rule { display: grid; gap: 4px; padding: 12px 18px; color: inherit; text-decoration: none; transition: background-color .12s; }
 .wr-agent-rule:hover { background: var(--brand-dim); }
 .wr-agent-rule:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }

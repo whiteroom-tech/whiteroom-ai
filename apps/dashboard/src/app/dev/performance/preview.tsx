@@ -16,9 +16,11 @@ import { dailySavings } from '@/lib/analytics-metrics';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { statusLine } from '@/lib/diagnosis/model';
-import type { DiagnosisFinding, FleetDiagnosis, PerformanceCostForecastResult, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
+import type { AgentBudgetForecast, DiagnosisFinding, FleetDiagnosis, PerformanceCostForecastResult, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
 import { CostTrackingSection } from '@/app/(citadel)/performance/_components/CostTracking';
+import { AgentBudgetsSection, type AgentBudgetsApi } from '@/app/(citadel)/performance/_components/AgentBudgets';
+import { capRuleFor } from '@/lib/agent-budgets';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
   runId: `${agentId}~${daysAgo}`, agentId, shift: 10 - daysAgo, startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), endedAt: new Date().toISOString(),
@@ -142,6 +144,7 @@ export function PerformancePreview() {
             </div>
           )}
           {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
+          {sample !== 'empty' && <div style={{ marginTop: 24, marginBottom: -24 }}><AgentBudgetsSection key={sample} fleetId="acme-claims-prod" agentIds={['lead-agent', 'code-reviewer', 'writer-agent']} api={previewBudgetsApi()} /></div>}
           <SavingsChart days={dailySavings(sample === 'empty' ? [] : ENTRIES, 7, Date.now())} />
         </section>
         {sample !== 'empty' && (
@@ -167,4 +170,21 @@ export function PerformancePreview() {
       </div>
     </AppShell>
   );
+}
+
+/** Sample budgets for the preview: kept in the page, never sent anywhere. */
+function previewBudgetsApi(): AgentBudgetsApi {
+  let agents: AgentBudgetForecast[] = [
+    { agentId: 'lead-agent', budgetUsd: 20, spentTodayUsd: 6.42, burnRateUsdPerHour: 1.1, callsLeft: 214, callsLeftReason: 'available' },
+    { agentId: 'code-reviewer', budgetUsd: 5, spentTodayUsd: 5.31, burnRateUsdPerHour: 0.6, callsLeft: 0, callsLeftReason: 'available' },
+  ];
+  return {
+    list: async (fleetId) => ({ fleetId, budgetPeriod: 'day', budgetTimeZone: 'UTC', agents }),
+    set: async (_f, agentId, usd) => {
+      agents = agents.filter((a) => a.agentId !== agentId);
+      if (usd !== null) agents.push({ agentId, budgetUsd: usd, spentTodayUsd: 0, burnRateUsdPerHour: null, callsLeft: null, callsLeftReason: 'no_history' });
+    },
+    rules: async () => [],
+    addCap: async (_f, agentId, usd) => ({ id: 'gr_preview', fleetId: 'acme-claims-prod', version: 1, changedBy: 'preview', changedAt: new Date().toISOString(), ...capRuleFor(agentId, usd) }),
+  };
 }
