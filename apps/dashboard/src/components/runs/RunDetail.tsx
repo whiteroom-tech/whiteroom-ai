@@ -113,6 +113,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   return (
     <>
       <PageHeader title={title} fleetId={fleetId}>
+        <CopyLinkButton />
         <Link href={`/agents/${encodeURIComponent(agentId)}?from=runs`} className="wr-btn wr-btn--secondary wr-btn--h32">Open agent</Link>
       </PageHeader>
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
@@ -130,7 +131,8 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
               {data.run.ruleActions.map((a) => (
                 <li key={`${a.at}-${a.ruleId}-${a.mode}`} style={{ display: 'flex', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)' }}>
                   <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', flex: 'none' }}>{clock(a.at)}</span>
-                  <span>&lsquo;{RULE_LABELS[a.ruleType]}&rsquo; · {a.mode === 'enforce' ? RESPONSE_LABEL[a.response] : `would ${RESPONSE_LABEL[a.response].toLowerCase()}`} · {MODE_LABEL[a.mode === 'enforce' ? 'enforce' : 'watch']}{a.occurrences > 1 && ` · ×${a.occurrences}`}</span>
+                  <span style={{ minWidth: 0 }}>&lsquo;{RULE_LABELS[a.ruleType]}&rsquo; · {a.mode === 'enforce' ? RESPONSE_LABEL[a.response] : `would ${RESPONSE_LABEL[a.response].toLowerCase()}`} · {MODE_LABEL[a.mode === 'enforce' ? 'enforce' : 'watch']}{a.occurrences > 1 && ` · ×${a.occurrences}`}</span>
+                  <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(a.ruleId)}`} className="wr-link" style={{ marginLeft: 'auto', flex: 'none' }}>See the rule &rarr;</Link>
                 </li>
               ))}
             </ul>
@@ -169,5 +171,23 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         </Panel>
       </div>
     </>
+  );
+}
+
+/** Copies this run's address, to share it (the page opens straight onto the run). */
+function CopyLinkButton() {
+  const [copied, setCopied] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (copied === null) return;
+    const t = setTimeout(() => setCopied(null), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <Button variant="ghost" size={32} onClick={() => {
+      // No clipboard (an insecure page, some browsers) fails the same way a refusal does.
+      Promise.resolve().then(() => navigator.clipboard.writeText(window.location.href)).then(() => setCopied(true), () => setCopied(false));
+    }}>
+      <span aria-live="polite">{copied === true ? 'Link copied' : copied === false ? 'Couldn’t copy' : 'Copy link'}</span>
+    </Button>
   );
 }

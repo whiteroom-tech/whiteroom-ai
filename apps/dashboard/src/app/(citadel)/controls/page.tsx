@@ -67,6 +67,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const searchParams = useSearchParams();
   const suggestionRec = searchParams.get("rec");
   const agentParam = searchParams.get("agent");
+  // ?rule=gr_…: a link from elsewhere (a run's Rule activity) opens that rule.
+  const ruleParam = searchParams.get("rule");
 
   const [rules, setRules] = useState<GovernanceRule[]>([]);
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
@@ -74,6 +76,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [govV1, setGovV1] = useState(false);
   const [actors, setActors] = useState<ControlActor[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // True once the rules have actually been read (a failed read sets `loaded` too, with no rules).
+  const [listed, setListed] = useState(false);
   const [addingSuggestion, setAddingSuggestion] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -82,6 +86,18 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
   const [actions, setActions] = useState<RuleActionsResult | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const ruleOpened = useRef<string | null>(null);
+  const openRuleRef = useRef<(id: string | null) => void>(() => {});
+  useEffect(() => {
+    // A link that's gone (or a new visit) can open the same rule again later.
+    if (!ruleParam) { ruleOpened.current = null; return; }
+    if (ruleOpened.current === ruleParam || !listed) return;
+    ruleOpened.current = ruleParam;
+    // A run can name a rule that's since been removed: say so rather than land silently.
+    // Through openRule, so an unsaved edit to another rule is asked about first.
+    if (rules.some((r) => r.id === ruleParam)) openRuleRef.current(ruleParam);
+    else setNotice("That rule isn’t here any more; it may have been removed. Its changes are in Recent changes.");
+  }, [ruleParam, rules, listed]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -129,6 +145,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setAgents(d.agents);
       setGovV1(!!d.govV1);
       setLoaded(true);
+      setListed(true);
       return true;
     } catch (e) {
       if (isAuthError(e)) { onAuthError(); return false; }
@@ -208,6 +225,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setDraft(r ? draftFrom(r) : null);
     });
   };
+  openRuleRef.current = openRule;
 
   /** The current URL with some search params changed (null removes one). */
   const withParams = (changes: Record<string, string | null>) => {

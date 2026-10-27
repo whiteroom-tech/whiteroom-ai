@@ -51,13 +51,15 @@ const api = vi.hoisted(() => ({
   models: null as string[] | null,
   /** Holds governance_list until resolved, to see the page before it loads. */
   listGate: null as Promise<void> | null,
+  /** governance_list fails (an engine outage). */
+  listFail: false,
   /** What Settings › Alerts has; null: an engine without alerts. */
   alerts: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null } | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string; before?: unknown; after?: unknown }>,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  governanceList: async () => { api.lists++; if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
+  governanceList: async () => { api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
@@ -87,7 +89,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.listGate = null; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.listGate = null; api.listFail = false; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -550,6 +552,69 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(m.text()).toMatch(/Couldn’t remove the rule/);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
     expect(m.row('100 times')).toBeTruthy();
+    m.root.unmount();
+  });
+});
+
+describe('Controls page, links in', () => {
+  it('opens the rule a link names (?rule=), e.g. from a run’s Rule activity', async () => {
+    nav.params = new URLSearchParams('rule=r3');
+    const m = await mount();
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+
+  it('claims nothing about a linked rule when the rules couldn’t be read', async () => {
+    api.listFail = true;
+    nav.params = new URLSearchParams('rule=r3');
+    const m = await mount();
+    expect(m.text()).toContain('Couldn’t load your rules.');
+    expect(m.text()).not.toContain('isn’t here any more');
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+
+  it('opens a different rule when the link changes', async () => {
+    nav.params = new URLSearchParams('rule=r3');
+    const m = await mount();
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
+    nav.params = new URLSearchParams('rule=r4');
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('200');
+    // Leaving the link and following the first one again opens it again.
+    nav.params = new URLSearchParams();
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    nav.params = new URLSearchParams('rule=r3');
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+
+  it('asks before a new link throws away an unsaved edit', async () => {
+    nav.params = new URLSearchParams('rule=r3');
+    const m = await mount();
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    nav.params = new URLSearchParams('rule=r4');
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    expect(m.text()).toContain('Discard your changes to Spend cap?');
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+
+  it('says so when the linked rule has been removed', async () => {
+    nav.params = new URLSearchParams('rule=gr_gone');
+    const m = await mount();
+    expect(m.text()).toContain('That rule isn’t here any more; it may have been removed.');
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeNull();
+    nav.params = new URLSearchParams();
     m.root.unmount();
   });
 });
