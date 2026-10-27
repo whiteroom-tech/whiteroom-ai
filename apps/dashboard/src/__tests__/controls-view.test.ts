@@ -220,6 +220,8 @@ describe('groups and per-rule counts', async () => {
     expect(g.off.map((r) => r.id)).toEqual(['d']);
     // A "tell me" rule in Block doesn't stop anything.
     expect(stopping([a, b, c, d]).map((r) => r.id)).toEqual(['b']);
+    // Nor does one with nothing picked yet (an empty allowlist acts on nothing).
+    expect(stopping([rule({ id: 'e', mode: 'enforce', ruleType: 'model_allowlist', params: { allowedModels: [] } })])).toEqual([]);
   });
 
   it('gives each rule its own count when the engine sends counts per rule, even with two of a type', () => {

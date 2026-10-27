@@ -142,6 +142,14 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
+  it('a Block rule with nothing picked yet is not a filled tag', async () => {
+    api.saved.r6 = { ...RULES[5], mode: 'enforce' };
+    const m = await mount();
+    const row = [...m.el.querySelectorAll('.gov-row')].find((r) => r.textContent?.includes('Tool list'))!;
+    expect(row.querySelector('.wr-tag')!.className).not.toContain('wr-tag--block');
+    m.root.unmount();
+  });
+
   it('names the agent in the group titles when filtering', async () => {
     nav.params = new URLSearchParams('agent=lead-agent');
     const m = await mount();

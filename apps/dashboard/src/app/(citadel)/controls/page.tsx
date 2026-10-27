@@ -427,7 +427,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>
             {RULE_LABELS[r.ruleType]}
             {r.mode === "watch" && <Tag tone="muted">{MODE_LABEL.watch}</Tag>}
-            {r.mode === "enforce" && <Tag tone={(r.response ?? "block") === "notify" ? "brand" : "block"}>{DOES_TAG[r.response ?? "block"]}</Tag>}
+            {/* Filled only when it really stops calls (stopping()): an alert-only rule, or one with nothing picked yet, isn't. */}
+            {r.mode === "enforce" && <Tag tone={stopping([r]).length ? "block" : (r.response ?? "block") === "notify" ? "brand" : "muted"}>{DOES_TAG[r.response ?? "block"]}</Tag>}
           </span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
         </span>
