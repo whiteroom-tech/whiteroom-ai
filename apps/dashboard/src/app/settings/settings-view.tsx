@@ -600,6 +600,12 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
   // the banner counts in the same one.
   const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
   useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
+  // A change from here or from the banner (cancel, keep): read the page's state again.
+  useEffect(() => {
+    const changed = () => router.refresh();
+    window.addEventListener(CLOSING_CHANGED, changed);
+    return () => window.removeEventListener(CLOSING_CHANGED, changed);
+  }, [router]);
 
   const matches = confirm.trim().toLowerCase() === (account.email ?? '').toLowerCase();
   const fleets = plural(account.fleetCount, 'fleet');
@@ -616,7 +622,6 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
       setOpen(false);
       setConfirm('');
       window.dispatchEvent(new Event(CLOSING_CHANGED));
-      router.refresh();
     } catch {
       setError(failure);
     } finally {

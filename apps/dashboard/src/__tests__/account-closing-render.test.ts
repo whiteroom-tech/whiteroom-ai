@@ -180,6 +180,20 @@ describe('Settings › Delete account', () => {
     expect(m.text()).toContain('For the next 14 days your fleets keep working');
   });
 
+  it('re-reads when the banner cancels or keeps, so the section never shows the old state', async () => {
+    const closing = { reason: 'deleted' as const, closesAt: new Date(Date.now() + 5 * DAY).toISOString() };
+    await mount(h(DangerSection, { account: ACCOUNT, closing, pending: false }));
+    const banner = await mount(h(AccountClosingBanner));
+    api.closing = closing;
+    _forgetClosingRead();
+    await act(async () => { window.dispatchEvent(new Event('wr:account-closing-changed')); });
+    await flush();
+    api.refresh.mockClear();
+    await banner.click(banner.button('Cancel deletion')!);
+    expect(api.cancel).toHaveBeenCalledTimes(1);
+    expect(api.refresh).toHaveBeenCalled();
+  });
+
   it("says when the account's state couldn't be read, rather than offering Delete", async () => {
     const m = await mount(h(DangerSection, { account: ACCOUNT, closing: 'unknown', pending: false }));
     expect(m.text()).toContain("Couldn't check your account status");
