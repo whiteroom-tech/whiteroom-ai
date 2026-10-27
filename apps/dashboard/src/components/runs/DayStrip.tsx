@@ -28,7 +28,9 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
     if (!el || el.scrollWidth <= el.clientWidth) return;
     const i = selected ? days.findIndex((d) => d.day === selected) : -1;
     el.scrollLeft = i < 0 ? el.scrollWidth : Math.max(0, ((i + 0.5) / days.length) * el.scrollWidth - el.clientWidth / 2);
-  }, [first, selected, days]);
+    // Only when the window or the pick changes, never on a poll's re-render, so scrolling back isn't undone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first, selected, days.length]);
   const last = days[days.length - 1]?.day;
   const max = Math.max(1, ...days.map((d) => d.runs));
   return (
