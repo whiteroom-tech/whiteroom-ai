@@ -125,10 +125,9 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const { refresh, tick } = usePoll(load, { intervalMs: 10_000, enabled: !!fleetId && !preview });
 
   // Recent runs, also the Now card's link to the last run: read again when the
-  // agent's run number changes, so a new run shows up with its link and date.
+  // run number changes or a run ends, so the list and the link stay current.
   // Another agent starts from Loading, never with the last one's runs. Waits
   // for the agent's status, so a visit reads the list once, not twice.
-  // Keyed on the run number and whether it's running, so a run that ends is read again too.
   const runNumber = agent ? `${agent.currentShift?.watchNumber ?? agent.lastShift?.watchNumber ?? agent.watchNumber ?? '-'}:${agent.currentShift ? 'running' : 'ended'}` : undefined;
   const runsFor = useRef<string | null>(null);
   useEffect(() => {
