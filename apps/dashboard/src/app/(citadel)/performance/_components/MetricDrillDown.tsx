@@ -295,5 +295,3 @@ export function MetricDrillDown({ metric, models, hourly, govSavings, govCounts,
 
   return null;
 }
-
-/** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */

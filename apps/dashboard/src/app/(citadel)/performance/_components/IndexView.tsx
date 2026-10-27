@@ -26,6 +26,7 @@ import { MetricDrillDown } from './MetricDrillDown';
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 export type FeedbackResult = 'done' | 'closed' | 'failed';
 
+/** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
 export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, agentScores, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {

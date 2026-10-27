@@ -16,16 +16,13 @@ import { countsFromRuleActions, governanceFromSummary, ruleActionsByAgent, type 
 import { Banner, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
-
+import { IndexView, type FeedbackResult } from './_components/IndexView';
+import { AgentView, EvidenceView } from './_components/AgentEvidence';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
 
 type ViewMode = 'index' | 'agent' | 'evidence';
-
-// The page's sections live in ./_components (IndexView, AgentEvidence, MetricDrillDown, perf-utils).
-import { IndexView, type FeedbackResult } from './_components/IndexView';
-import { AgentView, EvidenceView } from './_components/AgentEvidence';
 
 export default function PerformancePage() {
   const auth = useFleetAuth();
