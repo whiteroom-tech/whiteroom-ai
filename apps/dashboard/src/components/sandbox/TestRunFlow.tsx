@@ -1074,7 +1074,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     {phase !== 'workspace' && <PageHeader title="Sandbox" />}
 
     <main className={s.content}>
-      {phase !== 'workspace' && <div className="wr-setup-leadwrap"><PageLead>{SANDBOX_LEAD}</PageLead></div>}
+      {phase !== 'workspace' && <div className="wr-setup-leadwrap" style={{ marginBottom: 8 }}><PageLead>{SANDBOX_LEAD}</PageLead></div>}
       <div className={s.layout}>
       <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
       <div className={s.body}>

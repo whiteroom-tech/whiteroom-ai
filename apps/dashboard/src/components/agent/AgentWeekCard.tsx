@@ -46,7 +46,10 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
   const rules = week?.rules;
   const dash = loaded ? '—' : '…';
   const parts = score ? scoreParts(score) : [];
-  const working = scoreWorking(parts, score?.score);
+  const working = scoreWorking(parts);
+  // One score for the ring, the words and the worked sum: worked out from the
+  // parts shown, else the engine's when no part has data.
+  const shown = working?.score ?? (score?.score != null ? Math.round(score.score) : null);
   const ruleWords = rules ? weekRuleWords(rules) : null;
   return (
     <section className="wr-panel wr-agent-week" aria-labelledby="agent-week">
@@ -65,8 +68,8 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
             : <strong style={figure}>{dash}</strong>}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {score?.score != null && <ScoreRing score={Math.round(score.score)} size={52} />}
-          <span><span style={label}>Score</span><br />{score?.score != null ? <span style={{ ...cap, color: 'var(--tx)' }}>{Math.round(score.score)} out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
+          {shown != null && <ScoreRing score={shown} size={52} />}
+          <span><span style={label}>Score</span><br />{shown != null ? <span style={{ ...cap, color: 'var(--tx)' }}>{shown} out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
         </span>
       </div>
       {score && (

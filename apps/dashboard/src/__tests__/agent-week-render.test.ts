@@ -68,9 +68,8 @@ describe('Last 7 days on the agent page', () => {
     expect(scoreWorking([{ value: null }])).toBeNull();
     // Unrounded parts, so the sum ends on the score the ring shows (8.46 → 8, not 8.5 → 9).
     expect(scoreWorking([{ value: 84.6 }, { value: 84.6 }])).toEqual({ sum: '(8.46 + 8.46) ÷ 2 = 8.46 → 8', score: 8 });
-    // Enough places that the rounding shows, and it ends on the engine's score when there is one.
+    // Enough places that the rounding shows.
     expect(scoreWorking([{ value: 74.96 }, { value: 74.96 }])?.sum).toBe('(7.496 + 7.496) ÷ 2 = 7.496 → 7');
-    expect(scoreWorking([{ value: 100 }, { value: 57 }], 8)).toEqual({ sum: '(10 + 5.7) ÷ 2 = 7.85 → 8', score: 8 });
   });
 });
 
@@ -98,5 +97,16 @@ describe('Rules on this agent', () => {
   it('says so when none are on', () => {
     const t = text(renderToStaticMarkup(h(RulesOnAgent, { fleetId: 'f', agentId: 'a', preview: [rules[3]] })));
     expect(t).toContain('No rules are on for this agent. 1 rule is Off.');
+  });
+});
+
+describe('one score on the card', () => {
+  it('shows the score worked out from the parts in the ring, the words and the sum, even if the engine rounded differently', () => {
+    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
+      score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 3 },
+    } })));
+    expect(t).toContain('Score 8 out of 10');
+    expect(t).toContain('= 7.85 → 8');
+    expect(t).not.toContain('3 out of 10');
   });
 });

@@ -138,3 +138,22 @@ describe('Agent detail ⋯ menu keyboard', () => {
     m.root.unmount();
   });
 });
+
+describe('Undo right after Pause', () => {
+  it('stays on Resuming… until the resume request returns, whatever an earlier status read says', async () => {
+    api.watch.mockResolvedValue({ status: 'idle', watchNumber: 1, govV1: true });
+    api.pause.mockResolvedValue({ success: true });
+    let finish: (v: unknown) => void = () => {};
+    api.resume.mockReturnValue(new Promise((r) => { finish = r; }));
+    const m = await mount();
+    await m.click(m.button('Pause'));
+    await m.click([...m.toast()!.querySelectorAll('button')].find((b) => b.textContent === 'Undo'));
+    // The poll still shows the agent without a hold, but the resume hasn't returned.
+    expect(m.el.textContent).toContain('Resuming…');
+    await act(async () => { finish({ success: true }); });
+    await flush();
+    expect(m.el.textContent).not.toContain('Resuming…');
+    expect(m.button('Pause')).toBeTruthy();
+    m.root.unmount();
+  });
+});

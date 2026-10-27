@@ -83,6 +83,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     return () => { live = false; clearTimeout(retry); };
   }, [fleetId, holdAt, preview]);
   const resumingHold = useRef(false);
+  // Whether the resume request in progress has returned.
+  const resumeSent = useRef(false);
   const [taskDraft, setTaskDraft] = useState<string | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskNote, setTaskNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -189,8 +191,10 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     if (!pending || !agent) return;
     const s = agentState(agent);
     const held = s === 'paused' || s === 'stopped';
-    // Releasing a hold is done once it's gone, whatever the watch status underneath.
-    const resumed = resumingHold.current ? !held : s !== 'resting' && !held;
+    // Releasing a hold is done once it's gone, whatever the watch status
+    // underneath, and only after the resume request has returned: a status
+    // read before it (Undo right after Pause) proves nothing.
+    const resumed = resumeSent.current && (resumingHold.current ? !held : s !== 'resting' && !held);
     if ((pending === 'pausing' && (s === 'resting' || held)) || (pending === 'stopping' && s === 'stopped') || (pending === 'resuming' && resumed)) setPending(null);
   }, [pending, agent]);
 
@@ -275,9 +279,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     if (preview) return;
     setActionError(null);
     resumingHold.current = held || !!agent?.hold;
+    resumeSent.current = false;
     setPending('resuming');
     try {
       await resumeAgent(fleetId, agentId, authKey);
+      resumeSent.current = true;
       refresh();
     } catch (e) {
       setPending(null);

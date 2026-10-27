@@ -420,7 +420,6 @@
 .wr-table__group strong { color: var(--tx); font-weight: 600; }
 /* A row's detail, open directly beneath it (DataTable renderExpanded). */
 .wr-table__expanded { border-bottom: 1px solid var(--line); }
-.wr-clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .wr-daystrip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; height: 5.5rem; }
 .wr-hourstrip { grid-template-columns: repeat(24, minmax(0, 1fr)); height: 4.5rem; }
 .wr-daystrip__day:disabled { cursor: default; }
@@ -838,7 +837,7 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 
 /* ── Mockup parity: Settings, Fleet key, Sandbox (setup pages) ── */
 .wr-setup-page { padding: 24px 24px 80px; display: flex; flex-direction: column; gap: 16px; }
-.wr-setup-page > .wr-page-lead, .wr-setup-lead { margin: 0 0 16px; font-size: var(--fs-card); line-height: 1.55; color: var(--tx); max-width: none; }
+.wr-setup-page > .wr-page-lead, .wr-setup-leadwrap .wr-page-lead { margin: 0 0 16px; font-size: var(--fs-card); line-height: 1.55; color: var(--tx); max-width: none; }
 .wr-setup-narrow { max-width: 960px; display: flex; flex-direction: column; gap: 16px; }
 .wr-settings-stack.wr-setup-page > :not(.wr-page-lead) { max-width: 960px; width: 100%; }
 .wr-scard { overflow: hidden; }
@@ -873,4 +872,3 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-setup-page .wr-key-field { flex: 1 1 260px; min-height: 2.5rem; background: var(--card); border-color: var(--line2); border-radius: 8px; }
 .wr-setup-page .wr-key-list > li { background: none; padding: 10px 12px 10px 20px; border-radius: 10px; }
 .wr-setup-page .wr-scard__body .wr-seg { justify-self: start; }
-.wr-setup-leadwrap .wr-page-lead { margin: 0 0 24px; font-size: var(--fs-card); line-height: 1.55; color: var(--tx); max-width: none; }

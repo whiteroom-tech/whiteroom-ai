@@ -102,15 +102,15 @@ export function scoreSummary(parts: Pick<ScorePart, 'label' | 'value'>[]): strin
  * The worked sum under the table: "(10 + 5.7) ÷ 2 = 7.85 → 8". The score is
  * the average of the parts that have data, rounded. Null with none scored.
  */
-export function scoreWorking(parts: Pick<ScorePart, 'value'>[], engineScore?: number | null): { sum: string; score: number } | null {
+export function scoreWorking(parts: Pick<ScorePart, 'value'>[]): { sum: string; score: number } | null {
   // From the unrounded parts, as the engine averages them, so the sum ends on
   // the score the ring shows; parts print to two places only when they need it.
   const scored = parts.filter((p): p is { value: number } => p.value != null).map((p) => p.value / 10);
   if (scored.length === 0) return null;
   const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
   // Parts and mean to up to three places, so the rounding shows (7.496 → 7,
-  // never "7.5 → 7"); it ends on the score the ring shows, the engine's when it sent one.
-  const score = Math.round(engineScore ?? mean);
+  // never "7.5 → 7"). The card shows this same score in the ring, so the two can't disagree.
+  const score = Math.round(mean);
   if (scored.length === 1) return { sum: `${places(mean)} → ${score}`, score };
   return { sum: `(${scored.map(places).join(' + ')}) ÷ ${scored.length} = ${places(mean)} → ${score}`, score };
 }
