@@ -796,28 +796,6 @@ export interface DataSettings {
   /** What carries from one job to the next (P0 #3a): explicit_run means only within a labeled run. */
   handover_carry_forward_effective?: 'same_run' | 'explicit_run' | 'off';
 }
-/** The owner's goal for an agent (Agent detail › Goal). */
-export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
-export const goalGet = (fleetId: string, agentId: string) =>
-  alertsAction<{ owner: OwnerGoal | null }>({ action: 'goal_get', fleet_id: fleetId, agent_id: agentId });
-/**
- * `baseRevision` is the revision on screen when the edit began (0 for no goal): if the goal
- * changed since, the engine refuses the save as changed elsewhere. Older engines ignore it.
- */
-export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null, baseRevision: number) =>
-  alertsAction<{ owner: OwnerGoal }>({ action: 'goal_set_owner', fleet_id: fleetId, agent_id: agentId, goal, base_revision: baseRevision });
-export const agentNewRun = (fleetId: string, agentId: string) =>
-  alertsAction<{ success: boolean }>({ action: 'agent_new_run', fleet_id: fleetId, agent_id: agentId });
-
-/** Handover quality over a window (Agent detail › Handover quality). Shares are null until there's data. */
-export interface HandoverQuality {
-  handovers: number; scored: number; valuesChecked: number; valuesKept: number;
-  valuesKeptShare: number | null; shareChecked: number | null; coverageMin: number;
-  keptWithLabel: number | null; goalCarriedOver: number | null;
-}
-export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
-  alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });
-
 // Same refusal handling as alerts; an engine without the action hides the section.
 export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
 export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>

@@ -140,3 +140,15 @@ export function agentIdFromSegment(segment: string): string {
     return segment;
   }
 }
+
+/**
+ * The agent page's Last 7 days token figures. Without WhiteRoom is an
+ * estimate: what it used plus what smaller context saved it. Null when the
+ * audit read failed, so the card shows "—", never 0.
+ */
+export function weekTokens(w: { used?: number; saved?: number } | undefined): { without: number; used: number; saved: number; pct: number } | null {
+  if (w?.used === undefined) return null;
+  const saved = w.saved ?? 0;
+  const without = w.used + saved;
+  return { without, used: w.used, saved, pct: without > 0 ? Math.round((saved / without) * 100) : 0 };
+}

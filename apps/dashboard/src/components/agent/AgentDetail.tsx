@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Banner, Button, Hint, Panel, StatusPill, Tag, TextInput, FONT_MONO, type AgentState } from '@whiteroom/ui';
 import { auditLog, checkWatch, controlFailure, getHandover, isAuthError, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
-import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
+import type { AgentInfo, AuditEntry, GovernanceRule, HandoverDoc } from '@/lib/whiteroom/types';
+import type { AgentWeek } from '@/lib/home-agents';
 import { usePoll } from '@/hooks/usePoll';
 import { fmtTime, fmtTokens } from '@/lib/format';
 import { HELP } from '@/lib/metric-definitions';
@@ -15,8 +16,8 @@ import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns } from '@/components/agent/RecentRuns';
-import { GoalPanel } from '@/components/agent/GoalPanel';
-import { HandoverQualityPanel } from '@/components/agent/HandoverQualityPanel';
+import { AgentWeekCard } from '@/components/agent/AgentWeekCard';
+import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
@@ -27,8 +28,9 @@ import {
 type Pending = 'pausing' | 'stopping' | 'resuming' | 'removing' | null;
 
 /**
- * Agent detail (redesign screen 3): one agent's shift, handover notes, task
- * type and latest activity, with the actions today's engine supports.
+ * Agent detail (redesign screen 3): one agent's last 7 days and score, its
+ * current run, progress notes, task type, the rules on it and latest
+ * activity, with the actions today's engine supports.
  * Actions are not optimistic: the pill reads "Pausing…" / "Resuming…" until
  * the engine reports the new status, and a failure stays on screen.
  */
@@ -40,7 +42,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   from: 'home' | 'runs';
   onAuthError?: (msg: string) => void;
   /** Sample data for /dev/agent: nothing is fetched and actions do nothing. */
-  preview?: { agent: AgentInfo; handover: HandoverDoc | null; entries: AuditEntry[] };
+  preview?: { agent: AgentInfo; handover: HandoverDoc | null; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[] };
 }) {
   const [agent, setAgent] = useState<AgentInfo | null>(preview?.agent ?? null);
   const [notFound, setNotFound] = useState(false);
@@ -337,6 +339,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
               {[220, 180].map((h, i) => <div key={i} style={{ height: h, borderRadius: 14, background: 'var(--card)', border: '1px solid var(--line)' }} />)}
             </div>
           ) : (
+            <>
+            <AgentWeekCard fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview?.week} />
             <div className="wr-agent-grid">
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
                 <Panel title={<>Current run<Hint text={HELP.currentShift} /></>} count={shiftSummary(agent, fmtTokens)}>
@@ -357,8 +361,6 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     </div>
                   )}
                 </Panel>
-
-                {!preview && <GoalPanel fleetId={fleetId} agentId={agentId} />}
 
                 <Panel
                   title={<>Progress notes<Hint text={HELP.handoverNotes} /></>}
@@ -396,8 +398,6 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                   )}
                 </Panel>
 
-                {!preview && <HandoverQualityPanel fleetId={fleetId} agentId={agentId} />}
-
                 <Panel title={<>Task type<Hint text={HELP.taskType} /></>}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -418,12 +418,14 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
               </div>
 
               <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0 }}>
+                <RulesOnAgent fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.rules ?? []) : undefined} />
                 <RecentRuns fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? [] : undefined} />
                 <Panel title="Recent activity" bodyPadding={0}>
                   <ActivityRows rows={activity} empty="Nothing yet for this agent." />
                 </Panel>
               </div>
             </div>
+            </>
           )}
         </div>
       </div>
