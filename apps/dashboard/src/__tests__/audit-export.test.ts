@@ -180,6 +180,11 @@ describe('full audit export', () => {
     await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');
   });
 
+  it('refuses a last event whose content isn’t the one signed for', async () => {
+    const fetchPage = tampered((p) => (p.manifest ? { ...p, events: p.events.map((e) => (e.seq === HEAD ? { ...e, hash: 'swapped' } : e)) } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');
+  });
+
   it('refuses a signature for a different count', async () => {
     const fetchPage = tampered((p) => (p.manifest ? { ...p, manifest: { ...p.manifest, count: HEAD - 1 } } : p));
     await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');

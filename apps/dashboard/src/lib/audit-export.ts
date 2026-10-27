@@ -71,10 +71,12 @@ export async function buildAuditExport(
   let done = 0;
   // The seq the next event must have: events come one after another, none missing.
   let expect = page.firstSeq;
+  let lastHash: string | null = null;
   for (;;) {
     for (const e of page.events) {
       if (e.seq !== expect) throw new Error('The export is missing events.');
       expect++;
+      lastHash = typeof e.hash === 'string' ? e.hash : null;
     }
     if (page.events.length > 0) {
       parts.push(new Blob([(done > 0 ? ',\n' : '') + page.events.map((e) => JSON.stringify(e)).join(',\n')]));
@@ -95,7 +97,8 @@ export async function buildAuditExport(
   // An empty history (count 0) is a signed, empty file. Today's engine answers
   // 409 for a fleet with no stored events instead, which falls back above.
   const empty = done === 0 && m.count === 0;
-  if (m.firstSeq !== page.firstSeq || m.headSeq !== pinned || m.count !== done || (!empty && m.headSeq !== expect - 1)) {
+  // The signed head hash is the last event's: content swapped in under the right seq doesn't pass.
+  if (m.firstSeq !== page.firstSeq || m.headSeq !== pinned || m.count !== done || (!empty && (m.headSeq !== expect - 1 || m.headHash !== lastHash))) {
     throw new Error('The export doesn’t match its signature.');
   }
   parts.push(`\n],"manifest":${JSON.stringify(m, null, 2)}}\n`);
