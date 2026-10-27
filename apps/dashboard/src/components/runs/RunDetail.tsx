@@ -11,7 +11,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { ROUTES } from '@/lib/routes';
 import { clock } from '@/lib/home';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
-import { collectRunEvents, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
+import { collectRunEvents, collectRuns, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
@@ -86,19 +86,29 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     refresh();
   }, [kind, cursor, refresh]);
 
-  // The totals fallback: the run's row in list_runs for the day it started.
+  // The totals fallback: the run's row in list_runs for the day it started, looked up
+  // once per run (polls don't repeat it), reading that agent's day a few pages deep.
   const run = data?.run;
-  const needTotals = !!run && run.calls === undefined && !totals && !preview;
+  const needTotals = !!run && run.calls === undefined && !preview;
+  const lookupKey = needTotals && run ? `${run.runId}|${run.startedAt}` : null;
+  const lookedUp = useRef<string | null>(null);
   useEffect(() => {
-    if (!needTotals || !run) return;
+    if (!lookupKey || !run || lookedUp.current === lookupKey) return;
+    lookedUp.current = lookupKey;
     let live = true;
+    let done = false;
     const day = localDay(Date.parse(run.startedAt));
-    listRuns(fleetId, { fromDay: day, toDay: day, agentId: run.agentId, pageSize: 50 }, authKey).then((res) => {
-      const row = 'unsupported' in res ? null : res.runs.find((r) => r.runId === run.runId);
+    const target = run.runId;
+    collectRuns((cursor) => listRuns(fleetId, { fromDay: day, toDay: day, agentId: run.agentId, cursor, pageSize: 50 }, authKey), 10).then((res) => {
+      done = true;
+      const row = 'unsupported' in res ? null : res.runs.find((r) => r.runId === target);
       if (live && row) setTotals(row);
-    }, () => {});
-    return () => { live = false; };
-  }, [needTotals, run, fleetId, authKey]);
+    }, () => { done = true; });
+    // A lookup cut short (unmounted, or a new key) may run again; a finished one never does.
+    return () => { live = false; if (!done) lookedUp.current = null; };
+    // Keyed on the run, not the poll's fresh object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupKey, fleetId, authKey]);
 
   // A linked row (deep link or See in timeline) scrolls into view and takes focus once
   // it's on screen; the shading fades after a few seconds.

@@ -36,44 +36,42 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
           {flaggedKnown && <span><span className="wr-runchart__key is-flag" aria-hidden="true" />Flagged</span>}
         </span>
       </div>
-      <div>
-          <div className="wr-runchart__plot">
-            {max > 0 && <span className="wr-runchart__max" aria-hidden="true">{max}</span>}
-            <div
-              className="wr-runchart__bars"
-              role="group"
-              aria-label={`Runs per day${busiest && max > 0 ? `. Busiest day ${dayLabel(busiest.day, Date.now(), false)} with ${max} runs.` : ''}`}
-              style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
-            >
-              {days.map((d) => {
-                const label = barLabel(dayLabel(d.day), d.runs, { flagged: d.flagged });
-                const on = d.day === selected;
-                const flagged = flaggedKnown && d.flagged ? Math.min(d.flagged, d.runs) : 0;
-                return (
-                  <button
-                    key={d.day}
-                    type="button"
-                    className={`wr-runchart__day${on ? ' is-selected' : ''}${inRange(d.day) ? ' is-in' : ''}`}
-                    aria-pressed={on}
-                    aria-label={label}
-                    title={label}
-                    onClick={() => onPick(on ? null : d.day)}
-                  >
-                    <span className="wr-runchart__bar" style={{ height: barHeight(d.runs, max) }}>
-                      {flagged > 0 && <span className="wr-runchart__flag" style={{ height: `max(2px, ${(flagged / d.runs) * 100}%)` }} />}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="wr-runchart__ticks" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
-            {ticks.map((i, k) => (
-              <span key={days[i].day} style={{ gridColumn: `${i + 1} / span 1`, justifySelf: k === 0 ? 'start' : k === ticks.length - 1 ? 'end' : 'center' }}>
-                {days[i].day === today ? 'Today' : dayLabel(days[i].day, Date.now(), false).replace(/^\w+, /, '')}
-              </span>
-            ))}
+      <div className="wr-runchart__plot">
+        {max > 0 && <span className="wr-runchart__max" aria-hidden="true">{max}</span>}
+        <div
+          className="wr-runchart__bars"
+          role="group"
+          aria-label={`Runs per day${busiest && max > 0 ? `. Busiest day ${dayLabel(busiest.day, Date.now(), false)} with ${max} runs.` : ''}`}
+          style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+        >
+          {days.map((d) => {
+            const label = barLabel(dayLabel(d.day), d.runs, { flagged: d.flagged });
+            const on = d.day === selected;
+            const flagged = flaggedKnown && d.flagged ? Math.min(d.flagged, d.runs) : 0;
+            return (
+              <button
+                key={d.day}
+                type="button"
+                className={`wr-runchart__day${on ? ' is-selected' : ''}${inRange(d.day) ? ' is-in' : ''}`}
+                aria-pressed={on}
+                aria-label={label}
+                title={label}
+                onClick={() => onPick(on ? null : d.day)}
+              >
+                <span className="wr-runchart__bar" style={{ height: barHeight(d.runs, max) }}>
+                  {flagged > 0 && <span className="wr-runchart__flag" style={{ height: `max(2px, ${(flagged / d.runs) * 100}%)` }} />}
+                </span>
+              </button>
+            );
+          })}
         </div>
+      </div>
+      <div className="wr-runchart__ticks" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
+        {ticks.map((i, k) => (
+          <span key={days[i].day} style={{ gridColumn: `${i + 1} / span 1`, justifySelf: k === 0 ? 'start' : k === ticks.length - 1 ? 'end' : 'center' }}>
+            {days[i].day === today ? 'Today' : dayLabel(days[i].day, Date.now(), false).replace(/^\w+, /, '')}
+          </span>
+        ))}
       </div>
     </section>
   );

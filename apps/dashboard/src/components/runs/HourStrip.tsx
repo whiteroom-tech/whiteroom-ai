@@ -43,26 +43,24 @@ export function HourStrip({ dayName, hours, selected, onPick, onBack }: {
         <p className="wr-runchart__note" style={{ margin: 0 }}>No runs that day.</p>
       ) : (
         <>
-          <div>
-              <div className="wr-runchart__bars is-hours" role="group" aria-label={`Runs per hour on ${dayName}`}>
-                {Array.from({ length: 24 }, (_, h) => {
-                  const c = byHour.get(h);
-                  const n = c?.runs ?? 0;
-                  const rule = !!c?.ruleActivity;
-                  const on = h === selected;
-                  const label = barLabel(hourLabel(h), n, { ruleActivity: c?.ruleActivity });
-                  return (
-                    <button key={h} type="button" className={`wr-runchart__day is-in${on ? ' is-selected' : ''}`}
-                      aria-pressed={on} aria-label={label} title={label} disabled={!onPick || (n === 0 && !on)} onClick={() => onPick?.(on ? null : h)}>
-                      {n > 0 && <span className="wr-runchart__count">{n}</span>}
-                      <span className={`wr-runchart__bar${rule ? ' has-rule' : ''}`} style={{ height: n ? `max(4px, ${((n / max) * 72).toFixed(1)}%)` : barHeight(0, max) }} />
-                    </button>
-                  );
-                })}
-              </div>
-              <div aria-hidden className="wr-runchart__hticks">
-                {TICKS.map((h) => <span key={h}>{hourLabel(h)}</span>)}
-              </div>
+          <div className="wr-runchart__bars is-hours" role="group" aria-label={`Runs per hour on ${dayName}`}>
+            {Array.from({ length: 24 }, (_, h) => {
+              const c = byHour.get(h);
+              const n = c?.runs ?? 0;
+              const rule = !!c?.ruleActivity;
+              const on = h === selected;
+              const label = barLabel(hourLabel(h), n, { ruleActivity: c?.ruleActivity });
+              return (
+                <button key={h} type="button" className={`wr-runchart__day is-in${on ? ' is-selected' : ''}`}
+                  aria-pressed={on} aria-label={label} title={label} disabled={!onPick || (n === 0 && !on)} onClick={() => onPick?.(on ? null : h)}>
+                  {n > 0 && <span className="wr-runchart__count">{n}</span>}
+                  <span className={`wr-runchart__bar${rule ? ' has-rule' : ''}`} style={{ height: n ? `max(4px, ${((n / max) * 72).toFixed(1)}%)` : barHeight(0, max) }} />
+                </button>
+              );
+            })}
+          </div>
+          <div aria-hidden className="wr-runchart__hticks">
+            {TICKS.map((h) => <span key={h}>{hourLabel(h)}</span>)}
           </div>
           <p className="wr-runchart__legend is-foot">
             <span><span className="wr-runchart__key is-in" aria-hidden="true" />Runs started that hour</span>

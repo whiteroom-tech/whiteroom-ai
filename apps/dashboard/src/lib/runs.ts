@@ -457,7 +457,12 @@ export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTota
   const s = runSummary(run, fallback);
   const summary: (string | number)[][] = [['Run', runName(run)], ['Agent', run.agentId], ['Started', s.started], ['Length', s.length]];
   if (s.calls !== undefined) summary.push(['Model calls', s.calls]);
-  if (s.spend !== undefined) summary.push(['Spend (USD)', s.spend]);
+  // A number, so it sums and sorts; a lower bound when some calls had no price (counted on the next row).
+  const micros = run.spendMicros ?? fallback?.spendMicros;
+  if (micros !== undefined) {
+    summary.push(['Spend (USD)', Math.round(micros) / 1e6]);
+    summary.push(['Unpriced calls', run.unpricedAttempts ?? fallback?.unpricedAttempts ?? 0]);
+  }
   if (s.failed !== undefined) summary.push(['Failed calls', s.failed]);
   if (s.blocked !== undefined) summary.push(['Blocked calls', s.blocked]);
   if (s.wouldBlock !== undefined) summary.push(['Would have blocked', s.wouldBlock]);
@@ -521,7 +526,8 @@ export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {
   const d = new Date(r.startedAt);
   const p2 = (n: number) => String(n).padStart(2, '0');
   const started = `${localDay(d.getTime())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
-  return [runName(r), r.agentId, r.shift, started, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, r.wouldActCalls ?? '', Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, standOut(r).tone === 'clean' ? '' : standOut(r).text, `${origin}${runHref(r.runId)}`];
+  const stood = standOut(r);
+  return [runName(r), r.agentId, r.shift, started, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, r.wouldActCalls ?? '', Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, stood.tone === 'clean' ? '' : stood.text, `${origin}${runHref(r.runId)}`];
 }
 
 /** Export dialog › Which days: yesterday, the last 7 days, or the last 30, as the viewer's days ('shown' is the page's own view, handled by the page). */

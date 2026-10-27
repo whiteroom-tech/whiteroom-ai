@@ -13,11 +13,11 @@ const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(),
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace, push: nav.push }), useSearchParams: () => nav.params }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
 
-const api = vi.hoisted(() => ({ list: vi.fn(), counted: true, hours: vi.fn() }));
+const api = vi.hoisted(() => ({ list: vi.fn(), counted: true, hours: vi.fn(), days: { days: [] } as { days: { day: string; runs: number; flagged?: number }[]; flaggedUnavailable?: boolean } }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   listRuns: api.list,
-  runDays: async () => ({ days: [] }),
+  runDays: async () => api.days,
   runHours: api.hours,
   fleetReport: async () => ({ error: 'no' }),
 }));
@@ -69,6 +69,7 @@ beforeEach(() => {
     return opts.ruleActivity ? { runs: [runs[0]], total: 1, cursor: null } : { runs, total: 2, cursor: null };
   });
   api.counted = true;
+  api.days = { days: [] };
 });
 
 describe('Runs › Show › Rule activity', () => {
@@ -160,6 +161,31 @@ describe('Runs › phones', () => {
     expect(m.text()).toContain('No runs today.');
     await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show 30 days'));
     expect(m.radio('30 days')?.getAttribute('aria-checked')).toBe('true');
+    m.root.unmount();
+  });
+});
+
+describe('Runs › failures and engine limits', () => {
+  it('un-dims the old rows when a new filter fails to load, so they can still be opened', async () => {
+    const m = await mount();
+    api.list.mockRejectedValue(new Error('503'));
+    await m.click(m.radio('Today'));
+    expect(m.el.querySelector('.wr-runs-body.is-loading')).toBeNull();
+    expect(m.el.querySelector('.wr-runs-body a.wr-runlink')).not.toBeNull();
+    m.root.unmount();
+  });
+
+  it('shows flagged segments when counted, and none when the engine says it couldn’t count them', async () => {
+    const today = new Date().toLocaleDateString('en-CA');
+    api.days = { days: [{ day: today, runs: 3, flagged: 1 }] };
+    let m = await mount();
+    expect(m.el.querySelector('.wr-runchart__flag')).not.toBeNull();
+    expect(m.text()).toContain('Flagged');
+    m.root.unmount();
+    api.days = { days: [{ day: today, runs: 3, flagged: 0 }], flaggedUnavailable: true };
+    m = await mount();
+    expect(m.el.querySelector('.wr-runchart__flag')).toBeNull();
+    expect(m.el.querySelector('.wr-runchart__key.is-flag')).toBeNull();
     m.root.unmount();
   });
 });

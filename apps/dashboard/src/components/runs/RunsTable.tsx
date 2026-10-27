@@ -169,6 +169,8 @@ export function RunsTable({ preview, retentionDays }: {
   const stripEnd = stripPin ?? localDay();
   const pinStrip = (end: string) => setStripPin(end >= localDay() ? null : end);
   const [dayCounts, setDayCounts] = useState<RunDayCount[] | null>(() => preview?.dayCounts ?? null);
+  // The engine said it couldn't count flagged runs over this range (too many calls): no amber segment or key.
+  const [flaggedUnavailable, setFlaggedUnavailable] = useState(false);
   // How many runs the list shows: a page to start, a page more with each Show more.
   const [limit, setLimit] = useState(PAGE);
   const [runs, setRuns] = useState<RunSummary[] | null>(preview?.runs ?? null);
@@ -268,6 +270,8 @@ export function RunsTable({ preview, retentionDays }: {
     } catch (e) {
       if (stale()) return;
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      // The old rows stay usable (not dimmed) under the refresh-failed note; the poll retries.
+      setLoading(false);
       setFailing(true);
     }
   }, [fleetId, authKey, range, day, hour, from, to, agent, flaggedOnly, rulesOnly, limit, resetSession, preview]);
@@ -315,7 +319,9 @@ export function RunsTable({ preview, retentionDays }: {
     if (!fleetId || preview) return;
     const days = await runDays(fleetId, { fromDay: addDays(stripEnd, 1 - STRIP_DAYS), toDay: stripEnd, agentId: agent === 'all' ? undefined : agent }, authKey).catch(() => null);
     if (stale()) return;
-    setDayCounts(days && !('unsupported' in days) ? days.days : null);
+    const got = days && !('unsupported' in days) ? days : null;
+    setDayCounts(got?.days ?? null);
+    setFlaggedUnavailable(!!got?.flaggedUnavailable);
   }, [fleetId, authKey, agent, stripEnd, preview]);
   const { refresh: refreshStrip } = usePoll(loadStrip, { intervalMs: 60_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   const firstStrip = useRef(true);
@@ -447,7 +453,7 @@ export function RunsTable({ preview, retentionDays }: {
             days={strip}
             title={chartTitle}
             legend={legend}
-            flaggedKnown={!!dayCounts?.some((d) => d.flagged !== undefined)}
+            flaggedKnown={!flaggedUnavailable && !!dayCounts?.some((d) => d.flagged !== undefined)}
             selected={day}
             inRange={inSpan}
             onPick={(d) => changeFilter({ day: d })}

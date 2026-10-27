@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, SelectChip } from '@whiteroom/ui';
 import { DialogFrame } from '@/components/citadel/DialogFrame';
 import { fmtCount } from '@/lib/format';
@@ -53,7 +53,8 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
           ))}
         </fieldset>
         <div style={{ display: 'grid', gap: 6, justifyItems: 'start' }}>
-          <span className="wr-runs-dialog__label" id="export-agent-label">Agents</span>
+          {/* The select carries the same name for screen readers. */}
+          <span className="wr-runs-dialog__label" aria-hidden="true">Agents</span>
           <SelectChip label="Agents" value={agent} onChange={setAgent} options={[{ value: 'all', label: 'All agents' }, ...agents.map((a) => ({ value: a, label: a }))]} />
         </div>
         <p className="wr-runs-dialog__sub" style={{ margin: 0 }}>Times are in your time zone ({zoneName()}). Each row is one run, with its spend and anything your rules caught.</p>
@@ -86,17 +87,25 @@ export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded
   preview?: { result: VerifyAuditResult; info: AuditIntegrity | null };
 }) {
   const [check, setCheck] = useState<AuditCheck>({ state: 'checking' });
+  // Each opening is one check: a check from an earlier opening that answers late is ignored.
+  const current = useRef(0);
   async function run() {
+    const id = ++current.current;
+    const live = () => id === current.current;
     if (preview) { setCheck({ state: 'done', ...preview, at: Date.now() }); return; }
     if (!fleetId) { setCheck({ state: 'failed' }); return; }
     setCheck({ state: 'checking' });
     try {
       const result = await verifyAudit(fleetId, authKey);
       const info = await auditIntegrity(fleetId, authKey).catch(() => null);
-      setCheck({ state: 'done', result, info, at: Date.now() });
+      if (live()) setCheck({ state: 'done', result, info, at: Date.now() });
     } catch {
-      setCheck({ state: 'failed' });
+      if (live()) setCheck({ state: 'failed' });
     }
+  }
+  function close() {
+    current.current++;
+    onClose();
   }
   function downloadProof() {
     if (check.state !== 'done') return;
@@ -106,7 +115,7 @@ export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded
   }
   const summary = check.state === 'done' ? auditCheckText(check.result, check.info) : null;
   return (
-    <DialogFrame open={open} onCancel={onClose} onOpen={() => void run()} labelledBy="audit-check-title">
+    <DialogFrame open={open} onCancel={close} onOpen={() => void run()} labelledBy="audit-check-title">
       <div className="wr-runs-dialog">
         <h2 id="audit-check-title" className="wr-runs-dialog__title">Audit trail check</h2>
         <div className="wr-runs-auditbox" aria-live="polite">
@@ -130,7 +139,7 @@ export function AuditCheckDialog({ open, fleetId, authKey, onClose, onDownloaded
         )}
         <div className="wr-dialog-actions wr-runs-dialog__actions">
           <Button onClick={downloadProof} disabled={check.state !== 'done'}>Download proof</Button>
-          <Button variant="primary" onClick={onClose}>Done</Button>
+          <Button variant="primary" onClick={close}>Done</Button>
         </div>
       </div>
     </DialogFrame>

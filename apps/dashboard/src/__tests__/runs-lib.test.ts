@@ -172,6 +172,10 @@ describe('run detail rows', () => {
     const [summary, events] = runSheets(head, [{ id: 'c1', kind: 'call', at: '2026-10-25T00:45:01Z', type: 'complete', model: 'm1' }]);
     expect(summary.rows).toContainEqual(['Run', 'a #4']);
     expect(summary.rows).toContainEqual(['Models', 'm1']);
+    // Spend is a number that sums, with unpriced calls on their own row.
+    const priced = runSheets({ ...head, spendMicros: 52_000, unpricedAttempts: 1 }, [])[0].rows;
+    expect(priced).toContainEqual(['Spend (USD)', 0.052]);
+    expect(priced).toContainEqual(['Unpriced calls', 1]);
     expect(events.rows).toHaveLength(1);
     expect(events.rows[0][2]).toBe('Model call · m1');
   });
