@@ -156,7 +156,7 @@ describe('instrumentation register', () => {
     // Every column there: it starts.
     exit.mockClear();
     query.mockReset();
-    query.mockResolvedValueOnce({ rows: [{ is_nullable: 'YES' }] }).mockResolvedValueOnce({ rows: [{ n: 7 }] }).mockResolvedValue({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [{ is_nullable: 'YES' }] }).mockResolvedValueOnce({ rows: [{ n: 9 }] }).mockResolvedValue({ rows: [] });
     await register();
     expect(exit).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(5));

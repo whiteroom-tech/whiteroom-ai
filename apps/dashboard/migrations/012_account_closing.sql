@@ -6,6 +6,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_email_sent_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_notified_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_email_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_email_reason text;
+-- When a paid subscription stopped being active; set by the Stripe webhook from now on. Lapses before this stay NULL and start no closing window.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS lapsed_at timestamptz;
 
 DO $$
 BEGIN

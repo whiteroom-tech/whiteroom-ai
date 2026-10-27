@@ -14,15 +14,16 @@ describe('closingColumnsPresent', () => {
   beforeEach(() => query.mockReset());
 
   it('is true only when all of 012’s columns are in this schema', async () => {
-    query.mockResolvedValueOnce({ rows: [{ n: 7 }] });
+    query.mockResolvedValueOnce({ rows: [{ n: 9 }] });
     expect(await closingColumnsPresent()).toBe(true);
     const [sql, params] = query.mock.calls[0] as [string, string[][]];
     expect(sql).toContain('current_schema()');
-    expect(params[0]).toEqual(expect.arrayContaining(['closes_at', 'close_reason', 'delete_after', 'closing_email_sent_at', 'close_blocked_at', 'close_blocked_notified_at', 'close_blocked_email_attempts']));
+    expect(params[0]).toEqual(expect.arrayContaining(['closes_at', 'close_reason', 'delete_after', 'closing_email_sent_at', 'closing_email_reason', 'close_blocked_at', 'close_blocked_notified_at', 'close_blocked_email_attempts']));
+    expect(sql).toContain("table_name = 'subscriptions' AND column_name = 'lapsed_at'");
   });
 
   it('is false when any is missing, so production refuses to start on an unmigrated database', async () => {
-    query.mockResolvedValueOnce({ rows: [{ n: 6 }] });
+    query.mockResolvedValueOnce({ rows: [{ n: 8 }] });
     expect(await closingColumnsPresent()).toBe(false);
     query.mockResolvedValueOnce({ rows: [{ n: 0 }] });
     expect(await closingColumnsPresent()).toBe(false);

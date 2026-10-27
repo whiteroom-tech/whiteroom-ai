@@ -56,13 +56,14 @@ interface Account {
   close_blocked_notified_at: string | null;
   close_blocked_email_attempts: number;
   closing_email_sent_at: string | null;
+  closing_email_reason?: string | null;
   email: string | null;
 }
 
 interface World {
   user: Account;
   /** The subscriptions row, or null. */
-  sub: { plan: string; status: string; plan_override: string | null; stripe_subscription_id?: string | null; stripe_customer_id?: string; updated_at?: string } | null;
+  sub: { plan: string; status: string; plan_override: string | null; stripe_subscription_id?: string | null; stripe_customer_id?: string; lapsed_at?: string | null } | null;
   trialEndsAt: string;
   /** Owns fleet-1. */
   owner: boolean;
@@ -175,8 +176,8 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       return one(ok);
     }
     if (sql.startsWith('UPDATE users SET closing_email_sent_at = now()')) {
-      const ok = !u.closing_email_sent_at || ms(u.closing_email_sent_at) < now - 60 * MIN;
-      if (ok) u.closing_email_sent_at = new Date(now).toISOString();
+      const ok = !u.closing_email_sent_at || ms(u.closing_email_sent_at) < now - 60 * MIN || u.closing_email_reason !== params[1];
+      if (ok) { u.closing_email_sent_at = new Date(now).toISOString(); u.closing_email_reason = String(params[1]); }
       return one(ok);
     }
     if (sql.startsWith('UPDATE users SET closing_email_sent_at = NULL')) { u.closing_email_sent_at = null; return one(true); }
@@ -208,8 +209,12 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
     }
     if (sql.startsWith('UPDATE subscriptions SET updated_at')) { world.log.push('subscription to the back of the queue'); return one(!!world.sub); }
     if (sql.startsWith('UPDATE subscriptions SET status')) { if (world.sub) world.sub.status = String(params[1]); return one(!!world.sub); }
-    // A subscription row last changed now unless a test says otherwise (a lapse counts from LAPSE_WINDOWS_FROM).
-    if (sql.includes('FROM subscriptions')) { world.log.push('read plan'); return { rows: world.sub ? [{ updated_at: new Date().toISOString(), ...world.sub }] : [] }; }
+    // A lapse the webhook recorded (lapsed_at now) unless a test says otherwise; an active one has none.
+    if (sql.includes('FROM subscriptions')) {
+      world.log.push('read plan');
+      const s = world.sub;
+      return { rows: s ? [{ lapsed_at: ['active', 'trialing', 'past_due'].includes(s.status) ? null : new Date().toISOString(), ...s }] : [] };
+    }
     if (sql.startsWith('SELECT org_id FROM organization_members')) return { rows: world.soleOrgOwner ? [{ org_id: 'o1' }] : [] };
     if (sql.startsWith('SELECT o.name FROM organizations')) return { rows: world.soleOrgOwner ? [{ name: 'Acme' }] : [] };
 
@@ -342,16 +347,23 @@ describe('Delete account starts a 14-day window', () => {
 });
 
 describe('closing emails', () => {
-  it('at most one an hour per account, however often windows start', async () => {
+  it('at most one of each kind an hour, however often windows start', async () => {
     setup();
     const closing = { reason: 'deleted' as const, closesAt: IN_14_DAYS };
     await sendClosingEmail('u1', closing);
-    await sendClosingEmail('u1', { reason: 'lapsed', closesAt: IN_14_DAYS });
+    await sendClosingEmail('u1', closing);
     expect(sendEmail).toHaveBeenCalledTimes(1);
 
     world.user.closing_email_sent_at = at(-61 * MIN);
     await sendClosingEmail('u1', closing);
     expect(sendEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it('a lapse email never holds back the deletion notice that follows it', async () => {
+    setup();
+    await sendClosingEmail('u1', { reason: 'lapsed', closesAt: IN_14_DAYS });
+    await sendClosingEmail('u1', { reason: 'deleted', closesAt: IN_14_DAYS });
+    expect(sendEmail.mock.calls.map((c) => c[0].subject)).toEqual(['Your WhiteRoom plan has ended', 'Your WhiteRoom account will be deleted']);
   });
 
   it('a send that failed does not hold back the next one', async () => {
@@ -364,11 +376,12 @@ describe('closing emails', () => {
     expect(sendEmail).toHaveBeenCalledTimes(2);
   });
 
-  it('a deletion right after a lapse email (within the hour) sends no second email', async () => {
-    setup({ user: { closes_at: at(3 * DAY), close_reason: 'lapsed', closing_email_sent_at: at(-10 * MIN) } });
+  it('a deletion right after a lapse email (within the hour) still sends the deletion notice', async () => {
+    setup({ user: { closes_at: at(3 * DAY), close_reason: 'lapsed', closing_email_sent_at: at(-10 * MIN), closing_email_reason: 'lapsed' } });
     expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
     expect(world.user.close_reason).toBe('deleted');
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].subject).toBe('Your WhiteRoom account will be deleted');
   });
 });
 
@@ -459,8 +472,9 @@ describe('the closing state Settings and the banner read', () => {
 });
 
 describe('plan lapse', () => {
-  it('a paid plan that lapsed before closing windows began keeps its old behaviour: no window, no email', async () => {
-    setup({ owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null, updated_at: '2026-09-01T00:00:00Z' }, trialEndsAt: PAST });
+  it('a paid plan that lapsed before lapses were recorded keeps its old behaviour, however its row changes later: no window, no email', async () => {
+    // lapsed_at is NULL for lapses from before; later writes to the row (invoices, quantity syncs) never set it.
+    setup({ owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: null }, trialEndsAt: PAST });
     await syncEntitlementsToEngine('u1');
     expect(world.user.closes_at).toBeNull();
     expect(sendEmail).not.toHaveBeenCalled();

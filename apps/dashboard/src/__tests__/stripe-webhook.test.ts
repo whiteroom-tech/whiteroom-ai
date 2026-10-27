@@ -143,6 +143,15 @@ describe('stripe webhook: a subscription on a closing account', () => {
     expect(mocks.sync).toHaveBeenCalledWith('u1');
   });
 
+  it('records when a paid subscription stops being active, and clears it when it is active again', async () => {
+    await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
+    const upsert = mocks.query.mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO subscriptions'));
+    const sql = String(upsert?.[0]);
+    // Only a change from an active status sets it; a later write keeps it; active again clears it.
+    expect(sql).toMatch(/lapsed_at\s+= CASE\s+WHEN EXCLUDED\.status = ANY\(\$9\) THEN NULL\s+WHEN subscriptions\.lapsed_at IS NOT NULL THEN subscriptions\.lapsed_at\s+WHEN subscriptions\.status = ANY\(\$9\) THEN now\(\)\s+END/);
+    expect(upsert?.[1][8]).toEqual(['active', 'trialing', 'past_due']);
+  });
+
   it('in a deletion’s last minutes, when it can no longer be cancelled: nothing changes here, and the subscription is left for the closed-fleet pass', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: LATER });

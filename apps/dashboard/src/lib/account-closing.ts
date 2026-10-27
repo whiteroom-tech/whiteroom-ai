@@ -158,16 +158,18 @@ const CLOSING_EMAIL_GAP = '1 hour';
 /**
  * Tells the owner a window has started. Best effort: the window is already
  * stored, and the banner says the same on every page, so a failed send is
- * logged rather than undoing it. Skipped when one went to this account in
- * the last hour (users.closing_email_sent_at).
+ * logged rather than undoing it. Skipped when the same kind went to this
+ * account in the last hour (users.closing_email_sent_at / _reason), so a
+ * deletion notice is never held back by a lapse email.
  */
 export async function sendClosingEmail(userId: string, closing: Closing): Promise<void> {
   try {
     // Claimed before sending, so two windows starting at once send one email.
     const { rowCount } = await db().query(
-      `UPDATE users SET closing_email_sent_at = now()
-       WHERE id = $1 AND (closing_email_sent_at IS NULL OR closing_email_sent_at < now() - interval '${CLOSING_EMAIL_GAP}')`,
-      [userId],
+      `UPDATE users SET closing_email_sent_at = now(), closing_email_reason = $2
+       WHERE id = $1 AND (closing_email_sent_at IS NULL OR closing_email_sent_at < now() - interval '${CLOSING_EMAIL_GAP}'
+                          OR closing_email_reason IS DISTINCT FROM $2)`,
+      [userId, closing.reason],
     );
     if (!rowCount) return;
     const to = await ownerEmail(userId);
@@ -194,16 +196,12 @@ export async function sendClosingEmail(userId: string, closing: Closing): Promis
  * that fleet is switched off but kept, so subscribing later picks up where
  * it left off.
  */
-export function lapsedPaidPlan(plan: PlanId, sub: { plan: string; updatedAt?: string | null } | null): PaidPlanId | null {
-  if (plan !== 'expired' || !sub || !isPaidPlanId(sub.plan)) return null;
-  // Only lapses from when closing windows began: an older one keeps the
-  // behaviour it had, rather than every such account getting a window, an
-  // email and a closed fleet the day this ships.
-  return sub.updatedAt && Date.parse(sub.updatedAt) >= Date.parse(LAPSE_WINDOWS_FROM) ? sub.plan : null;
+export function lapsedPaidPlan(plan: PlanId, sub: { plan: string; lapsedAt?: string | null } | null): PaidPlanId | null {
+  // Only a lapse the webhook recorded: one from before that (lapsed_at NULL)
+  // keeps the behaviour it had, rather than getting a window, an email and a
+  // closed fleet the day this ships.
+  return plan === 'expired' && sub?.lapsedAt && isPaidPlanId(sub.plan) ? sub.plan : null;
 }
-
-/** Paid plans that lapse from this moment on get the closing window; earlier lapses don't. */
-export const LAPSE_WINDOWS_FROM = '2026-10-27T00:00:00Z';
 
 /**
  * Keeps a lapse window in step with the plan, on every entitlement push:
@@ -212,7 +210,7 @@ export const LAPSE_WINDOWS_FROM = '2026-10-27T00:00:00Z';
  * deletion window is left alone either way. Returns the window to send to
  * the engine.
  */
-export async function reconcileLapse(userId: string, plan: PlanId, sub: { plan: string; updatedAt?: string | null } | null): Promise<Closing | null> {
+export async function reconcileLapse(userId: string, plan: PlanId, sub: { plan: string; lapsedAt?: string | null } | null): Promise<Closing | null> {
   const current = await getClosing(userId);
   if (lapsedPaidPlan(plan, sub)) {
     if (current) return current;
@@ -502,9 +500,9 @@ export async function findDeletionBlocker(q: Queryable, userId: string, lock: bo
   };
 }
 
-/** The columns migration 012 adds to users; the boot check needs every one. */
+/** The columns migration 012 adds to users (plus subscriptions.lapsed_at); the boot check needs every one. */
 const CLOSING_USER_COLUMNS = [
-  'closes_at', 'close_reason', 'delete_after', 'closing_email_sent_at',
+  'closes_at', 'close_reason', 'delete_after', 'closing_email_sent_at', 'closing_email_reason',
   'close_blocked_at', 'close_blocked_notified_at', 'close_blocked_email_attempts',
 ];
 
@@ -516,11 +514,12 @@ export async function closingColumnsPresent(): Promise<boolean | null> {
   try {
     const { rows } = await db().query(
       `SELECT count(*)::int AS n FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = ANY($1)`,
+       WHERE table_schema = current_schema()
+         AND ((table_name = 'users' AND column_name = ANY($1)) OR (table_name = 'subscriptions' AND column_name = 'lapsed_at'))`,
       [CLOSING_USER_COLUMNS],
     );
     const n = rows[0]?.n;
-    return typeof n === 'number' ? n === CLOSING_USER_COLUMNS.length : null;
+    return typeof n === 'number' ? n === CLOSING_USER_COLUMNS.length + 1 : null;
   } catch {
     return null;
   }

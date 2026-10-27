@@ -2,7 +2,7 @@ import type Stripe from 'stripe';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
 import { enqueueEntitlementSync, syncEntitlementsToEngine } from '@/lib/entitlements';
-import { isActiveStatus, planItem } from '@/lib/plans';
+import { ACTIVE_STATUS_LIST, isActiveStatus, planItem } from '@/lib/plans';
 import { cancelClosing, cancelStripeSubscription, getClosing, reportRefundNeeded } from '@/lib/account-closing';
 import { isClosingOpen } from '@/lib/closing-shared';
 
@@ -162,6 +162,12 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
        current_period_end     = EXCLUDED.current_period_end,
        cancel_at_period_end   = EXCLUDED.cancel_at_period_end,
        billed_agents          = EXCLUDED.billed_agents,
+       -- The moment a paid subscription stops being active, kept until it's active again.
+       lapsed_at              = CASE
+                                  WHEN EXCLUDED.status = ANY($9) THEN NULL
+                                  WHEN subscriptions.lapsed_at IS NOT NULL THEN subscriptions.lapsed_at
+                                  WHEN subscriptions.status = ANY($9) THEN now()
+                                END,
        updated_at             = now()`,
     [
       userId,
@@ -172,6 +178,7 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
       periodEnd(sub),
       sub.cancel_at_period_end ?? false,
       billedAgents,
+      ACTIVE_STATUS_LIST,
     ],
   );
 

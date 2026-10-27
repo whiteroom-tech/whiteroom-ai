@@ -31,8 +31,8 @@ export interface SubscriptionRow {
   cancelAtPeriodEnd: boolean;
   /** Agents the Pro subscription is billed for, as Stripe last reported it. */
   billedAgents: number | null;
-  /** When the row last changed (a lapse is the last change of a lapsed plan). */
-  updatedAt: string | null;
+  /** When a paid subscription stopped being active (null: active, or lapsed before this was recorded). */
+  lapsedAt: string | null;
 }
 
 export interface Entitlement {
@@ -52,7 +52,7 @@ export interface Entitlement {
 export async function getSubscriptionRow(userId: string, q: Queryable = db()): Promise<SubscriptionRow | null> {
   const { rows } = await q.query(
     `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
-            current_period_end::text, cancel_at_period_end, billed_agents, updated_at::text
+            current_period_end::text, cancel_at_period_end, billed_agents, lapsed_at::text
      FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
@@ -67,7 +67,7 @@ export async function getSubscriptionRow(userId: string, q: Queryable = db()): P
     currentPeriodEnd: r.current_period_end,
     cancelAtPeriodEnd: r.cancel_at_period_end,
     billedAgents: r.billed_agents ?? null,
-    updatedAt: r.updated_at ?? null,
+    lapsedAt: r.lapsed_at ?? null,
   };
 }
 
