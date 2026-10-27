@@ -8,7 +8,8 @@ import { createRoot } from 'react-dom/client';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1' }) }));
-const api = vi.hoisted(() => ({ verify: vi.fn() }));
+const api = vi.hoisted(() => ({ verify: vi.fn(), build: vi.fn(), save: vi.fn() }));
+vi.mock('@/lib/audit-export', () => ({ buildAuditExport: api.build, saveBlob: api.save }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   auditIntegrity: async () => ({ fleetId: 'f1', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date(Date.now() - 3600_000).toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } }),
@@ -29,7 +30,7 @@ async function mount() {
   return { el, root, run, note };
 }
 
-beforeEach(() => api.verify.mockReset());
+beforeEach(() => { api.verify.mockReset(); api.build.mockReset(); api.save.mockReset(); });
 
 describe('audit integrity', () => {
   it('leads with coverage, never a pass below 100%', async () => {
@@ -51,6 +52,37 @@ describe('audit integrity', () => {
     api.verify.mockResolvedValueOnce({ valid: true, eventsVerified: 2045 });
     await m.run();
     expect(m.note()!.style.color).toBe('var(--ok)');
+    m.root.unmount();
+  });
+
+  it('downloads the whole history, counting events as they come in', async () => {
+    const m = await mount();
+    let finish!: (v: unknown) => void;
+    let report!: (done: number, total: number) => void;
+    api.build.mockImplementationOnce((_id: string, onProgress: typeof report) => { report = onProgress; return new Promise((r) => { finish = r; }); });
+    const button = () => [...m.el.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Download') || b.textContent?.startsWith('Preparing')) as HTMLButtonElement;
+    await act(async () => { button().click(); });
+    await flush();
+    expect(api.build).toHaveBeenCalledWith('f1', expect.any(Function), expect.objectContaining({ isCancelled: expect.any(Function) }));
+    expect(button().textContent).toContain('Preparing…');
+    await act(async () => { report(5000, 12345); });
+    expect(button().textContent).toContain('Preparing… 5,000 of 12,345 events');
+    const blob = new Blob(['{}']);
+    await act(async () => { finish({ blob, events: 12345 }); });
+    await flush();
+    expect(api.save).toHaveBeenCalledWith(blob, expect.stringMatching(/^whiteroom-audit-f1-\d{4}-\d{2}-\d{2}\.json$/));
+    expect(m.note()!.textContent).toBe('Downloaded 12,345 events, signed by WhiteRoom.');
+    expect(button().textContent).toBe('Download signed export');
+    m.root.unmount();
+  });
+
+  it('says so when the download fails', async () => {
+    const m = await mount();
+    api.build.mockRejectedValueOnce(new Error('HTTP 500'));
+    await act(async () => { ([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Download signed export') as HTMLButtonElement).click(); });
+    await flush();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(m.note()!.textContent).toBe('The export didn’t download. Try again.');
     m.root.unmount();
   });
 });

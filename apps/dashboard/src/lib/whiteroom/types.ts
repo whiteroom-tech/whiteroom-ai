@@ -817,6 +817,21 @@ export interface AuditIntegrity {
   anchoring: { enabled: boolean };
 }
 
+/**
+ * One page of the full signed export (engine export_audit_full). Events are
+ * passed through to the file as they come; the last page has the signed
+ * manifest (head seq and hash, count) and nextFromSeq null.
+ */
+export interface AuditExportPage {
+  fleetId: string;
+  firstSeq: number;
+  toSeq: number;
+  fromSeq: number;
+  events: Array<Record<string, unknown> & { seq: number }>;
+  nextFromSeq: number | null;
+  manifest?: Record<string, unknown> & { headSeq: number; count: number; signature: string };
+}
+
 export interface VerifyAuditResult {
   valid: boolean | null;
   complete?: boolean;
