@@ -571,6 +571,7 @@ describe('Keywords in the editor', () => {
     expect(m.button('Turn on Block')).toBeUndefined();
     await m.click(m.button('Turn it on'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', expect.objectContaining({ mode: 'enforce' }), 'k');
+    expect(m.text()).toContain('Saved. Keywords is now on.');
     m.root.unmount();
   });
 

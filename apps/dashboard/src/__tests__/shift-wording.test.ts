@@ -53,6 +53,11 @@ const COPY_FILES = [
   '../app/(citadel)/controls/_components/SuggestionDraft.tsx',
   '../app/fleet-key/onboarding.tsx',
   '../app/fleet-key/rotate.tsx',
+  '../app/fleet-key/page.tsx',
+  '../components/performance/SavingsPanels.tsx',
+  '../components/Sidebar.tsx',
+  '../hooks/useFleetAuth.ts',
+  '../../../../packages/ui/src/primitives/StatusPill.tsx',
 ];
 
 const BANNED = /\bshifts?\b|\bhand(s|ed|ing)? (work )?over\b|\bhandovers?\b|\bcompress(ed|ion)?\b|\bWatch only\b|\bEnforc(e|es|ing)\b|\byour API key\b/i;
@@ -63,8 +68,8 @@ function userFacingText(source: string, jsx: boolean): string[] {
   const strings = (code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? []).map((s) => s.replace(/\$\{[^}]*\}/g, ''));
   // JSX text only in .tsx: in plain .ts the pattern would match code between template holes.
   // Line breaks are folded first, so a sentence on its own line after a tag is still read.
-  // Runs with ; or = are code between braces, not text.
-  const jsxText = jsx ? (code.replace(/\s*\n\s*/g, ' ').match(/(?<=[>}])[^<>{}]+(?=[<{])/g) ?? []).filter((s) => !/[;=]|\bimport\b/.test(s)) : [];
+  // Runs with ; or =, or that start with a comma (object entries), are code between braces, not text.
+  const jsxText = jsx ? (code.replace(/\s*\n\s*/g, ' ').match(/(?<=[>}])[^<>{}]+(?=[<{])/g) ?? []).filter((s) => !/[;=]|\bimport\b|^\s*,/.test(s)) : [];
   // String literals count only as sentences (a space inside), so identifiers
   // like 'handover_out' pass; JSX text is always visible, even one word.
   return [...strings.filter((s) => /[a-z] [a-z]/i.test(s)), ...jsxText].filter((s) => BANNED.test(s));

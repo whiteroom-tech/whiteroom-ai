@@ -248,7 +248,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
-      const how = saved.mode === "enforce" ? "now blocks" : saved.mode === "watch" ? "is in Record only" : "is off";
+      const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "now blocks" : "is now on") : saved.mode === "watch" ? "is in Record only" : "is off";
       setNotice(`Saved. ${RULE_LABELS[saved.ruleType]} ${how}.`);
       void fetchData();
     } catch (e) {
