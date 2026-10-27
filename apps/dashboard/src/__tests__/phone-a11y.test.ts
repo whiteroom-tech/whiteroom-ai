@@ -84,6 +84,27 @@ describe('phone menu (AppShell)', () => {
     expect(open()).toBe(false);
   });
 
+  it('focus goes into the menu and comes back to More; the page behind is inert; a link closes it', async () => {
+    nav.path = '/home';
+    await render(shell());
+    const page = el.querySelector('main')!.parentElement!;
+    more().focus();
+    await act(async () => { more().click(); });
+    expect(el.querySelector('#wr-main-nav')!.contains(document.activeElement)).toBe(true);
+    expect(page.inert).toBe(true);
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+    expect(document.activeElement).toBe(more());
+    expect(page.inert).toBe(false);
+    // A link to the page you're on changes no path, and still closes the menu.
+    await act(async () => { more().click(); });
+    const home = [...el.querySelectorAll('#wr-main-nav a')].find((a) => a.textContent === 'Home') as HTMLAnchorElement;
+    const stay = (e: Event) => e.preventDefault();
+    document.addEventListener('click', stay);
+    await act(async () => { home.click(); });
+    document.removeEventListener('click', stay);
+    expect(open()).toBe(false);
+  });
+
   it('the sidebar it opens is the one More controls', async () => {
     await render(shell());
     expect(el.querySelector('#wr-main-nav')).toBeTruthy();

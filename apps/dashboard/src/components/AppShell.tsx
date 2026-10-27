@@ -17,22 +17,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const shell = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   useEffect(() => { applyTheme(storedTheme(), shell.current); }, []);
-  // Going to a page closes the menu; so does Escape.
+  // Going to a page closes the menu (as does any link in it, even to this
+  // page); Escape and the scrim close it and return focus to More. While it's
+  // open, focus starts in it and the page behind is inert.
   useEffect(() => { setMenuOpen(false); }, [pathname]);
+  const more = () => shell.current?.querySelector<HTMLButtonElement>('.wr-tabbar [aria-controls="wr-main-nav"]');
+  const closeMenu = () => { setMenuOpen(false); more()?.focus(); };
   useEffect(() => {
     if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    shell.current?.querySelector<HTMLElement>('#wr-main-nav a, #wr-main-nav button')?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenuOpen(false); more()?.focus(); } };
+    const nav = shell.current?.querySelector('#wr-main-nav');
+    const onLink = (e: Event) => { if ((e.target as Element).closest('a')) setMenuOpen(false); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    nav?.addEventListener('click', onLink);
+    return () => { window.removeEventListener('keydown', onKey); nav?.removeEventListener('click', onLink); };
   }, [menuOpen]);
 
   return (
     <div ref={shell} className={`wr-shell wr-shell--tabs citadel-layout${menuOpen ? ' navigation-open' : ''}`}>
       <Sidebar />
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+      <div inert={menuOpen} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
         {children}
       </div>
-      {menuOpen && <div className="wr-menu-scrim" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
+      {menuOpen && <div className="wr-menu-scrim" aria-hidden="true" onClick={closeMenu} />}
       <PhoneTabBar menuOpen={menuOpen} onMore={() => setMenuOpen((v) => !v)} />
     </div>
   );
