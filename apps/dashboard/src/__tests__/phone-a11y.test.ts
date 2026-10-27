@@ -157,9 +157,10 @@ describe('Pause from Home', () => {
   const agent = { agentId: 'code-reviewer', status: 'idle' };
 
   it('pauses at once and offers Undo in a toast, which resumes', async () => {
-    api.pause.mockResolvedValue({});
+    const own = { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z' };
+    api.pause.mockResolvedValue({ success: true, hold: own });
     api.resume.mockResolvedValue({});
-    api.check.mockImplementation(async () => ({ agentId: 'code-reviewer', status: 'idle', hold: { state: 'paused', by: 'user:u1', reason: null, at: new Date().toISOString() } }));
+    api.check.mockResolvedValue({ agentId: 'code-reviewer', status: 'idle', hold: own });
     await render(h(AgentActions, { agent, fleetId: 'f1', onChanged: () => {} }));
     await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
     await act(async () => { button('Pause')!.click(); });
@@ -191,7 +192,7 @@ describe('Pause from Home', () => {
 describe('Undo after a Pause', () => {
   const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
   it('is withdrawn once the agent is held some other way', async () => {
-    api.pause.mockResolvedValue({});
+    api.pause.mockResolvedValue({ success: true, hold: { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z' } });
     const agent = { agentId: 'code-reviewer', status: 'idle' };
     await render(h(AgentActions, { agent, fleetId: 'f1', onChanged: () => {} }));
     await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
@@ -240,7 +241,7 @@ describe('Home fact line', () => {
 describe('Undo checks the hold first', () => {
   const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
   const pauseThenUndo = async () => {
-    api.pause.mockResolvedValue({});
+    api.pause.mockResolvedValue({ success: true, hold: { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z' } });
     api.resume.mockReset();
     await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'f1', onChanged: () => {} }));
     await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
@@ -257,10 +258,20 @@ describe('Undo checks the hold first', () => {
     expect(el.querySelector('[role="status"]')?.textContent).toContain('Nothing changed.');
   });
 
-  it('leaves a later pause by someone else alone', async () => {
-    api.check.mockResolvedValue({ agentId: 'code-reviewer', status: 'idle', hold: { state: 'paused', by: 'user:u2', reason: null, at: new Date(Date.now() + 5 * 60_000).toISOString() } });
+  it('leaves another pause alone, even one made a moment later', async () => {
+    api.check.mockResolvedValue({ agentId: 'code-reviewer', status: 'idle', hold: { state: 'paused', by: 'user:u2', reason: null, at: '2026-10-27T10:00:05.000Z' } });
     await pauseThenUndo();
     expect(api.resume).not.toHaveBeenCalled();
+  });
+
+  it('offers no Undo when the engine doesn’t say which hold it set', async () => {
+    api.pause.mockResolvedValue({ success: true });
+    await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer paused.');
+    expect(button('Undo')).toBeUndefined();
   });
 
   it('does nothing when the check fails, and says so', async () => {

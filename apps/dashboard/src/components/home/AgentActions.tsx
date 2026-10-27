@@ -5,7 +5,7 @@ import { Toast } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
 import { checkWatch, controlFailure, pauseAgent, resumeAgent, stopAgent } from '@/lib/whiteroom/client';
-import type { AgentInfo } from '@/lib/whiteroom/types';
+import type { AgentHold, AgentInfo } from '@/lib/whiteroom/types';
 
 export type Act = 'pause' | 'stop' | 'resume';
 
@@ -40,8 +40,8 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; undo?: Act } | null>(null);
-  // When this Pause was made, so Undo can tell its own pause from a later one.
-  const pausedAt = useRef(0);
+  // The hold this Pause set, as the engine returned it, so Undo can tell its own pause from any other.
+  const ownHold = useRef<AgentHold | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,9 +61,10 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     setToast(null);
     setBusy(true);
     try {
-      await CALL[act](fleetId, agent.agentId, authKey);
-      if (act === 'pause') pausedAt.current = Date.now();
-      setToast({ message: `${agent.agentId} ${DONE[act]}.`, undo: UNDO[act] });
+      const res: { hold?: AgentHold | null } = await CALL[act](fleetId, agent.agentId, authKey);
+      if (act === 'pause') ownHold.current = res.hold?.state === 'paused' ? res.hold : null;
+      // Undo only when the engine said which hold it set (older engines don't).
+      setToast({ message: `${agent.agentId} ${DONE[act]}.`, undo: act === 'pause' && !ownHold.current ? undefined : UNDO[act] });
       onChanged();
     } catch (e) {
       const failure = controlFailure(e);
@@ -90,8 +91,8 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
   }, [holdState, toast?.undo]);
 
   // Undo reads the agent first and resumes only while it's still held by
-  // this pause: paused, and paused within a minute of when it was made. A
-  // stop, a later pause or a resume by someone else is left alone.
+  // this exact pause (same time and same person as the engine returned). A
+  // stop, another pause or a resume by someone else is left alone.
   async function undoPause() {
     setToast(null);
     setError(null);
@@ -102,8 +103,8 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
       setError(`Couldn’t check ${agent.agentId} before undoing. Nothing changed.`);
       return;
     }
-    const at = hold ? Date.parse(hold.at) : NaN;
-    const ours = hold?.state === 'paused' && (Number.isNaN(at) || Math.abs(at - pausedAt.current) <= 60_000);
+    const own = ownHold.current;
+    const ours = !!own && hold?.state === 'paused' && hold.at === own.at && hold.by === own.by;
     if (!ours) {
       setToast({ message: `${agent.agentId} was held or resumed again since. Nothing changed.` });
       onChanged();
