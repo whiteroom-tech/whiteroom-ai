@@ -442,8 +442,8 @@ export const ruleConditionText = (rule: Pick<GovernanceRule, 'ruleType' | 'param
 /** Who a rule covers, in a sentence: "all agents", "lead-agent", "lead-agent, code-reviewer". */
 export const whoFor = (scope: GovernanceScope) => (scope === 'all' ? 'all agents' : scope.join(', ') || 'no agents');
 
-/** Whether a rule has nothing to act on yet (a Keywords or Tool list rule with nothing picked). */
-export const notSetUp = (r: Pick<GovernanceRule, 'ruleType' | 'params'>) => emptyPick(r) !== null;
+/** Whether a rule has nothing to act on yet: a Keywords or Tool list rule with nothing picked, or one that covers no agents. */
+export const notSetUp = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'appliesTo'>) => emptyPick(r) !== null || (r.appliesTo !== 'all' && r.appliesTo.length === 0);
 
 /**
  * The page's three cards: rules for all agents, rules for specific agents

@@ -68,6 +68,9 @@ describe('the agent filter and groups', () => {
     expect(g.byAgent.map((x) => [x.agent, x.rules.map((r) => r.id)])).toEqual([['a-agent', ['two']], ['b-agent', ['two']], ['lead-agent', [lead.id]]]);
     expect(g.off.map((r) => r.id)).toEqual([other.id]);
     expect(g.unset.map((r) => r.id)).toEqual(['tools']);
+    // A rule that covers no agents isn't lost: it's not set up.
+    expect(ruleGroups([rule({ id: 'none', appliesTo: [] })]).unset.map((r) => r.id)).toEqual(['none']);
+    expect(leadCounts([rule({ appliesTo: [] })]).total).toBe(0);
     expect(modeCount(g.all)).toBe('1 Block · 1 Record only');
     expect(modeCount([lb, { ...lb, id: 'x' }])).toBe('2 Block · 0 Record only');
     // The lead line leaves out rules that aren't set up.

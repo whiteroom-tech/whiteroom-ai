@@ -356,6 +356,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   };
   const saveRef = useRef(save);
   saveRef.current = save;
+  /** Save after a weakening was confirmed; an Undo that stops there stops for good. */
+  const saveConfirmed = () => { if (save(true) === "stopped") undoingRef.current = false; };
 
   // ── Undo (lib/rule-history) ─────────────────────────────────────
   // Never edits the log: an update's old settings go into the editor and are
@@ -986,7 +988,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         cancelLabel={null}
         choices={[
           { label: "Keep blocking", tone: "primary", onClick: cancelDialog },
-          { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); save(true); } },
+          { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); saveConfirmed(); } },
         ]}
         onCancel={cancelDialog}
       />
@@ -1004,7 +1006,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         busy={saving}
         choices={dialog?.kind === "narrow" && dialog.next.appliesTo !== "all" ? [
           { label: <>Keep it for everyone, and add a copy just for {dialog.next.appliesTo.join(", ")}</>, tone: "primary", onClick: () => { if (dialog?.kind === "narrow" && dialog.next.appliesTo !== "all") void copyFor(dialog.rule, dialog.next.appliesTo); } },
-          { label: <>Move it to {dialog.next.appliesTo.join(", ")} only: {loseCount(agents, dialog.next.appliesTo)}</>, tone: "bad", onClick: () => { setDialog(null); save(true); } },
+          { label: <>Move it to {dialog.next.appliesTo.join(", ")} only: {loseCount(agents, dialog.next.appliesTo)}</>, tone: "bad", onClick: () => { setDialog(null); saveConfirmed(); } },
         ] : []}
         onCancel={cancelDialog}
       />
@@ -1082,7 +1084,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         confirmLabel="Save the change"
         cancelLabel="Keep it as it is"
         busy={saving}
-        onConfirm={() => { setDialog(null); save(true); }}
+        onConfirm={() => { setDialog(null); saveConfirmed(); }}
         onCancel={cancelDialog}
       />
 
