@@ -427,7 +427,9 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
     case 'keyword': {
       const p = a as KeywordParams, n = b as KeywordParams;
       const out: string[] = [];
-      const removed = p.keywords.filter((k) => !n.keywords.includes(k));
+      // Matched without regard to case, as the editor's duplicate check does: "Orion" → "orion" isn't a removal.
+      const kept = new Set(n.keywords.map((k) => k.toLowerCase()));
+      const removed = p.keywords.filter((k) => !kept.has(k.toLowerCase()));
       if (removed.length) out.push(`No longer looks for ${removed.map((k) => `“${k}”`).join(', ')}`);
       if (!p.wholeWord && n.wholeWord) out.push('Matches whole words only, not parts of words');
       const places = (w: KeywordParams['where']) => (w === 'both' ? ['incoming', 'replies'] : [w]);

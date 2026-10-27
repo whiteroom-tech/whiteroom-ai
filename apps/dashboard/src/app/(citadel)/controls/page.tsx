@@ -185,12 +185,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     let cancelled = false;
     // Another fleet, or a failed read: never the last fleet's spend beside this one's cap.
     setDailySpend(null);
-    Promise.all([performanceIndex(fleetId, SUGGESTION_HOURS, authKey), performanceFleetHourly(fleetId, SUGGESTION_HOURS, authKey)])
-      .then(([index, hourly]) => {
-        if (cancelled) return;
-        setSuggestions(computeSuggestions(index, hourly));
-        setDailySpend(averageDailySpend(hourly, SUGGESTION_HOURS / 24));
-      })
+    // Each read on its own: a failed model index doesn't hide the spend, nor the other way round.
+    const hourly = performanceFleetHourly(fleetId, SUGGESTION_HOURS, authKey);
+    hourly.then((h) => { if (!cancelled) setDailySpend(averageDailySpend(h, SUGGESTION_HOURS / 24)); }, () => {});
+    Promise.all([performanceIndex(fleetId, SUGGESTION_HOURS, authKey), hourly])
+      .then(([index, h]) => { if (!cancelled) setSuggestions(computeSuggestions(index, h)); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [fleetId, authKey]);

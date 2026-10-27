@@ -263,6 +263,7 @@ describe('weakening a rule', async () => {
     // Keywords: dropping one, whole words only, or looking in fewer places.
     const kw = rule({ ruleType: 'keyword', params: { keywords: ['a', 'b'], where: 'both', wholeWord: false } });
     expect(weakenings(kw, { ...kw, params: { keywords: ['a'], where: 'both', wholeWord: false } })).toEqual(['No longer looks for “b”']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['A', 'b'], where: 'both', wholeWord: false } })).toEqual([]);
     expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'both', wholeWord: true } })).toEqual(['Matches whole words only, not parts of words']);
     expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'incoming', wholeWord: false } })).toEqual(['No longer looks in model replies']);
     expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'replies', wholeWord: false } })).toEqual(['No longer looks in incoming data']);
