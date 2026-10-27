@@ -82,7 +82,7 @@ export function AuditCheckDialog({ open, fleetId, onClose }: { open: boolean; fl
             )}
           </div>
         </div>
-        <p className="ctl-cap" style={{ margin: 0 }}>Not yet anchored outside WhiteRoom. The signed export is in <Link href={`${ROUTES.settings}#audit-integrity`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Settings › Audit integrity</Link>.</p>
+        <p className="ctl-cap" style={{ margin: 0 }}>{state.kind === 'done' && state.info?.anchoring.enabled ? '' : 'Not yet anchored outside WhiteRoom. '}The signed export is in <Link href={`${ROUTES.settings}#audit-integrity`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Settings › Audit integrity</Link>.</p>
         <div className="wr-dialog-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           {(state.kind === 'failed' || (state.kind === 'done' && state.result.valid === null)) && <Button onClick={() => void check()}>Check again</Button>}
           <Button variant="primary" onClick={onClose}>Done</Button>

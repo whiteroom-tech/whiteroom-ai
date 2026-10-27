@@ -1203,7 +1203,8 @@ describe('Controls page, mockup suggestions and toasts', () => {
     await m.click(m.button('Add to allowlist…'));
     expect(dlg(m).textContent).toContain('the allowlist caught 44 calls from lead-agent');
     expect(dlg(m).textContent).toContain('agents added later aren’t covered by the allowlist until you add them');
-    await m.click(m.button('Allow for lead-agent only'));
+    expect(m.button('Allow for lead-agent only: agents added later lose the allowlist')!.className).toContain('ctl-bad');
+    await m.click(m.button('Allow for lead-agent only: agents added later lose the allowlist'));
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'model_allowlist', appliesTo: ['lead-agent'], params: { allowedModels: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5'] } }), 'k');
     expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ appliesTo: ['market-researcher'], ifVersion: 1 }), 'k');
     expect(m.el.querySelector('.wr-toast')!.textContent).toContain('claude-sonnet-4-5 allowed for lead-agent.');
@@ -1221,7 +1222,7 @@ describe('Controls page, mockup suggestions and toasts', () => {
     api.update.mockRejectedValue(new Error('down'));
     const m = await mount();
     await m.click(m.button('Add to allowlist…'));
-    await m.click(m.button('Allow for lead-agent only'));
+    await m.click(m.button('Allow for lead-agent only: agents added later lose the allowlist'));
     expect(api.create).toHaveBeenCalledTimes(1);
     expect(api.remove).toHaveBeenCalledWith('f1', 'c0', 'k');
     expect(m.text()).toMatch(/Couldn’t add the suggested allowlist/);
@@ -1265,6 +1266,7 @@ describe('Controls page, mockup suggestions and toasts', () => {
     await flush();
     expect(dlg(m).textContent).toContain('Nothing changed or missing');
     expect(dlg(m).textContent).toContain('All 2,045 events checked · just now. Events before tracking started aren’t covered.');
+    expect(dlg(m).textContent).toContain('Not yet anchored outside WhiteRoom.');
     m.root.unmount();
   });
 

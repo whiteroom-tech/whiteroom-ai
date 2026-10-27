@@ -965,7 +965,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         cancelLabel={null}
         choices={[
           { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep recording only" : "Cancel", onClick: cancelDialog },
-          { label: dialog?.kind === "enforce" && dialog.next.response === "notify" ? "Turn it on" : dialog?.kind === "enforce" && (dialog.next.response ?? "block") !== "block" ? "Turn it on" : "Start blocking", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
+          { label: dialog?.kind === "enforce" && (dialog.next.response ?? "block") !== "block" ? "Turn it on" : "Start blocking", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
         ]}
         onCancel={cancelDialog}
       />
@@ -1018,7 +1018,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               </p>
               <p className="ctl-cap" style={{ margin: 0 }}>
                 {allowOnlyFor
-                  ? <>Applies to all agents. Or allow it for {allowOnlyFor} only: {allowOnlyFor} gets its own copy of the allowlist, and agents added later aren’t covered by the allowlist until you add them.</>
+                  ? <>Applies to all agents. Or allow it for {allowOnlyFor} only: {allowOnlyFor} gets its own copy of the allowlist, and the original then covers only the agents you have today, so agents added later aren’t covered by the allowlist until you add them.</>
                   : <>Applies to all agents{allowlistTarget.mode === "off" ? ", in Record only" : ""}.</>}
               </p>
             </>
@@ -1028,7 +1028,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         ) : null}
         busy={saving}
         choices={dialog?.kind === "allow" ? [
-          ...(allowOnlyFor ? [{ label: `Allow for ${allowOnlyFor} only`, onClick: () => void addSuggestedAllowlist(dialog.models, allowOnlyFor) }] : []),
+          // The risky choice, said on the button: the original then covers a fixed list of agents.
+          ...(allowOnlyFor ? [{ label: `Allow for ${allowOnlyFor} only: agents added later lose the allowlist`, tone: "bad" as const, onClick: () => void addSuggestedAllowlist(dialog.models, allowOnlyFor) }] : []),
           { label: allowlistTarget && allowlistMissing.length ? "Allow for all agents" : allowlistTarget ? "Turn on in Record only" : "Add in Record only", tone: "primary" as const, onClick: () => void addSuggestedAllowlist(dialog.models) },
         ] : []}
         onCancel={cancelDialog}
