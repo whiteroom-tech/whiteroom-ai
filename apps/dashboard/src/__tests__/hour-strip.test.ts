@@ -33,6 +33,12 @@ describe('hour chart scrolling', () => {
     // Another day opens on its own busiest hour.
     await render('Tue, Oct 27', [{ hour: 6, runs: 3 }]);
     expect(wrap.scrollLeft).toBe((6 / 24) * 960 - 160);
+    // A day with no runs yet waits, then opens on its first busy hour once one arrives.
+    wrap.scrollLeft = 0;
+    await render('Wed, Oct 28', []);
+    expect(wrap.scrollLeft).toBe(0);
+    await render('Wed, Oct 28', [{ hour: 12, runs: 1 }]);
+    expect(wrap.scrollLeft).toBe((12 / 24) * 960 - 160);
     root.unmount();
   });
 });
