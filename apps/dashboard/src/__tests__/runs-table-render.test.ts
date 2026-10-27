@@ -223,6 +223,9 @@ describe('Runs › phones', () => {
     const more = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs');
     expect(more?.disabled).toBe(false);
     expect(m.text()).toContain('Couldn’t load more runs. Try again.');
+    // A poll Show more set aside isn't lost: the list is asked for again straight away.
+    const calls = api.list.mock.calls;
+    expect(calls[calls.length - 1][1]).not.toHaveProperty('cursor', '25');
     m.root.unmount();
   });
 

@@ -322,7 +322,9 @@ export function RunsTable({ preview, retentionDays }: {
     setMoreBusy(true);
     try {
       const res = await listRuns(fleetId, { ...listQuery(), cursor: next, pageSize: PAGE }, authKey);
-      if (currentFilter.current !== forFilter || 'unsupported' in res) return;
+      if (currentFilter.current !== forFilter) return;
+      // A poll this dropped (it bumped listGen) isn't redone by anything else: ask again now.
+      if ('unsupported' in res) { refresh(); return; }
       // A poll that started while this page loaded counted the shorter list: drop it when it lands.
       listGen.current++;
       expanded.current = true;
@@ -336,7 +338,7 @@ export function RunsTable({ preview, retentionDays }: {
       setTotal(res.total);
     } catch (e) {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
-      if (currentFilter.current === forFilter) setToast('Couldn’t load more runs. Try again.');
+      if (currentFilter.current === forFilter) { setToast('Couldn’t load more runs. Try again.'); refresh(); }
     } finally {
       setMoreBusy(false);
     }

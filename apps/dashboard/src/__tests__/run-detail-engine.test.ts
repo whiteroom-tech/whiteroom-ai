@@ -65,6 +65,32 @@ describe('run page totals fallback', () => {
   });
 });
 
+describe('run page totals fallback, when the lookup fails', () => {
+  it('tries the lookup again a little later', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      api.list.mockReset();
+      api.events.mockImplementation(async (): Promise<RunEventsResult> => ({
+        fleetId: 'f1', run: { runId: 'a~4', agentId: 'a', shift: 4, startedAt: now, endedAt: now }, events: [], page: 0, pages: 1, total: 0, eventFound: null,
+      }));
+      api.list.mockRejectedValueOnce(new Error('503'));
+      api.list.mockResolvedValue({ runs: [{ runId: 'a~4', agentId: 'a', shift: 4, startedAt: now, endedAt: now, lengthSeconds: 24, calls: 6, failedCalls: 0, blockedCalls: 0, spendMicros: 50_000, unpricedAttempts: 0, coverage: { calls: 6, checked: 6 } }], total: 1, cursor: null });
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      const root = createRoot(el);
+      await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
+      await flush();
+      expect(api.list).toHaveBeenCalledTimes(1);
+      await act(async () => { vi.advanceTimersByTime(30_000); });
+      await flush();
+      expect(api.list).toHaveBeenCalledTimes(2);
+      expect(el.querySelector('.wr-run-summary')?.textContent).toContain('6 model calls');
+      await act(async () => root.unmount());
+      el.remove();
+    } finally { vi.useRealTimers(); }
+  });
+});
+
 describe('run page when rule actions can’t be read', () => {
   it('says so instead of showing no rule activity', async () => {
     api.events.mockImplementation(async (): Promise<RunEventsResult> => ({

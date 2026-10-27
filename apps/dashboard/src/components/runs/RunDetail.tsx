@@ -111,23 +111,31 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   // Its last call's end is in the key, so a run still going is looked up again as it grows.
   const lookupKey = needTotals && run ? `${run.runId}|${run.startedAt}|${run.endedAt}` : null;
   const lookedUp = useRef<string | null>(null);
+  // A failed lookup tries again a little later (a finished run's key never changes on its own).
+  const [lookupTry, setLookupTry] = useState(0);
   useEffect(() => {
     if (!lookupKey || !run || lookedUp.current === lookupKey) return;
     lookedUp.current = lookupKey;
     let live = true;
     let done = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     const day = localDay(Date.parse(run.startedAt));
     const target = run.runId;
     collectRuns((cursor) => listRuns(fleetId, { fromDay: day, toDay: day, agentId: run.agentId, cursor, pageSize: 50 }, authKey), 10).then((res) => {
       done = true;
       const row = 'unsupported' in res ? null : res.runs.find((r) => r.runId === target);
       if (live && row) setTotals(row);
-    }, () => { done = true; });
+    }, () => {
+      done = true;
+      if (!live) return;
+      lookedUp.current = null;
+      retry = setTimeout(() => setLookupTry((n) => n + 1), 30_000);
+    });
     // A lookup cut short (unmounted, or a new key) may run again; a finished one never does.
-    return () => { live = false; if (!done) lookedUp.current = null; };
+    return () => { live = false; clearTimeout(retry); if (!done) lookedUp.current = null; };
     // Keyed on the run, not the poll's fresh object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lookupKey, fleetId, authKey]);
+  }, [lookupKey, fleetId, authKey, lookupTry]);
 
   // A linked row (deep link or See in timeline) scrolls into view and takes focus once
   // it's on screen; the shading fades after a few seconds.
@@ -238,11 +246,11 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
               <Link href={link.href} className="wr-link wr-panel__actions" style={{ fontSize: 'var(--fs-sm)' }}>{link.text} &rarr;</Link>
             </div>
             <ul className="wr-run-ra">
-              {actions.map((a) => {
+              {actions.map((a, i) => {
                 const r = ruleActivityRow(a);
                 const target = a.eventIds?.[0];
                 return (
-                  <li key={`${a.at}-${a.ruleId}-${a.mode}`}>
+                  <li key={`${a.at}-${a.ruleId}-${a.mode}-${i}`}>
                     <span className="wr-run-ra__time">{clock(a.at)}</span>
                     <span className="wr-run-ra__text">{r.lead}{r.count !== null && <> <strong>{r.count}</strong> {r.tail}</>}</span>
                     <ModeMark mode={a.mode === 'enforce' ? 'enforce' : 'watch'} />
