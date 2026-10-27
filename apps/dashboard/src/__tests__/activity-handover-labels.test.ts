@@ -6,10 +6,10 @@ const at = (e: Record<string, unknown>) =>
   eventModel({ id: 'e1', timestamp: '2026-09-29T12:00:00.000Z', agentId: 'lead-agent', ...e } as AuditEntry, Date.parse('2026-09-29T12:05:00.000Z'));
 
 describe('handover health labels', () => {
-  it('a transfer names the other agent; with no other agent it made its own context smaller', () => {
+  it('a transfer names the other agent when it can; only a self handover made its context smaller', () => {
     expect(at({ type: 'handover_out', toAgent: 'writer-agent' }).said).toBe('passed work to Writer-agent');
     expect(at({ type: 'handover', toAgent: 'writer-agent' }).said).toBe('passed work to Writer-agent');
-    expect(at({ type: 'handover_out' }).said).toBe('made its context smaller');
+    expect(at({ type: 'handover_out' }).said).toBe('passed work on');
     expect(at({ type: 'self_handover' }).said).toBe('made its context smaller');
     expect(at({ type: 'handover_unrecorded' }).said).toBe("passed work on while records couldn't be saved; it was recorded later");
   });
