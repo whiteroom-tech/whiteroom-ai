@@ -112,13 +112,14 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const { refresh: refreshWeek } = usePoll(async (stale) => {
     const todayDay = localDay();
     const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
+    // Every 7-day figure covers the same window: local midnight six days ago until now (whole UTC hours).
+    const weekHours = Math.ceil((Date.now() - start.getTime()) / 3_600_000) + 1;
     const [audit, scores, weekRules, dayRules, hourly] = await Promise.all([
       auditSummary(fleetId, start, authKey).catch(() => null),
-      performanceAgentScores(fleetId, 168, authKey).catch(() => null),
+      performanceAgentScores(fleetId, weekHours, authKey).catch(() => null),
       ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: todayDay }, authKey).catch(() => null),
       ruleActions(fleetId, { fromDay: todayDay, toDay: todayDay }, authKey).catch(() => null),
-      // The same 7 local days as the rest: from local midnight six days ago (whole UTC hours).
-      performanceFleetHourly(fleetId, Math.ceil((Date.now() - start.getTime()) / 3_600_000) + 1, authKey).catch(() => null),
+      performanceFleetHourly(fleetId, weekHours, authKey).catch(() => null),
     ]);
     if (stale()) return;
     setWeek(homeWeek(audit, scores, weekRules, hourly, start.getTime()));
