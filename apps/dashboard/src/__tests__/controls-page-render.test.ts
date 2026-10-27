@@ -1315,6 +1315,19 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('Undo of a suggested new allowlist removes it even when the reload after adding it failed', async () => {
+    api.models = ['gpt-4o'];
+    api.create.mockImplementation(async (_f: string, r: Partial<GovernanceRule>) => ({ rule: { ...base, id: 'a1', response: 'block', appliesTo: 'all', ...r } as GovernanceRule }));
+    const m = await mount();
+    api.listFail = true;
+    await m.click(m.button('Add allowlist…'));
+    await m.click(m.button('Add in Record only'));
+    expect(api.create).toHaveBeenCalled();
+    await m.click(m.button('Undo'));
+    expect(api.remove).toHaveBeenCalledWith('f1', 'a1', 'k');
+    m.root.unmount();
+  });
+
   it('a refused allowlist suggestion says so and leaves the open allowlist open', async () => {
     api.models = ['gpt-4o'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' };

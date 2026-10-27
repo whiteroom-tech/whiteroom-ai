@@ -618,6 +618,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     try {
       if (!target) {
         const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
+        setRules((rs) => [...rs, created]);
         showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created));
       } else {
         const prev = (target.params as ModelAllowlistParams).allowedModels;
