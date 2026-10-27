@@ -49,6 +49,8 @@ describe('quiet day', () => {
   it('says rule outcomes in the outcome words', () => {
     expect(ruleOutcomes({ blocks: 2, wouldBlocks: 60, paused: 0, stopped: 0, toldYou: 0 })).toBe('2 blocked · 60 would have blocked');
     expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 })).toBe('');
+    expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 }, true)).toBe('0 blocked · 0 would have blocked');
+    expect(ruleOutcomes({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 3 }, true)).toBe('2 paused · 1 blocked · 3 alerts · 0 would have blocked');
   });
 });
 

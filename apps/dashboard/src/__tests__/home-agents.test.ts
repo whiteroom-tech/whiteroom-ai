@@ -102,6 +102,8 @@ describe('Home view', () => {
     expect(html).toContain('a-very-long-agent-name-that-must-not-be-cut-off');
     expect(html).toContain('class="wr-agent-card__name"');
     expect(textOf(html)).toContain('120K tokens · 40K saved · 2 blocked');
+    // The dollar estimate is kept as the saved figure's tooltip.
+    expect(html).toContain('title="40K tokens saved, about $1.20 at this agent&#x27;s prices (est.)"');
   });
 
   it('opens on the table for a big fleet unless the viewer picked cards, with search and sort', () => {

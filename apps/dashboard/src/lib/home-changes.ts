@@ -88,13 +88,17 @@ export function dayLabel(day: string): string {
   return new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-/** A tally for a card or table cell, in the outcome words: "2 blocked · 60 would have blocked". '' for none. */
-export function ruleOutcomes(t: GovernanceTally): string {
+/**
+ * A tally in the outcome words: "2 blocked · 60 would have blocked". '' for
+ * none, unless `always`, which keeps "0 blocked · 0 would have blocked" (the
+ * Rule activity card, where a zero is the answer).
+ */
+export function ruleOutcomes(t: GovernanceTally, always = false): string {
   const bits: string[] = [];
   if (t.stopped) bits.push(`${t.stopped} stopped`);
   if (t.paused) bits.push(`${t.paused} paused`);
-  if (t.blocks) bits.push(`${t.blocks} blocked`);
+  if (t.blocks || always) bits.push(`${t.blocks} blocked`);
   if (t.toldYou) bits.push(`${t.toldYou} ${plural(t.toldYou, 'alert')}`);
-  if (t.wouldBlocks) bits.push(`${t.wouldBlocks} would have blocked`);
+  if (t.wouldBlocks || always) bits.push(`${t.wouldBlocks} would have blocked`);
   return bits.join(' · ');
 }

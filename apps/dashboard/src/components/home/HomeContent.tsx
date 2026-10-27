@@ -289,7 +289,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
             <StatCard
               variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions}
               value={todayRules ? fmtCount(tallyTotal(todayRules)) : '—'}
-              sub={todayRules ? (todayRules.paused || todayRules.stopped || todayRules.toldYou ? ruleOutcomes(todayRules) : `${todayRules.blocks} blocked · ${todayRules.wouldBlocks} would have blocked`) : 'not available yet'}
+              sub={todayRules ? ruleOutcomes(todayRules, true) : 'not available yet'}
               subHref={todayRules && tallyTotal(todayRules) > 0 ? `${ROUTES.runs}?show=rules&day=${localDay()}` : undefined}
             />
           </div>
@@ -367,7 +367,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                         <td><StatusPill state={agentState(a)} /></td>
                         <td>{line.run !== null && line.tasks ? <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> <span className="wr-home-table__cap">· {line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
                         <td className="is-num">{w?.used !== undefined ? fmtTokens(w.used) : '—'}</td>
-                        <td className="is-num" style={{ color: w?.saved ? 'var(--ok)' : undefined }}>{w?.saved ? fmtTokens(w.saved) : '—'}</td>
+                        <td className="is-num" style={{ color: w?.saved ? 'var(--ok)' : undefined }} title={w ? savedTitle(w) : undefined}>{w?.saved ? fmtTokens(w.saved) : '—'}</td>
                         <td className="wr-home-table__cap" style={{ color: outcomes ? 'var(--tx)' : undefined }}>{outcomes || '—'}</td>
                         <td>{w?.score?.score != null ? <span className="wr-home-table__score"><ScoreRing score={w.score.score} />{speed != null && <span className="wr-home-table__cap">Speed {(speed / 10).toFixed(1).replace(/\.0$/, '')}</span>}</span> : <span className="wr-home-muted">—</span>}</td>
                         <td className="is-num">{actions(a)}</td>
@@ -416,10 +416,15 @@ function WeekLine({ w }: { w: AgentWeek }) {
   const outcomes = w.rules ? ruleOutcomes(w.rules) : '';
   const bits: React.ReactNode[] = [];
   if (w.used !== undefined) bits.push(<span key="u">{fmtTokens(w.used)} tokens</span>);
-  if (w.saved) bits.push(<span key="s" style={{ color: 'var(--ok)' }}>{fmtTokens(w.saved)} saved</span>);
+  if (w.saved) bits.push(<span key="s" style={{ color: 'var(--ok)' }} title={savedTitle(w)}>{fmtTokens(w.saved)} saved</span>);
   if (outcomes) bits.push(<span key="r">{outcomes}</span>);
   if (bits.length === 0) return null;
   return <div className="wr-agent-card__week">{bits.map((b, i) => <span key={i}>{i > 0 && ' · '}{b}</span>)}</div>;
+}
+
+/** The saved figure's tooltip: what the tokens are worth at the agent's own prices, when the engine prices them. */
+function savedTitle(w: AgentWeek): string | undefined {
+  return w.saved && w.savedUsd != null ? `${fmtTokens(w.saved)} tokens saved, about ${usd(w.savedUsd)} at this agent's prices (est.)` : undefined;
 }
 
 /** The week's rules in a sentence: "rules would have blocked 120 calls". */
