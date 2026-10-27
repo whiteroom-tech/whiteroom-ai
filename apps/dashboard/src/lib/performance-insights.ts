@@ -98,12 +98,16 @@ export type RecRowAction = 'evidence' | 'toggle' | 'fixed' | 'snooze' | 'dismiss
 /**
  * Buttons on a recommendation row that isn't from the health check, in order:
  * View evidence, then (open rows only) a More/Less toggle that reveals
- * Mark as fixed, Snooze and Dismiss.
+ * Mark as fixed, Snooze and Dismiss. A row with no current finding gets no
+ * feedback buttons: the engine would refuse any feedback without one.
  */
-export function recRowActions(open: boolean, expanded: boolean): RecRowAction[] {
-  if (!open) return ['evidence'];
+export function recRowActions(open: boolean, expanded: boolean, hasFinding = true): RecRowAction[] {
+  if (!open || !hasFinding) return ['evidence'];
   return expanded ? ['evidence', 'toggle', 'fixed', 'snooze', 'dismiss'] : ['evidence', 'toggle'];
 }
+
+/** Why an open row has no feedback buttons. */
+export const NO_FINDING_NOTE = 'Can’t be marked yet: there’s no current evidence for it.';
 
 /** What each feedback button sends. Dismiss gives the one reason these rows offer. */
 export function recFeedback(action: Exclude<RecRowAction, 'evidence' | 'toggle'>): { action: 'implemented' | 'snooze' | 'dismiss'; reason?: string } {

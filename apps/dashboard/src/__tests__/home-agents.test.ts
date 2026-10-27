@@ -6,7 +6,6 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
 import { HomeView } from '@/components/home/HomeContent';
 import { homeWeek, shownAgents, TABLE_FROM } from '@/lib/home-agents';
-import { fmtTokens } from '@/lib/format';
 import type { AgentInfo, FleetReport } from '@/lib/whiteroom/types';
 
 const agent = (agentId: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo =>
@@ -28,7 +27,6 @@ describe('Home agents: one list', () => {
     expect(shownAgents(agents, weeks, '', 'used').map((a) => a.agentId)).toEqual(['writer', 'code-reviewer', 'lead-agent']);
     expect(shownAgents(agents, weeks, '', 'saved').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
     expect(shownAgents(agents, weeks, '', 'name').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
-    expect([980, 4000, 4100, 12_340, 999_999, 1_500_000, 12_000_000].map(fmtTokens)).toEqual(['980', '4K', '4.1K', '12K', '1M', '1.5M', '12M']);
   });
 
   it('builds each agent’s week from what came back, and leaves out what failed', () => {

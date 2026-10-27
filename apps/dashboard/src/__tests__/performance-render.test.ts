@@ -79,6 +79,14 @@ describe('Recommendations, rendered', () => {
     expect(html).not.toContain('Mark as fixed');
     expect(html).not.toMatch(/>none</);
   });
+  it('a row with no current finding offers no feedback, and says why, so nothing doomed is sent', () => {
+    const html = renderToStaticMarkup(h(RecommendationsCard, { ...props, recs: [{ ...rec, currentFindingId: null }] }));
+    expect(html).toContain('View evidence');
+    expect(html).not.toContain('>More<');
+    expect(html).toContain('Can’t be marked yet: there’s no current evidence for it.');
+    // A closed row has nothing to mark anyway: no note.
+    expect(renderToStaticMarkup(h(RecommendationsCard, { ...props, status: 'all', recs: [{ ...rec, status: 'dismissed', currentFindingId: null }] }))).not.toContain('Can’t be marked yet');
+  });
   it('after "Show closed…": the status filters show and the link goes', () => {
     const html = renderToStaticMarkup(h(RecommendationsCard, { ...props, status: 'all', showStatuses: true }));
     expect(html).toContain('Show recommendations by status');

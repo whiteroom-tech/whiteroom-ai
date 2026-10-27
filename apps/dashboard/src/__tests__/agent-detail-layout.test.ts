@@ -33,6 +33,23 @@ describe('agent page layout', () => {
   });
 });
 
+describe('agent page, what it leaves out', () => {
+  // With progress notes to show, so a carried-forward panel would have something to render.
+  it('has no Goal panel or "What it carries forward", but does show its progress notes', () => {
+    const html = renderToStaticMarkup(h(AgentDetail, {
+      fleetId: 'f', agentId: 'lead-agent', from: 'home',
+      preview: {
+        agent: { agentId: 'lead-agent', status: 'working', watchNumber: 2, tasksCompleted: 3 },
+        handover: { state: 'Drafting the claims summary', pending: [{ task: 'Check the totals' }], warnings: ['Totals are from yesterday'], session_stats: { tasks_completed: 3, total_tokens: 12_000 } },
+        entries: [], rules: [RULE],
+      },
+    }));
+    expect(html).toContain('Progress notes');
+    expect(html).not.toMatch(/>Goal</);
+    expect(html).not.toMatch(/carries forward/i);
+  });
+});
+
 describe('weekWindow', () => {
   it('starts at local midnight six days ago and counts whole hours back to it', () => {
     const now = new Date(2026, 9, 27, 15, 30).getTime();

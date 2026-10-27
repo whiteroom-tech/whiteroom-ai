@@ -212,7 +212,7 @@ const REASON: Record<GovernanceRuleType, string> = {
 /** The engine's 403 for this rule (blockResponseBody); nothing for Alert me. */
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
   const response = rule.response ?? 'block';
-  if (response === 'notify') return 'Nothing: the call goes through.\nYou get told; the agent doesn’t.';
+  if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it'
     : rule.ruleType === 'call_rate' ? 'once the last minute is back under the limit'
@@ -361,7 +361,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
-  { type: 'keyword', title: 'Flag keywords', desc: 'Get told, or block the call, when words you pick show up.', isNew: true },
+  { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.', isNew: true },
 ];
 
 // ── Groups: who a rule covers ───────────────────────────────────────

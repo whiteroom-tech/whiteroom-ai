@@ -67,6 +67,7 @@ describe('recommendations list', () => {
   it('keeps Mark as fixed, Snooze and Dismiss behind More on open rows', () => {
     expect(recRowActions(true, false)).toEqual(['evidence', 'toggle']);
     expect(recRowActions(true, true)).toEqual(['evidence', 'toggle', 'fixed', 'snooze', 'dismiss']);
+    expect(recRowActions(true, true, false)).toEqual(['evidence']);
     expect(recRowActions(false, true)).toEqual(['evidence']);
   });
   it('sends implemented for Mark as fixed, and a reason with Dismiss', () => {

@@ -9,7 +9,7 @@ import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import { FONT_MONO, SegmentedControl } from '@whiteroom/ui';
 import { fmtDay, plural } from '@/lib/format';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
-import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction } from '@/lib/performance-insights';
+import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction, NO_FINDING_NOTE } from '@/lib/performance-insights';
 import { Badge, Btn, CARD, H3 } from './primitives';
 import { DiagnosisRow, isDiagnosisRow } from './Diagnosis';
 
@@ -87,6 +87,7 @@ export function RecommendationsCard({
           </div>
           <RecActions
             open={rec.status === 'open'}
+            hasFinding={!!rec.currentFindingId}
             busy={feedbackLoading === rec.id}
             onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
             onFeedback={(f) => onFeedback(rec, f)}
@@ -125,7 +126,7 @@ export function RecommendationsCard({
 }
 
 /** View evidence up front; the rest behind More, so each row has one clear action. */
-function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; busy: boolean; onEvidence: () => void; onFeedback: (f: Feedback) => void }) {
+function RecActions({ open, hasFinding, busy, onEvidence, onFeedback }: { open: boolean; hasFinding: boolean; busy: boolean; onEvidence: () => void; onFeedback: (f: Feedback) => void }) {
   const [more, setMore] = useState(false);
   const buttons: Record<RecRowAction, ReactNode> = {
     evidence: <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
@@ -141,7 +142,8 @@ function RecActions({ open, busy, onEvidence, onFeedback }: { open: boolean; bus
   };
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-      {recRowActions(open, more).map((a) => buttons[a])}
+      {recRowActions(open, more, hasFinding).map((a) => buttons[a])}
+      {open && !hasFinding && <span style={{ alignSelf: 'center', fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{NO_FINDING_NOTE}</span>}
     </div>
   );
 }

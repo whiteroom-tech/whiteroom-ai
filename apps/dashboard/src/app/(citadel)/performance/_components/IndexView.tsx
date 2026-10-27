@@ -256,7 +256,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
             filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
             loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
             onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
-            onFeedback={(rec, f) => void submitFeedback(rec.id, rec.currentFindingId ?? '', f.action, f.reason)}
+            onFeedback={(rec, f) => { if (rec.currentFindingId) void submitFeedback(rec.id, rec.currentFindingId, f.action, f.reason); }}
             onDiagnosisFeedback={submitDiagnosisFeedback}
             feedbackLoading={feedbackLoading} feedbackError={feedbackError}
           />

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fmtTokens } from '@/lib/format';
 import { agentDaySavings, auditSavingsEvent, dailySavings, localDayFromTs } from '@/lib/analytics-metrics';
-import { axisTop, savingsCaption } from '@/components/performance/SavingsPanels';
+import { axisLabel, axisTop, savingsCaption } from '@/components/performance/SavingsPanels';
 
 // Performance's Savings chart and By agent table, moved from Run History,
 // must keep Run History's numbers: same attribution, same per-agent-day math.
@@ -43,13 +42,15 @@ describe('Savings axis', () => {
     expect(axisTop(0)).toBe(1);
   });
   it('labels without a trailing .0', () => {
-    expect([150_000, 75_000, 0, 1_500_000].map(fmtTokens)).toEqual(['150K', '75K', '0', '1.5M']);
+    expect([150_000, 75_000, 0, 1_500_000].map(axisLabel)).toEqual(['150K', '75K', '0', '1.5M']);
+    // Each tick names its own value: the midpoint of a 25K or 2.5M axis isn't rounded to a neighbour.
+    expect([axisTop(24_000) / 2, axisTop(2_400_000) / 2, axisTop(1_400) / 2].map(axisLabel)).toEqual(['12.5K', '1.25M', '750']);
   });
 });
 
 describe('Savings card caption', () => {
   it('names every part of the total it sits under', () => {
-    expect(savingsCaption(1_650_000, 0)).toBe('1.6M tokens not spent, estimated');
+    expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, estimated');
     expect(savingsCaption(0, 12_000)).toBe('cache reads, estimated');
     expect(savingsCaption(2_000, 12_000)).toBe('2K tokens not spent + cache reads, estimated');
     expect(savingsCaption(0, 0)).toBe('nothing saved in this range');

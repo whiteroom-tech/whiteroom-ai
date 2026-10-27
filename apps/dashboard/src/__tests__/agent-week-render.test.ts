@@ -19,7 +19,7 @@ describe('Last 7 days on the agent page', () => {
       score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
     } })));
     expect(t).toContain('Tokens without WhiteRoom, est. 279K');
-    expect(t).toContain('With WhiteRoom 53K 226K less (81%)');
+    expect(t).toContain('With WhiteRoom 53.4K 226K less (81%)');
     expect(t).toContain('2 blocked · 58 in Record only');
     expect(t).toContain('How is the score worked out?');
     expect(t).toContain('Clean calls 100 of 100');
