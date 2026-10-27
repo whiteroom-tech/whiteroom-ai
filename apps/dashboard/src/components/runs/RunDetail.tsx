@@ -3,25 +3,30 @@
 import { MODE_LABEL, RULE_ACTIVITY } from '@/lib/vocab';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, Hint, Icon, Panel, SegmentedControl, Tag, FONT_MONO } from '@whiteroom/ui';
-import { getRunEvents, isAuthError, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { Button, Icon, Panel, SegmentedControl, Tag, Toast, FONT_MONO } from '@whiteroom/ui';
+import { getRunEvents, isAuthError, listRuns, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import type { RunEventsResult } from '@/lib/whiteroom/types';
-import { PageHeader } from '@/components/citadel/PageChrome';
+import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
-import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { clock } from '@/lib/home';
-import { flagsNote, flagText, loadRunPage, parseRunId, runMeta, ruleActivityCount, RUNS_LIST_URL_KEY, timelineRow, type RunKind } from '@/lib/runs';
+import { fmtCount } from '@/lib/format';
+import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
+import { collectRunEvents, collectRuns, flagsNote, wouldActText, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
+/** A mode as the mockup tags it: filled brand "● Block", hollow "○ Record only". */
+export function ModeMark({ mode }: { mode: 'watch' | 'enforce' }) {
+  return <span className={`wr-run-mtag${mode === 'enforce' ? ' is-block' : ''}`}>{MODE_LABEL[mode]}</span>;
+}
+
 /**
- * Run detail (README › Screens › 2b), the P1 part: the meta line and What
- * happened, the run's calls and events in order, 20 per page, with ?event=
- * deep links. What stood out, Claim check and Rule actions arrive with P2.
+ * Run detail (README › Screens › 2b): the summary line, Rule activity (each
+ * row can jump to its call in the timeline), and What happened, the run's
+ * calls and events in order, 20 per page, with ?event= deep links.
  */
-export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, preview }: {
+export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, preview, previewTotals }: {
   fleetId: string;
   authKey?: string;
   runId: string;
@@ -30,15 +35,30 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   onAuthError?: (msg: string) => void;
   /** /dev/run: a sample page; nothing is fetched. */
   preview?: RunEventsResult;
+  /** /dev/run: the runs list's totals, as an older engine's fallback. */
+  previewTotals?: RunTotals;
 }) {
   const [kind, setKind] = useState<RunKind>('all');
   const [cursor, setCursor] = useState<string | null>(null);
-  const [data, setData] = useState<RunEventsResult | null>(preview ?? null);
+  const [loaded, setData] = useState<RunEventsResult | null>(preview ?? null);
+  // /dev/run filters its sample itself for Events only, as the engine would.
+  const data = preview && loaded && kind === 'events'
+    ? { ...loaded, events: loaded.events.filter((e) => e.kind === 'event'), total: loaded.events.filter((e) => e.kind === 'event').length }
+    : loaded;
   const [missing, setMissing] = useState(false);
   const [failing, setFailing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(preview ? Date.now() : null);
   const [highlight, setHighlight] = useState<string | null>(null);
+  // Older engines send no totals with the run: the runs list has them.
+  const [totals, setTotals] = useState<RunTotals | null>(previewTotals ?? null);
+  const [exporting, setExporting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   // The deep link applies to the first load only; paging after it is normal.
   const pendingEvent = useRef(eventId ?? null);
+  // A See in timeline jump waiting on its page: say so if the engine can't find the call.
+  const jumping = useRef(false);
+  // Bumped on each jump, so the same row can be jumped to again.
+  const [jumpSeq, setJumpSeq] = useState(0);
   const [backHref, setBackHref] = useState<string>(ROUTES.runs);
   useEffect(() => { setBackHref(safeSessionGet(RUNS_LIST_URL_KEY) ?? ROUTES.runs); }, []);
 
@@ -51,16 +71,25 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       setData(got.res);
       setFailing(false);
       setMissing(false);
+      setUpdatedAt(Date.now());
       if (target) {
         pendingEvent.current = null;
         setKind(got.kind);
         setCursor(got.cursor);
         setHighlight(got.highlight);
+        if (jumping.current && !got.highlight) setToast('Couldn’t find that call in this run.');
+        jumping.current = false;
       }
     } catch (e) {
       if (stale()) return;
       if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }
       if (e instanceof WhiteRoomApiError && e.status === 404) { setMissing(true); return; }
+      // A See in timeline jump whose page didn't load is dropped, so a later poll doesn't act on it.
+      if (jumping.current) {
+        jumping.current = false;
+        pendingEvent.current = null;
+        setToast('Couldn’t open that call. Try again.');
+      }
       setFailing(true);
     }
   }, [fleetId, authKey, runId, kind, cursor, onAuthError, preview]);
@@ -74,105 +103,214 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     refresh();
   }, [kind, cursor, refresh]);
 
-  // Scroll the deep-linked row into view once (it renders with the same
-  // update that sets the highlight) and let the highlight fade after 2 s.
+  // The totals fallback: the run's row in list_runs for the day it started, looked up
+  // once per run and size (polls that bring nothing new don't repeat it), reading that
+  // agent's day a few pages deep.
+  const run = data?.run;
+  const needTotals = !!run && run.calls === undefined && !preview;
+  // Its last call's end is in the key, so a run still going is looked up again as it grows.
+  const lookupKey = needTotals && run ? `${run.runId}|${run.startedAt}|${run.endedAt}` : null;
+  const lookedUp = useRef<string | null>(null);
+  // A failed lookup tries again a little later (a finished run's key never changes on its own).
+  const [lookupTry, setLookupTry] = useState(0);
+  useEffect(() => {
+    if (!lookupKey || !run || lookedUp.current === lookupKey) return;
+    lookedUp.current = lookupKey;
+    let live = true;
+    let done = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const day = localDay(Date.parse(run.startedAt));
+    const target = run.runId;
+    collectRuns((cursor) => listRuns(fleetId, { fromDay: day, toDay: day, agentId: run.agentId, cursor, pageSize: 50 }, authKey), 10).then((res) => {
+      done = true;
+      const row = 'unsupported' in res ? null : res.runs.find((r) => r.runId === target);
+      if (live && row) setTotals(row);
+    }, () => {
+      done = true;
+      if (!live) return;
+      lookedUp.current = null;
+      retry = setTimeout(() => setLookupTry((n) => n + 1), 30_000);
+    });
+    // A lookup cut short (unmounted, or a new key) may run again; a finished one never does.
+    return () => { live = false; clearTimeout(retry); if (!done) lookedUp.current = null; };
+    // Keyed on the run, not the poll's fresh object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupKey, fleetId, authKey, lookupTry]);
+
+  // A linked row (deep link or See in timeline) scrolls into view and takes focus once
+  // it's on screen; the shading fades after a few seconds.
   useEffect(() => {
     if (!highlight) return;
-    document.getElementById(`run-event-${highlight}`)?.scrollIntoView({ block: 'center' });
-    const t = setTimeout(() => setHighlight(null), 2000);
+    const el = document.getElementById(`run-event-${highlight}`);
+    if (el) {
+      const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
+      el.focus({ preventScroll: true });
+    }
+    const t = setTimeout(() => setHighlight(null), 4000);
     return () => clearTimeout(t);
-  }, [highlight]);
+  }, [highlight, jumpSeq]);
+
+  /** See in timeline: the row if it's on this page, else the page holding it. */
+  function jumpTo(id: string) {
+    if (data?.events.some((e) => e.id === id)) { setHighlight(id); setJumpSeq((n) => n + 1); return; }
+    if (preview) return;
+    pendingEvent.current = id;
+    jumping.current = true;
+    if (kind === 'all') refresh(); else setKind('all');
+  }
+
+  async function exportRun() {
+    if (!data) return;
+    setExporting(true);
+    try {
+      const got = preview ? { events: data.events, truncated: false } : await collectRunEvents((c) => getRunEvents(fleetId, runId, { cursor: c, kind: 'all' }, authKey));
+      downloadWorkbook(buildWorkbook(runSheets(data.run, got.events, totals)), `whiteroom-run-${data.run.agentId}-${data.run.shift}${got.truncated ? `-first-${got.events.length}` : ''}.xlsx`);
+      setToast(got.truncated
+        ? `Downloaded the first ${fmtCount(got.events.length)} calls and events of run ${data.run.shift}. The rest didn’t fit in one file.`
+        : `Downloaded run ${data.run.shift}.`);
+    } catch (e) {
+      if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }
+      setToast('Couldn’t export this run. Try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const parsed = parseRunId(runId);
   const agentId = data?.run.agentId ?? parsed?.agentId ?? runId;
   const shift = data?.run.shift ?? parsed?.shift ?? null;
-  const title = (
-    <>
-      <Link href={backHref} className="wr-crumb">&larr; Runs</Link>
-      <span aria-hidden="true" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', fontWeight: 400 }}>/</span>
-      <span style={{ fontFamily: FONT_MONO }}>{shift === null ? agentId : `${agentId} · run ${shift}`}</span>
-    </>
-  );
+  const title = <><span style={{ fontFamily: FONT_MONO }}>{agentId}</span>{shift !== null && <span>· run {shift}</span>}</>;
+  const crumb = <div className="wr-run-crumb"><Link href={backHref} className="wr-crumb">&larr; Runs</Link></div>;
 
   if (missing) {
     return (
-      <>
+      <div className="wr-runs-page">
+        {crumb}
         <PageHeader title={title} fleetId={fleetId} />
-        <div style={{ padding: 24, maxWidth: 760 }}>
+        <div className="wr-page-body" style={{ padding: 24 }}>
           <Panel title="Run not found">
             <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx2)', lineHeight: 1.55 }}>
               There&rsquo;s no run <span style={{ fontFamily: FONT_MONO, color: 'var(--tx)' }}>{shift === null ? runId : `${agentId} · ${shift}`}</span> in this fleet. It may be older than your plan keeps; <Link href={ROUTES.settings} className="wr-link">see your plan &rarr;</Link>
             </p>
           </Panel>
         </div>
-      </>
+      </div>
     );
   }
 
-  const rows = (data?.events ?? []).map(timelineRow);
+  const s = run ? runSummary(run, totals) : null;
+  // Only the first page starts from the run's first model (named in the summary line); a later
+  // page's first call names its model, since the call before it isn't on screen.
+  const rows = timelineRows(data?.events ?? [], data?.page === 0 && kind === 'all' ? s?.models[0] ?? null : null);
+  const actions = run?.ruleActions ?? [];
+  const activityTotal = actions.reduce((n, a) => n + a.occurrences, 0);
+  const link = actions.length ? ruleActivityLink(actions) : null;
+  const glyphs = new Set(rows.map((r) => r.glyph));
+  const shaded = rows.some((r) => r.rule);
   return (
-    <>
-      <PageHeader title={title} fleetId={fleetId}>
+    <div className="wr-runs-page">
+      {crumb}
+      <PageHeader title={title} fleetId={fleetId} badge={<LiveStatus at={updatedAt} failing={failing && !!data} />}>
         <CopyLinkButton />
+        <Button onClick={() => void exportRun()} busy={exporting} busyLabel="Exporting…" disabled={!data}>Export this run</Button>
         <Link href={`/agents/${encodeURIComponent(agentId)}?from=runs`} className="wr-btn wr-btn--secondary wr-btn--h32">Open agent</Link>
       </PageHeader>
-      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 12, alignContent: 'start' }}>
-        {data && <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{runMeta(data.run)}</p>}
-        {failing && data && <RefreshFailed />}
-        {!!data?.run.flags?.length && (
-          <Banner variant="warn">
-            <span style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--warn-tx)', marginBottom: 2 }}>What stood out</span>
-            {data.run.flags.map(flagText).join(' · ')}. {flagsNote(data.run.ruleActions)}
-          </Banner>
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 16, alignContent: 'start' }}>
+        {s && (
+          <p className="wr-run-summary">
+            {s.started} · {s.length}
+            {s.calls !== undefined && <> · <strong>{s.calls}</strong> model {s.calls === 1 ? 'call' : 'calls'}</>}
+            {s.spend !== undefined && <> · <strong>{s.spend}</strong></>}
+            {s.failed !== undefined && <> · <strong>{s.failed}</strong> failed</>}
+            {!!s.blocked && <> · <strong>{s.blocked}</strong> blocked</>}
+            {s.wouldBlock && <> · {s.wouldBlock.atLeast && 'at least '}<strong>{s.wouldBlock.n}</strong> would have blocked</>}
+            {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
+            {s.models.map((m) => <span key={m}> · <span className="wr-run-summary__model">{m}</span></span>)}
+          </p>
         )}
-        {!!data?.run.ruleActions?.length && (
-          <Panel title={RULE_ACTIVITY} count={ruleActivityCount(data.run.ruleActions)} bodyPadding={0}>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {data.run.ruleActions.map((a) => (
-                <li key={`${a.at}-${a.ruleId}-${a.mode}`} style={{ display: 'flex', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)' }}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', flex: 'none' }}>{clock(a.at)}</span>
-                  <span style={{ minWidth: 0 }}>&lsquo;{RULE_LABELS[a.ruleType]}&rsquo; · {a.mode === 'enforce' ? RESPONSE_LABEL[a.response] : `would ${RESPONSE_LABEL[a.response].toLowerCase()}`} · {MODE_LABEL[a.mode === 'enforce' ? 'enforce' : 'watch']}{a.occurrences > 1 && ` · ×${a.occurrences}`}</span>
-                  <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(a.ruleId)}`} className="wr-link" style={{ marginLeft: 'auto', flex: 'none' }}>See the rule &rarr;</Link>
-                </li>
-              ))}
+        {!!run?.flags?.length && (
+          <p className="wr-run-flags">
+            <span style={{ display: 'flex', color: 'var(--warn)' }}><Icon name="alert" size={14} /></span>
+            <span><strong>Stood out:</strong> {run.flags.map(flagText).join(' · ')}. {flagsNote(run.ruleActions)}</span>
+          </p>
+        )}
+        {failing && data && <RefreshFailed since={updatedAt} />}
+        {run?.ruleActionsUnavailable && actions.length === 0 && (
+          <p className="wr-run-flags">Rule activity for this run couldn&rsquo;t be read just now.</p>
+        )}
+        {actions.length > 0 && link && (
+          <section className="wr-panel" aria-labelledby="run-rule-activity" style={{ overflow: 'hidden' }}>
+            <div className="wr-panel__head">
+              <h2 id="run-rule-activity" className="wr-panel__title">{RULE_ACTIVITY} <span className="wr-panel__count">{activityTotal}</span></h2>
+              <Link href={link.href} className="wr-link wr-panel__actions" style={{ fontSize: 'var(--fs-sm)' }}>{link.text} &rarr;</Link>
+            </div>
+            <ul className="wr-run-ra">
+              {actions.map((a, i) => {
+                const r = ruleActivityRow(a);
+                const target = a.eventIds?.[0];
+                return (
+                  <li key={`${a.at}-${a.ruleId}-${a.mode}-${i}`}>
+                    <span className="wr-run-ra__time">{clock(a.at)}</span>
+                    <span className="wr-run-ra__text">{r.lead}{r.count !== null && <> <strong>{r.count}</strong> {r.tail}</>}</span>
+                    <ModeMark mode={a.mode === 'enforce' ? 'enforce' : 'watch'} />
+                    {target && <Button size={32} onClick={() => jumpTo(target)}>See in timeline</Button>}
+                  </li>
+                );
+              })}
             </ul>
-          </Panel>
+            <p className="wr-run-ra__foot">{ruleActivityFooter(actions)}</p>
+          </section>
         )}
-        <Panel
-          title={<>What happened<Hint text={HELP.whatHappened} /></>}
-          count={data ? `${data.total} ${kind === 'events' ? 'events' : 'calls and events'}` : undefined}
-          bodyPadding={0}
-          actions={<SegmentedControl<RunKind> label="Show" value={kind} onChange={(k) => { setKind(k); setCursor(null); }} size={24} options={[{ value: 'all', label: 'Everything' }, { value: 'events', label: 'Events only' }]} />}
-        >
+        <section className="wr-panel" aria-labelledby="run-what-happened" style={{ overflow: 'hidden' }}>
+          <div className="wr-panel__head">
+            <h2 id="run-what-happened" className="wr-panel__title">What happened {data && <span className="wr-panel__count">{data.total} {kind === 'events' ? 'events' : 'calls and events'}, oldest first</span>}</h2>
+            <span className="wr-panel__actions">
+              <SegmentedControl<RunKind> label="Show" value={kind} onChange={(k) => { setKind(k); setCursor(null); }} size={26} options={[{ value: 'all', label: 'Everything' }, { value: 'events', label: 'Events only' }]} />
+            </span>
+          </div>
           {!data ? (
             failing ? <LoadingLine>Couldn&rsquo;t load this run yet. Retrying&hellip;</LoadingLine> : <LoadingLine />
           ) : rows.length === 0 ? (
-            <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{kind === 'events' ? 'No events in this run; switch to Everything to see its calls.' : 'Nothing recorded for this run.'}</p>
+            <p style={{ margin: 0, padding: '14px 20px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{kind === 'events' ? 'No events in this run; switch to Everything to see its calls.' : 'Nothing recorded for this run.'}</p>
           ) : (
             <ol className="wr-timeline" aria-label="What happened, oldest first">
               {rows.map((r) => (
-                <li key={r.id} id={`run-event-${r.id}`} className={r.id === highlight ? 'is-highlighted' : undefined}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{r.time}</span>
-                  <span style={{ display: 'flex', color: r.iconColor }}><Icon name={r.icon} size={14} /></span>
-                  <span style={{ fontSize: 'var(--fs-sm)', minWidth: 0, overflowWrap: 'anywhere' }}>{r.text}</span>
-                  {r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}
+                <li key={r.id} id={`run-event-${r.id}`} tabIndex={-1} className={[r.rule ? 'is-shaded' : '', r.id === highlight ? 'is-highlighted' : ''].filter(Boolean).join(' ') || undefined}>
+                  <span className="wr-timeline__time" style={{ color: r.sameTime ? 'var(--tx3)' : 'var(--tx2)' }}>{r.time}</span>
+                  <span className={`wr-timeline__glyph is-${r.glyph}`} aria-label={GLYPH_NAME[r.glyph]} role="img">{GLYPH[r.glyph]}</span>
+                  <span className="wr-timeline__text">{r.text}</span>
+                  {r.rule ? (
+                    <span className="wr-timeline__rule"><span>{r.rule.text}</span><ModeMark mode={r.rule.mode} /></span>
+                  ) : r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}
                 </li>
               ))}
             </ol>
           )}
           {data && data.pages > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderTop: '1px solid var(--line)' }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>page {data.page + 1} of {data.pages}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderTop: '1px solid var(--line)' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Page {data.page + 1} of {data.pages}</span>
               <span style={{ marginLeft: 'auto' }} />
               {data.page > 0 && <Button variant="ghost" size={28} onClick={() => setCursor(String(data.page - 1))}>&larr; Earlier</Button>}
               {data.page < data.pages - 1 && <Button size={28} onClick={() => setCursor(String(data.page + 1))}>Later &rarr;</Button>}
             </div>
           )}
-        </Panel>
+          {rows.length > 0 && (
+            <p className="wr-timeline__legend">
+              {(['start', 'call', 'done', 'bad', 'event'] as TimelineGlyph[]).filter((g) => glyphs.has(g) || g === 'call' || g === 'bad').map((g) => (
+                <span key={g} className={g === 'bad' ? 'is-bad' : undefined}><span aria-hidden="true">{GLYPH[g]}</span> {g === 'call' && shaded ? 'model call (shaded: a rule acted on it, or would have)' : GLYPH_NAME[g]}</span>
+              ))}
+            </p>
+          )}
+        </section>
+        <p style={{ marginBlock: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>This run is part of your audit trail.</p>
       </div>
-    </>
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+    </div>
   );
 }
+
+const GLYPH_NAME: Record<TimelineGlyph, string> = { start: 'run started', call: 'model call', done: 'finished', bad: 'blocked or failed', event: 'other event' };
 
 /** Copies this run's address, to share it (the page opens straight onto the run). */
 function CopyLinkButton() {
@@ -183,7 +321,7 @@ function CopyLinkButton() {
     return () => clearTimeout(t);
   }, [copied]);
   return (
-    <Button variant="ghost" size={32} onClick={() => {
+    <Button size={32} onClick={() => {
       // No clipboard (an insecure page, some browsers) fails the same way a refusal does.
       Promise.resolve().then(() => navigator.clipboard.writeText(window.location.href)).then(() => setCopied(true), () => setCopied(false));
     }}>

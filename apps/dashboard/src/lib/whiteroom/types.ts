@@ -711,7 +711,18 @@ export interface GovernanceListResult {
 /** Rule actions in words (engine rule_actions). */
 export interface RuleActionCounts { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number }
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
-export interface RunRuleAction { at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number }
+export interface RunRuleAction {
+  at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number;
+  /** Timeline ids of the calls it was for, in timeline order (engine PR 298; empty on older rows, absent on older engines). */
+  eventIds?: string[];
+  ruleName?: string | null;
+  outcome?: CallRuleAction['outcome'];
+  /** The decision's reason code (model_not_allowed, …). Absent on older engines. */
+  reason?: string | null;
+}
+
+/** A rule that acted, or would have, on one call (engine PR 298). */
+export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block'; reason?: string | null }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 
@@ -741,9 +752,14 @@ export type RunFlag =
 
 export interface RunDaysResult {
   fleetId: string;
-  /** Oldest first; days with no runs are left out. */
-  days: { day: string; runs: number }[];
+  /** Oldest first; days with no runs are left out. `flagged` and `ruleActivity` from engine PR 298. */
+  days: RunDayCount[];
+  /** True when the range held too many calls to count flagged runs (engine PR 298). */
+  flaggedUnavailable?: boolean;
 }
+
+export interface RunDayCount { day: string; runs: number; flagged?: number; ruleActivity?: number }
+export interface RunHourCount { hour: number; runs: number; ruleActivity?: number }
 
 export interface ListRunsResult {
   fleetId: string;
@@ -765,12 +781,34 @@ export interface RunEvent {
   /** Tools the request offered the model. Not shown as use; kept for exports and investigations. */
   availableTools?: string[];
   durationMs?: number | null;
+  /** Calls: the rules that acted, or would have, on this call (engine PR 298). */
+  ruleActions?: CallRuleAction[];
   detail?: Record<string, unknown>;
+}
+
+/** A run's header on Run detail. The totals and models come from engine PR 298; older engines send only the first six fields. */
+export interface RunHeader {
+  runId: string; agentId: string; shift: number; startedAt: string; endedAt: string;
+  flags?: RunFlag[];
+  ruleActions?: RunRuleAction[];
+  calls?: number;
+  spendMicros?: number;
+  unpricedAttempts?: number;
+  failedCalls?: number;
+  blockedCalls?: number;
+  /** Calls a Record-only rule would have blocked (distinct linked calls, a lower bound); null when it can't be told. */
+  wouldBlockCalls?: number | null;
+  /** list_runs' figure for the run (times a Record-only rule would have acted): the fallback for older runs. */
+  wouldActCalls?: number;
+  /** The run's rule actions couldn't be read: Rule activity is unknown, not empty. */
+  ruleActionsUnavailable?: boolean;
+  /** Distinct models, in order of first use. */
+  models?: string[];
 }
 
 export interface RunEventsResult {
   fleetId: string;
-  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string; flags?: RunFlag[]; ruleActions?: RunRuleAction[] };
+  run: RunHeader;
   events: RunEvent[];
   page: number;
   pages: number;

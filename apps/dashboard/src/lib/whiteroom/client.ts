@@ -15,6 +15,7 @@ import type {
   GovernanceResponse,
   RuleActionsResult,
   RunDaysResult,
+  RunHourCount,
   RunEventsResult,
   FleetDiagnosis,
   AgentHold,
@@ -761,7 +762,7 @@ export function runDays(fleetId: string, opts: RunsQuery, key?: string): Promise
 }
 
 /** Runs per hour (0–23) of one of the viewer's days (engine E1a); `unsupported` on older engines. */
-export function runHours(fleetId: string, opts: { day: string; agentId?: string }, key?: string): Promise<{ hours: { hour: number; runs: number }[] } | { unsupported: true }> {
+export function runHours(fleetId: string, opts: { day: string; agentId?: string }, key?: string): Promise<{ hours: RunHourCount[] } | { unsupported: true }> {
   return runsAction('run_hours', fleetId, { fromDay: opts.day, toDay: opts.day, agentId: opts.agentId }, { day: opts.day }, key);
 }
 
