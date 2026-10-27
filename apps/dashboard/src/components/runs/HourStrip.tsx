@@ -12,7 +12,8 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
   dayName: string;
   hours: { hour: number; runs: number }[];
   selected: number | null;
-  onPick: (hour: number | null) => void;
+  /** Absent when the engine can't list one hour's runs: the bars then only show counts. */
+  onPick?: (hour: number | null) => void;
 }) {
   const byHour = new Map(hours.map((h) => [h.hour, h.runs]));
   const max = Math.max(1, ...hours.map((h) => h.runs));
@@ -34,7 +35,7 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
     <section aria-label={`${dayName} by hour`} style={{ display: 'grid', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{dayName} by hour</h3>
-        {selected !== null && (
+        {selected !== null && onPick && (
           <button type="button" onClick={() => onPick(null)} style={{ padding: 0, border: 0, background: 'none', color: 'var(--brand)', fontWeight: 600, fontSize: 'var(--fs-sm)', cursor: 'pointer' }}>All hours</button>
         )}
       </div>
@@ -47,7 +48,7 @@ export function HourStrip({ dayName, hours, selected, onPick }: {
             const label = `${hourLabel(h)}: ${n} run${n === 1 ? '' : 's'}`;
             return (
               <button key={h} type="button" className={`wr-daystrip__day${on ? ' is-selected' : ''}${selected === null ? ' is-in' : ''}`}
-                aria-pressed={on} aria-label={label} title={label} disabled={n === 0 && !on} onClick={() => onPick(on ? null : h)}>
+                aria-pressed={on} aria-label={label} title={label} disabled={!onPick || (n === 0 && !on)} onClick={() => onPick?.(on ? null : h)}>
                 <span className="wr-daystrip__bar" style={{ height: n ? `${Math.max(14, (n / max) * 100)}%` : 2 }} />
               </button>
             );

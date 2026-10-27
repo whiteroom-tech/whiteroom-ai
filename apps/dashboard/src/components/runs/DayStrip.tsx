@@ -21,12 +21,17 @@ export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }
   onLater?: () => void;
 }) {
   const first = days[0]?.day;
-  // Where the strip scrolls (phones), open on the picked day, else the newest.
+  // Where the strip scrolls (phones): a new window opens on the picked day, else the newest; picking
+  // a day centres it; un-picking leaves the strip where it is.
   const wrap = useRef<HTMLDivElement>(null);
+  const shownWindow = useRef<string | undefined>(undefined);
   useEffect(() => {
     const el = wrap.current;
     if (!el || el.scrollWidth <= el.clientWidth) return;
     const i = selected ? days.findIndex((d) => d.day === selected) : -1;
+    const newWindow = shownWindow.current !== first;
+    shownWindow.current = first;
+    if (i < 0 && !newWindow) return;
     el.scrollLeft = i < 0 ? el.scrollWidth : Math.max(0, ((i + 0.5) / days.length) * el.scrollWidth - el.clientWidth / 2);
     // Only when the window or the pick changes, never on a poll's re-render, so scrolling back isn't undone.
     // eslint-disable-next-line react-hooks/exhaustive-deps

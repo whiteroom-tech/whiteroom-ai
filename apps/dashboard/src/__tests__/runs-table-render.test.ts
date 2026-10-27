@@ -130,12 +130,13 @@ describe('Runs › a day by hour', () => {
     m.root.unmount();
   });
 
-  it('drops the hourly view on an engine without the hour filter, rather than mislabel the whole day', async () => {
+  it('on an engine without the hour filter, keeps the counts but not the picking, rather than mislabel the whole day', async () => {
     nav.params = new URLSearchParams(`day=${day}&hour=9`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
     const m = await mount();
-    expect(m.text()).not.toContain('by hour');
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    expect(m.text()).toContain('by hour');
+    expect(m.el.querySelector('button[aria-label="9 am: 2 runs"]')!.hasAttribute('disabled')).toBe(true);
     m.root.unmount();
   });
 
@@ -144,13 +145,26 @@ describe('Runs › a day by hour', () => {
     let honour = false;
     api.list.mockImplementation(async (_f: string, o: { hour?: number | null }) => ({ runs: honour && o.hour === 9 ? [run(1, { startedAt: at(9) })] : [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
     const m = await mount();
-    expect(m.text()).not.toContain('by hour');
+    expect(m.el.querySelector('button[aria-label="9 am: 2 runs"]')!.hasAttribute('disabled')).toBe(true);
     honour = true;
     const calls = api.hours.mock.calls.length;
     await m.click(m.el.querySelector('button[aria-label="Previous day"]') ?? undefined);
     expect(m.text()).toContain('by hour');
+    expect(m.el.querySelector('button[aria-label="9 am: 2 runs"]')!.hasAttribute('disabled')).toBe(false);
     // The hours load again for the new day (they have their own poll, keyed on day and agent).
     expect(api.hours.mock.calls.length).toBeGreaterThan(calls);
+    m.root.unmount();
+  });
+
+  it('never shows one day’s hour counts under another day', async () => {
+    nav.params = new URLSearchParams(`day=${day}`);
+    api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
+    const m = await mount();
+    expect(m.text()).toContain('by hour');
+    api.hours.mockImplementation(() => new Promise(() => {}));
+    await m.click(m.el.querySelector('button[aria-label="Previous day"]') ?? undefined);
+    // The new day's counts haven't arrived: no chart rather than the old day's bars.
+    expect(m.text()).not.toContain('by hour');
     m.root.unmount();
   });
 

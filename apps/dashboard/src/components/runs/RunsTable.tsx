@@ -65,8 +65,12 @@ export function RunsTable({ preview, retentionDays }: {
     // Only for the day the link named: a day older than the plan keeps moves to the oldest kept, and the hour isn't that day's.
     return raw !== null && Number.isInteger(h) && h >= 0 && h <= 23 && d && !(oldestKept(retentionDays) && d < oldestKept(retentionDays)!) ? h : null;
   });
-  const [hours, setHours] = useState<{ hour: number; runs: number }[] | null>(null);
+  // Hour counts are kept with the day and agent they're for, so the last day's never show under a new heading.
+  const [hoursFor, setHoursFor] = useState<{ key: string; hours: { hour: number; runs: number }[] } | null>(null);
   const [hoursOk, setHoursOk] = useState(true);
+  // Whether the engine filters by hour (list_runs hour). If one ignores it, the chart stays (its counts
+  // are right) but its bars can't be picked; a new day or agent checks again.
+  const [hourPickOk, setHourPickOk] = useState(true);
   const oldest = oldestKept(retentionDays);
   // One picked day (the viewer's local day) overrides the range.
   // A shared link can name a day the plan no longer keeps: start at the oldest kept.
@@ -99,6 +103,9 @@ export function RunsTable({ preview, retentionDays }: {
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<{ ok: boolean; text: string } | null>(null);
   const page = cursors.length - 1;
+  const hoursKey = `${day ?? ''}|${agent}`;
+  const hours = hoursFor?.key === hoursKey ? hoursFor.hours : null;
+  const setHours = (h: { hour: number; runs: number }[] | null, key = hoursKey) => setHoursFor(h ? { key, hours: h } : null);
 
   // The whole filter state lives in the URL; defaults drop out.
   useEffect(() => {
@@ -142,7 +149,7 @@ export function RunsTable({ preview, retentionDays }: {
     if (change.show !== undefined) setShow(change.show);
     // An hour belongs to its day: a different day (or none) drops it, and a new day or agent asks for hours again.
     setHour(change.hour !== undefined ? change.hour : nextView.day === day ? hour : null);
-    if (nextView.day !== day || change.agent !== undefined) setHoursOk(true);
+    if (nextView.day !== day || change.agent !== undefined) { setHoursOk(true); setHourPickOk(true); }
     setCursors([null]);
     // The preview fetches nothing: it keeps its sample and filters it below.
     setRuns(preview ?? null);
@@ -158,7 +165,7 @@ export function RunsTable({ preview, retentionDays }: {
       // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
       if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { setShow('all'); return; }
       // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
-      if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHoursOk(false); return; }
+      if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHourPickOk(false); return; }
       setRuns(res.runs);
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
@@ -185,7 +192,8 @@ export function RunsTable({ preview, retentionDays }: {
   // list or picking an hour doesn't refetch them, and a poll keeps a new run's hour current. A
   // failed refresh keeps the last counts (they're extra); the preview counts its own sample.
   useEffect(() => {
-    setHours(preview && day ? hoursFromRuns(preview, day) : null);
+    if (preview && day) setHours(hoursFromRuns(preview, day));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, agent, preview]);
   const loadHours = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview || !day || !hoursOk) return;
@@ -198,7 +206,8 @@ export function RunsTable({ preview, retentionDays }: {
       return;
     }
     if (stale()) return;
-    if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours);
+    if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours, `${day}|${agent}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fleetId, authKey, preview, day, agent, hoursOk, resetSession]);
   const { refresh: refreshHours } = usePoll(loadHours, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview && !!day && hoursOk });
   const firstHours = useRef(true);
@@ -325,7 +334,7 @@ export function RunsTable({ preview, retentionDays }: {
           />
         )}
         {day && hoursOk && hours && (
-          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={(h) => changeFilter({ hour: h })} />
+          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={hourPickOk ? (h) => changeFilter({ hour: h }) : undefined} />
         )}
         {exportNote && <Banner variant={exportNote.ok ? 'info' : 'error'}>{exportNote.text}</Banner>}
         {failing && runs && <RefreshFailed since={updatedAt} />}
