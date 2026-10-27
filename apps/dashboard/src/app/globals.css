@@ -784,6 +784,7 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-recs__body { padding: 0 20px; flex: 1; }
 .wr-recs__body > article:last-of-type { border-bottom: 0 !important; }
 .wr-recs__foot { padding: 12px 20px; border-top: 1px solid var(--line); }
+
 /* ── Mockup parity: Home ── (components/home, packages/ui StatusPill) */
 /* Status: a dot and a word, no box. Waiting is a grey ring; Paused and Stopped amber. */
 .wr-pill { gap: 6px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; font-size: var(--fs-sm); font-weight: 500; }
