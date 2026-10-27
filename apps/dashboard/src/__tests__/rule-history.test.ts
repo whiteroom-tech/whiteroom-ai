@@ -33,6 +33,10 @@ describe('change log', () => {
   it('adds a removed rule back, but never twice', () => {
     expect(undoFor(entry(cap(190), null, { description: 'Removed Spend cap rule' }), [])).toEqual({ kind: 'restore', rule: { ...cap(190), ruleType: 'spend_cap' } });
     expect(undoFor(entry(cap(190), null), [rule(cap(190))])).toBeNull();
+    // Added back already (a new id, same settings and scope): no second copy.
+    expect(undoFor(entry(cap(190), null), [rule(cap(190), { id: 'gr_new', mode: 'watch' })])).toBeNull();
+    // A different cap of the same type doesn't count.
+    expect(undoFor(entry(cap(190), null), [rule(cap(500), { id: 'gr_other' })])).toMatchObject({ kind: 'restore' });
   });
 
   it('offers nothing for an add, an older entry, or a Keywords list it can’t see', () => {

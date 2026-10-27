@@ -27,7 +27,8 @@ export type Undo =
 
 /**
  * How to undo this change, or null when it can't be done safely:
- * - a removal: the rule as it was, to add back (in Record only);
+ * - a removal: the rule as it was, to add back (in Record only), unless a
+ *   rule with the same settings and scope is already there;
  * - an update: only what this change touched, and only while the rule still
  *   looks exactly as the change left it (otherwise a later change would be
  *   overwritten);
@@ -40,7 +41,8 @@ export function undoFor(entry: GovernanceHistoryEntry, rules: GovernanceRule[]):
   const hidden = (s: GovernanceRuleSnapshot) => entry.ruleType === 'keyword' && !(s.params as { keywords?: string[] }).keywords?.length && Boolean((s.params as { keywordCount?: number }).keywordCount);
   if (hidden(before)) return null;
   if (after === null) {
-    if (rules.some((r) => r.id === entry.ruleId)) return null;
+    // Already back: the same rule, or one added back with the same settings and scope (a new id).
+    if (rules.some((r) => r.id === entry.ruleId || (r.ruleType === entry.ruleType && same(r.params, before.params) && same(r.appliesTo, before.appliesTo)))) return null;
     return { kind: 'restore', rule: { ...structuredClone(before), ruleType: entry.ruleType } };
   }
   if (!after) return null;

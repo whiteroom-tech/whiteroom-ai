@@ -111,7 +111,7 @@ export function AuditIntegritySection() {
 
 /**
  * How much of the history the last complete check covered: "939 of 2,045
- * events checked (46%) · 2 hours ago". "All" only when it reached the newest
+ * events checked (45%) · 2 hours ago". "All" only when it reached the newest
  * event, so a partial check never reads as a pass.
  */
 export function coverageLine(verifiedThrough: number, head: number, when: string | null): string {

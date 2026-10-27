@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildWorkbook } from '@/lib/xlsx';
-import { listRuns, runDays } from '@/lib/whiteroom/client';
+import { governanceCreateRule, listRuns, runDays } from '@/lib/whiteroom/client';
 
 // The writer stores files uncompressed, so their XML is readable in the bytes.
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -43,6 +43,20 @@ describe('listRuns', () => {
     await expect(listRuns('f', { fromDay: 'x', toDay: 'y' }, 'sk-key')).rejects.toThrow('HTTP 400');
     fetchMock.mockResolvedValue(reply({ fleetId: 'f', runs: [], total: 0, cursor: null }));
     expect(await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01' }, 'sk-key')).toMatchObject({ total: 0 });
+  });
+
+  it('asks for rule activity only when filtering by it', async () => {
+    fetchMock.mockImplementation(async () => reply({ fleetId: 'f', runs: [], total: 0, cursor: null }));
+    await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01', ruleActivity: true }, 'sk-key');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ action: 'list_runs', rule_activity: true });
+    await listRuns('f', { fromDay: '2026-10-01', toDay: '2026-10-01' }, 'sk-key');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('rule_activity');
+  });
+
+  it('sends Also alert when adding a rule back', async () => {
+    fetchMock.mockResolvedValue(reply({ rule: { id: 'gr_1' } }));
+    await governanceCreateRule('f', { ruleType: 'spend_cap', mode: 'watch', alsoNotify: true }, 'sk-key');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ action: 'governance_create_rule', rule_type: 'spend_cap', also_notify: true });
   });
 
   it('sends the viewer’s time zone with the days', async () => {
