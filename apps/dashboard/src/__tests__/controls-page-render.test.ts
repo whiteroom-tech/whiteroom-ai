@@ -1331,6 +1331,19 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('Undo of an added copy says it’s gone, rather than delete, when a reload no longer lists it', async () => {
+    api.created.push({ ...base, id: 'kw', ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password'], where: 'incoming', wholeWord: true } });
+    // A teammate removes the copy straight after: the reload doesn't list it.
+    api.create.mockImplementation(async (_f: string, r: Record<string, unknown>) => ({ rule: { ...base, id: 'c0', response: 'block', ...r } as GovernanceRule }));
+    const m = await mount();
+    await m.click(m.button('Cover all agents…'));
+    await m.click(m.button('Cover all agents'));
+    await m.click(m.button('Undo'));
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('That rule isn’t here any more, so there’s nothing to undo.');
+    m.root.unmount();
+  });
+
   it('the allowlist toast Undo, refused because the rule changed again, says so', async () => {
     api.models = ['gpt-4o'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' };

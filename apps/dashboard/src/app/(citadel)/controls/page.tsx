@@ -426,7 +426,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (undoBusy.current) return;
     // Changed since it was added (edited, switched to Block, a teammate): Undo leaves that work alone.
     const now = rules.find((r) => r.id === ruleId);
-    if (now && now.version !== created.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
+    if (!now) { showToast("That rule isn’t here any more, so there’s nothing to undo."); return; }
+    if (now.version !== created.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
     undoBusy.current = true;
     setSaving(true);
     setError(null);
