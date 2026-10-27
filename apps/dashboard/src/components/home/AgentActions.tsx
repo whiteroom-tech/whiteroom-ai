@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Toast } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
 import { controlFailure, pauseAgent, resumeAgent, stopAgent } from '@/lib/whiteroom/client';
@@ -16,11 +17,15 @@ export function agentMenu(agent: Pick<AgentInfo, 'hold'>): { act: Act; label: st
 }
 const CALL: Record<Act, typeof pauseAgent> = { pause: pauseAgent, stop: stopAgent, resume: resumeAgent };
 const VERB: Record<Act, string> = { pause: 'pause', stop: 'stop', resume: 'resume' };
+const DONE: Record<Act, string> = { pause: 'paused', stop: 'stopped', resume: 'resumed' };
+/** What Undo does after each act: a Pause is undone by Resume. A Stop has no Undo (it was confirmed by name); a Resume none either. */
+const UNDO: Partial<Record<Act, Act>> = { pause: 'resume' };
 
 /**
- * The ⋯ on a Home agent card (Rev 9 §7): Pause, Stop… or Resume without
- * opening the agent. Gov v1 fleets only; elsewhere Agent detail has the
- * break controls. Sits beside the card's link, never inside it.
+ * The ⋯ on a Home agent card or table row (Rev 9 §7): Pause, Stop… or Resume
+ * without opening the agent. Gov v1 fleets only. Pause acts at once and says
+ * so in a toast with Undo; Stop asks for the agent's name first. A failure
+ * stays on screen until dismissed.
  */
 export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }: {
   agent: AgentInfo;
@@ -34,6 +39,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
   const [confirmStop, setConfirmStop] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; undo?: Act } | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,9 +56,11 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     setOpen(false);
     setConfirmStop(false);
     setError(null);
+    setToast(null);
     setBusy(true);
     try {
       await CALL[act](fleetId, agent.agentId, authKey);
+      setToast({ message: `${agent.agentId} ${DONE[act]}.`, undo: UNDO[act] });
       onChanged();
     } catch (e) {
       const failure = controlFailure(e);
@@ -69,13 +77,6 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
 
   const items = agentMenu(agent);
 
-  // A failure note clears itself, and on click, so it never sits over the card.
-  useEffect(() => {
-    if (!error) return;
-    const t = setTimeout(() => setError(null), 6_000);
-    return () => clearTimeout(t);
-  }, [error]);
-
   return (
     <div ref={root} className="wr-agent-actions">
       <button type="button" className="wr-agent-actions__btn" aria-label={`Actions for ${agent.agentId}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={() => setOpen((o) => !o)}>
@@ -91,7 +92,21 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
           ))}
         </div>
       )}
-      {error && <p role="alert" className="wr-agent-actions__error" onClick={() => setError(null)} title="Dismiss">{error}</p>}
+      {error && (
+        <div role="alert" className="wr-agent-actions__error">
+          <span>{error}</span>
+          <button type="button" className="wr-agent-actions__dismiss" aria-label="Dismiss" onClick={() => setError(null)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+      {toast && (
+        <Toast
+          message={toast.message}
+          action={toast.undo ? { label: 'Undo', onClick: () => void run(toast.undo!) } : undefined}
+          onClose={() => setToast(null)}
+        />
+      )}
       <ConfirmDialog
         open={confirmStop}
         title={`Stop ${agent.agentId}?`}

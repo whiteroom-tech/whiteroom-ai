@@ -2,8 +2,8 @@
 // last 7 days (audit_summary tokens and savings, rule_actions, scores), and
 // the search and sort that keep a big fleet usable.
 
-import { hourTotals, sortAgents } from '@/lib/home';
-import { ruleActionsByAgent, tallyFromRuleActions, type GovernanceTally } from '@/lib/governance';
+import { agentState, hourTotals, sortAgents } from '@/lib/home';
+import { ruleActionsByAgent, tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
 import { HOUR_MS } from '@/lib/format';
 import { localDay } from '@/lib/runs';
@@ -34,7 +34,7 @@ export const AGENT_SORTS: { value: AgentSort; label: string }[] = [
 export const TABLE_FROM = 12;
 
 /** Above this many agents, Home shows Find and Sort. */
-export const FIND_FROM = 6;
+export const FIND_FROM = 12;
 
 /** Agents whose id contains the search (any case), in the chosen order. Ties keep needs-attention order. */
 export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<string, AgentWeek>, search: string, sort: AgentSort): T[] {
@@ -44,7 +44,12 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   if (sort === 'name') return [...base].sort((x, y) => x.agentId.localeCompare(y.agentId));
   if (sort === 'used') return [...base].sort((x, y) => (week(y)?.used ?? 0) - (week(x)?.used ?? 0));
   if (sort === 'saved') return [...base].sort((x, y) => (week(y)?.saved ?? 0) - (week(x)?.saved ?? 0));
-  return base;
+  // Needs attention: held and silent agents first (sortAgents), then, among
+  // agents in the same state, those with rule activity this week.
+  const caught = (a: T) => (week(a)?.rules && tallyTotal(week(a)!.rules!) > 0 ? 0 : 1);
+  const rank = new Map(base.map((a, i) => [a, i]));
+  const held = (a: T) => (['paused', 'stopped', 'stale', 'disconnected'].includes(agentState(a)) ? 0 : 1);
+  return [...base].sort((x, y) => held(x) - held(y) || caught(x) - caught(y) || rank.get(x)! - rank.get(y)!);
 }
 
 /**

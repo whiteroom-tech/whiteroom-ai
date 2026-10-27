@@ -47,20 +47,26 @@ export function currentShift(a: AgentInfo): ShiftMeasures | null {
 /** "1 task", "5 tasks". */
 export const taskWord = (n: number) => `${n} ${plural(n, 'task')}`;
 
-/** "Shift 8 · 62 tasks · 9.4 min worked"; "Rest after shift 5 · 31 tasks" while resting; no shift figures without a shift. */
-export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
+/**
+ * The card's run line in parts, so the run number can link to the run:
+ * "Run #8 · 62 tasks · 9.4 min so far" while working, "Last run #41 · 5 tasks ·
+ * waiting for work" otherwise. `run` is null when there's no run yet.
+ */
+export function runLine(a: AgentInfo, state: AgentState = agentState(a)): { label: string; run: number | null; rest: string } {
   const shift = currentShift(a);
-  if (!shift) {
-    const last = a.lastShift;
-    if (state === 'resting') return last ? `Rest after run ${last.watchNumber} · ${taskWord(last.tasksCompleted)}` : 'On a break';
-    const waiting = state === 'paused' || state === 'stopped' ? 'waiting to be resumed' : 'waiting for work';
-    return last ? `Last run ${last.watchNumber} · ${taskWord(last.tasksCompleted)} · ${waiting}` : `No run in progress · ${waiting}`;
-  }
-  const head = `Run ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
-  if (state === 'resting') return `Rest after run ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
-  if (state === 'idle') return `${head} · waiting for work`;
-  if (state === 'paused' || state === 'stopped') return `${head} · waiting to be resumed`;
-  return `${head} · ${oneDecimal(shift.minutesWorked)} min worked`;
+  const held = state === 'paused' || state === 'stopped';
+  const waiting = held ? 'waiting to be resumed' : 'waiting for work';
+  const busy = state === 'working' || state === 'handover';
+  if (shift && busy) return { label: 'Run', run: shift.watchNumber || 1, rest: `${taskWord(shift.tasksCompleted)} · ${oneDecimal(shift.minutesWorked)} min so far` };
+  const last = shift ?? a.lastShift;
+  if (!last) return { label: 'No run yet', run: null, rest: waiting };
+  return { label: 'Last run', run: last.watchNumber || 1, rest: `${taskWord(last.tasksCompleted)} · ${waiting}` };
+}
+
+/** The run line as text: "Last run #41 · 5 tasks · waiting for work". */
+export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
+  const r = runLine(a, state);
+  return r.run === null ? `${r.label} · ${r.rest}` : `${r.label} #${r.run} · ${r.rest}`;
 }
 
 // Needs-you items come first once P2 ships; until then working agents lead.
@@ -74,12 +80,14 @@ export function sortAgents<T extends AgentInfo>(agents: T[]): T[] {
   return [...agents].sort((x, y) => RANK[agentState(x)] - RANK[agentState(y)] || x.agentId.localeCompare(y.agentId));
 }
 
-/** Counts for the strip's "1 resting · 1 idle" sub-caption, most important first. */
+/** Counts for the strip's "1 on hold · 7 waiting for work" sub-caption, most important first. */
 export function stateSummary(agents: AgentInfo[]): string {
-  const order: [AgentState, string][] = [['stale', 'not reporting'], ['disconnected', 'disconnected'], ['handover', 'saving progress'], ['resting', 'resting'], ['idle', 'idle']];
-  const counts = new Map<AgentState, number>();
-  agents.forEach((a) => { const s = agentState(a); counts.set(s, (counts.get(s) ?? 0) + 1); });
-  return order.filter(([s]) => counts.get(s)).map(([s, word]) => `${counts.get(s)} ${word}`).join(' · ');
+  const group: Partial<Record<AgentState, string>> = {
+    paused: 'on hold', stopped: 'on hold', stale: 'not reporting', disconnected: 'disconnected', resting: 'waiting for work', idle: 'waiting for work',
+  };
+  const counts = new Map<string, number>();
+  agents.forEach((a) => { const g = group[agentState(a)]; if (g) counts.set(g, (counts.get(g) ?? 0) + 1); });
+  return ['on hold', 'not reporting', 'disconnected', 'waiting for work'].filter((g) => counts.get(g)).map((g) => `${counts.get(g)} ${g}`).join(' · ');
 }
 
 // ── Agent details between fan-outs ───────────────────────────────────────

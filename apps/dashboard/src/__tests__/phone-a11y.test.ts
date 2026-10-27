@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Phase 8: the phone tab bar and its menu, Home and End in a segmented control, and
-// Needs you's Undo staying while it has focus.
+// Home's Pause with a toast and Undo.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -9,9 +9,11 @@ import { createRoot, type Root } from 'react-dom/client';
 
 const nav = vi.hoisted(() => ({ path: '/home' }));
 vi.mock('next/navigation', () => ({ usePathname: () => nav.path }));
+const api = vi.hoisted(() => ({ pause: vi.fn(), resume: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  listRuns: async () => ({ runs: [{ runId: 'r1', agentId: 'a1', shift: 3, flags: [{ kind: 'loop' }] }], total: 1 }),
+  pauseAgent: api.pause,
+  resumeAgent: api.resume,
 }));
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
@@ -21,7 +23,7 @@ vi.mock('@/lib/account', () => ({ getAccountClosing: async () => null, cancelAcc
 const { PhoneTabBar, TABS, MORE } = await import('@/components/PhoneTabBar');
 const { AppShell } = await import('@/components/AppShell');
 const { SegmentedControl } = await import('@whiteroom/ui');
-const { NeedsYou } = await import('@/components/home/NeedsYou');
+const { AgentActions } = await import('@/components/home/AgentActions');
 
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 let el: HTMLDivElement;
@@ -147,39 +149,37 @@ describe('segmented control keys', () => {
   });
 });
 
-describe('Needs you undo', () => {
-  const mount = async () => {
-    await render(h(NeedsYou, { agents: [], holds: {}, holdsKnown: true, fleet: { fleetId: 'f1' } }));
-    const live = el.querySelector('[role="status"]');
-    expect(live?.textContent).toBe('');
-    const button = (text: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
-    await act(async () => { button('Mark as seen')!.click(); });
-    // The same element: it stays mounted when the panel gives way to "Nothing needs you".
-    expect(el.querySelector('[role="status"]')).toBe(live);
-    return button;
-  };
+describe('Pause from Home', () => {
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+  const agent = { agentId: 'code-reviewer', status: 'idle' };
 
-  it('moves focus to Undo, and keeps it while focused; it goes 5 s after focus leaves', async () => {
-    const button = await mount();
-    vi.useFakeTimers();
-    const undo = button('Undo')!;
-    expect(document.activeElement).toBe(undo);
-    // Announced through a live region that was already there, so screen readers speak it.
-    expect(el.querySelector('[role="status"]')!.textContent).toBe('Marked as seen.');
-    await act(async () => { vi.advanceTimersByTime(30_000); });
-    expect(button('Undo')).toBeDefined();
-    await act(async () => { undo.blur(); });
-    await act(async () => { vi.advanceTimersByTime(4_900); });
-    expect(button('Undo')).toBeDefined();
-    await act(async () => { vi.advanceTimersByTime(200); });
+  it('pauses at once and offers Undo in a toast, which resumes', async () => {
+    api.pause.mockResolvedValue({});
+    api.resume.mockResolvedValue({});
+    await render(h(AgentActions, { agent, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    expect(api.pause).toHaveBeenCalledWith('f1', 'code-reviewer', undefined);
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer paused.');
+    await act(async () => { button('Undo')!.click(); });
+    await flush();
+    expect(api.resume).toHaveBeenCalledWith('f1', 'code-reviewer', undefined);
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer resumed.');
     expect(button('Undo')).toBeUndefined();
   });
 
-  it('Undo brings the run back', async () => {
-    const button = await mount();
-    expect(el.textContent).not.toContain('Run 3');
-    await act(async () => { button('Undo')!.click(); });
-    expect(el.textContent).toContain('Run 3');
-    expect(button('Undo')).toBeUndefined();
+  it('keeps a failure on screen until it is dismissed', async () => {
+    api.pause.mockRejectedValue(new Error('boom'));
+    vi.useFakeTimers();
+    await render(h(AgentActions, { agent, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('Couldn’t pause code-reviewer');
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(el.querySelector('[role="alert"]')).not.toBeNull();
+    await act(async () => { (el.querySelector('[aria-label="Dismiss"]') as HTMLButtonElement).click(); });
+    expect(el.querySelector('[role="alert"]')).toBeNull();
   });
 });

@@ -99,16 +99,15 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const title = <>Live feed<Hint text={liveFeedHelp(ttlHours)} /></>;
 
   if (!open) {
+    // Collapsed: one card with a line on what it holds (mockup). Nothing is fetched until Show.
     return (
-      <Panel
-        title={title}
-        bodyPadding="14px 18px"
-        actions={<Button size={28} className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>}
-      >
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' }}>
-          What agents actually said and did: their replies, the tools they called and the pages they visited, with credentials removed. Kept {ttlHours} hours, then deleted; never part of the audit record.
-        </p>
-      </Panel>
+      <section className="wr-home-livefeed" aria-labelledby="home-live-feed">
+        <div style={{ minWidth: 0 }}>
+          <h2 id="home-live-feed" className="wr-home-livefeed__title">Live feed<Hint text={liveFeedHelp(ttlHours)} /></h2>
+          <p className="wr-home-livefeed__sub">What agents said and did. Kept {ttlHours} hours, not part of the audit record.</p>
+        </div>
+        <Button className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>
+      </section>
     );
   }
 

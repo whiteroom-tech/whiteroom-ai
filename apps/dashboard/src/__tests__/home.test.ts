@@ -17,17 +17,18 @@ describe('agents', () => {
     expect(agentState(agent('a', 'something-new'))).toBe('idle');
   });
 
-  it('writes the progress line in shifts, never "watch"', () => {
-    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Run 8 · 62 tasks · 9.4 min worked');
-    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Rest after run 5 · 1 task');
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run in progress · waiting for work');
+  it('writes the run line in runs, never "watch", "rest" or "break"', () => {
+    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Run #8 · 62 tasks · 9.4 min so far');
+    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Last run #5 · 1 task · waiting for work');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run yet · waiting for work');
+    expect(progressLine(agent('a', 'idle', { hold: { state: 'paused', by: 'x', reason: null, at: '' }, currentShift: null, lastShift: { watchNumber: 2, tasksCompleted: 3, tokensUsed: 0, minutesWorked: 0 } }))).toBe('Last run #2 · 3 tasks · waiting to be resumed');
   });
 
   it('shows the last shift, not lifetime, once a shift has ended (M14)', () => {
     const last = { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 };
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run 41 · 5 tasks · waiting for work');
-    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Rest after run 41 · 5 tasks');
-    expect(progressLine(agent('a', 'working', { currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Run 42 · 2 tasks · 1.3 min worked');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run #41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run #41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'working', { minutesRemaining: 3, currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Run #42 · 2 tasks · 1.3 min so far');
   });
 
   it('sorts problems first, then working, resting, idle, then by id', () => {
@@ -42,7 +43,8 @@ describe('agents', () => {
   });
 
   it('summarises the non-working states for the strip', () => {
-    expect(stateSummary([agent('a', 'resting'), agent('b', 'idle'), agent('c', 'resting'), agent('d', 'working', { minutesRemaining: 1 })])).toBe('2 resting · 1 idle');
+    expect(stateSummary([agent('a', 'resting'), agent('b', 'idle'), agent('c', 'resting'), agent('d', 'working', { minutesRemaining: 1 })])).toBe('3 waiting for work');
+    expect(stateSummary([agent('a', 'idle', { hold: { state: 'stopped', by: 'x', reason: null, at: '' } }), agent('b', 'idle')])).toBe('1 on hold · 1 waiting for work');
     expect(stateSummary([agent('d', 'working', { minutesRemaining: 1 })])).toBe('');
   });
 });

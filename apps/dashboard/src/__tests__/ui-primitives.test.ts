@@ -61,18 +61,21 @@ describe('SegmentedControl', () => {
 
 describe('StatusPill', () => {
   it.each([
-    ['working', 'Working'], ['resting', 'Resting'], ['idle', 'Idle'], ['paused', 'Paused'], ['stopped', 'Stopped'],
-    ['stopping', 'Stopping…'], ['pausing', 'Pausing…'], ['resuming', 'Resuming…'],
-  ] as const)('%s shows its word, an icon and a title', (state, word) => {
+    ['working', 'Working'], ['resting', 'Waiting'], ['idle', 'Waiting'], ['paused', 'Paused'], ['stopped', 'Stopped'],
+    ['stopping', 'Stopping…'], ['pausing', 'Pausing…'], ['resuming', 'Resuming…'], ['handover', 'Working'],
+  ] as const)('%s shows its word, a dot and a title', (state, word) => {
     const out = html(h(StatusPill, { state }));
-    expect(out).toContain(word);
-    expect(out).toContain('<svg');
+    expect(out).toContain(`</span>${word}</span>`);
+    expect(out).toContain('wr-pill__dot');
     expect(out).toMatch(/title="[^"]+"/);
   });
 
-  it('only Paused gets the warn fill', () => {
+  it('Paused and Stopped are amber; Waiting is a grey ring; tooltips never say how WhiteRoom works', () => {
     expect(html(h(StatusPill, { state: 'paused' }))).toContain('wr-pill--warn');
-    expect(html(h(StatusPill, { state: 'stopped' }))).not.toContain('wr-pill--warn');
+    expect(html(h(StatusPill, { state: 'stopped' }))).toContain('wr-pill--warn');
+    expect(html(h(StatusPill, { state: 'idle' }))).toContain('wr-pill--muted');
+    expect(html(h(StatusPill, { state: 'idle' }))).toContain('wr-pill__dot--ring');
+    for (const s of ['resting', 'handover', 'idle'] as const) expect(html(h(StatusPill, { state: s }))).not.toMatch(/break|rest|saving|progress|brand|ho/i);
   });
 });
 

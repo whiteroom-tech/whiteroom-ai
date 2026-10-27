@@ -10,7 +10,6 @@ import { createRoot } from 'react-dom/client';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 vi.mock('@/components/home/LiveFeedPanel', () => ({ LiveFeedPanel: () => null }));
-vi.mock('@/components/home/NeedsYou', () => ({ NeedsYou: () => null }));
 
 const counts = (blocked: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 });
 const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn() }));
@@ -24,6 +23,8 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
     compliance: { allAgentsWithinLimits: true, restingAgentsCount: 0, laborScore: '100%' },
   }),
   auditLog: async () => ({ entries: [] }),
+  listRuns: async () => ({ unsupported: true }),
+  runDays: async () => ({ unsupported: true }),
   auditSummary: api.audit,
   performanceAgentScores: api.scores,
   performanceFleetHourly: api.hourly,
@@ -83,14 +84,14 @@ describe('Home polls', () => {
   it('a failed today read clears today’s rule activity and keeps the week', async () => {
     const m = await mount();
     expect(m.text()).toContain('Rule activity2');
-    expect(m.text()).toContain('Last 7 days: 1K tokens · 5 blocked');
+    expect(m.text()).toContain('1K tokens · 5 blocked');
     api.rules.mockImplementation(async (_f: string, q: { fromDay: string; toDay: string }) => {
       if (isToday(q)) throw new Error('down');
       return { fleetId: 'f1', totals: counts(5), byAgent: { 'lead-agent': counts(5) } };
     });
     await m.advance(60_000);
     expect(m.text()).toContain('Rule activity—not available yet');
-    expect(m.text()).toContain('Last 7 days: 1K tokens · 5 blocked');
+    expect(m.text()).toContain('1K tokens · 5 blocked');
     m.root.unmount();
   });
 });
