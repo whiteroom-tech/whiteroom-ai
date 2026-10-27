@@ -137,4 +137,41 @@ describe('audit integrity', () => {
     expect(m.note()).toBeNull();
     m.root.unmount();
   });
+
+  it('a cancelled download finishing late leaves a newer one alone', async () => {
+    const m = await mount();
+    const first = await startDownload(m);
+    auth.fleetId = 'f2';
+    await act(async () => { m.root.render(h(AuditIntegritySection)); });
+    await flush();
+    // The new fleet's button is free straight away.
+    const second = await startDownload(m);
+    expect(first.isCancelled()).toBe(true);
+    expect(second.isCancelled()).toBe(false);
+    await act(async () => { second.report(10, 40); });
+    // The old one ends late: it saves nothing and doesn't clear the new one's progress.
+    await act(async () => { first.report(30, 40); first.finish({ blob: new Blob(['{}']), events: 40 }); });
+    await flush();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(m.el.textContent).toContain('Preparing… 10 of 40 events');
+    const blob = new Blob(['{}']);
+    await act(async () => { second.finish({ blob, events: 40 }); });
+    await flush();
+    expect(api.save).toHaveBeenCalledTimes(1);
+    expect(api.save).toHaveBeenCalledWith(blob, expect.stringMatching(/^whiteroom-audit-f2-/));
+    m.root.unmount();
+  });
+
+  it('an old download failing late shows no error for the new fleet', async () => {
+    const m = await mount();
+    let fail!: (e: Error) => void;
+    api.build.mockImplementationOnce(() => new Promise((_r, j) => { fail = j; }));
+    await act(async () => { ([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Download signed export') as HTMLButtonElement).click(); });
+    auth.fleetId = 'f2';
+    await act(async () => { m.root.render(h(AuditIntegritySection)); });
+    await act(async () => { fail(new Error('HTTP 500')); });
+    await flush();
+    expect(m.note()).toBeNull();
+    m.root.unmount();
+  });
 });

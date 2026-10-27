@@ -14,20 +14,22 @@ const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 type Page = import('@/lib/whiteroom/types').AuditExportPage;
 
 const HEAD = 1_234;
+/** Total time a fake wait was asked to wait. */
+const waited = (wait: { mock: { calls: unknown[][] } }) => wait.mock.calls.reduce((t, [ms]) => t + (ms as number), 0);
 const event = (seq: number) => ({ seq, id: `e${seq}`, type: 'task_complete', prevHash: `h${seq - 1}`, hash: `h${seq}`, payload: { n: seq } });
 
 /** A fake engine: pages of `size` from seq 1 to HEAD, the manifest on the last. */
-function engine(size = 500) {
+function engine(size = 500, first = 1) {
   const calls: Array<{ fromSeq: number; toSeq: number } | undefined> = [];
   const fetchPage = vi.fn(async (_fleet: string, cursor?: { fromSeq: number; toSeq: number }): Promise<Page> => {
     calls.push(cursor);
-    const from = cursor?.fromSeq ?? 1;
+    const from = cursor?.fromSeq ?? first;
     const to = cursor?.toSeq ?? HEAD;
     const upTo = Math.min(to, from + size - 1);
     const events = Array.from({ length: upTo - from + 1 }, (_, i) => event(from + i));
     return {
-      fleetId: 'f1', firstSeq: 1, toSeq: to, fromSeq: from, events, nextFromSeq: upTo < to ? upTo + 1 : null,
-      ...(upTo >= to && { manifest: { format: 'whiteroom-audit-export', headSeq: to, headHash: `h${to}`, count: to, signature: 'sig' } }),
+      fleetId: 'f1', firstSeq: first, toSeq: to, fromSeq: from, events, nextFromSeq: upTo < to ? upTo + 1 : null,
+      ...(upTo >= to && { manifest: { format: 'whiteroom-audit-export', firstSeq: first, headSeq: to, headHash: `h${to}`, count: to - first + 1, signature: 'sig' } }),
     };
   });
   return { fetchPage, calls };
@@ -52,9 +54,9 @@ describe('full audit export', () => {
   it('waits and tries again when the engine is busy', async () => {
     const { fetchPage } = engine(1_000);
     fetchPage.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 429', 429));
-    const wait = vi.fn(async () => {});
+    const wait = vi.fn(async (_ms: number) => {});
     const file = await buildAuditExport('f1', () => {}, { fetchPage, wait });
-    expect(wait).toHaveBeenCalledTimes(1);
+    expect(waited(wait)).toBe(5_000);
     expect(file!.events).toBe(HEAD);
   });
 
@@ -83,7 +85,9 @@ describe('full audit export', () => {
 
   it('stops between pages once cancelled', async () => {
     const { fetchPage } = engine();
-    const file = await buildAuditExport('f1', () => {}, { fetchPage, isCancelled: () => true });
+    let pages = 0;
+    fetchPage.mockImplementation(async (f, c) => { pages++; return (await engine().fetchPage(f, c)); });
+    const file = await buildAuditExport('f1', () => {}, { fetchPage, isCancelled: () => pages >= 1 });
     expect(file).toBeNull();
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
@@ -112,9 +116,9 @@ describe('full audit export', () => {
       if (c?.fromSeq === 501 && !failed) { failed = true; throw new WhiteRoomApiError('HTTP 503', 503); }
       return real(f, c);
     });
-    const wait = vi.fn(async () => {});
+    const wait = vi.fn(async (_ms: number) => {});
     const file = await buildAuditExport('f1', () => {}, { fetchPage, wait });
-    expect(wait).toHaveBeenCalledTimes(1);
+    expect(waited(wait)).toBe(5_000);
     expect(fetchPage.mock.calls.map(([, c]) => c?.fromSeq)).toEqual([undefined, 501, 501, 1001]);
     expect(file!.events).toBe(HEAD);
     expect(JSON.parse(await file!.blob.text()).events).toHaveLength(HEAD);
@@ -137,5 +141,61 @@ describe('full audit export', () => {
     expect(stuck).toHaveBeenCalledTimes(1);
     const beyond = vi.fn(async (): Promise<Page> => ({ fleetId: 'f1', firstSeq: 1, toSeq: 10, fromSeq: 1, events: [event(1)], nextFromSeq: 11 }));
     await expect(buildAuditExport('f1', () => {}, { fetchPage: beyond })).rejects.toThrow('stopped moving forward');
+  });
+
+  /** A fake engine whose pages are changed by `tamper` before they're returned. */
+  function tampered(tamper: (p: Page) => Page, size = 500) {
+    const { fetchPage } = engine(size);
+    const real = fetchPage.getMockImplementation()!;
+    return vi.fn(async (f: string, c?: { fromSeq: number; toSeq: number }) => tamper(await real(f, c)));
+  }
+
+  it('refuses a short page that skips ahead', async () => {
+    // The engine says the next page starts at 501, but sent only 499 events.
+    const fetchPage = tampered((p) => (p.fromSeq === 1 ? { ...p, events: p.events.slice(0, -1) } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('stopped moving forward');
+  });
+
+  it('refuses an empty page that says there is more', async () => {
+    const fetchPage = tampered((p) => (p.fromSeq === 501 ? { ...p, events: [] } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('stopped moving forward');
+  });
+
+  it('refuses a missing event in the middle of a page', async () => {
+    const fetchPage = tampered((p) => (p.fromSeq === 501 ? { ...p, events: p.events.filter((e) => e.seq !== 700) } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('missing events');
+  });
+
+  it('refuses a file whose first event isn’t where it should start', async () => {
+    const fetchPage = tampered((p) => (p.fromSeq === 1 ? { ...p, events: p.events.slice(1) } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('missing events');
+  });
+
+  it('refuses a signature for a different head', async () => {
+    const fetchPage = tampered((p) => (p.manifest ? { ...p, manifest: { ...p.manifest, headSeq: HEAD + 1 } } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');
+  });
+
+  it('refuses a signature for a different count', async () => {
+    const fetchPage = tampered((p) => (p.manifest ? { ...p, manifest: { ...p.manifest, count: HEAD - 1 } } : p));
+    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('doesn’t match its signature');
+  });
+
+  it('matches a history that starts after seq 1', async () => {
+    const { fetchPage, calls } = engine(500, 100);
+    const file = await buildAuditExport('f1', () => {}, { fetchPage });
+    expect(calls).toEqual([undefined, { fromSeq: 600, toSeq: HEAD }, { fromSeq: 1100, toSeq: HEAD }]);
+    expect(file!.events).toBe(HEAD - 99);
+    expect(JSON.parse(await file!.blob.text()).events[0].seq).toBe(100);
+  });
+
+  it('stops waiting to retry as soon as it is cancelled', async () => {
+    let cancel = false;
+    const busy = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 429', 429); });
+    const wait = vi.fn(async (_ms: number) => { if (wait.mock.calls.length === 3) cancel = true; });
+    const file = await buildAuditExport('f1', () => {}, { fetchPage: busy, wait, isCancelled: () => cancel });
+    expect(file).toBeNull();
+    expect(busy).toHaveBeenCalledTimes(1);
+    expect(wait).toHaveBeenCalledTimes(3); // well short of the 5 s wait
   });
 });

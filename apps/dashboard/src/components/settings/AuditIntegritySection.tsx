@@ -22,7 +22,18 @@ export function AuditIntegritySection() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   // The fleet shown now: an export still running for another one stops and saves nothing.
   const fleetRef = useRef(fleetId);
-  useEffect(() => { fleetRef.current = fleetId; return () => { fleetRef.current = null; }; }, [fleetId]);
+  // Which download is current: an older one finishing late can't touch a newer one's state.
+  const exportRef = useRef(0);
+  useEffect(() => {
+    fleetRef.current = fleetId;
+    return () => {
+      // Leaving a fleet cancels its download, so the next fleet's button is free at once.
+      fleetRef.current = null;
+      exportRef.current++;
+      setBusy((b) => (b === 'export' ? null : b));
+      setProgress(null);
+    };
+  }, [fleetId]);
 
   // After a check, unless the fleet changed meanwhile.
   const reload = useCallback(async (id: string) => {
@@ -59,21 +70,25 @@ export function AuditIntegritySection() {
 
   async function download() {
     const id = fleetId!;
+    const run = ++exportRef.current;
+    const current = () => exportRef.current === run && fleetRef.current === id;
     setBusy('export');
     setNote(null);
     setProgress(null);
     try {
       const file = await buildAuditExport(id, (done, total) => {
-        if (fleetRef.current === id) setProgress({ done, total });
-      }, { isCancelled: () => fleetRef.current !== id });
-      if (!file || fleetRef.current !== id) return;
+        if (current()) setProgress({ done, total });
+      }, { isCancelled: () => !current() });
+      if (!file || !current()) return;
       saveBlob(file.blob, `whiteroom-audit-${id}-${new Date().toISOString().slice(0, 10)}.json`);
       if (file.events !== null) setNote({ tone: 'neutral', text: `Downloaded ${file.events.toLocaleString('en-US')} events, signed by WhiteRoom.` });
     } catch {
-      setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
+      if (current()) setNote({ tone: 'bad', text: 'The export didn’t download. Try again.' });
     } finally {
-      setBusy(null);
-      setProgress(null);
+      if (exportRef.current === run) {
+        setBusy(null);
+        setProgress(null);
+      }
     }
   }
 

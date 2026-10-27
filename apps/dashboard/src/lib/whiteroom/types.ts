@@ -829,7 +829,7 @@ export interface AuditExportPage {
   fromSeq: number;
   events: Array<Record<string, unknown> & { seq: number }>;
   nextFromSeq: number | null;
-  manifest?: Record<string, unknown> & { headSeq: number; count: number; signature: string };
+  manifest?: Record<string, unknown> & { firstSeq: number; headSeq: number; count: number; signature: string };
 }
 
 export interface VerifyAuditResult {
