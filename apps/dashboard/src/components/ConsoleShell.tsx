@@ -9,6 +9,7 @@ import { ROUTES, isNavActive } from '@/lib/routes';
 import { ROLE_LABELS, type OrgRole } from '@/lib/org-roles';
 import { applyTheme, storedTheme } from '@/lib/theme';
 import { AccountMenu } from '@/components/AccountMenu';
+import { AccountClosingBanner } from '@/components/AccountClosingBanner';
 
 /**
  * Chrome for the enterprise console (console.whiteroom.tech).
@@ -81,6 +82,7 @@ export function ConsoleShell({
           </svg>
           {menuOpen ? 'Close menu' : 'Menu'}
         </button>
+        <AccountClosingBanner />
         {children}
       </div>
     </div>

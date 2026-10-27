@@ -12,6 +12,7 @@ import { AppShell } from '@/components/AppShell';
 import { TextSizeControl } from '@/components/TextSizeControl';
 import { Banner, Button, Panel, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
+  cancelAccountDeletion,
   cancelEmailChange,
   deleteAccount,
   requestEmailChange,
@@ -19,11 +20,14 @@ import {
   unlinkProvider,
   updateProfile,
   type AccountOverview,
+  type ActionResult,
 } from '@/lib/account';
 import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
+import { CLOSE_WINDOW_DAYS, isClosingOpen, type ClosingState } from '@/lib/closing-shared';
+import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
 import { plural, DAY_MS } from '@/lib/format';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -31,7 +35,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   email: 'Email link',
 };
 
-type Notice = { tone: 'ok' | 'bad'; text: string } | null;
+/** `support`: only support can resolve it, so the banner offers a way to reach them. */
+type Notice = { tone: 'ok' | 'bad'; text: string; support?: boolean } | null;
 
 function Section({
   title,
@@ -77,11 +82,14 @@ export function SettingsView({
   entitlement,
   purchasablePlans,
   billingResult,
+  closing,
 }: {
   account: AccountOverview;
   entitlement: Entitlement;
   purchasablePlans: PlanId[];
   billingResult: string | null;
+  /** The account's closing window (deleted or plan lapsed), null, or 'unknown' when it couldn't be read. */
+  closing: ClosingState;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -118,11 +126,11 @@ export function SettingsView({
         <div ref={sections} className="wr-settings-stack" style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
 
           {banner && (
-            <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined}>{banner.text}</Banner>
+            <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined} actions={banner.support ? <SupportLink /> : undefined}>{banner.text}</Banner>
           )}
 
           <ProfileSection account={account} pending={pending} run={run} />
-          <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
+          <div id="plan"><PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} /></div>
           <DataPrivacySection />
           <SmallerHandoversSection />
           <div id="alerts"><AlertsSection /></div>
@@ -130,7 +138,7 @@ export function SettingsView({
           <EmailSection account={account} pending={pending} run={run} />
           <MethodsSection account={account} pending={pending} run={run} />
           <SessionsSection pending={pending} />
-          <DangerSection account={account} pending={pending} />
+          <div id="delete-account"><DangerSection account={account} closing={closing} pending={pending} /></div>
         </div>
       </main>
     </AppShell>
@@ -240,14 +248,14 @@ function PlanSection({
   const [busy, setBusy] = useState<string | null>(null);
   const { plan, limits, usage, subscription } = entitlement;
 
-  async function go(action: () => Promise<{ ok: boolean; url?: string; error?: string }>, key: string) {
+  async function go(action: () => Promise<{ ok: boolean; url?: string; error?: string; support?: boolean }>, key: string) {
     setBusy(key);
     try {
       const res = await action();
       // Stripe's hosted pages are a full navigation, not a fetch — assigning
       // location is the handoff.
       if (res.ok && res.url) window.location.href = res.url;
-      else setBanner({ tone: 'bad', text: res.error ?? 'Could not reach Stripe.' });
+      else setBanner({ tone: 'bad', text: res.error ?? 'Could not reach Stripe.', support: res.support });
     } catch (err) {
       setBanner({ tone: 'bad', text: err instanceof Error ? err.message : 'Could not reach Stripe.' });
     } finally {
@@ -582,19 +590,93 @@ function SessionsSection({ pending }: { pending: boolean }) {
 
 // -- Danger --
 
-function DangerSection({ account, pending }: { account: AccountOverview; pending: boolean }) {
+export function DangerSection({ account, closing, pending }: { account: AccountOverview; closing: ClosingState; pending: boolean }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // The viewer's zone, read after mount so server and browser render alike;
+  // the banner counts in the same one.
+  const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
+  useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
+  // A change from here or from the banner (cancel, keep): read the page's state again.
+  useEffect(() => {
+    const changed = () => router.refresh();
+    window.addEventListener(CLOSING_CHANGED, changed);
+    return () => window.removeEventListener(CLOSING_CHANGED, changed);
+  }, [router]);
 
   const matches = confirm.trim().toLowerCase() === (account.email ?? '').toLowerCase();
+  const fleets = plural(account.fleetCount, 'fleet');
+  const exportLink = <a href="#audit-integrity" style={{ color: 'var(--brand)' }}>download your data</a>;
+  const errorLine = error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '0 0 12px' }}>{error}</p>;
+  const text = (t: React.ReactNode) => <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 16px', maxWidth: '62ch' }}>{t}</p>;
+
+  async function act(action: () => Promise<ActionResult>, failure: string) {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await action();
+      if (!res.ok) { setError(res.error); return; }
+      setOpen(false);
+      setConfirm('');
+      window.dispatchEvent(new Event(CLOSING_CHANGED));
+    } catch {
+      setError(failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (closing === 'unknown') {
+    return (
+      <Section title="Delete account" tone="danger">
+        {text("Couldn't check your account status. Reload the page to try again.")}
+      </Section>
+    );
+  }
+
+  const deleting = closing?.reason === 'deleted' ? closing : null;
+  const keep = (
+    <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not keep the account.')}>
+      {busy ? 'Keeping…' : 'Keep my account'}
+    </Button>
+  );
+
+  if (deleting && !isClosingOpen(deleting)) {
+    const waiting = !!deleting.deleteAfter && new Date(deleting.deleteAfter).getTime() > Date.now();
+    return (
+      <Section title="Delete account" tone="danger">
+        {text(closingMessage(deleting, Date.now(), timeZone))}
+        {errorLine}
+        {(deleting.blocked || waiting) && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {deleting.blocked && <BlockedFix kind={deleting.blocked.kind} />}
+            {keep}
+          </div>
+        )}
+      </Section>
+    );
+  }
+
+  if (deleting) {
+    return (
+      <Section title="Delete account" tone="danger">
+        {text(<>{closingMessage(deleting, Date.now(), timeZone)} Until then you can {exportLink} or cancel. The audit trail is kept for {AUDIT_KEPT}.</>)}
+        {errorLine}
+        <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not cancel the deletion.')}>
+          {busy ? 'Cancelling…' : 'Cancel deletion'}
+        </Button>
+      </Section>
+    );
+  }
 
   return (
     <Section
       title="Delete account"
       tone="danger"
-      description="Removes your profile and linked fleets. Cancel any paid subscription first, and hand over any organization you solely own. Your fleets keep running on the engine — they belong to whoever holds the fleet token — but this dashboard will no longer know about them."
+      description={`Deletes your account after ${CLOSE_WINDOW_DAYS} days and closes your ${fleets}. Cancel any paid subscription first, and hand over any organization you solely own.`}
     >
       {!open ? (
         <Button variant="danger" disabled={pending} onClick={() => setOpen(true)}>
@@ -602,6 +684,14 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
         </Button>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '62ch' }}>
+            <p style={{ margin: '0 0 6px' }}>What happens:</p>
+            <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc', display: 'grid', gap: 4 }}>
+              <li>For the next {CLOSE_WINDOW_DAYS} days your {fleets} keep{account.fleetCount === 1 ? 's' : ''} working. You can {exportLink} or cancel at any time.</li>
+              <li>After {CLOSE_WINDOW_DAYS} days your WhiteRoom fleet key stops working and calls through it are refused. Your account is removed.</li>
+              <li>The audit trail is kept for {AUDIT_KEPT}.</li>
+            </ul>
+          </div>
           <div>
             <label htmlFor="confirmDelete" style={labelStyle}>
               Type {account.email} to confirm
@@ -614,28 +704,17 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
               onChange={(e) => { setConfirm(e.target.value); setError(''); }}
             />
           </div>
-          {error && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: 0 }}>{error}</p>}
-          <div style={{ display: 'flex', gap: 10 }}>
+          {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: 0 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Button
-              variant="danger"
+              variant="danger-fill"
               disabled={!matches || busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  const res = await deleteAccount(confirm);
-                  if (!res.ok) { setError(res.error); setBusy(false); }
-                } catch (err) {
-                  // A NEXT_REDIRECT from the successful path also lands here;
-                  // it rethrows itself, so only real failures need surfacing.
-                  setError(err instanceof Error ? err.message : 'Could not delete the account.');
-                  setBusy(false);
-                }
-              }}
+              onClick={() => void act(() => deleteAccount(confirm), 'Could not delete the account.')}
             >
-              {busy ? 'Deleting…' : 'Permanently delete'}
+              {busy ? 'Deleting…' : `Delete in ${CLOSE_WINDOW_DAYS} days`}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => { setOpen(false); setConfirm(''); setError(''); }}>
-              Cancel
+              Keep my account
             </Button>
           </div>
         </div>

@@ -124,7 +124,8 @@ export const PLANS: Record<PlanId, Plan> = {
  * costs far more goodwill than the few days of service it saves. Access ends
  * at `canceled` / `unpaid`, once Stripe has given up.
  */
-const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
+export const ACTIVE_STATUS_LIST: readonly string[] = ['active', 'trialing', 'past_due'];
+const ACTIVE_STATUSES = new Set(ACTIVE_STATUS_LIST);
 
 export function isActiveStatus(status: string): boolean {
   return ACTIVE_STATUSES.has(status);

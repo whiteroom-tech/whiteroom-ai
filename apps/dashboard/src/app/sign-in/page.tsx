@@ -64,11 +64,10 @@ const ERRORS: Record<string, string> = {
 };
 
 // Outcomes that land here deliberately, rather than failures. Settings
-// redirects to /sign-in after ending a session or deleting an account, and
-// without these the page would just look like an ordinary sign-out.
+// redirects to /sign-in after ending every session, and without this the
+// page would just look like an ordinary sign-out.
 const OUTCOMES: Record<string, string> = {
   'signedOut=all': 'Signed out on every device. Sign in again to continue.',
-  'deleted=1': 'Your account has been deleted.',
 };
 
 export default function SignInPage() {
@@ -133,16 +132,7 @@ export default function SignInPage() {
         const [name, value] = key.split('=');
         if (params.get(name) !== value) continue;
         setNotice(message);
-        if (name === 'deleted') {
-          // The opposite of a returning user: the account this pointed at is
-          // gone, and greeting them with "Welcome back" over the top of
-          // "Your account has been deleted" would be absurd.
-          safeRemove(LAST_METHOD_KEY);
-          safeRemove(LAST_EMAIL_KEY);
-          remembered = null;
-        } else {
-          wasSignedOut = true;
-        }
+        wasSignedOut = true;
         url.searchParams.delete(name);
         break;
       }

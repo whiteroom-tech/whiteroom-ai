@@ -6,7 +6,19 @@ import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
-import { isActiveStatus } from '@/lib/plans';
+import {
+  cancelClosing,
+  endedToDeletion,
+  findDeletionBlocker,
+  getClosing,
+  keepClosedAccount,
+  lapsedPaidPlan,
+  lapseToDeletion,
+  sendClosingEmail,
+  startClosing,
+} from '@/lib/account-closing';
+import { CANCEL_CUTOFF_MS, isClosingOpen, type Closing, type ClosingState } from '@/lib/closing-shared';
+import { enqueueEntitlementSync, resolvePlan, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { HOUR_MS } from '@/lib/format';
 
 const EMAIL_CHANGE_TTL_MS = HOUR_MS;
@@ -339,57 +351,18 @@ export async function confirmEmailChange(token: string): Promise<
 
 // -- Deletion --
 
-type Queryable = { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
-
 /**
- * Why this account can't be deleted yet, or null. Runs inside the deletion
- * transaction, with the same organization locks leaveOrganization takes.
+ * Starts deleting the account: a 14-day window, not an immediate delete.
+ * During it the fleets keep working and the owner can export or cancel. When
+ * it ends the engine closes every fleet the account owns (calls refused,
+ * WhiteRoom fleet key revoked, audit trail kept) and the billing sync
+ * removes the account (finishDeletedAccounts).
  *
- * - A live Stripe subscription would keep billing after the row that links
- *   it to a person is gone, leaving no way back to the billing portal
- *   (audit F07). Cancel first.
- * - Deleting the only owner of an organization that has other members
- *   cascades the membership away and leaves nobody able to manage it — the
- *   rule leave/remove/demote already enforce (audit F21).
- */
-async function deletionBlocker(q: Queryable, userId: string): Promise<string | null> {
-  const { rows: sub } = await q.query(
-    `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`,
-    [userId],
-  );
-  if (sub[0]?.stripe_subscription_id && isActiveStatus(String(sub[0].status))) {
-    return 'Cancel your subscription in Manage billing before deleting your account.';
-  }
-
-  const { rows: owned } = await q.query(
-    `SELECT org_id FROM organization_members WHERE user_id = $1 AND role = 'owner' AND status = 'active'`,
-    [userId],
-  );
-  const orgIds = owned.map((r) => r.org_id);
-  if (orgIds.length === 0) return null;
-
-  await q.query(`SELECT id FROM organizations WHERE id = ANY($1) FOR UPDATE`, [orgIds]);
-  const { rows: stranded } = await q.query(
-    `SELECT o.name FROM organizations o
-     WHERE o.id = ANY($1)
-       AND NOT EXISTS (SELECT 1 FROM organization_members m
-                       WHERE m.org_id = o.id AND m.user_id <> $2 AND m.role = 'owner' AND m.status = 'active')
-       AND EXISTS (SELECT 1 FROM organization_members m WHERE m.org_id = o.id AND m.user_id <> $2)`,
-    [orgIds, userId],
-  );
-  if (stranded.length === 0) return null;
-  return `You're the only owner of ${stranded[0].name ?? 'your organization'}. Make someone else an owner before deleting your account.`;
-}
-
-/**
- * Deletes the account and everything the dashboard holds for it.
- *
- * What it deliberately does NOT do is delete the customer's fleets on the
- * engine. Nothing over there references a user (see fleets.account_id — an
- * opaque token account, not a person), the fleet may still be serving live
- * agent traffic under the customer's own provider key, and a dashboard
- * deletion is not consent to tear that down. The link rows go; the fleets
- * stay, reachable with the fleet token the customer already holds.
+ * A running lapse becomes a deletion: its fleet still closes when the lapse
+ * ends, but the account is removed no sooner than 14 days from now. A window
+ * that has run out is replaced by a fresh 14 days. Asking again while a
+ * deletion runs (a double submit, a second tab) changes nothing and sends no
+ * second email.
  */
 export async function deleteAccount(confirmEmail: string): Promise<ActionResult> {
   const userId = await requireUserId();
@@ -400,32 +373,128 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
     return { ok: false, error: 'Type your email address exactly to confirm.' };
   }
 
+  // The window to email about: one started or converted by this call.
+  let changed: Closing | null = null;
   const client = await db().connect();
   try {
     await client.query('BEGIN');
 
-    const blocked = await deletionBlocker(client, userId);
+    // The user row first, then subscription and organizations (in
+    // findDeletionBlocker): the same order finishDeletedAccounts takes them,
+    // so the two can't deadlock. Locked, so two requests can't both decide
+    // they started it.
+    const { rowCount } = await client.query(`SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+    if (!rowCount) {
+      await client.query('ROLLBACK');
+      return { ok: false, error: 'This account no longer exists.' };
+    }
+    const current = await getClosing(userId, client);
+    const blocked = await findDeletionBlocker(client, userId, true);
     if (blocked) {
       await client.query('ROLLBACK');
-      client.release();
-      return { ok: false, error: blocked };
+      return { ok: false, error: blocked.message };
     }
 
-    // user_fleets predates the adapter migration and its foreign key may not
-    // cascade, so clear it explicitly rather than relying on the constraint.
-    await client.query(`DELETE FROM user_fleets WHERE user_id = $1`, [userId]);
-    await client.query(`DELETE FROM email_change_requests WHERE user_id = $1`, [userId]);
-    await client.query(`DELETE FROM subscriptions WHERE user_id = $1`, [userId]);
-    // accounts and sessions cascade from users (001_nextauth.sql).
-    await client.query(`DELETE FROM users WHERE id = $1`, [userId]);
+    if (!current) {
+      changed = await startClosing(client, userId, 'deleted');
+    } else if (!isClosingOpen(current)) {
+      // The fleet already closed (closing is final): only the account's removal is new.
+      changed = await endedToDeletion(client, userId);
+    } else if (current.reason === 'lapsed') {
+      changed = await lapseToDeletion(client, userId);
+    }
+    // Same transaction: the engine hears about the closing time even if the
+    // push below fails (the sweep delivers it).
+    if (changed) await enqueueEntitlementSync(client, userId, 'account_closing');
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    client.release();
+    console.error('[account] deletion failed:', err instanceof Error ? err.message : 'unknown error');
     return { ok: false, error: 'Could not delete the account.' };
+  } finally {
+    client.release();
   }
-  client.release();
 
-  await signOut({ redirectTo: '/sign-in?deleted=1' });
+  if (changed) {
+    await syncEntitlementsToEngine(userId);
+    await sendClosingEmail(userId, changed);
+  }
   return { ok: true };
+}
+
+/**
+ * Cancels a deletion. While its window runs: back to normal, or back to the
+ * lapse if a paid plan has lapsed meanwhile (same date). After the fleet
+ * closed (a blocked deletion, or one waiting to remove the account): keeps
+ * the account, with its fleet closed. Not in the last minutes before the
+ * fleet closes.
+ */
+export async function cancelAccountDeletion(): Promise<ActionResult> {
+  const userId = await requireUserId();
+
+  const client = await db().connect();
+  let changed = false;
+  let current: Closing | null = null;
+  try {
+    await client.query('BEGIN');
+    // The user row is locked first and the plan read after it, on this
+    // transaction's client: a lapse that a webhook records meanwhile waits on
+    // this lock and reconciles against what this commits.
+    current = await getClosing(userId, client, { lock: true });
+    const { plan, sub } = await resolvePlan(userId, client);
+    if (await keepClosedAccount(client, userId)) {
+      changed = true;
+    } else if (current?.reason === 'deleted' && !isClosingOpen(current, Date.now() + CANCEL_CUTOFF_MS)) {
+      // In its last minutes the engine may already be closing the fleet.
+      changed = false;
+    } else if (lapsedPaidPlan(plan, sub)) {
+      const res = await client.query(
+        `UPDATE users SET close_reason = 'lapsed', delete_after = NULL, updated_at = now()
+         WHERE id = $1 AND close_reason = 'deleted' AND closes_at > now()`,
+        [userId],
+      );
+      changed = (res.rowCount ?? 0) > 0;
+    } else {
+      changed = await cancelClosing(client, userId, 'deleted');
+    }
+    if (changed) await enqueueEntitlementSync(client, userId, 'account_closing_cancelled');
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[account] cancelling the deletion failed:', err instanceof Error ? err.message : 'unknown error');
+    return { ok: false, error: 'Could not cancel the deletion.' };
+  } finally {
+    client.release();
+  }
+
+  if (!changed) {
+    if (current?.reason === 'deleted' && isClosingOpen(current)) {
+      return { ok: false, error: 'Your fleet closes in the next few minutes, so the deletion can no longer be cancelled.' };
+    }
+    return { ok: false, error: 'There is no deletion to cancel.' };
+  }
+  await syncEntitlementsToEngine(userId);
+  return { ok: true };
+}
+
+/**
+ * What the closing banner and Settings show: the signed-in account's window
+ * (with why a deletion is blocked once the billing sync has found it so), or
+ * null. 'unknown' when it couldn't be read: never "not closing" on an error.
+ */
+export async function getAccountClosing(): Promise<ClosingState> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return null;
+    const userId = session.user.id;
+    const closing = await getClosing(userId);
+    if (closing?.reason !== 'deleted' || isClosingOpen(closing)) return closing;
+    const { rows } = await db().query(`SELECT close_blocked_at FROM users WHERE id = $1`, [userId]);
+    if (!rows[0]?.close_blocked_at) return closing;
+    const blocked = await findDeletionBlocker(db(), userId, false);
+    return blocked ? { ...closing, blocked: { kind: blocked.kind, reason: blocked.reason } } : closing;
+  } catch (err) {
+    console.error('[account] couldn\'t read the closing state:', err instanceof Error ? err.message : 'unknown error');
+    return 'unknown';
+  }
 }

@@ -104,6 +104,7 @@ describe('deleteAccount safeguards', () => {
   function respond(over: { subscription?: Record<string, unknown>; ownedOrgs?: string[]; stranded?: string[] }) {
     query.mockImplementation(async (sql: string) => {
       if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: USER.email }] };
+      if (sql.startsWith('SELECT 1 FROM users')) return { rows: [{}], rowCount: 1 };
       if (sql.includes('FROM subscriptions')) return { rows: over.subscription ? [over.subscription] : [] };
       if (sql.startsWith('SELECT org_id FROM organization_members')) return { rows: (over.ownedOrgs ?? []).map((org_id) => ({ org_id })) };
       if (sql.includes('FROM organizations o')) return { rows: (over.stranded ?? []).map((name) => ({ name })) };
@@ -128,9 +129,10 @@ describe('deleteAccount safeguards', () => {
     expect(deletedUser()).toBe(false);
   });
 
-  it('deletes when neither applies', async () => {
+  it('starts the 14-day deletion window when neither applies (nothing is deleted yet)', async () => {
     respond({ subscription: { stripe_subscription_id: 'sub_1', status: 'canceled' }, ownedOrgs: ['org-1'], stranded: [] });
-    await deleteAccount(USER.email);
-    expect(deletedUser()).toBe(true);
+    expect(await deleteAccount(USER.email)).toEqual({ ok: true });
+    expect(query.mock.calls.some((c) => String(c[0]).startsWith('UPDATE users SET closes_at = now()'))).toBe(true);
+    expect(deletedUser()).toBe(false);
   });
 });

@@ -13,11 +13,13 @@
 import 'server-only';
 
 import { auth } from '@/auth';
-import { db } from '@/lib/db';
+import { db, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
+import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
+import { isClosingOpen, type Closing } from '@/lib/closing-shared';
 
 export interface SubscriptionRow {
   plan: string;
@@ -29,6 +31,8 @@ export interface SubscriptionRow {
   cancelAtPeriodEnd: boolean;
   /** Agents the Pro subscription is billed for, as Stripe last reported it. */
   billedAgents: number | null;
+  /** When a paid subscription stopped being active (null: active, or lapsed before this was recorded). */
+  lapsedAt: string | null;
 }
 
 export interface Entitlement {
@@ -45,10 +49,10 @@ export interface Entitlement {
   usage: { fleets: number; agents: number | null };
 }
 
-export async function getSubscriptionRow(userId: string): Promise<SubscriptionRow | null> {
-  const { rows } = await db().query(
+export async function getSubscriptionRow(userId: string, q: Queryable = db()): Promise<SubscriptionRow | null> {
+  const { rows } = await q.query(
     `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
-            current_period_end::text, cancel_at_period_end, billed_agents
+            current_period_end::text, cancel_at_period_end, billed_agents, lapsed_at::text
      FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
@@ -63,6 +67,7 @@ export async function getSubscriptionRow(userId: string): Promise<SubscriptionRo
     currentPeriodEnd: r.current_period_end,
     cancelAtPeriodEnd: r.cancel_at_period_end,
     billedAgents: r.billed_agents ?? null,
+    lapsedAt: r.lapsed_at ?? null,
   };
 }
 
@@ -70,14 +75,16 @@ export async function getSubscriptionRow(userId: string): Promise<SubscriptionRo
  * When this user's free Starter period ends. Null only if the user row is
  * gone, which effectivePlan treats as an expired trial.
  */
-export async function getTrialEndsAt(userId: string): Promise<string | null> {
-  const { rows } = await db().query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
+export async function getTrialEndsAt(userId: string, q: Queryable = db()): Promise<string | null> {
+  const { rows } = await q.query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
   return rows[0]?.trial_ends_at ?? null;
 }
 
-/** The plan this user is on right now, read fresh from the database. */
-export async function resolvePlan(userId: string): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
-  const [sub, trialEndsAt] = await Promise.all([getSubscriptionRow(userId), getTrialEndsAt(userId)]);
+/** The plan this user is on right now, read fresh from the database (inside `q`'s transaction when given one). */
+export async function resolvePlan(userId: string, q: Queryable = db()): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
+  // One after the other: a transaction's client runs one query at a time.
+  const sub = await getSubscriptionRow(userId, q);
+  const trialEndsAt = await getTrialEndsAt(userId, q);
   return { plan: effectivePlan(sub, trialEndsAt), sub, trialEndsAt };
 }
 
@@ -233,21 +240,40 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     return false;
   }
 
-  const [{ plan }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
+  const [{ plan, sub }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
+
+  // A lapsed paid plan starts the 14-day closing window, and one that came back
+  // cancels it (lib/account-closing.ts). Before the fleet check: an account
+  // with no fleet still gets the email and the banner.
+  let closing: Closing | null;
+  try {
+    closing = await reconcileLapse(userId, plan, sub);
+  } catch (err) {
+    console.error('[entitlements] closing check failed:', err instanceof Error ? err.message : 'unknown error');
+    return false;
+  }
   if (fleetIds.length === 0) return true;
 
-  const limits = limitsFor(plan);
+  // During the window the fleets keep working: a lapsed paid plan runs on
+  // the plan it had until the window ends. An ended free period stays off,
+  // window or not (a trial account that deletes isn't switched back on).
+  const windowOpen = !!closing && isClosingOpen(closing);
+  const applied: PlanId = (windowOpen && lapsedPaidPlan(plan, sub)) || plan;
+  const limits = limitsFor(applied);
 
   const payload = {
     fleets: fleetIds.map((fleetId) => ({
       fleetId,
-      plan,
+      plan: applied,
       // The engine only ever gates on "is this allowed to run"; the nuance of
       // why (trial over vs. a cancelled subscription) stays on this side. An
       // inactive fleet refuses every agent, including ones already in it.
-      status: plan === 'expired' ? 'inactive' : 'active',
+      status: applied === 'expired' ? 'inactive' : 'active',
       maxAgents: limits.maxAgentsPerFleet,
       retentionDays: limits.retentionDays,
+      // When the fleet closes, or null: sent every time, so a cancel lands.
+      closesAt: closing?.closesAt ?? null,
+      closeReason: closing?.reason ?? null,
     })),
   };
 
@@ -262,6 +288,21 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
       return false;
+    }
+    const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
+    const closed = Array.isArray(body?.closed) ? body.closed : null;
+    // An engine that answers without `closed` doesn't know about closing and
+    // dropped the time: not delivered, so the outbox keeps it until one does.
+    // Otherwise a deleted account could be removed with its fleets still open.
+    if (closing && !closed) {
+      console.error('[entitlements] engine did not take the closing time; leaving pending');
+      return false;
+    }
+    // The engine has the final say on closing: a fleet it reports closed
+    // while this side thinks it open (a cancel that came too late) is
+    // recorded closed, so checkout refuses and the banner tells the truth.
+    if (closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
+      if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
     }
     return true;
   } catch (err) {
@@ -295,6 +336,8 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
           status: 'active',
           maxAgents: starter.maxAgentsPerFleet,
           retentionDays: starter.retentionDays,
+          // Closing follows the owner: a fleet nobody owns isn't closing.
+          closesAt: null,
         }],
       }),
     });

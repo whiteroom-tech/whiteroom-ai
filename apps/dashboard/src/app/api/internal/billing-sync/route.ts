@@ -4,6 +4,7 @@ import { countAgents } from '@/lib/entitlements';
 import { billableAgents, planItem } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
 import { syncSecretMatches } from '@/lib/sync-secret';
+import { cancelClosedSubscriptions, finishDeletedAccounts } from '@/lib/account-closing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,10 @@ const AGENT_COUNT_TIMEOUT_MS = 5_000;
  *    compares each Pro account's live agent count with the quantity Stripe
  *    bills and corrects Stripe when they differ. Stripe prorates the change
  *    onto the next invoice.
+ *
+ * 3. Closed accounts. Once an account's fleet has closed, any Stripe
+ *    subscription that can still bill is cancelled; a deleted account's
+ *    dashboard rows go once its removal date has passed.
  */
 export async function POST(req: Request): Promise<Response> {
   if (!syncSecretMatches(req.headers.get('x-wr-sync-secret'))) {
@@ -48,13 +53,34 @@ export async function POST(req: Request): Promise<Response> {
   const pro = process.env.STRIPE_SECRET_KEY
     ? await syncProQuantities()
     : { checked: 0, updated: 0, skipped: 0, deferred: 0 };
+  // Closed fleets bill nothing: their Stripe subscriptions are cancelled
+  // first, so no account is removed while one can still charge.
+  // A subscription that fails to cancel is logged and retried next run.
+  const closedSubscriptions = process.env.STRIPE_SECRET_KEY
+    ? await cancelClosedSubscriptions().catch((err) => {
+        console.error('[billing-sync] could not cancel closed accounts\' subscriptions:', err instanceof Error ? err.message : err);
+        return null;
+      })
+    : { cancelled: 0, failed: 0 };
+  // Accounts whose deletion window has run out (lib/account-closing.ts).
+  const deletions = await finishDeletedAccounts().catch((err) => {
+    console.error('[billing-sync] could not finish deleted accounts:', err instanceof Error ? err.message : err);
+    return null;
+  });
 
-  // A failed trial pass is a 500 so Cloud Scheduler records the failure and
-  // retries. The Pro pass still ran, since it doesn't depend on it.
-  if (trials === null) {
-    return Response.json({ error: 'Could not queue expired trials.', pro }, { status: 500 });
-  }
-  return Response.json({ trialsQueued: trials, pro });
+  // A failed trial, cancel or deletion pass, or any subscription that didn't
+  // cancel, is a 500 so Cloud Scheduler records the failure and retries. The
+  // other passes still ran; none depends on another. A subscription Stripe
+  // keeps refusing to cancel stays a 500 on every run, on purpose: that
+  // account is never removed while it can bill, so a person has to look.
+  // Each run still cancels the rest (the failing one goes to the back).
+  const failed = trials === null ? 'Could not queue expired trials.'
+    : closedSubscriptions === null ? "Could not cancel closed accounts' subscriptions."
+    : closedSubscriptions.failed > 0 ? `Could not cancel ${closedSubscriptions.failed} closed account subscription(s).`
+    : deletions === null ? 'Could not finish deleted accounts.'
+    : null;
+  if (failed) return Response.json({ error: failed, pro, closedSubscriptions, deletions }, { status: 500 });
+  return Response.json({ trialsQueued: trials, pro, closedSubscriptions, deletions });
 }
 
 /** Number of trials queued, or null if the database refused. */

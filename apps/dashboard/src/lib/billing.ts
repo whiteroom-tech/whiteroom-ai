@@ -4,11 +4,21 @@ import { appOrigin } from '@/lib/app-origin';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
+import { getClosing } from '@/lib/account-closing';
+import { CANCEL_CUTOFF_MS, closingDate, isClosingOpen, SUPPORT_EMAIL } from '@/lib/closing-shared';
 import { countAgents, getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
 import { billableAgents, hasLiveSubscription, isPaidPlanId, isTrialActive, stripePriceId } from '@/lib/plans';
 import { HOUR_MS } from '@/lib/format';
 
-type UrlResult = { ok: true; url: string } | { ok: false; error: string };
+/**
+ * How long a Checkout page stays payable. Stripe's shortest allowed lifetime
+ * is 30 minutes from its own clock; a minute's margin keeps a slow request
+ * from being refused for it.
+ */
+const CHECKOUT_LIFETIME_S = 31 * 60;
+
+/** `support`: a refusal only support can resolve, so the page offers a way to reach them (SUPPORT_EMAIL). */
+type UrlResult = { ok: true; url: string } | { ok: false; error: string; support?: boolean };
 
 async function requireUser(): Promise<{ id: string; email: string | null }> {
   const session = await auth();
@@ -71,6 +81,26 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
 
   try {
     const user = await requireUser();
+    const closing = await getClosing(user.id);
+    // Closing is final: once the fleet has closed, paying wouldn't reopen
+    // it, so nothing is charged for it.
+    if (closing && !isClosingOpen(closing)) {
+      return {
+        ok: false,
+        support: true,
+        error: `This account's fleet was closed on ${closingDate(closing.closesAt)}. Contact support at ${SUPPORT_EMAIL} to start again.`,
+      };
+    }
+    // A Checkout page stays payable for CHECKOUT_LIFETIME_S; one paid after
+    // the fleet closes would only be cancelled again, so a lapse this close
+    // to its end is sent to support instead.
+    if (closing && new Date(closing.closesAt).getTime() - Date.now() < CHECKOUT_LIFETIME_S * 1000 + CANCEL_CUTOFF_MS) {
+      return { ok: false, support: true, error: `Your fleet closes too soon to start a plan here. Contact support at ${SUPPORT_EMAIL} to keep it.` };
+    }
+    // A subscription started now would outlive the account, and block its removal.
+    if (closing?.reason === 'deleted') {
+      return { ok: false, error: 'Cancel the account deletion before choosing a plan.' };
+    }
     if (hasLiveSubscription(await getSubscriptionRow(user.id))) {
       return { ok: false, error: 'You already have a subscription — change plans from Manage billing.' };
     }
@@ -113,6 +143,9 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
         ...(trialEnd ? { trial_end: trialEnd } : {}),
       },
       allow_promotion_codes: true,
+      // A closing account's session expires soon, so it can't be paid after the
+      // fleet closes; everyone else keeps Stripe's usual lifetime.
+      ...(closing ? { expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_LIFETIME_S } : {}),
     });
 
     if (!session.url) return { ok: false, error: 'Stripe did not return a checkout URL.' };

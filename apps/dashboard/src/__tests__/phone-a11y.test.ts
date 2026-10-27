@@ -16,6 +16,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/organization-actions', () => ({ myOrganizationSummary: async () => null }));
+vi.mock('@/lib/account', () => ({ getAccountClosing: async () => null, cancelAccountDeletion: async () => ({ ok: true }) }));
 
 const { PhoneTabBar, TABS, MORE } = await import('@/components/PhoneTabBar');
 const { AppShell } = await import('@/components/AppShell');

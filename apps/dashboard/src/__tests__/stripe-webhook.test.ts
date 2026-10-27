@@ -4,10 +4,21 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   constructEvent: vi.fn(),
   sync: vi.fn(),
+  getClosing: vi.fn(),
+  cancelClosing: vi.fn(),
+  cancelStripe: vi.fn(),
+  refund: vi.fn(),
+  enqueue: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
-vi.mock('@/lib/entitlements', () => ({ syncEntitlementsToEngine: mocks.sync }));
+vi.mock('@/lib/entitlements', () => ({ syncEntitlementsToEngine: mocks.sync, enqueueEntitlementSync: mocks.enqueue }));
+vi.mock('@/lib/account-closing', () => ({
+  getClosing: mocks.getClosing,
+  cancelClosing: mocks.cancelClosing,
+  cancelStripeSubscription: mocks.cancelStripe,
+  reportRefundNeeded: mocks.refund,
+}));
 vi.mock('@/lib/stripe', () => ({
   stripe: () => ({ webhooks: { constructEventAsync: mocks.constructEvent } }),
 }));
@@ -60,6 +71,10 @@ beforeEach(() => {
   // rowCount 1 means the idempotency claim succeeds; everything else is a write.
   mocks.query.mockResolvedValue({ rowCount: 1, rows: [] });
   mocks.sync.mockResolvedValue(true);
+  mocks.getClosing.mockResolvedValue(null);
+  mocks.cancelClosing.mockResolvedValue(true);
+  mocks.cancelStripe.mockResolvedValue('canceled');
+  mocks.refund.mockResolvedValue(undefined);
 });
 
 describe('stripe webhook: subscription upsert', () => {
@@ -91,5 +106,101 @@ describe('stripe webhook: subscription upsert', () => {
   it('pushes the new limits to the engine', async () => {
     await deliver(subscription([{ price: 'price_pro', quantity: 9 }]));
     expect(mocks.sync).toHaveBeenCalledWith('u1');
+  });
+});
+
+describe('stripe webhook: a subscription on a closing account', () => {
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+  const LATER = new Date(Date.now() + 5 * 86_400_000).toISOString();
+
+  it('after the fleet closed: cancels it at Stripe, records that, reports a refund, refunds nothing itself', async () => {
+    mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: PAST });
+    expect((await deliver(subscription([{ price: 'price_starter', quantity: 1 }]))).status).toBe(200);
+    expect(mocks.cancelStripe).toHaveBeenCalledWith('sub_1');
+    const recorded = mocks.query.mock.calls.find((c) => String(c[0]).startsWith('UPDATE subscriptions SET status'));
+    expect(recorded?.[1]).toEqual(['u1', 'canceled', 'sub_1']);
+    expect(mocks.refund).toHaveBeenCalledWith('u1', 'sub_1', 'became active');
+    expect(mocks.cancelClosing).not.toHaveBeenCalled();
+    expect(mocks.sync).toHaveBeenCalledWith('u1');
+  });
+
+  it('a cancel Stripe refuses fails the delivery, so Stripe retries it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: PAST });
+    mocks.cancelStripe.mockRejectedValue(new Error('stripe down'));
+    expect((await deliver(subscription([{ price: 'price_starter', quantity: 1 }]))).status).toBeGreaterThanOrEqual(500);
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
+  it('during a deletion window: the deletion is cancelled and the engine told; nothing is cancelled at Stripe', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: LATER });
+    await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
+    expect(mocks.cancelClosing).toHaveBeenCalledWith(expect.anything(), 'u1', 'deleted');
+    // Queued as well as pushed: a failed push still reaches the engine.
+    expect(mocks.enqueue).toHaveBeenCalledWith(expect.anything(), 'u1', 'account_closing_cancelled');
+    expect(mocks.cancelStripe).not.toHaveBeenCalled();
+    expect(mocks.sync).toHaveBeenCalledWith('u1');
+  });
+
+  it('records when a paid subscription stops being active, and clears it when it is active again', async () => {
+    await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
+    const upsert = mocks.query.mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO subscriptions'));
+    const sql = String(upsert?.[0]);
+    // Only a change from an active status sets it; a later write keeps it; active again clears it.
+    const active = upsert?.[1][8] as string[];
+    expect(active).toEqual(['active', 'trialing', 'past_due']);
+
+    // Runs the upsert's own CASE clauses, in order, over a run of Stripe writes.
+    const body = sql.match(/lapsed_at\s*=\s*CASE([\s\S]*?)\bEND\b/)?.[1];
+    const clauses = [...(body ?? '').matchAll(/WHEN\s+(.+?)\s+THEN\s+(\S+)/g)].map((m) => [m[1], m[2]]);
+    expect(clauses.length).toBeGreaterThan(0);
+    const write = (row: { status: string; lapsedAt: string | null }, next: string, now: string) => {
+      const cond: Record<string, boolean> = {
+        'EXCLUDED.status = ANY($9)': active.includes(next),
+        'subscriptions.lapsed_at IS NOT NULL': row.lapsedAt !== null,
+        'subscriptions.status = ANY($9)': active.includes(row.status),
+      };
+      const value: Record<string, string | null> = { NULL: null, 'subscriptions.lapsed_at': row.lapsedAt, 'now()': now };
+      for (const [when, then] of clauses) {
+        if (!(when in cond) || !(then in value)) throw new Error(`unknown clause: WHEN ${when} THEN ${then}`);
+        if (cond[when]) return { status: next, lapsedAt: value[then] };
+      }
+      return { status: next, lapsedAt: null };
+    };
+    let row = { status: 'active', lapsedAt: null as string | null };
+    row = write(row, 'active', 't1');
+    expect(row.lapsedAt).toBeNull();
+    row = write(row, 'canceled', 't2');
+    expect(row.lapsedAt).toBe('t2');
+    row = write(row, 'canceled', 't3');
+    expect(row.lapsedAt).toBe('t2');
+    row = write(row, 'unpaid', 't4');
+    expect(row.lapsedAt).toBe('t2');
+    row = write(row, 'active', 't5');
+    expect(row.lapsedAt).toBeNull();
+    // Never active: no lapse to record.
+    expect(write({ status: 'incomplete', lapsedAt: null }, 'incomplete_expired', 't6').lapsedAt).toBeNull();
+  });
+
+  it('in a deletion’s last minutes, when it can no longer be cancelled: nothing changes here, and the subscription is left for the closed-fleet pass', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: LATER });
+    mocks.cancelClosing.mockResolvedValueOnce(false);
+    expect((await deliver(subscription([{ price: 'price_starter', quantity: 1 }]))).status).toBe(200);
+    expect(mocks.cancelClosing).toHaveBeenCalledWith(expect.anything(), 'u1', 'deleted');
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('deletion cancelled'));
+    // Not cancelled at Stripe yet: once the fleet closes, cancelClosedSubscriptions cancels it and reports the refund.
+    expect(mocks.cancelStripe).not.toHaveBeenCalled();
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
+  it('during a lapse window, or for a subscription that is not active, leaves both alone', async () => {
+    mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: LATER });
+    await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
+    mocks.getClosing.mockResolvedValue({ reason: 'lapsed', closesAt: PAST });
+    await deliver({ ...subscription([{ price: 'price_starter', quantity: 1 }]), status: 'canceled' });
+    expect(mocks.cancelClosing).not.toHaveBeenCalled();
+    expect(mocks.cancelStripe).not.toHaveBeenCalled();
   });
 });

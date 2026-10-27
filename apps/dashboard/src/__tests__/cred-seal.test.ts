@@ -115,8 +115,8 @@ describe('instrumentation register', () => {
     vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
     query.mockResolvedValue({ rows: [] });
     await register();
-    // The migration 011 check, then one backfill query per column.
-    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(4));
+    // The migration 011 and 012 checks, then one backfill query per column.
+    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(5));
     vi.restoreAllMocks();
   });
 
@@ -137,6 +137,28 @@ describe('instrumentation register', () => {
     await register();
     expect(exit).not.toHaveBeenCalled();
     // Let the background backfill finish before the next test counts queries.
+    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(6));
+    vi.restoreAllMocks();
+  });
+
+  it('exits in production while users.closes_at is missing (migration 012 not applied)', async () => {
+    const { register } = await import('@/instrumentation');
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
+    query.mockReset();
+    query.mockResolvedValueOnce({ rows: [{ is_nullable: 'YES' }] }).mockResolvedValueOnce({ rows: [{ n: 0 }] }).mockResolvedValue({ rows: [] });
+    await expect(register()).rejects.toThrow('exit');
+    expect(errors).toHaveBeenCalledWith(expect.stringMatching(/apply migration 012/));
+
+    // Every column there: it starts.
+    exit.mockClear();
+    query.mockReset();
+    query.mockResolvedValueOnce({ rows: [{ is_nullable: 'YES' }] }).mockResolvedValueOnce({ rows: [{ n: 9 }] }).mockResolvedValue({ rows: [] });
+    await register();
+    expect(exit).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(5));
     vi.restoreAllMocks();
   });
