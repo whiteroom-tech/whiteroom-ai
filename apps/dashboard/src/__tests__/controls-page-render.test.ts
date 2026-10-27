@@ -554,6 +554,17 @@ describe('Controls page, suggestions, removing and filtering', () => {
   });
 });
 
+describe('Controls page, links in', () => {
+  it('opens the rule a link names (?rule=), e.g. from a run’s Rule activity', async () => {
+    nav.params = new URLSearchParams('rule=r3');
+    const m = await mount();
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('190');
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+});
+
 describe('Controls page, change log', () => {
   const snap = (dailyCap: number, mode = 'watch') => ({ mode, response: 'block', alsoNotify: false, appliesTo: 'all', params: { dailyCap, scope: 'day', unit: 'dollars' } });
   const when = new Date(Date.now() - 60_000).toISOString();

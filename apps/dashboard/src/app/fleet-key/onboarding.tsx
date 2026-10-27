@@ -127,7 +127,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
         <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-          Each key gets its own proxy URL. WhiteRoom stores only a hash; the key stays yours.
+          Each key gets its own proxy URL. WhiteRoom stores only a hash and the last 4 characters, never the key itself.
         </p>
 
         {replaced && <RotationResult result={replaced} onDismiss={() => setReplaced(null)} />}

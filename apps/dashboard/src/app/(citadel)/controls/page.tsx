@@ -67,6 +67,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const searchParams = useSearchParams();
   const suggestionRec = searchParams.get("rec");
   const agentParam = searchParams.get("agent");
+  // ?rule=gr_…: a link from elsewhere (a run's Rule activity) opens that rule.
+  const ruleParam = searchParams.get("rule");
 
   const [rules, setRules] = useState<GovernanceRule[]>([]);
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
@@ -82,6 +84,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
   const [actions, setActions] = useState<RuleActionsResult | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const ruleOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ruleParam || ruleOpened.current === ruleParam || !rules.some((r) => r.id === ruleParam)) return;
+    ruleOpened.current = ruleParam;
+    setSelectedId(ruleParam);
+  }, [ruleParam, rules]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
