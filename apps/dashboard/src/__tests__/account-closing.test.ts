@@ -194,6 +194,10 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       const s = world.sub;
       return { rows: s?.stripe_subscription_id && (params[1] as string[]).includes(s.status) ? [{}] : [] };
     }
+    if (sql.startsWith('SELECT stripe_subscription_id, status FROM subscriptions') && sql.includes('FOR UPDATE')) {
+      world.log.push('lock subscription');
+      return { rows: world.sub ? [world.sub] : [] };
+    }
     if (sql.startsWith('UPDATE subscriptions SET updated_at')) { world.log.push('subscription to the back of the queue'); return one(!!world.sub); }
     if (sql.startsWith('UPDATE subscriptions SET status')) { if (world.sub) world.sub.status = String(params[1]); return one(!!world.sub); }
     if (sql.includes('FROM subscriptions')) { world.log.push('read plan'); return { rows: world.sub ? [world.sub] : [] }; }
@@ -245,7 +249,8 @@ describe('Delete account starts a 14-day window', () => {
     setup({ owner: true });
     expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
     const steps = world.log.filter((e) => e !== 'read plan');
-    expect(steps.slice(0, 5)).toEqual(['BEGIN', 'lock user', 'start deleted', 'queue engine push', 'COMMIT']);
+    // The user row before the subscription, the order the removal job takes them in, so they can't deadlock.
+    expect(steps.slice(0, 6)).toEqual(['BEGIN', 'lock user', 'lock subscription', 'start deleted', 'queue engine push', 'COMMIT']);
     expect(world.deleted).toBe(false); // nothing is removed now
     expect(near(world.user.closes_at, Date.now() + 14 * DAY)).toBe(true);
     expect(world.user.delete_after).toBe(world.user.closes_at);
@@ -656,7 +661,7 @@ describe('the end of a deletion', () => {
     expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 0 });
     world.outboxPending = false;
     expect(await finishDeletedAccounts()).toEqual({ deleted: 1, skipped: 0, blocked: 0 });
-    expect(world.log.filter((e) => e !== 'read plan')).toEqual(['BEGIN', 'lock user', 'delete account', 'COMMIT']);
+    expect(world.log.filter((e) => e !== 'read plan')).toEqual(['BEGIN', 'lock user', 'lock subscription', 'delete account', 'COMMIT']);
   });
 
   it('after a deletion over a lapse: the fleet has closed, but the account waits for its removal date', async () => {

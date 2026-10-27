@@ -378,14 +378,17 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
   try {
     await client.query('BEGIN');
 
+    // The user row first, then subscription and organizations (in
+    // findDeletionBlocker): the same order finishDeletedAccounts takes them,
+    // so the two can't deadlock. Locked, so two requests can't both decide
+    // they started it.
+    const current = await getClosing(userId, client, { lock: true });
     const blocked = await findDeletionBlocker(client, userId, true);
     if (blocked) {
       await client.query('ROLLBACK');
       return { ok: false, error: blocked.message };
     }
 
-    // Locked, so two requests can't both decide they started it.
-    const current = await getClosing(userId, client, { lock: true });
     if (!current || !isClosingOpen(current)) {
       changed = await startClosing(client, userId, 'deleted', { replaceEnded: true });
     } else if (current.reason === 'lapsed') {
