@@ -42,7 +42,7 @@ export function HandoverQualityPanel({ fleetId, agentId }: { fleetId: string; ag
   return (
     <Panel
       title={<>Note quality<Hint text={HELP.handoverQuality} /></>}
-      actions={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Last 7 days · {q.handovers} handover{q.handovers === 1 ? '' : 's'}</span>}
+      actions={<span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Last 7 days · {q.handovers} {q.handovers === 1 ? 'note' : 'notes'} checked</span>}
     >
       <div style={{ display: 'grid' }}>
         {qualityRows(q).map((r, i) => (

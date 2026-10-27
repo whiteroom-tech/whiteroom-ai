@@ -44,19 +44,19 @@ describe('finding sentences', () => {
     expect(t).toContain('1.5×');
     for (const n of numbersIn(t)) expect(measureValues(m)).toContain(n);
     // A short-shift streak still leads when both fired.
-    expect(sentenceText(findingSentence('review_handover_churn', { ...m, longestStreak: 3 }))).toContain('Its runs lasted only');
+    expect(sentenceText(findingSentence('review_handover_churn', { ...m, longestStreak: 3 }))).toContain('Its last 3 runs lasted only');
   });
 
   it('churn thresholds: repeat leads from 2 in a row, short shifts from 3', () => {
     const lead = (x: Record<string, number>) => sentenceText(findingSentence('review_handover_churn', { ...MEASURES.review_handover_churn, ...x }));
     expect(lead({ longestRepeatStreak: 1, repeatedSharePct: 60, longestStreak: 0 })).toContain('Its runs lasted only');
     expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 2 })).toContain('Redid 60%');
-    expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 3 })).toContain('Its runs lasted only');
+    expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 3 })).toContain('Its last 3 runs lasted only');
   });
 
   it('older churn findings without repeat measures read as before', () => {
     expect(MEASURES.review_handover_churn).not.toHaveProperty('longestRepeatStreak');
-    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Its runs lasted only 1\.5 calls on average, 20 runs in a row\./);
+    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Its last 20 runs lasted only 1\.5 calls each on average\./);
   });
 
   it('tool silence mentions several quiet tools only when there are several', () => {
@@ -119,7 +119,7 @@ describe('cost, limitations, reasons, how-to', () => {
       .toBe('search ran with the same request 1 time in run 2, and this happened in 1 run this week. The agent may be stuck in a loop.');
     expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5× normal.');
     expect(text('review_tool_errors', { ...MEASURES.review_tool_errors, toolErrors: 1 })).toContain('failed 1 time this week');
-    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('only 1 call on average, 1 run in a row');
+    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('Its runs lasted only 1 call each on average.');
     expect(text('review_tool_silence', { ...MEASURES.review_tool_silence, recentCalls: 1 })).toContain('(1 call)');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 1 })).toContain('1 other model is also failing.');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');

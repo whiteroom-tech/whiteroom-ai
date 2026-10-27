@@ -59,8 +59,7 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
             ...count(m.longestRepeatStreak, 'run', 'runs'), t(' in a row. It likely lost track of what it had found, so it did the work again. To fix: have its tools send back shorter answers, or have it save its progress as it goes.'),
           ]
         : [
-            t('Its runs lasted only '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' on average, '),
-            ...count(m.longestStreak, 'run', 'runs'), t(' in a row. Its tools likely send back too much at once, which fills each run fast. To fix: have its tools send back shorter answers.'),
+            ...(Number(m.longestStreak) > 1 ? [t('Its last '), ...count(m.longestStreak, 'run', 'runs')] : [t('Its runs')]), t(' lasted only '), ...count(m.medianCallsPerWatch, 'call', 'calls'), t(' each on average. Its tools likely send back too much at once, which fills each run fast. To fix: have its tools send back shorter answers.'),
           ];
       if (Number(m.limitMultiplier) > 1) parts.push(t(' WhiteRoom has raised this agent’s limit '), v(m.limitMultiplier), t('× to keep it working.'));
       return parts;

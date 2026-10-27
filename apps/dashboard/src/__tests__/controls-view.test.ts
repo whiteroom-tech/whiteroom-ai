@@ -164,10 +164,10 @@ describe('editing a rule', () => {
     expect(draftProblem({ ...loop, number: '2.5' })).toBe('Enter a whole number from 1 to 10,000.');
     expect(draftProblem({ ...spend, appliesTo: [] })).toBe('Pick at least one agent, or choose All agents.');
     const models = draftFrom(rule({ ruleType: 'model_allowlist', params: { allowedModels: [] } }));
-    expect(draftProblem({ ...models, mode: 'enforce' })).toBe('Pick at least one model before you enforce this rule.');
+    expect(draftProblem({ ...models, mode: 'enforce' })).toBe('Pick at least one model before you turn on Block.');
     expect(draftProblem(models)).toBeNull();
     const tools = draftFrom(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }));
-    expect(draftProblem({ ...tools, mode: 'enforce' })).toBe('Pick at least one tool before you enforce this rule.');
+    expect(draftProblem({ ...tools, mode: 'enforce' })).toBe('Pick at least one tool before you turn on Block.');
     expect(draftProblem({ ...tools, mode: 'enforce', params: { blockedTools: ['shell'] } })).toBeNull();
     expect(draftChanges({ ...spend, number: '0' }, rule({}))).toBeNull();
   });

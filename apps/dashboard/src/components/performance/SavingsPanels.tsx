@@ -128,7 +128,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
 export function ByAgentTable({ rows, scope, ruleActions, scores }: {
   rows: AgentTotals[];
   scope: string;
-  /** Controls blocks (Enforce) and would-blocks (Watch only) per agent id, lower-cased. */
+  /** Controls blocks (Block) and would-blocks (Record only) per agent id, lower-cased. */
   ruleActions?: Record<string, GovernanceTally>;
   /** Task success / cost diligence / speed, per agent id (absent on older engines, or while still loading). */
   scores?: Record<string, AgentScore>;

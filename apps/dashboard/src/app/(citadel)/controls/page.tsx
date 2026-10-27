@@ -1,7 +1,7 @@
 "use client";
 
 // Controls (spec Rev 1, D1): rules read as sentences, grouped by what they do
-// now (Blocking, Record only, Off), changed in one editor on the right and sent
+// now (Acting, Record only, Off), changed in one editor on the right and sent
 // to the engine only on Save. Built from the shared primitives and the
 // dashboard's own words, so it reads like the other tabs.
 
@@ -431,7 +431,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             </Banner>
           )}
 
-          {group(MODE_GROUP.enforce, enforcing, "No rules block yet. Rules in Record only show what they would do first.")}
+          {group(MODE_GROUP.enforce, enforcing, "No rules are acting yet. Rules in Record only show what they would do first.")}
           {group(MODE_GROUP.watch, watching, "No rules in Record only.")}
           {group("Off", off, "No rules are off.", true)}
 
@@ -502,10 +502,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "enforce"}
         tone="neutral"
-        title={dialog?.kind === "enforce" ? `Turn on Block for the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
+        title={dialog?.kind === "enforce" ? (dialog.next.response === "notify" ? `Turn on the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : `Turn on Block for the ${RULE_LABELS[dialog.rule.ruleType]} rule?`) : ""}
         body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldActs[`${dialog.rule.id}@${dialog.rule.version}`] ?? null} /> : null}
-        confirmLabel="Turn on Block"
-        cancelLabel={dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep watching" : "Cancel"}
+        confirmLabel={dialog?.kind === "enforce" && dialog.next.response === "notify" ? "Turn it on" : "Turn on Block"}
+        cancelLabel={dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep Record only" : "Cancel"}
         busy={saving}
         onConfirm={() => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); }}
         onCancel={() => setDialog(null)}
@@ -533,7 +533,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "remove"}
         title={dialog?.kind === "remove" ? `Remove the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
-        body={dialog?.kind === "remove" ? <>{ruleSentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops watching right away." : "It stops right away."} Its history stays in the audit chain.</> : null}
+        body={dialog?.kind === "remove" ? <>{ruleSentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops recording right away." : "It stops right away."} Its history stays in the audit chain.</> : null}
         confirmLabel="Remove rule"
         cancelLabel="Keep rule"
         busy={saving}

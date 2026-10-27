@@ -57,19 +57,21 @@ const COPY_FILES = [
 
 const BANNED = /\bshifts?\b|\bhand(s|ed|ing)? (work )?over\b|\bhandovers?\b|\bcompress(ed|ion)?\b|\bWatch only\b|\bEnforc(e|es|ing)\b|\byour API key\b/i;
 
-function userFacingText(source: string): string[] {
+function userFacingText(source: string, jsx: boolean): string[] {
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   // Template holes are code (shift.watchNumber), not words.
   const strings = (code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? []).map((s) => s.replace(/\$\{[^}]*\}/g, ''));
-  const jsxText = code.match(/(?<=[>}])[^<>{}\n]+(?=[<{])/g) ?? [];
-  // Sentences only (a space inside), so identifiers like 'handover_out' pass.
-  return [...strings, ...jsxText].filter((s) => /[a-z] [a-z]/i.test(s) && BANNED.test(s));
+  // JSX text only in .tsx: in plain .ts the pattern would match code between template holes.
+  const jsxText = jsx ? code.match(/(?<=[>}])[^<>{}\n]+(?=[<{])/g) ?? [] : [];
+  // String literals count only as sentences (a space inside), so identifiers
+  // like 'handover_out' pass; JSX text is always visible, even one word.
+  return [...strings.filter((s) => /[a-z] [a-z]/i.test(s)), ...jsxText].filter((s) => BANNED.test(s));
 }
 
 describe('customer copy', () => {
   it.each(COPY_FILES)('%s keeps internal mechanics and old mode names out', (rel) => {
     const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
-    expect(userFacingText(src)).toEqual([]);
+    expect(userFacingText(src, rel.endsWith('.tsx'))).toEqual([]);
   });
 });
 

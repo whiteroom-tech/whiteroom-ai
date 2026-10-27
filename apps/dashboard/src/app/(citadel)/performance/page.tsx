@@ -1,5 +1,6 @@
 'use client';
 
+import { RULE_ACTIVITY } from '@/lib/vocab';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceAgent, performanceEvidence, performanceFeedback, performanceRecommendationExport, performanceRecommendationsList, performanceRecommendationGet, performanceFleetHourly, performanceAgentScores, auditSummary, ruleActions as fetchRuleActions } from '@/lib/whiteroom/client';
@@ -515,9 +516,9 @@ function MetricDrillDown({ metric, models, hourly, govSavings, govCounts, blocke
     const agents = counts ? Object.entries(counts.byAgent).sort(([, a], [, b]) => (b.blocks - a.blocks) || (b.wouldBlocks - a.wouldBlocks)) : [];
     return (
       <div style={{ ...CARD, marginBottom: 16 }}>
-        <h3 style={H3}>Rule activity</h3>
+        <h3 style={H3}>{RULE_ACTIVITY}</h3>
         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginBottom: 12 }}>
-          Calls stopped by rules on the Controls page. Blocked = a Block rule stopped the call; would have blocked = a Record only rule matched and the call went through. Per-rule and per-agent counts come from recent audit events.
+          Calls stopped by rules on the Controls page. Blocked = a Block rule stopped the call; would have acted = a Record only rule matched and the call went through. Per-rule and per-agent counts come from recent audit events.
         </div>
         {!counts || (counts.blocks === 0 && counts.wouldBlocks === 0 && !blockedCount) ? (
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>No governance rule fired in the selected time window.</div>
@@ -730,7 +731,7 @@ function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCou
           sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
         />
         <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtPct(s.errorRate)} sub={`${failedCalls.toLocaleString()} of ${s.totalCalls.toLocaleString()}`} />
-        <StatCard variant="card" label="Rule activity" hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
+        <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked }).toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
       </div>
 
       <div style={{ margin: '10px 0 24px' }}>

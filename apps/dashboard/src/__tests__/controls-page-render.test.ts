@@ -109,11 +109,11 @@ describe('Controls page', () => {
   it('reads each rule as a sentence, grouped by what it does now, with the cards and the overlap', async () => {
     const m = await mount();
     const groups = [...m.el.querySelectorAll('.wr-panel__title')].map((t) => t.textContent);
-    expect(groups).toEqual(['Blocking', 'Record only', 'Off']);
+    expect(groups).toEqual(['Acting', 'Record only', 'Off']);
     expect(m.text()).toContain('When an agent makes the same call 100 times in a run, block the call.');
     expect(m.text()).toContain('Only market-researcher');
     // Stat cards, as Performance counts rule actions.
-    expect(m.text()).toMatch(/Blocking2Call rate, Loop breaker/);
+    expect(m.text()).toMatch(/Acting2Call rate, Loop breaker/);
     expect(m.text()).toMatch(/Rule activity\s*7/);
     const card = [...m.el.querySelectorAll('section[aria-label="Rules at a glance"] > *')].find((c) => c.textContent?.startsWith('Rule activity'))!;
     expect(card.textContent).toMatch(/· last 7 days$/);
@@ -381,7 +381,7 @@ describe('Controls page, suggestions, removing and filtering', () => {
     const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
     expect(dialog.textContent).toContain('$200');
     // A cap in Watch isn't acting, so removing it stops only the watching.
-    expect(dialog.textContent).toContain('It stops watching right away.');
+    expect(dialog.textContent).toContain('It stops recording right away.');
     await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r4', 'k');
     m.root.unmount();
