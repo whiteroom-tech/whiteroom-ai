@@ -588,6 +588,19 @@ describe('Controls page, links in', () => {
     m.root.unmount();
   });
 
+  it('asks before a new link throws away an unsaved edit', async () => {
+    nav.params = new URLSearchParams('rule=r3');
+    const m = await mount();
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    nav.params = new URLSearchParams('rule=r4');
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    expect(m.text()).toContain('Discard your changes to Spend cap?');
+    expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
+
   it('says so when the linked rule has been removed', async () => {
     nav.params = new URLSearchParams('rule=gr_gone');
     const m = await mount();
