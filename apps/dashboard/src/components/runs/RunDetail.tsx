@@ -184,7 +184,8 @@ function CopyLinkButton() {
   }, [copied]);
   return (
     <Button variant="ghost" size={32} onClick={() => {
-      navigator.clipboard?.writeText(window.location.href).then(() => setCopied(true), () => setCopied(false));
+      // No clipboard (an insecure page, some browsers) fails the same way a refusal does.
+      Promise.resolve().then(() => navigator.clipboard.writeText(window.location.href)).then(() => setCopied(true), () => setCopied(false));
     }}>
       <span aria-live="polite">{copied === true ? 'Link copied' : copied === false ? 'Couldn’t copy' : 'Copy link'}</span>
     </Button>

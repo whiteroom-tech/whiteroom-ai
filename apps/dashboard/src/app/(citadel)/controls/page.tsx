@@ -87,11 +87,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [actions, setActions] = useState<RuleActionsResult | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const ruleOpened = useRef<string | null>(null);
+  const openRuleRef = useRef<(id: string | null) => void>(() => {});
   useEffect(() => {
     if (!ruleParam || ruleOpened.current === ruleParam || !listed) return;
     ruleOpened.current = ruleParam;
     // A run can name a rule that's since been removed: say so rather than land silently.
-    if (rules.some((r) => r.id === ruleParam)) setSelectedId(ruleParam);
+    // Through openRule, so an unsaved edit to another rule is asked about first.
+    if (rules.some((r) => r.id === ruleParam)) openRuleRef.current(ruleParam);
     else setNotice("That rule isn’t here any more; it may have been removed. Its changes are in Recent changes.");
   }, [ruleParam, rules, listed]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
@@ -221,6 +223,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setDraft(r ? draftFrom(r) : null);
     });
   };
+  openRuleRef.current = openRule;
 
   /** The current URL with some search params changed (null removes one). */
   const withParams = (changes: Record<string, string | null>) => {
