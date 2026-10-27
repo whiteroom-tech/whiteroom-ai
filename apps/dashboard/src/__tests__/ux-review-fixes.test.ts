@@ -1,6 +1,7 @@
 // UX review fixes: plain wording built from the data, and Block in one colour.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import postcss from 'postcss';
 import { describe, expect, it } from 'vitest';
 import { ordinal } from '@/lib/format';
 import { loopActs } from '@/lib/controls-view';
@@ -64,10 +65,28 @@ describe('Block is red everywhere it means a real block', () => {
 });
 
 describe('Block colour in the stylesheet', () => {
-  const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
-  it('paints the editor Block pill, the Block dot and a card block in --bad, never amber', () => {
-    expect(css).toMatch(/\.gov-edhead__mode\.is-on \{ background: var\(--bad-bg\); color: var\(--bad\); \}/);
-    expect(css).toMatch(/\.wr-dot--bad \{ background: var\(--bad\); \}/);
-    expect(css).toMatch(/\.wr-chip-block \{[^}]*background: var\(--bad-bg\); color: var\(--bad\);/);
+  // Parsed, so the check holds whatever the declaration order or extra declarations.
+  const root = postcss.parse(readFileSync(join(__dirname, '../app/globals.css'), 'utf8'));
+  /** Every rule for `selector`, in source order (top level and inside media queries). */
+  const rulesFor = (selector: string) => {
+    const out: postcss.Rule[] = [];
+    root.walkRules((r) => { if (r.selectors.includes(selector)) out.push(r); });
+    return out;
+  };
+  const decl = (r: postcss.Rule, prop: string) => { let v: string | undefined; r.walkDecls(prop, (d) => { v = d.value; }); return v; };
+
+  it.each([
+    ['.gov-edhead__mode.is-on', { background: 'var(--bad-bg)', color: 'var(--bad)' }],
+    ['.wr-dot--bad', { background: 'var(--bad)' }],
+    ['.wr-chip-block', { background: 'var(--bad-bg)', color: 'var(--bad)' }],
+  ] as const)('%s is red, and no later rule turns it amber', (selector, want) => {
+    const rules = rulesFor(selector);
+    expect(rules.length).toBeGreaterThan(0);
+    for (const [prop, value] of Object.entries(want)) {
+      // The last rule that sets the property is the one that wins.
+      const setting = rules.filter((r) => decl(r, prop) !== undefined);
+      expect(decl(setting[setting.length - 1], prop)).toBe(value);
+    }
+    for (const r of rules) for (const prop of ['background', 'color']) expect(decl(r, prop) ?? '').not.toMatch(/warn/);
   });
 });

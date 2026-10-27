@@ -39,12 +39,11 @@ const STRIP_DAYS = 30;
  * Phones (below 640px): each run is a stacked row, so nothing is cut off:
  * run · agent · time, then what stood out, then length and spend.
  */
-export function RunsPhoneList({ runs, groupOf, onOpen, footer }: {
+export function RunsPhoneList({ runs, groupOf, onOpen }: {
   runs: RunSummary[];
   groupOf: (r: RunSummary) => { key: string; label: React.ReactNode };
   /** Called before a run opens. */
   onOpen: () => void;
-  footer?: React.ReactNode;
 }) {
   return (
     <div className="wr-runs-list">
@@ -75,7 +74,6 @@ export function RunsPhoneList({ runs, groupOf, onOpen, footer }: {
           );
         })}
       </ul>
-      {footer && <div className="wr-table__foot">{footer}</div>}
     </div>
   );
 }
@@ -415,7 +413,11 @@ export function RunsTable({ preview, retentionDays }: {
             <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No {flaggedOnly ? 'flagged runs' : rulesOnly ? 'runs with rule activity' : 'runs'} {day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}{agent !== 'all' ? ` for ${agent}` : ''}.{flaggedOnly ? ' A run is flagged when it repeats the same call or fails several calls in a row.' : rulesOnly ? ' A run shows here when a rule blocked a call or, in Record only, would have.' : ' A run appears once an agent makes calls.'}</p>
           ) : (
             <>
-            <RunsPhoneList runs={shown} groupOf={groupOf} onOpen={remember} footer={pager} />
+            {/* Both views are rendered and CSS shows one (globals.css, 640px): choosing in JS with
+                matchMedia would flash the wrong one and mismatch the server render. The hidden
+                one is display: none, which also takes it out of the accessibility tree, so
+                screen readers meet one list. The pager is shared, below both. */}
+            <RunsPhoneList runs={shown} groupOf={groupOf} onOpen={remember} />
             <div className="wr-runs-table">
             <DataTable<RunSummary>
               caption="Runs, newest first"
@@ -443,9 +445,9 @@ export function RunsTable({ preview, retentionDays }: {
                   },
                 },
               ]}
-              footer={pager}
             />
             </div>
+            {pager && <div className="wr-table__foot">{pager}</div>}
             </>
           )}
         </Panel>
