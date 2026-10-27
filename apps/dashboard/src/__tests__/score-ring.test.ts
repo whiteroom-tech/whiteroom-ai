@@ -9,7 +9,7 @@ const ring = (score: number) => renderToStaticMarkup(h(ScoreRing, { score, size:
 describe('ScoreRing', () => {
   it('labels whole scores plainly and others to one place', () => {
     expect(ring(8)).toContain('aria-label="Score 8 out of 10"');
-    expect(ring(7.85)).toContain('aria-label="Score 7.8 out of 10"');
+    expect(ring(7.85)).toContain('aria-label="Score 7.9 out of 10"');
   });
 
   it('clamps out-of-range scores and never draws NaN', () => {
@@ -30,5 +30,16 @@ describe('ScoreRing beside its own words', () => {
     const html = renderToStaticMarkup(h(ScoreRing, { score: 8, decorative: true }));
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toContain('aria-label');
+  });
+});
+
+describe('ScoreRing rounding', () => {
+  it('colours by the number it shows: 8.96 reads 9 and is green, 8.94 reads 8.9 and is not', () => {
+    const up = renderToStaticMarkup(h(ScoreRing, { score: 8.96 }));
+    expect(up).toContain('aria-label="Score 9 out of 10"');
+    expect(up).toContain('stroke="var(--ok)"');
+    const down = renderToStaticMarkup(h(ScoreRing, { score: 8.94 }));
+    expect(down).toContain('aria-label="Score 8.9 out of 10"');
+    expect(down).toContain('stroke="var(--brand)"');
   });
 });

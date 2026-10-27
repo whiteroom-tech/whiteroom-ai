@@ -12,7 +12,9 @@ export function ScoreRing({ score, size = 40, decorative = false }: {
   decorative?: boolean;
 }) {
   // Out-of-range or missing scores draw as the nearest end of the scale, never NaN.
-  const s = Number.isFinite(score) ? Math.max(0, Math.min(10, score)) : 0;
+  // Rounded to the one decimal shown, so the label, the arc and the green
+  // threshold all use the same number (8.96 reads 9.0 and is green).
+  const s = Number.isFinite(score) ? Math.round(Math.max(0, Math.min(10, score)) * 10) / 10 : 0;
   const r = size * 0.4;
   const c = 2 * Math.PI * r;
   const w = size * 0.1;
