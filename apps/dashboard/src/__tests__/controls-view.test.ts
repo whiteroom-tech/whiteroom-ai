@@ -294,5 +294,8 @@ describe('fleet daily spend beside a spend cap', async () => {
     expect(averageDailySpend({ hourly: [] }, 14)).toBeNull();
     expect(averageDailySpend({ error: 'no store' }, 14)).toBeNull();
     expect(averageDailySpend(null, 14)).toBeNull();
+    // Hours it can't read: the whole window; no window: nothing.
+    expect(averageDailySpend({ hourly: [{ hour: 'soon', costMicros: 14_000_000 }] }, 14)).toEqual({ perDay: 1, days: 14 });
+    expect(averageDailySpend({ hourly: [{ hour: new Date().toISOString(), costMicros: 1 }] }, 0)).toBeNull();
   });
 });

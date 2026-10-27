@@ -92,6 +92,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
   const [actions, setActions] = useState<RuleActionsResult | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const fleetRef = useRef(fleetId);
+  fleetRef.current = fleetId;
   const ruleOpened = useRef<string | null>(null);
   const openRuleRef = useRef<(id: string | null) => void>(() => {});
   useEffect(() => {
@@ -319,8 +321,17 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // the original rule's settings (only the narrowing, none of the edit's other changes), in Record
   // only like any new rule. The original is left as it was.
   const copyFor = async (rule: GovernanceRule, agentsPicked: string[]) => {
-    if (!agentsPicked.length) return;
+    if (!agentsPicked.length || saving) return;
     const next = { ...rule, appliesTo: agentsPicked };
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    // Already made (say, Save and Copy again): don't add a second, identical rule.
+    if (rules.some((r) => r.ruleType === next.ruleType && same(r.params, next.params) && same(r.appliesTo, agentsPicked))) {
+      setDialog(null);
+      setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
+      setNotice(`There's already a copy for ${agentsPicked.join(", ")}. The rule for all agents is unchanged.`);
+      return;
+    }
+    const forFleet = fleetId;
     setDialog(null);
     setSaving(true);
     setError(null);
@@ -330,6 +341,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         ruleType: next.ruleType, mode: "watch", response: next.response, alsoNotify: next.alsoNotify, params: next.params, appliesTo: agentsPicked,
         description: `Added a copy of the ${RULE_LABELS[next.ruleType]} rule for ${agentsPicked.join(", ")}`,
       }, authKey);
+      // Signed into another fleet meanwhile: this answer isn't for the page now on screen.
+      if (fleetRef.current !== forFleet) return;
       setRules((rs) => [...rs, created]);
       // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));

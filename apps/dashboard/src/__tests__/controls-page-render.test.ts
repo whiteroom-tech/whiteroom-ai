@@ -811,6 +811,13 @@ describe('Controls page, weakening a rule', () => {
     expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
     expect(api.update).not.toHaveBeenCalled();
     expect(m.text()).toContain('Added a copy for lead-agent, in Record only. The rule for all agents is unchanged.');
+    // Copying again doesn't add a second, identical rule.
+    await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
+    await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
+    await m.click(m.button('Save'));
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Keep it for all, and add a copy')));
+    expect(api.create).toHaveBeenCalledTimes(1);
+    expect(m.text()).toContain('There’s already a copy for lead-agent.'.replace('’', "'"));
     // The limit edit is kept; only the narrowing is undone in the editor.
     expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('500');
     expect((m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement).value).toBe('all');
