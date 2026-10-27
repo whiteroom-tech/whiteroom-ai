@@ -155,22 +155,6 @@ export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Re
   return out;
 }
 
-/** Recent enforced blocks shows as a badge on Overview. */
-export const RECENT_BLOCK_MS = 15 * 60_000;
-
-/** Newest governance_block per agent within `windowMs` of `now`. */
-export function recentBlocksByAgent(entries: AuditEntry[], now = Date.now(), windowMs = RECENT_BLOCK_MS): Record<string, AuditEntry> {
-  const out: Record<string, AuditEntry> = {};
-  for (const e of entries) {
-    if (e.type !== GOVERNANCE_BLOCK || !e.agentId) continue;
-    const t = new Date(e.timestamp).getTime();
-    if (!Number.isFinite(t) || now - t > windowMs) continue;
-    const prev = out[e.agentId];
-    if (!prev || new Date(prev.timestamp).getTime() < t) out[e.agentId] = e;
-  }
-  return out;
-}
-
 export interface GovernanceSuggestions {
   /** Input traffic exists but nothing was ever read from or written to cache. */
   noCaching: boolean;
