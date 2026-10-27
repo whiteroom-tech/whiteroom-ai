@@ -1,0 +1,53 @@
+// Performance's overview, rendered to HTML: Cost, then a read-only Control
+// summary, then Performance (plan Rev1); the More detail toggle, Calls per
+// hour and the By agent table are gone (By agent is on Home now).
+import { describe, expect, it, vi } from 'vitest';
+import { createElement as h } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
+
+const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
+
+const DATA = {
+  fleetId: 'f1',
+  period: { start: '2026-10-26T00:00:00Z', end: '2026-10-27T00:00:00Z' },
+  summary: { totalCalls: 99, totalCost: 0.912, avgLatencyMs: 1900, errorRate: 0.02, blockedCount: 2, models: [{ model: 'claude-haiku-4-5', calls: 99, costMicros: 912_000, inputTokens: 1, outputTokens: 1 }] },
+  recommendations: [],
+  priceInfo: { version: '1', ageDays: 1, stale: false, expired: false },
+};
+
+const view = () => renderToStaticMarkup(h(IndexView, {
+  data: DATA, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: {} },
+  savingsDays: null, byAgent: null, rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
+  onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
+} as never));
+
+describe('Performance overview layout', () => {
+  it('reads Cost, then Control, then Performance', () => {
+    const html = view();
+    const order = ['id="perf-cost"', 'id="perf-control"', 'id="perf-performance"'].map((id) => html.indexOf(id));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('puts spend, savings, the hourly rate and smaller context under Cost, and rule activity under Control', () => {
+    const html = view();
+    const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
+    for (const label of ['Spend', 'Saved by WhiteRoom', 'Hourly', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
+    expect(control).toContain('Rule activity');
+    expect(control).toContain('2 blocked · 57 in Record only');
+    expect(control).toContain('href="/controls"');
+    const perf = html.slice(html.indexOf('id="perf-performance"'));
+    expect(perf).toContain('Failed calls');
+    expect(perf).toContain('Typical response');
+  });
+
+  it('leaves out More detail, Calls per hour and By agent', () => {
+    const html = view();
+    expect(html).not.toContain('More detail');
+    expect(html).not.toContain('Calls per hour');
+    expect(html).not.toContain('By agent');
+  });
+});

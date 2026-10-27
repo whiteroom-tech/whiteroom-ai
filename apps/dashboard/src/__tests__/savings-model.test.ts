@@ -58,8 +58,8 @@ describe('cost tracking captions (audit M10, M11)', () => {
   });
 
   it('names the right budget per side, and does not ask for a saved budget again when the task-cost data is what is missing', () => {
-    expect(remainingTasksNoteFor('budget_missing', 'dollar')).toBe('set a daily budget to see tasks left');
-    expect(remainingTasksNoteFor('budget_missing', 'token')).toBe('set a daily token budget to see tasks left');
+    expect(remainingTasksNoteFor('budget_missing', 'dollar')).toBe('set a daily budget to see calls left');
+    expect(remainingTasksNoteFor('budget_missing', 'token')).toBe('set a daily token budget to see calls left');
     expect(remainingTasksNoteFor('task_type_missing', 'dollar')).toMatch(/task type/);
     expect(remainingTasksNoteFor('task_type_missing', 'token')).toMatch(/task type/);
     expect(remainingTasksNoteFor('partial_coverage', 'dollar')).toMatch(/no price on file/);
