@@ -130,12 +130,13 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     if (await diagnosis.checkNow()) void fetchRecs();
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
-  // Smaller context: the fleet report's compression ratio (it moved here from Home). null until it loads or if it can't.
+  // Smaller context: the fleet report's compression ratio over all time (it doesn't follow the range; the card says so).
+  // null until it loads, if it can't, or if the engine doesn't send it: never shown as 0.
   const [compression, setCompression] = useState<number | null>(null);
   useEffect(() => {
     let live = true;
     setCompression(null);
-    fleetReport(fleetId, authKey).then((r) => { if (live && !r.error) setCompression(r.energySavings?.compressionRatio ?? 0); }, () => {});
+    fleetReport(fleetId, authKey).then((r) => { if (live && !r.error) setCompression(r.energySavings?.compressionRatio ?? null); }, () => {});
     return () => { live = false; };
   }, [fleetId, authKey]);
   const seeFindings = () => {
@@ -203,7 +204,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
             sub={auditFailed ? UNAVAILABLE : savingsCaption(savings.govTokensSaved, savings.cacheMicros)}
           />
           <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value={`${fmtCost(s.totalCost / hoursInRange)}${partialMark(spendPartial)}`} sub="spend per hour, on average" />
-          <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={compression === null ? '—' : compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression === null ? UNAVAILABLE : compression > 0 ? 'smaller than full history, on average' : 'nothing saved yet'} />
+          <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={compression === null ? '—' : compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression === null ? UNAVAILABLE : compression > 0 ? 'smaller than full history, all time' : 'nothing saved yet'} />
         </div>
         {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
         {/* Each its own full row: Cost prediction (a card with its own bottom margin), then tokens with vs without, then spend by model. */}
@@ -220,7 +221,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
       <section aria-labelledby="perf-control" style={{ marginBottom: 24 }}>
         <h2 id="perf-control" style={sectionTitle}>Control</h2>
         <div className="wr-perf-strip">
-          <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : ruleTotal.toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} subHref={ROUTES.controls} />
+          <StatCard variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions} value={auditFailed && !govCounts ? '—' : ruleTotal.toLocaleString()} sub={auditFailed && !govCounts ? UNAVAILABLE : ruleSub || 'no rule stepped in'} />
         </div>
         <p style={{ margin: '10px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Rules and their changes are on <Link href={ROUTES.controls} className="wr-link">Controls &rarr;</Link></p>
       </section>

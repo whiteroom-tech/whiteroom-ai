@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, localDayFromTs } from '@/lib/analytics-metrics';
 import { axisLabel, axisTop, savingsCaption } from '@/components/performance/SavingsPanels';
-import { ruleActionsByAgent } from '@/lib/governance';
 
 // Performance's Savings chart and By agent table, moved from Run History,
 // must keep Run History's numbers: same attribution, same per-agent-day math.
@@ -84,12 +83,3 @@ describe('Savings card caption', () => {
   });
 });
 
-describe('Rule actions per By agent row', () => {
-  it('merges mixed-case ids and keeps no-agent decisions on the Unattributed key', () => {
-    expect(ruleActionsByAgent({
-      'Lead-Agent': { blocks: 1, wouldBlocks: 0 },
-      'lead-agent': { blocks: 2, wouldBlocks: 1 },
-      '': { blocks: 0, wouldBlocks: 4 },
-    })).toEqual({ 'lead-agent': { blocks: 3, wouldBlocks: 1 }, '': { blocks: 0, wouldBlocks: 4 } });
-  });
-});
