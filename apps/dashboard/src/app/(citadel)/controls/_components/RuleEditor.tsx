@@ -38,7 +38,7 @@ const MODES: { value: GovernanceMode; label: string; dot?: 'warn' }[] = [
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, undoOf, onUndo, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, wouldAct, history, actors, undoOf, onUndo, fleetDailySpend = null, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
@@ -53,6 +53,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   /** How to undo a change, or null (lib/rule-history). */
   undoOf: (h: GovernanceHistoryEntry) => Undo | null;
   onUndo: (u: Undo, entryId: string) => void;
+  /** The fleet's average daily spend (all agents together), for a dollars-a-day cap; null when unknown. */
+  fleetDailySpend?: number | null;
   actors: ControlActor[];
   dirty: boolean;
   error: string | null;
@@ -111,6 +113,9 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               in a
               <InlineSelect label="Limit period" value={(p as SpendCapParams).scope} options={['day', 'run'] as const} onChange={(scope) => setParams({ scope })} />
             </div>
+            {(p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && fleetDailySpend !== null && (
+              <p style={{ ...help, color: 'var(--tx)' }}>Your fleet spends about ${fleetDailySpend < 10 ? fleetDailySpend.toFixed(2) : Math.round(fleetDailySpend).toLocaleString('en-US')} a day, all agents together (last 14 days).</p>
+            )}
             {(p as SpendCapParams).unit === 'dollars' && (
               <p style={help}>Dollar estimates use a blended rate of $0.003/1K tokens. Actual cost varies by model — see the Performance tab for per-model pricing.</p>
             )}

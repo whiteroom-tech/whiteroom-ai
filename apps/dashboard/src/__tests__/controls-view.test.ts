@@ -237,3 +237,33 @@ describe('groups and per-rule counts', async () => {
     expect(rowStat(rule({ id: 'gr_3', mode: 'enforce', appliesTo: ['lead'] }), { byRuleId: { gr_3: counts }, onlyOfItsType: false, agent: 'lead' })).toBe('4 blocked · last 7 days');
   });
 });
+
+describe('weakening a rule', async () => {
+  const { weakenings } = await import('@/lib/controls-view');
+  it('names every way a change makes the rule weaker, and nothing for a stronger one', () => {
+    const cap = rule({ mode: 'enforce', response: 'pause', alsoNotify: false, params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
+    expect(weakenings(cap, { ...cap, mode: 'off' })).toEqual(['Mode: Block → Off']);
+    expect(weakenings(cap, { ...cap, response: 'notify' })).toEqual(['Then: pause the agent → tell me']);
+    expect(weakenings(cap, { ...cap, appliesTo: ['lead'] })).toEqual(['Covers only lead, not every agent']);
+    expect(weakenings({ ...cap, appliesTo: ['lead', 'writer'] }, { ...cap, appliesTo: ['lead'] })).toEqual(['No longer covers writer']);
+    expect(weakenings(cap, { ...cap, params: { dailyCap: 250, scope: 'day', unit: 'dollars' } })).toEqual(['Limit: $190 → $250']);
+    expect(weakenings({ ...cap, response: 'block', alsoNotify: true }, { ...cap, response: 'block', alsoNotify: false })).toEqual(['It stops sending you an alert']);
+    // Stronger or unchanged: nothing to confirm.
+    expect(weakenings(cap, { ...cap, response: 'stop', params: { dailyCap: 100, scope: 'day', unit: 'dollars' } })).toEqual([]);
+    expect(weakenings({ ...cap, mode: 'watch' }, cap)).toEqual([]);
+    const tools = rule({ ruleType: 'tool_list', params: { blockedTools: ['a', 'b'] } });
+    expect(weakenings(tools, { ...tools, params: { blockedTools: ['a'] } })).toEqual(['No longer blocks b']);
+    const models = rule({ ruleType: 'model_allowlist', params: { allowedModels: ['x'] } });
+    expect(weakenings(models, { ...models, params: { allowedModels: ['x', 'y'] } })).toEqual(['Also allows y']);
+  });
+});
+
+describe('fleet daily spend beside a spend cap', async () => {
+  const { averageDailySpend } = await import('@/lib/controls-view');
+  it('averages the hourly spend per day, and is unknown rather than $0 without data', () => {
+    expect(averageDailySpend({ hourly: [{ costMicros: 7_000_000 }, { costMicros: 21_000_000 }] }, 14)).toBe(2);
+    expect(averageDailySpend({ hourly: [] }, 14)).toBeNull();
+    expect(averageDailySpend({ error: 'no store' }, 14)).toBeNull();
+    expect(averageDailySpend(null, 14)).toBeNull();
+  });
+});

@@ -754,6 +754,50 @@ describe('Controls page, change log', () => {
   });
 });
 
+describe('Controls page, weakening a rule', () => {
+  it('says what a change weakens before saving it', async () => {
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('100 times'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === 'Record only'));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Make the Loop breaker rule weaker?');
+    expect(m.text()).toContain('Mode: Block → Record only');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Keep it as it is'));
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Save'));
+    await m.click(m.button('Save the change'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'r1', { mode: 'watch', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('shows what the fleet really spends a day beside a dollars-a-day cap', async () => {
+    api.models = ['claude-haiku-4-5-20251001'];
+    const m = await mount();
+    await m.click(m.row('$190'));
+    // The mocked store has no hourly points: the line stays out rather than claim $0.
+    expect(m.text()).not.toContain('Your fleet spends about');
+    m.root.unmount();
+  });
+
+  it('narrowing a rule for all agents can keep it and add a copy just for them', async () => {
+    api.create.mockImplementation(async (_f: string, r: Record<string, unknown>) => { const rule = { ...base, id: 'r9', ...r }; api.created.push(rule as GovernanceRule); return { rule }; });
+    const m = await mount();
+    await m.click(m.row('$190'));
+    await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
+    await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Covers only lead-agent, not every agent');
+    expect(m.text()).toContain('Agents added later won’t be covered by a narrowed rule.');
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Keep it for all, and add a copy')));
+    expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 190, scope: 'day', unit: 'dollars' } }), 'k');
+    expect(api.update).not.toHaveBeenCalled();
+    expect(m.text()).toContain('Added a copy for lead-agent, in Record only. The rule for all agents is unchanged.');
+    m.root.unmount();
+  });
+});
+
 describe('Keywords in the editor', () => {
   const keywordRule = (over: Partial<GovernanceRule> = {}): GovernanceRule => ({
     ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all',
@@ -799,6 +843,11 @@ describe('Keywords in the editor', () => {
     expect(input.value).toBe('project FALCON');
     expect(m.text()).toContain('That keyword is already in the list.');
     await m.click(m.button('Save'));
+    // Removing a keyword weakens the rule: it says so first.
+    expect(m.text()).toContain('Make the Keywords rule weaker?');
+    expect(m.text()).toContain('No longer looks for “Orion”');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Save the change'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', { params: { keywords: ['Project Falcon'], where: 'both', wholeWord: true }, ifVersion: 1 }, 'k');
     m.root.unmount();
   });
@@ -813,6 +862,8 @@ describe('Keywords in the editor', () => {
     expect((m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement).disabled).toBe(true);
     await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === 'Off'));
     await m.click(m.button('Save'));
+    expect(m.text()).toContain('Mode: Record only → Off');
+    await m.click(m.button('Save the change'));
     expect(api.update).toHaveBeenCalledWith('f1', 'k1', { mode: 'off', ifVersion: 1 }, 'k');
     m.root.unmount();
   });

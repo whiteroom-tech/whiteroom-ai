@@ -370,3 +370,70 @@ export function coverageGroups(rules: GovernanceRule[]): { all: GovernanceRule[]
 export function stopping(rules: GovernanceRule[]): GovernanceRule[] {
   return rules.filter((r) => r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r));
 }
+
+// ── Weakening a rule ────────────────────────────────────────────────
+
+const MODE_RANK: Record<GovernanceMode, number> = { off: 0, watch: 1, enforce: 2 };
+const RESPONSE_RANK: Record<GovernanceResponse, number> = { notify: 0, block: 1, pause: 2, stop: 3 };
+const MODE_WORD: Record<GovernanceMode, string> = { off: 'Off', watch: 'Record only', enforce: 'Block' };
+const RESPONSE_WORD: Record<GovernanceResponse, string> = { notify: 'tell me', block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
+
+/**
+ * What a change makes weaker, in plain lines, so Save can ask first: a lower
+ * mode, a milder response, no alert, fewer agents covered, or a looser limit.
+ * Empty when nothing weakens (anyone may weaken a rule, decided Q5; the log
+ * records it and the change log can undo it).
+ */
+export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[] {
+  const out: string[] = [];
+  if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_WORD[prev.mode]} → ${MODE_WORD[next.mode]}`);
+  const pr = prev.response ?? 'block', nr = next.response ?? 'block';
+  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`Then: ${RESPONSE_WORD[pr]} → ${RESPONSE_WORD[nr]}`);
+  if (prev.alsoNotify && !next.alsoNotify && nr === 'block') out.push('It stops sending you an alert');
+  if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
+  else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
+    const dropped = prev.appliesTo.filter((a) => !(next.appliesTo as string[]).includes(a));
+    if (dropped.length) out.push(`No longer covers ${dropped.join(', ')}`);
+  }
+  out.push(...looser(prev, next));
+  return out;
+}
+
+function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
+  const a = prev.params, b = next.params;
+  switch (prev.ruleType) {
+    case 'spend_cap': {
+      const p = a as SpendCapParams, n = b as SpendCapParams;
+      return p.unit === n.unit && p.scope === n.scope && n.dailyCap > p.dailyCap ? [`Limit: ${money(p)} → ${money(n)}`] : [];
+    }
+    case 'loop_breaker': {
+      const p = a as LoopBreakerParams, n = b as LoopBreakerParams;
+      return n.threshold > p.threshold ? [`Acts after ${fmt(n.threshold)} repeats instead of ${fmt(p.threshold)}`] : [];
+    }
+    case 'call_rate': {
+      const p = a as CallRateParams, n = b as CallRateParams;
+      return n.maxCalls > p.maxCalls ? [`Allows ${fmt(n.maxCalls)} calls a minute instead of ${fmt(p.maxCalls)}`] : [];
+    }
+    case 'model_allowlist': {
+      const added = (b as ModelAllowlistParams).allowedModels.filter((m) => !(a as ModelAllowlistParams).allowedModels.includes(m));
+      return added.length ? [`Also allows ${added.join(', ')}`] : [];
+    }
+    case 'tool_list': {
+      const freed = (a as ToolListParams).blockedTools.filter((t) => !(b as ToolListParams).blockedTools.includes(t));
+      return freed.length ? [`No longer blocks ${freed.join(', ')}`] : [];
+    }
+    case 'keyword': {
+      const p = a as KeywordParams, n = b as KeywordParams;
+      const removed = p.keywords.filter((k) => !n.keywords.includes(k));
+      return removed.length ? [`No longer looks for ${removed.map((k) => `“${k}”`).join(', ')}`] : [];
+    }
+    default:
+      return [];
+  }
+}
+
+/** Average dollars a day over `days`, from hourly points; null without data (never a made-up $0). */
+export function averageDailySpend(hourly: { error?: string; hourly?: { costMicros?: number }[] } | null | undefined, days: number): number | null {
+  if (!hourly || hourly.error || !Array.isArray(hourly.hourly) || hourly.hourly.length === 0 || days <= 0) return null;
+  return hourly.hourly.reduce((n, h) => n + (h.costMicros || 0), 0) / 1e6 / days;
+}
