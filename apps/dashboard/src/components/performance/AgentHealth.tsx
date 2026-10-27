@@ -82,7 +82,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
             {groups.map((g) => (
               <div key={g.title} className="wr-health__check">
                 <span>{g.title}</span>
-                <span className="wr-cap" style={{ color: g.tone === 'problem' ? 'var(--warn-tx)' : g.tone === 'ok' ? 'var(--ok)' : undefined, fontWeight: g.tone === 'problem' ? 600 : undefined }}>
+                <span className="wr-cap" style={{ color: g.tone === 'problem' ? 'var(--warn-tx)' : g.tone === 'ok' ? 'var(--ok)' : 'var(--tx2)', fontWeight: g.tone === 'problem' ? 600 : undefined }}>
                   {g.status}{g.problemAgents.length > 0 && <> · <span className="wr-agent-name">{g.problemAgents.join(', ')}</span></>}
                 </span>
               </div>

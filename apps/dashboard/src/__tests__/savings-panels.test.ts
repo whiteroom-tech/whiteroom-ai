@@ -53,6 +53,22 @@ describe('Tokens: with WhiteRoom vs without', () => {
     expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain('font-mono');
   });
+  it('sizes the bars: the with-bar as its share of the without-bar, days against the busiest day', () => {
+    const html = renderToStaticMarkup(h(TokensCompare, { days, defaultOpen: true }));
+    expect(html).toContain('width:calc((100% - 72px) * 1)');
+    expect(html).toContain('width:calc((100% - 72px) * 0.405)'); // 1.72M of 4.25M
+    // The busiest day (2.63M without) fills the plot; its 1.67M with WhiteRoom is 63 of 100px.
+    expect(html).toContain('height:100px');
+    expect(html).toContain('height:63px');
+    // A tiny day still shows a sliver, never 0px.
+    expect(html).toContain('height:3px');
+  });
+  it('a quiet day shows a dash, and a day without a dollar figure shows only its tokens', () => {
+    const html = renderToStaticMarkup(h(TokensCompare, { days, usdByDay: null, defaultOpen: true }));
+    expect(html).toContain('>—<');
+    expect(html).toContain('960K saved');
+    expect(html).not.toContain('wr-tokens__usd');
+  });
   it('starts with By day folded, and says so when nothing ran', () => {
     expect(renderToStaticMarkup(h(TokensCompare, { days }))).toContain('aria-expanded="false"');
     expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]] }))).toContain('No model calls in the last 7 days.');

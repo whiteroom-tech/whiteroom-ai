@@ -9,7 +9,7 @@ export function liveFeedHelp(ttlHours: number): string {
 /** Hover help for labels, shown through the ⓘ Hint next to each label. */
 export const HELP = {
   smallerContext: "How much smaller your agents' context is with WhiteRoom than their full history, on average, over all time.",
-  hourlySpend: 'What your agents spend in an hour while they work: the average over hours with model calls in the last 14 days. Quiet hours don’t pull it down.',
+  hourlySpend: 'What your agents spend in an hour while they work: the average over recent hours with model calls. Quiet hours don’t pull it down.',
   modelCalls: 'Each time an agent asks the AI model something, that counts as one call.',
   typicalResponse: 'The median time a model call takes, start to finish: half of calls are faster.',
   savings: 'An estimate of the money WhiteRoom saved your agents in the range shown, at the prices they pay. A "+" means some tokens had no price on file.',

@@ -9,7 +9,7 @@ import type { GovernanceCounts } from '@/lib/governance';
 /** The overview's figures beyond the index and audit reads; each null (or undefined) when unknown. */
 export interface OverviewExtras {
   /** Hourly cost: the fleet's spend per working hour. */
-  workingHour: { usdPerHour: number; lookbackHours: number | null } | null;
+  workingHour: { usdPerHour: number; lookbackHours: number | null; unpriced?: boolean } | null;
   rules: GovernanceRule[] | null;
   /** Rule activity per rule id (engine rule_actions, newer engines). */
   byRuleId: Record<string, RuleActionCounts> | undefined;

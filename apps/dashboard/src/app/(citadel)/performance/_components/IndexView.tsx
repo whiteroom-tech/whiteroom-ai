@@ -14,7 +14,7 @@ import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
 import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
-import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { latencyTrend, lookbackText, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import { CostPredictionSection, type CostPredictionApi } from './CostPrediction';
@@ -26,7 +26,12 @@ import { statusLine } from '@/lib/diagnosis/model';
 import { fmtLatency, SpendByModel } from './perf-utils';
 
 /** Hourly cost: the fleet's spend per working hour (engine performance_cost_forecast). */
-export interface WorkingHourRate { usdPerHour: number; lookbackHours: number | null }
+export interface WorkingHourRate {
+  usdPerHour: number;
+  lookbackHours: number | null;
+  /** Recent calls had no price on file: the rate is unknown, not $0. */
+  unpriced?: boolean;
+}
 
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 export type FeedbackResult = 'done' | 'closed' | 'failed';
@@ -254,8 +259,9 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
             variant="card"
             label="Hourly cost"
             hint={HELP.hourlySpend}
-            value={workingHour ? fmtCost(Math.round(workingHour.usdPerHour * 1_000_000)) : '—'}
-            sub={workingHour ? `an hour while agents work${workingHour.lookbackHours ? ` · last ${Math.round(workingHour.lookbackHours / 24)} days` : ''}` : UNAVAILABLE}
+            value={workingHour && !workingHour.unpriced ? fmtCost(Math.round(workingHour.usdPerHour * 1_000_000)) : '—'}
+            sub={!workingHour ? UNAVAILABLE : workingHour.unpriced ? 'recent calls have no price on file yet'
+              : ['an hour while agents work', lookbackText(workingHour.lookbackHours)].filter(Boolean).join(' · ')}
           />
           <StatCard
             variant="card"

@@ -5,6 +5,7 @@
 // rendering.
 import type { AgentBudgetForecast, AgentBudgetsResult } from '@/lib/whiteroom/types';
 import { fmtCost, fmtCount, plural } from '@/lib/format';
+import { lookbackText } from '@/lib/performance-overview';
 
 /** The engine's cap on a daily token budget (agent_budget_set). */
 export const MAX_AGENT_BUDGET_TOKENS = 10_000_000_000;
@@ -77,8 +78,8 @@ export function agentCostLine(f: AgentBudgetForecast, unit: string, lookbackHour
     f.costPerTaskUsd != null && f.costPerTaskUsd > 0 ? `${fmtCost(Math.round(f.costPerTaskUsd * 1_000_000))} a ${unit}` : '',
   ].filter(Boolean);
   if (!parts.length) return null;
-  const days = lookbackHours ? Math.round(lookbackHours / 24) : null;
-  return `${parts.join(' · ')}${days ? ` · last ${days} ${plural(days, 'day')}` : ''}`;
+  const since = lookbackText(lookbackHours);
+  return `${parts.join(' · ')}${since ? ` · ${since}` : ''}`;
 }
 
 /** Today against the saved budget: "$0.42 spent today · ≈ 214 model calls left". Null without a budget. */

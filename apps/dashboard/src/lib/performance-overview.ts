@@ -11,6 +11,14 @@ import { checkTitle } from '@/lib/diagnosis/model';
 import { ruleSentence } from '@/lib/controls-view';
 import { fmtCount, fmtTokens, plural } from '@/lib/format';
 
+/** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
+export function lookbackText(hours: number | null | undefined): string | null {
+  if (!hours || !(hours > 0)) return null;
+  if (hours < 24) { const h = Math.round(hours); return `last ${h} ${plural(h, 'hour')}`; }
+  const d = Math.round(hours / 24);
+  return d === 1 ? 'last day' : `last ${d} days`;
+}
+
 /** "last 7 days" → "prior 7 days", for the trend lines. */
 export function priorLabel(rangeLabel: string): string {
   return rangeLabel.replace(/^last /, 'prior ');
@@ -170,7 +178,8 @@ export interface CheckGroup {
   title: string;
   /** "7 passed", "3 passed · 4 set aside", "needs about 14 more days · 7 agents". */
   status: string;
-  tone: 'problem' | 'ok' | 'waiting';
+  /** ok (green) only when every agent checked passed; neutral when some are waiting or set aside. */
+  tone: 'problem' | 'ok' | 'neutral';
   /** Agents with an open finding for this check. */
   problemAgents: string[];
 }
@@ -201,7 +210,7 @@ export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
       g.setAside ? `${g.setAside} set aside` : '',
       ...[...g.waiting].map(([note, n]) => `${note} · ${n} ${plural(n, 'agent')}`),
     ].filter(Boolean);
-    return { title: checkTitle(det), status: parts.join(' · '), tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size ? 'ok' : g.waiting.size && !g.passed ? 'waiting' : 'ok', problemAgents: g.problems };
+    return { title: checkTitle(det), status: parts.join(' · '), tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size && !g.setAside ? 'ok' : 'neutral', problemAgents: g.problems };
   });
 }
 

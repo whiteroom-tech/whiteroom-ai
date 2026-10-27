@@ -18,7 +18,6 @@ import type {
   RunEventsResult,
   FleetDiagnosis,
   AgentInfo,
-  AgentPerformanceResult,
   AuditLogResponse,
   BedrockRoleStatus,
   ClaimFleetResult,
@@ -46,8 +45,6 @@ import type {
   AgentScoresResult,
   PerformanceCostForecastResult,
   AgentBudgetsResult,
-  SetBudgetResult,
-  SetTokenBudgetResult,
   RegisterResult,
   StoreBedrockRoleResult,
   StoreKeyResult,
@@ -470,10 +467,6 @@ export function performanceIndex(fleetId: string, hoursBack?: number, key?: stri
   return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, hours_back: hoursBack ?? 24 }, key);
 }
 
-export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
-  return apiCall<AgentPerformanceResult>({ action: 'performance_agent', fleet_id: fleetId, agent_id: agentId, hours_back: hoursBack ?? 24 }, key);
-}
-
 export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {
   return apiCall<PerformanceEvidenceResult>({ action: 'performance_evidence', fleet_id: fleetId, finding_id: findingId }, key);
 }
@@ -588,14 +581,6 @@ export function performanceRecommendationExport(
 export function performanceCostForecast(fleetId: string, taskType?: string, key?: string): Promise<PerformanceCostForecastResult> {
   // tz: the daily budget resets at the viewer's midnight.
   return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType, tz: viewerTimeZone() }, key);
-}
-
-export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {
-  return apiCall<SetBudgetResult>({ action: 'set_budget_usd', fleet_id: fleetId, budget_usd: budgetUsd }, key);
-}
-
-export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {
-  return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
 }
 
 /**

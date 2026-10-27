@@ -59,12 +59,15 @@ export default function PerformancePage() {
   // Keep the URL in sync: defaults drop their param; leaving agent/evidence
   // views removes ?agent.
   useEffect(() => {
+    // An old per-agent link is on its way to the agent's page: rewriting this
+    // page's URL now would replace that navigation.
+    if (legacyAgent) return;
     syncQueryParams(router, {
       hours: hoursBack === 168 ? null : String(hoursBack),
       view: view === 'index' ? null : view,
       agent: view === 'index' ? null : selectedAgent,
     });
-  }, [router, hoursBack, view, selectedAgent]);
+  }, [router, hoursBack, view, selectedAgent, legacyAgent]);
   const openAgent = useCallback((id: string) => router.push(agentPage(id)), [router]);
   // The overview as last shown for this fleet and range: on a return visit it's
   // on screen at once, and the refresh below replaces it.
@@ -126,7 +129,7 @@ export default function PerformancePage() {
       const fromAudit = audit?.savingsBuckets ? governanceFromSummary(audit.governance) : null;
       const extras: OverviewExtras = {
         workingHour: forecast && !forecast.error && typeof forecast.burnRateUsdPerHour === 'number'
-          ? { usdPerHour: forecast.burnRateUsdPerHour, lookbackHours: forecast.burnLookbackHours ?? null } : null,
+          ? { usdPerHour: forecast.burnRateUsdPerHour, lookbackHours: forecast.burnLookbackHours ?? null, unpriced: !!forecast.costUnavailable } : null,
         rules,
         byRuleId: undefined,
         rangeUsedTokens: audit?.savingsBuckets ? audit.savingsBuckets.reduce((n, b) => n + b.used, 0) : null,
@@ -201,7 +204,7 @@ export default function PerformancePage() {
     finally { if (!stale()) setLoading(false); }
   }, [fleetId, authKey]);
 
-  useEffect(() => { if (authenticated && view === 'index') fetchIndex(); }, [authenticated, view, fetchIndex]);
+  useEffect(() => { if (authenticated && view === 'index' && !legacyAgent) fetchIndex(); }, [authenticated, view, fetchIndex, legacyAgent]);
   // The Savings chart is 7 local calendar days: reload just after local
   // midnight so it moves to the new day even when nothing else refreshes.
   const [midnights, setMidnights] = useState(0);

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
-  checkGroups, fewerTokens, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
+  checkGroups, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
   ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
@@ -22,6 +22,16 @@ const RULES = [
   rule('gr_m', 'model_allowlist', 'watch', { allowedModels: ['claude-haiku-4-5'] }),
   rule('gr_off', 'call_rate', 'off', { maxCalls: 10 }),
 ];
+
+describe('lookbacks', () => {
+  it('says hours under a day and pluralises days', () => {
+    expect(lookbackText(336)).toBe('last 14 days');
+    expect(lookbackText(24)).toBe('last day');
+    expect(lookbackText(6)).toBe('last 6 hours');
+    expect(lookbackText(1)).toBe('last 1 hour');
+    expect(lookbackText(null)).toBeNull();
+  });
+});
 
 describe('trends', () => {
   it('compares with the window just before, and says nothing without one', () => {
@@ -108,9 +118,17 @@ describe('Agent health', () => {
   it('groups the checks by check, across agents', () => {
     expect(checkGroups(d)).toEqual([
       { title: 'Repeating the same call', status: '1 problem · 1 set aside', tone: 'problem', problemAgents: ['a'] },
-      { title: 'Unusually expensive days', status: 'starts in about 7 days · 2 agents', tone: 'waiting', problemAgents: [] },
+      { title: 'Unusually expensive days', status: 'starts in about 7 days · 2 agents', tone: 'neutral', problemAgents: [] },
       { title: 'A tool keeps failing', status: '2 passed', tone: 'ok', problemAgents: [] },
     ]);
+  });
+  it('is green only when every agent checked passed', () => {
+    const r = (agentId: string, o: Partial<FleetDiagnosis['reports'][number]>) => ({ schema: 'diagnosis.v1', agentId, window: { from: '', to: '', days: 7, calls: 1, watches: 1 }, findings: [], clear: [], notMeasured: [], ...o }) as FleetDiagnosis['reports'][number];
+    const tones = checkGroups({ reports: [
+      r('a', { clear: [{ detector: 'review_tool_errors', note: null }], findings: [{ detector: 'review_tool_loops', status: 'dismissed' } as never], notMeasured: [{ detector: 'review_spend_outliers', code: 'x', reason: 'Not yet' }] }),
+      r('b', { clear: [{ detector: 'review_tool_errors', note: null }, { detector: 'review_spend_outliers', note: null }] }),
+    ] } as FleetDiagnosis).map((g) => [g.title, g.tone]);
+    expect(tones).toEqual([['Repeating the same call', 'neutral'], ['Unusually expensive days', 'neutral'], ['A tool keeps failing', 'ok']]);
   });
   it('heads the card with what ran and what still needs data', () => {
     expect(healthHeadline({ fine: 17, needsData: 22, openFindings: 0 })).toEqual({ title: 'No issues in 17 checks', sub: '22 more checks need more data before they can run', tone: 'ok' });

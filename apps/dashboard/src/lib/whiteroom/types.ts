@@ -322,27 +322,6 @@ export interface AgentScoresResult {
   error?: string;
 }
 
-export interface AgentPerformanceResult {
-  fleetId: string;
-  agentId: string;
-  period: { start: string; end: string };
-  hourly: HourlyDataPoint[];
-  totals: {
-    calls: number;
-    costMicros: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    errorRate: number;
-    /** Calls stopped by a governance rule in Enforce (absent on older engines). */
-    blockedCount?: number;
-    /** The median (p50) call time over the window, despite the name: shown as "Typical response". */
-    avgLatencyMs: number | null;
-  };
-  error?: string;
-}
-
 export interface PerformanceEvidenceResult {
   finding: {
     id: string;
@@ -478,42 +457,19 @@ export interface FleetHourlyResult {
   error?: string;
 }
 
+/**
+ * engine performance_cost_forecast, as the dashboard reads it: Hourly cost's
+ * figure. The engine also sends the old fleet-budget fields, which nothing
+ * here shows any more (per-agent budgets are on agent_budgets_get).
+ */
 export interface PerformanceCostForecastResult {
   fleetId: string;
-  budgetUsd: number | null;
-  spendToDateUsd: number;
+  /** Spend per working hour: the average over hours with calls in burnLookbackHours. */
   burnRateUsdPerHour: number;
-  // Legacy combined figure, kept for engines that predate the independent
-  // dollarRemainingTasks/tokenRemainingTasks fields below: dollar-based
-  // normally, token-based (against tokenBudget) when costUnavailable. The
-  // card now reads this only as a fallback (see resolveTasksLeft) — prefer
-  // the independent fields when the engine sends them.
-  remainingTasks: number | null;
-  // true when recent activity used a model with no price-catalog entry —
-  // burnRateUsdPerHour is $0 because it's unpriced, not because it's free.
-  // tokensPerHour/tokenBudget are the fallback signals in that case.
-  costUnavailable: boolean;
-  tokensPerHour: number | null;
-  tokenBudget: number | null;
-  /** Legacy: why remainingTasks is null. Superseded by dollarRemainingTasksReason/tokenRemainingTasksReason below; see resolveTasksLeft. */
-  remainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
-  /** The budget is daily: spend counts from local midnight in budgetTimeZone. */
-  budgetPeriod?: 'day';
-  budgetTimeZone?: string;
-  spentTodayUsd?: number;
-  /** burnRateUsdPerHour averages the hours with calls in this lookback. */
+  /** True when recent calls had no price on file: burnRateUsdPerHour is $0 because it's unpriced, not free. */
+  costUnavailable?: boolean;
   burnLookbackHours?: number;
   burnActiveHours?: number;
-  /**
-   * Dollar and token remaining-tasks, tracked independently (absent on
-   * older engines, which only ever returned the combined remainingTasks
-   * above). A fleet can have both budgets set; one being unavailable
-   * (stale pricing, no task-cost model yet) doesn't hide the other.
-   */
-  dollarRemainingTasks?: number | null;
-  dollarRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
-  tokenRemainingTasks?: number | null;
-  tokenRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'available';
   error?: string;
 }
 
@@ -572,20 +528,6 @@ export interface AgentBudgetsResult {
   /** How far back the per-unit averages look, in hours. */
   rateLookbackHours?: number;
   agents: AgentBudgetForecast[];
-}
-
-export interface SetBudgetResult {
-  success: boolean;
-  fleetId: string;
-  budgetUsd: number | null;
-  error?: string;
-}
-
-export interface SetTokenBudgetResult {
-  success: boolean;
-  fleetId: string;
-  tokenBudget: number | null;
-  error?: string;
 }
 
 export interface PaginatedRecommendationsResult {
