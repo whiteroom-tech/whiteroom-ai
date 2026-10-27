@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  Banner, Button, DataTable, Hint, Panel, SegmentedControl, SelectChip, StatusPill, Tag, Toggle,
+  Banner, Button, DataTable, Hint, Panel, SegmentedControl, SelectChip, StatusPill, Tag, Toast, Toggle,
 } from '@whiteroom/ui';
 
 const html = (el: React.ReactElement) => renderToStaticMarkup(el);
@@ -161,5 +161,38 @@ describe('Panel, Tag, SelectChip', () => {
   it('uses a real, named select', () => {
     const out = html(h(SelectChip<string>, { label: 'Agent', value: 'all', onChange: noop, options: [{ value: 'all', label: 'All agents' }] }));
     expect(out).toContain('<select aria-label="Agent"');
+  });
+});
+
+describe('DataTable numeric columns', () => {
+  it('right-align by default, unless the column says left', () => {
+    const out = html(h(DataTable<{ id: string; n: number }>, {
+      caption: 'Numbers',
+      rows: [{ id: 'a', n: 3 }],
+      rowKey: (r) => r.id,
+      columns: [
+        { key: 'n', header: 'Calls', width: '1fr', numeric: true, render: (r) => r.n },
+        { key: 'm', header: 'Kept left', width: '1fr', numeric: true, align: 'left', render: (r) => r.n },
+      ],
+    }));
+    expect(out).toContain('role="columnheader" class="is-right">Calls<');
+    expect(out).toContain('role="columnheader">Kept left<');
+    expect(out).toContain('class="is-right is-num">3<');
+    expect(out).toContain('class="is-num">3<');
+  });
+});
+
+describe('Toast', () => {
+  it('announces the message, offers its action and a Dismiss', () => {
+    const out = html(h(Toast, { message: 'code-reviewer paused.', action: { label: 'Undo', onClick: noop }, onClose: noop }));
+    expect(out).toContain('role="status"');
+    expect(out).toContain('code-reviewer paused.');
+    expect(out).toContain('>Undo</button>');
+    expect(out).toContain('aria-label="Dismiss"');
+  });
+
+  it('has no action button when none is given', () => {
+    const out = html(h(Toast, { message: 'Saved.', onClose: noop }));
+    expect(out).not.toContain('wr-btn--secondary');
   });
 });

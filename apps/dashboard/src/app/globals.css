@@ -115,7 +115,7 @@
   --ho: #6d28d9; --ho-bg: #f5f3ff;
   --info: #0369a1; --info-bg: #e0f2fe;
   --overlay: rgba(17, 24, 39, .5); --shadow: rgba(17, 24, 39, .1);
-    --card-shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 1px 1px rgba(15, 23, 42, .04);
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 1px 1px rgba(15, 23, 42, .04);
   --cr-cyan: #0369a1;
 }
 
@@ -142,8 +142,8 @@
 /* In-app confirm dialogs (ConfirmDialog). */
 .wr-confirm-dialog::backdrop { background: rgba(3, 6, 12, .6); }
 
-/* ── App shell (components/AppShell.tsx, Sidebar.tsx, AccountMenu.tsx) ──
-   README › Global shell: a 220px sidebar and the page column, full height. */
+/* ── App shell (components/AppShell.tsx, Sidebar.tsx, SidebarPreferences.tsx) ──
+   README › Global shell: a 248px sidebar and the page column, full height. */
 .citadel-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; overflow: hidden; background: var(--bg); color: var(--tx); font-family: var(--font-sans); font-size: var(--fs-md); line-height: 1.53; }
 .wr-sidebar { width: 248px; box-sizing: border-box; height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 18px 12px 14px; background: var(--card); border-right: 1px solid var(--line); }
 .wr-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 16px; }
