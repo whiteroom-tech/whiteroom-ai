@@ -121,7 +121,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         {failing && data && <RefreshFailed />}
         {!!data?.run.flags?.length && (
           <Banner variant="warn">
-            <span style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--warn-tx)', marginBottom: 2 }}>What stood out</span>
+            <span style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--warn-tx)', marginBottom: 2 }}>What stood out</span>
             {data.run.flags.map(flagText).join(' · ')}. {flagsNote(data.run.ruleActions)}
           </Banner>
         )}
@@ -130,7 +130,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {data.run.ruleActions.map((a) => (
                 <li key={`${a.at}-${a.ruleId}-${a.mode}`} style={{ display: 'flex', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)' }}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', flex: 'none' }}>{clock(a.at)}</span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', flex: 'none' }}>{clock(a.at)}</span>
                   <span style={{ minWidth: 0 }}>&lsquo;{RULE_LABELS[a.ruleType]}&rsquo; · {a.mode === 'enforce' ? RESPONSE_LABEL[a.response] : `would ${RESPONSE_LABEL[a.response].toLowerCase()}`} · {MODE_LABEL[a.mode === 'enforce' ? 'enforce' : 'watch']}{a.occurrences > 1 && ` · ×${a.occurrences}`}</span>
                   <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(a.ruleId)}`} className="wr-link" style={{ marginLeft: 'auto', flex: 'none' }}>See the rule &rarr;</Link>
                 </li>
@@ -152,7 +152,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             <ol className="wr-timeline" aria-label="What happened, oldest first">
               {rows.map((r) => (
                 <li key={r.id} id={`run-event-${r.id}`} className={r.id === highlight ? 'is-highlighted' : undefined}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{r.time}</span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{r.time}</span>
                   <span style={{ display: 'flex', color: r.iconColor }}><Icon name={r.icon} size={14} /></span>
                   <span style={{ fontSize: 'var(--fs-sm)', minWidth: 0, overflowWrap: 'anywhere' }}>{r.text}</span>
                   {r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}
@@ -162,7 +162,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
           )}
           {data && data.pages > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderTop: '1px solid var(--line)' }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>page {data.page + 1} of {data.pages}</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>page {data.page + 1} of {data.pages}</span>
               <span style={{ marginLeft: 'auto' }} />
               {data.page > 0 && <Button variant="ghost" size={28} onClick={() => setCursor(String(data.page - 1))}>&larr; Earlier</Button>}
               {data.page < data.pages - 1 && <Button size={28} onClick={() => setCursor(String(data.page + 1))}>Later &rarr;</Button>}

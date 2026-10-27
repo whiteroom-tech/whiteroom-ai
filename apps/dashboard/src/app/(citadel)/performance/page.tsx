@@ -271,7 +271,7 @@ export default function PerformancePage() {
           size={26}
           options={[{ value: '24', label: '24h' }, { value: '72', label: '3d' }, { value: '168', label: '7d' }]}
         />
-        <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>rolling, from now</span>
+        <span className="citadel-hide-mobile" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>rolling, from now</span>
       </PageHeader>
 
       {/* Content — dimmed while a range/agent fetch is in flight over data

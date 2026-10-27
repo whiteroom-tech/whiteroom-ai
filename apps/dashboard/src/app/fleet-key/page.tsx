@@ -173,7 +173,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <ThemedShell className="flex items-center justify-center">
-        <p className="text-sm font-mono" style={{ color: 'var(--tx2)' }}>Loading dashboard...</p>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Loading…</p>
       </ThemedShell>
     );
   }
@@ -182,11 +182,11 @@ export default function DashboardPage() {
     return (
       <ThemedShell className="flex items-center justify-center">
         <div className="text-center space-y-4" style={{ maxWidth: 400 }}>
-          <p className="text-sm font-mono" style={{ color: 'var(--bad)' }}>{provisionError}</p>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{provisionError}</p>
           <button
             onClick={() => { setProvisionError(null); setLoading(true); window.location.reload(); }}
-            className="px-6 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ background: 'var(--raised)', color: 'var(--tx)', border: '1px solid var(--line2)' }}
+            className="px-6 py-2 rounded-lg font-semibold cursor-pointer"
+            style={{ fontSize: 'var(--fs-sm)', background: 'var(--raised)', color: 'var(--tx)', border: '1px solid var(--line2)' }}
           >
             Retry
           </button>

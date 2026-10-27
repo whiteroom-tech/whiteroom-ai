@@ -90,7 +90,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
           <button type="button" className="dx-link dx-strong" disabled={busy} onClick={() => void onFeedback('implemented')}>Mark as fixed</button>
         </div>
       )}
-      {error && <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--bad)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{error}</div>}
     </article>
   );
 }
@@ -109,7 +109,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {h.watches.map((w) => (
             <span key={w.watch} style={{
-              ...MONO, fontSize: 'var(--fs-xs)', padding: '2px 6px', borderRadius: 4,
+              ...MONO, fontSize: 'var(--fs-sm)', padding: '2px 6px', borderRadius: 4,
               border: `1px solid ${w.calls <= 2 ? 'var(--warn-line)' : 'var(--line2)'}`,
               background: w.calls <= 2 ? 'var(--warn-bg)' : 'transparent',
               color: w.calls <= 2 ? 'var(--warn-tx)' : 'var(--tx2)',
@@ -125,7 +125,7 @@ export function DiagnosisEvidence({ detector, calls, measures }: { detector: str
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', minWidth: 420, borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
           <thead>
-            <tr>{h.columns.map((c) => <th key={c} style={{ textAlign: 'left', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--tx2)', padding: '6px 8px', borderBottom: '1px solid var(--line)' }}>{c}</th>)}</tr>
+            <tr>{h.columns.map((c) => <th key={c} style={{ textAlign: 'left', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)', padding: '6px 8px', borderBottom: '1px solid var(--line)' }}>{c}</th>)}</tr>
           </thead>
           <tbody>
             {h.rows.map((r, i) => (

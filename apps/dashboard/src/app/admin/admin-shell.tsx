@@ -142,7 +142,7 @@ export function AdminShell({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span
                 style={{
-                  fontSize: 'var(--fs-xs)', fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
+                  fontSize: 'var(--fs-sm)', fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
                   padding: '3px 9px', borderRadius: 99,
                   background: 'var(--ho-bg)', color: 'var(--ho)', border: '1px solid var(--ho)',
                 }}

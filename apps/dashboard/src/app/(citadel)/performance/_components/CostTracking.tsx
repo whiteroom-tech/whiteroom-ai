@@ -146,7 +146,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
             which one is actually usable can change as pricing coverage does. */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap" title="Used to estimate calls remaining. It never stops spending; to set a limit, add a Spend cap in Controls.">
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>FLEET BUDGET PER DAY</span>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', letterSpacing: 0.5 }}>FLEET BUDGET PER DAY</span>
             {/* "$" and the amount stay together at any text size. */}
             <span className="inline-flex items-center gap-2" style={{ flexWrap: 'nowrap' }}>
               <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>$</span>
@@ -154,7 +154,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap" title="For a model with no $/token price on file yet — tracks calls left in tokens instead of dollars.">
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>FLEET TOKENS PER DAY</span>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', letterSpacing: 0.5 }}>FLEET TOKENS PER DAY</span>
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
         </div>
@@ -182,7 +182,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
             {/* Same money format as the Spend card, so a small rate isn't rounded to $0.01. */}
             {fmtCost(Math.round(forecast.burnRateUsdPerHour * 1_000_000))} / h
           </div>
-          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{burnCaption(forecast)}</div>
         </div>
         {(() => {
           const dollar = resolveTasksLeft(forecast, 'dollar');
@@ -205,7 +205,7 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
     return (
       <div>
         <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: 'var(--tx3)' }}>—</div>
-        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{note}</div>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{note}</div>
       </div>
     );
   }
@@ -214,7 +214,7 @@ function TasksLeftCell({ value, note, label }: { value: number | null; note: str
       <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: tasksLeftColor(value) }}>
         {value}
       </div>
-      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{label}</div>
     </div>
   );
 }

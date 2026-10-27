@@ -7,11 +7,16 @@ export type Column<R> = {
   header: React.ReactNode;
   /** CSS grid track, e.g. '56px' or 'minmax(140px,1fr)'. */
   width: string;
+  /** Numeric columns are right-aligned unless this says 'left'. */
   align?: 'left' | 'right';
-  /** Mono, tabular numbers. */
+  /** Tabular numbers, right-aligned. */
   numeric?: boolean;
   render: (row: R) => React.ReactNode;
 };
+
+function alignRight(c: { align?: 'left' | 'right'; numeric?: boolean }): boolean {
+  return c.align === 'right' || (!!c.numeric && c.align !== 'left');
+}
 
 /** True when row `i` is the first of its group: the first row, or a key change from the row above. */
 export function startsNewGroup<R>(rows: R[], i: number, group: (row: R) => { key: string }): boolean {
@@ -19,7 +24,7 @@ export function startsNewGroup<R>(rows: R[], i: number, group: (row: R) => { key
 }
 
 /**
- * Mono uppercase header, 40–44px rows, numeric columns right-aligned and
+ * Sentence-case header, 40–44px rows, numeric columns right-aligned and
  * tabular. With `onOpen`, the whole row is the target: it's focusable and
  * Enter or Space opens it, and the table is exposed as an ARIA grid (where
  * focusable rows and aria-selected are valid). Without it, a plain table.
@@ -58,7 +63,7 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
         <div role="rowgroup" className="wr-table__head">
           <div role="row" className="wr-table__row wr-table__row--head" style={{ gridTemplateColumns: grid }}>
             {columns.map((c) => (
-              <span key={c.key} role="columnheader" className={c.align === 'right' ? 'is-right' : undefined}>{c.header}</span>
+              <span key={c.key} role="columnheader" className={alignRight(c) ? 'is-right' : undefined}>{c.header}</span>
             ))}
           </div>
         </div>
@@ -95,7 +100,7 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
                 } : undefined}
               >
                 {columns.map((c) => (
-                  <span key={c.key} role={cellRole} className={`${c.align === 'right' ? 'is-right' : ''}${c.numeric ? ' is-num' : ''}`.trim() || undefined}>
+                  <span key={c.key} role={cellRole} className={`${alignRight(c) ? 'is-right' : ''}${c.numeric ? ' is-num' : ''}`.trim() || undefined}>
                     {c.render(r)}
                   </span>
                 ))}

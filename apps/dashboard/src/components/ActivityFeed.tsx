@@ -43,13 +43,13 @@ function RowDetail({ m, open, technical }: { m: EventModel; open: boolean; techn
   return (
     <>
       {tech && (
-        <div style={{ marginTop: 4, borderLeft: '2px solid var(--line)', paddingLeft: 6, fontSize: 'var(--fs-xs)', wordBreak: 'break-word', color: 'var(--tx2)' }}>
+        <div style={{ marginTop: 4, borderLeft: '2px solid var(--line)', paddingLeft: 6, fontSize: 'var(--fs-sm)', wordBreak: 'break-word', color: 'var(--tx2)' }}>
           {tech}
         </div>
       )}
       {open && (
         <div style={{ marginTop: 6, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
-          <div style={{ marginBottom: 4, fontSize: 'var(--fs-xs)', fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx3)' }}>WHAT IT DID</div>
+          <div style={{ marginBottom: 4, fontSize: 'var(--fs-sm)', fontWeight: 700, letterSpacing: 1.2, color: 'var(--tx3)' }}>WHAT IT DID</div>
           {m.details.map((d, i) => {
             const kind = classifyAction(d?.name);
             const arg = shortArg(d?.args);
@@ -61,7 +61,7 @@ function RowDetail({ m, open, technical }: { m: EventModel; open: boolean; techn
                   <span style={{ minWidth: 0, wordBreak: 'break-word', color: 'var(--tx2)' }}>{arg || prettyToolName(d?.name)}</span>
                 </div>
                 {technical && (
-                  <div style={{ marginLeft: 24, fontSize: 'var(--fs-xs)', wordBreak: 'break-all', color: 'var(--tx3)' }}>
+                  <div style={{ marginLeft: 24, fontSize: 'var(--fs-sm)', wordBreak: 'break-all', color: 'var(--tx3)' }}>
                     {String(d?.name ?? '')}({String(d?.args ?? '')})
                   </div>
                 )}
@@ -87,7 +87,7 @@ function LogRow({ m, open, technical, onToggle }: RowProps) {
     <div className="grid" style={{ gridTemplateColumns: '44px 14px 1fr', borderBottom: '1px solid var(--line)', paddingRight: 8, paddingBottom: 8, marginBottom: 8 }}>
       <div style={{ paddingRight: 8, paddingTop: 6, textAlign: 'right' }}>
         <div style={{ fontFamily: 'monospace', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{m.clock}</div>
-        <div title={m.watch ? `Run ${m.watch}` : undefined} style={{ marginTop: 2, fontSize: 'var(--fs-xs)', letterSpacing: 1, color: 'var(--tx3)' }}>{m.watch}</div>
+        <div title={m.watch ? `Run ${m.watch}` : undefined} style={{ marginTop: 2, fontSize: 'var(--fs-sm)', letterSpacing: 1, color: 'var(--tx3)' }}>{m.watch}</div>
       </div>
       <div style={{ position: 'relative' }}>
         <div style={{ position: 'absolute', left: '50%', top: -8, bottom: -8, width: 1, transform: 'translateX(-50%)', background: 'var(--line)' }} />
@@ -126,7 +126,7 @@ function TapeRow({ m, open, technical, onToggle }: RowProps) {
             <span style={{ minWidth: 0, flex: 1, wordBreak: 'break-word' }}>
               <Headline m={m} open={open} />
             </span>
-            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{m.clock}</span>
+            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{m.clock}</span>
           </div>
           <div style={{ marginTop: 2, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{eventSubtitle(m)}</div>
         </div>
@@ -140,7 +140,7 @@ function TapeRow({ m, open, technical, onToggle }: RowProps) {
 function ManifestRow({ m, open, technical, onToggle }: RowProps) {
   return (
     <div className="grid items-start gap-2" style={{ gridTemplateColumns: '36px 1fr', borderTop: '1px solid var(--line)', padding: 8 }}>
-      <div style={{ borderRadius: 4, border: `1px solid ${m.accent}`, padding: '3px 0', textAlign: 'center', fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: 0.6, color: m.accent, background: m.accentBg }}>
+      <div style={{ borderRadius: 4, border: `1px solid ${m.accent}`, padding: '3px 0', textAlign: 'center', fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: 0.6, color: m.accent, background: m.accentBg }}>
         {m.code}
       </div>
       <div style={{ minWidth: 0 }}>
@@ -149,9 +149,9 @@ function ManifestRow({ m, open, technical, onToggle }: RowProps) {
             <span style={{ minWidth: 0, flex: 1, wordBreak: 'break-word' }}>
               <Headline m={m} open={open} />
             </span>
-            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{m.clock}</span>
+            <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{m.clock}</span>
           </div>
-          <div style={{ marginTop: 2, fontSize: 'var(--fs-xs)', letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)' }}>{eventSubtitle(m)}</div>
+          <div style={{ marginTop: 2, fontSize: 'var(--fs-sm)', letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)' }}>{eventSubtitle(m)}</div>
         </div>
         <RowDetail m={m} open={open} technical={technical} />
       </div>
@@ -248,7 +248,7 @@ export function ActivityFeed({
           <div key={model.key}>
             {day && (
               <div className="flex items-center gap-2" style={{ marginTop: 12, marginBottom: 6 }}>
-                <span style={{ whiteSpace: 'nowrap', fontSize: 'var(--fs-xs)', fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)' }}>{day}</span>
+                <span style={{ whiteSpace: 'nowrap', fontSize: 'var(--fs-sm)', fontWeight: 700, letterSpacing: 1, color: 'var(--tx3)' }}>{day}</span>
                 <span style={{ height: 1, flex: 1, background: 'var(--line)' }} />
               </div>
             )}

@@ -39,7 +39,7 @@ export function UserControls({ userId, currentOverride }: { userId: string; curr
         <div style={{ flex: '1 1 200px' }}>
           <label
             htmlFor="override"
-            style={{ display: 'block', fontSize: 'var(--fs-xs)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 6 }}
+            style={{ display: 'block', fontSize: 'var(--fs-sm)', fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', marginBottom: 6 }}
           >
             Comp a plan
           </label>

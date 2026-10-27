@@ -161,7 +161,7 @@ export function EventFeedRuns() {
           bodyPadding={0}
           actions={
             <>
-              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
+              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
               <SelectChip<FeedVariant> label="Feed view" value={feedVariant} onChange={setFeedVariant} options={FEED_VARIANTS} />
               <Button size={28} aria-pressed={feedTechnical} onClick={() => setFeedTechnical((t) => !t)} title="Show raw event types and tool arguments">Technical</Button>
             </>

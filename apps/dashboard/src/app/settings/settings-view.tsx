@@ -123,7 +123,7 @@ export function SettingsView({
     <AppShell>
       <PageHeader title="Settings" fleetId={account.email} fleetTitle="Signed in as" />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <div ref={sections} className="wr-settings-stack" style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+        <div ref={sections} className="wr-settings-stack" style={{ maxWidth: 960, margin: '0 auto', padding: '24px 24px 80px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
 
           {banner && (
             <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined} actions={banner.support ? <SupportLink /> : undefined}>{banner.text}</Banner>
@@ -293,22 +293,22 @@ function PlanSection({
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <span style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)', fontWeight: 700 }}>{PLANS[plan].name}</span>
             {entitlement.onTrial && (
-              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
                 free · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left
               </span>
             )}
             {subscription?.planOverride && (
-              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ho-bg)', color: 'var(--ho)' }}>
                 comped
               </span>
             )}
             {subscription?.cancelAtPeriodEnd && (
-              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
                 ends {subscription.currentPeriodEnd?.slice(0, 10)}
               </span>
             )}
             {subscription?.status === 'past_due' && (
-              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--bad-bg)', color: 'var(--bad)' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--bad-bg)', color: 'var(--bad)' }}>
                 payment failed
               </span>
             )}
@@ -350,7 +350,7 @@ function PlanSection({
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-md)', fontWeight: 700 }}>{PLANS[p].name}</span>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-                  {formatPrice(PLANS[p].pricing?.monthlyCents ?? null)}<span style={{ color: 'var(--tx3)', fontSize: 'var(--fs-xs)' }}>/mo</span>
+                  {formatPrice(PLANS[p].pricing?.monthlyCents ?? null)}<span style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)' }}>/mo</span>
                 </span>
               </div>
               <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 14px', display: 'grid', gap: 5 }}>
@@ -424,7 +424,7 @@ function EmailSection({
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', color: 'var(--tx)' }}>{account.email}</span>
         {account.emailVerified && (
-          <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ok-bg)', color: 'var(--ok)' }}>
+          <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--ok-bg)', color: 'var(--ok)' }}>
             verified
           </span>
         )}
@@ -522,7 +522,7 @@ function MethodsSection({
                     one user is a real shape in production — so the account
                     reference below is what tells them apart. */}
                 {account.methods.filter((o) => o.provider === m.provider).length > 1 && (
-                  <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 500, color: 'var(--tx3)', marginLeft: 6 }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx3)', marginLeft: 6 }}>
                     account {account.methods.filter((o) => o.provider === m.provider).findIndex((o) => o.id === m.id) + 1}
                   </span>
                 )}
@@ -530,7 +530,7 @@ function MethodsSection({
               <div
                 style={{
                   fontFamily: FONT_MONO,
-                  fontSize: 'var(--fs-xs)',
+                  fontSize: 'var(--fs-sm)',
                   color: 'var(--tx3)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -551,7 +551,7 @@ function MethodsSection({
                 Unlink
               </Button>
             ) : (
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>
                 {m.provider === 'email' ? 'Always available' : 'Only method'}
               </span>
             )}

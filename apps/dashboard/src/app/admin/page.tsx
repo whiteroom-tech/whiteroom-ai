@@ -50,7 +50,7 @@ export default async function AdminUsersPage({
                   <th
                     key={h}
                     style={{
-                      textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700,
+                      textAlign: 'left', padding: '10px 14px', fontSize: 'var(--fs-sm)', fontWeight: 700,
                       letterSpacing: 1, textTransform: 'uppercase', color: 'var(--tx3)',
                       background: 'var(--sunk)', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
                     }}
@@ -74,7 +74,7 @@ export default async function AdminUsersPage({
                     <Link href={`/users/${u.id}`} style={{ color: 'var(--tx)', textDecoration: 'none', fontWeight: 600, fontSize: 'var(--fs-md)' }}>
                       {u.email ?? <span style={{ color: 'var(--tx3)' }}>no email</span>}
                     </Link>
-                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
                       {u.name && <span>{u.name}</span>}
                       {u.role === 'admin' && <Pill tone="ho">admin</Pill>}
                       {!u.emailVerified && <Pill tone="warn">unverified</Pill>}
@@ -134,7 +134,7 @@ export default async function AdminUsersPage({
                 display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline',
               }}
             >
-              <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+              <span style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                 {e.createdAt.slice(0, 16).replace('T', ' ')}
               </span>
               <span style={{ color: 'var(--tx2)' }}>{e.actorEmail ?? 'unknown'}</span>
@@ -175,7 +175,7 @@ function SubscriptionCell({
     <div>
       <Pill tone={tone}>{status.replace(/_/g, ' ')}</Pill>
       {cancelAtPeriodEnd && currentPeriodEnd && (
-        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--warn)', marginTop: 3 }}>ends {currentPeriodEnd.slice(0, 10)}</div>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--warn)', marginTop: 3 }}>ends {currentPeriodEnd.slice(0, 10)}</div>
       )}
     </div>
   );

@@ -152,7 +152,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
                 <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
-                <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
+                <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
                 <Button variant="danger" size={28} disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>
             ))}
@@ -468,7 +468,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
     <>
       <PageHeader title="Fleet key" fleetId={email} fleetTitle="Signed in as" />
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <main style={{ maxWidth: 760, margin: '0 auto', padding: 24, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+        <main style={{ maxWidth: 960, margin: '0 auto', padding: 24, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
           {isNew && (
             <Banner variant="info" icon="check">Welcome, {name}. Your account is ready: point an agent at WhiteRoom below and it appears on <a href={ROUTES.home} className="wr-link">Home</a> on its first call.</Banner>
           )}

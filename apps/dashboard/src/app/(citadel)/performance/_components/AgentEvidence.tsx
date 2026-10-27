@@ -40,7 +40,7 @@ export function AgentView({ data }: { data: AgentPerformanceResult }) {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 4, fontFamily: FONT_MONO }}>
             <span>{new Date(data.hourly[0].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             <span>{new Date(data.hourly[data.hourly.length - 1].hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
@@ -189,18 +189,18 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
                 <tbody>
                   {sortedCalls.map((c, i) => (
                     <tr key={i} style={{ borderTop: '1px solid var(--line)' }}>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{String(c.callId ?? '').slice(0, 16)}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{String(c.reportedModel ?? c.requestedModel ?? '--')}</td>
                       {diagDetector ? (
-                        <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>{c.watchNumber != null ? String(c.watchNumber) : '--'}</td>
+                        <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{c.watchNumber != null ? String(c.watchNumber) : '--'}</td>
                       ) : (
                         <>
                           <td style={{ padding: 8, textAlign: 'right', color: 'var(--tx)' }}>{String(c.toolDefinitionCount ?? '--')}</td>
-                          <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
+                          <td style={{ padding: 8, textAlign: 'right', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{c.toolSchemaEstimateChars != null ? Number(c.toolSchemaEstimateChars).toLocaleString() : '--'}</td>
                         </>
                       )}
                       <td style={{ padding: 8 }}><Badge status={String(c.terminal ?? 'unknown')} /></td>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
                     </tr>
                   ))}
                 </tbody>

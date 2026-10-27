@@ -259,7 +259,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       <details className="gov-details">
         <summary>What the agent gets</summary>
-        <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
+        <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
           {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
         </pre>
         {draft.response !== 'notify' && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}

@@ -57,7 +57,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8 }}>
-            <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
+            <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
               {[top, top / 2, 0].map((v, i) => (
                 <span key={i} style={{ position: 'absolute', right: 0, top: `${(i / 2) * 100}%`, transform: 'translateY(-50%)' }}>{axisLabel(v)}</span>
               ))}
@@ -89,13 +89,13 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
                         <div style={{ width: 12, height: h(d.used), background: 'var(--brand)', borderRadius: '2px 2px 0 0' }} />
                         <div style={{ width: 12, height: h(without), background: 'var(--line2)', borderRadius: '2px 2px 0 0' }} />
                       </div>
-                      <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{weekday(d.day)}</div>
+                      <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{weekday(d.day)}</div>
                       {/* Two lines, so neighbouring days' figures never run into each other. */}
-                      <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)', whiteSpace: 'nowrap' }}>
+                      <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)', whiteSpace: 'nowrap' }}>
                         {without ? fmtTokens(d.used) : '—'}
                       </div>
                       {without > 0 && (
-                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
+                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
                           / {fmtTokens(without)}
                         </div>
                       )}
@@ -108,7 +108,7 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--brand)' }} />With WhiteRoom</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--line2)' }} />Without, est.</span>
-            <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>
+            <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
               {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, est. ${fmtTokens(shown.used + shown.saved)} without` : ''}
             </span>
           </div>

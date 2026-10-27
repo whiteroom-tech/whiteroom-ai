@@ -92,7 +92,7 @@ export function RecommendationsCard({
             onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
             onFeedback={(f) => onFeedback(rec, f)}
           />
-          {feedbackError?.recId === rec.id && <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--bad)' }}>{feedbackError.message}</div>}
+          {feedbackError?.recId === rec.id && <div role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{feedbackError.message}</div>}
         </article>
       )) : (
         <div style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)', textAlign: 'center', padding: 16 }}>
@@ -132,7 +132,7 @@ function RecActions({ open, hasFinding, busy, onEvidence, onFeedback }: { open: 
     evidence: <Btn key="evidence" label="View evidence" onClick={onEvidence} loading={false} accent />,
     toggle: (
       <button key="toggle" type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{
-        fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+        fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
         background: 'transparent', color: 'var(--tx2)', border: '1px solid var(--line)',
       }}>{more ? 'Less' : 'More'}</button>
     ),
@@ -143,7 +143,7 @@ function RecActions({ open, hasFinding, busy, onEvidence, onFeedback }: { open: 
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
       {recRowActions(open, more, hasFinding).map((a) => buttons[a])}
-      {open && !hasFinding && <span style={{ alignSelf: 'center', fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>{NO_FINDING_NOTE}</span>}
+      {open && !hasFinding && <span style={{ alignSelf: 'center', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{NO_FINDING_NOTE}</span>}
     </div>
   );
 }

@@ -111,7 +111,7 @@ export function UnusualDetails({ flagged }: { flagged: FlaggedRuns }) {
                 <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', textAlign: 'right' }}>{a.total}</span>
               </div>
             ))}
-            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 160px) minmax(0, 240px) 28px', gap: 12, fontSize: 'var(--fs-xs)', color: 'var(--tx2)' }}>
+            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 160px) minmax(0, 240px) 28px', gap: 12, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
               <span />
               <span style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 240 }}><span>{weekday(days[0])}</span><span>today</span></span>
               <span />

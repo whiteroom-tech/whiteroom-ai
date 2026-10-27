@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TEXT_SIZE_BOOT, applyTextSize, chooseTextSize, parseTextSize, storedTextSize } from '@/lib/text-size';
+import { TEXT_SIZE_BOOT, applyTextSize, chooseTextSize, parseTextSize, storedTextSize, TEXT_SIZE_CHANGED } from '@/lib/text-size';
 
 // A stand-in for <html>: just the attribute calls the code uses.
 function fakeRoot() {
@@ -35,16 +35,18 @@ describe('text size', () => {
     expect(root.attrs.has('data-wr-text')).toBe(false);
   });
 
-  it('saves the choice in this browser and applies it', () => {
+  it('saves the choice in this browser, applies it, and tells every control on the page', () => {
     const storage = fakeStorage();
     const root = fakeRoot();
+    const dispatchEvent = vi.fn();
     vi.stubGlobal('localStorage', storage);
-    vi.stubGlobal('window', { localStorage: storage });
+    vi.stubGlobal('window', { localStorage: storage, dispatchEvent });
     vi.stubGlobal('document', { documentElement: root });
     chooseTextSize('lg');
     expect(storage.m.get('wr_text')).toBe('lg');
     expect(root.attrs.get('data-wr-text')).toBe('lg');
     expect(storedTextSize()).toBe('lg');
+    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: TEXT_SIZE_CHANGED }));
   });
 
   it('boot script agrees with parseTextSize for every stored value', () => {

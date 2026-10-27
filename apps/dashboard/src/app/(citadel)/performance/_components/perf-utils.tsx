@@ -76,8 +76,8 @@ export function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)' }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
               <span style={{ color: 'var(--tx2)', minWidth: 60 }}>{a.model.provider}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{a.model.model ?? 'unknown'}</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginLeft: 'auto' }}>{(a.pct * 100).toFixed(0)}%</span>
             </div>
           ))}
         </div>
@@ -137,7 +137,7 @@ export function MetricCard({ label, value, sub, warn }: { label: string; value: 
     <div style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0 }}>
       <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx3)', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: warn ? 'var(--warn)' : 'var(--tx)' }}>{value}</div>
-      {sub && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }

@@ -8,7 +8,7 @@ export function ActivityRows({ rows, empty }: { rows: ActivityRow[]; empty: stri
   }
   return rows.map((r) => (
     <div key={r.key} className="wr-activity-row">
-      <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{r.time}</span>
+      <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{r.time}</span>
       {/* Up to two lines, then cut; the full text is the tooltip. */}
       <span className="wr-activity-row__text" title={r.text} style={{ fontSize: 'var(--fs-sm)' }}>{r.text}</span>
       {r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}

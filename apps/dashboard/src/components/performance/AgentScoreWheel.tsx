@@ -32,7 +32,7 @@ export function AgentScoreWheel({ agent }: { agent: AgentScore }) {
           <span style={{ fontSize: 'var(--fs-md)', lineHeight: 1 }}>{agent.score}</span>
         </span>
       </span>
-      <span aria-hidden style={{ display: 'grid', gridTemplateColumns: `auto ${BAR}px auto`, alignItems: 'center', columnGap: 8, rowGap: 1, fontSize: 'var(--fs-xs)', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+      <span aria-hidden style={{ display: 'grid', gridTemplateColumns: `auto ${BAR}px auto`, alignItems: 'center', columnGap: 8, rowGap: 1, fontSize: 'var(--fs-sm)', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
         {wedges.map((w) => (
           <span key={w.label} style={{ display: 'contents' }}>
             <span style={{ color: 'var(--tx2)' }}>{w.short}</span>
