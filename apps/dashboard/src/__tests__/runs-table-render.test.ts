@@ -199,6 +199,56 @@ describe('Runs › failures and engine limits', () => {
   });
 });
 
+describe('Runs › Export', () => {
+  const openAndDownload = async (m: Awaited<ReturnType<typeof mount>>, pick?: { span?: string; agent?: string }) => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Export .xlsx'));
+    if (pick?.span) await m.click(m.el.querySelector(`input[value="${pick.span}"]`) ?? undefined);
+    if (pick?.agent) {
+      const select = [...m.el.querySelectorAll('dialog select')][0] as HTMLSelectElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, pick.agent);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    }
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Download .xlsx'));
+  };
+
+  it('exports yesterday for one agent, asking for those days and naming the file for them', async () => {
+    const { downloadWorkbook } = await import('@/lib/xlsx');
+    const dl = vi.mocked(downloadWorkbook);
+    dl.mockClear();
+    nav.params = new URLSearchParams('agent=lead-agent');
+    const m = await mount();
+    await openAndDownload(m, { span: 'yesterday' });
+    const y = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ fromDay: y, toDay: y, agentId: 'lead-agent', flagged: false, hour: null }), 'k');
+    expect(dl.mock.calls[0][1]).toBe(`whiteroom-runs-${y}-to-${y}-lead-agent.xlsx`);
+    expect(m.text()).toContain('for yesterday · lead-agent');
+    m.root.unmount();
+  });
+
+  it('says when it stopped at the newest runs, when the export failed, and when the engine can’t list runs', async () => {
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => ({ runs: [run(Number(o.cursor ?? 0) + 1)], total: 9999, cursor: String(Number(o.cursor ?? 0) + 1) }));
+    let m = await mount();
+    await openAndDownload(m);
+    expect(m.text()).toContain('Downloaded the newest 100 runs for the last 7 days.');
+    m.root.unmount();
+    api.list.mockReset();
+    api.list.mockResolvedValueOnce({ runs: [run(1)], total: 1, cursor: null }).mockRejectedValue(new Error('503'));
+    m = await mount();
+    await openAndDownload(m);
+    expect(m.text()).toContain('Couldn’t export runs. Try again.');
+    m.root.unmount();
+    api.list.mockReset();
+    api.list.mockResolvedValueOnce({ runs: [run(1)], total: 1, cursor: null }).mockResolvedValue({ unsupported: true });
+    m = await mount();
+    await openAndDownload(m);
+    expect(m.text()).toContain('This engine can’t list runs yet, so there’s nothing to export.');
+    m.root.unmount();
+  });
+});
+
 describe('Runs › a day by hour', () => {
   const day = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
   const at = (h: number) => { const d = new Date(`${day}T00:00:00`); d.setHours(h, 15); return d.toISOString(); };

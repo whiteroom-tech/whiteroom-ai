@@ -343,7 +343,8 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
 }
 
 const START_EVENT = /^(watch_start|run_started)$/;
-const DONE_EVENT = /^(watch_end|run_ended|run_finished|task_complete)$/;
+// The run's own end; a finished task within the run stays a plain event.
+const DONE_EVENT = /^(watch_end|run_ended|run_finished)$/;
 
 /**
  * One row of What happened. Calls say what the agent called and which tools

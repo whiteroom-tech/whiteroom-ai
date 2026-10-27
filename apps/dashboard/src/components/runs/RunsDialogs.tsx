@@ -33,11 +33,12 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
   const md = (d: string) => dayLabel(d, now, false).replace(/^\w+, /, '');
   const y = exportDays('yesterday', now);
   const w = exportDays('7d', now);
+  const m = exportDays('30d', now);
   const options: { value: ExportSpan; label: string; sub: string }[] = [
     ...(shown ? [{ value: 'shown' as const, label: 'What’s shown now', sub: shown }] : []),
     { value: 'yesterday', label: 'Yesterday', sub: dayLabel(y.fromDay, now, false) },
     { value: '7d', label: 'Last 7 days', sub: `${md(w.fromDay)} – ${md(w.toDay)}` },
-    { value: '30d', label: 'Last 30 days', sub: 'Everything kept on your plan' },
+    { value: '30d', label: 'Last 30 days', sub: `${md(m.fromDay)} – ${md(m.toDay)}` },
   ];
   return (
     <DialogFrame open={open} busy={busy} onCancel={onCancel} onOpen={() => { setSpan(first); setAgent(initialAgent); }} labelledBy="export-runs-title">

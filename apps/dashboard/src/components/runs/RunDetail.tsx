@@ -80,6 +80,12 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       if (stale()) return;
       if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }
       if (e instanceof WhiteRoomApiError && e.status === 404) { setMissing(true); return; }
+      // A See in timeline jump whose page didn't load is dropped, so a later poll doesn't act on it.
+      if (jumping.current) {
+        jumping.current = false;
+        pendingEvent.current = null;
+        setToast('Couldn’t open that call. Try again.');
+      }
       setFailing(true);
     }
   }, [fleetId, authKey, runId, kind, cursor, onAuthError, preview]);
@@ -182,7 +188,9 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   }
 
   const s = run ? runSummary(run, totals) : null;
-  const rows = timelineRows(data?.events ?? [], s?.models[0] ?? null);
+  // Only the first page starts from the run's first model (named in the summary line); a later
+  // page's first call names its model, since the call before it isn't on screen.
+  const rows = timelineRows(data?.events ?? [], data?.page === 0 && kind === 'all' ? s?.models[0] ?? null : null);
   const actions = run?.ruleActions ?? [];
   const activityTotal = actions.reduce((n, a) => n + a.occurrences, 0);
   const link = actions.length ? ruleActivityLink(actions) : null;

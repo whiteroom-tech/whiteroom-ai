@@ -127,6 +127,8 @@ describe('run detail rows', () => {
     expect(timelineRow({ id: 'c0', kind: 'call', at, type: 'complete' }).glyph).toBe('call');
     expect(timelineRow({ id: 'c1', kind: 'call', at, type: 'upstream_error' }).glyph).toBe('bad');
     expect(timelineRow({ id: 'e1', kind: 'event', at, type: 'watch_end', detail: { agentId: 'a' } }).glyph).toBe('done');
+    // A finished task is part of the run, not its end.
+    expect(timelineRow({ id: 'e3', kind: 'event', at, type: 'task_complete', detail: { agentId: 'a' } }).glyph).toBe('event');
     expect(timelineRow({ id: 'e2', kind: 'event', at, type: 'governance_block', detail: { agentId: 'a', ruleType: 'spend_cap' } }).glyph).toBe('bad');
   });
   it('shows the model only when it changes, and quiets a repeated time', () => {

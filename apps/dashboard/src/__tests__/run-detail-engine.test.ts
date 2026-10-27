@@ -118,6 +118,28 @@ describe('run page exports and links', () => {
     el.remove();
   });
 
+  it('drops a jump whose page fails to load, and says so', async () => {
+    api.events.mockImplementation(async (_f: string, _r: string, q: { cursor?: string | null; eventId?: string | null }) => {
+      if (q.eventId) throw new Error('503');
+      return page(Number(q.cursor ?? 0));
+    });
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
+    await flush();
+    await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'See in timeline') as HTMLElement).click(); });
+    await flush();
+    expect(el.textContent).toContain('Couldn’t open that call. Try again.');
+    // The next load is an ordinary one, not the dropped jump.
+    const calls = api.events.mock.calls.length;
+    await act(async () => { ([...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent === 'Events only') as HTMLElement).click(); });
+    await flush();
+    expect(api.events.mock.calls.slice(calls).every((c) => !c[2].eventId)).toBe(true);
+    await act(async () => root.unmount());
+    el.remove();
+  });
+
   it('opens the page holding a call on another page, from See in timeline', async () => {
     api.events.mockImplementation(async (_f: string, _r: string, q: { cursor?: string | null; eventId?: string | null }) => (q.eventId === 'call:2' ? page(1, { eventFound: true }) : page(Number(q.cursor ?? 0))));
     const el = document.createElement('div');
@@ -130,6 +152,8 @@ describe('run page exports and links', () => {
     await flush();
     expect(api.events).toHaveBeenCalledWith('f1', 'a~4', expect.objectContaining({ eventId: 'call:2' }), undefined);
     expect(el.querySelector('#run-event-call\\:2')?.classList.contains('is-highlighted')).toBe(true);
+    // A later page's first call names its model: the call before it isn't on screen.
+    expect(el.querySelector('#run-event-call\\:2 .wr-timeline__text')?.textContent).toBe('Model call · m');
     await act(async () => root.unmount());
     el.remove();
   });
