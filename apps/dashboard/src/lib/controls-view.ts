@@ -475,16 +475,21 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
 }
 const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
 
-/** A group's sub-line, worded like the lead line: "1 Block · 6 Record only". */
+/** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Block. */
+export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'>) => r.mode === 'enforce' && r.response === 'notify';
+
+/** A group's sub-line, worded like the lead line: "1 Block · 6 Record only" (and "· 1 Alert only" when there is one). */
 export function modeCount(rules: readonly GovernanceRule[]): string {
-  const e = rules.filter((r) => r.mode === 'enforce').length, w = rules.filter((r) => r.mode === 'watch').length;
-  return `${e} Block · ${w} Record only`;
+  const a = rules.filter(alertOnly).length;
+  const e = rules.filter((r) => r.mode === 'enforce').length - a, w = rules.filter((r) => r.mode === 'watch').length;
+  return `${e} Block${a ? ` · ${a} Alert only` : ''} · ${w} Record only`;
 }
 
 /** The page's lead line, counting only rules that are set up. */
-export function leadCounts(rules: readonly GovernanceRule[]): { total: number; enforce: number; watch: number; off: number } {
+export function leadCounts(rules: readonly GovernanceRule[]): { total: number; enforce: number; alert: number; watch: number; off: number } {
   const set = rules.filter((r) => !notSetUp(r));
-  return { total: set.length, enforce: set.filter((r) => r.mode === 'enforce').length, watch: set.filter((r) => r.mode === 'watch').length, off: set.filter((r) => r.mode === 'off').length };
+  const alert = set.filter(alertOnly).length;
+  return { total: set.length, enforce: set.filter((r) => r.mode === 'enforce').length - alert, alert, watch: set.filter((r) => r.mode === 'watch').length, off: set.filter((r) => r.mode === 'off').length };
 }
 
 /** When the one rule that blocks acts, for the amber box: "only after 100 repeated calls". */

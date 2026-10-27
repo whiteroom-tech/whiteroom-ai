@@ -860,7 +860,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 {rules.length > 0 && (
                   <div>
                     <p className="ctl-lead">
-                      {lead.total} {lead.total === 1 ? "rule" : "rules"} · <strong>{lead.enforce}</strong> Block · <strong>{lead.watch}</strong> Record only
+                      {lead.total} {lead.total === 1 ? "rule" : "rules"} · <strong>{lead.enforce}</strong> Block{lead.alert > 0 && <> · <strong>{lead.alert}</strong> Alert only</>} · <strong>{lead.watch}</strong> Record only
                       {lead.off > 0 && <> · <strong>{lead.off}</strong> Off</>}
                       {counts && <> · <strong>{caught.toLocaleString("en-US")}</strong> caught this week, <strong>{blocked.toLocaleString("en-US")}</strong> blocked</>}
                     </p>
