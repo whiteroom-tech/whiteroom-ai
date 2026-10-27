@@ -473,8 +473,10 @@ export function RunsTable({ preview, retentionDays }: {
 
   // The chart: its days, what the brand bars cover, and that span's run count when it's all on the chart.
   // While a new agent's or window's counts load, the chart stays (so focus on ‹ › isn't lost) with empty
-  // bars rather than the last counts; it hides only when the engine has no run_days.
-  const strip = dayCounts ? stripDays(dayCounts, STRIP_DAYS, stripEnd) : dayCountsFor ? stripDays([], STRIP_DAYS, stripEnd) : null;
+  // bars rather than the last counts; a failed load shows it with a note, even on the first load. It
+  // hides only when the engine has no run_days.
+  const stripFailed = stripFailedFor === `${agent}|${stripEnd}`;
+  const strip = dayCounts ? stripDays(dayCounts, STRIP_DAYS, stripEnd) : dayCountsFor || stripFailed ? stripDays([], STRIP_DAYS, stripEnd) : null;
   const stripStart = addDays(stripEnd, 1 - STRIP_DAYS);
   const spanOnStrip = span.fromDay >= stripStart && span.toDay <= stripEnd;
   const spanRuns = dayCounts && strip && spanOnStrip ? strip.filter((d) => inSpan(d.day)).reduce((n, d) => n + d.runs, 0) : null;
@@ -541,7 +543,7 @@ export function RunsTable({ preview, retentionDays }: {
             onEarlier={oldest && stripStart <= oldest ? undefined : () => pinStrip(addDays(stripEnd, -STRIP_DAYS))}
             onLater={stripEnd >= today ? undefined : () => pinStrip(addDays(stripEnd, STRIP_DAYS))}
             // No counts for these days yet, and the last try failed: say so rather than draw empty bars.
-            note={!dayCounts && stripFailedFor === `${agent}|${stripEnd}` ? 'Couldn’t load the runs per day for these days. Retrying…' : undefined}
+            note={!dayCounts && stripFailed ? 'Couldn’t load the runs per day for these days. Retrying…' : undefined}
           />
         )}
         {day && hoursOk && hours && (

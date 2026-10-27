@@ -36,11 +36,14 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
   // Phones scroll the chart sideways so each bar stays a tappable width. A new window opens on
   // the picked day, else the newest; picking a day centres it; un-picking leaves the strip where it is.
   const first = days[0]?.day;
+  const noted = !!note;
   const wrap = useRef<HTMLDivElement>(null);
   const shownWindow = useRef<string | undefined>(undefined);
   useEffect(() => {
     const el = wrap.current;
-    if (!el || el.scrollWidth <= el.clientWidth) return;
+    // Under a note there are no bars: when they come back, they open like a new window.
+    if (!el) { shownWindow.current = undefined; return; }
+    if (el.scrollWidth <= el.clientWidth) return;
     const i = selected ? days.findIndex((d) => d.day === selected) : -1;
     const newWindow = shownWindow.current !== first;
     shownWindow.current = first;
@@ -49,7 +52,7 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
     else centreBar(el, i, days.length);
     // Only when the window or the pick changes, never on a poll's re-render, so scrolling back isn't undone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [first, selected, days.length]);
+  }, [first, selected, days.length, noted]);
   const max = Math.max(0, ...days.map((d) => d.runs));
   const busiest = days.reduce<RunDayCount | null>((b, d) => (!b || d.runs > b.runs ? d : b), null);
   const today = localDay();

@@ -344,6 +344,15 @@ describe('Runs › failures and engine limits', () => {
     m.root.unmount();
   });
 
+  it('says the day counts couldn’t load when the very first load fails', async () => {
+    api.daysFn = async () => { throw new Error('503'); };
+    api.list.mockImplementation(async () => ({ runs: [run(1)], total: 1, cursor: null }));
+    const m = await mount();
+    expect(m.el.querySelector('#runs-per-day')).not.toBeNull();
+    expect(m.text()).toContain('Couldn’t load the runs per day for these days');
+    m.root.unmount();
+  });
+
   it('shows flagged segments when counted, and none when the engine says it couldn’t count them', async () => {
     const today = new Date().toLocaleDateString('en-CA');
     api.days = { days: [{ day: today, runs: 3, flagged: 1 }] };
