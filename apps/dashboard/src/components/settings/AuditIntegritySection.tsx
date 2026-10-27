@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Panel } from '@whiteroom/ui';
-import { auditIntegrity, verifyAudit } from '@/lib/whiteroom/client';
+import { auditIntegrity, verifyAudit, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AuditExportProblem, buildAuditExport } from '@/lib/audit-export';
 import { saveBlob } from '@/lib/download';
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
@@ -20,6 +20,7 @@ export function AuditIntegritySection() {
   const { fleetId, status: authStatus } = useFleetAuth();
   const [info, setInfo] = useState<AuditIntegrity | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
   const [busy, setBusy] = useState<'check' | 'export' | null>(null);
   const [note, setNote] = useState<{ tone: 'ok' | 'bad' | 'neutral'; text: string; check?: boolean } | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -47,12 +48,19 @@ export function AuditIntegritySection() {
   useEffect(() => {
     setInfo(null);
     setLoadFailed(false);
+    setUnsupported(false);
     if (authStatus !== 'authenticated' || !fleetId) return;
     let live = true;
-    auditIntegrity(fleetId).then((i) => { if (live) setInfo(i); }, () => { if (live) setLoadFailed(true); });
+    auditIntegrity(fleetId).then((i) => { if (live) setInfo(i); }, (e: unknown) => {
+      if (!live) return;
+      // An engine without audit integrity can't be fixed by a reload: the section stays hidden.
+      if (e instanceof WhiteRoomApiError && e.status === 400 && e.reason === 'Unknown action.') setUnsupported(true);
+      else setLoadFailed(true);
+    });
     return () => { live = false; };
   }, [fleetId, authStatus]);
 
+  if (unsupported) return null;
   if (!info) {
     const signedOut = authStatus === 'unauthenticated' || (authStatus === 'authenticated' && !fleetId);
     const line = signedOut
@@ -95,7 +103,10 @@ export function AuditIntegritySection() {
       }, { isCancelled: () => !current() });
       if (!file || !current()) return;
       saveBlob(file.blob, `whiteroom-audit-${id}-${new Date().toISOString().slice(0, 10)}.json`);
-      if (file.events !== null) setNote({ tone: 'ok', text: `Downloaded ${fmtCount(file.events)} events, signed by WhiteRoom.` });
+      setNote(file.events !== null
+        ? { tone: 'ok', text: `Downloaded ${fmtCount(file.events)} events, signed by WhiteRoom.` }
+        // The older export: signed, but only the most recent events.
+        : { tone: 'neutral', text: 'Downloaded the shorter signed export, with the most recent events only.' });
     } catch (e) {
       if (!current()) return;
       // The history itself didn't add up: trying again won't help, a check will say more.

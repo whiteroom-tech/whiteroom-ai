@@ -21,6 +21,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 
 const { AuditIntegritySection } = await import('@/components/settings/AuditIntegritySection');
 const { AuditExportProblem } = await import('@/lib/audit-export');
+const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 
 async function mount() {
@@ -188,14 +189,28 @@ describe('audit integrity', () => {
     expect(api.save).not.toHaveBeenCalled();
   });
 
-  it('saves the older export from an older engine without a count note', async () => {
+  it('saves the older export and says it holds only the most recent events', async () => {
     const m = await mount();
     const ctl = await startDownload(m);
     const blob = new Blob(['{}']);
     await act(async () => { ctl.finish({ blob, events: null }); });
     await flush();
     expect(api.save).toHaveBeenCalledWith(blob, expect.any(String));
-    expect(m.note()).toBeNull();
+    expect(m.note()!.textContent).toBe('Downloaded the shorter signed export, with the most recent events only.');
+    m.root.unmount();
+  });
+
+  it('stays hidden on an engine without audit integrity, rather than asking for a reload', async () => {
+    api.integrity.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 400', 400, 'Unknown action.'));
+    const m = await mount();
+    expect(m.el.textContent).toBe('');
+    m.root.unmount();
+  });
+
+  it('a failed load says so and offers a reload', async () => {
+    api.integrity.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 503', 503));
+    const m = await mount();
+    expect(m.el.textContent).toContain('Couldn’t load the audit trail. Reload the page to try again.');
     m.root.unmount();
   });
 

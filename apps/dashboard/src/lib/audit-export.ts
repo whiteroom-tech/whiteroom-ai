@@ -103,10 +103,10 @@ export async function buildAuditExport(
     if (page.nextFromSeq === null) break;
     if (cancelled()) return null;
     // Each page must move forward within the pinned range, right after its last event, or this would never end.
-    if (page.events.length === 0 || page.nextFromSeq !== expect || page.nextFromSeq > page.toSeq) throw new AuditExportProblem('The export stopped moving forward.', 'it stopped before the end');
+    if (page.events.length === 0 || page.nextFromSeq !== expect || page.nextFromSeq > page.toSeq) throw new Error('The export stopped moving forward.');
     page = await get({ fromSeq: page.nextFromSeq, toSeq: pinned });
     if (!page) return null;
-    if (page.toSeq !== pinned || page.firstSeq !== pinnedFirst) throw new AuditExportProblem('The export changed part-way through.', 'it changed while it was downloading');
+    if (page.toSeq !== pinned || page.firstSeq !== pinnedFirst) throw new Error('The export changed part-way through.');
   }
   const m = page.manifest;
   if (!m) throw new AuditExportProblem('The export ended without its signature.', 'it doesn’t match WhiteRoom’s signature');

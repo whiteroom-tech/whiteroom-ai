@@ -250,8 +250,29 @@ describe('full audit export', () => {
       const p = await real(f, c);
       return c?.fromSeq === 501 ? { ...p, toSeq: HEAD + 50 } : p;
     });
-    await expect(buildAuditExport('f1', () => {}, { fetchPage })).rejects.toThrow('changed part-way through');
+    const err = await buildAuditExport('f1', () => {}, { fetchPage }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('The export changed part-way through.');
+    // A race worth retrying, not a broken trail.
+    expect(err).not.toBeInstanceOf(AuditExportProblem);
     // Asked for the pinned head every time, and stopped at the page that changed it.
     expect(fetchPage.mock.calls.map(([, c]) => c)).toEqual([undefined, { fromSeq: 501, toSeq: HEAD }]);
   });
+
+  it('a stuck cursor is worth retrying, not a broken trail', async () => {
+    const stuck = vi.fn(async () => ({ fleetId: 'f1', fromSeq: 1, firstSeq: 1, toSeq: 3, events: [event(1)], nextFromSeq: 1, manifest: null }));
+    const err = await buildAuditExport('f1', () => {}, { fetchPage: stuck as never }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('The export stopped moving forward.');
+    expect(err).not.toBeInstanceOf(AuditExportProblem);
+  });
+
+  it('saves an empty signed file for a history with no events', async () => {
+    const empty = vi.fn(async () => ({
+      fleetId: 'f1', fromSeq: 1, firstSeq: 1, toSeq: 0, events: [], nextFromSeq: null,
+      manifest: { format: 'whiteroom-audit-export', firstSeq: 1, headSeq: 0, headHash: null, count: 0, signature: 'sig' },
+    }));
+    const file = await buildAuditExport('f1', () => {}, { fetchPage: empty as never });
+    expect(file!.events).toBe(0);
+    expect(JSON.parse(await file!.blob.text())).toMatchObject({ events: [], manifest: { count: 0 } });
+  });
 });
+
