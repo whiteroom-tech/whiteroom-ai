@@ -52,6 +52,19 @@ export function shortTokens(n: number): string {
   return String(Math.round(n));
 }
 
+/**
+ * The last 7 days as Home and the agent page read them: from local midnight
+ * six days ago, plus that window in whole hours for the engine's hourly
+ * reads. Its windows are whole UTC hours ending at the next hour boundary,
+ * so the hour count starts exactly at the hour holding that midnight (in a
+ * half-hour zone, up to 30 minutes before it).
+ */
+export function weekWindow(now: number = Date.now()): { start: Date; hours: number } {
+  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
+  const HOUR = 3_600_000;
+  return { start, hours: (Math.floor(now / HOUR) + 1) - Math.floor(start.getTime() / HOUR) };
+}
+
 /** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
 export interface HomeWeek {
   agents: Record<string, AgentWeek>;

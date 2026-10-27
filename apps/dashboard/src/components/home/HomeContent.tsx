@@ -10,7 +10,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
 import { blockedByPhrase, recentBlocksByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
-import { AGENT_SORTS, FIND_FROM, homeWeek, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
+import { AGENT_SORTS, FIND_FROM, homeWeek, shortTokens, shownAgents, TABLE_FROM, weekWindow, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { localDay, zoneName } from '@/lib/runs';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { ROUTES } from '@/lib/routes';
@@ -110,12 +110,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // activity: extra, so a failure hides them rather than failing the page, and once a minute is enough.
   const { refresh: refreshWeek } = usePoll(async (stale) => {
     const todayDay = localDay();
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
-    // The engine's windows are whole UTC hours ending at the next hour boundary, so this many hours
-    // starts exactly at the hour holding local midnight six days ago, the same start the hourly
-    // totals are trimmed to (in a half-hour zone, up to 30 minutes before that midnight).
-    const HOUR = 3_600_000;
-    const weekHours = (Math.floor(Date.now() / HOUR) + 1) - Math.floor(start.getTime() / HOUR);
+    const { start, hours: weekHours } = weekWindow();
     const [audit, scores, weekRules, dayRules, hourly] = await Promise.all([
       auditSummary(fleetId, start, authKey).catch(() => null),
       performanceAgentScores(fleetId, weekHours, authKey).catch(() => null),

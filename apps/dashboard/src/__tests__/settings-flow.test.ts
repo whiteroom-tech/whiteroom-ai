@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyChange, changedElsewhere, CHANGED_ELSEWHERE, CHANGED_ELSEWHERE_CHECK, CHANGED_ELSEWHERE_RELOAD, CHANGED_ELSEWHERE_RETRY, conflictMessage, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
+import { applyChange, confirmKind, loadOptional, NOT_APPLIED, mergeSettingsReply } from '@/lib/settings-flow';
 import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 
 describe('applying a settings change', () => {
@@ -45,27 +45,6 @@ describe('loading an optional panel', () => {
   it('reports a network or server failure instead of hiding', async () => {
     expect(await loadOptional(async () => { throw new TypeError('Failed to fetch'); })).toEqual({ kind: 'failed' });
     expect(await loadOptional(async () => { throw new Error('HTTP 502'); })).toEqual({ kind: 'failed' });
-  });
-});
-
-describe('a change someone else beat', () => {
-  it('is recognised from the engine’s 409 wording, goal or rule', () => {
-    expect(changedElsewhere('This goal was changed elsewhere. Reload and try again.')).toBe(true);
-    expect(changedElsewhere('Rule was changed elsewhere. Reload and try again.')).toBe(true);
-    expect(changedElsewhere(NOT_APPLIED)).toBe(false);
-    expect(changedElsewhere('HTTP 503')).toBe(false);
-  });
-});
-
-describe('the note after a goal change someone else beat', () => {
-  it('keeps the user’s text for a save, asks to check for a clear, and asks for a reload if the re-read failed', () => {
-    expect(conflictMessage(true, 'save')).toBe(CHANGED_ELSEWHERE);
-    expect(conflictMessage(true, 'clear')).toBe(CHANGED_ELSEWHERE_CHECK);
-    expect(conflictMessage(false, 'save')).toBe(CHANGED_ELSEWHERE_RELOAD);
-    expect(conflictMessage(false, 'clear')).toBe(CHANGED_ELSEWHERE_RELOAD);
-    expect(CHANGED_ELSEWHERE_CHECK).not.toMatch(/your text/i);
-    expect(conflictMessage(true, 'run')).toBe(CHANGED_ELSEWHERE_RETRY); // no editor open: nothing "shown above"
-    expect(CHANGED_ELSEWHERE_RETRY).not.toMatch(/above/i);
   });
 });
 

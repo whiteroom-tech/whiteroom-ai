@@ -6,7 +6,7 @@ import { auditSummary, performanceAgentScores, ruleActions } from '@/lib/whitero
 import { usePoll } from '@/hooks/usePoll';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { localDay } from '@/lib/runs';
-import { agentWeekFrom, shortTokens, type AgentWeek } from '@/lib/home-agents';
+import { agentWeekFrom, shortTokens, weekWindow, type AgentWeek } from '@/lib/home-agents';
 import { scoreParts } from '@/lib/agent-scores';
 import { tallyShort, tallyTotal } from '@/lib/governance';
 import { weekTokens } from '@/lib/agent-detail';
@@ -30,10 +30,7 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
   const [week, setWeek] = useState<AgentWeek | undefined>(preview);
   const [loaded, setLoaded] = useState(!!preview);
   const load = useCallback(async (stale: () => boolean) => {
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
-    // Whole UTC hours back to the hour holding local midnight six days ago, as on Home.
-    const HOUR = 3_600_000;
-    const hours = (Math.floor(Date.now() / HOUR) + 1) - Math.floor(start.getTime() / HOUR);
+    const { start, hours } = weekWindow();
     const [audit, scores, rules] = await Promise.all([
       auditSummary(fleetId, start, authKey).catch(() => null),
       performanceAgentScores(fleetId, hours, authKey).catch(() => null),
