@@ -8,11 +8,12 @@ import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
 import {
   cancelClosing,
+  endedToDeletion,
   findDeletionBlocker,
   getClosing,
   keepClosedAccount,
   lapsedPaidPlan,
-  endedToDeletion, lapseToDeletion,
+  lapseToDeletion,
   sendClosingEmail,
   startClosing,
 } from '@/lib/account-closing';

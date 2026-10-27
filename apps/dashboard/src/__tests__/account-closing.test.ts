@@ -753,11 +753,7 @@ describe('the end of a deletion', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const real = query.getMockImplementation()!;
     query.mockImplementation(async (sql: string, params?: unknown[]) => {
-      if (sql === 'SELECT 1 FROM users WHERE id = $1 FOR UPDATE') {
-      world.log.push('lock user');
-      return { rows: world.deleted ? [] : [{}], rowCount: world.deleted ? 0 : 1 };
-    }
-    if (sql.startsWith('SELECT email FROM users')) throw new Error('connection reset');
+      if (sql.startsWith('SELECT email FROM users')) throw new Error('connection reset');
       return real(sql, params);
     });
     expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 1 });
