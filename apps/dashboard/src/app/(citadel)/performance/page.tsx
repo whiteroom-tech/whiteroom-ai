@@ -17,8 +17,6 @@ import { Banner, SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedback';
 
-/** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
-type FeedbackResult = 'done' | 'closed' | 'failed';
 
 /** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
 const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
@@ -26,7 +24,7 @@ const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
 type ViewMode = 'index' | 'agent' | 'evidence';
 
 // The page's sections live in ./_components (IndexView, AgentEvidence, MetricDrillDown, perf-utils).
-import { IndexView } from './_components/IndexView';
+import { IndexView, type FeedbackResult } from './_components/IndexView';
 import { AgentView, EvidenceView } from './_components/AgentEvidence';
 
 export default function PerformancePage() {

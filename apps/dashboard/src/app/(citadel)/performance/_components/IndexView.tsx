@@ -23,9 +23,10 @@ import { statusLine } from '@/lib/diagnosis/model';
 import { fmtLatency, fmtPct, computeTrends, FleetActivityChart, CostDonut, TrafficByModel, MetricCard } from './perf-utils';
 import { MetricDrillDown } from './MetricDrillDown';
 
-type FeedbackResult = 'done' | 'closed' | 'failed';
+/** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
+export type FeedbackResult = 'done' | 'closed' | 'failed';
 
-export const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
+const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
 export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, byAgent, agentScores, ruleActions, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
@@ -97,9 +98,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
   useEffect(() => { fetchRecs(); }, [fetchRecs]);
 
-  // The list is owned here, not by the parent's index refresh, so reload it
-  // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
-  // its old status and buttons until a filter changes (audit F16).
   // Agent Diagnosis: one read shared by Agent health and the Recommendations rows.
   const diagnosis = useDiagnosis(fleetId, authKey);
   const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
@@ -108,6 +106,9 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   // The notice is about the last action; changing what's listed moves on from it.
   useEffect(() => { setDiagnosisNotice(null); }, [recStatus, recAgentQuery]);
 
+  // The list is owned here, not by the parent's index refresh, so reload it
+  // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
+  // its old status and buttons until a filter changes (audit F16).
   const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
     const result = await onFeedback(recId, findingVersion, action, reason, recover);
     if (result !== 'failed') void fetchRecs();
