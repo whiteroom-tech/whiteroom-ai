@@ -9,7 +9,11 @@ export interface ToolDetail {
 }
 
 /** A durable pause or stop (engine gov-state.ts): the agent refuses calls until resumed. */
-export interface AgentHold { state: 'paused' | 'stopped'; by: string; reason: string | null; at: string }
+export interface AgentHold {
+  state: 'paused' | 'stopped'; by: string; reason: string | null; at: string;
+  /** When the agent was first held, if this hold replaced an earlier one (engine applyHold keeps it). */
+  since?: string;
+}
 
 export interface AgentInfo {
   agentId: string;
