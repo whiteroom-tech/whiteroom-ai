@@ -623,27 +623,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const prev = (target.params as ModelAllowlistParams).allowedModels;
         const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description, ifVersion: target.version }, authKey);
         const added = models.filter((m) => !prev.includes(m));
-        showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => live.current.guard(() => void (async () => {
-          // One Undo at a time, over the version this change made, as every Undo here.
-          if (undoBusy.current) return;
-          undoBusy.current = true;
-          setSaving(true);
-          try {
-            const { rule: back } = await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version, description: "Undid the last change" }, authKey);
-            if (selectedRef.current === back.id) setDraft(draftFrom(back));
-            showToast("Change undone.");
-          } catch (e) {
-            if (e instanceof WhiteRoomApiError && e.status === 409) showToast("This rule changed again since, so Undo left it as it is.");
-            else handleError(e, "undo the change");
-          }
-          finally { undoBusy.current = false; setSaving(false); void fetchData(); }
-        })()));
+        setRules((rs) => rs.map((x) => (x.id === updated.id && updated.version >= x.version ? updated : x)));
+        // The rule's version moved: an open editor on it reopens from the saved rule.
+        if (selectedRef.current === target.id) setDraft(null);
+        // Undo goes the way every saved change's Undo does: same checks, only what this changed.
+        showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => live.current.undoSaved(target, updated));
       }
-    } catch (e) { handleError(e, "add the suggested allowlist"); }
+    } catch (e) {
+      // Nothing was saved, so an open editor on that allowlist keeps its edits.
+      if (e instanceof WhiteRoomApiError && e.status === 409) setError("Your Model allowlist changed somewhere else, so the suggestion wasn’t added. It’s been reloaded: try again.");
+      else handleError(e, "add the suggested allowlist");
+    }
     // Busy until the list reloads and the suggestion goes, so a second click can't add another rule.
     try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
-    // The rule's version moved: an open editor on it reopens from the saved rule.
-    if (target && selectedRef.current === target.id) setDraft(null);
   };
 
   // An allowlist in Block takes the models through the editor: Save says what it loosens and asks first.

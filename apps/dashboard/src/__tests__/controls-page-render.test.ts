@@ -1304,13 +1304,27 @@ describe('Controls page, mockup suggestions and toasts', () => {
   it('the allowlist toast Undo puts the old list back over the version it made', async () => {
     api.models = ['gpt-4o'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
-    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 5 } }));
+    // The engine keeps what it saved: the reload lists version 5.
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: (api.saved[id] = { ...api.saved[id], ...ch, version: 5 } as GovernanceRule) }));
     const m = await mount();
     await m.click(m.button('Add to allowlist…'));
     await m.click(m.button('Allow for all agents'));
     await m.click(m.button('Undo'));
-    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { mode: 'watch', params: { allowedModels: ['claude-haiku-4-5-20251001'] }, ifVersion: 5, description: 'Undid the last change' }, 'k');
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Change undone.');
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { params: { allowedModels: ['claude-haiku-4-5-20251001'] }, ifVersion: 5, description: 'Undid the last change' }, 'k');
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('Undone. Model allowlist is back to how it was (Record only).');
+    m.root.unmount();
+  });
+
+  it('a refused allowlist suggestion says so and leaves the open allowlist open', async () => {
+    api.models = ['gpt-4o'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
+    api.update.mockRejectedValue(new WhiteRoomApiError('changed', 409));
+    const m = await mount();
+    await m.open('Only claude');
+    await m.click(m.button('Add to allowlist…'));
+    await m.click(m.button('Allow for all agents'));
+    expect(m.text()).toContain('Your Model allowlist changed somewhere else, so the suggestion wasn’t added.');
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
     m.root.unmount();
   });
 
@@ -1349,7 +1363,7 @@ describe('Controls page, mockup suggestions and toasts', () => {
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => {
       if (api.update.mock.calls.length > 1) throw new WhiteRoomApiError('changed', 409);
-      return { rule: { ...api.saved[id], ...ch, version: 5 } };
+      return { rule: (api.saved[id] = { ...api.saved[id], ...ch, version: 5 } as GovernanceRule) };
     });
     const m = await mount();
     await m.click(m.button('Add to allowlist…'));
