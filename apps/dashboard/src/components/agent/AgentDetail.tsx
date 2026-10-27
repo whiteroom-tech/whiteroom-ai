@@ -128,7 +128,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   // agent's run number changes, so a new run shows up with its link and date.
   // Another agent starts from Loading, never with the last one's runs. Waits
   // for the agent's status, so a visit reads the list once, not twice.
-  const runNumber = agent ? (agent.currentShift?.watchNumber ?? agent.lastShift?.watchNumber ?? agent.watchNumber ?? null) : undefined;
+  // Keyed on the run number and whether it's running, so a run that ends is read again too.
+  const runNumber = agent ? `${agent.currentShift?.watchNumber ?? agent.lastShift?.watchNumber ?? agent.watchNumber ?? '-'}:${agent.currentShift ? 'running' : 'ended'}` : undefined;
   const runsFor = useRef<string | null>(null);
   useEffect(() => {
     if (preview || runNumber === undefined) return;
@@ -151,11 +152,21 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     if (preview) return;
     setDiagnosis(null);
     let live = true;
-    const read = () => { getDiagnosis(fleetId, authKey).then((d) => { if (live) setDiagnosis(d); }, () => {}); };
+    // A failed read hides the line rather than keep an old result; an expired session signs out.
+    const read = () => {
+      getDiagnosis(fleetId, authKey).then(
+        (d) => { if (live) setDiagnosis(d); },
+        (e: unknown) => {
+          if (!live) return;
+          setDiagnosis(null);
+          if (isAuthError(e)) onAuthError?.('Session expired. Please sign in again.');
+        },
+      );
+    };
     read();
     const id = setInterval(read, 5 * 60_000);
     return () => { live = false; clearInterval(id); };
-  }, [fleetId, authKey, preview]);
+  }, [fleetId, authKey, preview, onAuthError]);
 
   // The ⋯ menu, as a menu: focus moves to its first item on open, arrow keys
   // move between items, Escape closes it and returns focus to ⋯; a click

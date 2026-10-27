@@ -78,3 +78,19 @@ describe('Agent detail recent runs', () => {
     m.root.unmount();
   });
 });
+
+describe('Agent detail recent runs, when a run ends', () => {
+  it('reads the runs again when the run in progress finishes, so it gets its link', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    api.watch.mockResolvedValue({ status: 'working', govV1: true, currentShift: { watchNumber: 8, tasksCompleted: 2, tokensUsed: 10, minutesWorked: 1 } });
+    api.runs.mockResolvedValueOnce({ runs: [] }).mockResolvedValue({ runs: [run(8)] });
+    const m = await mount();
+    expect(m.el.textContent).toContain('Run #8');
+    api.watch.mockResolvedValue(idle(8));
+    await act(async () => { vi.advanceTimersByTime(10_500); });
+    await flush();
+    expect(api.runs).toHaveBeenCalledTimes(2);
+    expect(m.el.querySelector('a[href="/runs/scout~8"]')?.textContent).toBe('#8');
+    m.root.unmount();
+  });
+});

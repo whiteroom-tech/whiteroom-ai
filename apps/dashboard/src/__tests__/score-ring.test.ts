@@ -1,0 +1,26 @@
+// @whiteroom/ui ScoreRing: one ring, clamped to 0–10, green from 9 up.
+import { describe, expect, it } from 'vitest';
+import { createElement as h } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ScoreRing } from '@whiteroom/ui';
+
+const ring = (score: number) => renderToStaticMarkup(h(ScoreRing, { score, size: 40 }));
+
+describe('ScoreRing', () => {
+  it('labels whole scores plainly and others to one place', () => {
+    expect(ring(8)).toContain('aria-label="Score 8 out of 10"');
+    expect(ring(7.85)).toContain('aria-label="Score 7.8 out of 10"');
+  });
+
+  it('clamps out-of-range scores and never draws NaN', () => {
+    expect(ring(14)).toContain('aria-label="Score 10 out of 10"');
+    expect(ring(-3)).toContain('aria-label="Score 0 out of 10"');
+    expect(ring(Number.NaN)).toContain('aria-label="Score 0 out of 10"');
+    expect(ring(Number.NaN)).not.toContain('NaN');
+  });
+
+  it('is brand below 9 and green from 9', () => {
+    expect(ring(8.9)).toContain('stroke="var(--brand)"');
+    expect(ring(9)).toContain('stroke="var(--ok)"');
+  });
+});

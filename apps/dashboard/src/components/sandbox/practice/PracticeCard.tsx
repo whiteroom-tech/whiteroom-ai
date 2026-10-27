@@ -54,7 +54,7 @@ export function PracticeCard({ entry }: { entry: PracticeEntry }) {
         title={open ? 'Your practice test' : 'Try your agent on practice tasks'}
         sub={open
           ? (open.lifecycle === 'draft' ? 'Waiting for you to run it from your computer.' : open.lifecycle === 'finalizing' ? 'Finished. Working out the result.' : progressLine(open, Date.now()))
-          : `${PRACTICE_SUMMARY} · about 50 model calls on your key`}
+          : PRACTICE_SUMMARY}
       >
         {open
           ? <Link className={`${s.btn} ${s.btnPrimary}`} href={`${ROUTES.practiceTest}?run=${open.id}`}>Open it →</Link>

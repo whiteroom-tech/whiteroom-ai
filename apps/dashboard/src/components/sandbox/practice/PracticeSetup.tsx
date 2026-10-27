@@ -6,7 +6,7 @@ import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
   callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlLine, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
-  PRACTICE_TASKS, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
+  PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
@@ -152,7 +152,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   return (
     <div className={p.wrap}>
       <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Set up a practice test</h2>
-      <p className={s.pageSub}>Your agent works through {PRACTICE_TASKS} practice tasks while WhiteRoom checks the results and your rules. A run usually takes {usualMinutes(1)}. You start it from your computer with one command.</p>
+      <p className={s.pageSub}>{PRACTICE_SUMMARY}. You start it from your computer with one command.</p>
 
       {blocked && (
         <div className={s.notice} role="status">

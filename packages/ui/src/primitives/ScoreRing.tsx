@@ -6,7 +6,8 @@ import { FONT_DISPLAY } from '../theme';
  * red or amber tiers): the score is a summary, not an alarm.
  */
 export function ScoreRing({ score, size = 40 }: { score: number; size?: number }) {
-  const s = Math.max(0, Math.min(10, score));
+  // Out-of-range or missing scores draw as the nearest end of the scale, never NaN.
+  const s = Number.isFinite(score) ? Math.max(0, Math.min(10, score)) : 0;
   const r = size * 0.4;
   const c = 2 * Math.PI * r;
   const w = size * 0.1;

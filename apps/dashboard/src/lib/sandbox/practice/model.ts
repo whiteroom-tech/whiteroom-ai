@@ -37,8 +37,8 @@ export function usualMinutes(runs: number): string {
   return `${lo * runs}–${hi * runs} min`;
 }
 
-/** What a practice test is, for the ways into it: "5 practice tasks and a check of your rules · about 5–10 min". */
-export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)}`;
+/** What a practice test is, the one line every way into it uses: "5 practice tasks and a check of your rules · about 5–10 min · around 50 model calls on your key". */
+export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)} · around 50 model calls on your key`;
 
 /** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
 export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
