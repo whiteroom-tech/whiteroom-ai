@@ -196,13 +196,6 @@ export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
   stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',
 };
 
-/** Pause and Stop only where the fleet has them (Gov v1), but always the rule's current one. */
-export function responseOptions(govV1: boolean, current: GovernanceResponse): { value: GovernanceResponse; label: string }[] {
-  return (['notify', 'block', 'pause', 'stop'] as const)
-    .filter((r) => govV1 || r === 'notify' || r === 'block' || r === current)
-    .map((r) => ({ value: r, label: RESPONSE_LABEL[r] }));
-}
-
 // ── Rule actions (P2.4) ─────────────────────────────────────────────
 
 /** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). */

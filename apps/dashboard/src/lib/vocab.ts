@@ -9,16 +9,6 @@ import type { GovernanceMode as RuleMode } from '@/lib/whiteroom/types';
 /** Rule mode labels: Off · Record only · Block. */
 export const MODE_LABEL: Record<RuleMode, string> = { off: 'Off', watch: 'Record only', enforce: 'Block' };
 
-/** Group headings on Controls, by mode. */
-export const MODE_GROUP: Record<RuleMode, string> = { off: 'Off', watch: 'Record only', enforce: 'Acting' };
-
-/** What a mode does, in one line. */
-export const MODE_MEANING: Record<RuleMode, string> = {
-  off: 'Off: the rule does nothing.',
-  watch: 'Record only: the rule records what it would have done and lets every call through.',
-  enforce: 'Block: the rule acts on matching calls (alerts, blocks, pauses or stops).',
-};
-
 /**
  * The notify response in customer words: the picker option, the verb in a
  * rule's sentence, the count of times it fired, and its row tag. The engine

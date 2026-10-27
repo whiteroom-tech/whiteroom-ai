@@ -6,7 +6,7 @@ import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
   GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
-import { convertSpendCap, RULE_LABELS } from '@/lib/governance';
+import { convertSpendCap } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 import { DAY_MS, fmtCount, ordinal } from '@/lib/format';
 
@@ -80,23 +80,11 @@ export function appliesNow(scope: GovernanceScope): string {
   return `It applies to ${scope === 'all' ? 'all agents in this fleet' : scope.join(', ')}, and takes effect now.`;
 }
 
-/** "All agents", or "Only " + the agents (more than two: "3 agents"). */
-export function scopeLabel(scope: GovernanceScope): { lead: string; agents: string } {
-  if (scope === 'all') return { lead: 'All agents', agents: '' };
-  if (scope.length === 0) return { lead: 'No agents selected', agents: '' };
-  return { lead: 'Only ', agents: scope.length > 2 ? `${scope.length} agents` : scope.join(', ') };
-}
-
 // ── Grouping and the agent filter ───────────────────────────────────
 
 /** The rules that govern an agent: the fleet-wide ones and its own. `null`: every rule. */
 export function rulesFor(rules: readonly GovernanceRule[], agent: string | null): GovernanceRule[] {
   return agent === null ? [...rules] : rules.filter((r) => r.appliesTo === 'all' || r.appliesTo.includes(agent));
-}
-
-/** One mode's rules in the "Add a rule" order, so the same kinds sit together. Spend caps of the same kind run smallest first. */
-export function byMode(rules: readonly GovernanceRule[], mode: GovernanceMode): GovernanceRule[] {
-  return rules.filter((r) => r.mode === mode).sort(ruleOrder);
 }
 
 function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
@@ -111,12 +99,6 @@ function typeRank(t: GovernanceRuleType): number {
   return i < 0 ? RULE_TEMPLATES.length : i;
 }
 
-/** Rule names for a stat card's sub-line, each once: "Spend cap, Loop breaker". */
-export function ruleNames(rules: readonly GovernanceRule[]): string {
-  const names = [...new Set(rules.map((r) => RULE_LABELS[r.ruleType]))];
-  return names.length ? names.join(', ') : '—';
-}
-
 // ── Overlap ─────────────────────────────────────────────────────────
 
 const covers = (a: GovernanceScope, b: GovernanceScope) => a === 'all' || (b !== 'all' && b.every((x) => a.includes(x)));
@@ -129,7 +111,8 @@ const covers = (a: GovernanceScope, b: GovernanceScope) => a === 'all' || (b !==
  * $190 cap for one agent.
  */
 export function spendOverlap(rules: readonly GovernanceRule[]): { never: GovernanceRule; first: GovernanceRule } | null {
-  const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode !== 'off');
+  // Only caps that block: in Record only neither acts, and an alert before a block is a warning, not an overlap.
+  const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode === 'enforce' && (r.response ?? 'block') !== 'notify');
   for (let i = 0; i < caps.length; i++) {
     for (let j = i + 1; j < caps.length; j++) {
       const a = caps[i], b = caps[j];
@@ -158,47 +141,6 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
   if (rule.ruleType === 'keyword') return keywordTotal(rule.params as KeywordParams) ? null : 'a keyword';
   if (rule.ruleType === 'tool_list') return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
   return null;
-}
-
-/**
- * The row's status line. Enforce: what it did in the last 7 days, from the
- * engine's counts per rule type, so only when this is the fleet's one rule
- * of its type (two spend caps would share the count). Watch: what it would
- * have done since its last change. Viewing one agent, the counts are that
- * agent's: an Enforce count shows only for a rule that covers just them.
- * A Keywords or Tool list rule with nothing picked says so instead.
- */
-export function rowStat(rule: GovernanceRule, ctx: {
-  /** The engine's rule_actions byRule (keyed by rule type). */
-  byRuleType?: Record<string, RuleActionCounts>;
-  /** Per rule id (engine E1a): each rule's own count, even with two of a type. */
-  byRuleId?: Record<string, RuleActionCounts>;
-  onlyOfItsType: boolean;
-  /** unversioned: the engine's count may include events from before the rule's last change. */
-  wouldAct?: { byAgent: Record<string, number>; unversioned?: boolean } | null;
-  /** The agent being viewed, if any. */
-  agent?: string | null;
-}): string {
-  const response = rule.response ?? 'block';
-  if (rule.mode === 'off') return '';
-  const nothingPicked = emptyPick(rule);
-  if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
-  if (rule.mode === 'enforce') {
-    const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
-    // Per rule id when the engine sends it; else per type, only when it's the one rule of its type.
-    // Both list only what acted: a missing one acted 0 times.
-    const c = !justThem ? undefined
-      : ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS
-      : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
-    return c ? `${fmtCount(c[TALLY[response]])} ${TALLY_WORD[response]} · last 7 days` : '';
-  }
-  if (rule.mode === 'watch') {
-    if (!ctx.wouldAct) return '';
-    const n = ctx.agent ? ctx.wouldAct.byAgent[ctx.agent] ?? 0 : Object.values(ctx.wouldAct.byAgent).reduce((a, b) => a + b, 0);
-    if (ctx.wouldAct.unversioned) return n ? `Would have acted ${times(n)}, some maybe before its last change` : 'Hasn’t fired yet';
-    return n ? `Would have ${TALLY_WORD[response]} ${times(n)}` : 'Hasn’t fired since its last change';
-  }
-  return '';
 }
 
 // ── What the agent gets ─────────────────────────────────────────────
@@ -353,7 +295,7 @@ export function draftProblem(d: RuleDraft): string | null {
 
 // ── Add a rule ──────────────────────────────────────────────────────
 
-/** "Add a rule" choices, by goal, each naming its rule. Also the order rules are listed in on Controls (byMode). */
+/** "Add a rule" choices, by goal, each naming its rule. Also the order rules are listed in on Controls (ruleGroups). */
 export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string; isNew?: boolean }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
   { type: 'call_rate', title: 'Limit calls per minute', desc: 'Block calls once an agent makes too many in a minute.' },
@@ -364,17 +306,6 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
 ];
 
 // ── Groups: who a rule covers ───────────────────────────────────────
-
-/** Controls groups rules by who they cover; Off is apart. Within a group, Block (enforce) first. */
-export function coverageGroups(rules: GovernanceRule[]): { all: GovernanceRule[]; some: GovernanceRule[]; off: GovernanceRule[] } {
-  const on = rules.filter((r) => r.mode !== 'off');
-  const blockFirst = (list: GovernanceRule[]) => [...list].sort((a, b) => (a.mode === 'enforce' ? 0 : 1) - (b.mode === 'enforce' ? 0 : 1));
-  return {
-    all: blockFirst(on.filter((r) => r.appliesTo === 'all')),
-    some: blockFirst(on.filter((r) => r.appliesTo !== 'all')),
-    off: rules.filter((r) => r.mode === 'off'),
-  };
-}
 
 /** Whether a rule can stop a call or an agent now: Block mode with a response other than Alert me, that has something to act on. */
 export function isStopping(r: GovernanceRule): boolean {
@@ -402,7 +333,9 @@ export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[]
   if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_LABEL[prev.mode]} → ${MODE_LABEL[next.mode]}`);
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
   if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`Then: ${VERB[pr]} → ${VERB[nr]}`);
-  if (prev.alsoNotify && !next.alsoNotify && nr === 'block') out.push('It stops sending you an alert');
+  // Any lost alert, whatever the response: Pause, Stop and Alert me alert; Block does when asked to.
+  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
+  if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
     const dropped = prev.appliesTo.filter((a) => !(next.appliesTo as string[]).includes(a));
@@ -423,7 +356,13 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
     }
     case 'loop_breaker': {
       const p = a as LoopBreakerParams, n = b as LoopBreakerParams;
-      return n.threshold > p.threshold ? [`Acts after ${fmtCount(n.threshold)} repeats instead of ${fmtCount(p.threshold)}`] : [];
+      const out: string[] = [];
+      if (n.threshold > p.threshold) out.push(`Acts after ${fmtCount(n.threshold)} repeats instead of ${fmtCount(p.threshold)}`);
+      // Per day and per run count differently: ask, as for a spend cap's period.
+      if (n.scope !== p.scope) out.push(`Counts repeats in a ${n.scope} instead of a ${p.scope}`);
+      const ignored = n.ignoreTools.filter((t) => !p.ignoreTools.includes(t));
+      if (ignored.length) out.push(`No longer counts calls to ${ignored.join(', ')}`);
+      return out;
     }
     case 'call_rate': {
       const p = a as CallRateParams, n = b as CallRateParams;
@@ -474,3 +413,288 @@ export function sameValue(a: unknown, b: unknown): boolean {
     : v ?? null);
   return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 }
+
+// ── Mockup parity: rows, status, groups and suggestions ─────────────
+
+/**
+ * The rule's condition alone, for a row under its kind ("Spend cap" /
+ * "Over $190 a day"), split so the value can be set in mono.
+ */
+export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): { pre: string; val: string; post: string } {
+  if (rule.ruleType === 'spend_cap') {
+    const p = rule.params as SpendCapParams;
+    const per = p.scope === 'day' ? ' a day' : ' in a run';
+    return p.unit === 'dollars' ? { pre: 'Over ', val: money(p), post: per } : { pre: 'Over ', val: fmtCount(p.dailyCap), post: ` tokens${per}` };
+  }
+  if (rule.ruleType === 'loop_breaker') {
+    const p = rule.params as LoopBreakerParams;
+    return { pre: 'Same call ', val: fmtCount(p.threshold), post: `× in a ${p.scope}` };
+  }
+  if (rule.ruleType === 'call_rate') return { pre: 'Over ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls a minute' };
+  if (rule.ruleType === 'keyword') {
+    const p = rule.params as KeywordParams;
+    const where = KEYWORD_WHERE[p.where];
+    const lead = `${where[0].toUpperCase()}${where.slice(1)} contains `;
+    if (!p.keywords.length && p.keywordCount) return { pre: lead, val: p.keywordCount === 1 ? 'a hidden keyword' : `${p.keywordCount} hidden keywords`, post: '' };
+    return p.keywords.length ? { pre: lead, val: p.keywords.map((k) => `"${k}"`).join(', '), post: '' } : { pre: 'No keywords picked yet', val: '', post: '' };
+  }
+  if (rule.ruleType === 'tool_list') {
+    const tools = (rule.params as ToolListParams).blockedTools;
+    return tools.length ? { pre: 'Tools: ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+  }
+  const models = (rule.params as ModelAllowlistParams).allowedModels;
+  return models.length ? { pre: 'Only ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+}
+
+export const ruleConditionText = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>) => { const c = ruleCondition(rule); return c.pre + c.val + c.post; };
+
+/** Who a rule covers, in a sentence: "all agents", "lead-agent", "lead-agent, code-reviewer". */
+export const whoFor = (scope: GovernanceScope) => (scope === 'all' ? 'all agents' : scope.join(', ') || 'no agents');
+
+/** Whether a rule has nothing to act on yet: a Keywords or Tool list rule with nothing picked, or one that covers no agents. */
+export const notSetUp = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'appliesTo'>) => emptyPick(r) !== null || (r.appliesTo !== 'all' && r.appliesTo.length === 0);
+
+/**
+ * The page's three cards: rules for all agents, rules for specific agents
+ * (each agent's own, under its name; a rule for two agents shows under
+ * both), and "Off and not set up". Block first within a group, then the
+ * "Add a rule" order.
+ */
+export function ruleGroups(rules: readonly GovernanceRule[]): {
+  all: GovernanceRule[]; byAgent: { agent: string; rules: GovernanceRule[] }[]; off: GovernanceRule[]; unset: GovernanceRule[];
+} {
+  const sorted = [...rules].sort((a, b) => MODE_ORDER[a.mode] - MODE_ORDER[b.mode] || ruleOrder(a, b));
+  const on = sorted.filter((r) => r.mode !== 'off' && !notSetUp(r));
+  const owners = [...new Set(on.flatMap((r) => (r.appliesTo === 'all' ? [] : r.appliesTo)))].sort((a, b) => a.localeCompare(b));
+  return {
+    all: on.filter((r) => r.appliesTo === 'all'),
+    byAgent: owners.map((agent) => ({ agent, rules: on.filter((r) => r.appliesTo !== 'all' && r.appliesTo.includes(agent)) })),
+    off: sorted.filter((r) => r.mode === 'off' && !notSetUp(r)),
+    unset: sorted.filter(notSetUp),
+  };
+}
+const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
+
+/** A group's sub-line, worded like the lead line: "1 Block · 6 Record only". */
+export function modeCount(rules: readonly GovernanceRule[]): string {
+  const e = rules.filter((r) => r.mode === 'enforce').length, w = rules.filter((r) => r.mode === 'watch').length;
+  return `${e} Block · ${w} Record only`;
+}
+
+/** The page's lead line, counting only rules that are set up. */
+export function leadCounts(rules: readonly GovernanceRule[]): { total: number; enforce: number; watch: number; off: number } {
+  const set = rules.filter((r) => !notSetUp(r));
+  return { total: set.length, enforce: set.filter((r) => r.mode === 'enforce').length, watch: set.filter((r) => r.mode === 'watch').length, off: set.filter((r) => r.mode === 'off').length };
+}
+
+/** When the one rule that blocks acts, for the amber box: "only after 100 repeated calls". */
+export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'appliesTo'>): string {
+  const only = rule.appliesTo === 'all' ? '' : `, for ${whoFor(rule.appliesTo)}`;
+  switch (rule.ruleType) {
+    case 'loop_breaker': return `only after ${fmtCount((rule.params as LoopBreakerParams).threshold)} repeated calls${only}`;
+    case 'spend_cap': { const p = rule.params as SpendCapParams; return `only over ${money(p)} ${p.scope === 'day' ? 'a day' : 'in a run'}${only}`; }
+    case 'call_rate': return `only over ${fmtCount((rule.params as CallRateParams).maxCalls)} calls a minute${only}`;
+    case 'model_allowlist': return `only for models not on its list${only}`;
+    case 'tool_list': return `only for the tools it names${only}`;
+    default: return `only when its keywords show up${only}`;
+  }
+}
+
+export type RowCount = { text: string; tone: 'plain' | 'hot' | 'warn' };
+
+/**
+ * The count at the right of a row: "60 caught · 7 days", "None since edit",
+ * "Never triggers ($190 cap first)". Seven-day counts are per rule id
+ * (rule_actions byRuleId); "since edit" comes from rule_would_act. Viewing
+ * one agent, a Record only rule counts that agent's calls since its last
+ * change, and a Block rule shows its count only when it covers just them.
+ */
+export function rowCount(rule: GovernanceRule, ctx: {
+  byRuleId?: Record<string, RuleActionCounts>;
+  byRuleType?: Record<string, RuleActionCounts>;
+  onlyOfItsType: boolean;
+  wouldAct?: { byAgent: Record<string, number>; unversioned?: boolean } | null;
+  agent?: string | null;
+  /** This spend cap never triggers: the cap that catches it first. */
+  neverFirst?: string | null;
+}): RowCount {
+  if (rule.mode === 'off') return { text: '', tone: 'plain' };
+  const nothingPicked = emptyPick(rule);
+  if (nothingPicked) return { text: `Does nothing until you add ${nothingPicked}`, tone: 'warn' };
+  if (ctx.neverFirst) return { text: `Never triggers (${ctx.neverFirst} cap first)`, tone: 'warn' };
+  const week = ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
+  const response = rule.response ?? 'block';
+  if (rule.mode === 'enforce') {
+    const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
+    if (!justThem || !week) return { text: '', tone: 'plain' };
+    const n = week[TALLY[response]];
+    return n ? { text: `${fmtCount(n)} ${TALLY_WORD[response]} · 7 days`, tone: 'hot' } : { text: 'None caught · 7 days', tone: 'plain' };
+  }
+  const since = ctx.wouldAct && !ctx.wouldAct.unversioned ? ctx.wouldAct : null;
+  const sinceN = since ? (ctx.agent ? since.byAgent[ctx.agent] ?? 0 : Object.values(since.byAgent).reduce((a, b) => a + b, 0)) : null;
+  if (ctx.agent || !week) {
+    if (sinceN === null) return { text: '', tone: 'plain' };
+    return sinceN ? { text: `${fmtCount(sinceN)} caught since edit`, tone: 'hot' } : { text: 'None since edit', tone: 'plain' };
+  }
+  if (week.wouldAct) return { text: `${fmtCount(week.wouldAct)} caught · 7 days`, tone: 'hot' };
+  return { text: sinceN === 0 ? 'None since edit' : 'None caught · 7 days', tone: 'plain' };
+}
+
+const WOULD_VERB: Record<GovernanceResponse, (who: string) => string> = {
+  block: (who) => `blocked ${who}`, pause: (who) => `paused ${who}`, stop: (who) => `stopped ${who}`, notify: (who) => `alerted you about ${who}`,
+};
+const DOING: Record<GovernanceResponse, string> = { block: 'Blocking', pause: 'Pausing agents', stop: 'Stopping agents', notify: 'Alerting you' };
+
+/**
+ * The editor's status sentence: what the rule is doing now, and what it
+ * caught. "Would have blocked code-reviewer 44 times since it was last
+ * changed 4 days ago." Never claims a count it doesn't have.
+ */
+export function ruleStatus(rule: GovernanceRule, ctx: {
+  week?: RuleActionCounts;
+  wouldAct?: { byAgent: Record<string, number>; unversioned?: boolean; since?: string | null } | null;
+  neverFirst?: string | null;
+  now?: number;
+}): string {
+  const who = whoFor(rule.appliesTo);
+  const response = rule.response ?? 'block';
+  if (rule.mode === 'off') return 'Off. Records nothing.';
+  const nothingPicked = emptyPick(rule);
+  if (nothingPicked) return `Does nothing until you add ${nothingPicked}.`;
+  if (ctx.neverFirst) return `This cap never triggers. The ${ctx.neverFirst} cap covers the same agents and catches it first.`;
+  if (rule.mode === 'enforce') {
+    const n = ctx.week ? ctx.week[TALLY[response]] : null;
+    const tail = n === null ? '' : n ? ` ${TALLY_WORD[response][0].toUpperCase()}${TALLY_WORD[response].slice(1)} ${times(n)} in the last 7 days.` : ' Nothing caught in the last 7 days.';
+    return `${DOING[response]} for ${who}.${tail}`;
+  }
+  const w = ctx.wouldAct;
+  if (w && !w.unversioned && w.since) {
+    const when = timeAgoShort(w.since, ctx.now);
+    const hits = Object.entries(w.byAgent).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    if (!hits.length) return `Record only for ${who}. Nothing caught since it was last changed ${when}.`;
+    const total = hits.reduce((s, [, n]) => s + n, 0);
+    const whom = hits.length === 1 ? `${hits[0][0]} ${times(hits[0][1])}` : hits.length === 2 ? `${hits[0][0]} and ${hits[1][0]} ${times(total)} in all` : `${hits.length} agents ${times(total)} in all`;
+    return `Would have ${WOULD_VERB[response](whom)} since it was last changed ${when}.`;
+  }
+  if (ctx.week) {
+    return ctx.week.wouldAct ? `Record only for ${who}. Would have acted ${times(ctx.week.wouldAct)} in the last 7 days.` : `Record only for ${who}. Nothing caught in the last 7 days.`;
+  }
+  return `Record only for ${who}.`;
+}
+
+function timeAgoShort(ts: string, now = Date.now()): string {
+  const days = Math.floor((now - Date.parse(ts)) / DAY_MS);
+  return days < 1 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+/** Rules that do exactly the same thing (same kind, settings, agents, mode, response and alert): all but the first are extra. */
+export function duplicateRules(rules: readonly GovernanceRule[]): { keep: GovernanceRule; extra: GovernanceRule[] }[] {
+  const out: { keep: GovernanceRule; extra: GovernanceRule[] }[] = [];
+  const scopeKey = (s: GovernanceScope) => (s === 'all' ? 'all' : [...s].sort());
+  for (const r of rules) {
+    // A Keywords list the engine hid can't be compared: two such rules may look alike and differ.
+    if (notSetUp(r) || keywordsHidden(r)) continue;
+    const g = out.find(({ keep: k }) => k.ruleType === r.ruleType && k.mode === r.mode && (k.response ?? 'block') === (r.response ?? 'block')
+      && !!k.alsoNotify === !!r.alsoNotify && sameValue(scopeKey(k.appliesTo), scopeKey(r.appliesTo)) && sameValue(k.params, r.params));
+    if (g) g.extra.push(r); else out.push({ keep: r, extra: [] });
+  }
+  return out.filter((g) => g.extra.length > 0);
+}
+
+/**
+ * Keywords rules that cover only some agents, with no rule for all agents
+ * looking for the same words in the same place: the words aren't watched
+ * for everyone else. Hidden keyword lists are left out (they can't be copied).
+ */
+export function keywordGaps(rules: readonly GovernanceRule[], agents: readonly string[]): GovernanceRule[] {
+  const kw = rules.filter((r) => r.ruleType === 'keyword' && r.mode !== 'off');
+  const places = (w: KeywordWhere) => (w === 'both' ? ['incoming', 'replies'] : [w]);
+  return kw.filter((r) => {
+    if (r.appliesTo === 'all') return false;
+    const p = r.params as KeywordParams;
+    if (!p.keywords.length) return false;
+    if (agents.every((a) => (r.appliesTo as string[]).includes(a))) return false;
+    return !kw.some((o) => {
+      if (o.appliesTo !== 'all') return false;
+      const q = o.params as KeywordParams;
+      const have = new Set(q.keywords.map((k) => k.toLowerCase()));
+      return p.keywords.every((k) => have.has(k.toLowerCase())) && places(p.where).every((x) => places(q.where).includes(x));
+    });
+  });
+}
+
+/** A Keywords rule whose list the engine sent only as a count (no dashboard secret on the read). */
+export function keywordsHidden(r: Pick<GovernanceRule, 'ruleType' | 'params'>): boolean {
+  return r.ruleType === 'keyword' && !(r.params as KeywordParams).keywords.length && !!(r.params as KeywordParams).keywordCount;
+}
+
+/** A Keywords rule's words for a sentence: "password", or "password", "SSN" + 2 more. */
+export function keywordsShort(p: KeywordParams): string {
+  const shown = p.keywords.slice(0, 2).map((k) => `"${k}"`).join(', ');
+  return p.keywords.length > 2 ? `${shown} + ${p.keywords.length - 2} more` : shown;
+}
+
+// ── The editor's three questions (Rashad, Oct 27): When · Who · What happens ──
+
+/** The rule's condition as one plain sentence, for When before Change: "Spends more than $190 in a day". */
+export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): { pre: string; val: string; post: string } {
+  if (rule.ruleType === 'spend_cap') {
+    const p = rule.params as SpendCapParams;
+    return { pre: 'Spends more than ', val: money(p), post: ` in a ${p.scope}` };
+  }
+  if (rule.ruleType === 'loop_breaker') {
+    const p = rule.params as LoopBreakerParams;
+    const ignore = p.ignoreTools.length ? `, not counting ${p.ignoreTools.join(', ')}` : '';
+    return { pre: 'Makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}${ignore}` };
+  }
+  if (rule.ruleType === 'call_rate') return { pre: 'Makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls in a minute' };
+  if (rule.ruleType === 'model_allowlist') {
+    const models = (rule.params as ModelAllowlistParams).allowedModels;
+    return models.length ? { pre: 'Uses a model other than ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+  }
+  if (rule.ruleType === 'tool_list') {
+    const tools = (rule.params as ToolListParams).blockedTools;
+    return tools.length ? { pre: 'Is about to run ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+  }
+  return ruleCondition(rule);
+}
+
+/** "What happens": one choice for mode and response. Off and Record only keep the response, so switching back restores it. */
+export type WhatHappens = 'off' | 'watch' | GovernanceResponse;
+
+export function whatHappens(d: Pick<RuleDraft, 'mode' | 'response'>): WhatHappens {
+  return d.mode === 'enforce' ? d.response : d.mode;
+}
+
+/**
+ * The draft with a new choice: Off → mode off; Record only → mode watch; an
+ * action → Block mode with that response. Leaving an action for Off or Record
+ * only puts back the saved rule's response and alert, so clicking through the
+ * actions changes nothing; what Record only records is picked on its own
+ * (recordAs).
+ */
+export function chooseWhatHappens(d: RuleDraft, choice: WhatHappens, saved: Pick<GovernanceRule, 'response' | 'alsoNotify'>): RuleDraft {
+  if (choice === 'off' || choice === 'watch') {
+    return d.mode === 'enforce' ? { ...d, mode: choice, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode: choice };
+  }
+  return changeResponse({ ...d, mode: 'enforce' }, choice);
+}
+
+/** What a rule in Record only (or Off) records: the action it would take. */
+export function recordAs(d: RuleDraft, response: GovernanceResponse): RuleDraft {
+  return changeResponse(d, response);
+}
+
+/** The actions this fleet has: Pause and Stop only on Gov v1 fleets, but always the ones the rule uses. */
+export function responseChoices(govV1: boolean, ...keep: GovernanceResponse[]): GovernanceResponse[] {
+  return (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || keep.includes(r));
+}
+
+/** The choices in order: Off · Record only · the actions (responseChoices). */
+export function whatHappensOptions(govV1: boolean, ...keep: GovernanceResponse[]): WhatHappens[] {
+  return ['off', 'watch', ...responseChoices(govV1, ...keep)];
+}
+
+export const WHAT_HAPPENS_LABEL: Record<WhatHappens, string> = {
+  off: 'Off', watch: 'Record only', block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent', notify: NOTIFY.option,
+};
