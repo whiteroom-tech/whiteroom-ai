@@ -237,3 +237,74 @@ describe('groups and per-rule counts', async () => {
     expect(rowStat(rule({ id: 'gr_3', mode: 'enforce', appliesTo: ['lead'] }), { byRuleId: { gr_3: counts }, onlyOfItsType: false, agent: 'lead' })).toBe('4 blocked · last 7 days');
   });
 });
+
+describe('weakening a rule', async () => {
+  const { weakenings } = await import('@/lib/controls-view');
+  it('names every way a change makes the rule weaker, and nothing for a stronger one', () => {
+    const cap = rule({ mode: 'enforce', response: 'pause', alsoNotify: false, params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
+    expect(weakenings(cap, { ...cap, mode: 'off' })).toEqual(['Mode: Block → Off']);
+    expect(weakenings(cap, { ...cap, response: 'notify' })).toEqual(['Then: pause the agent → tell me']);
+    expect(weakenings(cap, { ...cap, appliesTo: ['lead'] })).toEqual(['Covers only lead, not every agent']);
+    expect(weakenings({ ...cap, appliesTo: ['lead', 'writer'] }, { ...cap, appliesTo: ['lead'] })).toEqual(['No longer covers writer']);
+    expect(weakenings(cap, { ...cap, params: { dailyCap: 250, scope: 'day', unit: 'dollars' } })).toEqual(['Limit: $190 → $250']);
+    expect(weakenings({ ...cap, response: 'block', alsoNotify: true }, { ...cap, response: 'block', alsoNotify: false })).toEqual(['It stops sending you an alert']);
+    // Stronger or unchanged: nothing to confirm.
+    expect(weakenings(cap, { ...cap, response: 'stop', params: { dailyCap: 100, scope: 'day', unit: 'dollars' } })).toEqual([]);
+    expect(weakenings({ ...cap, mode: 'watch' }, cap)).toEqual([]);
+    // Loop breaker and call rate: a higher number is looser.
+    const loop = rule({ ruleType: 'loop_breaker', params: { threshold: 10, scope: 'run', ignoreTools: [] } });
+    expect(weakenings(loop, { ...loop, params: { threshold: 20, scope: 'run', ignoreTools: [] } })).toEqual(['Acts after 20 repeats instead of 10']);
+    const rate = rule({ ruleType: 'call_rate', params: { maxCalls: 60 } });
+    expect(weakenings(rate, { ...rate, params: { maxCalls: 90 } })).toEqual(['Allows 90 calls a minute instead of 60']);
+    expect(weakenings(rate, { ...rate, params: { maxCalls: 30 } })).toEqual([]);
+    // A milder response counts only while the rule acts; and the alert line only for Block.
+    expect(weakenings({ ...cap, mode: 'watch' }, { ...cap, mode: 'watch', response: 'notify' })).toEqual([]);
+    expect(weakenings({ ...cap, response: 'pause', alsoNotify: true }, { ...cap, response: 'pause', alsoNotify: false })).toEqual([]);
+    // Keywords: dropping one, whole words only, or looking in fewer places.
+    const kw = rule({ ruleType: 'keyword', params: { keywords: ['a', 'b'], where: 'both', wholeWord: false } });
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a'], where: 'both', wholeWord: false } })).toEqual(['No longer looks for “b”']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['A', 'b'], where: 'both', wholeWord: false } })).toEqual([]);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'both', wholeWord: true } })).toEqual(['Matches whole words only, not parts of words']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'incoming', wholeWord: false } })).toEqual(['No longer looks in model replies']);
+    expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'replies', wholeWord: false } })).toEqual(['No longer looks in incoming data']);
+    expect(weakenings({ ...kw, params: { keywords: ['a'], where: 'incoming', wholeWord: false } }, { ...kw, params: { keywords: ['a'], where: 'both', wholeWord: false } })).toEqual([]);
+    // A switch from one place to the other names the place dropped.
+    expect(weakenings({ ...kw, params: { keywords: ['a'], where: 'replies', wholeWord: false } }, { ...kw, params: { keywords: ['a'], where: 'incoming', wholeWord: false } })).toEqual(['No longer looks in model replies']);
+    // A new unit or period can't be compared: it's asked about.
+    expect(weakenings(cap, { ...cap, params: { dailyCap: 190, scope: 'run', unit: 'dollars' } })).toEqual(['Limit: $190 a day → $190 a run']);
+    expect(weakenings(cap, { ...cap, params: { dailyCap: 50000, scope: 'day', unit: 'tokens' } })).toEqual(['Limit: $190 a day → 50,000 tokens a day']);
+    const tools = rule({ ruleType: 'tool_list', params: { blockedTools: ['a', 'b'] } });
+    expect(weakenings(tools, { ...tools, params: { blockedTools: ['a'] } })).toEqual(['No longer blocks b']);
+    const models = rule({ ruleType: 'model_allowlist', params: { allowedModels: ['x'] } });
+    expect(weakenings(models, { ...models, params: { allowedModels: ['x', 'y'] } })).toEqual(['Also allows y']);
+  });
+});
+
+describe('fleet daily spend beside a spend cap', async () => {
+  const { averageDailySpend } = await import('@/lib/controls-view');
+  it('averages the hourly spend per day, and is unknown rather than $0 without data', () => {
+    const at = (d: number, h = 0) => new Date(Date.UTC(2026, 9, d, h)).toISOString();
+    // 14 days of data: the total over 14.
+    const now = Date.UTC(2026, 9, 27, 0);
+    expect(averageDailySpend({ hourly: [{ hour: at(13), costMicros: 7_000_000 }, { hour: at(26, 23), costMicros: 21_000_000 }] }, 14, now)).toEqual({ perDay: 2, days: 14 });
+    // A fleet two days old averages over two days, not fourteen.
+    expect(averageDailySpend({ hourly: [{ hour: at(25), costMicros: 7_000_000 }, { hour: at(26, 10), costMicros: 7_000_000 }] }, 14, now)).toEqual({ perDay: 7, days: 2 });
+    // A burst 10 days ago and nothing since is spread over those 10 days.
+    expect(averageDailySpend({ hourly: [{ hour: at(17), costMicros: 20_000_000 }] }, 14, now)).toEqual({ perDay: 2, days: 10 });
+    expect(averageDailySpend({ hourly: [] }, 14)).toBeNull();
+    expect(averageDailySpend({ error: 'no store' }, 14)).toBeNull();
+    expect(averageDailySpend(null, 14)).toBeNull();
+    // Hours it can't read: the whole window; no window: nothing.
+    expect(averageDailySpend({ hourly: [{ hour: 'soon', costMicros: 14_000_000 }] }, 14)).toEqual({ perDay: 1, days: 14 });
+    expect(averageDailySpend({ hourly: [{ hour: new Date().toISOString(), costMicros: 1 }] }, 0)).toBeNull();
+  });
+});
+
+describe('sameValue', async () => {
+  const { sameValue } = await import('@/lib/controls-view');
+  it('ignores key order but not values', () => {
+    expect(sameValue({ dailyCap: 1, unit: 'dollars', scope: 'day' }, { scope: 'day', dailyCap: 1, unit: 'dollars' })).toBe(true);
+    expect(sameValue({ dailyCap: 1 }, { dailyCap: 2 })).toBe(false);
+    expect(sameValue(['a', 'b'], ['b', 'a'])).toBe(false);
+  });
+});

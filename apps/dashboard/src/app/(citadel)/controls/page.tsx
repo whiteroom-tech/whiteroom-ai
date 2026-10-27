@@ -38,6 +38,9 @@ import {
   appliesNow, byMode, draftChanges, draftFrom, draftParams, draftProblem, emptyPick, isDirty, money, NO_ACTIONS, ruleNames, ruleSentence, rulesFor, rowStat, scopeLabel, ruleSentenceText, spendOverlap,
   type RuleDraft,
   coverageGroups, stopping,
+  weakenings,
+  averageDailySpend,
+  sameValue,
 } from "@/lib/controls-view";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
@@ -61,6 +64,7 @@ type Dialog =
   | { kind: "stop"; rule: GovernanceRule; next: GovernanceRule }
   | { kind: "keyword"; rule: GovernanceRule; next: GovernanceRule }
   | { kind: "remove"; rule: GovernanceRule }
+  | { kind: "weaken"; rule: GovernanceRule; next: GovernanceRule; reasons: string[] }
   | { kind: "discard"; label: string; then: () => void };
 
 function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; authKey: string | undefined; onAuthError: (msg?: string) => void }) {
@@ -83,10 +87,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<GovernanceSuggestions>({ noCaching: false, onlyModels: null });
+  // The fleet's average daily spend over the same 14 days, beside a dollars-a-day spend cap.
+  const [dailySpend, setDailySpend] = useState<{ perDay: number; days: number } | null>(null);
   /** rule_would_act per Watch rule, keyed `${id}@${version}`. */
   const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
   const [actions, setActions] = useState<RuleActionsResult | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const fleetRef = useRef(fleetId);
+  fleetRef.current = fleetId;
   const ruleOpened = useRef<string | null>(null);
   const openRuleRef = useRef<(id: string | null) => void>(() => {});
   useEffect(() => {
@@ -178,8 +186,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([performanceIndex(fleetId, SUGGESTION_HOURS, authKey), performanceFleetHourly(fleetId, SUGGESTION_HOURS, authKey)])
-      .then(([index, hourly]) => { if (!cancelled) setSuggestions(computeSuggestions(index, hourly)); })
+    // Another fleet, or a failed read: never the last fleet's spend beside this one's cap.
+    setDailySpend(null);
+    // Each read on its own: a failed model index doesn't hide the spend, nor the other way round.
+    const hourly = performanceFleetHourly(fleetId, SUGGESTION_HOURS, authKey);
+    hourly.then((h) => { if (!cancelled) setDailySpend(averageDailySpend(h, SUGGESTION_HOURS / 24)); }, () => {});
+    Promise.all([performanceIndex(fleetId, SUGGESTION_HOURS, authKey), hourly])
+      .then(([index, h]) => { if (!cancelled) setSuggestions(computeSuggestions(index, h)); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [fleetId, authKey]);
@@ -237,12 +250,17 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   };
 
   // ── Save ────────────────────────────────────────────────────────
-  const save = () => {
+  const save = (weakenChecked = false) => {
     if (!selected || !draft || !dirty) return;
     const problem = draftProblem(draft);
     if (problem) { setError(problem); return; }
     const parsed = draftParams(draft);
     const next: GovernanceRule = { ...selected, mode: draft.mode, response: draft.response, alsoNotify: draft.alsoNotify, appliesTo: draft.appliesTo, params: "params" in parsed ? parsed.params : selected.params };
+    // Anything that makes the rule weaker is said and confirmed first (the change log can undo it).
+    if (!weakenChecked) {
+      const reasons = weakenings(selected, next);
+      if (reasons.length) { setDialog({ kind: "weaken", rule: selected, next, reasons }); return; }
+    }
     // A rule that would stop agents must have run in Watch for a day, and is confirmed by typing who it covers.
     const stop = stopCheck(selected, { mode: draft.mode, response: draft.response }, history);
     if (stop.kind === "blocked") { setError(stop.reason); return; }
@@ -295,6 +313,45 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       void fetchData();
     } catch (e) {
       handleError(e, "add the rule back");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Narrowing a rule for all agents can keep it and add a copy just for the picked agents instead:
+  // the original rule's settings (only the narrowing, none of the edit's other changes), in Record
+  // only like any new rule. The original is left as it was.
+  const copyFor = async (rule: GovernanceRule, agentsPicked: string[]) => {
+    if (!agentsPicked.length || saving) return;
+    const next = { ...rule, appliesTo: agentsPicked };
+    // Already made (say, Save and Copy again): don't add a second, identical rule. Identical means
+    // the same type, settings, response, alert and agents, whatever order the settings come in.
+    if (rules.some((r) => r.ruleType === next.ruleType && sameValue(r.params, next.params) && sameValue(r.appliesTo, agentsPicked)
+      && (r.response ?? "block") === (next.response ?? "block") && !!r.alsoNotify === !!next.alsoNotify)) {
+      setDialog(null);
+      setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
+      setNotice(`There's already a copy for ${agentsPicked.join(", ")}. The rule for all agents is unchanged.`);
+      return;
+    }
+    const forFleet = fleetId;
+    setDialog(null);
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { rule: created } = await governanceCreateRule(fleetId, {
+        ruleType: next.ruleType, mode: "watch", response: next.response, alsoNotify: next.alsoNotify, params: next.params, appliesTo: agentsPicked,
+        description: `Added a copy of the ${RULE_LABELS[next.ruleType]} rule for ${agentsPicked.join(", ")}`,
+      }, authKey);
+      // Signed into another fleet meanwhile: this answer isn't for the page now on screen.
+      if (fleetRef.current !== forFleet) return;
+      setRules((rs) => [...rs, created]);
+      // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
+      setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
+      setNotice(`Added a copy for ${agentsPicked.join(", ")}, in Record only. The rule for all agents is unchanged.`);
+      void fetchData();
+    } catch (e) {
+      if (fleetRef.current === forFleet) handleError(e, "add the copy");
     } finally {
       setSaving(false);
     }
@@ -560,11 +617,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               history={history.filter((h) => h.ruleId === selected.id)}
               actors={actors}
               undoOf={undoOf}
+              fleetDailySpend={dailySpend}
               onUndo={undo}
               dirty={dirty}
               error={error}
               saving={saving}
-              onSave={save}
+              onSave={() => save()}
               onDiscard={() => { setDraft(draftFrom(selected)); setError(null); }}
               onClose={() => openRule(null)}
               onRemove={() => setDialog({ kind: "remove", rule: selected })}
@@ -620,6 +678,30 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         onConfirm={() => { if (dialog?.kind === "keyword" && draft) void commit(dialog.rule, draft); }}
         onCancel={() => setDialog(null)}
       />
+      <ConfirmDialog
+        open={dialog?.kind === "weaken"}
+        title={dialog?.kind === "weaken" ? `Make the ${RULE_LABELS[dialog.rule.ruleType]} rule weaker?` : ""}
+        body={dialog?.kind === "weaken" ? (
+          <>
+            <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{dialog.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+            The change is recorded, and you can undo it from the change log.
+            {dialog.rule.appliesTo === "all" && dialog.next.appliesTo !== "all" && (
+              <span style={{ display: "block", marginTop: 10 }}>
+                Agents added later won&rsquo;t be covered by a narrowed rule.{" "}
+                {dialog.next.appliesTo.length > 0 && (
+                  <Button size={28} variant="ghost" onClick={() => void copyFor(dialog.rule, dialog.next.appliesTo as string[])}>Keep it for all, and add a copy for {dialog.next.appliesTo.join(", ")}</Button>
+                )}
+              </span>
+            )}
+          </>
+        ) : null}
+        confirmLabel="Save the change"
+        cancelLabel="Keep it as it is"
+        busy={saving}
+        onConfirm={() => { setDialog(null); save(true); }}
+        onCancel={() => setDialog(null)}
+      />
+
       <ConfirmDialog
         open={dialog?.kind === "remove"}
         title={dialog?.kind === "remove" ? `Remove the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
