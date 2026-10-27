@@ -25,12 +25,15 @@ export function partialMark(partial: boolean): string {
   return partial ? '+' : '';
 }
 
-/** Token counts, short: 980 → "980", 4000 → "4K", 4100 → "4.1K", 12_340 → "12K", 1_500_000 → "1.5M". */
+/**
+ * Token counts, short, never with a trailing ".0": exact below 1,000 ("980");
+ * thousands with one decimal below 100K ("4K", "4.1K", "12.3K"), whole above
+ * ("120K"); millions with two decimals below 10M ("1.5M", "4.03M"), one above ("12.5M").
+ */
 export function fmtTokens(n: number): string {
-  // One decimal below 10 of a unit, none above; never a trailing ".0".
-  const short = (v: number, unit: string) => `${v < 10 ? Number(v.toFixed(1)) : Math.round(v)}${unit}`;
-  if (n >= 999_500) return short(n / 1_000_000, 'M');
-  if (n >= 1000) return short(n / 1000, 'K');
+  const trim = (v: number, digits: number) => String(Number(v.toFixed(digits)));
+  if (n >= 999_500) { const m = n / 1_000_000; return `${trim(m, m < 10 ? 2 : 1)}M`; }
+  if (n >= 1000) { const k = n / 1000; return `${k < 99.95 ? trim(k, 1) : Math.round(k)}K`; }
   return String(Math.round(n));
 }
 
