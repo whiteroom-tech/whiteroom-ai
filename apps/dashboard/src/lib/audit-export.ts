@@ -2,6 +2,9 @@ import { exportAuditFullPage, exportAuditSigned, WhiteRoomApiError } from '@/lib
 import type { AuditExportPage } from '@/lib/whiteroom/types';
 
 /** How a page fetch is made; the client's by default, swapped in tests. */
+
+/** The engine's refusal of a dashboard-only action without the service secret. */
+export const DASHBOARD_ONLY_REASON = 'This action is only available from the WhiteRoom dashboard.';
 export type FetchExportPage = (fleetId: string, cursor?: { fromSeq: number; toSeq: number }) => Promise<AuditExportPage>;
 
 export interface AuditExportFile {
@@ -66,10 +69,10 @@ export async function buildAuditExport(
     page = await get();
   } catch (e) {
     // An older engine doesn't know the action (400); 409 is a fleet whose
-    // history isn't stored yet; 403 is an engine that wants the dashboard's
-    // service secret for it before this dashboard sends one. All still get
-    // the signed export they had.
-    if (e instanceof WhiteRoomApiError && (e.status === 409 || e.status === 403 || (e.status === 400 && e.reason === 'Unknown action.'))) {
+    // history isn't stored yet; this 403 is an engine that wants the
+    // dashboard's service secret before this dashboard sends one. All still
+    // get the signed export they had; any other refusal is an error.
+    if (e instanceof WhiteRoomApiError && (e.status === 409 || (e.status === 403 && e.reason === DASHBOARD_ONLY_REASON) || (e.status === 400 && e.reason === 'Unknown action.'))) {
       const signed = await exportAuditSigned(fleetId);
       return { blob: new Blob([JSON.stringify(signed, null, 2)], { type: 'application/json' }), events: null };
     }

@@ -86,7 +86,8 @@ export function AgentBudgetsSection({ fleetId, authKey, agentIds, api = liveAgen
 
   async function save() {
     const usd = parseBudget(amount);
-    if (!picked || usd === null) {
+    if (!picked) { setNote({ tone: 'bad', text: 'Pick an agent first.' }); return; }
+    if (usd === null) {
       setNote({ tone: 'bad', text: `Enter an amount in dollars, above 0 and up to ${fmtCount(MAX_AGENT_BUDGET_USD)}.`, invalid: true });
       amountRef.current?.focus();
       return;

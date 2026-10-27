@@ -9,7 +9,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   exportAuditSigned: client.signed,
 }));
 
-const { AuditExportProblem, buildAuditExport } = await import('@/lib/audit-export');
+const { AuditExportProblem, DASHBOARD_ONLY_REASON, buildAuditExport } = await import('@/lib/audit-export');
 const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 type Page = import('@/lib/whiteroom/types').AuditExportPage;
 
@@ -107,11 +107,19 @@ describe('full audit export', () => {
 
   it('uses the older signed export when the engine wants the dashboard’s secret for the full one (403)', async () => {
     client.signed.mockResolvedValueOnce({ fleetId: 'f1', entries: [], signature: 'old' });
-    const secretOnly = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403, 'This action needs the dashboard.'); });
+    const secretOnly = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403, DASHBOARD_ONLY_REASON); });
     const file = await buildAuditExport('f1', () => {}, { fetchPage: secretOnly });
     expect(file!.events).toBeNull();
     expect(secretOnly).toHaveBeenCalledTimes(1);
     expect(client.signed).toHaveBeenCalledWith('f1');
+  });
+
+  it('any other refusal (403) is an error, never a quiet swap to the older export', async () => {
+    const denied = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403, 'Invalid fleet credential.'); });
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: denied })).rejects.toThrow('HTTP 403');
+    const bare = vi.fn(async () => { throw new WhiteRoomApiError('HTTP 403', 403); });
+    await expect(buildAuditExport('f1', () => {}, { fetchPage: bare })).rejects.toThrow('HTTP 403');
+    expect(client.signed).not.toHaveBeenCalled();
   });
 
   it('marks a history that doesn’t add up as a problem with the audit trail, in plain words', async () => {
