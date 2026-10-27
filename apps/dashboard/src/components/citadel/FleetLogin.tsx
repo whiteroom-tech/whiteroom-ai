@@ -51,7 +51,7 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
           <Logo width={22} height={30} gradientId="wr-l" />
           <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 0.5, color: 'var(--tx)' }}>WhiteRoom</span>
         </div>
-        <p style={{ fontSize: 'var(--fs-sm)', letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginBottom: 32 }}>Sign in to your fleet</p>
 
         {auth.retryableError && (
           <div className="text-left" style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, padding: '12px 16px', marginBottom: 24 }}>
@@ -59,17 +59,17 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
             <button
               type="button"
               onClick={auth.retry}
-              style={{ marginTop: 10, fontSize: 'var(--fs-sm)', fontWeight: 700, letterSpacing: 1, fontFamily: FONT_DISPLAY, color: 'var(--tx)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 14px', background: 'var(--card)', cursor: 'pointer' }}
+              style={{ marginTop: 10, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 14px', background: 'var(--card)', cursor: 'pointer' }}
             >
-              RETRY
+              Retry
             </button>
           </div>
         )}
 
         <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
           <div>
-            <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
-              YOUR API KEY OR FLEET TOKEN
+            <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)', marginBottom: 8 }}>
+              Your fleet key or fleet token
             </label>
             <input
               id="fleet-token"
@@ -89,9 +89,9 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
           <button
             type="submit"
             disabled={auth.loginLoading || !loginToken}
-            style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 'var(--fs-md)', letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: auth.loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: auth.loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
+            style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 600, fontSize: 'var(--fs-md)', border: 'none', cursor: auth.loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: auth.loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
           >
-            {auth.loginLoading ? 'CONNECTING...' : 'CONNECT TO MY FLEET →'}
+            {auth.loginLoading ? 'Connecting…' : 'Connect to my fleet →'}
           </button>
         </form>
 
