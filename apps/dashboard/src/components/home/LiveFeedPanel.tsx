@@ -26,14 +26,16 @@ const FILTERS: LiveFilter[] = ['all', 'web', 'tools', 'replies'];
  * Never fetched until revealed, because it holds customer content; hidden
  * again on every visit. The kind filter is remembered per browser.
  */
-export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
+export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview, previewOpen = true }: {
   fleetId: string;
   authKey?: string;
   refreshSignal: number;
-  /** Sample rows for /dev/home: starts open and never fetches. */
+  /** Sample rows for /dev/home: never fetches. */
   preview?: AuditEntry[];
+  /** Whether a preview starts open (default) or closed, as a real page does. */
+  previewOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(!!preview);
+  const [open, setOpen] = useState(!!preview && previewOpen);
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>(preview ?? []);
   const [total, setTotal] = useState(preview?.length ?? 0);
@@ -92,7 +94,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const pageRows = win.rows;
 
   function reveal() { setOpen(true); load(); }
-  function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
+  function hide() { request.current += 1; setOpen(false); setEntries(preview ?? []); setTotal(preview?.length ?? 0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
   function toggle(key: string) { setExpanded((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 

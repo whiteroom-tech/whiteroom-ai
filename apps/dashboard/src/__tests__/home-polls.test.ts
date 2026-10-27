@@ -154,6 +154,10 @@ describe('Home conditional polls', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const busy = await mountWith();
     expect(api.days).not.toHaveBeenCalled();
+    // Not on the header's Refresh either.
+    await busy.render(1);
+    await flush();
+    expect(api.days).not.toHaveBeenCalled();
     expect(busy.text()).not.toContain('Last activity');
     busy.root.unmount();
   });

@@ -31,7 +31,8 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError, 
   agent: AgentInfo;
   fleetId: string;
   authKey?: string;
-  onChanged: () => void;
+  /** After an act: what it did and, in a preview, the hold it left (a real page reloads instead). */
+  onChanged: (change?: { act: Act; hold: AgentHold | null }) => void;
   /** The page's session-expired handler; without one, a note asks to reload. */
   onAuthError?: (message: string) => void;
   /** /dev/home: the menu, toast and Undo work, but nothing is sent. */
@@ -65,12 +66,12 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError, 
     setBusy(true);
     try {
       const res: { hold?: AgentHold | null } = preview
-        ? (act === 'pause' ? { hold: (previewHold.current = { state: 'paused', by: 'preview', reason: null, at: new Date().toISOString() }) } : {})
+        ? { hold: (previewHold.current = act === 'resume' ? null : { state: act === 'stop' ? 'stopped' : 'paused', by: 'preview', reason: null, at: new Date().toISOString() }) }
         : await CALL[act](fleetId, agent.agentId, authKey);
       if (act === 'pause') ownHold.current = res.hold?.state === 'paused' ? res.hold : null;
       // Undo only when the engine said which hold it set (older engines don't).
       setToast({ message: `${agent.agentId} ${DONE[act]}.`, undo: act === 'pause' && !ownHold.current ? undefined : UNDO[act] });
-      onChanged();
+      onChanged({ act, hold: res.hold ?? null });
     } catch (e) {
       const failure = controlFailure(e);
       if (failure === 'sign-out') {
@@ -147,7 +148,8 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError, 
         <Toast
           message={toast.message}
           action={toast.undo ? { label: 'Undo', onClick: () => void undoPause() } : undefined}
-          onClose={() => setToast(null)}
+          // Only this toast: Undo's own "resumed." may already have replaced it.
+          onClose={() => { const shown = toast; setToast((t) => (t === shown ? null : t)); }}
         />
       )}
       <ConfirmDialog

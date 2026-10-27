@@ -320,3 +320,21 @@ describe('Undo checks the hold first', () => {
     expect(el.querySelector('[role="alert"]')?.textContent).toContain('Couldn’t check code-reviewer before undoing. Nothing changed.');
   });
 });
+
+describe('Pause in the /dev/home preview', () => {
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+  it('sends nothing, reports the hold, and Undo shows "resumed." at once', async () => {
+    api.pause.mockReset(); api.resume.mockReset(); api.check.mockReset();
+    const onChanged = vi.fn();
+    await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'preview', onChanged, preview: true }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    expect(onChanged).toHaveBeenLastCalledWith({ act: 'pause', hold: expect.objectContaining({ state: 'paused' }) });
+    await act(async () => { button('Undo')!.click(); });
+    await flush();
+    expect(onChanged).toHaveBeenLastCalledWith({ act: 'resume', hold: null });
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('code-reviewer resumed.');
+    expect([api.pause, api.resume, api.check].every((f) => f.mock.calls.length === 0)).toBe(true);
+  });
+});

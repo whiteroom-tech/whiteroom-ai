@@ -804,12 +804,19 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-agent-actions__dismiss { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-left: auto; border: 0; border-radius: 4px; background: none; color: inherit; cursor: pointer; }
 .wr-agent-actions__dismiss:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .wr-home-tablebox { overflow-x: auto; }
+/* Wide enough for the whole table: no scroll box, so a row's ⋯ menu is never clipped. */
+.wr-home-section { container-type: inline-size; }
+@container (min-width: 900px) { .wr-home-tablebox { overflow: visible; } }
+/* Narrower, the table scrolls: the last rows' menus open upward, inside the box. */
+.wr-home-table tbody tr:nth-last-child(-n+2):not(:nth-child(-n+2)) .wr-agent-actions__menu { top: auto; bottom: calc(100% + 4px); }
 .wr-home-table { width: 100%; min-width: 880px; border-collapse: collapse; font-size: var(--fs-md); }
 .wr-home-table th { padding: 10px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
 .wr-home-table td { padding: 16px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
 .wr-home-table__cap { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .wr-home-table tbody tr:last-child td { border-bottom: 0; }
 .wr-home-table tbody tr { cursor: pointer; }
+/* The ⋯'s Stop dialog and its menu live in the last cell: they don't take the cell's nowrap or right alignment. */
+.wr-home-table .wr-agent-actions dialog, .wr-home-table .wr-agent-actions__menu, .wr-home-table .wr-agent-actions__error { white-space: normal; text-align: left; cursor: auto; }
 .wr-home-table tbody tr:hover { background: var(--sunk); }
 .wr-home-table .is-num { text-align: right; font-variant-numeric: tabular-nums; }
 .wr-home-table td:first-child, .wr-home-table th:first-child { position: sticky; left: 0; z-index: 1; background: var(--card); }
@@ -835,3 +842,8 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
   .wr-home-change { padding: 10px 16px; }
   .wr-home-change__time { min-width: 64px; }
 }
+.wr-home-dialog { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
+.wr-home-dialog__title { margin: 0; font-family: var(--font-display); font-size: var(--fs-section); line-height: 1.3; font-weight: 600; color: var(--tx); }
+.wr-home-dialog__sub { font-size: var(--fs-sm); color: var(--tx2); line-height: 1.5; }
+.wr-home-dialog__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.wr-home-auditbox { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; font-size: var(--fs-md); color: var(--tx); }

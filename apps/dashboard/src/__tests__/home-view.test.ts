@@ -94,3 +94,13 @@ describe("Home (mockup parity)", () => {
     expect(text(home({ todayRules: tally(0, 4) }))).toContain("rules caught 4 calls today, 0 blocked ·");
   });
 });
+
+describe("Home audit check wording", () => {
+  it("is green only for a whole, clean check", async () => {
+    const { auditCheckText } = await import("@/components/home/AuditCheckDialog");
+    const info = { fleetId: "f", mode: "sequenced" as const, headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: null, prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } };
+    expect(auditCheckText({ valid: true, complete: true, eventsVerified: 2045, message: "" }, { ...info, verifiedThroughSeq: 2045 })).toMatchObject({ tone: "ok", title: "Nothing changed or missing" });
+    expect(auditCheckText({ valid: true, eventsVerified: 939, message: "" }, info)).toMatchObject({ tone: "neutral", detail: "Verified through event 939 of 2,045. Events before tracking started aren’t covered. The rest hasn’t been checked yet." });
+    expect(auditCheckText({ valid: false, eventsVerified: 3, message: "Event 4 was changed." }, info)).toMatchObject({ tone: "bad", detail: "Event 4 was changed." });
+  });
+});

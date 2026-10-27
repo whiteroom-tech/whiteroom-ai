@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Hint, SegmentedControl, SelectChip, StatCard, StatusPill } from '@whiteroom/ui';
+import { Button, Hint, SegmentedControl, SelectChip, StatCard, StatusPill } from '@whiteroom/ui';
 import { auditLog, checkWatch, fleetReport, isAuthError, listRuns, performanceFleetHourly, ruleActions, runDays } from '@/lib/whiteroom/client';
-import type { AgentInfo, FleetReport } from '@/lib/whiteroom/types';
+import type { AgentHold, AgentInfo, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
@@ -23,6 +23,7 @@ import { fmtCount, fmtTokens, partialMark, plural } from '@/lib/format';
 import { RULE_ACTIVITY } from '@/lib/vocab';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { AgentActions } from '@/components/home/AgentActions';
+import { AuditCheckDialog } from '@/components/home/AuditCheckDialog';
 import { HomeFacts } from '@/components/home/HomeFacts';
 import { ScoreRing } from '@/components/home/ScoreRing';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -180,11 +181,14 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     }
   }, { intervalMs: empty ? 5_000 : 10_000, enabled: !!fleetId });
 
+  // The last active day is read only on a quiet day, on Refresh as on the timer.
+  const quietRef = useRef(false);
+  useEffect(() => { quietRef.current = today?.calls === 0; }, [today]);
   // The header's Refresh button bumps refreshSignal; skip the initial value,
   // since usePoll already fetched on mount.
   const firstSignal = useRef(refreshSignal);
   useEffect(() => {
-    if (refreshSignal !== firstSignal.current) { refresh(); refreshWeek(); refreshTodayRules(); refreshChanges(); refreshFlagged(); refreshLastActive(); }
+    if (refreshSignal !== firstSignal.current) { refresh(); refreshWeek(); refreshTodayRules(); refreshChanges(); refreshFlagged(); if (quietRef.current) refreshLastActive(); }
   }, [refreshSignal, refresh, refreshWeek, refreshTodayRules, refreshChanges, refreshFlagged, refreshLastActive]);
 
   function changeView(v: AgentsView) {
@@ -245,14 +249,15 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   liveFeed: React.ReactNode;
   /** The fleet, for Pause/Stop/Resume. `preview` (/dev/home) shows the controls without sending anything. */
   fleet?: { fleetId: string; authKey?: string; preview?: boolean };
-  /** After Pause, Stop or Resume: reload now rather than at the next poll. */
-  onActed?: () => void;
+  /** After Pause, Stop or Resume: reload now rather than at the next poll (a preview applies the hold itself). */
+  onActed?: (agentId?: string, hold?: AgentHold | null) => void;
   onAuthError?: (message: string) => void;
 }) {
   const router = useRouter();
   const view: AgentsView = viewPref ?? (agents.length > TABLE_FROM ? 'table' : 'cards');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AgentSort>('attention');
+  const [auditOpen, setAuditOpen] = useState(false);
   const weeks = week?.agents ?? {};
   // Search and sort only while their controls are shown (above FIND_FROM agents): a fleet that shrinks can't stay filtered.
   const finding = agents.length > FIND_FROM;
@@ -265,7 +270,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
   const canAct = (a: AgentInfo) => !!fleet && (report.govV1 || a.govV1);
   const actions = (a: AgentInfo) => canAct(a)
-    ? <AgentActions agent={a} fleetId={fleet!.fleetId} authKey={fleet!.authKey} onChanged={() => onActed?.()} onAuthError={onAuthError} preview={fleet!.preview} />
+    ? <AgentActions agent={a} fleetId={fleet!.fleetId} authKey={fleet!.authKey} onChanged={(c) => onActed?.(a.agentId, c?.hold)} onAuthError={onAuthError} preview={fleet!.preview} />
     : null;
 
   return (
@@ -412,8 +417,9 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
 
         {liveFeed}
 
+        {fleet && <AuditCheckDialog open={auditOpen} fleetId={fleet.fleetId} authKey={fleet.authKey} onClose={() => setAuditOpen(false)} onAuthError={onAuthError} preview={fleet.preview ? PREVIEW_AUDIT : undefined} />}
         <p className="wr-home-close">
-          Calls through WhiteRoom are recorded · <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link> · <Link href={`${ROUTES.settings}#audit-integrity`} className="wr-btn wr-btn--secondary wr-btn--h28">Check audit trail</Link>
+          Calls through WhiteRoom are recorded · <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link> · <Button size={28} onClick={() => setAuditOpen(true)}>Check audit trail</Button>
         </p>
       </div>
     </div>
@@ -467,6 +473,12 @@ function HomeSkeleton({ failing }: { failing: boolean }) {
     </div>
   );
 }
+
+/** /dev/home's audit check: a whole, clean trail. */
+const PREVIEW_AUDIT = {
+  result: { valid: true, complete: true, eventsVerified: 2045, message: 'ok' },
+  info: { fleetId: 'preview', mode: 'sequenced' as const, headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: null, prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } },
+};
 
 /** Agent detail for one agent. */
 function agentHref(agentId: string): string {

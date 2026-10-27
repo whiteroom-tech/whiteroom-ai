@@ -9,7 +9,7 @@ import { LiveFeedPanel } from '@/components/home/LiveFeedPanel';
 import { EmptyHome } from '@/components/home/EmptyHome';
 import { latestChanges } from '@/lib/home-changes';
 import { addDays, localDay } from '@/lib/runs';
-import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
+import type { AgentHold, AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 
 // Sample fleets for /dev/home. The default is a quiet day like the mockup's
 // (seven agents waiting, nothing on hold); ?busy=1 is a working day with a
@@ -89,6 +89,12 @@ const BUSY_WEEK = {
 
 export function HomePreview({ empty = false, busy = false, view: initialView = 'cards' }: { empty?: boolean; busy?: boolean; view?: AgentsView }) {
   const [view, setView] = useState<AgentsView>(initialView);
+  // Pause, Stop and Resume change the sample agents in place; nothing is sent.
+  const [holds, setHolds] = useState<Record<string, AgentHold | null>>({});
+  const base = busy ? BUSY_AGENTS : QUIET_AGENTS;
+  const agents = base.map((a) => (a.agentId in holds ? { ...a, hold: holds[a.agentId] } : a));
+  const report = busy ? BUSY : QUIET;
+  const reportHolds = Object.fromEntries(Object.entries({ ...report.holds, ...holds }).filter((e): e is [string, AgentHold] => !!e[1]));
   if (empty) {
     return (
       <AppShell>
@@ -103,8 +109,8 @@ export function HomePreview({ empty = false, busy = false, view: initialView = '
         <Button>Refresh</Button>
       </PageHeader>
       <HomeView
-        report={busy ? BUSY : QUIET}
-        agents={busy ? BUSY_AGENTS : QUIET_AGENTS}
+        report={{ ...report, holds: reportHolds }}
+        agents={agents}
         changes={latestChanges(CHANGES, ACTORS, 4)}
         flaggedToday={busy ? 2 : 0}
         lastActive={{ day: addDays(localDay(), -3), runs: 47 }}
@@ -114,8 +120,9 @@ export function HomePreview({ empty = false, busy = false, view: initialView = '
         onViewChange={setView}
         todayRules={busy ? tally(2, 47) : tally(0, 0)}
         week={busy ? BUSY_WEEK : QUIET_WEEK}
-        liveFeed={<LiveFeedPanel fleetId="preview" refreshSignal={0} preview={busy ? LIVE : undefined} />}
+        liveFeed={<LiveFeedPanel fleetId="preview" refreshSignal={0} preview={LIVE} previewOpen={busy} />}
         fleet={{ fleetId: 'preview', preview: true }}
+        onActed={(id, hold) => { if (id) setHolds((h) => ({ ...h, [id]: hold ?? null })); }}
       />
     </AppShell>
   );
