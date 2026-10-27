@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { TEXT_SIZE_BOOT } from '@/lib/text-size';
 import './globals.css';
 import { AnalyticsInit } from './analytics-init';
 import { Providers } from './providers';
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark'||t==='system')document.documentElement.setAttribute('data-wr-theme',t);var s=localStorage.getItem('wr_text');if(s==='lg'||s==='xl')document.documentElement.setAttribute('data-wr-text',s)}catch(e){}";
+const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t==='dark'||t==='system')document.documentElement.setAttribute('data-wr-theme',t);"+TEXT_SIZE_BOOT+"}catch(e){}";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();

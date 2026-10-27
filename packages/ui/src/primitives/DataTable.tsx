@@ -87,7 +87,7 @@ export function DataTable<R>({ columns, rows, rowKey, onOpen, selectedKey, rowHe
                 aria-expanded={renderExpanded && interactive ? expanded : undefined}
                 aria-controls={expanded ? detailId : undefined}
                 className={`wr-table__row${onOpen ? ' is-link' : ''}${selectedKey === k ? ' is-selected' : ''}`}
-                style={{ gridTemplateColumns: grid, height: rowHeight }}
+                style={{ gridTemplateColumns: grid, minHeight: `${rowHeight / 16}rem` }}
                 onClick={onOpen ? () => onOpen(r) : undefined}
                 onKeyDown={onOpen ? (e) => {
                   if (e.target !== e.currentTarget) return;

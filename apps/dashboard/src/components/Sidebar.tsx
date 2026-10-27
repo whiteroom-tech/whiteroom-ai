@@ -100,7 +100,7 @@ export function Sidebar() {
       <div className="wr-sidebar__brand">
         <Logo width={22} height={30} gradientId="wr-sidebar-mark" />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-md)', fontWeight: 700, letterSpacing: '.02em', lineHeight: 1.1, color: 'var(--tx)' }}>WhiteRoom</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: '.02em', lineHeight: 1.1, color: 'var(--tx)' }}>WhiteRoom</div>
           {fleetId && (
             <div title={fleetId} style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fleetId}</div>
           )}

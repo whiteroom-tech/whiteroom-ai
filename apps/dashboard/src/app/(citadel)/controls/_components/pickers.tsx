@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { FONT_MONO } from '@whiteroom/ui';
 import type { GovernanceScope } from '@/lib/whiteroom/types';
 
-export const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 'var(--fs-sm)', height: 30, boxSizing: 'border-box' } as const;
+export const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 'var(--fs-sm)', minHeight: '1.875rem', boxSizing: 'border-box' } as const;
 
 export type PickGroup = { label: string; options: { id: string; label: string }[] };
 
@@ -44,7 +44,7 @@ export const TOOL_GROUPS: PickGroup[] = [
 
 export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { label: string; onRemove: () => void; removeLabel?: string }) {
   return (
-    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
+    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
       {label}
       <button type="button" onClick={onRemove} aria-label={removeLabel} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 'var(--fs-md)' }}>&times;</button>
     </span>

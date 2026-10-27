@@ -3,7 +3,7 @@ import { safeGet, safeSet } from '@/lib/safe-storage';
 // Text size, stored in wr_text and mirrored on <html data-wr-text> (set before
 // first paint by app/layout.tsx). Every font size is a rem token in
 // globals.css, so changing the root size scales all text and the layout
-// reflows with it. Default is the 100% scale and stores nothing.
+// reflows with it. Default is the 100% scale and sets no attribute.
 export type TextSize = 'md' | 'lg' | 'xl';
 
 export const TEXT_SIZES: { value: TextSize; label: string }[] = [
@@ -11,6 +11,12 @@ export const TEXT_SIZES: { value: TextSize; label: string }[] = [
   { value: 'lg', label: 'Large' },
   { value: 'xl', label: 'Larger' },
 ];
+
+/**
+ * Runs inline in <head> before first paint (app/layout.tsx). Plain ES5 so it
+ * can be inlined as a string; applies the same rule as parseTextSize.
+ */
+export const TEXT_SIZE_BOOT = "var s=localStorage.getItem('wr_text');if(s==='lg'||s==='xl')document.documentElement.setAttribute('data-wr-text',s);";
 
 export function parseTextSize(v: string | null): TextSize {
   return v === 'lg' || v === 'xl' ? v : 'md';

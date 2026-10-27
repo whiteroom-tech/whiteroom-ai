@@ -54,7 +54,7 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
             disabled={o.disabled}
             title={o.title}
             className={`wr-seg__item${on ? ' is-on' : ''}`}
-            style={{ height: size }}
+            style={{ minHeight: `${size / 16}rem` }}
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); move(o.value, 1); }
