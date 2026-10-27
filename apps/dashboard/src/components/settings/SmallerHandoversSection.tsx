@@ -78,7 +78,7 @@ export function SmallerHandoversSection() {
   return (
     <Panel title="Cheaper calls">
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 12px', maxWidth: '62ch' }}>
-        Changes that make handover notes cheaper to send, tried one at a time. For fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>.
+        Changes that make each call cheaper, tried one at a time. For fleet <span style={{ fontFamily: FONT_MONO }}>{fleetId}</span>.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <SegmentedControl label="Cheaper calls" value={preview.compression_mode} options={OPTIONS}

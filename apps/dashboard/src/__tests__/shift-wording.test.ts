@@ -62,7 +62,9 @@ function userFacingText(source: string, jsx: boolean): string[] {
   // Template holes are code (shift.watchNumber), not words.
   const strings = (code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? []).map((s) => s.replace(/\$\{[^}]*\}/g, ''));
   // JSX text only in .tsx: in plain .ts the pattern would match code between template holes.
-  const jsxText = jsx ? code.match(/(?<=[>}])[^<>{}\n]+(?=[<{])/g) ?? [] : [];
+  // Line breaks are folded first, so a sentence on its own line after a tag is still read.
+  // Runs with ; or = are code between braces, not text.
+  const jsxText = jsx ? (code.replace(/\s*\n\s*/g, ' ').match(/(?<=[>}])[^<>{}]+(?=[<{])/g) ?? []).filter((s) => !/[;=]|\bimport\b/.test(s)) : [];
   // String literals count only as sentences (a space inside), so identifiers
   // like 'handover_out' pass; JSX text is always visible, even one word.
   return [...strings.filter((s) => /[a-z] [a-z]/i.test(s)), ...jsxText].filter((s) => BANNED.test(s));

@@ -17,5 +17,7 @@ describe('rule mode words', () => {
     expect(modeWords('Record only → Block')).toBe('Record only → Block');
     expect(modeWords('Then → Pause')).toBe('Then → Pause');
     expect(modeWords('Watchlist updated')).toBe('Watchlist updated');
+    expect(modeWords('Added Watch rule for agent Watch')).toBe('Added Watch rule for agent Watch');
+    expect(modeWords('Enforce the policy')).toBe('Enforce the policy');
   });
 });

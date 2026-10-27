@@ -24,12 +24,13 @@ export const RULE_ACTIVITY = 'Rule activity';
 
 /**
  * Rule history text from the engine still uses the old mode names
- * ("Watch → Enforce"); show it in today's words. Display only: parsers
- * (controls-guard) read the stored text.
+ * ("Watch → Enforce", "… in Watch only"); show it in today's words. Only mode
+ * changes and "in Watch" are rewritten, so a name containing "Watch" stays.
+ * Display only: parsers (controls-guard) read the stored text.
  */
+const OLD_MODE: Record<string, string> = { Off: MODE_LABEL.off, Watch: MODE_LABEL.watch, 'Watch only': MODE_LABEL.watch, Enforce: MODE_LABEL.enforce };
 export function modeWords(text: string): string {
   return text
-    .replace(/\bWatch only\b/g, MODE_LABEL.watch)
-    .replace(/\bWatch\b/g, MODE_LABEL.watch)
-    .replace(/\bEnforce\b/g, MODE_LABEL.enforce);
+    .replace(/\b(Off|Watch only|Watch|Enforce) → (Off|Watch only|Watch|Enforce)\b/g, (_, a: string, b: string) => `${OLD_MODE[a]} → ${OLD_MODE[b]}`)
+    .replace(/\bin Watch( only)?\b/g, `in ${MODE_LABEL.watch}`);
 }

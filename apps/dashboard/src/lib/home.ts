@@ -173,10 +173,8 @@ export interface ActivityRow {
 }
 
 const TAGS: Record<string, { label: string; tone: TagTone }> = {
-  handover_out: { label: 'Progress saved', tone: 'ho' },
-  handover_in: { label: 'Progress saved', tone: 'ho' },
-  handover: { label: 'Progress saved', tone: 'ho' },
-  self_handover: { label: 'Progress saved', tone: 'ho' },
+  handover_in: { label: 'Took over', tone: 'ho' },
+  self_handover: { label: 'Smaller context', tone: 'ho' },
   agent_paused: { label: 'Paused', tone: 'warn' },
   governance_block: { label: 'Blocked', tone: 'muted' },
   governance_would_block: { label: 'Record only', tone: 'muted' },
@@ -184,6 +182,12 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   unclean_stop: { label: 'Gap', tone: 'warn' },
   possible_gap: { label: 'Gap', tone: 'warn' },
 };
+
+/** A work transfer reads "Passed work"; the same event with no other agent made its own context smaller. */
+function tagFor(type: string, e: AuditEntry): { label: string; tone: TagTone } | undefined {
+  if (type === 'handover_out' || type === 'handover') return { label: e.toAgent ? 'Passed work' : 'Smaller context', tone: 'ho' };
+  return TAGS[type];
+}
 
 /** Who an event is about. Handovers can carry only fromAgent / toAgent. */
 export function eventAgent(e: AuditEntry): string {
@@ -208,7 +212,7 @@ export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRo
   const m = eventModel(e, now);
   // Fleet-level events (WhiteRoom itself) name no agent.
   const subject = m.type === 'governance_rule_changed' ? 'Controls:' : m.who === 'WhiteRoom' ? 'WhiteRoom' : eventAgent(e) || 'An agent';
-  return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: TAGS[m.type] };
+  return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: tagFor(m.type, e) };
 }
 
 /** Epoch ms of an event; 0 for an unreadable timestamp, so it sorts last instead of breaking the sort. */

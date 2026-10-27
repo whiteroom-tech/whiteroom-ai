@@ -560,6 +560,20 @@ describe('Keywords in the editor', () => {
     params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true }, ...over,
   });
 
+  it('turning on an alert-only rule asks to turn it on, not to block', async () => {
+    api.created.push(keywordRule());
+    api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row('“Project Falcon”'));
+    await m.click([...m.el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Block')));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Turn on the Keywords rule?');
+    expect(m.button('Turn on Block')).toBeUndefined();
+    await m.click(m.button('Turn it on'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'k1', expect.objectContaining({ mode: 'enforce' }), 'k');
+    m.root.unmount();
+  });
+
   it('changes where it looks, removes a keyword, and won’t add a blank or a repeat in any case', async () => {
     api.created.push(keywordRule({ params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true } }));
     api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));

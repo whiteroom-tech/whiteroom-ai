@@ -320,7 +320,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           )}
           {agent?.hold && (
             <Banner variant="warn" icon={agent.hold.state === 'stopped' ? 'square' : 'pause'}>
-              {agentId} was {agent.hold.state} at {fmtTime(agent.hold.at)} {holdWho(agent.hold, agentId, actors)}. It refuses every call until someone resumes it, even after a restart. If it stays paused longer than handover notes are kept, it continues without its earlier context.
+              {agentId} was {agent.hold.state} at {fmtTime(agent.hold.at)} {holdWho(agent.hold, agentId, actors)}. It refuses every call until someone resumes it, even after a restart. If it stays paused longer than progress notes are kept, it continues without its earlier context.
             </Banner>
           )}
           {failing && (
