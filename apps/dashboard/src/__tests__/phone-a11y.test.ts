@@ -9,11 +9,12 @@ import { createRoot, type Root } from 'react-dom/client';
 
 const nav = vi.hoisted(() => ({ path: '/home' }));
 vi.mock('next/navigation', () => ({ usePathname: () => nav.path }));
-const api = vi.hoisted(() => ({ pause: vi.fn(), resume: vi.fn() }));
+const api = vi.hoisted(() => ({ pause: vi.fn(), resume: vi.fn(), check: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   pauseAgent: api.pause,
   resumeAgent: api.resume,
+  checkWatch: api.check,
 }));
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
@@ -158,6 +159,7 @@ describe('Pause from Home', () => {
   it('pauses at once and offers Undo in a toast, which resumes', async () => {
     api.pause.mockResolvedValue({});
     api.resume.mockResolvedValue({});
+    api.check.mockImplementation(async () => ({ agentId: 'code-reviewer', status: 'idle', hold: { state: 'paused', by: 'user:u1', reason: null, at: new Date().toISOString() } }));
     await render(h(AgentActions, { agent, fleetId: 'f1', onChanged: () => {} }));
     await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
     await act(async () => { button('Pause')!.click(); });
@@ -232,5 +234,39 @@ describe('Home fact line', () => {
     await act(async () => { resumeButton().click(); });
     await flush();
     expect(el.querySelector('[role="alert"]')?.textContent).toBe(words);
+  });
+});
+
+describe('Undo checks the hold first', () => {
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+  const pauseThenUndo = async () => {
+    api.pause.mockResolvedValue({});
+    api.resume.mockReset();
+    await render(h(AgentActions, { agent: { agentId: 'code-reviewer', status: 'idle' }, fleetId: 'f1', onChanged: () => {} }));
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    await act(async () => { button('Undo')!.click(); });
+    await flush();
+  };
+
+  it('leaves an agent alone that was stopped since', async () => {
+    api.check.mockResolvedValue({ agentId: 'code-reviewer', status: 'idle', hold: { state: 'stopped', by: 'rule:gr_1', reason: null, at: new Date().toISOString() } });
+    await pauseThenUndo();
+    expect(api.resume).not.toHaveBeenCalled();
+    expect(el.querySelector('[role="status"]')?.textContent).toContain('Nothing changed.');
+  });
+
+  it('leaves a later pause by someone else alone', async () => {
+    api.check.mockResolvedValue({ agentId: 'code-reviewer', status: 'idle', hold: { state: 'paused', by: 'user:u2', reason: null, at: new Date(Date.now() + 5 * 60_000).toISOString() } });
+    await pauseThenUndo();
+    expect(api.resume).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the check fails, and says so', async () => {
+    api.check.mockRejectedValue(new Error('down'));
+    await pauseThenUndo();
+    expect(api.resume).not.toHaveBeenCalled();
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('Couldn’t check code-reviewer before undoing. Nothing changed.');
   });
 });

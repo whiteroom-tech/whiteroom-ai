@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Toast } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
-import { controlFailure, pauseAgent, resumeAgent, stopAgent } from '@/lib/whiteroom/client';
+import { checkWatch, controlFailure, pauseAgent, resumeAgent, stopAgent } from '@/lib/whiteroom/client';
 import type { AgentInfo } from '@/lib/whiteroom/types';
 
 export type Act = 'pause' | 'stop' | 'resume';
@@ -40,6 +40,8 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; undo?: Act } | null>(null);
+  // When this Pause was made, so Undo can tell its own pause from a later one.
+  const pausedAt = useRef(0);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     setBusy(true);
     try {
       await CALL[act](fleetId, agent.agentId, authKey);
+      if (act === 'pause') pausedAt.current = Date.now();
       setToast({ message: `${agent.agentId} ${DONE[act]}.`, undo: UNDO[act] });
       onChanged();
     } catch (e) {
@@ -85,6 +88,29 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     if (holdState === 'paused') sawPause.current = true;
     else if (holdState !== null || sawPause.current) setToast((t) => (t ? { message: t.message } : t));
   }, [holdState, toast?.undo]);
+
+  // Undo reads the agent first and resumes only while it's still held by
+  // this pause: paused, and paused within a minute of when it was made. A
+  // stop, a later pause or a resume by someone else is left alone.
+  async function undoPause() {
+    setToast(null);
+    setError(null);
+    let hold: AgentInfo['hold'];
+    try {
+      hold = (await checkWatch(agent.agentId, fleetId, authKey)).hold;
+    } catch {
+      setError(`Couldn’t check ${agent.agentId} before undoing. Nothing changed.`);
+      return;
+    }
+    const at = hold ? Date.parse(hold.at) : NaN;
+    const ours = hold?.state === 'paused' && (Number.isNaN(at) || Math.abs(at - pausedAt.current) <= 60_000);
+    if (!ours) {
+      setToast({ message: `${agent.agentId} was held or resumed again since. Nothing changed.` });
+      onChanged();
+      return;
+    }
+    await run('resume');
+  }
 
   const items = agentMenu(agent);
 
@@ -114,7 +140,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
       {toast && (
         <Toast
           message={toast.message}
-          action={toast.undo ? { label: 'Undo', onClick: () => void run(toast.undo!) } : undefined}
+          action={toast.undo ? { label: 'Undo', onClick: () => void undoPause() } : undefined}
           onClose={() => setToast(null)}
         />
       )}
