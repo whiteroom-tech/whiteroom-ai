@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { RunDetail } from '@/components/runs/RunDetail';
@@ -45,12 +46,15 @@ const OLD: RunEventsResult = {
 
 export function RunPreview() {
   const old = useSearchParams().get('engine') === 'old';
+  // The sample's times are relative to now, so it renders in the browser only (no server/client mismatch).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <AppShell>
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
+      {mounted && <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
         <RunDetail fleetId="demo-fleet" runId="code-reviewer~4" preview={old ? OLD : DATA}
           previewTotals={old ? { calls: 7, failedCalls: 1, blockedCalls: 1, spendMicros: 52_000, unpricedAttempts: 0, wouldActCalls: 4 } : undefined} />
-      </div>
+      </div>}
     </AppShell>
   );
 }

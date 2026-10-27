@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RunsTable, type RunsSample } from '@/components/runs/RunsTable';
 import { localDay, localHour } from '@/lib/runs';
@@ -51,9 +52,12 @@ export function samplePreview(runs: RunSummary[]): RunsSample {
 const PREVIEW = samplePreview(RUNS);
 
 export function RunsPreview() {
+  // The sample's times are relative to now, so it renders in the browser only (no server/client mismatch).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <AppShell>
-      <RunsTable preview={PREVIEW} />
+      {mounted && <RunsTable preview={PREVIEW} />}
     </AppShell>
   );
 }
