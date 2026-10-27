@@ -133,6 +133,19 @@ describe('Controls page', () => {
     m.root.unmount();
   });
 
+  it('gathers the tips under Suggestions, and shows no heading without any', async () => {
+    const m = await mount();
+    const section = m.el.querySelector('section[aria-labelledby="gov-suggestions"]')!;
+    expect(section.querySelector('h2')!.textContent).toBe('Suggestions');
+    expect(section.textContent).toContain('Your $200 cap would never act.');
+    expect(m.text()).toContain('By mode');
+    m.root.unmount();
+    api.saved.r4 = { ...RULES[3], mode: 'off' };
+    const none = await mount();
+    expect(none.el.querySelector('section[aria-labelledby="gov-suggestions"]')).toBeNull();
+    none.root.unmount();
+  });
+
   it('says when no rule stops calls, and says nothing when every rule is off', async () => {
     api.saved.r1 = { ...RULES[0], mode: 'watch' };
     api.saved.r5 = { ...RULES[4], response: 'notify' };

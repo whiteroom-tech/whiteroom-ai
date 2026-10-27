@@ -472,6 +472,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
       <div className="gov-columns">
         <main className="gov-list">
+          {/* The cards count rules by mode; the list below groups them by who they cover. */}
+          <p className="gov-eyebrow" style={{ margin: 0 }}>By mode</p>
           <section aria-label="Rules at a glance" className="wr-stat-strip" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
             <StatCard variant="card" label={MODE_GROUP.enforce} value={enforcing.length} sub={ruleNames(enforcing)} />
             <StatCard variant="card" label={MODE_GROUP.watch} hint={`${MODE_MEANING.watch} ${MODE_MEANING.enforce}`} value={watching.length} sub={ruleNames(watching)} />
