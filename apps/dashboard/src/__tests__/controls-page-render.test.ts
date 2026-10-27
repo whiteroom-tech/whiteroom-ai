@@ -1314,6 +1314,22 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('the allowlist toast Undo, refused because the rule changed again, says so', async () => {
+    api.models = ['gpt-4o'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => {
+      if (api.update.mock.calls.length > 1) throw new WhiteRoomApiError('changed', 409);
+      return { rule: { ...api.saved[id], ...ch, version: 5 } };
+    });
+    const m = await mount();
+    await m.click(m.button('Add to allowlist…'));
+    await m.click(m.button('Allow for all agents'));
+    await m.click(m.button('Undo'));
+    expect(api.update).toHaveBeenCalledTimes(2);
+    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('This rule changed again since, so Undo left it as it is.');
+    m.root.unmount();
+  });
+
   it('narrowing: Move it saves the narrowed rule, with what else the edit weakens', async () => {
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } }));
     const m = await mount();

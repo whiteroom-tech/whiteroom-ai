@@ -598,6 +598,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
    */
   const addSuggestedAllowlist = async (models: string[]) => {
     if (saving) return;
+    // An allowlist in Block would still refuse the models: a second one in Record only wouldn't help.
+    // (The suggestion opens that one in the editor instead; this is for rules that changed meanwhile.)
+    const blocking = rules.find((r) => r.ruleType === "model_allowlist" && r.mode === "enforce" && r.appliesTo === "all");
+    if (blocking) { setDialog(null); openAllowlistWith(blocking, models); return; }
     setDialog(null);
     setSaving(true);
     setAddingSuggestion(true);
@@ -606,8 +610,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const description = "Added Model allowlist in Record only (suggested)";
     // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
     const target = suggestedAllowlistTarget(rules);
-    // An allowlist in Block would still refuse the models: a second one in Record only wouldn't help.
-    if (rules.some((r) => r.ruleType === "model_allowlist" && r.mode === "enforce" && r.appliesTo === "all")) { setSaving(false); setAddingSuggestion(false); return; }
     try {
       if (!target) {
         const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
@@ -617,12 +619,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description, ifVersion: target.version }, authKey);
         const added = models.filter((m) => !prev.includes(m));
         showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => live.current.guard(() => void (async () => {
+          // One Undo at a time, over the version this change made, as every Undo here.
+          if (undoBusy.current) return;
+          undoBusy.current = true;
           setSaving(true);
           try {
-            await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version }, authKey);
+            const { rule: back } = await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version }, authKey);
+            if (selectedRef.current === back.id) setDraft(draftFrom(back));
             showToast("Change undone.");
-          } catch (e) { handleError(e, "undo the change"); }
-          finally { setSaving(false); void fetchData(); }
+          } catch (e) {
+            if (e instanceof WhiteRoomApiError && e.status === 409) showToast("This rule changed again since, so Undo left it as it is.");
+            else handleError(e, "undo the change");
+          }
+          finally { undoBusy.current = false; setSaving(false); void fetchData(); }
         })()));
       }
     } catch (e) { handleError(e, "add the suggested allowlist"); }
