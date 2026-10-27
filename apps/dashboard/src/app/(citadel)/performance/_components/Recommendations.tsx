@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import type { RecommendationDetail } from '@/lib/whiteroom/types';
-import { FONT_MONO } from '@whiteroom/ui';
+import { FONT_MONO, SegmentedControl } from '@whiteroom/ui';
 import { fmtDay } from '@/lib/format';
 import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
 import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction } from '@/lib/performance-insights';
@@ -57,15 +57,9 @@ export function RecommendationsCard({
         {showAgentFilter && <input aria-label="Filter by agent" value={agentFilter} onChange={e => onAgentFilter(e.target.value)} placeholder="Filter by agent..." style={{ fontSize: 'var(--fs-sm)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--sunk)', color: 'var(--tx)', width: 160, outline: 'none' }} />}
       </div>
       <div aria-live="polite" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: notice ? '0 0 8px' : 0 }}>{notice}</div>
-      {showStatuses && <div role="group" aria-label="Show recommendations by status" style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
-        {REC_STATUSES.map(st => (
-          <button key={st} type="button" aria-pressed={status === st} onClick={() => onStatus(st)} style={{
-            fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
-            background: status === st ? 'var(--brand-dim)' : 'transparent',
-            color: status === st ? 'var(--brand)' : 'var(--tx3)',
-            border: `1px solid ${status === st ? 'var(--brand)' : 'var(--line)'}`,
-          }}>{recStatusLabel(st)}</button>
-        ))}
+      {showStatuses && <div style={{ marginBottom: 12 }}>
+        <SegmentedControl<string> label="Show recommendations by status" value={status} onChange={onStatus} size={24}
+          options={REC_STATUSES.map((st) => ({ value: st, label: recStatusLabel(st) }))} />
       </div>}
 
       {recs.length > 0 ? recs.map(rec => isDiagnosisRow(rec) ? (

@@ -45,4 +45,12 @@ describe('type scale', () => {
     expect(sizes.length).toBeGreaterThanOrEqual(8);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(14);
   });
+
+  // The phone tab bar's labels are the only fixed size: five tabs must fit a
+  // 320px phone, so they don't follow Text size. Nothing else may join it.
+  it('has one fixed-size token, --fs-tab, at 14px', () => {
+    const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
+    expect([...css.matchAll(/--fs-[a-z]+:\s*[\d.]+px/g)].map((m) => m[0])).toEqual(['--fs-tab: 14px']);
+    expect([...css.matchAll(/var\(--fs-tab\)/g)]).toHaveLength(1);
+  });
 });

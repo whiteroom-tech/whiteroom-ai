@@ -240,6 +240,37 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     });
   };
   openRuleRef.current = openRule;
+  // On phones the editor is a sheet over the list: Escape closes it, as ‹ Controls does
+  // (an unsaved edit is asked about first). Not while a dialog is open over it.
+  const sheetOpen = !!(selected && draft && !suggestionRec);
+  useEffect(() => {
+    if (!sheetOpen || dialog) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && window.matchMedia('(max-width: 720px)').matches) openRuleRef.current(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sheetOpen, dialog]);
+  // On phones the sheet is modal: what's behind it (header, list, tab bar) is
+  // inert, focus starts on ‹ Controls, and goes back where it was on close.
+  // Follows the layout if the window crosses the phone width meanwhile.
+  useEffect(() => {
+    const phone = window.matchMedia?.('(max-width: 720px)');
+    if (!sheetOpen || !phone) return;
+    const from = document.activeElement as HTMLElement | null;
+    const behind = [...document.querySelectorAll<HTMLElement>('.citadel-page-header, .gov-list, .wr-tabbar')];
+    const apply = () => {
+      behind.forEach((e) => { e.inert = phone.matches; });
+      if (phone.matches) document.querySelector<HTMLElement>('aside.is-sheet .gov-edhead__back')?.focus();
+    };
+    apply();
+    phone.addEventListener('change', apply);
+    return () => {
+      phone.removeEventListener('change', apply);
+      behind.forEach((e) => { e.inert = false; });
+      if (phone.matches && from?.isConnected) from.focus();
+    };
+  }, [sheetOpen]);
 
   /** The current URL with some search params changed (null removes one). */
   const withParams = (changes: Record<string, string | null>) => {
@@ -604,6 +635,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             onCancel={(ruleCreated) => { router.replace(withParams({ rec: null })); if (ruleCreated) void fetchData(); }}
           />
         ) : selected && draft ? (
+          <>
+          {/* Phones only (globals.css): the dimmed list above the sheet; tapping it goes back, as ‹ Controls does. */}
+          <div className="gov-scrim" aria-hidden="true" onClick={() => openRule(null)} />
           <aside aria-label="Edit rule" className="gov-panel is-sheet">
             {notice && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
             <RuleEditor
@@ -628,6 +662,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               onRemove={() => setDialog({ kind: "remove", rule: selected })}
             />
           </aside>
+          </>
         ) : (
           <aside aria-label="Rule details" className="gov-panel is-empty">
             <p style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Pick a rule to change it</p>

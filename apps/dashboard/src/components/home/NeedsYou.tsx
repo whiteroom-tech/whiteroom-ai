@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button, Hint, Icon, Panel, StatusPill, FONT_MONO } from '@whiteroom/ui';
 import { controlFailure, listRuns, resumeAgent } from '@/lib/whiteroom/client';
@@ -49,11 +49,26 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
   }, [fleetId, authKey]);
   usePoll(load, { intervalMs: 60_000, enabled: !!fleetId });
 
+  // Undo stays while it has focus or the pointer is on it; the countdown starts
+  // again when it's left. Mark as seen goes with its row, so focus moves to Undo.
+  const undoRef = useRef<HTMLButtonElement>(null);
+  const [undoFocused, setUndoFocused] = useState(false);
+  const [undoHovered, setUndoHovered] = useState(false);
   useEffect(() => {
-    if (!undo) return;
+    if (!undo || undoFocused || undoHovered) return;
     const t = setTimeout(() => setUndo(null), UNDO_MS);
     return () => clearTimeout(t);
+  }, [undo, undoFocused, undoHovered]);
+  useEffect(() => {
+    if (undo) undoRef.current?.focus();
+    else { setUndoFocused(false); setUndoHovered(false); }
   }, [undo]);
+  const undoHold = {
+    onFocus: () => setUndoFocused(true),
+    onBlur: (e: React.FocusEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setUndoFocused(false); },
+    onMouseEnter: () => setUndoHovered(true),
+    onMouseLeave: () => setUndoHovered(false),
+  };
 
   function markSeen(runId: string | null, add: boolean) {
     if (!runId) return;
@@ -91,21 +106,25 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
   const runs = (flagged ?? []).filter((r) => !seen.includes(r.runId));
   if (!holdsKnown && flagged === null) return null;
   const count = held.length + gone.length + runs.length;
+  // Always mounted, so the message is announced when it appears (a live
+  // region inserted with its text often isn't). The notes below are visual.
+  const live = <p role="status" className="wr-sr-only">{undo ? 'Marked as seen.' : ''}</p>;
   if (count === 0) {
-    return (
+    return (<>{live}
       <p style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         <span style={{ display: 'flex', color: 'var(--ok)' }}><Icon name="check" size={14} /></span>
         Nothing needs you right now.
-        {undo && <Button variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button>}
+        {undo && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} {...undoHold}><span aria-hidden="true">Marked as seen.</span><Button ref={undoRef} variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button></span>}
       </p>
-    );
+    </>);
   }
 
-  const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', gap: 14, alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 'var(--fs-sm)' };
-  return (
+  // Columns come from .wr-needs-row: on phones the row wraps, the action below the text.
+  const row: React.CSSProperties = { display: 'grid', gap: 14, alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 'var(--fs-sm)' };
+  return (<>{live}
     <Panel title={<>Needs you<Hint text={HELP.needsYou} /></>} count={<span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: 'var(--warn)' }}>{count}</span>} bodyPadding={0}>
       {held.map((a) => (
-        <div key={a.agentId} style={row}>
+        <div key={a.agentId} className="wr-needs-row" style={row}>
           <StatusPill state={a.hold!.state} />
           <span style={{ minWidth: 0 }}>
             <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{a.agentId}</span> was {a.hold!.state} at {fmtTime(a.hold!.at)}. It won&rsquo;t make calls until someone resumes it.
@@ -114,7 +133,7 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
         </div>
       ))}
       {gone.map(([agentId, hold]) => (
-        <div key={`gone-${agentId}`} style={row}>
+        <div key={`gone-${agentId}`} className="wr-needs-row" style={row}>
           <StatusPill state={hold.state} />
           <span style={{ minWidth: 0 }}>
             <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{agentId}</span> was removed while {hold.state}. It&rsquo;s still {hold.state}: if it registers again, its calls are refused until someone resumes it.
@@ -124,7 +143,7 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
       ))}
       {resumeError && <div role="alert" style={{ ...row, gridTemplateColumns: '1fr', color: 'var(--bad)' }}>{resumeError}</div>}
       {runs.map((r) => (
-        <div key={r.runId} style={row}>
+        <div key={r.runId} className="wr-needs-row" style={row}>
           <span style={{ display: 'flex', color: 'var(--warn)' }}><Icon name="alert" size={14} /></span>
           <Link href={runHref(r.runId)} className="wr-link" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             Run {r.shift} · {r.agentId}: {flagText(r.flags![0])}
@@ -133,11 +152,11 @@ export function NeedsYou({ agents, holds, holdsKnown, fleet, onResumed }: {
         </div>
       ))}
       {undo && (
-        <div style={{ ...row, gridTemplateColumns: '1fr auto', color: 'var(--tx2)' }}>
-          <span>Marked as seen.</span>
-          <Button variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button>
+        <div style={{ ...row, gridTemplateColumns: '1fr auto', color: 'var(--tx2)' }} {...undoHold}>
+          <span aria-hidden="true">Marked as seen.</span>
+          <Button ref={undoRef} variant="ghost" size={28} onClick={() => markSeen(undo, false)}>Undo</Button>
         </div>
       )}
     </Panel>
-  );
+  </>);
 }
