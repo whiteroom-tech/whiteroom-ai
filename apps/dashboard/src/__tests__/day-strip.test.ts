@@ -132,6 +132,19 @@ describe('chart scrolling (phones)', () => {
     el.remove();
   });
 
+  it('opens the day chart on the newest day again when a failure note clears', async () => {
+    const props = (note?: string) => ({ days: days(false), selected: null, inRange: () => true, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false, note });
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => root.render(h(DayStrip, props('Couldn’t load'))));
+    expect(el.querySelector('.wr-strip-scroll')).toBeNull();
+    await act(async () => root.render(h(DayStrip, props())));
+    expect((el.querySelector('.wr-strip-scroll') as HTMLElement).scrollLeft).toBe(960);
+    await act(async () => root.unmount());
+    el.remove();
+  });
+
   it('opens the hour chart on the busiest hour once per day', async () => {
     const el = document.createElement('div');
     document.body.appendChild(el);
