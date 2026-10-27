@@ -151,7 +151,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
   };
 
-
   const hourly = hourlyData?.hourly ?? [];
   // The selected range (the first half of the hourly rows feeds trends), and
   // what both Spend cards say about completeness, worked out once.
@@ -174,7 +173,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
   const ruleSub = tallyShort({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked });
 
-  // Where a rule section reads its words: Block counts and Record only matches over the range.
   const ruleTotal = tallyTotal({ ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked });
   const sectionTitle = { margin: '8px 0 12px', fontSize: 'var(--fs-card)', fontWeight: 700 } as const;
 
@@ -252,7 +250,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     </>
   );
 }
-
 
 /** The Smaller context card's figure and line: unknown is "—", never 0; it covers all time, not the range. */
 export function smallerContextCard(compression: number | null): { value: string; sub: string } {

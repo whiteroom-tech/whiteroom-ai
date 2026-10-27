@@ -45,33 +45,6 @@ export function fmtPct(rate: number): string {
   return rate === 0 ? '0%' : `${(rate * 100).toFixed(1)}%`;
 }
 
-export function Sparkline({ data, color = 'var(--brand)', height = 32, width = 100 }: { data: (number | null)[]; color?: string; height?: number; width?: number }) {
-  const nums = data.map(d => d ?? 0);
-  const max = Math.max(...nums, 1);
-  const pts = nums.map((v, i) => `${i === 0 ? 'M' : 'L'}${((i / Math.max(nums.length - 1, 1)) * width).toFixed(1)},${(height - (v / max) * height * 0.85).toFixed(1)}`).join(' ');
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height, display: 'block' }} preserveAspectRatio="none">
-      <path d={`${pts} L${width},${height} L0,${height} Z`} fill={color} opacity={0.12} />
-      <path d={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/** A change against the previous period: "%" is relative change, "pp" a difference between two rates. */
-export function TrendBadge({ value, invert, unit = '%' }: { value: number | null; invert?: boolean; unit?: '%' | 'pp' }) {
-  if (value == null || !isFinite(value)) return null;
-  const positive = invert ? value < 0 : value > 0;
-  const negative = invert ? value > 0 : value < 0;
-  const color = negative ? 'var(--bad)' : positive ? 'var(--ok)' : 'var(--tx3)';
-  const bg = negative ? 'var(--bad-bg)' : positive ? 'var(--ok-bg)' : 'var(--sunk)';
-  const arrow = value > 0 ? '↑' : value < 0 ? '↓' : '';
-  return (
-    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: bg, color, fontFamily: FONT_MONO }}>
-      {arrow}{Math.abs(value).toFixed(1)}{unit === 'pp' ? ' pp' : '%'}
-    </span>
-  );
-}
-
 export function CostDonut({ models }: { models: PerformanceModelSummary[] }) {
   const total = models.reduce((s, m) => s + m.costMicros, 0);
   if (total === 0) return null;
@@ -158,25 +131,13 @@ export function TrafficByModel({ models }: { models: PerformanceModelSummary[] }
   );
 }
 
-export function MetricCard({ label, value, sub, warn, sparklineData, sparklineColor, trend, trendInvert, trendUnit, onClick, active }: {
-  label: string; value: string; sub?: string; warn?: boolean;
-  sparklineData?: (number | null)[]; sparklineColor?: string;
-  trend?: number | null; trendInvert?: boolean; trendUnit?: '%' | 'pp';
-  onClick?: () => void; active?: boolean;
-}) {
+/** A plain figure card for the agent and evidence views: label, value, an optional line, and a warning colour. */
+export function MetricCard({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
   return (
-    <div onClick={onClick} style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0, cursor: onClick ? 'pointer' : undefined, borderColor: active ? 'var(--brand)' : 'var(--line)', transition: 'border-color 0.15s', position: 'relative', paddingBottom: sparklineData && sparklineData.length > 1 ? 48 : 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: active ? 'var(--brand)' : 'var(--tx3)' }}>{label}</div>
-        <TrendBadge value={trend ?? null} invert={trendInvert} unit={trendUnit} />
-      </div>
+    <div style={{ ...CARD, padding: '16px 20px', flex: 1, minWidth: 180, overflow: 'hidden', marginBottom: 0 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx3)', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, fontFamily: FONT_MONO, color: warn ? 'var(--warn)' : 'var(--tx)' }}>{value}</div>
       {sub && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx3)', marginTop: 4 }}>{sub}</div>}
-      {sparklineData && sparklineData.length > 1 && (
-        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
-          <Sparkline data={sparklineData} color={sparklineColor} />
-        </div>
-      )}
     </div>
   );
 }
