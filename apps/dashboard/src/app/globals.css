@@ -487,20 +487,6 @@
 /* Phone: the "/ without" figures run into each other; tapping a day still shows both in the readout. */
 @media (max-width: 480px) { .wr-savings-without { display: none; } }
 
-/* Performance › By agent: a table on wide screens, one card per agent on phones. */
-.wr-byagent-cards { display: none; }
-@media (max-width: 720px) {
-  .wr-byagent-table { display: none; }
-  .wr-byagent-cards { display: block; margin: 0; padding: 0; list-style: none; }
-  .wr-byagent-cards > li { padding: 14px 18px; border-bottom: 1px solid var(--line); }
-  .wr-byagent-cards > li:last-child { border-bottom: 0; }
-  .wr-byagent-cards__name { font-size: var(--fs-md); margin-bottom: 10px; overflow-wrap: anywhere; }
-  .wr-byagent-cards dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; }
-  .wr-byagent-cards dt { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--tx2); margin-bottom: 3px; }
-  .wr-byagent-cards dd { margin: 0; font-family: var(--font-mono); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .wr-byagent-cards__wide { grid-column: 1 / -1; }
-}
-
 /* A panel that fills the rest of the page, its body scrolling (Runs' event feed). */
 .wr-panel--fill { flex: 1; min-height: 320px; display: flex; flex-direction: column; }
 .wr-panel--fill > div:last-child { flex: 1; min-height: 0; display: flex; flex-direction: column; }

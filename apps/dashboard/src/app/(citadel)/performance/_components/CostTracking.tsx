@@ -126,9 +126,9 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   if (loadError) {
     return (
       <div style={CARD}>
-        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
+        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost prediction<Hint text={HELP.costTracking} /></h3>
         <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>
-          Couldn&apos;t load cost tracking: {loadError}
+          Couldn&rsquo;t load the cost prediction: {loadError}
           {loadError === 'Unknown action.' && ' — the backend hasn’t been deployed with this feature yet.'}
         </div>
       </div>
@@ -140,17 +140,17 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
   return (
     <div style={CARD}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost tracking<Hint text={HELP.costTracking} /></h3>
+        <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost prediction<Hint text={HELP.costTracking} /></h3>
         {/* Both budgets are always editable — dollar and token tasks-left are
             tracked independently, so a fleet can set either or both, and
             which one is actually usable can change as pricing coverage does. */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2" title="Used to estimate tasks remaining. It does not stop spending — add a spend cap on the Controls page for that.">
+          <div className="flex items-center gap-2" title="Used to estimate calls remaining. It does not stop spending — add a spend cap on the Controls page for that.">
             <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>BUDGET PER DAY</span>
             <span aria-hidden style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)' }}>$</span>
             <TextInput ariaLabel="Fleet budget in USD" value={budgetDraft} onChange={v => { budgetDirty.current = true; setBudgetDraft(v); }} onCommit={commitBudget} placeholder="not set" mono className="w-24 text-right" />
           </div>
-          <div className="flex items-center gap-2" title="For a model with no $/token price on file yet — tracks tasks left in tokens instead of dollars.">
+          <div className="flex items-center gap-2" title="For a model with no $/token price on file yet — tracks calls left in tokens instead of dollars.">
             <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--tx2)', letterSpacing: 0.5 }}>TOKENS PER DAY</span>
             <TextInput ariaLabel="Fleet token budget" value={tokenBudgetDraft} onChange={v => { tokenBudgetDirty.current = true; setTokenBudgetDraft(v); }} onCommit={commitTokenBudget} placeholder="not set" mono className="w-28 text-right" />
           </div>
@@ -186,8 +186,8 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
           const token = resolveTasksLeft(forecast, 'token');
           return (
             <>
-              <TasksLeftCell value={dollar.value} note={remainingTasksNoteFor(dollar.reason, 'dollar')} label="tasks left in today’s budget" />
-              <TasksLeftCell value={token.value} note={remainingTasksNoteFor(token.reason, 'token')} label="tasks left in today’s token budget" />
+              <TasksLeftCell value={dollar.value} note={remainingTasksNoteFor(dollar.reason, 'dollar')} label="calls left in today’s budget" />
+              <TasksLeftCell value={token.value} note={remainingTasksNoteFor(token.reason, 'token')} label="calls left in today’s token budget" />
             </>
           );
         })()}

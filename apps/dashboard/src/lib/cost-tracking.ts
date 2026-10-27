@@ -49,10 +49,10 @@ export function resolveTasksLeft(
  */
 export function remainingTasksNoteFor(reason: TasksLeftReason, kind: 'dollar' | 'token'): string {
   switch (reason) {
-    case 'task_type_missing': return 'give an agent a task type to estimate tasks left';
-    case 'partial_coverage': return 'some of today’s calls have no price on file, so tasks left can’t be estimated';
-    case 'budget_missing': return kind === 'token' ? 'set a daily token budget to see tasks left' : 'set a daily budget to see tasks left';
-    default: return 'tasks left isn’t available right now';
+    case 'task_type_missing': return 'give an agent a task type to estimate calls left';
+    case 'partial_coverage': return 'some of today’s calls have no price on file, so calls left can’t be estimated';
+    case 'budget_missing': return kind === 'token' ? 'set a daily token budget to see calls left' : 'set a daily budget to see calls left';
+    default: return 'calls left isn’t available right now';
   }
 }
 
@@ -66,7 +66,7 @@ export function tasksLeftColor(value: number | null): string {
 
 /**
  * The plain line under Cost tracking when a daily budget has run out, or has
- * too little left for another task. Budgets only track; nothing stops
+ * too little left for another call. Budgets only track; nothing stops
  * spending, so it says agents are still running. Null while there's room.
  */
 export function budgetNotice(f: Pick<PerformanceCostForecastResult, 'budgetUsd' | 'spentTodayUsd' | 'remainingTasks' | 'remainingTasksReason' | 'costUnavailable' | 'dollarRemainingTasks' | 'dollarRemainingTasksReason' | 'tokenRemainingTasks' | 'tokenRemainingTasksReason'>): string | null {
@@ -74,12 +74,12 @@ export function budgetNotice(f: Pick<PerformanceCostForecastResult, 'budgetUsd' 
   const token = resolveTasksLeft(f, 'token');
   const dollarSpent = f.budgetUsd != null && f.spentTodayUsd != null && f.spentTodayUsd >= f.budgetUsd;
   const dollarShort = !dollarSpent && f.budgetUsd != null && dollar.reason === 'available' && dollar.value === 0;
-  // The engine doesn't send today's tokens, so the token side can only say "not enough for another task".
+  // The engine doesn't send today's tokens, so the token side can only say "not enough for another call".
   const tokenShort = token.reason === 'available' && token.value === 0;
   const parts = [
     dollarSpent ? 'Today\u2019s $ budget is used up.' : '',
-    dollarShort ? 'Not enough left in today\u2019s $ budget for another task.' : '',
-    tokenShort ? 'Not enough left in today\u2019s token budget for another task.' : '',
+    dollarShort ? 'Not enough left in today\u2019s $ budget for another call.' : '',
+    tokenShort ? 'Not enough left in today\u2019s token budget for another call.' : '',
   ].filter(Boolean);
   return parts.length ? `${parts.join(' ')} Your agents are still running.` : null;
 }

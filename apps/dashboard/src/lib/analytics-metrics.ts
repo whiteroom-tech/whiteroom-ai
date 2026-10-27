@@ -72,11 +72,6 @@ export function cacheFigures(cache: CacheSummary | undefined, hourly: Array<{ in
   };
 }
 
-/** The agents' own caching to show beside WhiteRoom's figure: null when there's none, or the engine sends none. */
-export function ownCachingMicros(c: Pick<CacheFigures, 'agentSavedMicros'>): number | null {
-  return c.agentSavedMicros != null && c.agentSavedMicros > 0 ? c.agentSavedMicros : null;
-}
-
 /** YYYY-MM-DD in the browser's local timezone. */
 function localDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -261,10 +256,6 @@ export function watchKey(day: string, agentId: string, watchNumber: number): str
 /** An audit entry as the savings math reads it. */
 type SavingsEntry = { type: string; timestamp: string; agentId?: string; tokensUsed?: number } & Record<string, unknown>;
 
-function entryAgent(e: SavingsEntry): string {
-  return ((isHandoverEntry(e) ? handoverAgent(e) : e.agentId) || '').toLowerCase();
-}
-
 /** One day of the Savings chart: tokens used with WhiteRoom, and tokens saved. */
 export interface DaySavings { day: string; used: number; saved: number }
 
@@ -289,23 +280,5 @@ export function dailySavings(entries: SavingsEntry[], days: number, nowMs: numbe
   return order.map((day) => ({ day, used: used.get(day) ?? 0, saved: saved.get(day) ?? 0 }));
 }
 
-/** One row of the By agent table. */
+/** Tokens used and saved by one agent. */
 export interface AgentTotals { agent: string; used: number; saved: number }
-
-/**
- * Tokens used and saved per agent for events at or after `sinceMs` (a rolling
- * window, unlike dailySavings' calendar days), most tokens first. Tokens on
- * events with no agent are kept under agent '' so the column adds up.
- */
-export function agentTotals(entries: SavingsEntry[], sinceMs: number): AgentTotals[] {
-  const inRange = entries.filter((e) => Date.parse(e.timestamp) >= sinceMs);
-  const used = new Map<string, number>();
-  for (const e of inRange) {
-    const agent = entryAgent(e);
-    if (agent || e.tokensUsed) used.set(agent, (used.get(agent) ?? 0) + (e.tokensUsed ?? 0));
-  }
-  const saved = agentDaySavings(inRange.map((e) => auditSavingsEvent(e, localDayFromTs(e.timestamp)))).byAgent;
-  return [...used.keys()]
-    .map((agent) => ({ agent, used: used.get(agent) ?? 0, saved: saved.get(agent) ?? 0 }))
-    .sort((a, b) => b.used - a.used || a.agent.localeCompare(b.agent));
-}

@@ -2,7 +2,7 @@
 // the page shows it at once while a fresh copy loads (instead of a loading line
 // on every visit). Memory only: it lasts until the tab reloads, and never
 // outlives the figures' own refresh, which always runs.
-import type { AgentScore, PerformanceIndexResult, FleetHourlyResult } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, FleetHourlyResult } from '@/lib/whiteroom/types';
 import type { AgentTotals, DaySavings, GovSavings } from '@/lib/analytics-metrics';
 import type { GovernanceCounts } from '@/lib/governance';
 
@@ -13,7 +13,6 @@ export interface PerformanceSnapshot {
   govSavings: GovSavings | null;
   govCounts: GovernanceCounts | null;
   byAgent: AgentTotals[] | null;
-  agentScores: Record<string, AgentScore> | null;
   auditFailed: boolean;
   loadedAt: number;
 }

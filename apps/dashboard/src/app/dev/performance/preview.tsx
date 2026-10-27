@@ -6,8 +6,8 @@ import { HELP } from '@/lib/metric-definitions';
 
 import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/citadel/PageChrome';
-import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
-import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
+import { SavingsChart } from '@/components/performance/SavingsPanels';
+import { dailySavings } from '@/lib/analytics-metrics';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { statusLine } from '@/lib/diagnosis/model';
@@ -122,33 +122,40 @@ export function PerformancePreview() {
         <SegmentedControl<Sample> label="Sample week" value={sample} onChange={setSample} options={[{ value: 'quiet', label: 'Quiet week' }, { value: 'problem', label: 'Has a problem', dot: 'warn' }, { value: 'empty', label: 'No data' }]} />
       </PageHeader>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start', gridAutoRows: 'max-content' }}>
+        {/* The same order as the page: Cost, then a read-only Control summary, then Performance. */}
+        <section aria-labelledby="pv-cost" style={{ display: 'grid', gap: 16 }}>
+          <h2 id="pv-cost" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Cost</h2>
+          {sample !== 'empty' && (
+            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+              <StatCard variant="card" label="Spend" hint={HELP.spend} value="$0.909" sub="last 24 h" />
+              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
+              <StatCard variant="card" label="Hourly" hint={HELP.hourlySpend} value="$0.0379" sub="spend per hour, on average" />
+              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value="90.8%" sub="smaller than full history, all time" />
+            </div>
+          )}
+          {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
+          <SavingsChart days={dailySavings(sample === 'empty' ? [] : ENTRIES, 7, Date.now())} />
+        </section>
         {sample !== 'empty' && (
-          // The four numbers at the top of Performance, with sample values (the real ones follow the page range).
-          <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
-            <StatCard variant="card" label="Spend" hint={HELP.spend} value="$0.909" sub="$0.0054 / h" />
-            <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
-            <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value="0%" sub="0 of 99" />
-            <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value="59" sub="59 would act (Watch only)" />
-          </div>
+          <section aria-labelledby="pv-control" style={{ display: 'grid', gap: 12 }}>
+            <h2 id="pv-control" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Control</h2>
+            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+              <StatCard variant="card" label="Rule activity" hint={HELP.ruleActions} value="59" sub="2 blocked · 57 in Record only" />
+            </div>
+          </section>
         )}
-        {/* The card carries its own 24px bottom margin; the grid gap already spaces it here. */}
-        {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
-        {sample === 'empty' ? <SavingsChart days={dailySavings([], 7, Date.now())} /> : <>
-        <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
-        <ByAgentTable
-          rows={agentTotals([...ENTRIES, { type: 'model_call', timestamp: day(0, 15), tokensUsed: 1_200 }], Date.now() - 24 * 3_600_000)}
-          scope="last 24 h"
-          ruleActions={{ 'lead-agent': { blocks: 2, wouldBlocks: 1, paused: 1 }, 'scout-agent': { blocks: 0, wouldBlocks: 3, toldYou: 2 } }}
-          scores={{
-            'lead-agent': { agentId: 'lead-agent', calls: 180, completeRate: 100, costDiligence: null, speedScore: 100, score: 10 },
-            'writer-agent': { agentId: 'writer-agent', calls: 90, completeRate: 92, costDiligence: 55, speedScore: 81, score: 8 },
-            'scout-agent': { agentId: 'scout-agent', calls: 40, completeRate: 25, costDiligence: 60, speedScore: 40, score: 4 },
-          }}
-        />
-        {sample === 'quiet'
-          ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
-          : <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="problem" runs={FLAGGED} health={PROBLEM} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
-        </>}
+        {sample !== 'empty' && (
+          <section aria-labelledby="pv-performance" style={{ display: 'grid', gap: 16 }}>
+            <h2 id="pv-performance" style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 700 }}>Performance</h2>
+            <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
+              <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value="0%" sub="0 of 99" />
+              <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value="1.9 s" sub="median time per call" />
+            </div>
+            {sample === 'quiet'
+              ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
+              : <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="problem" runs={FLAGGED} health={PROBLEM} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
+          </section>
+        )}
       </div>
     </AppShell>
   );

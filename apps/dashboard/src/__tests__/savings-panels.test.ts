@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { agentDaySavings, agentTotals, auditSavingsEvent, dailySavings, localDayFromTs } from '@/lib/analytics-metrics';
+import { agentDaySavings, auditSavingsEvent, dailySavings, localDayFromTs } from '@/lib/analytics-metrics';
 import { axisLabel, axisTop, savingsCaption } from '@/components/performance/SavingsPanels';
-import { ruleActionsByAgent } from '@/lib/governance';
 
 // Performance's Savings chart and By agent table, moved from Run History,
 // must keep Run History's numbers: same attribution, same per-agent-day math.
@@ -35,18 +34,6 @@ describe('dailySavings', () => {
   });
 });
 
-describe('agentTotals', () => {
-  it('sums tokens per agent (case-folded) in the window, most tokens first', () => {
-    const rows = agentTotals(entries, new Date(2026, 9, 1, 0, 0).getTime());
-    expect(rows.map((r) => [r.agent, r.used])).toEqual([['writer', 3000], ['lead-agent', 1000]]);
-  });
-
-  it('credits a handover’s saving to the agent that handed over', () => {
-    const lead = agentTotals(entries, new Date(2026, 9, 1, 0, 0).getTime()).find((r) => r.agent === 'lead-agent')!;
-    expect(lead.saved).toBeGreaterThan(0);
-  });
-});
-
 describe('Savings axis', () => {
   it('rounds up to a tidy top the tallest bar mostly fills', () => {
     expect(axisTop(104_600)).toBe(150_000);
@@ -59,22 +46,6 @@ describe('Savings axis', () => {
   });
 });
 
-describe('agentTotals edge cases', () => {
-  it('keeps tokens from events with no agent, so the column adds up to the chart', () => {
-    const rows = agentTotals([
-      { type: 'task_complete', timestamp: at(1), agentId: 'a', tokensUsed: 100 },
-      { type: 'model_call', timestamp: at(1, 11), tokensUsed: 40 },
-      { type: 'watch_start', timestamp: at(1, 12) },
-    ], new Date(2026, 9, 1, 0, 0).getTime());
-    expect(rows).toEqual([{ agent: 'a', used: 100, saved: 0 }, { agent: '', used: 40, saved: 0 }]);
-    const chartTotal = dailySavings([
-      { type: 'task_complete', timestamp: at(1), agentId: 'a', tokensUsed: 100 },
-      { type: 'model_call', timestamp: at(1, 11), tokensUsed: 40 },
-    ], 1, now)[0].used;
-    expect(rows.reduce((s, r) => s + r.used, 0)).toBe(chartTotal);
-  });
-});
-
 describe('Savings card caption', () => {
   it('names every part of the total it sits under', () => {
     expect(savingsCaption(1_650_000, 0)).toBe('1.65M tokens not spent, estimated');
@@ -84,12 +55,3 @@ describe('Savings card caption', () => {
   });
 });
 
-describe('Rule actions per By agent row', () => {
-  it('merges mixed-case ids and keeps no-agent decisions on the Unattributed key', () => {
-    expect(ruleActionsByAgent({
-      'Lead-Agent': { blocks: 1, wouldBlocks: 0 },
-      'lead-agent': { blocks: 2, wouldBlocks: 1 },
-      '': { blocks: 0, wouldBlocks: 4 },
-    })).toEqual({ 'lead-agent': { blocks: 3, wouldBlocks: 1 }, '': { blocks: 0, wouldBlocks: 4 } });
-  });
-});

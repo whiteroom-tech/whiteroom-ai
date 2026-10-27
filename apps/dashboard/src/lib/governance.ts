@@ -135,9 +135,9 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
 }
 
 /**
- * Per-agent tallies keyed the way the By agent table keys its rows: agent ids
- * lower-cased (so "Lead-Agent" and "lead-agent" merge, as their tokens do),
- * and '' kept for decisions recorded without an agent (the Unattributed row).
+ * Per-agent tallies keyed by lower-cased agent id, so "Lead-Agent" and
+ * "lead-agent" merge (as their tokens do; Home's agent list), with '' kept
+ * for decisions recorded without an agent.
  */
 export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Record<string, GovernanceTally> {
   const out: Record<string, GovernanceTally> = {};
