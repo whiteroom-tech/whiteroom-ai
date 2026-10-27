@@ -382,7 +382,12 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
     // findDeletionBlocker): the same order finishDeletedAccounts takes them,
     // so the two can't deadlock. Locked, so two requests can't both decide
     // they started it.
-    const current = await getClosing(userId, client, { lock: true });
+    const { rowCount } = await client.query(`SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+    if (!rowCount) {
+      await client.query('ROLLBACK');
+      return { ok: false, error: 'This account no longer exists.' };
+    }
+    const current = await getClosing(userId, client);
     const blocked = await findDeletionBlocker(client, userId, true);
     if (blocked) {
       await client.query('ROLLBACK');

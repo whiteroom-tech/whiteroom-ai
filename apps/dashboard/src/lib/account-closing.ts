@@ -318,6 +318,9 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
     `SELECT id FROM users u
      WHERE close_reason = 'deleted' AND closes_at <= now() AND COALESCE(delete_after, closes_at) <= now()
        AND NOT EXISTS (SELECT 1 FROM entitlement_outbox o WHERE o.user_id = u.id AND o.delivered_at IS NULL)
+       -- Left for cancelClosedSubscriptions, so they never take a batch slot.
+       AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id
+                       AND s.stripe_subscription_id IS NOT NULL AND s.status = ANY($2))
        AND (u.close_blocked_at IS NULL
             OR u.close_blocked_notified_at IS NULL
             OR u.close_blocked_at < now() - interval '1 day'
@@ -327,7 +330,7 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
                        WHERE m.user_id = u.id AND l.created_at > u.close_blocked_at))
      ORDER BY u.close_blocked_at NULLS FIRST, closes_at
      LIMIT $1`,
-    [FINISH_BATCH],
+    [FINISH_BATCH, BILLABLE_STRIPE_STATUSES],
   );
   let deleted = 0;
   let skipped = 0;

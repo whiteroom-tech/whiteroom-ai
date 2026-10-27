@@ -116,12 +116,18 @@ function setup(over: Partial<Omit<World, 'user'>> & { user?: Partial<Account> } 
       if (sql.includes('FOR UPDATE')) world.log.push('lock user');
       return { rows: world.deleted ? [] : [closingCols(u)] };
     }
+    if (sql === 'SELECT 1 FROM users WHERE id = $1 FOR UPDATE') {
+      world.log.push('lock user');
+      return { rows: world.deleted ? [] : [{}], rowCount: world.deleted ? 0 : 1 };
+    }
     if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: u.email }] };
     if (sql.startsWith('SELECT close_blocked_at FROM users')) return { rows: [{ close_blocked_at: u.close_blocked_at }] };
     if (sql.startsWith('SELECT trial_ends_at')) { world.log.push('read plan'); return { rows: [{ trial_ends_at: world.trialEndsAt }] }; }
     if (sql.startsWith('SELECT id FROM users u')) {
       const looked = !u.close_blocked_at || !u.close_blocked_notified_at || world.blockerChanged || ms(u.close_blocked_at) < now - DAY;
-      return { rows: !world.deleted && removable(u, now) && !world.outboxPending && looked ? [{ id: 'u1' }] : [] };
+      const s = world.sub;
+      const billable = !!s?.stripe_subscription_id && (params[1] as string[]).includes(s.status);
+      return { rows: !world.deleted && removable(u, now) && !world.outboxPending && !billable && looked ? [{ id: 'u1' }] : [] };
     }
     if (sql.startsWith('SELECT close_blocked_at, close_blocked_notified_at')) {
       world.log.push('lock user');
@@ -286,6 +292,13 @@ describe('Delete account starts a 14-day window', () => {
     setup({ soleOrgOwner: true });
     expect((await deleteAccount(EMAIL)).ok).toBe(false);
     expect(world.user.closes_at).toBeNull();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('reports an error, not ok, when the account row is gone by the time it is locked', async () => {
+    setup();
+    world.deleted = true;
+    expect(await deleteAccount(EMAIL)).toEqual({ ok: false, error: 'This account no longer exists.' });
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
@@ -691,7 +704,8 @@ describe('a closed fleet bills nothing', () => {
 
   it('a deleted account is never removed while Stripe can still bill it; once cancelled, it goes', async () => {
     setup({ user: { closes_at: PAST, close_reason: 'deleted', delete_after: PAST }, sub: live('active') });
-    expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 1, blocked: 0 });
+    // Not even picked up, so it never takes a slot in the batch.
+    expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 0 });
     expect(world.deleted).toBe(false);
 
     stripeApi.retrieve.mockResolvedValue({ id: 'sub_1', status: 'active' });
@@ -739,7 +753,11 @@ describe('the end of a deletion', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const real = query.getMockImplementation()!;
     query.mockImplementation(async (sql: string, params?: unknown[]) => {
-      if (sql.startsWith('SELECT email FROM users')) throw new Error('connection reset');
+      if (sql === 'SELECT 1 FROM users WHERE id = $1 FOR UPDATE') {
+      world.log.push('lock user');
+      return { rows: world.deleted ? [] : [{}], rowCount: world.deleted ? 0 : 1 };
+    }
+    if (sql.startsWith('SELECT email FROM users')) throw new Error('connection reset');
       return real(sql, params);
     });
     expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 1 });

@@ -148,8 +148,39 @@ describe('stripe webhook: a subscription on a closing account', () => {
     const upsert = mocks.query.mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO subscriptions'));
     const sql = String(upsert?.[0]);
     // Only a change from an active status sets it; a later write keeps it; active again clears it.
-    expect(sql).toMatch(/lapsed_at\s+= CASE\s+WHEN EXCLUDED\.status = ANY\(\$9\) THEN NULL\s+WHEN subscriptions\.lapsed_at IS NOT NULL THEN subscriptions\.lapsed_at\s+WHEN subscriptions\.status = ANY\(\$9\) THEN now\(\)\s+END/);
-    expect(upsert?.[1][8]).toEqual(['active', 'trialing', 'past_due']);
+    const active = upsert?.[1][8] as string[];
+    expect(active).toEqual(['active', 'trialing', 'past_due']);
+
+    // Runs the upsert's own CASE clauses, in order, over a run of Stripe writes.
+    const body = sql.match(/lapsed_at\s*=\s*CASE([\s\S]*?)\bEND\b/)?.[1];
+    const clauses = [...(body ?? '').matchAll(/WHEN\s+(.+?)\s+THEN\s+(\S+)/g)].map((m) => [m[1], m[2]]);
+    expect(clauses.length).toBeGreaterThan(0);
+    const write = (row: { status: string; lapsedAt: string | null }, next: string, now: string) => {
+      const cond: Record<string, boolean> = {
+        'EXCLUDED.status = ANY($9)': active.includes(next),
+        'subscriptions.lapsed_at IS NOT NULL': row.lapsedAt !== null,
+        'subscriptions.status = ANY($9)': active.includes(row.status),
+      };
+      const value: Record<string, string | null> = { NULL: null, 'subscriptions.lapsed_at': row.lapsedAt, 'now()': now };
+      for (const [when, then] of clauses) {
+        if (!(when in cond) || !(then in value)) throw new Error(`unknown clause: WHEN ${when} THEN ${then}`);
+        if (cond[when]) return { status: next, lapsedAt: value[then] };
+      }
+      return { status: next, lapsedAt: null };
+    };
+    let row = { status: 'active', lapsedAt: null as string | null };
+    row = write(row, 'active', 't1');
+    expect(row.lapsedAt).toBeNull();
+    row = write(row, 'canceled', 't2');
+    expect(row.lapsedAt).toBe('t2');
+    row = write(row, 'canceled', 't3');
+    expect(row.lapsedAt).toBe('t2');
+    row = write(row, 'unpaid', 't4');
+    expect(row.lapsedAt).toBe('t2');
+    row = write(row, 'active', 't5');
+    expect(row.lapsedAt).toBeNull();
+    // Never active: no lapse to record.
+    expect(write({ status: 'incomplete', lapsedAt: null }, 'incomplete_expired', 't6').lapsedAt).toBeNull();
   });
 
   it('in a deletion’s last minutes, when it can no longer be cancelled: nothing changes here, and the subscription is left for the closed-fleet pass', async () => {
