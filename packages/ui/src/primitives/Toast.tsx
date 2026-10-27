@@ -21,7 +21,7 @@ export function Toast({ message, action, onClose, ms = 9000 }: {
     if (held.focus || held.hover) return;
     const t = setTimeout(() => close.current(), ms);
     return () => clearTimeout(t);
-  }, [held.focus, held.hover, ms, message]);
+  }, [held.focus, held.hover, ms]);
 
   return (
     <div

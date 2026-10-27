@@ -56,3 +56,19 @@ describe('sidebar preferences', () => {
     expect(checked(radio(side, 'Text size'))).toBe('A++');
   });
 });
+
+describe('text size without browser storage', () => {
+  it('keeps showing the size that was applied when storage refuses to save it', async () => {
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    const side = await mount(h(TextSizeControl, { compact: true }));
+    const settings = await mount(h(TextSizeControl));
+    const large = [...radio(side, 'Text size')!.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === 'A+')!;
+    await act(async () => { large.click(); });
+    expect(document.documentElement.getAttribute('data-wr-text')).toBe('lg');
+    expect(checked(radio(side, 'Text size'))).toBe('A+');
+    expect(checked(radio(settings, 'Text size'))).toBe('Large');
+    set.mockRestore();
+    get.mockRestore();
+  });
+});

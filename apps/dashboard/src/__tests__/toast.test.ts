@@ -65,3 +65,20 @@ describe('Toast', () => {
     expect(d.onUndo).not.toHaveBeenCalled();
   });
 });
+
+describe('Toast countdown', () => {
+  it("isn't restarted by a re-render with an equal message", async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    const render = () => act(async () => { root.render(h(Toast, { message: h('span', null, 'Saved.'), onClose, ms: 1000 })); });
+    await render();
+    await act(async () => { vi.advanceTimersByTime(600); });
+    await render();
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { LiveStatus, SectionHeader } from '@/components/citadel/PageChrome';
+import { LiveStatus, PageLead, SectionHeader } from '@/components/citadel/PageChrome';
 import { fmtTime } from '@/lib/format';
 
 const AT = Date.parse('2026-10-27T15:08:00Z');
@@ -35,5 +35,11 @@ describe('SectionHeader', () => {
     const bare = renderToStaticMarkup(h(SectionHeader, { title: 'Cost' }));
     expect(bare).not.toContain('wr-section-head__sub');
     expect(bare).not.toContain('wr-section-head__meta');
+  });
+});
+
+describe('PageLead', () => {
+  it('is one plain sentence under the header', () => {
+    expect(renderToStaticMarkup(h(PageLead, null, 'Connect an agent to WhiteRoom.'))).toBe('<p class="wr-page-lead">Connect an agent to WhiteRoom.</p>');
   });
 });
