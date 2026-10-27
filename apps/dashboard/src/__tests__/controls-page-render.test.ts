@@ -563,6 +563,15 @@ describe('Controls page, links in', () => {
     nav.params = new URLSearchParams();
     m.root.unmount();
   });
+
+  it('says so when the linked rule has been removed', async () => {
+    nav.params = new URLSearchParams('rule=gr_gone');
+    const m = await mount();
+    expect(m.text()).toContain('That rule isn’t here any more; it may have been removed.');
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeNull();
+    nav.params = new URLSearchParams();
+    m.root.unmount();
+  });
 });
 
 describe('Controls page, change log', () => {

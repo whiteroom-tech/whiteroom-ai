@@ -76,6 +76,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [govV1, setGovV1] = useState(false);
   const [actors, setActors] = useState<ControlActor[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // True once the rules have actually been read (a failed read sets `loaded` too, with no rules).
+  const [listed, setListed] = useState(false);
   const [addingSuggestion, setAddingSuggestion] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -86,10 +88,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const ruleOpened = useRef<string | null>(null);
   useEffect(() => {
-    if (!ruleParam || ruleOpened.current === ruleParam || !rules.some((r) => r.id === ruleParam)) return;
+    if (!ruleParam || ruleOpened.current === ruleParam || !listed) return;
     ruleOpened.current = ruleParam;
-    setSelectedId(ruleParam);
-  }, [ruleParam, rules]);
+    // A run can name a rule that's since been removed: say so rather than land silently.
+    if (rules.some((r) => r.id === ruleParam)) setSelectedId(ruleParam);
+    else setNotice("That rule isn’t here any more; it may have been removed. Its changes are in Recent changes.");
+  }, [ruleParam, rules, listed]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -137,6 +141,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setAgents(d.agents);
       setGovV1(!!d.govV1);
       setLoaded(true);
+      setListed(true);
       return true;
     } catch (e) {
       if (isAuthError(e)) { onAuthError(); return false; }
