@@ -42,6 +42,10 @@ describe('Home agents: one list', () => {
     expect(w.calls).toBeNull();
     expect(w.costUsd).toBeNull();
     expect(homeWeek(null, null, { unsupported: true }, null)).toEqual({ agents: {}, calls: null, costUsd: null, rules: null });
+    // Week totals count only hours from the week's start, the same 7 days as the rest.
+    const h = (hour: string, calls: number) => ({ hour, calls, costMicros: calls * 10_000 });
+    const since = Date.parse('2026-10-20T04:00:00Z');
+    expect(homeWeek(null, null, null, { hourly: [h('2026-10-20T03:00:00Z', 9), h('2026-10-20T04:00:00Z', 2), h('2026-10-26T12:00:00Z', 3)] } as never, since)).toMatchObject({ calls: 5, costUsd: 0.05 });
     // The audit read failed but rules came back: tokens are unknown (–), never 0.
     const noAudit = homeWeek(null, null, { fleetId: 'f', totals: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: { writer: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } } as never, null);
     expect(noAudit.agents.writer.used).toBeUndefined();

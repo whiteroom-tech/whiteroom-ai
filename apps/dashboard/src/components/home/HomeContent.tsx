@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { DataTable, Hint, Icon, Panel, SegmentedControl, StatCard, StatusPill, FONT_MONO } from '@whiteroom/ui';
+import { DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, StatCard, StatusPill, FONT_MONO } from '@whiteroom/ui';
 import { auditLog, auditSummary, checkWatch, fleetReport, isAuthError, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
@@ -14,7 +14,6 @@ import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
 import { AGENT_SORTS, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek } from '@/lib/home-agents';
 import { localDay, zoneName } from '@/lib/runs';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
-import { SelectChip } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
 import {
   afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, hourTotals, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
@@ -118,10 +117,11 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       performanceAgentScores(fleetId, 168, authKey).catch(() => null),
       ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: today }, authKey).catch(() => null),
       ruleActions(fleetId, { fromDay: today, toDay: today }, authKey).catch(() => null),
-      performanceFleetHourly(fleetId, 168, authKey).catch(() => null),
+      // The same 7 local days as the rest: from local midnight six days ago (whole UTC hours).
+      performanceFleetHourly(fleetId, Math.ceil((Date.now() - start.getTime()) / 3_600_000) + 1, authKey).catch(() => null),
     ]);
     if (stale()) return;
-    setWeek(homeWeek(audit, scores, weekRules, hourly));
+    setWeek(homeWeek(audit, scores, weekRules, hourly, start.getTime()));
     setTodayRules(dayRules && !('unsupported' in dayRules) ? tallyFromRuleActions(dayRules.totals) : null);
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
@@ -373,20 +373,22 @@ export function homeWeek(
   scores: Awaited<ReturnType<typeof performanceAgentScores>> | null,
   rules: Awaited<ReturnType<typeof ruleActions>> | null,
   hourly: Awaited<ReturnType<typeof performanceFleetHourly>> | null,
+  /** Where the 7 days start (local midnight six days ago); hourly points before it are left out. */
+  since = 0,
 ): HomeWeek {
   const agents: Record<string, AgentWeek> = {};
   const key = (id: string) => id.toLowerCase();
   if (audit?.savingsBuckets) {
     for (const t of agentTotalsFromBuckets(audit.savingsBuckets)) {
       if (!t.agent) continue;
-      const usd = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
-      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(usd !== undefined && { savedUsd: usd === null ? null : usd / 1e6 }) };
+      const micros = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
+      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
     }
   }
   const okRules = rules && !('unsupported' in rules) ? rules : null;
   if (okRules) for (const [id, c] of Object.entries(okRules.byAgent)) (agents[key(id)] ??= {}).rules = tallyFromRuleActions(c);
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
-  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly) : null;
+  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
