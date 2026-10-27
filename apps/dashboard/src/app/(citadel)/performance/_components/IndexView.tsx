@@ -161,8 +161,8 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   };
 
   const hourly = hourlyData?.hourly ?? [];
-  // The selected range (the first half of the hourly rows feeds trends), and
-  // what both Spend cards say about completeness, worked out once.
+  // The selected range (the second half of the hourly rows), and what the
+  // Spend and Hourly cards say about completeness.
   const { shown: displayHourly, gapLine, partial: spendPartial } = spendSummary(hourly, s.unpricedAttempts);
 
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
