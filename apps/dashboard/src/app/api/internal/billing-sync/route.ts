@@ -68,10 +68,12 @@ export async function POST(req: Request): Promise<Response> {
     return null;
   });
 
-  // A failed trial, cancel or deletion pass is a 500 so Cloud Scheduler records the
-  // failure and retries. The other passes still ran; none depends on another.
+  // A failed trial, cancel or deletion pass, or any subscription that didn't
+  // cancel, is a 500 so Cloud Scheduler records the failure and retries. The
+  // other passes still ran; none depends on another.
   const failed = trials === null ? 'Could not queue expired trials.'
     : closedSubscriptions === null ? "Could not cancel closed accounts' subscriptions."
+    : closedSubscriptions.failed > 0 ? `Could not cancel ${closedSubscriptions.failed} closed account subscription(s).`
     : deletions === null ? 'Could not finish deleted accounts.'
     : null;
   if (failed) return Response.json({ error: failed, pro, closedSubscriptions, deletions }, { status: 500 });

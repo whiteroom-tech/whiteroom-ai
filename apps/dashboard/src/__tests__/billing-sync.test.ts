@@ -324,6 +324,16 @@ describe('billing sync: closed accounts\' subscriptions', () => {
     expect(mocks.finishDeleted).toHaveBeenCalledTimes(1);
   });
 
+  it('returns 500 when any one subscription fails to cancel; the rest still count and the deletion pass runs', async () => {
+    mocks.cancelClosed.mockResolvedValue({ cancelled: 2, failed: 1 });
+    const res = await run(SECRET);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('Could not cancel 1 closed account subscription(s).');
+    expect(body.closedSubscriptions).toEqual({ cancelled: 2, failed: 1 });
+    expect(mocks.finishDeleted).toHaveBeenCalledTimes(1);
+  });
+
   it('is skipped without Stripe configured', async () => {
     delete process.env.STRIPE_SECRET_KEY;
     const res = await run(SECRET);
