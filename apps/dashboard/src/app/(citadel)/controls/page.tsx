@@ -485,7 +485,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           {error && !selected && <Banner variant="error" actions={<Button variant="ghost" size={28} onClick={() => setError(null)}>Dismiss</Button>}>{error}</Banner>}
           {notice && !selected && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
 
-          {loaded && shown.some((r) => r.mode !== "off") && canStop.length <= 1 && (
+          {/* Only when some active rule doesn't stop calls: a fleet whose one rule stops calls is fine. */}
+          {loaded && canStop.length <= 1 && shown.some((r) => r.mode !== "off" && !canStop.includes(r)) && (
             <Banner variant="warn">
               {canStop.length === 0
                 ? <>No rule stops calls yet, so every call goes through.</>

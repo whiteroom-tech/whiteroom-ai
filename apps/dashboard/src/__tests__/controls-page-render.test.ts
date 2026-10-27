@@ -156,6 +156,11 @@ describe('Controls page', () => {
     const off = await mount();
     expect(off.text()).not.toContain('stop calls');
     off.root.unmount();
+    // One active rule, and it stops calls: nothing to warn about.
+    for (const r of RULES) api.saved[r.id] = r.id === 'r1' ? r : { ...r, mode: 'off' };
+    const one = await mount();
+    expect(one.text()).not.toContain('stop calls');
+    one.root.unmount();
   });
 
   it('tags a Block-mode rule by what it does: an alert-only rule is never a red Block', async () => {
