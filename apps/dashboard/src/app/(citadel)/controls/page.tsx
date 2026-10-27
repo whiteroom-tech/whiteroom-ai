@@ -42,7 +42,7 @@ import {
   weakenings,
   averageDailySpend,
   sameValue,
-  blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
+  blocksWhen, duplicateRules, keywordsHidden, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
@@ -141,6 +141,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [agentCalls, setAgentCalls] = useState<Record<string, number>>({});
   // Opening a rule moves focus into the editor on a wide screen (a phone's sheet focuses ‹ Controls).
   const focusEditor = useRef(false);
+  /** The rule Add rule just made: its editor opens with When expanded. */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
 
   // Trusted from the URL until the agents load, then only if it names one.
   const agentFilter = agentParam && (!loaded || agents.includes(agentParam)) ? agentParam : null;
@@ -393,7 +395,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           ...((before.response ?? "block") !== (saved.response ?? "block") && { response: before.response ?? "block" }),
           ...(!!before.alsoNotify !== !!saved.alsoNotify && { alsoNotify: !!before.alsoNotify }),
           ...(!sameValue(before.appliesTo, saved.appliesTo) && { appliesTo: before.appliesTo }),
-          ...(!sameValue(before.params, saved.params) && { params: before.params }),
+          // A Keywords list the engine hid can't be written back: the editor can't change it either.
+          ...(!sameValue(before.params, saved.params) && !keywordsHidden(before) && { params: before.params }),
         };
         const { rule: back } = await governanceUpdateRule(fleetId, r.id, { ...changes, ifVersion: saved.version, description: "Undid the last change" }, authKey);
         setRules((rs) => rs.map((x) => (x.id === back.id && back.version >= x.version ? back : x)));
@@ -542,6 +545,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setAdding("closed");
       if (suggestionRec) router.replace(withParams({ rec: null }));
       focusEditor.current = true;
+      setJustAdded(rule.id);
       setSelectedId(rule.id);
       setDraft(draftFrom(rule));
       setNotice(null);
@@ -882,6 +886,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               <aside aria-label="Edit rule" className="wr-panel ctl-editor is-sheet">
                 {notice && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
                 <RuleEditor
+                  key={edited.id}
                   rule={edited}
                   draft={draft}
                   onDraft={(d) => { setDraft(d); setError(null); }}
@@ -894,7 +899,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   fleetDailySpend={dailySpend}
                   agentSpend={spendAgents.flatMap((a) => (agentSpend[a] ? [{ agent: a, ...agentSpend[a]! }] : []))}
                   status={ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
-                  weekCaught={weekOf(edited)?.wouldAct ?? null}
+                  ruleHistory={history}
+                  startOpen={justAdded === edited.id}
                   onAudit={() => setAuditOpen(true)}
                   onUndo={undo}
                   dirty={dirty}

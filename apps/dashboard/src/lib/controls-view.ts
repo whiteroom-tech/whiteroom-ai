@@ -583,7 +583,8 @@ export function duplicateRules(rules: readonly GovernanceRule[]): { keep: Govern
   const out: { keep: GovernanceRule; extra: GovernanceRule[] }[] = [];
   const scopeKey = (s: GovernanceScope) => (s === 'all' ? 'all' : [...s].sort());
   for (const r of rules) {
-    if (notSetUp(r)) continue;
+    // A Keywords list the engine hid can't be compared: two such rules may look alike and differ.
+    if (notSetUp(r) || keywordsHidden(r)) continue;
     const g = out.find(({ keep: k }) => k.ruleType === r.ruleType && k.mode === r.mode && (k.response ?? 'block') === (r.response ?? 'block')
       && !!k.alsoNotify === !!r.alsoNotify && sameValue(scopeKey(k.appliesTo), scopeKey(r.appliesTo)) && sameValue(k.params, r.params));
     if (g) g.extra.push(r); else out.push({ keep: r, extra: [] });
@@ -613,8 +614,61 @@ export function keywordGaps(rules: readonly GovernanceRule[], agents: readonly s
   });
 }
 
+/** A Keywords rule whose list the engine sent only as a count (no dashboard secret on the read). */
+export function keywordsHidden(r: Pick<GovernanceRule, 'ruleType' | 'params'>): boolean {
+  return r.ruleType === 'keyword' && !(r.params as KeywordParams).keywords.length && !!(r.params as KeywordParams).keywordCount;
+}
+
 /** A Keywords rule's words for a sentence: "password", or "password", "SSN" + 2 more. */
 export function keywordsShort(p: KeywordParams): string {
   const shown = p.keywords.slice(0, 2).map((k) => `"${k}"`).join(', ');
   return p.keywords.length > 2 ? `${shown} + ${p.keywords.length - 2} more` : shown;
 }
+
+// ── The editor's three questions (Rashad, Oct 27): When · Who · What happens ──
+
+/** The rule's condition as one plain sentence, for When before Change: "Spends more than $190 in a day". */
+export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): { pre: string; val: string; post: string } {
+  if (rule.ruleType === 'spend_cap') {
+    const p = rule.params as SpendCapParams;
+    return { pre: 'Spends more than ', val: money(p), post: ` in a ${p.scope}` };
+  }
+  if (rule.ruleType === 'loop_breaker') {
+    const p = rule.params as LoopBreakerParams;
+    const ignore = p.ignoreTools.length ? `, not counting ${p.ignoreTools.join(', ')}` : '';
+    return { pre: 'Makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}${ignore}` };
+  }
+  if (rule.ruleType === 'call_rate') return { pre: 'Makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls in a minute' };
+  if (rule.ruleType === 'model_allowlist') {
+    const models = (rule.params as ModelAllowlistParams).allowedModels;
+    return models.length ? { pre: 'Uses a model other than ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+  }
+  if (rule.ruleType === 'tool_list') {
+    const tools = (rule.params as ToolListParams).blockedTools;
+    return tools.length ? { pre: 'Is about to run ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+  }
+  return ruleCondition(rule);
+}
+
+/** "What happens": one choice for mode and response. Off and Record only keep the response, so switching back restores it. */
+export type WhatHappens = 'off' | 'watch' | GovernanceResponse;
+
+export function whatHappens(d: Pick<RuleDraft, 'mode' | 'response'>): WhatHappens {
+  return d.mode === 'enforce' ? d.response : d.mode;
+}
+
+/** The draft with a new choice: Off → mode off; Record only → mode watch; an action → Block mode with that response. */
+export function chooseWhatHappens(d: RuleDraft, choice: WhatHappens): RuleDraft {
+  if (choice === 'off' || choice === 'watch') return { ...d, mode: choice };
+  return changeResponse({ ...d, mode: 'enforce' }, choice);
+}
+
+/** The choices in order: Off · Record only · the actions this fleet has (always the rule's own). */
+export function whatHappensOptions(govV1: boolean, current: GovernanceResponse): WhatHappens[] {
+  const actions = (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || r === current);
+  return ['off', 'watch', ...actions];
+}
+
+export const WHAT_HAPPENS_LABEL: Record<WhatHappens, string> = {
+  off: 'Off', watch: 'Record only', block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent', notify: NOTIFY.option,
+};

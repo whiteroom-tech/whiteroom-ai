@@ -32,14 +32,10 @@ export const STOP_WATCH_HOURS = 24;
 // governance-guard tests pin the format. The engine doesn't enforce this guard.
 const MODE_CHANGE = /^(Off|Watch|Enforce) → (Off|Watch|Enforce)$/;
 
-/**
- * The longest unbroken stretch, in hours, this rule has spent in Watch,
- * read from its history ("Off → Watch", "Watch → Enforce"). A rule created
- * in Watch counts from its first history entry.
- */
-export function longestWatchHours(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number = Date.now()): number {
+/** The rule's stretches in Watch from its history: the longest (ms) and when the current one began (null: not in Watch). */
+function watchStretches(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number): { best: number; current: number | null } {
   const entries = history.filter((h) => h.ruleId === ruleId).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
-  if (entries.length === 0) return 0;
+  if (entries.length === 0) return { best: 0, current: null };
   const changes = entries.flatMap((h) => {
     const m = MODE_CHANGE.exec(h.description);
     return m ? [{ from: m[1], to: m[2], at: Date.parse(h.time) }] : [];
@@ -54,8 +50,31 @@ export function longestWatchHours(ruleId: string, history: GovernanceHistoryEntr
     if (c.from === 'Watch' && start !== null) { best = Math.max(best, c.at - start); start = null; }
     if (c.to === 'Watch') start = c.at;
   }
-  if (start !== null && currentMode === 'watch') best = Math.max(best, now - start);
-  return Number.isFinite(best) ? best / HOUR_MS : 0;
+  const current = start !== null && currentMode === 'watch' ? start : null;
+  if (current !== null) best = Math.max(best, now - current);
+  return { best: Number.isFinite(best) ? best : 0, current };
+}
+
+/**
+ * The longest unbroken stretch, in hours, this rule has spent in Watch,
+ * read from its history ("Off → Watch", "Watch → Enforce"). A rule created
+ * in Watch counts from its first history entry.
+ */
+export function longestWatchHours(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number = Date.now()): number {
+  return watchStretches(ruleId, history, currentMode, now).best / HOUR_MS;
+}
+
+/**
+ * When an action that needs a day in Record only first can be picked: null
+ * when it already can; the time, while the rule is in Record only now;
+ * 'record-first' when it isn't recording yet; 'unknown' when it is but the
+ * history doesn't say since when (fails closed, like stopBlockedReason).
+ */
+export function actionAvailableFrom(ruleId: string, history: GovernanceHistoryEntry[], currentMode: string, now: number = Date.now()): number | 'record-first' | 'unknown' | null {
+  const { best, current } = watchStretches(ruleId, history, currentMode, now);
+  if (best >= STOP_WATCH_HOURS * HOUR_MS) return null;
+  if (current !== null) return current + STOP_WATCH_HOURS * HOUR_MS;
+  return currentMode === 'watch' ? 'unknown' : 'record-first';
 }
 
 /** Why Stop can't be turned on yet, or null when it can. */

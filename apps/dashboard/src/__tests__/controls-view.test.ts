@@ -347,3 +347,64 @@ describe('sameValue', async () => {
     expect(sameValue(['a', 'b'], ['b', 'a'])).toBe(false);
   });
 });
+
+describe('What happens: one choice for mode and response', async () => {
+  const { whatHappens, chooseWhatHappens, whatHappensOptions, whenSentence, keywordsHidden, duplicateRules, draftFrom } = await import('@/lib/controls-view');
+  const { actionAvailableFrom } = await import('@/lib/controls-guard');
+
+  it('maps each option to a mode and response, and back, losing nothing', () => {
+    const d = draftFrom(rule({ mode: 'watch', response: 'pause', alsoNotify: false }));
+    expect(whatHappens(d)).toBe('watch');
+    // Off and Record only keep the response, so switching back restores it.
+    const off = chooseWhatHappens(d, 'off');
+    expect([off.mode, off.response]).toEqual(['off', 'pause']);
+    const back = chooseWhatHappens(off, 'watch');
+    expect([back.mode, back.response]).toEqual(['watch', 'pause']);
+    for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
+      const on = chooseWhatHappens(d, r);
+      expect([on.mode, on.response, whatHappens(on)]).toEqual(['enforce', r, r]);
+    }
+    // The alert box belongs to Block: kept through Record only, cleared by another action.
+    const alerting = { ...chooseWhatHappens(d, 'block'), alsoNotify: true };
+    expect(chooseWhatHappens(alerting, 'watch').alsoNotify).toBe(true);
+    expect(chooseWhatHappens(alerting, 'notify').alsoNotify).toBe(false);
+    // Every engine combination is reachable: watch/off with any response, via that action then Record only or Off.
+    for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
+      for (const m of ['off', 'watch'] as const) {
+        const x = chooseWhatHappens(chooseWhatHappens(d, r), m);
+        expect([x.mode, x.response]).toEqual([m, r]);
+      }
+    }
+  });
+
+  it('offers Pause and Stop only where the fleet has them, but always the rule’s own', () => {
+    expect(whatHappensOptions(false, 'block')).toEqual(['off', 'watch', 'block', 'notify']);
+    expect(whatHappensOptions(true, 'block')).toEqual(['off', 'watch', 'block', 'pause', 'stop', 'notify']);
+    expect(whatHappensOptions(false, 'stop')).toEqual(['off', 'watch', 'block', 'stop', 'notify']);
+  });
+
+  it('says When as one sentence', () => {
+    const t = (r: GovernanceRule) => { const s = whenSentence(r); return s.pre + s.val + s.post; };
+    expect(t(rule({}))).toBe('Spends more than $190 in a day');
+    expect(t(rule({ ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5'] } }))).toBe('Uses a model other than claude-haiku-4-5');
+    expect(t(rule({ ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: ['read_file'] } }))).toBe('Makes the same call 5 times in a run, not counting read_file');
+    expect(t(rule({ ruleType: 'call_rate', params: { maxCalls: 60 } }))).toBe('Makes more than 60 calls in a minute');
+    expect(t(rule({ ruleType: 'tool_list', params: { blockedTools: ['shell'] } }))).toBe('Is about to run shell');
+    expect(t(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: ['password'], wholeWord: true } }))).toBe('Incoming data contains "password"');
+  });
+
+  it('never calls two hidden Keywords lists duplicates', () => {
+    const hidden = (id: string) => rule({ id, ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true, keywordCount: 2 } });
+    expect(keywordsHidden(hidden('a'))).toBe(true);
+    expect(duplicateRules([hidden('a'), hidden('b')])).toEqual([]);
+  });
+
+  it('says from when an action that needs a day in Record only can be picked', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z');
+    const added = (hoursAgo: number) => [{ id: 'h', ruleId: 'r', ruleType: 'spend_cap' as const, description: 'Added new Spend cap rule', by: 't', time: new Date(now - hoursAgo * 3_600_000).toISOString() }];
+    expect(actionAvailableFrom('r', added(2), 'watch', now)).toBe(now + 22 * 3_600_000);
+    expect(actionAvailableFrom('r', added(30), 'watch', now)).toBeNull();
+    expect(actionAvailableFrom('r', [], 'off', now)).toBe('record-first');
+    expect(actionAvailableFrom('r', [], 'watch', now)).toBe('unknown');
+  });
+});
