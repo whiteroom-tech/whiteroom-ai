@@ -1,18 +1,17 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { FONT_MONO } from '@whiteroom/ui';
 import { usePoll } from '@/hooks/usePoll';
-import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
+import { ScoreRing } from '@/components/agent/ScoreRing';
 import { agentWeekFrom, loadWeekReads, WEEK_POLL_MS, type AgentWeek } from '@/lib/home-agents';
 import { fmtTokens } from '@/lib/format';
 import { RULE_ACTIVITY } from '@/lib/vocab';
-import { scoreParts } from '@/lib/agent-scores';
-import { tallyShort, tallyTotal } from '@/lib/governance';
-import { weekTokens } from '@/lib/agent-detail';
+import { outOfTen, scoreParts, scoreSummary, scoreWorking } from '@/lib/agent-scores';
+import { weekRuleWords, weekTokens } from '@/lib/agent-detail';
 
-const label = { fontSize: 'var(--fs-sm)', color: 'var(--tx2)' } as const;
-const figure = { fontFamily: FONT_MONO, fontSize: 'var(--fs-xl)', fontWeight: 600 } as const;
+const label = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)' } as const;
+const cap = { fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' } as const;
+const figure = { fontSize: 'var(--fs-md)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' } as const;
 
 /**
  * One agent's last 7 days: tokens with and without
@@ -20,12 +19,16 @@ const figure = { fontFamily: FONT_MONO, fontSize: 'var(--fs-xl)', fontWeight: 60
  * same reads as Home's agent list. A part that has never loaded shows "—",
  * never 0; a refresh that fails keeps the last figures.
  */
-export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
+export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType = false, onSetTaskType }: {
   fleetId: string;
   authKey?: string;
   agentId: string;
   /** /dev/agent sample: nothing is fetched. */
   preview?: AgentWeek;
+  /** Whether the agent has a task type; without one the Cost row offers to set it. */
+  hasTaskType?: boolean;
+  /** Takes the visitor to the Task type card. */
+  onSetTaskType?: () => void;
 }) {
   const [week, setWeek] = useState<AgentWeek | undefined>(preview);
   const [loaded, setLoaded] = useState(!!preview);
@@ -42,44 +45,58 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
   const score = week?.score;
   const rules = week?.rules;
   const dash = loaded ? '—' : '…';
+  const parts = score ? scoreParts(score) : [];
+  const working = scoreWorking(parts);
+  const ruleWords = rules ? weekRuleWords(rules) : null;
   return (
-    <section className="wr-panel" aria-labelledby="agent-week" style={{ overflow: 'hidden' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 40px', alignItems: 'center', padding: '16px 20px' }}>
+    <section className="wr-panel wr-agent-week" aria-labelledby="agent-week">
+      <div className="wr-agent-week__row">
         <h2 id="agent-week" className="wr-panel__title" style={{ margin: 0 }}>Last 7 days</h2>
         <span><span style={label}>Tokens without WhiteRoom, est.</span><br /><strong style={figure}>{tokens ? fmtTokens(tokens.without) : dash}</strong></span>
         <span>
           <span style={label}>With WhiteRoom</span><br />
           <strong style={figure}>{tokens ? fmtTokens(tokens.used) : dash}</strong>
-          {tokens && tokens.saved > 0 && <span style={{ ...label, color: 'var(--ok)' }}> {fmtTokens(tokens.saved)} less ({tokens.pct}%)</span>}
+          {tokens && tokens.saved > 0 && <span style={{ ...cap, color: 'var(--ok)' }}> {fmtTokens(tokens.saved)} less ({tokens.pct}%)</span>}
         </span>
         <span>
           <span style={label}>{RULE_ACTIVITY}</span><br />
-          {rules && tallyTotal(rules) > 0
-            ? <strong style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{tallyShort(rules)}</strong>
-            : <strong style={figure}>{rules ? '0' : dash}</strong>}
+          {ruleWords
+            ? ruleWords.map((w, i) => <span key={w.word}>{i > 0 && <span style={cap}> · </span>}<strong style={figure}>{w.count}</strong> <span style={cap}>{w.word}</span></span>)
+            : <strong style={figure}>{dash}</strong>}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {score ? <AgentScoreWheel agent={score} /> : <span><span style={label}>Score</span><br /><strong style={figure}>{dash}</strong></span>}
+          {score?.score != null && <ScoreRing score={Math.round(score.score)} />}
+          <span><span style={label}>Score</span><br />{score?.score != null ? <span style={{ ...cap, color: 'var(--tx)' }}>{Math.round(score.score)} out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
         </span>
       </div>
       {score && (
-        <details style={{ borderTop: '1px solid var(--line)' }}>
-          <summary style={{ padding: '12px 20px', cursor: 'pointer', fontSize: 'var(--fs-md)' }}>
-            How is the score worked out?
+        <details className="wr-disc">
+          <summary>
+            <span className="wr-disc__chev" aria-hidden="true">›</span>
+            <span>How is the score worked out?</span>
+            <span className="wr-disc__meta">{scoreSummary(parts)}</span>
           </summary>
           <div style={{ padding: '0 20px 18px' }}>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
-              {scoreParts(score).map((p) => (
-                <li key={p.label} style={{ display: 'grid', gap: 2 }}>
-                  <span style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'baseline' }}>
-                    <strong style={{ fontWeight: 600 }}>{p.label}</strong>
-                    {p.value == null ? <span style={label}>not scored</span> : <span><strong style={{ fontFamily: FONT_MONO }}>{p.value}</strong> <span style={label}>of 100</span></span>}
-                  </span>
-                  <span style={label}>{p.measures}{p.value == null && p.missing ? ` ${p.missing}` : ''}</span>
-                </li>
-              ))}
-            </ul>
-            <p style={{ ...label, margin: '10px 0 0' }}>The score out of 10 is the average of the parts that have data. Last 7 days.</p>
+            <div className="wr-agent-week__scroll">
+              <table className="wr-score-table">
+                <thead><tr><th>Part</th><th className="is-num">Score</th><th>What it measures</th></tr></thead>
+                <tbody>
+                  {parts.map((p) => (
+                    <tr key={p.label}>
+                      <td>{p.label}</td>
+                      <td className="is-num">{p.value == null ? <span style={cap}>not scored</span> : <><strong>{outOfTen(p.value)}</strong> <span style={cap}>of 10</span></>}</td>
+                      <td>
+                        {p.measures}
+                        {p.value == null && (p.label === 'Cost' && !hasTaskType && onSetTaskType
+                          ? <> <button type="button" className="wr-btn wr-btn--secondary wr-btn--h32" onClick={onSetTaskType}>Set a task type</button> to include it.</>
+                          : p.missing ? ` ${p.missing}` : '')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {working && <p style={{ ...cap, margin: '10px 0 0' }}>The score is the average of the parts that have data, rounded: {working.sum}. Last 7 days.</p>}
           </div>
         </details>
       )}

@@ -65,19 +65,47 @@ export function wedgeSummary(wedges: Pick<ScoreWedge, 'label' | 'value'>[]): str
 /** One row of the agent page's "How is the score worked out?" table. */
 export interface ScorePart {
   label: string;
-  /** 0-100, or null when the part isn't scored. */
+  /** 0-100 as the engine sends it, or null when the part isn't scored. */
   value: number | null;
   measures: string;
   /** Why a part isn't scored, when it isn't. */
   missing?: string;
 }
 
-/** The score's three parts, in the wheel's order and with its labels. */
+/**
+ * The score's three parts in the agent page's order (scored parts read
+ * first in the mockup: Clean calls, Speed, Cost), with the wheel's labels.
+ */
 export function scoreParts(a: Pick<AgentScore, 'completeRate' | 'costDiligence' | 'speedScore'>): ScorePart[] {
   const [clean, cost, speed] = scoreWedges(a);
   return [
     { label: clean.label, value: clean.value, measures: 'Share of its calls that finished cleanly: not failed, blocked, cancelled or cut off.', missing: 'No calls in the last 7 days.' },
-    { label: cost.label, value: cost.value, measures: 'What it spends compared with the typical cost for its task type. 100 at or under; lower the more it overspends.', missing: 'Needs a task type and a finished call.' },
-    { label: speed.label, value: speed.value, measures: 'Its typical response time compared with your fleet’s. 100 means as fast or faster; lower the slower it is.', missing: 'Too few calls to time.' },
+    { label: speed.label, value: speed.value, measures: 'Its typical response time compared with your fleet’s. 10 means as fast or faster; lower the slower it is.', missing: 'Too few calls to time.' },
+    { label: cost.label, value: cost.value, measures: 'What it spends compared with the typical cost for its task type. 10 at or under; lower the more it overspends.', missing: 'Needs a task type and a finished call.' },
   ];
+}
+
+/** A 0-100 part on the score's 0-10 scale: 100 → "10", 57 → "5.7". */
+export function outOfTen(value: number): string {
+  const v = Math.round(value) / 10;
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+/** The closed row of "How is the score worked out?": "Clean calls 10 · Speed 5.7 · Cost not scored yet". */
+export function scoreSummary(parts: Pick<ScorePart, 'label' | 'value'>[]): string {
+  return parts.map((p) => `${p.label} ${p.value == null ? 'not scored yet' : outOfTen(p.value)}`).join(' · ');
+}
+
+/**
+ * The worked sum under the table: "(10 + 5.7) ÷ 2 = 7.85 → 8". The score is
+ * the average of the parts that have data, rounded. Null with none scored.
+ */
+export function scoreWorking(parts: Pick<ScorePart, 'value'>[]): { sum: string; score: number } | null {
+  const scored = parts.filter((p): p is { value: number } => p.value != null).map((p) => Math.round(p.value) / 10);
+  if (scored.length === 0) return null;
+  const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
+  const shown = +mean.toFixed(2);
+  const score = Math.round(mean);
+  if (scored.length === 1) return { sum: `${shown} → ${score}`, score };
+  return { sum: `(${scored.map((v) => String(v)).join(' + ')}) ÷ ${scored.length} = ${shown} → ${score}`, score };
 }

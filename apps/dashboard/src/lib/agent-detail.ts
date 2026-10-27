@@ -1,14 +1,15 @@
 // Pure helpers for Agent detail. No React, so the rules
 // for what an operator may do, and what the page says, can be unit-tested.
 //
-// What today's engine supports: pause_agent sends a working agent on its
-// scheduled break early (status "resting"); it starts again on its own when
-// the break ends. resume_agent ends a break, but the engine refuses while the
-// mandatory break is still running. The redesign's Pause / Stop (calls refused
-// until someone resumes) arrive with the governance engine (P2), so the page
-// names these actions for what they do: "Start a break" and "Resume".
+// Actions: Pause holds the agent (Gov v1) or, on older fleets, pauses it
+// for a short while; Resume releases either. Customer copy never says how
+// WhiteRoom keeps an agent going, only what the operator can do.
 
-import type { AgentInfo, AuditEntry, HandoverDoc } from '@/lib/whiteroom/types';
+import type { AgentInfo, AuditEntry, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
+import type { AgentState } from '@whiteroom/ui';
+import type { GovernanceTally } from '@/lib/governance';
+import { TITLES, isDiagnosisDetector } from '@/lib/diagnosis/copy';
+import { fmtTokens, plural, timeAgo } from '@/lib/format';
 import { agentState, currentShift, taskWord } from '@/lib/home';
 
 /** When the current break ends (epoch ms), or null when it can't be told. */
@@ -24,75 +25,115 @@ export function breakEndsAt(a: Pick<AgentInfo, 'alarmAt' | 'restStartedAt' | 're
 
 export type ActionGate = { allowed: boolean; why?: string };
 
-/** "Start a break" is for an agent that is working right now. */
-export function canStartBreak(a: AgentInfo): ActionGate {
+/**
+ * Pause: on a Gov v1 fleet any agent that isn't held; on an older fleet only
+ * one that is working right now.
+ */
+export function canPause(a: AgentInfo): ActionGate {
+  if (a.hold) return { allowed: false, why: `It’s already ${a.hold.state}.` };
+  if (a.govV1) return { allowed: true };
   const s = agentState(a);
   if (s === 'working') return { allowed: true };
-  if (s === 'resting') return { allowed: false, why: 'It is already on a break.' };
-  return { allowed: false, why: 'Only a working agent can be sent on a break.' };
+  if (s === 'resting') return { allowed: false, why: 'It is already paused.' };
+  return { allowed: false, why: 'Only a working agent can be paused.' };
 }
 
-/** Resume ends a break, once the mandatory part is over. */
+/** Resume releases a hold, or ends a short pause once it can be ended. */
 export function canResume(a: AgentInfo, now: number = Date.now()): ActionGate {
   if (a.hold) return { allowed: true };
-  if (agentState(a) !== 'resting') return { allowed: false, why: 'It isn’t on a break.' };
+  if (agentState(a) !== 'resting') return { allowed: false, why: 'It isn’t paused.' };
   const end = breakEndsAt(a);
   if (end !== null && now < end) {
     const min = Math.max(1, Math.ceil((end - now) / 60_000));
-    return { allowed: false, why: `The break is mandatory; it can resume in ${min} min.` };
+    return { allowed: false, why: `It can resume in ${min} min.` };
   }
   return { allowed: true };
 }
 
-/** The shift (or break) progress bar: percent and a short caption; null with no shift running, never a made-up 0%. */
-export function shiftProgress(a: AgentInfo, now: number = Date.now()): { pct: number; label: string; onBreak: boolean } | null {
-  const s = agentState(a);
-  if (s !== 'resting' && !currentShift(a)) return null;
-  if (s === 'resting') {
-    const pct = clampPct(parseFloat(String(a.restPercent ?? '0')));
-    const end = breakEndsAt(a);
-    const left = end !== null ? Math.max(0, Math.ceil((end - now) / 60_000)) : null;
-    return { pct, onBreak: true, label: left !== null ? `${Math.round(pct)}% of the break · ${left} min left` : `${Math.round(pct)}% of the break` };
+/** The header's one action: Resume while held or paused, otherwise Pause. */
+export function headerAction(a: AgentInfo): 'pause' | 'resume' {
+  return a.hold || agentState(a) === 'resting' ? 'resume' : 'pause';
+}
+
+/** The header's status words, with no pill: "Waiting for work", "Working", "Paused"… */
+export function statusWords(state: AgentState | 'removing'): { text: string; tone: 'ok' | 'warn' | 'muted' } {
+  switch (state) {
+    case 'working': case 'handover': return { text: 'Working', tone: 'ok' };
+    case 'paused': return { text: 'Paused', tone: 'warn' };
+    case 'resting': return { text: 'Paused for a moment', tone: 'warn' };
+    case 'stopped': return { text: 'Stopped', tone: 'warn' };
+    case 'stale': return { text: 'Not reporting', tone: 'warn' };
+    case 'disconnected': return { text: 'Disconnected', tone: 'muted' };
+    case 'pausing': return { text: 'Pausing…', tone: 'muted' };
+    case 'stopping': return { text: 'Stopping…', tone: 'muted' };
+    case 'resuming': return { text: 'Resuming…', tone: 'muted' };
+    case 'removing': return { text: 'Removing…', tone: 'muted' };
+    default: return { text: 'Waiting for work', tone: 'muted' };
   }
-  const pct = clampPct(parseFloat(String(a.percentComplete ?? '0').replace('%', '')));
-  const left = typeof a.minutesRemaining === 'number' ? ` · ${Math.round(a.minutesRemaining * 10) / 10} min left` : '';
-  return { pct, onBreak: false, label: `${Math.round(pct)}%${left}` };
 }
 
-function clampPct(n: number): number {
-  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+/** The Now card. */
+export interface NowCard {
+  /** Header right: "Running", "Not running", "Paused", "Stopped". */
+  status: string;
+  /** "Run #8 · 62 tasks · 9.4 min so far" or "Last run #4 · 6 tasks"; null with no run known. */
+  run: { label: string; number: number; tail: string } | null;
+  /** When the last run started, from Recent runs, when it's there. */
+  runId: string | null;
+  runDate: string | null;
+  /** "All time: 60 tasks · 53.4K tokens"; null when the engine doesn't send lifetime totals. */
+  allTime: string | null;
+}
+
+export function nowCard(a: AgentInfo, runs: RunSummary[] | null, fmtDate: (iso: string) => string): NowCard {
+  const s = agentState(a);
+  const shift = currentShift(a);
+  const status = a.hold ? (a.hold.state === 'stopped' ? 'Stopped' : 'Paused') : s === 'resting' ? 'Paused' : shift ? 'Running' : 'Not running';
+  let run: NowCard['run'] = null;
+  if (shift) {
+    run = { label: 'Run', number: shift.watchNumber || 1, tail: [taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min so far`].join(' · ') };
+  } else if (a.lastShift) {
+    run = { label: 'Last run', number: a.lastShift.watchNumber, tail: taskWord(a.lastShift.tasksCompleted) };
+  }
+  const match = run ? (runs ?? []).find((r) => r.shift === run.number) : undefined;
+  const allTime = a.lifetime
+    ? `All time: ${[taskWord(a.lifetime.tasksCompleted), a.lifetime.tokensUsed ? `${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''].filter(Boolean).join(' · ')}`
+    : null;
+  return { status, run, runId: match?.runId ?? null, runDate: match ? fmtDate(match.startedAt) : null, allTime };
+}
+
+/** Rule activity on the Last 7 days card: "2 blocked · 58 would have blocked". */
+export function weekRuleWords(t: GovernanceTally): { count: number; word: string }[] {
+  const out: { count: number; word: string }[] = [];
+  if (t.blocks > 0) out.push({ count: t.blocks, word: 'blocked' });
+  if (t.wouldBlocks > 0) out.push({ count: t.wouldBlocks, word: 'would have blocked' });
+  if (t.paused) out.push({ count: t.paused, word: 'paused' });
+  if (t.stopped) out.push({ count: t.stopped, word: 'stopped' });
+  if (t.toldYou) out.push({ count: t.toldYou, word: 'alerted you' });
+  return out.length ? out : [{ count: 0, word: 'caught' }];
 }
 
 /**
- * The Current run header: "#3", or "none in progress" when there is no run
- * (M14). The run's figures sit in the panel (shiftStats), so the header never
- * runs out of room.
+ * One line from the fleet health check for this agent, or null when the
+ * check is off or hasn't looked at it: "1 problem: Repeating the same call ·
+ * checked 2 hours ago", "4 checks passed · checked 1 day ago", or "Waiting for
+ * more calls".
  */
-export function shiftSummary(a: AgentInfo): string {
-  const shift = currentShift(a);
-  return shift ? `#${shift.watchNumber || 1}` : 'none in progress';
-}
-
-/** "17 tasks · 4.1 min worked · 12.4K tokens" for the run in progress; null with none. */
-export function shiftStats(a: AgentInfo, fmtTokens: (n: number) => string): string | null {
-  const shift = currentShift(a);
-  if (!shift) return null;
-  const bits = [taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min worked`];
-  if (shift.tokensUsed) bits.push(`${fmtTokens(shift.tokensUsed)} tokens`);
-  return bits.join(' · ');
-}
-
-/**
- * With no shift running, what the panel shows instead, each labelled so
- * lifetime totals never read as one shift: "Last shift #41: 5 tasks",
- * "Lifetime: 332 tasks, 4.03M tokens". Empty while a shift runs.
- */
-export function shiftAside(a: AgentInfo, fmtTokens: (n: number) => string): string[] {
-  if (currentShift(a)) return [];
-  const out: string[] = [];
-  if (a.lastShift) out.push(`Last run #${a.lastShift.watchNumber}: ${taskWord(a.lastShift.tasksCompleted)}`);
-  if (a.lifetime) out.push(`Lifetime: ${taskWord(a.lifetime.tasksCompleted)}${a.lifetime.tokensUsed ? `, ${fmtTokens(a.lifetime.tokensUsed)} tokens` : ''}`);
-  return out;
+export function agentHealthLine(d: FleetDiagnosis | null, agentId: string, now: number = Date.now()): { tone: 'warn' | 'ok' | 'muted'; text: string } | null {
+  if (!d || !d.checkedAt) return null;
+  const checked = `checked ${timeAgo(d.checkedAt, now)}`;
+  const report = d.reports.find((r) => r.agentId === agentId);
+  if (!report) {
+    return d.waiting.some((w) => w.agentId === agentId) ? { tone: 'muted', text: 'Waiting for more calls before the first check' } : null;
+  }
+  const open = report.findings.filter((f) => f.status === 'open');
+  if (open.length > 0) {
+    const first = isDiagnosisDetector(open[0].detector) ? TITLES[open[0].detector] : 'A check found a problem';
+    const more = open.length > 1 ? ` and ${open.length - 1} more` : '';
+    return { tone: 'warn', text: `${open.length} ${plural(open.length, 'problem')}: ${first}${more} · ${checked}` };
+  }
+  const passed = report.clear.length;
+  return { tone: 'ok', text: `${passed > 0 ? `${passed} ${plural(passed, 'check')} passed` : 'No problems found'} · ${checked}` };
 }
 
 /** The model the agent last called, from its newest audit entry that names one. */
@@ -104,33 +145,6 @@ export function lastModel(entries: AuditEntry[]): string | null {
     if (!Number.isNaN(at) && (!best || at > best.at)) best = { at, model: e.model };
   }
   return best?.model ?? null;
-}
-
-/** Handover notes as labelled lines; empty when the agent hasn't handed over yet. */
-export function handoverLines(doc: HandoverDoc | null | undefined): { label: string; text: string }[] {
-  if (!doc) return [];
-  const out: { label: string; text: string }[] = [];
-  if (doc.state) out.push({ label: 'State', text: doc.state });
-  const pending = (doc.pending ?? []).map((p) => p.task).filter(Boolean);
-  if (pending.length) out.push({ label: 'Pending', text: pending.join('; ') });
-  const warnings = (doc.warnings ?? []).filter(Boolean);
-  if (warnings.length) out.push({ label: 'Warning', text: warnings.join(' ') });
-  return out;
-}
-
-/** Notes long enough to start collapsed: more than about four lines of text in the panel. */
-export function notesAreLong(lines: { text: string }[]): boolean {
-  return lines.reduce((n, l) => n + l.text.length, 0) > 320;
-}
-
-/**
- * What the Handover notes panel can show. Notes belong to a shift: when the
- * agent moves on, the previous shift's notes are out of date, so they're
- * replaced by a loading or failed line until the new ones arrive.
- */
-export function notesStatus(notesShift: number | null | undefined, currentShift: number | null, failed: boolean): 'current' | 'loading' | 'failed' {
-  if (notesShift === currentShift) return 'current';
-  return failed ? 'failed' : 'loading';
 }
 
 /** check_watch answers an unknown agent with { error: "Agent '…' not found." }. */

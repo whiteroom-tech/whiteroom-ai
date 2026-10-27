@@ -6,31 +6,33 @@ const at = (e: Record<string, unknown>) =>
   eventModel({ id: 'e1', timestamp: '2026-09-29T12:00:00.000Z', agentId: 'lead-agent', ...e } as AuditEntry, Date.parse('2026-09-29T12:05:00.000Z'));
 
 describe('handover health labels', () => {
-  it('a transfer names the other agent when it can; only a self handover made its context smaller', () => {
-    expect(at({ type: 'handover_out', toAgent: 'writer-agent' }).said).toBe('passed work to Writer-agent');
-    expect(at({ type: 'handover', toAgent: 'writer-agent' }).said).toBe('passed work to Writer-agent');
-    expect(at({ type: 'handover_out' }).said).toBe('passed work on');
+  it('says the agent saved its progress, never how; only a self handover made its context smaller', () => {
+    expect(at({ type: 'handover_out', toAgent: 'writer-agent' }).said).toBe('saved its progress');
+    expect(at({ type: 'handover', toAgent: 'writer-agent' }).said).toBe('saved its progress');
+    expect(at({ type: 'handover_in', fromAgent: 'writer-agent' }).said).toBe('continued its work');
     expect(at({ type: 'self_handover' }).said).toBe('made its context smaller');
-    expect(at({ type: 'handover_unrecorded' }).said).toBe("passed work on while records couldn't be saved; it was recorded later");
+    expect(at({ type: 'handover_unrecorded' }).said).toBe("saved its progress while records couldn't be written; it was recorded later");
+    expect(at({ type: 'rest_start' }).said).toBe('paused for a moment');
+    expect(at({ type: 'rest_end' }).said).toBe('started again');
   });
 
   it('handover loop names the new limit from the payload', () => {
     const m = at({ type: 'handover_loop_detected', previousLimit: 20000, newLimit: 40000, watchNumber: 12 });
     expect(m.who).toBe('Lead-agent');
-    expect(m.said).toBe('filled its context after a call or two, so WhiteRoom raised its context limit to 40,000 tokens to keep it working');
+    expect(m.said).toBe('ran out of room after a call or two, so WhiteRoom gave it more room (up to 40,000 tokens) to keep working');
     expect(m.code).toBe('H/L');
     expect(m.watch).toBe('#12');
   });
 
   it('handover loop still reads well without a limit', () => {
     expect(at({ type: 'handover_loop_detected' }).said).toBe(
-      'filled its context after a call or two, so WhiteRoom raised its context limit to keep it working',
+      'ran out of room after a call or two, so WhiteRoom gave it more room to keep working',
     );
   });
 
   it('summary failure', () => {
     const m = at({ type: 'handover_summary_failed', outcome: 'timeout', watchNumber: 4 });
-    expect(m.said).toBe("couldn't save its full progress, so it continued from a short note");
+    expect(m.said).toBe("couldn't save all of its progress");
     expect(m.tone).toBe('wouldBlock');
   });
 
@@ -45,7 +47,7 @@ describe('handover health labels', () => {
   it('malformed numbers are left out, never printed', () => {
     for (const bad of [0, NaN, Infinity, -1, 2.5, '40000']) {
       expect(at({ type: 'handover_loop_detected', newLimit: bad }).said).toBe(
-        'filled its context after a call or two, so WhiteRoom raised its context limit to keep it working',
+        'ran out of room after a call or two, so WhiteRoom gave it more room to keep working',
       );
       expect(at({ type: 'handover_results_truncated', results: bad }).said).toContain('had tool results too large');
     }
@@ -53,7 +55,7 @@ describe('handover health labels', () => {
 
   it('a repeat-work raise says why', () => {
     expect(at({ type: 'handover_loop_detected', reason: 'repeated_work', newLimit: 37500 }).said).toBe(
-      'kept redoing work it had already done, so WhiteRoom raised its context limit to 37,500 tokens to give it room to finish',
+      'kept redoing work it had already done, so WhiteRoom gave it more room (up to 37,500 tokens) to finish',
     );
   });
 
@@ -63,8 +65,8 @@ describe('handover health labels', () => {
     expect(d.code).toBe('H/D');
     expect(at({ type: 'handover_deferred', reason: 'something_new', deferrals: 2 }).said).toBe('got one more call to finish a step');
     expect(at({ type: 'handover_deferred' }).said).toBe('got one more call to finish a step');
-    expect(at({ type: 'handover_limit_lowered', newLimit: 25000 }).said).toBe('stopped redoing earlier work, so WhiteRoom lowered its context limit to 25,000 tokens');
-    expect(at({ type: 'handover_limit_lowered' }).said).toBe('stopped redoing earlier work, so WhiteRoom lowered its context limit');
+    expect(at({ type: 'handover_limit_lowered', newLimit: 25000 }).said).toBe('stopped redoing earlier work, so WhiteRoom gave it less room (25,000 tokens)');
+    expect(at({ type: 'handover_limit_lowered' }).said).toBe('stopped redoing earlier work, so WhiteRoom gave it less room');
   });
 
   it('each type has its own label and code, not the generic fallback', () => {
@@ -78,14 +80,14 @@ describe('handover health labels', () => {
 
   it('no label uses internal words', () => {
     for (const type of ['handover_loop_detected', 'handover_summary_failed', 'handover_results_truncated', 'handover_deferred', 'handover_limit_lowered']) {
-      expect(at({ type, results: 2, newLimit: 1, reason: 'repeated_work' }).said).not.toMatch(/watch|shift|session|compression|truncat/i);
+      expect(at({ type, results: 2, newLimit: 1, reason: 'repeated_work' }).said).not.toMatch(/watch|shift|session|compression|truncat|context limit|notes|summary|break/i);
     }
   });
 
   it('handover delivery and goal events read as sentences, never raw codes', () => {
-    expect(at({ type: 'handover_delivery_abandoned' }).said).toBe('had progress notes too large to deliver, so WhiteRoom sent a short version');
-    expect(at({ type: 'handover_chain_abandoned' }).said).toBe("couldn't receive its progress notes, so it carried on without them");
-    expect(at({ type: 'handover_notes_resealed' }).said).toBe('had its saved progress notes cleaned and re-secured by WhiteRoom');
+    expect(at({ type: 'handover_delivery_abandoned' }).said).toBe('had too much saved progress to send in full, so some was left out');
+    expect(at({ type: 'handover_chain_abandoned' }).said).toBe("couldn't get its saved progress back");
+    expect(at({ type: 'handover_notes_resealed' }).said).toBe('had its saved progress cleaned and re-secured by WhiteRoom');
     expect(at({ type: 'goal_set', cleared: false }).said).toBe('got a new goal from its owner');
     expect(at({ type: 'goal_set', cleared: true }).said).toBe('had its goal cleared');
     expect(at({ type: 'run_started' }).said).toBe('was started on a new task');

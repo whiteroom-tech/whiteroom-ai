@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { agentIdFromSegment, notesAreLong, breakEndsAt, canResume, canStartBreak, handoverLines, isNotFound, lastModel, notesStatus, shiftAside, shiftProgress, shiftStats, shiftSummary } from '@/lib/agent-detail';
-import type { AgentInfo, AuditEntry } from '@/lib/whiteroom/types';
+import { agentHealthLine, agentIdFromSegment, breakEndsAt, canPause, canResume, headerAction, isNotFound, lastModel, nowCard, statusWords, weekRuleWords } from '@/lib/agent-detail';
+import type { AgentInfo, AuditEntry, FleetDiagnosis, RunSummary } from '@/lib/whiteroom/types';
 import { agentState } from '@/lib/home';
 
 const now = Date.parse('2026-10-01T14:00:00Z');
@@ -16,53 +16,76 @@ describe('break timing', () => {
 });
 
 describe('what the operator may do', () => {
-  it('starts a break only for a working agent', () => {
-    expect(canStartBreak(working).allowed).toBe(true);
-    expect(canStartBreak(resting()).allowed).toBe(false);
-    expect(canStartBreak({ agentId: 'a', status: 'idle' })).toEqual({ allowed: false, why: 'Only a working agent can be sent on a break.' });
+  it('pauses any agent that isn\'t held on a Gov v1 fleet, and only a working one on an older fleet', () => {
+    expect(canPause({ agentId: 'a', status: 'idle', govV1: true }).allowed).toBe(true);
+    expect(canPause({ agentId: 'a', status: 'idle', govV1: true, hold: { state: 'paused', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } })).toEqual({ allowed: false, why: 'It’s already paused.' });
+    expect(canPause(working).allowed).toBe(true);
+    expect(canPause(resting())).toEqual({ allowed: false, why: 'It is already paused.' });
+    expect(canPause({ agentId: 'a', status: 'idle' })).toEqual({ allowed: false, why: 'Only a working agent can be paused.' });
   });
 
-  it('resumes only after the mandatory break, and says how long is left', () => {
-    expect(canResume(working, now)).toEqual({ allowed: false, why: 'It isn’t on a break.' });
-    expect(canResume(resting({ alarmAt: '2026-10-01T14:03:30Z' }), now)).toEqual({ allowed: false, why: 'The break is mandatory; it can resume in 4 min.' });
+  it('resumes once it can, and says how long is left', () => {
+    expect(canResume(working, now)).toEqual({ allowed: false, why: 'It isn’t paused.' });
+    expect(canResume(resting({ alarmAt: '2026-10-01T14:03:30Z' }), now)).toEqual({ allowed: false, why: 'It can resume in 4 min.' });
     expect(canResume(resting({ alarmAt: '2026-10-01T13:59:00Z' }), now).allowed).toBe(true);
     // Unknown end: let the engine decide (its answer is shown if it refuses).
     expect(canResume(resting(), now).allowed).toBe(true);
   });
+
+  it('offers one header action: Resume while held or paused, else Pause', () => {
+    expect(headerAction(working)).toBe('pause');
+    expect(headerAction(resting())).toBe('resume');
+    expect(headerAction({ agentId: 'a', status: 'idle', hold: { state: 'stopped', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } })).toBe('resume');
+  });
+
+  it('words the status without a pill', () => {
+    expect(statusWords('idle')).toEqual({ text: 'Waiting for work', tone: 'muted' });
+    expect(statusWords('working').text).toBe('Working');
+    expect(statusWords('handover').text).toBe('Working');
+    expect(statusWords('paused').text).toBe('Paused');
+    expect(statusWords('pausing').text).toBe('Pausing…');
+  });
 });
 
-describe('progress and summary', () => {
-  it('shows shift progress with minutes left', () => {
-    expect(shiftProgress(working, now)).toEqual({ pct: 41, onBreak: false, label: '41% · 3.2 min left' });
+describe('the Now card', () => {
+  const date = (iso: string) => iso.slice(5, 10);
+  const run = (shift: number): RunSummary => ({ runId: `a~${shift}`, agentId: 'a', shift, startedAt: '2026-10-24T20:45:00Z', endedAt: '2026-10-24T20:45:24Z', lengthSeconds: 24, calls: 6, failedCalls: 0, blockedCalls: 0, wouldActCalls: 0, spendMicros: 0, unpricedAttempts: 0, coverage: { calls: 6, checked: 6 }, flags: [] });
+  it('shows the last run, linked when Recent runs has it, and the all-time totals', () => {
+    const idle: AgentInfo = { agentId: 'a', status: 'idle', currentShift: null, lastShift: { watchNumber: 4, tokensUsed: 900, tasksCompleted: 6, minutesWorked: 0.4 }, lifetime: { tokensUsed: 53_400, tasksCompleted: 60, minutesWorked: 40 } };
+    expect(nowCard(idle, [run(4)], date)).toEqual({ status: 'Not running', run: { label: 'Last run', number: 4, tail: '6 tasks' }, runId: 'a~4', runDate: '10-24', allTime: 'All time: 60 tasks · 53.4K tokens' });
+    expect(nowCard(idle, null, date).runId).toBeNull();
   });
-
-  it('shows break progress while resting', () => {
-    expect(shiftProgress(resting({ restPercent: '50', alarmAt: '2026-10-01T14:02:00Z' }), now)).toEqual({ pct: 50, onBreak: true, label: '50% of the break · 2 min left' });
+  it('shows the run in progress, and never lifetime totals as a run (M14)', () => {
+    expect(nowCard(working, [], date)).toMatchObject({ status: 'Running', run: { label: 'Run', number: 8, tail: '62 tasks · 9.4 min so far' }, allTime: null });
+    // Older engine: an idle agent's flat fields are lifetime totals, so no run is claimed.
+    expect(nowCard({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332 }, [], date).run).toBeNull();
   });
-
-  it('clamps junk percentages', () => {
-    expect(shiftProgress({ ...working, percentComplete: '140%' }, now)!.pct).toBe(100);
-    expect(shiftProgress({ ...working, percentComplete: 'n/a' }, now)!.pct).toBe(0);
+  it('says Paused or Stopped while held', () => {
+    expect(nowCard({ agentId: 'a', status: 'working', hold: { state: 'stopped', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } }, [], date).status).toBe('Stopped');
   });
+});
 
-  it('summarises the shift', () => {
-    // The header keeps to the run number; the figures go in the panel, so they never overflow it.
-    expect(shiftSummary(working)).toBe('#8');
-    expect(shiftStats(working, (n) => `${n / 1000}K`)).toBe('62 tasks · 9.4 min worked · 12.4K tokens');
-    expect(shiftSummary({ agentId: 'a', status: 'idle' })).toBe('none in progress');
-    expect(shiftStats({ agentId: 'a', status: 'idle' }, String)).toBeNull();
+describe('Last 7 days rule activity', () => {
+  it('says blocked and would have blocked, or 0 caught', () => {
+    expect(weekRuleWords({ blocks: 2, wouldBlocks: 58 })).toEqual([{ count: 2, word: 'blocked' }, { count: 58, word: 'would have blocked' }]);
+    expect(weekRuleWords({ blocks: 0, wouldBlocks: 60 })).toEqual([{ count: 60, word: 'would have blocked' }]);
+    expect(weekRuleWords({ blocks: 0, wouldBlocks: 0 })).toEqual([{ count: 0, word: 'caught' }]);
   });
+});
 
-  it('never shows lifetime totals as the current shift (M14)', () => {
-    const idle = { agentId: 'a', status: 'idle', currentShift: null, lastShift: { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 }, lifetime: { tokensUsed: 4_030_000, tasksCompleted: 332, minutesWorked: 40 } };
-    expect(shiftSummary(idle)).toBe('none in progress');
-    expect(shiftStats(idle, String)).toBeNull();
-    expect(shiftAside(idle, (n) => `${n / 1e6}M`)).toEqual(['Last run #41: 5 tasks', 'Lifetime: 332 tasks, 4.03M tokens']);
-    expect(shiftAside(working, String)).toEqual([]);
-    // Older engine: an idle agent's flat fields are lifetime totals, so no shift is claimed.
-    expect(shiftSummary({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332, tokensUsed: 4_030_000 })).toBe('none in progress');
-    expect(shiftProgress(idle)).toBeNull(); // no made-up 0% bar
-    expect(shiftProgress({ agentId: 'a', status: 'idle', percentComplete: '0%' })).toBeNull();
+describe('health line', () => {
+  const base: FleetDiagnosis = { checkedAt: '2026-10-01T12:00:00Z', source: 'background', reports: [], waiting: [], skipped: [], truncated: false, readyAgents: 1, busiest: null, minCalls: 50 };
+  const report = (findings: FleetDiagnosis['reports'][number]['findings']): FleetDiagnosis['reports'][number] => ({ schema: 'diagnosis.v1', agentId: 'a', window: { from: '', to: '', days: 7, calls: 100, watches: 3 }, findings, clear: [{ detector: 'review_tool_errors', note: null }], notMeasured: [] });
+  const finding = { recommendationId: 'r', findingId: 'f', findingVersion: 1, detector: 'review_tool_loops' as const, detectorVersion: 1, status: 'open', measures: {}, estWastedTokens: null, estWastedCostMicros: null, evidenceCallIds: [], coverage: 'full', limitations: null, suggestedAction: { kind: 'rule' as const, rule: 'loop_breaker' as const, mode: 'watch' as const, appliesTo: ['a'], params: {} } };
+  it('names an open problem, or what passed, with when it was checked', () => {
+    expect(agentHealthLine({ ...base, reports: [report([finding])] }, 'a', now)).toEqual({ tone: 'warn', text: '1 problem: Repeating the same call · checked 2 hours ago' });
+    expect(agentHealthLine({ ...base, reports: [report([])] }, 'a', now)).toEqual({ tone: 'ok', text: '1 check passed · checked 2 hours ago' });
+  });
+  it('is quiet when the check is off or hasn\'t looked at the agent', () => {
+    expect(agentHealthLine(null, 'a', now)).toBeNull();
+    expect(agentHealthLine({ ...base, checkedAt: null }, 'a', now)).toBeNull();
+    expect(agentHealthLine(base, 'a', now)).toBeNull();
+    expect(agentHealthLine({ ...base, waiting: [{ agentId: 'a', calls7d: 3 }] }, 'a', now)?.text).toBe('Waiting for more calls before the first check');
   });
 });
 
@@ -71,14 +94,6 @@ describe('details', () => {
     const e = (ts: string, model?: string) => ({ id: ts, type: 'task_complete', timestamp: ts, model }) as AuditEntry;
     expect(lastModel([e('2026-10-01T13:00:00Z', 'claude-haiku-4-5'), e('2026-10-01T13:30:00Z', 'claude-sonnet-4-5'), e('2026-10-01T13:45:00Z')])).toBe('claude-sonnet-4-5');
     expect(lastModel([])).toBeNull();
-  });
-
-  it('turns handover notes into labelled lines, skipping empty parts', () => {
-    expect(handoverLines({ state: 'Triaging batch', pending: [{ task: 'policy lookup' }, { task: '' }], warnings: [] })).toEqual([
-      { label: 'State', text: 'Triaging batch' },
-      { label: 'Pending', text: 'policy lookup' },
-    ]);
-    expect(handoverLines(null)).toEqual([]);
   });
 
   it('recognises the engine\'s not-found answer', () => {
@@ -95,17 +110,6 @@ describe('agent ids from the URL', () => {
   });
 });
 
-describe('handover notes per shift', () => {
-  it('shows notes only for the shift they belong to', () => {
-    expect(notesStatus(8, 8, false)).toBe('current');
-    expect(notesStatus(null, null, false)).toBe('current');
-    // The agent moved on to shift 9: shift 8's notes are out of date.
-    expect(notesStatus(8, 9, false)).toBe('loading');
-    expect(notesStatus(8, 9, true)).toBe('failed');
-    expect(notesStatus(undefined, 1, false)).toBe('loading');
-  });
-});
-
 describe('durable holds (P2.2)', () => {
   const held = (state: 'paused' | 'stopped') => ({ agentId: 'a', status: 'working', hold: { state, by: 'dashboard', reason: null, at: '2026-10-01T18:00:00Z' } });
   it('shows a held agent as paused or stopped, whatever its watch status', () => {
@@ -115,12 +119,5 @@ describe('durable holds (P2.2)', () => {
   });
   it('lets a held agent resume right away', () => {
     expect(canResume(held('stopped'))).toEqual({ allowed: true });
-  });
-});
-
-describe('handover notes length', () => {
-  it('collapses only notes longer than a few lines', () => {
-    expect(notesAreLong([{ text: 'Triaging the 2:00 pm batch.' }])).toBe(false);
-    expect(notesAreLong([{ text: 'x'.repeat(200) }, { text: 'y'.repeat(200) }])).toBe(true);
   });
 });

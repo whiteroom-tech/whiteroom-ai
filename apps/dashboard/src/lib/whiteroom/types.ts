@@ -159,14 +159,6 @@ export interface ListFleetsResult {
   error?: string;
 }
 
-export interface GetHandoverResult {
-  /** Pending, single-use: the agent gets it on its next call, then it's cleared. */
-  handoverDoc?: HandoverDoc;
-  /** The last doc already delivered, kept for people to read (engine #94). */
-  lastHandoverDoc?: HandoverDoc | null;
-  error?: string;
-}
-
 export interface ClaimFleetResult {
   success?: boolean;
   fleetId?: string;
