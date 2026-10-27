@@ -349,7 +349,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setNotice(`Added a copy for ${agentsPicked.join(", ")}, in Record only. The rule for all agents is unchanged.`);
       void fetchData();
     } catch (e) {
-      handleError(e, "add the copy");
+      if (fleetRef.current === forFleet) handleError(e, "add the copy");
     } finally {
       setSaving(false);
     }
