@@ -1,10 +1,10 @@
 import { exportAuditFullPage, exportAuditSigned, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import type { AuditExportPage } from '@/lib/whiteroom/types';
 
-/** How a page fetch is made; the client's by default, swapped in tests. */
-
 /** The engine's refusal of a dashboard-only action without the service secret. */
 export const DASHBOARD_ONLY_REASON = 'This action is only available from the WhiteRoom dashboard.';
+
+/** How a page fetch is made; the client's by default, swapped in tests. */
 export type FetchExportPage = (fleetId: string, cursor?: { fromSeq: number; toSeq: number }) => Promise<AuditExportPage>;
 
 export interface AuditExportFile {
