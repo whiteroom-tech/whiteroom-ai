@@ -121,18 +121,33 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   const { refresh, tick } = usePoll(load, { intervalMs: 10_000, enabled: !!fleetId && !preview });
 
-  // Recent runs (also the Now card's link to the last run) and the fleet
-  // health check: read once. A health check that's off or fails shows nothing.
+  // Recent runs, also the Now card's link to the last run: read again when the
+  // agent's run number changes, so a new run shows up with its link and date.
+  // Another agent starts from Loading, never with the last one's runs.
+  const runNumber = agent ? (agent.currentShift?.watchNumber ?? agent.lastShift?.watchNumber ?? agent.watchNumber ?? null) : null;
+  const runsFor = useRef<string | null>(null);
   useEffect(() => {
     if (preview) return;
+    if (runsFor.current !== `${fleetId}/${agentId}`) { runsFor.current = `${fleetId}/${agentId}`; setRuns({ kind: 'loading' }); }
     let live = true;
     listRuns(fleetId, { ...runsDays('7d'), agentId, pageSize: 5 }, authKey).then(
       (res) => { if (live) setRuns('unsupported' in res ? { kind: 'unsupported' } : { kind: 'ok', runs: res.runs }); },
-      () => { if (live) setRuns({ kind: 'failed' }); },
+      () => { if (live) setRuns((r) => (r.kind === 'ok' ? r : { kind: 'failed' })); },
     );
-    getDiagnosis(fleetId, authKey).then((d) => { if (live) setDiagnosis(d); }, () => {});
     return () => { live = false; };
-  }, [fleetId, authKey, agentId, preview]);
+  }, [fleetId, authKey, agentId, preview, runNumber]);
+
+  // The fleet health check, read again on the same 5-minute cadence as
+  // Performance. A check that's off or fails shows nothing.
+  useEffect(() => {
+    if (preview) return;
+    setDiagnosis(null);
+    let live = true;
+    const read = () => { getDiagnosis(fleetId, authKey).then((d) => { if (live) setDiagnosis(d); }, () => {}); };
+    read();
+    const id = setInterval(read, 5 * 60_000);
+    return () => { live = false; clearInterval(id); };
+  }, [fleetId, authKey, preview]);
 
   // The ⋯ menu closes on Escape or a click outside it.
   useEffect(() => {
@@ -170,13 +185,19 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   }, [pending, refresh, tick]);
 
   async function pause() {
-    if (preview) { setToast({ text: `${agentId} paused.`, undo: () => setToast(null) }); return; }
+    // A Gov v1 fleet holds the agent until someone resumes it, so Pause offers
+    // Undo; an older fleet pauses it for a moment and it starts again on its own.
+    const held = !!agent?.govV1;
+    const toastFor = (): { text: string; undo?: () => void } => held
+      ? { text: `${agentId} paused. It makes no calls until you resume it. ${UNNAMED_CALLS_REFUSED}`, undo: () => void resume(true) }
+      : { text: `${agentId} is paused for a moment. It starts again on its own.` };
+    if (preview) { setToast(toastFor()); return; }
     setActionError(null);
     setPending('pausing');
     try {
       await pauseAgent(fleetId, agentId, authKey);
       refresh();
-      setToast({ text: `${agentId} paused. It makes no calls until you resume it.`, undo: () => void resume() });
+      setToast(toastFor());
     } catch (e) {
       setPending(null);
       const failure = controlFailure(e);
@@ -223,10 +244,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
     }
   }
 
-  async function resume() {
+  /** `held`: releasing a hold just made here (Undo), before a poll has shown it. */
+  async function resume(held = false) {
     if (preview) return;
     setActionError(null);
-    resumingHold.current = !!agent?.hold;
+    resumingHold.current = held || !!agent?.hold;
     setPending('resuming');
     try {
       await resumeAgent(fleetId, agentId, authKey);
@@ -237,7 +259,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       if (failure === 'sign-out') { onAuthError?.('Session expired. Please sign in again.'); return; }
       setActionError(failure === 'refused'
         ? { text: (e as Error).message }
-        : { text: `Couldn’t resume ${agentId}. ${e instanceof Error ? e.message : ''}`, retry: resume });
+        : { text: `Couldn’t resume ${agentId}. ${e instanceof Error ? e.message : ''}`, retry: () => void resume(held) });
     }
   }
 
@@ -320,7 +342,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
           variant="primary"
           disabled={!agent || !gate.allowed || !!pending}
           title={gate.why}
-          onClick={action === 'resume' ? resume : pause}
+          onClick={action === 'resume' ? () => void resume() : () => void pause()}
           busy={pending === 'pausing' || pending === 'resuming'}
           busyLabel={pending === 'resuming' ? 'Resuming…' : 'Pausing…'}
         >
