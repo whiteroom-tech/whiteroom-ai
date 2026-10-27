@@ -17,9 +17,9 @@ const DATA = {
   priceInfo: { version: '1', ageDays: 1, stale: false, expired: false },
 };
 
-const view = () => renderToStaticMarkup(h(IndexView, {
-  data: DATA, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: {} },
-  savingsDays: null, byAgent: null, rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
+const view = (data: object = DATA, rangeLabel = 'last 24 h') => renderToStaticMarkup(h(IndexView, {
+  data, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: {} },
+  savingsDays: null, byAgent: null, rangeLabel, fleetId: 'f1', authKey: 'k',
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
 } as never));
 
@@ -42,6 +42,20 @@ describe('Performance overview layout', () => {
     const perf = html.slice(html.indexOf('id="perf-performance"'));
     expect(perf).toContain('Failed calls');
     expect(perf).toContain('Typical response');
+  });
+
+  it('works out the card figures: spend, spend per hour over the range, and the typical response', () => {
+    const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    // $2.40 over 24 hours is $0.100 an hour; the sub-line is the range when nothing makes it inexact.
+    const exact = text(view({ ...DATA, summary: { ...DATA.summary, totalCost: 2_400_000 } }, 'last 24 hours'));
+    expect(exact).toMatch(/Spend .*\$2\.40 last 24 hours/);
+    expect(exact).toMatch(/Hourly .*\$0\.100 spend per hour/);
+    expect(exact).toMatch(/Typical response .*1\.9s median time per call/);
+    // Unpriced calls make both a lower bound ("+"), and the Spend sub-line says why.
+    const partial = text(view({ ...DATA, summary: { ...DATA.summary, totalCost: 2_400_000, unpricedAttempts: 3 } }, 'last 24 hours'));
+    expect(partial).toMatch(/\$2\.40\+/);
+    expect(partial).toMatch(/\$0\.100\+/);
+    expect(partial).not.toMatch(/\$2\.40\+ last 24 hours/);
   });
 
   it('leaves out More detail, Calls per hour and By agent', () => {

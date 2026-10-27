@@ -136,16 +136,16 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   const compression = compressionFor?.fleetId === fleetId ? compressionFor.value : null;
   // Read again with each page refresh (loadedAt); a failed read keeps the last figure. A read
   // still in flight for this fleet isn't started again (a cached page then a fresh one is one
-  // read). An answer for a fleet that's no longer shown is dropped.
+  // read). An answer for a fleet or key that's no longer current is dropped.
   const compressionReading = useRef<string | null>(null);
-  const shownFleet = useRef(fleetId);
-  useEffect(() => { shownFleet.current = fleetId; }, [fleetId]);
+  const shownReading = useRef('');
+  useEffect(() => { shownReading.current = `${fleetId}|${authKey ?? ''}`; }, [fleetId, authKey]);
   useEffect(() => {
     const reading = `${fleetId}|${authKey ?? ''}`;
     if (compressionReading.current === reading) return;
     compressionReading.current = reading;
     fleetReport(fleetId, authKey)
-      .then((r) => { if (!r.error && shownFleet.current === fleetId) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null }); }, () => {})
+      .then((r) => { if (!r.error && shownReading.current === reading) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null }); }, () => {})
       .finally(() => { if (compressionReading.current === reading) compressionReading.current = null; });
   }, [fleetId, authKey, loadedAt]);
   const seeFindings = () => {

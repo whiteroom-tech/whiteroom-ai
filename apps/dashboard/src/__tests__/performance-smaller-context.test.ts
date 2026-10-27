@@ -20,9 +20,9 @@ vi.mock('@/app/(citadel)/performance/_components/CostTracking', () => ({ CostTra
 
 const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
 const DATA = { fleetId: 'f1', period: { start: '2026-10-26T00:00:00Z', end: '2026-10-27T00:00:00Z' }, summary: { totalCalls: 1, totalCost: 0, avgLatencyMs: 1, errorRate: 0, models: [] }, recommendations: [], priceInfo: { version: '1', ageDays: 1, stale: false, expired: false } };
-const props = (fleetId: string, loadedAt: number) => ({
+const props = (fleetId: string, loadedAt: number, authKey = 'k') => ({
   data: DATA, hourlyData: { hourly: [] }, auditFailed: false, loadedAt, govSavings: null, govCounts: null, savingsDays: null, byAgent: null, rangeLabel: 'last 24 h',
-  fleetId, authKey: 'k', onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
+  fleetId, authKey, onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
 } as never);
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 const card = (el: HTMLElement) => [...el.querySelectorAll('.wr-stat-card')].find((c) => c.textContent?.startsWith('Smaller context'))!.textContent ?? '';
@@ -68,6 +68,22 @@ describe('Smaller context on Performance', () => {
     await act(async () => { root.render(h(IndexView, props('f2', 3))); });
     await flush();
     await act(async () => { answerF1({ energySavings: { compressionRatio: 90.8 } }); });
+    await flush();
+    expect(card(el)).toContain('40.0%');
+    root.unmount();
+  });
+
+  it('drops a late answer read with a key that is no longer current', async () => {
+    let answerOld!: (v: unknown) => void;
+    api.report.mockImplementationOnce(() => new Promise((r) => { answerOld = r; }));
+    api.report.mockResolvedValueOnce({ energySavings: { compressionRatio: 40 } });
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(IndexView, props('f1', 1, 'old'))); });
+    await act(async () => { root.render(h(IndexView, props('f1', 1, 'new'))); });
+    await flush();
+    await act(async () => { answerOld({ energySavings: { compressionRatio: 90.8 } }); });
     await flush();
     expect(card(el)).toContain('40.0%');
     root.unmount();

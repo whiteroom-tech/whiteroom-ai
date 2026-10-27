@@ -128,7 +128,7 @@ export function CostTrackingSection({ fleetId, authKey, preview }: {
       <div style={CARD}>
         <h3 style={{ ...H3, display: 'inline-flex', alignItems: 'center' }}>Cost prediction<Hint text={HELP.costTracking} /></h3>
         <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>
-          Couldn&apos;t load the cost prediction: {loadError}
+          Couldn&rsquo;t load the cost prediction: {loadError}
           {loadError === 'Unknown action.' && ' — the backend hasn’t been deployed with this feature yet.'}
         </div>
       </div>
