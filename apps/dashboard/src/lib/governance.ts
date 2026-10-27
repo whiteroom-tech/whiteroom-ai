@@ -253,6 +253,11 @@ export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'w
   return out;
 }
 
+/** The same tally, short enough for a card line: "2 blocked · 47 in Record only". */
+export function tallyShort(t: GovernanceTally): string {
+  return tallyWords(t).map((w) => w.text.replace(/ would have acted \(Record only\)$/, ' in Record only')).join(' · ');
+}
+
 export function tallyTotal(t: GovernanceTally): number {
   return t.blocks + t.wouldBlocks + (t.paused ?? 0) + (t.stopped ?? 0) + (t.toldYou ?? 0);
 }

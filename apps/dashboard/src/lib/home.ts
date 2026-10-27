@@ -226,18 +226,6 @@ export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.
     .map((e) => ({ ...activityRow(e, now), time: fmtWhen(eventTime(e) || '', now) }));
 }
 
-/** The last thing each agent did, for the Agents table's "Last event" column. */
-export function lastEventByAgent(entries: AuditEntry[], now: number = Date.now()): Record<string, { time: string; text: string }> {
-  const out: Record<string, { time: string; text: string; at: number }> = {};
-  for (const e of entries) {
-    const id = eventAgent(e);
-    const at = epochMs(e.timestamp);
-    if (!id || Number.isNaN(at) || (out[id] && out[id].at >= at)) continue;
-    out[id] = { time: fmtWhen(at, now), text: eventModel(e).said, at };
-  }
-  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { time: v.time, text: v.text }]));
-}
-
 // ── Live feed ────────────────────────────────────────────────────────────
 
 export type LiveKind = 'web' | 'tool' | 'file' | 'reply';
@@ -393,21 +381,31 @@ export function matchesFilter(row: LiveRow, f: LiveFilter): boolean {
 
 // ── Today (UTC) ──────────────────────────────────────────────────────────
 
-function utcMidnight(now: number): number {
+/**
+ * The hour that holds the viewer's local midnight. Hourly points are whole UTC
+ * hours, so in a half-hour zone (India) "today" starts at the top of that hour,
+ * up to 30 minutes early; whole-hour zones start exactly at midnight.
+ */
+function localTodayStart(now: number): number {
   const d = new Date(now);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  d.setHours(0, 0, 0, 0);
+  return Math.floor(d.getTime() / 3_600_000) * 3_600_000;
 }
 
-/** Hours to ask for so the window reaches back to 00:00 UTC today. */
-export function hoursSinceUtcMidnight(now: number = Date.now()): number {
-  return Math.max(1, Math.ceil((now - utcMidnight(now)) / 3_600_000));
+/** Hours to ask for so the window reaches back to the start of the viewer's today. */
+export function hoursSinceLocalMidnight(now: number = Date.now()): number {
+  return Math.max(1, Math.ceil((now - localTodayStart(now)) / 3_600_000));
 }
 
-/** Calls and spend since 00:00 UTC, from hourly points; `partial` when some calls have no price on file or were dropped. */
+/** Calls and spend since the viewer's midnight, from hourly points; `partial` when some calls have no price on file or were dropped. */
 export function todayTotals(hourly: FleetHourlyDataPoint[], now: number = Date.now()): { calls: number; costUsd: number; partial: boolean } {
-  const midnight = utcMidnight(now);
+  return hourTotals(hourly, localTodayStart(now));
+}
+
+/** Calls and spend in hourly points from `since` on. */
+export function hourTotals(hourly: FleetHourlyDataPoint[], since = 0): { calls: number; costUsd: number; partial: boolean } {
   return hourly
-    .filter((h) => Date.parse(h.hour) >= midnight)
+    .filter((h) => Date.parse(h.hour) >= since)
     .reduce<{ calls: number; costUsd: number; partial: boolean }>((t, h) => ({ calls: t.calls + (h.calls || 0), costUsd: t.costUsd + (h.costMicros || 0) / 1e6, partial: t.partial || (h.unpricedAttempts ?? 0) > 0 || (h.droppedAttempts ?? 0) > 0 }), { calls: 0, costUsd: 0, partial: false });
 }
 

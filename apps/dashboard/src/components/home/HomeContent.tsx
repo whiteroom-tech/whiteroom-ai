@@ -3,20 +3,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { DataTable, Hint, Icon, Panel, SegmentedControl, StatCard, StatusPill, FONT_MONO } from '@whiteroom/ui';
-import { auditLog, checkWatch, fleetReport, isAuthError, performanceFleetHourly } from '@/lib/whiteroom/client';
+import { DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, StatCard, StatusPill, FONT_MONO } from '@whiteroom/ui';
+import { auditLog, auditSummary, checkWatch, fleetReport, isAuthError, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
-import { blockedByPhrase, recentBlocksByAgent } from '@/lib/governance';
+import { blockedByPhrase, recentBlocksByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
+import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
+import { AGENT_SORTS, FIND_FROM, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek } from '@/lib/home-agents';
+import { localDay, zoneName } from '@/lib/runs';
+import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { ROUTES } from '@/lib/routes';
 import {
-  afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceUtcMidnight, lastEventByAgent, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, sortAgents, stateSummary, todayTotals, usd,
+  afterFanOut, agentState, clock, inferredNameNote, fanOutDue, FANOUT_START, hasUnknownAgents, mergeFanOut, overlayStatuses, reportStatuses, hoursSinceLocalMidnight, hourTotals, latestActivity, progressLine, savedByWhiteRoom, savedByWhiteRoomHint, stateSummary, todayTotals, usd
 } from '@/lib/home';
 import { ActivityRows } from './ActivityRows';
 import { LiveFeedPanel } from './LiveFeedPanel';
-import { fmtKwh, partialMark } from '@/lib/format';
+import { partialMark } from '@/lib/format';
 import { NeedsYou } from '@/components/home/NeedsYou';
 import { AgentActions } from '@/components/home/AgentActions';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -46,7 +50,10 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const [today, setToday] = useState<{ calls: number; costUsd: number; partial: boolean } | null>(null);
   const [todayFailing, setTodayFailing] = useState(false);
   const [failing, setFailing] = useState(false);
-  const [view, setView] = useState<AgentsView>(() => (safeGet('wr_home_agents_view') === 'table' ? 'table' : 'cards'));
+  // The viewer's pick, if any; without one, big fleets open on the table (TABLE_FROM).
+  const [view, setView] = useState<AgentsView | null>(() => { const v = safeGet('wr_home_agents_view'); return v === 'table' || v === 'cards' ? v : null; });
+  const [week, setWeek] = useState<HomeWeek | null>(null);
+  const [todayRules, setTodayRules] = useState<GovernanceTally | null>(null);
   const fanOutClock = useRef(FANOUT_START);
   const fanOutDetails = useRef<AgentInfo[]>([]);
   // No agents yet (README › Screens › 8): check every 5 s for the first call.
@@ -94,11 +101,33 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   }, [fleetId, authKey]);
 
   const fetchToday = useCallback(async (stale: () => boolean) => {
-    const res = await performanceFleetHourly(fleetId, hoursSinceUtcMidnight(), authKey);
+    const res = await performanceFleetHourly(fleetId, hoursSinceLocalMidnight(), authKey);
     if (stale()) return;
     if (res.error || !Array.isArray(res.hourly)) throw new Error('hourly unavailable');
     setToday(todayTotals(res.hourly));
   }, [fleetId, authKey]);
+
+  // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
+  // activity: extra, so a failure hides them rather than failing the page, and once a minute is enough.
+  const { refresh: refreshWeek } = usePoll(async (stale) => {
+    const todayDay = localDay();
+    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
+    // The engine's windows are whole UTC hours ending at the next hour boundary, so this many hours
+    // starts exactly at the hour holding local midnight six days ago, the same start the hourly
+    // totals are trimmed to (in a half-hour zone, up to 30 minutes before that midnight).
+    const HOUR = 3_600_000;
+    const weekHours = (Math.floor(Date.now() / HOUR) + 1) - Math.floor(start.getTime() / HOUR);
+    const [audit, scores, weekRules, dayRules, hourly] = await Promise.all([
+      auditSummary(fleetId, start, authKey).catch(() => null),
+      performanceAgentScores(fleetId, weekHours, authKey).catch(() => null),
+      ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: todayDay }, authKey).catch(() => null),
+      ruleActions(fleetId, { fromDay: todayDay, toDay: todayDay }, authKey).catch(() => null),
+      performanceFleetHourly(fleetId, weekHours, authKey).catch(() => null),
+    ]);
+    if (stale()) return;
+    setWeek(homeWeek(audit, scores, weekRules, hourly, start.getTime()));
+    setTodayRules(dayRules && !('unsupported' in dayRules) ? tallyFromRuleActions(dayRules.totals) : null);
+  }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
   const { refresh } = usePoll(async (stale) => {
     try {
@@ -125,8 +154,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // since usePoll already fetched on mount.
   const firstSignal = useRef(refreshSignal);
   useEffect(() => {
-    if (refreshSignal !== firstSignal.current) refresh();
-  }, [refreshSignal, refresh]);
+    if (refreshSignal !== firstSignal.current) { refresh(); refreshWeek(); }
+  }, [refreshSignal, refresh, refreshWeek]);
 
   function changeView(v: AgentsView) {
     setView(v);
@@ -146,6 +175,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       failing={failing}
       view={view}
       onViewChange={changeView}
+      week={week}
+      todayRules={todayRules}
       liveFeed={<LiveFeedPanel fleetId={fleetId} authKey={authKey} refreshSignal={refreshSignal} />}
       fleet={{ fleetId, authKey }}
       onActed={refresh}
@@ -158,7 +189,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
  * Home's layout from plain data, so it can be previewed with sample data
  * (/dev/home) without a fleet.
  */
-export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view, onViewChange, liveFeed, fleet, onActed, onAuthError }: {
+export function HomeView({ report, agents, entries, today, todayFailing = false, failing, view: viewPref, onViewChange, week = null, todayRules = null, liveFeed, fleet, onActed, onAuthError }: {
   report: FleetReport;
   agents: AgentInfo[];
   /** null while the first activity load is pending. */
@@ -166,8 +197,13 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   today: { calls: number; costUsd: number; partial?: boolean } | null;
   todayFailing?: boolean;
   failing: boolean;
-  view: AgentsView;
+  /** The viewer's pick; null lets the fleet's size choose (table above TABLE_FROM agents). */
+  view: AgentsView | null;
   onViewChange: (v: AgentsView) => void;
+  /** The last 7 days; null until it loads (or if it can't). */
+  week?: HomeWeek | null;
+  /** Today's rule activity; null when unknown. */
+  todayRules?: GovernanceTally | null;
   liveFeed: React.ReactNode;
   /** Where Needs you reads today's flagged runs; previews leave it out. */
   fleet?: { fleetId: string; authKey?: string };
@@ -176,17 +212,21 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   onAuthError?: (message: string) => void;
 }) {
   const router = useRouter();
-  const sorted = sortAgents(agents);
+  const view: AgentsView = viewPref ?? (agents.length > TABLE_FROM ? 'table' : 'cards');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<AgentSort>('attention');
+  const weeks = week?.agents ?? {};
+  // Search and sort only while their controls are shown (above FIND_FROM agents): a fleet that shrinks can't stay filtered.
+  const finding = agents.length > FIND_FROM;
+  const sorted = shownAgents(agents, weeks, finding ? search : '', finding ? sort : 'attention');
+  const weekOf = (id: string) => weeks[id.toLowerCase()];
+  const quiet = !!today && today.calls === 0 && !todayFailing;
   const nameNote = inferredNameNote(agents);
   const working = agents.filter((a) => agentState(a) === 'working').length;
-  const compression = report.energySavings.compressionRatio ?? 0;
   const saved = savedByWhiteRoom(report.energySavings);
   const blocks = recentBlocksByAgent(entries ?? []);
-  const lastEvents = lastEventByAgent(entries ?? []);
   const activity = latestActivity(entries ?? [], 4);
   const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
-  // The engine's own estimate, so Home and the fleet report agree.
-  const energyOverall = fmtKwh(parseFloat(report.energySavings.estimatedEnergySaved));
 
   return (
     <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -194,41 +234,63 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
         {failing && <RefreshFailed />}
         <NeedsYou agents={agents} holds={report.holds} holdsKnown={report.holds !== undefined} fleet={fleet} onResumed={() => onActed?.()} />
 
+        <section aria-labelledby="home-today" style={{ display: 'grid', gap: 10 }}>
+          <h2 id="home-today" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>Today <span style={{ fontWeight: 400, color: 'var(--tx2)' }}>· since 12:00 am {zoneName()}</span></h2>
+          {quiet && (
+            <p style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--tx2)' }}>
+              Quiet so far today.{week && week.calls !== null && <> This week: {week.calls.toLocaleString('en-US')} model call{week.calls === 1 ? '' : 's'}{week.costUsd !== null && <>, {usd(week.costUsd)}{partialMark(week.partial)} spent</>}{week.rules && tallyTotal(week.rules) > 0 && <>; rules: {tallyWords(week.rules).map((w) => w.text).join(', ')}</>}.</>} <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
+            </p>
+          )}
         <div className="wr-home-strip">
           <StatCard variant="card" label="Agents working" hint={HELP.agentsWorking} value={working} suffix={`/ ${report.agentCount}`} sub={stateSummary(agents) || ' '} />
-          <StatCard variant="card" label="Model calls today" hint={HELP.modelCallsToday} value={today ? today.calls.toLocaleString('en-US') : '—'} sub={todaySub} />
+          <StatCard variant="card" label="Model calls" hint={HELP.modelCallsToday} value={today ? today.calls.toLocaleString('en-US') : '—'} sub={todaySub} />
           <StatCard
             variant="card"
-            label="Spend today"
+            label="Spend"
             hint={saved ? `${HELP.spendToday} ${savedByWhiteRoomHint(saved)}` : HELP.spendToday}
             value={today ? `${usd(today.costUsd)}${partialMark(!!today.partial)}` : '—'}
             sub={saved && !todayFailing ? `est. ${usd(saved.usd)}${partialMark(saved.partial)} saved by WhiteRoom →` : todaySub}
             subHref={saved && !todayFailing ? ROUTES.performance : undefined}
           />
-          <StatCard variant="card" label="Smaller context" hint={HELP.smallerHandovers} value={compression > 0 ? `${compression.toFixed(1)}%` : '—'} sub={compression > 0 ? (energyOverall ? `${energyOverall} saved overall` : undefined) : 'nothing saved yet'} />
+          <StatCard variant="card" label="Rule activity" hint={HELP.ruleActions} value={todayRules ? tallyTotal(todayRules).toLocaleString('en-US') : '—'} sub={todayRules ? (tallyTotal(todayRules) > 0 ? tallyShort(todayRules) : 'none today') : 'not available yet'} subHref={todayRules && tallyTotal(todayRules) > 0 ? `${ROUTES.runs}?show=rules&day=${localDay()}` : undefined} />
         </div>
+        </section>
 
         <Panel
           title={<>Agents<Hint text={HELP.agents} /></>}
           count={agents.length}
-          bodyPadding={view === 'cards' ? '16px 18px' : 0}
+          bodyPadding={0}
           actions={<SegmentedControl<AgentsView> label="Agents view" value={view} onChange={onViewChange} size={24} options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]} />}
         >
-          {nameNote && <p style={{ margin: view === 'cards' ? '0 0 12px' : '12px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{nameNote}</p>}
+          <div style={{ display: 'grid', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Status now · tokens, savings, rule activity and score for the last 7 days.</p>
+            {finding && (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input type="search" className="wr-input" aria-label="Find an agent" placeholder="Find an agent" value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: '1 1 14rem', minWidth: 0, maxWidth: '22rem' }} />
+                <SelectChip label="Sort" value={sort} onChange={setSort} options={AGENT_SORTS} />
+              </div>
+            )}
+            {nameNote && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{nameNote}</p>}
+          </div>
           {agents.length === 0 ? (
-            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No agents connected yet. They appear here on their first call through WhiteRoom.</p>
+            <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No agents connected yet. They appear here on their first call through WhiteRoom.</p>
+          ) : sorted.length === 0 ? (
+            <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No agent matches &ldquo;{search}&rdquo;.</p>
           ) : view === 'cards' ? (
-            <div className="wr-home-agents">
+            <div className="wr-home-agents" style={{ padding: '16px 18px' }}>
               {sorted.map((a) => {
                 const block = blocks[a.agentId];
+                const w = weekOf(a.agentId);
                 return (
                   <div key={a.agentId} className="wr-agent-card-wrap">
                     <Link href={agentHref(a.agentId)} className="wr-agent-card">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                        <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.agentId}</span>
+                      {/* Names are never cut off: the name gets its own line and wraps. */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-md)', fontWeight: 600, overflowWrap: 'anywhere', minWidth: 0 }}>{a.agentId}</span>
                         <StatusPill state={agentState(a)} />
                       </div>
                       <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{progressLine(a)}</div>
+                      {w && weekLine(w) && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{weekLine(w)}</div>}
                       {block && (
                         <div>
                           <span className="wr-chip-warn">
@@ -249,21 +311,20 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
               rows={sorted}
               rowKey={(a) => a.agentId}
               onOpen={(a) => router.push(agentHref(a.agentId))}
-              rowHeight={42}
+              rowHeight={64}
               columns={[
-                { key: 'agent', header: 'Agent', width: 'minmax(140px,1.2fr)', render: (a) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{a.agentId}</span> },
+                { key: 'agent', header: 'Agent', width: 'minmax(160px,1.4fr)', render: (a) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{a.agentId}</span> },
                 { key: 'status', header: 'Status', width: '150px', render: (a) => <StatusPill state={agentState(a)} /> },
-                { key: 'shift', header: 'Run', width: '72px', numeric: true, render: (a) => String(a.watchNumber || 1) },
-                {
-                  key: 'last', header: 'Last event', width: 'minmax(200px,2fr)',
-                  render: (a) => {
-                    const ev = lastEvents[a.agentId];
-                    return ev ? <span><span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-xs)', color: 'var(--tx2)', marginRight: 10 }}>{ev.time}</span>{ev.text}</span> : <span style={{ color: 'var(--tx2)' }}>—</span>;
-                  },
-                },
+                { key: 'used', header: 'Tokens used', width: '110px', numeric: true, render: (a) => { const u = weekOf(a.agentId)?.used; return u !== undefined ? shortTokens(u) : '–'; } },
+                { key: 'saved', header: 'Saved, est.', width: '110px', numeric: true, render: (a) => { const w = weekOf(a.agentId); return w?.saved ? (w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`) : '–'; } },
+                { key: 'rules', header: 'Rule activity', width: 'minmax(160px,1.2fr)', render: (a) => { const r = weekOf(a.agentId)?.rules; return r && tallyTotal(r) > 0 ? <span style={{ whiteSpace: 'normal' }}>{tallyShort(r)}</span> : <span style={{ color: 'var(--tx2)' }}>–</span>; } },
+                { key: 'score', header: 'Score', width: '200px', render: (a) => { const sc = weekOf(a.agentId)?.score; return sc ? <AgentScoreWheel agent={sc} /> : <span style={{ color: 'var(--tx2)' }}>–</span>; } },
               ]}
             />
           )}
+          <p style={{ margin: 0, padding: '10px 18px 14px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', borderTop: '1px solid var(--line)' }}>
+            {sort === 'attention' || !finding ? 'Agents that need attention are listed first. ' : ''}Score is out of 10: the average of clean calls, speed and (once a task type is set) cost.
+          </p>
         </Panel>
 
         <Panel title={<>Activity<Hint text={HELP.activity} /></>} bodyPadding={0} actions={<a href={ROUTES.runs} className="wr-link">View all runs &rarr;</a>}>
@@ -300,4 +361,49 @@ function HomeSkeleton({ failing }: { failing: boolean }) {
 /** Agent detail for one agent. */
 function agentHref(agentId: string): string {
   return `/agents/${encodeURIComponent(agentId)}`;
+}
+
+/** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
+export interface HomeWeek {
+  agents: Record<string, AgentWeek>;
+  calls: number | null;
+  costUsd: number | null;
+  /** Some calls had no price on file, or were dropped: the spend is a lower bound. */
+  partial: boolean;
+  rules: GovernanceTally | null;
+}
+
+/** The week from what came back; anything that failed is left out, never shown as zero. */
+export function homeWeek(
+  audit: Awaited<ReturnType<typeof auditSummary>> | null,
+  scores: Awaited<ReturnType<typeof performanceAgentScores>> | null,
+  rules: Awaited<ReturnType<typeof ruleActions>> | null,
+  hourly: Awaited<ReturnType<typeof performanceFleetHourly>> | null,
+  /** Where the 7 days start (local midnight six days ago); hourly points before it are left out. */
+  since = 0,
+): HomeWeek {
+  const agents: Record<string, AgentWeek> = {};
+  const key = (id: string) => id.toLowerCase();
+  if (audit?.savingsBuckets) {
+    for (const t of agentTotalsFromBuckets(audit.savingsBuckets)) {
+      if (!t.agent) continue;
+      const micros = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
+      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
+    }
+  }
+  const okRules = rules && !('unsupported' in rules) ? rules : null;
+  if (okRules) for (const [id, c] of Object.entries(okRules.byAgent)) (agents[key(id)] ??= {}).rules = tallyFromRuleActions(c);
+  if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
+  const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
+  return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
+}
+
+/** "Last 7 days: 120K tokens · saved $1.20 · 2 blocked · score 8". */
+function weekLine(w: AgentWeek): string {
+  const bits: string[] = [];
+  if (w.used !== undefined) bits.push(`${shortTokens(w.used)} tokens`);
+  if (w.saved) bits.push(`saved ${w.savedUsd != null ? usd(w.savedUsd) : `${shortTokens(w.saved)} tokens`}`);
+  if (w.rules && tallyTotal(w.rules) > 0) bits.push(tallyShort(w.rules));
+  if (w.score?.score != null) bits.push(`score ${w.score.score}`);
+  return bits.length ? `Last 7 days: ${bits.join(' · ')}` : '';
 }
