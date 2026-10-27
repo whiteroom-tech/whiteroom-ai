@@ -67,8 +67,14 @@ describe('needs-attention order', () => {
   it('puts held and silent agents first, then agents with rule activity, then the usual order', async () => {
     const { shownAgents } = await import('@/lib/home-agents');
     const a = (agentId: string, x: Record<string, unknown> = {}) => ({ agentId, status: 'idle', ...x });
-    const agents = [a('alpha'), a('beta'), a('gamma', { hold: { state: 'paused', by: 'x', reason: null, at: '' } }), a('delta')];
+    const agents = [
+      a('alpha'), a('beta'), a('gamma', { hold: { state: 'paused', by: 'x', reason: null, at: '' } }), a('delta'),
+      a('epsilon', { hold: { state: 'stopped', by: 'x', reason: null, at: '' } }), a('zeta', { stale: true }), a('eta', { disconnected: true }),
+    ];
     const weeks = { delta: { rules: { blocks: 0, wouldBlocks: 3, paused: 0, stopped: 0, toldYou: 0 } } };
-    expect(shownAgents(agents, weeks, '', 'attention').map((x) => x.agentId)).toEqual(['gamma', 'delta', 'alpha', 'beta']);
+    const order = shownAgents(agents, weeks, '', 'attention').map((x) => x.agentId);
+    // Held, not reporting and disconnected agents all come before the rest.
+    expect(new Set(order.slice(0, 4))).toEqual(new Set(['gamma', 'epsilon', 'zeta', 'eta']));
+    expect(order.slice(4)).toEqual(['delta', 'alpha', 'beta']);
   });
 });

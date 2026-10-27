@@ -243,8 +243,8 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   /** Today's rule activity; null when unknown. */
   todayRules?: GovernanceTally | null;
   liveFeed: React.ReactNode;
-  /** The fleet, for Pause/Stop/Resume; previews leave it out. */
-  fleet?: { fleetId: string; authKey?: string };
+  /** The fleet, for Pause/Stop/Resume. `preview` (/dev/home) shows the controls without sending anything. */
+  fleet?: { fleetId: string; authKey?: string; preview?: boolean };
   /** After Pause, Stop or Resume: reload now rather than at the next poll. */
   onActed?: () => void;
   onAuthError?: (message: string) => void;
@@ -265,14 +265,14 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   const todaySub = todayFailing ? 'not updated, retrying' : 'counted hourly';
   const canAct = (a: AgentInfo) => !!fleet && (report.govV1 || a.govV1);
   const actions = (a: AgentInfo) => canAct(a)
-    ? <AgentActions agent={a} fleetId={fleet!.fleetId} authKey={fleet!.authKey} onChanged={() => onActed?.()} onAuthError={onAuthError} />
+    ? <AgentActions agent={a} fleetId={fleet!.fleetId} authKey={fleet!.authKey} onChanged={() => onActed?.()} onAuthError={onAuthError} preview={fleet!.preview} />
     : null;
 
   return (
     <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <div className="wr-home">
         {failing && <RefreshFailed />}
-        <HomeFacts agents={agents} holds={report.holds} holdsKnown={report.holds !== undefined} flaggedToday={flaggedToday} todayRules={todayRules} fleet={fleet} onResumed={() => onActed?.()} />
+        <HomeFacts agents={agents} holds={report.holds} holdsKnown={report.holds !== undefined} flaggedToday={flaggedToday} todayRules={todayRules} fleet={fleet?.preview ? undefined : fleet} onResumed={() => onActed?.()} />
 
         <section aria-labelledby="home-today" className="wr-home-today">
           <h2 id="home-today" className="wr-home-today__title">Today · since 12:00 am {zoneName()}</h2>

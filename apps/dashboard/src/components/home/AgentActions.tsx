@@ -27,13 +27,15 @@ const UNDO: Partial<Record<Act, Act>> = { pause: 'resume' };
  * so in a toast with Undo; Stop asks for the agent's name first. A failure
  * stays on screen until dismissed.
  */
-export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }: {
+export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError, preview = false }: {
   agent: AgentInfo;
   fleetId: string;
   authKey?: string;
   onChanged: () => void;
   /** The page's session-expired handler; without one, a note asks to reload. */
   onAuthError?: (message: string) => void;
+  /** /dev/home: the menu, toast and Undo work, but nothing is sent. */
+  preview?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -42,6 +44,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
   const [toast, setToast] = useState<{ message: string; undo?: Act } | null>(null);
   // The hold this Pause set, as the engine returned it, so Undo can tell its own pause from any other.
   const ownHold = useRef<AgentHold | null>(null);
+  const previewHold = useRef<AgentHold | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,7 +64,9 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     setToast(null);
     setBusy(true);
     try {
-      const res: { hold?: AgentHold | null } = await CALL[act](fleetId, agent.agentId, authKey);
+      const res: { hold?: AgentHold | null } = preview
+        ? (act === 'pause' ? { hold: (previewHold.current = { state: 'paused', by: 'preview', reason: null, at: new Date().toISOString() }) } : {})
+        : await CALL[act](fleetId, agent.agentId, authKey);
       if (act === 'pause') ownHold.current = res.hold?.state === 'paused' ? res.hold : null;
       // Undo only when the engine said which hold it set (older engines don't).
       setToast({ message: `${agent.agentId} ${DONE[act]}.`, undo: act === 'pause' && !ownHold.current ? undefined : UNDO[act] });
@@ -98,7 +103,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError }
     setError(null);
     let hold: AgentInfo['hold'];
     try {
-      hold = (await checkWatch(agent.agentId, fleetId, authKey)).hold;
+      hold = preview ? previewHold.current : (await checkWatch(agent.agentId, fleetId, authKey)).hold;
     } catch {
       setError(`Couldn’t check ${agent.agentId} before undoing. Nothing changed.`);
       return;

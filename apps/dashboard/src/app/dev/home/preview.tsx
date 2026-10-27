@@ -115,7 +115,7 @@ export function HomePreview({ empty = false, busy = false, view: initialView = '
         todayRules={busy ? tally(2, 47) : tally(0, 0)}
         week={busy ? BUSY_WEEK : QUIET_WEEK}
         liveFeed={<LiveFeedPanel fleetId="preview" refreshSignal={0} preview={busy ? LIVE : undefined} />}
-        fleet={{ fleetId: 'preview' }}
+        fleet={{ fleetId: 'preview', preview: true }}
       />
     </AppShell>
   );
