@@ -74,7 +74,16 @@ describe('the agent filter and groups', () => {
     expect(modeCount(g.all)).toBe('1 Block · 1 Record only');
     expect(modeCount([lb, { ...lb, id: 'x' }])).toBe('2 Block · 0 Record only');
     // The lead line leaves out rules that aren't set up.
-    expect(leadCounts([all, lead, other, tools])).toEqual({ total: 3, enforce: 1, watch: 1, off: 1 });
+    expect(leadCounts([all, lead, other, tools])).toEqual({ total: 3, enforce: 1, alert: 0, watch: 1, off: 1 });
+  });
+
+  it('counts a rule that only alerts apart from Block: it never stops a call', () => {
+    const alerts = rule({ mode: 'enforce', response: 'notify' });
+    const blocks = rule({ mode: 'enforce', response: 'block' });
+    const watch = rule({ mode: 'watch' });
+    expect(modeCount([alerts, watch])).toBe('0 Block · 1 Alert only · 1 Record only');
+    expect(modeCount([blocks, alerts])).toBe('1 Block · 1 Alert only · 0 Record only');
+    expect(leadCounts([alerts, blocks, watch])).toMatchObject({ total: 3, enforce: 1, alert: 1, watch: 1 });
   });
 
   it('lists a group in the Add a rule order, spend caps of a kind smallest first', () => {
