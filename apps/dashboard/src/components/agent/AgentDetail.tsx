@@ -253,6 +253,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   async function stop() {
     setConfirmStop(false);
+    // A pause toast's Undo would release the stop.
+    setToast(null);
     if (preview) { previewHold('stopped'); return; }
     setActionError(null);
     setPending('stopping');
@@ -271,6 +273,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
   async function remove() {
     setConfirmRemove(false);
+    setToast(null);
     if (preview) return;
     setActionError(null);
     setPending('removing');

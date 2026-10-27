@@ -10,7 +10,7 @@ import { createRoot } from 'react-dom/client';
 import './support/dialog';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => '/agents/scout' }));
-const api = vi.hoisted(() => ({ pause: vi.fn(), resume: vi.fn(), watch: vi.fn() }));
+const api = vi.hoisted(() => ({ pause: vi.fn(), resume: vi.fn(), watch: vi.fn(), stop: vi.fn(async () => ({ success: true })) }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   checkWatch: api.watch,
@@ -19,6 +19,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   getDiagnosis: async () => { throw new Error('off'); },
   pauseAgent: api.pause,
   resumeAgent: api.resume,
+  stopAgent: api.stop,
 }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
 vi.mock('@/components/agent/RecentRuns', () => ({ RecentRuns: () => null }));
@@ -154,6 +155,32 @@ describe('Undo right after Pause', () => {
     await flush();
     expect(m.el.textContent).not.toContain('Resuming…');
     expect(m.button('Pause')).toBeTruthy();
+    m.root.unmount();
+  });
+});
+
+describe('Stop after Pause', () => {
+  it('takes the pause toast away, so its Undo can’t release the stop', async () => {
+    api.watch.mockResolvedValue({ status: 'idle', watchNumber: 1, govV1: true });
+    // The engine reports the hold once the pause lands.
+    api.pause.mockImplementation(async () => {
+      api.watch.mockResolvedValue({ status: 'idle', watchNumber: 1, govV1: true, hold: { state: 'paused', by: 'dashboard', reason: null, at: '2026-10-27T10:00:00Z' } });
+      return { success: true };
+    });
+    const m = await mount();
+    await m.click(m.button('Pause'));
+    expect(m.toast()).not.toBeNull();
+    await m.click(m.more());
+    await m.click(m.button('Stop…'));
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1) as HTMLDialogElement;
+    const input = dialog.querySelector('input') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'scout');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await m.click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Stop agent'));
+    expect(api.stop).toHaveBeenCalledWith('f1', 'scout', 'k');
+    expect(m.toast()).toBeNull();
     m.root.unmount();
   });
 });
