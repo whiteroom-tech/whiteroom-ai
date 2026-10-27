@@ -112,3 +112,17 @@ export function accountClosingEmail(
       });
   return { subject: reason === 'deleted' ? 'Your WhiteRoom account will be deleted' : 'Your WhiteRoom plan has ended', ...email };
 }
+
+/** Sent once when an account's deletion window ends but something stops the deletion. */
+export function deletionBlockedEmail(why: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: "Your WhiteRoom account wasn't deleted yet",
+    ...transactionalEmail({
+      heading: "Your account wasn't deleted yet",
+      body: `${why} We'll delete your account once that's done.`,
+      cta: 'Open Settings',
+      url: settingsUrl,
+      footer: 'Your fleet is already closed. Nothing else changes until then.',
+    }),
+  };
+}

@@ -14,6 +14,10 @@
 -- Idempotent: safe to re-run, same as 001-011.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS closes_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_reason text;
+-- Set when a deletion that has run out can't finish (a subscription, an
+-- organization the account alone owns): the owner is told once, and the
+-- billing sync only looks again once that may have changed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_at timestamptz;
 
 DO $$
 BEGIN

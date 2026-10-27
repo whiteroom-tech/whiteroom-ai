@@ -415,11 +415,11 @@ export async function cancelAccountDeletion(): Promise<ActionResult> {
   let changed = false;
   try {
     await client.query('BEGIN');
-    // The user row is locked first and the plan read after, inside the
-    // transaction: a lapse that a webhook records meanwhile waits on this
-    // lock and reconciles against what this commits.
+    // The user row is locked first and the plan read after it, on this
+    // transaction's client: a lapse that a webhook records meanwhile waits on
+    // this lock and reconciles against what this commits.
     await getClosing(userId, client, { lock: true });
-    const { plan, sub } = await resolvePlan(userId);
+    const { plan, sub } = await resolvePlan(userId, client);
     if (lapsedPaidPlan(plan, sub)) {
       const res = await client.query(
         `UPDATE users SET close_reason = 'lapsed', updated_at = now()

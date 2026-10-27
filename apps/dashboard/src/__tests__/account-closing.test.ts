@@ -37,12 +37,17 @@ interface State {
   owner?: boolean;
   due?: string[];
   blocked?: boolean;
+  /** users.close_blocked_at of the due account (set by an earlier run). */
+  blockedAt?: string | null;
 }
 
 /** Answers every query by its SQL, so the order of checks doesn't matter. */
 function db(state: State) {
   query.mockReset();
   query.mockImplementation(async (sql: string, params?: unknown[]) => {
+    if (sql.includes("close_reason = 'deleted' AND closes_at <= now()") && sql.includes('entitlement_outbox')) {
+      return { rows: (state.due ?? []).map((id) => ({ id })) };
+    }
     if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: EMAIL }] };
     if (sql.startsWith('SELECT closes_at, close_reason FROM users')) return { rows: state.closing ? [state.closing] : [] };
     if (sql.startsWith("UPDATE users SET close_reason = 'deleted'")) {
@@ -70,10 +75,7 @@ function db(state: State) {
     if (sql.includes('trial_ends_at')) return { rows: [{ trial_ends_at: state.trialEndsAt ?? PAST }] };
     if (sql.includes('AS provisioned')) return { rows: state.owner ? [{ fleetId: 'fleet-1', userId: 'u1', provisioned: true, since: 1 }] : [] };
     if (sql.includes('SELECT fleet_id FROM users')) return { rows: state.owner ? [{ fleet_id: 'fleet-1' }] : [] };
-    if (sql.includes("close_reason = 'deleted' AND closes_at <= now()") && sql.includes('entitlement_outbox')) {
-      return { rows: (state.due ?? []).map((id) => ({ id })) };
-    }
-    if (sql.includes('FOR UPDATE') && sql.includes("close_reason = 'deleted'")) return { rows: [{ '?column?': 1 }] };
+    if (sql.includes('FOR UPDATE') && sql.includes("close_reason = 'deleted'")) return { rows: [{ close_blocked_at: state.blockedAt ?? null }] };
     return { rows: [], rowCount: 0 };
   });
 }
@@ -195,11 +197,13 @@ describe('Cancel deletion', () => {
     const begin = calls.indexOf('BEGIN');
     const lock = calls.findIndex((s) => s.startsWith('SELECT closes_at, close_reason FROM users') && s.includes('FOR UPDATE'));
     const plan = calls.findIndex((s) => s.includes('FROM subscriptions'));
+    const trial = calls.findIndex((s) => s.includes('trial_ends_at'));
     const commit = calls.indexOf('COMMIT');
     expect(begin).toBeGreaterThanOrEqual(0);
     expect(lock).toBeGreaterThan(begin);
     expect(plan).toBeGreaterThan(lock);
-    expect(commit).toBeGreaterThan(plan);
+    expect(trial).toBeGreaterThan(lock);
+    expect(commit).toBeGreaterThan(Math.max(plan, trial));
   });
 
   it('says so when there is nothing to cancel (or the window has run out)', async () => {
@@ -304,7 +308,7 @@ describe('the end of a deletion window', () => {
   it('removes only due accounts whose closing time the engine has, in one transaction each', async () => {
     db({ closing: null, due: ['u-due'] });
     const res = await finishDeletedAccounts();
-    expect(res).toEqual({ deleted: 1, skipped: 0 });
+    expect(res).toEqual({ deleted: 1, skipped: 0, blocked: 0 });
     const select = sqlCalls().find((s) => s.includes('entitlement_outbox'))!;
     expect(select).toContain("close_reason = 'deleted' AND closes_at <= now()");
     expect(select).toContain('delivered_at IS NULL');
@@ -313,15 +317,67 @@ describe('the end of a deletion window', () => {
     expect(sqlCalls()).toContain('COMMIT');
   });
 
-  it('skips an account that started a subscription meanwhile', async () => {
-    db({ closing: null, due: ['u-due'], blocked: true });
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 1 });
+  it('a blocked deletion is recorded once: marked, warned and the owner emailed, nothing deleted', async () => {
+    db({ closing: null, due: ['u-due'], blocked: true, blockedAt: null });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 1 });
     expect(ran('DELETE FROM users')).toBe(false);
+    const mark = query.mock.calls.find((c) => String(c[0]).startsWith('UPDATE users SET close_blocked_at = now()'))!;
+    expect(mark[1]).toEqual(['u-due']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const mail = sendEmail.mock.calls[0][0] as { subject: string; text: string };
+    expect(mail.subject).toBe("Your WhiteRoom account wasn't deleted yet");
+    expect(mail.text).toContain('Cancel your subscription in Manage billing');
+    warn.mockRestore();
+  });
+
+  it('a deletion already recorded as blocked is checked again quietly: no second warning or email', async () => {
+    db({ closing: null, due: ['u-due'], blocked: true, blockedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await finishDeletedAccounts()).toEqual({ deleted: 0, skipped: 0, blocked: 1 });
+    expect(warn).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('only looks at a blocked deletion again once its subscription or organization changed, or a day on', async () => {
+    db({ closing: null, due: [] });
+    await finishDeletedAccounts();
+    const select = sqlCalls().find((s) => s.includes('entitlement_outbox'))!;
+    expect(select).toContain('u.close_blocked_at IS NULL');
+    expect(select).toContain("u.close_blocked_at < now() - interval '1 day'");
+    expect(select).toContain('s.updated_at > u.close_blocked_at');
+    expect(select).toContain('l.created_at > u.close_blocked_at');
+  });
+
+  it('a blocked deletion goes through once the blocker is gone', async () => {
+    db({ closing: null, due: ['u-due'], blocked: false, blockedAt: new Date(Date.now() - 3_600_000).toISOString() });
+    expect(await finishDeletedAccounts()).toEqual({ deleted: 1, skipped: 0, blocked: 0 });
+    expect(ran('DELETE FROM users')).toBe(true);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('starting or cancelling a window clears an earlier block', async () => {
+    db({ closing: null, started: true });
+    await deleteAccount(EMAIL);
+    expect(sqlCalls().find((s) => s.startsWith('UPDATE users SET closes_at = now()'))).toContain('close_blocked_at = NULL');
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, cancelled: 1, trialEndsAt: IN_14_DAYS });
+    await cancelAccountDeletion();
+    expect(sqlCalls().find((s) => s.startsWith('UPDATE users SET closes_at = NULL'))).toContain('close_blocked_at = NULL');
   });
 });
 
 describe('checkout during a deletion', () => {
+  it('is refused once the fleet has closed: no charge for a fleet that stays closed', async () => {
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+    db({ closing: { closes_at: '2026-10-20T12:00:00.000Z', close_reason: 'lapsed' } });
+    const res = await startCheckout('pro');
+    expect(res).toEqual({ ok: false, error: "This account's fleet was closed on October 20, 2026. Contact support to start again." });
+    expect(ran('INSERT INTO subscriptions')).toBe(false);
+    delete process.env.STRIPE_PRICE_PRO;
+  });
+
   it('is refused until the deletion is cancelled', async () => {
     process.env.STRIPE_PRICE_PRO = 'price_pro';
     db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' } });

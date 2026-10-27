@@ -6,7 +6,7 @@ import 'server-only';
 import { appOrigin } from '@/lib/app-origin';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
-import { accountClosingEmail } from '@/lib/magic-link-email';
+import { accountClosingEmail, deletionBlockedEmail } from '@/lib/magic-link-email';
 import { isActiveStatus, isPaidPlanId, type PaidPlanId, type PlanId } from '@/lib/plans';
 import { CLOSE_WINDOW_DAYS, closingDate, type Closing, type CloseReason } from '@/lib/closing-shared';
 
@@ -46,7 +46,7 @@ export async function getClosing(userId: string, q: Queryable = db(), opts: { lo
  */
 export async function startClosing(q: Queryable, userId: string, reason: CloseReason, opts: { replaceEnded?: boolean } = {}): Promise<Closing | null> {
   const { rows } = await q.query(
-    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, updated_at = now()
+    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, close_blocked_at = NULL, updated_at = now()
      WHERE id = $1 AND (closes_at IS NULL${opts.replaceEnded ? ' OR closes_at <= now()' : ''})
      RETURNING closes_at, close_reason`,
     [userId, reason, CLOSE_WINDOW_DAYS],
@@ -61,7 +61,7 @@ export async function startClosing(q: Queryable, userId: string, reason: CloseRe
  */
 export async function cancelClosing(q: Queryable, userId: string, reason?: CloseReason): Promise<boolean> {
   const { rowCount } = await q.query(
-    `UPDATE users SET closes_at = NULL, close_reason = NULL, updated_at = now()
+    `UPDATE users SET closes_at = NULL, close_reason = NULL, close_blocked_at = NULL, updated_at = now()
      WHERE id = $1 AND closes_at > now() AND ($2::text IS NULL OR close_reason = $2)`,
     [userId, reason ?? null],
   );
@@ -128,34 +128,57 @@ const FINISH_BATCH = 100;
  * Only once the engine has acknowledged the account's last entitlement push
  * (no undelivered outbox row): that push is what carried the closing time,
  * and deleting the account first would leave nothing able to send it again.
- * An account that can't be deleted now (a subscription started during the
- * window, an organization it alone owns) is skipped and logged.
+ *
+ * An account that can't be deleted at the end of its window (a subscription
+ * started meanwhile, an organization it alone owns) is recorded once:
+ * close_blocked_at is set, a warning logged and the owner emailed what to
+ * do. It isn't tried again until what blocked it may have changed (its
+ * subscription row, or its organization's membership, changed since), with
+ * a daily check as a backstop, and those checks are quiet.
  */
-export async function finishDeletedAccounts(): Promise<{ deleted: number; skipped: number }> {
+export async function finishDeletedAccounts(): Promise<{ deleted: number; skipped: number; blocked: number }> {
   const { rows } = await db().query(
     `SELECT id FROM users u
      WHERE close_reason = 'deleted' AND closes_at <= now()
        AND NOT EXISTS (SELECT 1 FROM entitlement_outbox o WHERE o.user_id = u.id AND o.delivered_at IS NULL)
-     ORDER BY closes_at
+       AND (u.close_blocked_at IS NULL
+            OR u.close_blocked_at < now() - interval '1 day'
+            OR EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.updated_at > u.close_blocked_at)
+            OR EXISTS (SELECT 1 FROM organization_members m
+                       JOIN organization_audit_log l ON l.org_id = m.org_id
+                       WHERE m.user_id = u.id AND l.created_at > u.close_blocked_at))
+     ORDER BY u.close_blocked_at NULLS FIRST, closes_at
      LIMIT $1`,
     [FINISH_BATCH],
   );
   let deleted = 0;
   let skipped = 0;
+  let blockedCount = 0;
   for (const { id } of rows as Array<{ id: string }>) {
     const client = await db().connect();
     try {
       await client.query('BEGIN');
       // Re-checked under the lock: cancelled meanwhile, or not due after all.
       const { rows: still } = await client.query(
-        `SELECT 1 FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
+        `SELECT close_blocked_at FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
         [id],
       );
-      const blocked = still.length ? await deletionBlocker(client, id) : 'no longer due';
-      if (blocked) {
+      if (!still.length) {
         await client.query('ROLLBACK');
-        if (still.length) console.warn(`[closing] deletion of user ${id} skipped: ${blocked}`);
         skipped++;
+        continue;
+      }
+      const blocked = await deletionBlocker(client, id);
+      if (blocked) {
+        const first = still[0].close_blocked_at == null;
+        // Moves on each check, so "changed since" means since the last look.
+        await client.query(`UPDATE users SET close_blocked_at = now() WHERE id = $1`, [id]);
+        await client.query('COMMIT');
+        blockedCount++;
+        if (first) {
+          console.warn(`[closing] deletion of user ${id} blocked: ${blocked}`);
+          await sendDeletionBlockedEmail(id, blocked);
+        }
         continue;
       }
       await deleteAccountRows(client, id);
@@ -169,7 +192,20 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
       client.release();
     }
   }
-  return { deleted, skipped };
+  return { deleted, skipped, blocked: blockedCount };
+}
+
+/** Tells the owner, once, why their account wasn't deleted at the end of its window. Best effort. */
+async function sendDeletionBlockedEmail(userId: string, why: string): Promise<void> {
+  try {
+    const { rows } = await db().query(`SELECT email FROM users WHERE id = $1`, [userId]);
+    const to = rows[0]?.email as string | undefined;
+    if (!to) return;
+    const { subject, html, text } = deletionBlockedEmail(why, `${appOrigin()}/settings`);
+    await sendEmail({ to, subject, html, text });
+  } catch {
+    console.error(`[closing] couldn't send the blocked-deletion email for user ${userId}`);
+  }
 }
 
 /** Everything the dashboard holds for an account, inside the caller's transaction. */
@@ -232,10 +268,10 @@ export async function closingColumnsPresent(): Promise<boolean | null> {
   try {
     const { rows } = await db().query(
       `SELECT count(*)::int AS n FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason')`,
+       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason', 'close_blocked_at')`,
     );
     const n = rows[0]?.n;
-    return typeof n === 'number' ? n === 2 : null;
+    return typeof n === 'number' ? n === 3 : null;
   } catch {
     return null;
   }

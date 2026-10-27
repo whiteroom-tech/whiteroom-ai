@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   countAgents: vi.fn(),
   retrieve: vi.fn(),
   updateItem: vi.fn(),
+  finishDeleted: vi.fn(),
 }));
 
 const connectFails = vi.hoisted(() => ({ current: false }));
@@ -20,6 +21,7 @@ vi.mock('@/lib/db', () => ({
   }),
 }));
 vi.mock('@/lib/entitlements', () => ({ countAgents: mocks.countAgents }));
+vi.mock('@/lib/account-closing', () => ({ finishDeletedAccounts: mocks.finishDeleted }));
 vi.mock('@/lib/stripe', () => ({
   stripe: () => ({
     subscriptions: { retrieve: mocks.retrieve },
@@ -51,6 +53,7 @@ beforeEach(() => {
   mocks.countAgents.mockReset();
   mocks.retrieve.mockReset();
   mocks.updateItem.mockReset();
+  mocks.finishDeleted.mockReset().mockResolvedValue({ deleted: 0, skipped: 0, blocked: 0 });
 });
 
 describe('billing sync', () => {
@@ -268,5 +271,32 @@ describe('billing sync rotation and budget', () => {
     } finally {
       connectFails.current = false;
     }
+  });
+});
+
+describe('billing sync: deleted accounts', () => {
+  it('finishes accounts whose deletion window has run out, after the other passes, and reports it', async () => {
+    mocks.finishDeleted.mockResolvedValue({ deleted: 2, skipped: 1, blocked: 1 });
+    const res = await run(SECRET);
+    expect(res.status).toBe(200);
+    expect((await res.json()).deletions).toEqual({ deleted: 2, skipped: 1, blocked: 1 });
+    expect(mocks.finishDeleted).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 500 when that pass fails, with the other passes still run', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.finishDeleted.mockRejectedValue(new Error('database refused'));
+    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 8 }] });
+    mocks.countAgents.mockResolvedValue(8);
+    const res = await run(SECRET);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('Could not finish deleted accounts.');
+    expect(body.pro.checked).toBe(1);
+  });
+
+  it('is not run without the sync secret', async () => {
+    expect((await run()).status).toBe(401);
+    expect(mocks.finishDeleted).not.toHaveBeenCalled();
   });
 });

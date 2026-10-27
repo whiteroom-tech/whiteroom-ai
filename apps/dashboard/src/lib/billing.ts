@@ -4,7 +4,7 @@ import { appOrigin } from '@/lib/app-origin';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
-import { getClosing } from '@/lib/account-closing';
+import { closingDate, getClosing } from '@/lib/account-closing';
 import { countAgents, getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
 import { billableAgents, hasLiveSubscription, isPaidPlanId, isTrialActive, stripePriceId } from '@/lib/plans';
 
@@ -71,8 +71,14 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
 
   try {
     const user = await requireUser();
+    const closing = await getClosing(user.id);
+    // Closing is final (decision Q4): once the fleet has closed, paying
+    // wouldn't reopen it, so nothing is charged for it.
+    if (closing && new Date(closing.closesAt).getTime() <= Date.now()) {
+      return { ok: false, error: `This account's fleet was closed on ${closingDate(closing.closesAt)}. Contact support to start again.` };
+    }
     // A subscription started now would outlive the account, and block its removal.
-    if ((await getClosing(user.id))?.reason === 'deleted') {
+    if (closing?.reason === 'deleted') {
       return { ok: false, error: 'Cancel the account deletion before choosing a plan.' };
     }
     if (hasLiveSubscription(await getSubscriptionRow(user.id))) {

@@ -46,8 +46,11 @@ export interface Entitlement {
   usage: { fleets: number; agents: number | null };
 }
 
-export async function getSubscriptionRow(userId: string): Promise<SubscriptionRow | null> {
-  const { rows } = await db().query(
+/** Anything that runs a query: the pool, or a transaction's client. */
+type Queryable = Pick<ReturnType<typeof db>, 'query'>;
+
+export async function getSubscriptionRow(userId: string, q: Queryable = db()): Promise<SubscriptionRow | null> {
+  const { rows } = await q.query(
     `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
             current_period_end::text, cancel_at_period_end, billed_agents
      FROM subscriptions WHERE user_id = $1`,
@@ -71,14 +74,16 @@ export async function getSubscriptionRow(userId: string): Promise<SubscriptionRo
  * When this user's free Starter period ends. Null only if the user row is
  * gone, which effectivePlan treats as an expired trial.
  */
-export async function getTrialEndsAt(userId: string): Promise<string | null> {
-  const { rows } = await db().query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
+export async function getTrialEndsAt(userId: string, q: Queryable = db()): Promise<string | null> {
+  const { rows } = await q.query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
   return rows[0]?.trial_ends_at ?? null;
 }
 
-/** The plan this user is on right now, read fresh from the database. */
-export async function resolvePlan(userId: string): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
-  const [sub, trialEndsAt] = await Promise.all([getSubscriptionRow(userId), getTrialEndsAt(userId)]);
+/** The plan this user is on right now, read fresh from the database (inside `q`'s transaction when given one). */
+export async function resolvePlan(userId: string, q: Queryable = db()): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
+  // One after the other: a transaction's client runs one query at a time.
+  const sub = await getSubscriptionRow(userId, q);
+  const trialEndsAt = await getTrialEndsAt(userId, q);
   return { plan: effectivePlan(sub, trialEndsAt), sub, trialEndsAt };
 }
 
