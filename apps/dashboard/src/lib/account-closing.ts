@@ -46,7 +46,7 @@ export async function getClosing(userId: string, q: Queryable = db(), opts: { lo
  */
 export async function startClosing(q: Queryable, userId: string, reason: CloseReason, opts: { replaceEnded?: boolean } = {}): Promise<Closing | null> {
   const { rows } = await q.query(
-    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, close_blocked_at = NULL, close_blocked_notified_at = NULL, updated_at = now()
+    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, close_blocked_at = NULL, close_blocked_notified_at = NULL, close_blocked_email_attempts = 0, updated_at = now()
      WHERE id = $1 AND (closes_at IS NULL${opts.replaceEnded ? ' OR closes_at <= now()' : ''})
      RETURNING closes_at, close_reason`,
     [userId, reason, CLOSE_WINDOW_DAYS],
@@ -61,7 +61,7 @@ export async function startClosing(q: Queryable, userId: string, reason: CloseRe
  */
 export async function cancelClosing(q: Queryable, userId: string, reason?: CloseReason): Promise<boolean> {
   const { rowCount } = await q.query(
-    `UPDATE users SET closes_at = NULL, close_reason = NULL, close_blocked_at = NULL, close_blocked_notified_at = NULL, updated_at = now()
+    `UPDATE users SET closes_at = NULL, close_reason = NULL, close_blocked_at = NULL, close_blocked_notified_at = NULL, close_blocked_email_attempts = 0, updated_at = now()
      WHERE id = $1 AND closes_at > now() AND ($2::text IS NULL OR close_reason = $2)`,
     [userId, reason ?? null],
   );
@@ -132,8 +132,8 @@ const FINISH_BATCH = 100;
  * An account that can't be deleted at the end of its window (a subscription
  * started meanwhile, an organization it alone owns) is recorded once:
  * close_blocked_at is set and a warning logged, and the owner is emailed
- * what to do (close_blocked_notified_at, set only once a send works; a
- * failed send is tried again on the next run). It isn't tried again until
+ * what to do (notifyBlocked: a failed send is tried again on the next run,
+ * up to BLOCKED_EMAIL_ATTEMPTS times). It isn't tried again until
  * what blocked it may have changed (its subscription row, or its
  * organization's membership, changed since), with a daily check as a
  * backstop, and those checks are quiet.
@@ -163,7 +163,7 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
       await client.query('BEGIN');
       // Re-checked under the lock: cancelled meanwhile, or not due after all.
       const { rows: still } = await client.query(
-        `SELECT close_blocked_at, close_blocked_notified_at FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
+        `SELECT close_blocked_at, close_blocked_notified_at, close_blocked_email_attempts FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
         [id],
       );
       if (!still.length) {
@@ -179,14 +179,8 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
         await client.query('COMMIT');
         blockedCount++;
         if (first) console.warn(`[closing] deletion of user ${id} blocked: ${blocked}`);
-        // Told once: recorded only after a send that worked, so a failed
-        // send is tried again on the next run (quietly), and a sent one never
-        // repeats.
-        if (still[0].close_blocked_notified_at == null && (await sendDeletionBlockedEmail(id, blocked))) {
-          await db().query(
-            `UPDATE users SET close_blocked_notified_at = now() WHERE id = $1 AND close_blocked_notified_at IS NULL`,
-            [id],
-          );
+        if (still[0].close_blocked_notified_at == null) {
+          await notifyBlocked(id, blocked, Number(still[0].close_blocked_email_attempts ?? 0));
         }
         continue;
       }
@@ -204,18 +198,39 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
   return { deleted, skipped, blocked: blockedCount };
 }
 
-/** Tells the owner why their account wasn't deleted at the end of its window. Resolves whether it was sent. */
-async function sendDeletionBlockedEmail(userId: string, why: string): Promise<boolean> {
+/** Sends of the blocked-deletion email tried before giving up (one per billing-sync run). */
+export const BLOCKED_EMAIL_ATTEMPTS = 5;
+
+/**
+ * Tells the owner, once, why their account wasn't deleted at the end of its
+ * window. close_blocked_notified_at is set once it is settled: sent, no
+ * address to send to (logged once), or BLOCKED_EMAIL_ATTEMPTS failed sends
+ * (logged once). Until then a failed send is counted and tried again, quietly,
+ * on the next run. The banner and Settings say the same on every visit.
+ */
+async function notifyBlocked(userId: string, why: string, attempts: number): Promise<void> {
+  const settle = () => db().query(
+    `UPDATE users SET close_blocked_notified_at = now() WHERE id = $1 AND close_blocked_notified_at IS NULL`,
+    [userId],
+  );
+  const { rows } = await db().query(`SELECT email FROM users WHERE id = $1`, [userId]);
+  const to = rows[0]?.email as string | undefined;
+  if (!to) {
+    console.warn(`[closing] user ${userId} has no email address; the blocked deletion is shown in the dashboard only`);
+    await settle();
+    return;
+  }
   try {
-    const { rows } = await db().query(`SELECT email FROM users WHERE id = $1`, [userId]);
-    const to = rows[0]?.email as string | undefined;
-    if (!to) return false;
     const { subject, html, text } = deletionBlockedEmail(why, `${appOrigin()}/settings`);
     await sendEmail({ to, subject, html, text });
-    return true;
+    await settle();
   } catch {
-    console.error(`[closing] couldn't send the blocked-deletion email for user ${userId}; tried again next run`);
-    return false;
+    const tried = attempts + 1;
+    await db().query(`UPDATE users SET close_blocked_email_attempts = $2 WHERE id = $1`, [userId, tried]);
+    if (tried >= BLOCKED_EMAIL_ATTEMPTS) {
+      console.error(`[closing] gave up sending the blocked-deletion email for user ${userId} after ${tried} attempts`);
+      await settle();
+    }
   }
 }
 
@@ -243,12 +258,25 @@ export async function deleteAccountRows(q: Queryable, userId: string): Promise<v
  *   rule leave/remove/demote already enforce (audit F21).
  */
 export async function deletionBlocker(q: Queryable, userId: string): Promise<string | null> {
+  return (await findDeletionBlocker(q, userId, true))?.reason ?? null;
+}
+
+/**
+ * deletionBlocker with its kind. `lock` takes the row locks the deletion
+ * transaction needs; the read for the banner takes none.
+ */
+export async function findDeletionBlocker(
+  q: Queryable,
+  userId: string,
+  lock: boolean,
+): Promise<{ reason: string; kind: 'subscription' | 'organization' } | null> {
+  const forUpdate = lock ? ' FOR UPDATE' : '';
   const { rows: sub } = await q.query(
-    `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`,
+    `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1${forUpdate}`,
     [userId],
   );
   if (sub[0]?.stripe_subscription_id && isActiveStatus(String(sub[0].status))) {
-    return 'Cancel your subscription in Manage billing before deleting your account.';
+    return { kind: 'subscription', reason: 'Cancel your subscription in Manage billing before deleting your account.' };
   }
 
   const { rows: owned } = await q.query(
@@ -258,7 +286,7 @@ export async function deletionBlocker(q: Queryable, userId: string): Promise<str
   const orgIds = owned.map((r) => r.org_id);
   if (orgIds.length === 0) return null;
 
-  await q.query(`SELECT id FROM organizations WHERE id = ANY($1) FOR UPDATE`, [orgIds]);
+  if (lock) await q.query(`SELECT id FROM organizations WHERE id = ANY($1) FOR UPDATE`, [orgIds]);
   const { rows: stranded } = await q.query(
     `SELECT o.name FROM organizations o
      WHERE o.id = ANY($1)
@@ -268,7 +296,7 @@ export async function deletionBlocker(q: Queryable, userId: string): Promise<str
     [orgIds, userId],
   );
   if (stranded.length === 0) return null;
-  return `You're the only owner of ${stranded[0].name ?? 'your organization'}. Make someone else an owner before deleting your account.`;
+  return { kind: 'organization', reason: `You're the only owner of ${stranded[0].name ?? 'your organization'}. Make someone else an owner before deleting your account.` };
 }
 
 /**
@@ -279,10 +307,10 @@ export async function closingColumnsPresent(): Promise<boolean | null> {
   try {
     const { rows } = await db().query(
       `SELECT count(*)::int AS n FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason', 'close_blocked_at', 'close_blocked_notified_at')`,
+       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason', 'close_blocked_at', 'close_blocked_notified_at', 'close_blocked_email_attempts')`,
     );
     const n = rows[0]?.n;
-    return typeof n === 'number' ? n === 4 : null;
+    return typeof n === 'number' ? n === 5 : null;
   } catch {
     return null;
   }

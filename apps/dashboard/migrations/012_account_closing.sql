@@ -21,6 +21,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_at timestamptz;
 -- When the owner was told about the block. Set only after a send that
 -- worked, so a failed email is tried again and a sent one never repeats.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_notified_at timestamptz;
+-- Failed sends of that email so far; it is given up after a few.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS close_blocked_email_attempts integer NOT NULL DEFAULT 0;
 
 DO $$
 BEGIN

@@ -25,8 +25,8 @@ import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
-import { CLOSE_WINDOW_DAYS, closingDate, type Closing } from '@/lib/closing-shared';
-import { CLOSING_CHANGED } from '@/components/AccountClosingBanner';
+import { CLOSE_WINDOW_DAYS, blockedMessage, closingDate, type Closing } from '@/lib/closing-shared';
+import { BlockedFix, CLOSING_CHANGED } from '@/components/AccountClosingBanner';
 import { plural, DAY_MS } from '@/lib/format';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -614,6 +614,22 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
     } finally {
       setBusy(false);
     }
+  }
+
+  if (deleting && new Date(deleting.closesAt).getTime() <= Date.now()) {
+    return (
+      <Section title="Delete account" tone="danger" description={deleting.blocked ? blockedMessage(deleting.blocked.reason) : 'Your account is being deleted.'}>
+        {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '0 0 12px' }}>{error}</p>}
+        {deleting.blocked && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <BlockedFix kind={deleting.blocked.kind} />
+            <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not keep the account.')}>
+              {busy ? 'Keeping…' : 'Keep my account'}
+            </Button>
+          </div>
+        )}
+      </Section>
+    );
   }
 
   if (deleting) {

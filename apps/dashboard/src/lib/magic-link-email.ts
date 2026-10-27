@@ -1,3 +1,5 @@
+import { blockedMessage } from '@/lib/closing-shared';
+
 // Table-based and fully inline-styled on purpose: the major email clients drop
 // <style> blocks and have no flexbox, so the layout has to survive on
 // attributes and inline CSS alone.
@@ -119,10 +121,10 @@ export function deletionBlockedEmail(why: string, settingsUrl: string): { subjec
     subject: "Your WhiteRoom account wasn't deleted yet",
     ...transactionalEmail({
       heading: "Your account wasn't deleted yet",
-      body: `${why} We'll delete your account once that's done.`,
+      body: blockedMessage(why),
       cta: 'Open Settings',
       url: settingsUrl,
-      footer: 'Your fleet is already closed. Nothing else changes until then.',
+      footer: 'Fix it or keep your account from Settings.',
     }),
   };
 }

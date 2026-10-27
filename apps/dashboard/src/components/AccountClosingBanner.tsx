@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button } from '@whiteroom/ui';
 import { cancelAccountDeletion, getAccountClosing } from '@/lib/account';
-import { closingDate as day, type Closing } from '@/lib/closing-shared';
+import { blockedMessage, closingDate as day, type Closing } from '@/lib/closing-shared';
 import { ROUTES } from '@/lib/routes';
 import { DAY_MS, plural } from '@/lib/format';
 
@@ -21,9 +21,8 @@ export function closingMessage(c: Closing, now = Date.now()): string {
   const left = daysLeft(c.closesAt, now);
   const when = `${day(c.closesAt)}, in ${left} ${plural(left, 'day')}`;
   if (c.reason === 'deleted') {
-    return left > 0
-      ? `Your account will be deleted on ${when}. Your fleet keeps working until then.`
-      : 'Your account is being deleted.';
+    if (left > 0) return `Your account will be deleted on ${when}. Your fleet keeps working until then.`;
+    return c.blocked ? blockedMessage(c.blocked.reason) : 'Your account is being deleted.';
   }
   return left > 0
     ? `Your plan has ended. Your fleet keeps working until ${when}. Then it closes and your WhiteRoom fleet key stops working.`
@@ -32,10 +31,18 @@ export function closingMessage(c: Closing, now = Date.now()): string {
 
 const linkClass = 'wr-btn wr-btn--secondary wr-btn--h28';
 
+/** The fix a blocked deletion needs, as a link: Manage billing, or the organization. */
+export function BlockedFix({ kind }: { kind: 'subscription' | 'organization' }) {
+  return kind === 'subscription'
+    ? <Link href={`${ROUTES.settings}#plan`} className={linkClass} style={{ textDecoration: 'none' }}>Manage billing</Link>
+    : <Link href={ROUTES.organization} className={linkClass} style={{ textDecoration: 'none' }}>Open organization</Link>;
+}
+
 /**
  * Every signed-in page, while the account is closing (deleted, or plan
  * lapsed): days left, a way to the export, and Cancel deletion or Choose a
- * plan. Renders nothing otherwise.
+ * plan. A deletion that ended but can't finish (blocked) says why, with the
+ * fix and Keep my account. Renders nothing otherwise.
  */
 export function AccountClosingBanner() {
   const [closing, setClosing] = useState<Closing | null>(null);
@@ -75,6 +82,11 @@ export function AccountClosingBanner() {
       {closing.reason === 'deleted'
         ? <Button size={28} busy={busy} busyLabel="Cancelling…" onClick={() => void cancel()}>Cancel deletion</Button>
         : <Link href={`${ROUTES.settings}#plan`} className={linkClass} style={{ textDecoration: 'none' }}>Choose a plan</Link>}
+    </>
+  ) : closing.blocked ? (
+    <>
+      <BlockedFix kind={closing.blocked.kind} />
+      <Button size={28} busy={busy} busyLabel="Keeping…" onClick={() => void cancel()}>Keep my account</Button>
     </>
   ) : undefined;
 

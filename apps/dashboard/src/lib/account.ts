@@ -6,7 +6,7 @@ import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
-import { cancelClosing, deletionBlocker, getClosing, lapsedPaidPlan, sendClosingEmail, startClosing, type Closing } from '@/lib/account-closing';
+import { cancelClosing, deletionBlocker, findDeletionBlocker, getClosing, lapsedPaidPlan, sendClosingEmail, startClosing, type Closing } from '@/lib/account-closing';
 import { enqueueEntitlementSync, resolvePlan, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { HOUR_MS } from '@/lib/format';
 
@@ -421,7 +421,19 @@ export async function cancelAccountDeletion(): Promise<ActionResult> {
     // this lock and reconciles against what this commits.
     await getClosing(userId, client, { lock: true });
     const { plan, sub } = await resolvePlan(userId, client);
-    if (lapsedPaidPlan(plan, sub)) {
+    // A deletion whose window ended but couldn't finish (blocked): keeping
+    // the account ends the deletion. The fleet closed when the window ended
+    // and closing is final, so the account stays with its fleet closed (the
+    // ended window is kept as 'lapsed', which is what refuses a new plan).
+    const kept = await client.query(
+      `UPDATE users SET close_reason = 'lapsed', close_blocked_at = NULL, close_blocked_notified_at = NULL,
+                        close_blocked_email_attempts = 0, updated_at = now()
+       WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() AND close_blocked_at IS NOT NULL`,
+      [userId],
+    );
+    if ((kept.rowCount ?? 0) > 0) {
+      changed = true;
+    } else if (lapsedPaidPlan(plan, sub)) {
       const res = await client.query(
         `UPDATE users SET close_reason = 'lapsed', updated_at = now()
          WHERE id = $1 AND close_reason = 'deleted' AND closes_at > now()`,
@@ -446,12 +458,22 @@ export async function cancelAccountDeletion(): Promise<ActionResult> {
   return { ok: true };
 }
 
-/** What the closing banner shows: the signed-in account's window, or null. Never throws. */
+/**
+ * What the closing banner and Settings show: the signed-in account's window,
+ * or null, with why a deletion is blocked once the billing sync has found it
+ * so. Never throws.
+ */
 export async function getAccountClosing(): Promise<Closing | null> {
   try {
     const session = await auth();
     if (!session?.user?.id) return null;
-    return await getClosing(session.user.id);
+    const userId = session.user.id;
+    const closing = await getClosing(userId);
+    if (closing?.reason !== 'deleted' || new Date(closing.closesAt).getTime() > Date.now()) return closing;
+    const { rows } = await db().query(`SELECT close_blocked_at FROM users WHERE id = $1`, [userId]);
+    if (!rows[0]?.close_blocked_at) return closing;
+    const blocked = await findDeletionBlocker(db(), userId, false);
+    return blocked ? { ...closing, blocked } : closing;
   } catch {
     return null;
   }
