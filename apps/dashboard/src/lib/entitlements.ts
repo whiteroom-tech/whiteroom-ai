@@ -243,7 +243,7 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
   try {
     closing = await reconcileLapse(userId, plan, sub);
   } catch (err) {
-    console.error('[entitlements] closing check failed');
+    console.error('[entitlements] closing check failed:', err instanceof Error ? err.message : 'unknown error');
     return false;
   }
   if (fleetIds.length === 0) return true;

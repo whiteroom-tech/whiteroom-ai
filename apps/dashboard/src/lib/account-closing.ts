@@ -32,20 +32,22 @@ function toClosing(row: Record<string, unknown> | undefined): Closing | null {
 }
 
 /** The account's closing window, or null when it isn't closing. A window whose time has passed is still returned. */
-export async function getClosing(userId: string, q: Queryable = db()): Promise<Closing | null> {
-  const { rows } = await q.query(`SELECT closes_at, close_reason FROM users WHERE id = $1`, [userId]);
+export async function getClosing(userId: string, q: Queryable = db(), opts: { lock?: boolean } = {}): Promise<Closing | null> {
+  const { rows } = await q.query(`SELECT closes_at, close_reason FROM users WHERE id = $1${opts.lock ? ' FOR UPDATE' : ''}`, [userId]);
   return toClosing(rows[0]);
 }
 
 /**
- * Starts the window, unless one is already running. Returns the new window,
+ * Starts a 14-day window, unless one is already running. `replaceEnded` also
+ * starts a fresh one over a window that has run out (a deletion after a
+ * lapse closed the fleets still gets its 14 days). Returns the new window,
  * or null when nothing started (one was running, or no such user), so only
  * the caller that started it sends the email.
  */
-export async function startClosing(q: Queryable, userId: string, reason: CloseReason): Promise<Closing | null> {
+export async function startClosing(q: Queryable, userId: string, reason: CloseReason, opts: { replaceEnded?: boolean } = {}): Promise<Closing | null> {
   const { rows } = await q.query(
     `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, updated_at = now()
-     WHERE id = $1 AND closes_at IS NULL
+     WHERE id = $1 AND (closes_at IS NULL${opts.replaceEnded ? ' OR closes_at <= now()' : ''})
      RETURNING closes_at, close_reason`,
     [userId, reason, CLOSE_WINDOW_DAYS],
   );
@@ -230,7 +232,7 @@ export async function closingColumnsPresent(): Promise<boolean | null> {
   try {
     const { rows } = await db().query(
       `SELECT count(*)::int AS n FROM information_schema.columns
-       WHERE table_name = 'users' AND column_name IN ('closes_at', 'close_reason')`,
+       WHERE table_schema = current_schema() AND table_name = 'users' AND column_name IN ('closes_at', 'close_reason')`,
     );
     const n = rows[0]?.n;
     return typeof n === 'number' ? n === 2 : null;

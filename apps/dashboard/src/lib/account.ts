@@ -346,7 +346,10 @@ export async function confirmEmailChange(token: string): Promise<
  * owns (calls refused, WhiteRoom fleet key revoked, audit trail kept) and the
  * billing sync removes the account (finishDeletedAccounts).
  *
- * A lapse window already running becomes a deletion, with the same end date.
+ * A lapse window still running becomes a deletion with the same end date; a
+ * window that has run out is replaced by a fresh 14 days, so a click never
+ * removes an account without its window. Asking again while a deletion runs
+ * (a double submit, a second tab) changes nothing and sends no second email.
  */
 export async function deleteAccount(confirmEmail: string): Promise<ActionResult> {
   const userId = await requireUserId();
@@ -357,7 +360,8 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
     return { ok: false, error: 'Type your email address exactly to confirm.' };
   }
 
-  let started: Closing | null = null;
+  // The window to email about: one started or converted by this call.
+  let changed: Closing | null = null;
   const client = await db().connect();
   try {
     await client.query('BEGIN');
@@ -368,29 +372,35 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
       return { ok: false, error: blocked };
     }
 
-    started = await startClosing(client, userId, 'deleted');
-    if (!started) {
-      // A window is already running (or ran out after a lapse): it becomes a
-      // deletion with the same date, so the account goes when it ends.
-      await client.query(
-        `UPDATE users SET close_reason = 'deleted', updated_at = now() WHERE id = $1 AND closes_at IS NOT NULL`,
+    // Locked, so two requests can't both decide they started it.
+    const current = await getClosing(userId, client, { lock: true });
+    const open = !!current && new Date(current.closesAt).getTime() > Date.now();
+    if (!open) {
+      changed = await startClosing(client, userId, 'deleted', { replaceEnded: true });
+    } else if (current!.reason === 'lapsed') {
+      const res = await client.query(
+        `UPDATE users SET close_reason = 'deleted', updated_at = now()
+         WHERE id = $1 AND close_reason = 'lapsed' AND closes_at > now()`,
         [userId],
       );
+      if ((res.rowCount ?? 0) > 0) changed = { reason: 'deleted', closesAt: current!.closesAt };
     }
     // Same transaction: the engine hears about the closing time even if the
     // push below fails (the sweep delivers it).
-    await enqueueEntitlementSync(client, userId, 'account_closing');
+    if (changed) await enqueueEntitlementSync(client, userId, 'account_closing');
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[account] deletion failed:', err instanceof Error ? err.message : 'unknown error');
     return { ok: false, error: 'Could not delete the account.' };
   } finally {
     client.release();
   }
 
-  await syncEntitlementsToEngine(userId);
-  const closing = started ?? (await getClosing(userId));
-  if (closing) await sendClosingEmail(userId, closing);
+  if (changed) {
+    await syncEntitlementsToEngine(userId);
+    await sendClosingEmail(userId, changed);
+  }
   return { ok: true };
 }
 
@@ -400,12 +410,16 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
  */
 export async function cancelAccountDeletion(): Promise<ActionResult> {
   const userId = await requireUserId();
-  const { plan, sub } = await resolvePlan(userId);
 
   const client = await db().connect();
   let changed = false;
   try {
     await client.query('BEGIN');
+    // The user row is locked first and the plan read after, inside the
+    // transaction: a lapse that a webhook records meanwhile waits on this
+    // lock and reconciles against what this commits.
+    await getClosing(userId, client, { lock: true });
+    const { plan, sub } = await resolvePlan(userId);
     if (lapsedPaidPlan(plan, sub)) {
       const res = await client.query(
         `UPDATE users SET close_reason = 'lapsed', updated_at = now()
@@ -420,6 +434,7 @@ export async function cancelAccountDeletion(): Promise<ActionResult> {
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[account] cancelling the deletion failed:', err instanceof Error ? err.message : 'unknown error');
     return { ok: false, error: 'Could not cancel the deletion.' };
   } finally {
     client.release();

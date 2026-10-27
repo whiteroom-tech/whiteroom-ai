@@ -45,8 +45,15 @@ function db(state: State) {
   query.mockImplementation(async (sql: string, params?: unknown[]) => {
     if (sql.startsWith('SELECT email FROM users')) return { rows: [{ email: EMAIL }] };
     if (sql.startsWith('SELECT closes_at, close_reason FROM users')) return { rows: state.closing ? [state.closing] : [] };
+    if (sql.startsWith("UPDATE users SET close_reason = 'deleted'")) {
+      if (state.closing?.close_reason !== 'lapsed' || Date.parse(state.closing.closes_at) <= Date.now()) return { rows: [], rowCount: 0 };
+      state.closing = { ...state.closing, close_reason: 'deleted' };
+      return { rows: [], rowCount: 1 };
+    }
     if (sql.startsWith('UPDATE users SET closes_at = now()')) {
-      if (!state.started) return { rows: [] };
+      const ended = !!state.closing && Date.parse(state.closing.closes_at) <= Date.now();
+      const free = !state.closing || (ended && sql.includes('OR closes_at <= now()'));
+      if (!state.started || !free) return { rows: [] };
       state.closing = { closes_at: IN_14_DAYS, close_reason: String(params?.[1]) };
       return { rows: [state.closing] };
     }
@@ -130,10 +137,43 @@ describe('Delete account starts a 14-day window', () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it('turns a running lapse window into a deletion with the same date', async () => {
-    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'lapsed' }, started: false });
+  it('turns a running lapse window into a deletion with the same date, and emails about it', async () => {
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'lapsed' }, started: true });
     expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
     expect(sqlCalls().some((s) => s.startsWith("UPDATE users SET close_reason = 'deleted'"))).toBe(true);
+    expect(ran('UPDATE users SET closes_at = now()')).toBe(false); // same date, not a new one
+    expect(ran('INSERT INTO entitlement_outbox')).toBe(true);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect((sendEmail.mock.calls[0][0] as { subject: string }).subject).toBe('Your WhiteRoom account will be deleted');
+  });
+
+  it('over a lapse window that has run out, starts a fresh 14 days instead of deleting at once', async () => {
+    db({ closing: { closes_at: PAST, close_reason: 'lapsed' }, started: true });
+    expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
+    const start = query.mock.calls.find((c) => String(c[0]).startsWith('UPDATE users SET closes_at = now()'))!;
+    expect(String(start[0])).toContain('OR closes_at <= now()');
+    expect(start[1]).toEqual(['u1', 'deleted', 14]);
+    expect(ran("UPDATE users SET close_reason = 'deleted'")).toBe(false);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect((sendEmail.mock.calls[0][0] as { text: string }).text).toContain(new Date(IN_14_DAYS).getUTCFullYear().toString());
+  });
+
+  it('asking again while a deletion runs (double submit, second tab) changes nothing and sends no second email', async () => {
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, started: true });
+    expect(await deleteAccount(EMAIL)).toEqual({ ok: true });
+    expect(ran('UPDATE users SET closes_at = now()')).toBe(false);
+    expect(ran("UPDATE users SET close_reason = 'deleted'")).toBe(false);
+    expect(ran('INSERT INTO entitlement_outbox')).toBe(false);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reads the window under a row lock', async () => {
+    db({ closing: null, started: true });
+    await deleteAccount(EMAIL);
+    const read = sqlCalls().find((s) => s.startsWith('SELECT closes_at, close_reason FROM users'))!;
+    expect(read).toContain('FOR UPDATE');
+    expect(sqlCalls().indexOf(read)).toBeGreaterThan(sqlCalls().indexOf('BEGIN'));
   });
 });
 
@@ -146,6 +186,20 @@ describe('Cancel deletion', () => {
     expect(cancel[1]).toEqual(['u1', 'deleted']);
     expect(ran('INSERT INTO entitlement_outbox')).toBe(true);
     expect(pushed()).toMatchObject({ closesAt: null, closeReason: null, status: 'active' });
+  });
+
+  it('locks the user row before reading the plan, inside the transaction', async () => {
+    db({ closing: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, cancelled: 1, trialEndsAt: IN_14_DAYS });
+    await cancelAccountDeletion();
+    const calls = sqlCalls();
+    const begin = calls.indexOf('BEGIN');
+    const lock = calls.findIndex((s) => s.startsWith('SELECT closes_at, close_reason FROM users') && s.includes('FOR UPDATE'));
+    const plan = calls.findIndex((s) => s.includes('FROM subscriptions'));
+    const commit = calls.indexOf('COMMIT');
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(lock).toBeGreaterThan(begin);
+    expect(plan).toBeGreaterThan(lock);
+    expect(commit).toBeGreaterThan(plan);
   });
 
   it('says so when there is nothing to cancel (or the window has run out)', async () => {
