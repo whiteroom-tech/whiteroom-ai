@@ -49,6 +49,9 @@ describe('Home agents: one list', () => {
     // The audit read failed but rules came back: tokens are unknown (–), never 0.
     const noAudit = homeWeek(null, null, { fleetId: 'f', totals: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: { writer: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } } as never, null);
     expect(noAudit.agents.writer.used).toBeUndefined();
+    // Ids that differ only in case are one agent: counts add up.
+    const mixed = homeWeek(null, null, { fleetId: 'f', totals: { blocked: 3, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: { 'Lead-Agent': { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, 'lead-agent': { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } } as never, null);
+    expect(mixed.agents['lead-agent'].rules?.blocks).toBe(3);
   });
 });
 

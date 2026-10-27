@@ -16,6 +16,9 @@ export function liveFeedHelp(ttlHours: number): string {
  * "Labels and hover help"). Shown through the ⓘ Hint next to each label.
  */
 export const HELP = {
+  smallerContext: "How much smaller WhiteRoom keeps each agent's context than its full history, on average, over all time (not just the range shown).",
+  hourlySpend: 'What your agents spend per hour, on average, over the range shown.',
+  typicalResponse: 'The median time a model call takes, start to finish: half of calls are faster.',
   savings: `An estimate of money not spent. WhiteRoom keeps each agent's context small, so later calls send fewer tokens. When an agent has to redo work, the tokens it spent redoing it are taken off. Each agent's saved tokens are valued at the input price it actually pays, cache discounts included. Prompt caching counts only where WhiteRoom added it: what those cache reads saved, less what the cache writes cost. Caching your agents already do on their own isn't counted. A "+" means some tokens had no price on file. Energy is the saved tokens × ${KWH_PER_MILLION} kWh per million tokens, also an estimate.`,
   agentsWorking: 'Agents doing a task right now, out of all the agents connected to this fleet.',
   modelCallsToday: 'Each time an agent asks the AI model something, that counts as one call. Counted since midnight in your time zone.',
@@ -38,9 +41,7 @@ export const HELP = {
   rulesThatApply: 'The rules from Controls that cover this agent, and what each one has done to it lately.',
   spend: "What the fleet's model calls cost in this time range.",
   failedCalls: 'The share of model calls that came back with an error.',
-  costTracking: 'How fast the fleet spends in the hours it is working (over the last 14 days), and how many more tasks today’s budget covers. The budget is daily: today’s spend counts from your midnight, and it resets each day.',
-  byAgent: 'The same numbers, one row per agent.',
-  agentPerformance: 'A score out of 10, averaged from task success (calls that finished cleanly), cost (spend vs. what’s typical for the task) and speed (vs. your other agents), each out of 100. Green is good, amber is worth a look, red needs attention. A dash means not enough data yet.',
+  costTracking: 'How fast the fleet spends in the hours it is working (over the last 14 days), and about how many more calls today’s budget covers (the engine estimates per call). The budget is daily: today’s spend counts from your midnight, and it resets each day.',
   agentHealthCheck: "An automatic review of each agent's recent work: cost, errors and habits.",
   recommendations: 'Changes that would save money or prevent problems, based on how your agents have been working.',
   historyKept: 'How long WhiteRoom keeps the record of what your agents did. Older records are deleted automatically.',

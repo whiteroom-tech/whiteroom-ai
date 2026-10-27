@@ -18,13 +18,13 @@ describe('budget notice', () => {
     expect(budgetNotice({ ...base, spentTodayUsd: 6, dollarRemainingTasks: null, dollarRemainingTasksReason: 'task_type_missing' })).toBe('Today’s $ budget is used up. Your agents are still running.');
   });
   it('with money left but less than a task costs: "not enough", not "used up"', () => {
-    expect(budgetNotice({ ...base, spentTodayUsd: 4.7, dollarRemainingTasks: 0 })).toBe('Not enough left in today’s $ budget for another task. Your agents are still running.');
+    expect(budgetNotice({ ...base, spentTodayUsd: 4.7, dollarRemainingTasks: 0 })).toBe('Not enough left in today’s $ budget for another call. Your agents are still running.');
   });
   it('the token budget can only say "not enough" (the engine sends no token spend)', () => {
-    expect(budgetNotice({ ...base, tokenRemainingTasks: 0, tokenRemainingTasksReason: 'available' })).toBe('Not enough left in today’s token budget for another task. Your agents are still running.');
+    expect(budgetNotice({ ...base, tokenRemainingTasks: 0, tokenRemainingTasksReason: 'available' })).toBe('Not enough left in today’s token budget for another call. Your agents are still running.');
   });
   it('both at once', () => {
     expect(budgetNotice({ ...base, spentTodayUsd: 5.4, dollarRemainingTasks: 0, tokenRemainingTasks: 0, tokenRemainingTasksReason: 'available' }))
-      .toBe('Today’s $ budget is used up. Not enough left in today’s token budget for another task. Your agents are still running.');
+      .toBe('Today’s $ budget is used up. Not enough left in today’s token budget for another call. Your agents are still running.');
   });
 });

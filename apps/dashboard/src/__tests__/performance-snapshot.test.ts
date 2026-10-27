@@ -9,7 +9,6 @@ const snap = (loadedAt: number): PerformanceSnapshot => ({
   govSavings: null,
   govCounts: null,
   byAgent: null,
-  agentScores: null,
   auditFailed: false,
   loadedAt,
 });

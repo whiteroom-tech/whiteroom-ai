@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cacheFigures, ownCachingMicros, savingsDollars } from '../lib/analytics-metrics';
+import { cacheFigures, savingsDollars } from '../lib/analytics-metrics';
 import { burnCaption, remainingTasksNoteFor, resolveTasksLeft, tasksLeftColor } from '../lib/cost-tracking';
 import { partialMark } from '../lib/format';
 
@@ -38,13 +38,11 @@ describe('cache figures (audit M08)', () => {
     expect(c).toMatchObject({ savedMicros: 0, readTokens: 3_000, hitRate: 0.75, agentSavedMicros: null });
   });
 
-  it("keeps the agents' own caching apart from WhiteRoom's, shown only when there is some", () => {
+  it("keeps the agents' own caching apart from WhiteRoom's", () => {
     const base = { freshInputTokens: 1_000, readTokens: 9_000, writeTokens: 0, readSavedMicros: 2_700, writePremiumMicros: 0, unpricedReadTokens: 0 };
     const own = cacheFigures({ ...base, agentSavedMicros: 5_400 }, []);
     expect(own).toMatchObject({ savedMicros: 2_700, agentSavedMicros: 5_400 }); // never added in
-    expect(ownCachingMicros(own)).toBe(5_400);
-    expect(ownCachingMicros(cacheFigures({ ...base, agentSavedMicros: 0 }, []))).toBeNull();
-    expect(ownCachingMicros(cacheFigures(base, []))).toBeNull(); // an engine without the split
+    expect(cacheFigures(base, []).agentSavedMicros).toBeNull(); // an engine without the split
   });
 });
 
@@ -58,8 +56,8 @@ describe('cost tracking captions (audit M10, M11)', () => {
   });
 
   it('names the right budget per side, and does not ask for a saved budget again when the task-cost data is what is missing', () => {
-    expect(remainingTasksNoteFor('budget_missing', 'dollar')).toBe('set a daily budget to see tasks left');
-    expect(remainingTasksNoteFor('budget_missing', 'token')).toBe('set a daily token budget to see tasks left');
+    expect(remainingTasksNoteFor('budget_missing', 'dollar')).toBe('set a daily budget to see calls left');
+    expect(remainingTasksNoteFor('budget_missing', 'token')).toBe('set a daily token budget to see calls left');
     expect(remainingTasksNoteFor('task_type_missing', 'dollar')).toMatch(/task type/);
     expect(remainingTasksNoteFor('task_type_missing', 'token')).toMatch(/task type/);
     expect(remainingTasksNoteFor('partial_coverage', 'dollar')).toMatch(/no price on file/);

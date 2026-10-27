@@ -9,7 +9,7 @@ import type { AgentInfo, AuditEntry, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
-import { blockedByPhrase, recentBlocksByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
+import { blockedByPhrase, recentBlocksByAgent, ruleActionsByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
 import { AGENT_SORTS, FIND_FROM, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek } from '@/lib/home-agents';
 import { localDay, zoneName } from '@/lib/runs';
@@ -392,7 +392,11 @@ export function homeWeek(
     }
   }
   const okRules = rules && !('unsupported' in rules) ? rules : null;
-  if (okRules) for (const [id, c] of Object.entries(okRules.byAgent)) (agents[key(id)] ??= {}).rules = tallyFromRuleActions(c);
+  // Agent ids that differ only in case are one agent: their counts add up (ruleActionsByAgent), never overwrite.
+  if (okRules) {
+    const merged = ruleActionsByAgent(Object.fromEntries(Object.entries(okRules.byAgent).map(([id, c]) => [id, tallyFromRuleActions(c)])));
+    for (const [id, t] of Object.entries(merged)) if (id) (agents[id] ??= {}).rules = t;
+  }
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
   const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / 3_600_000) * 3_600_000) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };

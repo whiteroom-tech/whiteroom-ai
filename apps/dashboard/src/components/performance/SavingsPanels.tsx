@@ -1,13 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { DataTable, Hint, Panel, FONT_MONO } from '@whiteroom/ui';
-import type { AgentTotals, DaySavings } from '@/lib/analytics-metrics';
+import { Hint, Panel, FONT_MONO } from '@whiteroom/ui';
+import type { DaySavings } from '@/lib/analytics-metrics';
 import { fmtEnergy, fmtTokens } from '@/lib/format';
-import { tallyWords, type GovernanceTally } from '@/lib/governance';
 import { HELP } from '@/lib/metric-definitions';
-import { AgentScoreWheel } from './AgentScoreWheel';
-import type { AgentScore } from '@/lib/whiteroom/types';
 
 const PLOT_H = 120;
 
@@ -114,79 +111,6 @@ export function SavingsChart({ days }: { days: DaySavings[] }) {
               {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, est. ${fmtTokens(shown.used + shown.saved)} without` : ''}
             </span>
           </div>
-        </>
-      )}
-    </Panel>
-  );
-}
-
-/**
- * By agent (README › Performance), moved from Run History: tokens and savings
- * per agent for the page's range, most tokens first. Rule actions, flagged
- * runs and claim check join it with the governance engine (P2).
- */
-export function ByAgentTable({ rows, scope, ruleActions, scores }: {
-  rows: AgentTotals[];
-  scope: string;
-  /** Controls blocks (Block) and would-blocks (Record only) per agent id, lower-cased. */
-  ruleActions?: Record<string, GovernanceTally>;
-  /** Task success / cost diligence / speed, per agent id (absent on older engines, or while still loading). */
-  scores?: Record<string, AgentScore>;
-}) {
-  const name = (r: AgentTotals) => r.agent
-    ? <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agent}</span>
-    : <span style={{ color: 'var(--tx2)' }} title="Model calls recorded without an agent name">Unattributed</span>;
-  const saved = (r: AgentTotals) => (r.saved > 0 ? fmtTokens(r.saved) : '–');
-  const ruleWords = (r: AgentTotals) => (ruleActions?.[r.agent] ? tallyWords(ruleActions[r.agent]) : []);
-  const rules = (r: AgentTotals) => {
-    const words = ruleWords(r);
-    if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
-    return (
-      <span title="What Controls rules did for this agent (Block), and would have done (Record only)">
-        {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
-      </span>
-    );
-  };
-  const score = (r: AgentTotals) => {
-    const s = scores?.[r.agent];
-    return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
-  };
-
-  return (
-    <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
-      {rows.length === 0 ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No agent activity in this range.</p>
-      ) : (
-        <>
-          <div className="wr-byagent-table">
-            <DataTable<AgentTotals>
-              caption="Tokens and savings by agent"
-              rows={rows}
-              rowKey={(r) => r.agent}
-              rowHeight={scores && Object.keys(scores).length ? 64 : 44}
-              columns={[
-                { key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)', render: name },
-                { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
-                { key: 'saved', header: 'Saved, est.', width: '120px', numeric: true, render: saved },
-                { key: 'rules', header: 'Rule activity', width: 'minmax(180px, 280px)', numeric: true, render: rules },
-                { key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)', render: score },
-              ]}
-            />
-          </div>
-          {/* Phones: one card per agent instead of a table that scrolls sideways. */}
-          <ul className="wr-byagent-cards" aria-label="Tokens and savings by agent">
-            {rows.map((r) => (
-              <li key={r.agent}>
-                <div className="wr-byagent-cards__name">{name(r)}</div>
-                <dl>
-                  <div><dt>Tokens</dt><dd>{fmtTokens(r.used)}</dd></div>
-                  <div><dt>Saved, est.</dt><dd>{saved(r)}</dd></div>
-                  {ruleWords(r).length > 0 && <div className="wr-byagent-cards__wide"><dt>Rule activity</dt><dd>{rules(r)}</dd></div>}
-                  {scores?.[r.agent] && <div className="wr-byagent-cards__wide"><dt>Performance<Hint text={HELP.agentPerformance} /></dt><dd>{score(r)}</dd></div>}
-                </dl>
-              </li>
-            ))}
-          </ul>
         </>
       )}
     </Panel>
