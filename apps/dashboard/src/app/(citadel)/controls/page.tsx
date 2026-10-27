@@ -87,7 +87,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [notice, setNotice] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<GovernanceSuggestions>({ noCaching: false, onlyModels: null });
   // The fleet's average daily spend over the same 14 days, beside a dollars-a-day spend cap.
-  const [dailySpend, setDailySpend] = useState<number | null>(null);
+  const [dailySpend, setDailySpend] = useState<{ perDay: number; days: number } | null>(null);
   /** rule_would_act per Watch rule, keyed `${id}@${version}`. */
   const [wouldActs, setWouldActs] = useState<Record<string, RuleWouldActResult>>({});
   const [actions, setActions] = useState<RuleActionsResult | null>(null);

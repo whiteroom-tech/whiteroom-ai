@@ -49,6 +49,8 @@ const api = vi.hoisted(() => ({
   govV1: false,
   /** Models the fleet used lately, for the allowlist suggestion; null: no data. */
   models: null as string[] | null,
+  /** Hourly points the store returns (with models set). */
+  hourly: [] as Array<{ hour: string; costMicros: number }>,
   /** Holds governance_list until resolved, to see the page before it loads. */
   listGate: null as Promise<void> | null,
   /** governance_list fails (an engine outage). */
@@ -65,7 +67,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
   ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
   performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
-  performanceFleetHourly: async () => { if (!api.models) throw new Error('no store'); return { hourly: [] }; },
+  performanceFleetHourly: async () => { if (!api.models) throw new Error('no store'); return { hourly: api.hourly }; },
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
@@ -89,7 +91,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.listGate = null; api.listFail = false; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.history = [];
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -779,6 +781,18 @@ describe('Controls page, weakening a rule', () => {
     // The mocked store has no hourly points: the line stays out rather than claim $0.
     expect(m.text()).not.toContain('Your fleet spends about');
     m.root.unmount();
+    // With 14 days of spend: about $12.50 a day; above $10 it's rounded.
+    const day = (d: number) => new Date(Date.UTC(2026, 9, d)).toISOString();
+    api.hourly = [{ hour: day(1), costMicros: 100_000_000 }, { hour: day(14), costMicros: 75_000_000 }];
+    const m2 = await mount();
+    await m2.click(m2.row('$190'));
+    expect(m2.text()).toContain('Your fleet spends about $13 a day, all agents together (last 14 days).');
+    m2.root.unmount();
+    api.hourly = [{ hour: day(1), costMicros: 4_000_000 }, { hour: day(2), costMicros: 3_000_000 }];
+    const m3 = await mount();
+    await m3.click(m3.row('$190'));
+    expect(m3.text()).toContain('Your fleet spends about $3.50 a day, all agents together (last 2 days).');
+    m3.root.unmount();
   });
 
   it('narrowing a rule for all agents can keep it and add a copy just for them', async () => {

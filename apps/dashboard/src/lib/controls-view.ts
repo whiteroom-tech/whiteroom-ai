@@ -404,7 +404,9 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
   switch (prev.ruleType) {
     case 'spend_cap': {
       const p = a as SpendCapParams, n = b as SpendCapParams;
-      return p.unit === n.unit && p.scope === n.scope && n.dailyCap > p.dailyCap ? [`Limit: ${money(p)} → ${money(n)}`] : [];
+      // A different unit or period can't be compared, and may well be looser: ask.
+      if (p.unit !== n.unit || p.scope !== n.scope) return [`Limit: ${money(p)} a ${p.scope} → ${money(n)} a ${n.scope}`];
+      return n.dailyCap > p.dailyCap ? [`Limit: ${money(p)} → ${money(n)}`] : [];
     }
     case 'loop_breaker': {
       const p = a as LoopBreakerParams, n = b as LoopBreakerParams;
@@ -432,8 +434,14 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
   }
 }
 
-/** Average dollars a day over `days`, from hourly points; null without data (never a made-up $0). */
-export function averageDailySpend(hourly: { error?: string; hourly?: { costMicros?: number }[] } | null | undefined, days: number): number | null {
-  if (!hourly || hourly.error || !Array.isArray(hourly.hourly) || hourly.hourly.length === 0 || days <= 0) return null;
-  return hourly.hourly.reduce((n, h) => n + (h.costMicros || 0), 0) / 1e6 / days;
+/**
+ * Average dollars a day from hourly points, over the days they actually cover (a fleet two days old
+ * averages over two days, not the whole window), up to `maxDays`. Null without data, never a made-up $0.
+ */
+export function averageDailySpend(hourly: { error?: string; hourly?: { hour?: string; costMicros?: number }[] } | null | undefined, maxDays: number): { perDay: number; days: number } | null {
+  if (!hourly || hourly.error || !Array.isArray(hourly.hourly) || hourly.hourly.length === 0 || maxDays <= 0) return null;
+  const times = hourly.hourly.map((h) => Date.parse(h.hour ?? '')).filter((t) => !Number.isNaN(t));
+  const spanDays = times.length ? (Math.max(...times) - Math.min(...times) + 3_600_000) / 86_400_000 : maxDays;
+  const days = Math.min(maxDays, Math.max(1, Math.ceil(spanDays)));
+  return { perDay: hourly.hourly.reduce((n, h) => n + (h.costMicros || 0), 0) / 1e6 / days, days };
 }

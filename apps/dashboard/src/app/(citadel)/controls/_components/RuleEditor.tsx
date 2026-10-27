@@ -53,8 +53,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   /** How to undo a change, or null (lib/rule-history). */
   undoOf: (h: GovernanceHistoryEntry) => Undo | null;
   onUndo: (u: Undo, entryId: string) => void;
-  /** The fleet's average daily spend (all agents together), for a dollars-a-day cap; null when unknown. */
-  fleetDailySpend?: number | null;
+  /** The fleet's average daily spend (all agents together) and over how many days, for a dollars-a-day cap; null when unknown. */
+  fleetDailySpend?: { perDay: number; days: number } | null;
   actors: ControlActor[];
   dirty: boolean;
   error: string | null;
@@ -114,7 +114,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               <InlineSelect label="Limit period" value={(p as SpendCapParams).scope} options={['day', 'run'] as const} onChange={(scope) => setParams({ scope })} />
             </div>
             {(p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && fleetDailySpend !== null && (
-              <p style={{ ...help, color: 'var(--tx)' }}>Your fleet spends about ${fleetDailySpend < 10 ? fleetDailySpend.toFixed(2) : Math.round(fleetDailySpend).toLocaleString('en-US')} a day, all agents together (last 14 days).</p>
+              <p style={{ ...help, color: 'var(--tx)' }}>Your fleet spends about ${fleetDailySpend.perDay < 10 ? fleetDailySpend.perDay.toFixed(2) : Math.round(fleetDailySpend.perDay).toLocaleString('en-US')} a day, all agents together (last {fleetDailySpend.days === 1 ? 'day' : `${fleetDailySpend.days} days`}).</p>
             )}
             {(p as SpendCapParams).unit === 'dollars' && (
               <p style={help}>Dollar estimates use a blended rate of $0.003/1K tokens. Actual cost varies by model — see the Performance tab for per-model pricing.</p>

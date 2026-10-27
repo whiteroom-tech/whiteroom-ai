@@ -251,6 +251,9 @@ describe('weakening a rule', async () => {
     // Stronger or unchanged: nothing to confirm.
     expect(weakenings(cap, { ...cap, response: 'stop', params: { dailyCap: 100, scope: 'day', unit: 'dollars' } })).toEqual([]);
     expect(weakenings({ ...cap, mode: 'watch' }, cap)).toEqual([]);
+    // A new unit or period can't be compared: it's asked about.
+    expect(weakenings(cap, { ...cap, params: { dailyCap: 190, scope: 'run', unit: 'dollars' } })).toEqual(['Limit: $190 a day → $190 a run']);
+    expect(weakenings(cap, { ...cap, params: { dailyCap: 50000, scope: 'day', unit: 'tokens' } })).toEqual(['Limit: $190 a day → 50,000 tokens a day']);
     const tools = rule({ ruleType: 'tool_list', params: { blockedTools: ['a', 'b'] } });
     expect(weakenings(tools, { ...tools, params: { blockedTools: ['a'] } })).toEqual(['No longer blocks b']);
     const models = rule({ ruleType: 'model_allowlist', params: { allowedModels: ['x'] } });
@@ -261,7 +264,11 @@ describe('weakening a rule', async () => {
 describe('fleet daily spend beside a spend cap', async () => {
   const { averageDailySpend } = await import('@/lib/controls-view');
   it('averages the hourly spend per day, and is unknown rather than $0 without data', () => {
-    expect(averageDailySpend({ hourly: [{ costMicros: 7_000_000 }, { costMicros: 21_000_000 }] }, 14)).toBe(2);
+    const at = (d: number, h = 0) => new Date(Date.UTC(2026, 9, d, h)).toISOString();
+    // 14 days of data: the total over 14.
+    expect(averageDailySpend({ hourly: [{ hour: at(1), costMicros: 7_000_000 }, { hour: at(14, 23), costMicros: 21_000_000 }] }, 14)).toEqual({ perDay: 2, days: 14 });
+    // A fleet two days old averages over two days, not fourteen.
+    expect(averageDailySpend({ hourly: [{ hour: at(25), costMicros: 7_000_000 }, { hour: at(26, 10), costMicros: 7_000_000 }] }, 14)).toEqual({ perDay: 7, days: 2 });
     expect(averageDailySpend({ hourly: [] }, 14)).toBeNull();
     expect(averageDailySpend({ error: 'no store' }, 14)).toBeNull();
     expect(averageDailySpend(null, 14)).toBeNull();
