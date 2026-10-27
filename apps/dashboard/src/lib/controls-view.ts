@@ -476,7 +476,7 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
 const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
 
 /** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Block. */
-const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'>) => r.mode === 'enforce' && r.response === 'notify';
+export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'>) => r.mode === 'enforce' && r.response === 'notify';
 
 /** A group's sub-line, worded like the lead line: "1 Block · 6 Record only" (and "· 1 Alert only" when there is one). */
 export function modeCount(rules: readonly GovernanceRule[]): string {

@@ -8,7 +8,7 @@ import type { GovernanceCounts, GovernanceTally } from '@/lib/governance';
 import { RULE_LABELS } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
-import { ruleSentence } from '@/lib/controls-view';
+import { alertOnly, ruleSentence } from '@/lib/controls-view';
 import { fmtCount, fmtTokens, plural } from '@/lib/format';
 
 /** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
@@ -103,7 +103,7 @@ export function rulesCaughtText(total: number, blocked: number): string {
 /** "8 rules: 1 Block · 7 Record only · 0 Off" (and "· 1 Alert only" when a rule only alerts: it never blocks). */
 export function ruleModeCounts(rules: GovernanceRule[]): string {
   const n = (m: GovernanceRule['mode']) => rules.filter((r) => r.mode === m).length;
-  const alert = rules.filter((r) => r.mode === 'enforce' && r.response === 'notify').length;
+  const alert = rules.filter(alertOnly).length;
   return `${fmtCount(rules.length)} ${plural(rules.length, 'rule')}: ${n('enforce') - alert} Block${alert ? ` · ${alert} Alert only` : ''} · ${n('watch')} Record only · ${n('off')} Off`;
 }
 
