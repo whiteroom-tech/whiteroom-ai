@@ -328,7 +328,7 @@ function PlanSection({
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '-8px 0 20px' }}>
-        History kept covers call records and run history. Handover notes have their own limit under Data and privacy.
+        History kept covers call records and run history. The audit trail is kept for at least 12 months on every plan. Progress notes have their own limit under Data and privacy.
       </p>
 
       {offers.length > 0 && (

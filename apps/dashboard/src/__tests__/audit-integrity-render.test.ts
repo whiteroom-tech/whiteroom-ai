@@ -35,6 +35,7 @@ describe('audit integrity', () => {
   it('leads with coverage, never a pass below 100%', async () => {
     const m = await mount();
     expect(m.el.textContent).toContain('939 of 2,045 events checked (45%)');
+    expect(m.el.textContent).toContain('Kept for at least 12 months on every plan.');
     m.root.unmount();
   });
 
