@@ -362,7 +362,19 @@
 /* A row's detail, open directly beneath it (DataTable renderExpanded). */
 .wr-table__expanded { border-bottom: 1px solid var(--line); }
 .wr-clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.wr-daystrip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; height: 52px; }
+.wr-daystrip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; height: 5.5rem; }
+.wr-hourstrip { grid-template-columns: repeat(24, minmax(0, 1fr)); height: 4.5rem; }
+.wr-daystrip__day:disabled { cursor: default; }
+.wr-daystrip__day:disabled:hover { background: transparent; }
+/* Phones: the last 14 days, so each bar is a tappable width (≥24px). */
+@media (max-width: 600px) {
+  .wr-daystrip:not(.wr-hourstrip) { grid-template-columns: repeat(14, minmax(0, 1fr)); }
+  .wr-daystrip:not(.wr-hourstrip) > .wr-daystrip__day:nth-last-child(n+15) { display: none; }
+  .wr-daystrip-start--wide { display: none; }
+  .wr-hourstrip-wrap { overflow-x: auto; }
+  .wr-hourstrip-wrap > * { min-width: 40rem; }
+}
+@media (min-width: 601px) { .wr-daystrip-start--phone { display: none; } }
 .wr-daystrip__day { position: relative; display: flex; align-items: flex-end; padding: 0; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
 .wr-daystrip__day:hover { background: var(--brand-dim); }
 .wr-daystrip__day:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }

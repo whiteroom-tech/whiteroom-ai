@@ -686,7 +686,7 @@ async function runsAction<T>(action: string, fleetId: string, q: RunsQuery, extr
 /** Runs that started in a range of the viewer's days, newest first; `unsupported` sends Runs to the event feed. */
 export function listRuns(
   fleetId: string,
-  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean; ruleActivity?: boolean },
+  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean; ruleActivity?: boolean; hour?: number | null },
   key?: string,
 ): Promise<ListRunsResult | { unsupported: true }> {
   return runsAction<ListRunsResult>('list_runs', fleetId, opts, {
@@ -694,6 +694,7 @@ export function listRuns(
     ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
     ...(opts.flagged ? { flagged: true } : {}),
     ...(opts.ruleActivity ? { rule_activity: true } : {}),
+    ...(opts.hour != null ? { hour: opts.hour } : {}),
   }, key);
 }
 
@@ -735,6 +736,11 @@ export function ruleActions(fleetId: string, opts: RunsQuery, key?: string, hour
 /** Runs per day of the viewer's, for the day strip; `unsupported` hides the strip. */
 export function runDays(fleetId: string, opts: RunsQuery, key?: string): Promise<RunDaysResult | { unsupported: true }> {
   return runsAction<RunDaysResult>('run_days', fleetId, opts, {}, key);
+}
+
+/** Runs per hour (0–23) of one of the viewer's days (engine E1a); `unsupported` on older engines. */
+export function runHours(fleetId: string, opts: { day: string; agentId?: string }, key?: string): Promise<{ hours: { hour: number; runs: number }[] } | { unsupported: true }> {
+  return runsAction('run_hours', fleetId, { fromDay: opts.day, toDay: opts.day, agentId: opts.agentId }, { day: opts.day }, key);
 }
 
 export function getRunEvents(

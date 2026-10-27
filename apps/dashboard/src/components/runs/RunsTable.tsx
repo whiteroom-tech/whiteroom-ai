@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Banner, Button, DataTable, Hint, Icon, Panel, SegmentedControl, SelectChip, FONT_MONO } from '@whiteroom/ui';
 import { fmtTime } from '@/lib/format';
-import { fleetReport, isAuthError, listRuns, runDays } from '@/lib/whiteroom/client';
+import { fleetReport, isAuthError, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
@@ -15,8 +15,9 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { HELP } from '@/lib/metric-definitions';
 import { reportStatuses, usd } from '@/lib/home';
-import { addDays, clampSpan, ignoresFlagged, ignoresRuleActivity, type RunsShow, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, hoursFromRuns, ignoresFlagged, ignoresHour, ignoresRuleActivity, localHour, type RunsShow, collectRuns, dayLabel, fmtLength, fmtStarted, localDay, MAX_SPAN_DAYS, oldestKept, runHref, RUNS_EXPORT_HEADER, runsDays, runsExportRow, RUNS_LIST_URL_KEY, runsCount, RUNS_RANGES, runsWindow, standOut, stripDays, stripEndFor, validDay, zoneName, type RunsRange, type RunsView } from '@/lib/runs';
 import { DayStrip } from '@/components/runs/DayStrip';
+import { HourStrip } from '@/components/runs/HourStrip';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 
@@ -56,6 +57,14 @@ export function RunsTable({ preview, retentionDays }: {
   // Flagged shows once the engine reports flags (P2.1); Rule activity once it counts each run's rule actions (E1a).
   const [flagsKnown, setFlagsKnown] = useState(() => !!preview?.some((r) => r.flags));
   const [rulesKnown, setRulesKnown] = useState(() => !!preview?.some((r) => r.wouldActCalls !== undefined));
+  // A picked hour of the picked day (the hourly view); only with a day, and only on engines that take it.
+  const [hour, setHour] = useState<number | null>(() => {
+    const raw = params.get('hour');
+    const h = Number(raw);
+    return raw !== null && Number.isInteger(h) && h >= 0 && h <= 23 && validDay(params.get('day')) ? h : null;
+  });
+  const [hours, setHours] = useState<{ hour: number; runs: number }[] | null>(null);
+  const [hoursOk, setHoursOk] = useState(true);
   const oldest = oldestKept(retentionDays);
   // One picked day (the viewer's local day) overrides the range.
   // A shared link can name a day the plan no longer keeps: start at the oldest kept.
@@ -96,16 +105,17 @@ export function RunsTable({ preview, retentionDays }: {
     if (agent === 'all') sp.delete('agent'); else sp.set('agent', agent);
     if (show !== 'all') sp.set('show', show); else sp.delete('show');
     if (day) sp.set('day', day); else sp.delete('day');
+    if (day && hour !== null) sp.set('hour', String(hour)); else sp.delete('hour');
     if (range === 'custom' && from && to) { sp.set('from', from); sp.set('to', to); } else { sp.delete('from'); sp.delete('to'); }
     const qs = sp.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     if (url !== `${window.location.pathname}${window.location.search}`) router.replace(url, { scroll: false });
-  }, [range, agent, show, day, from, to, router]);
+  }, [range, agent, show, day, hour, from, to, router]);
 
   // A new filter starts from the first page with nothing shown, in one
   // update, so no request ever pairs the new filter with an old cursor and
   // the count never mixes the old total with the new range.
-  function changeFilter(change: { range?: RunsRange; agent?: string; show?: RunsShow; day?: string | null; from?: string; to?: string }) {
+  function changeFilter(change: { range?: RunsRange; agent?: string; show?: RunsShow; day?: string | null; hour?: number | null; from?: string; to?: string }) {
     const today = localDay();
     const nextView: RunsView = { range, day, from, to };
     if (change.range !== undefined) {
@@ -128,6 +138,8 @@ export function RunsTable({ preview, retentionDays }: {
     pinStrip(stripEndFor(runsWindow(nextView), stripEnd, STRIP_DAYS));
     if (change.agent !== undefined) setAgent(change.agent);
     if (change.show !== undefined) setShow(change.show);
+    // An hour belongs to its day: a different day (or none) drops it.
+    setHour(change.hour !== undefined ? change.hour : nextView.day === day ? hour : null);
     setCursors([null]);
     // The preview fetches nothing: it keeps its sample and filters it below.
     setRuns(preview ?? null);
@@ -137,11 +149,13 @@ export function RunsTable({ preview, retentionDays }: {
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
     try {
-      const res = await listRuns(fleetId, { ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, cursor: cursors[cursors.length - 1], pageSize: PAGE, flagged: flaggedOnly, ruleActivity: rulesOnly }, authKey);
+      const res = await listRuns(fleetId, { ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, cursor: cursors[cursors.length - 1], pageSize: PAGE, flagged: flaggedOnly, ruleActivity: rulesOnly, hour: day ? hour : null }, authKey);
       if (stale()) return;
       if ('unsupported' in res) { setUnsupported(true); return; }
       // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
       if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { setShow('all'); return; }
+      // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
+      if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHoursOk(false); return; }
       setRuns(res.runs);
       if (res.runs.some((r) => r.flags)) setFlagsKnown(true);
       if (res.runs.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
@@ -154,7 +168,7 @@ export function RunsTable({ preview, retentionDays }: {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       setFailing(true);
     }
-  }, [fleetId, authKey, range, day, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
+  }, [fleetId, authKey, range, day, hour, from, to, agent, flaggedOnly, rulesOnly, cursors, resetSession]);
 
   const { refresh } = usePoll(load, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   // usePoll fetches on mount; refetch only when the filter or page changes.
@@ -162,7 +176,22 @@ export function RunsTable({ preview, retentionDays }: {
   useEffect(() => {
     if (firstQuery.current) { firstQuery.current = false; return; }
     refresh();
-  }, [range, day, from, to, agent, show, cursors, refresh]);
+  }, [range, day, hour, from, to, agent, show, cursors, refresh]);
+
+  // The picked day's runs per hour (engine run_hours; the preview counts its own sample).
+  useEffect(() => {
+    setHours(null);
+    if (!day) return;
+    if (preview) { setHours(hoursFromRuns(preview, day)); return; }
+    if (!fleetId || !hoursOk) return;
+    let live = true;
+    runHours(fleetId, { day, agentId: agent === 'all' ? undefined : agent }, authKey).then((r) => {
+      if (!live) return;
+      if ('unsupported' in r) { setHoursOk(false); setHour(null); return; }
+      setHours(r.hours);
+    }, () => {});
+    return () => { live = false; };
+  }, [day, agent, fleetId, authKey, preview, hoursOk]);
 
   // The strip depends only on the agent and its own 30 days, so it loads on
   // its own: paging the list or picking a day on it doesn't refetch it, and a slow strip never holds up the
@@ -203,7 +232,7 @@ export function RunsTable({ preview, retentionDays }: {
     try {
       const { fromDay, toDay } = runsWindow(view);
       const got = await collectRuns(
-        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50, flagged: flaggedOnly, ruleActivity: rulesOnly }, authKey),
+        (cursor) => listRuns(fleetId, { fromDay, toDay, agentId: agent === 'all' ? undefined : agent, cursor, pageSize: 50, flagged: flaggedOnly, ruleActivity: rulesOnly, hour: day ? hour : null }, authKey),
         EXPORT_MAX_PAGES,
       );
       if ('unsupported' in got) { setExportNote({ ok: false, text: 'This engine can’t list runs yet, so there’s nothing to export.' }); return; }
@@ -228,12 +257,12 @@ export function RunsTable({ preview, retentionDays }: {
   const groupOf = (r: RunSummary) => {
     const d = localDay(Date.parse(r.startedAt));
     // Day totals count every run, so they'd mislead under Flagged or Rule activity.
-    const n = show !== 'all' ? undefined : counts.get(d);
+    const n = show !== 'all' || hour !== null ? undefined : counts.get(d);
     return { key: d, label: <><strong>{dayLabel(d)}</strong>{n !== undefined && <>&nbsp;·&nbsp;{n} run{n === 1 ? '' : 's'}</>}</> };
   };
   const today = localDay();
   // /dev/runs fetches nothing, so it filters its sample to the shown days.
-  const shown = preview && runs ? runs.filter((r) => inSpan(localDay(Date.parse(r.startedAt))) && (!flaggedOnly || !!r.flags?.length) && (!rulesOnly || r.blockedCalls > 0 || (r.wouldActCalls ?? 0) > 0)) : runs;
+  const shown = preview && runs ? runs.filter((r) => inSpan(localDay(Date.parse(r.startedAt))) && (!flaggedOnly || !!r.flags?.length) && (!rulesOnly || r.blockedCalls > 0 || (r.wouldActCalls ?? 0) > 0) && (hour === null || localHour(r.startedAt) === hour)) : runs;
 
   if (auth.status !== 'authenticated' && !preview) return <FleetLogin auth={auth} />;
   if (unsupported) return <EventFeedRuns />;
@@ -281,6 +310,9 @@ export function RunsTable({ preview, retentionDays }: {
             onLater={stripEnd >= today ? undefined : () => pinStrip(addDays(stripEnd, STRIP_DAYS))}
           />
         )}
+        {day && hoursOk && hours && (
+          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={(h) => changeFilter({ hour: h })} />
+        )}
         {exportNote && <Banner variant={exportNote.ok ? 'info' : 'error'}>{exportNote.text}</Banner>}
         {failing && runs && <RefreshFailed since={updatedAt} />}
 
@@ -299,7 +331,8 @@ export function RunsTable({ preview, retentionDays }: {
               columns={[
                 { key: 'run', header: 'Run', width: '64px', render: (r) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>#{r.shift}</span> },
                 { key: 'agent', header: 'Agent', width: 'minmax(140px, 1fr)', render: (r) => <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agentId}</span> },
-                { key: 'started', header: 'Started', width: '136px', render: (r) => <span style={{ fontFamily: FONT_MONO, color: 'var(--tx2)' }}>{fmtStarted(r.startedAt)}</span> },
+                // The day is in the group header above, so the row shows the time.
+                { key: 'started', header: 'Started', width: '96px', render: (r) => <span style={{ fontFamily: FONT_MONO, color: 'var(--tx2)' }} title={fmtStarted(r.startedAt)}>{fmtTime(r.startedAt)}</span> },
                 { key: 'length', header: 'Length', width: '72px', numeric: true, render: (r) => fmtLength(r.lengthSeconds) },
                 { key: 'spend', header: 'Spend', width: '80px', numeric: true, render: (r) => <span title={r.unpricedAttempts ? 'Some calls have no price on file, so this is a lower bound' : undefined}>{usd(r.spendMicros / 1e6)}{r.unpricedAttempts ? '+' : ''}</span> },
                 {

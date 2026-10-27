@@ -130,6 +130,29 @@ export function ignoresFlagged(runs: Pick<RunSummary, 'flags'>[]): boolean {
   return runs.length > 0 && runs.every((r) => r.flags === undefined);
 }
 
+/** The hour (0–23) a run started, in the viewer's time zone. */
+export function localHour(iso: string): number {
+  return new Date(iso).getHours();
+}
+
+/** Runs per hour of `day` from a set of runs (the /dev/runs preview has no engine). */
+export function hoursFromRuns(runs: Pick<RunSummary, 'startedAt'>[], day: string): { hour: number; runs: number }[] {
+  const m = new Map<number, number>();
+  for (const r of runs) if (localDay(Date.parse(r.startedAt)) === day) m.set(localHour(r.startedAt), (m.get(localHour(r.startedAt)) ?? 0) + 1);
+  return [...m].sort((a, b) => a[0] - b[0]).map(([hour, n]) => ({ hour, runs: n }));
+}
+
+/** True when the engine ignored the hour filter (before it took `hour`): a run from another hour came back. */
+export function ignoresHour(runs: Pick<RunSummary, 'startedAt'>[], hour: number): boolean {
+  return runs.some((r) => localHour(r.startedAt) !== hour);
+}
+
+/** "9 am", "12 pm": an hour of the day, plainly. */
+export function hourLabel(hour: number): string {
+  const h = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h} ${hour < 12 ? 'am' : 'pm'}`;
+}
+
 /** Runs › Show: every run, flagged ones, or ones where a rule acted or would have. */
 export type RunsShow = 'all' | 'flagged' | 'rules';
 

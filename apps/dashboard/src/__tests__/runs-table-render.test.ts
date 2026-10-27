@@ -13,11 +13,12 @@ const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(),
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace, push: nav.push }), useSearchParams: () => nav.params }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
 
-const api = vi.hoisted(() => ({ list: vi.fn(), counted: true }));
+const api = vi.hoisted(() => ({ list: vi.fn(), counted: true, hours: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   listRuns: api.list,
   runDays: async () => ({ days: [] }),
+  runHours: api.hours,
   fleetReport: async () => ({ error: 'no' }),
 }));
 
@@ -43,6 +44,8 @@ async function mount(preview?: RunSummary[]) {
 }
 
 beforeEach(() => {
+  api.hours.mockReset();
+  api.hours.mockResolvedValue({ hours: [{ hour: 9, runs: 2 }, { hour: 14, runs: 1 }] });
   nav.params = new URLSearchParams();
   nav.replace.mockClear();
   api.list.mockReset();
@@ -92,6 +95,44 @@ describe('Runs › Show › Rule activity, in the preview (no engine)', () => {
     // Day totals count every run, so they're left out under a filter.
     expect(m.text()).not.toMatch(/·\s*3 runs/);
     expect(api.list).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+});
+
+describe('Runs › a day by hour', () => {
+  const day = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
+  const at = (h: number) => { const d = new Date(`${day}T00:00:00`); d.setHours(h, 15); return d.toISOString(); };
+
+  it('shows the picked day by hour, and an hour lists only that hour’s runs', async () => {
+    nav.params = new URLSearchParams(`day=${day}`);
+    api.list.mockImplementation(async (_f: string, o: { hour?: number | null }) => ({ runs: o.hour === 9 ? [run(1, { startedAt: at(9) })] : [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
+    const m = await mount();
+    expect(api.hours).toHaveBeenCalledWith('f1', { day, agentId: undefined }, 'k');
+    expect(m.text()).toContain('by hour');
+    const nine = m.el.querySelector('button[aria-label="9 am: 2 runs"]') as HTMLButtonElement;
+    expect(m.el.querySelector('button[aria-label="3 am: 0 runs"]')!.hasAttribute('disabled')).toBe(true);
+    await m.click(nine);
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: 9 }), 'k');
+    expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('hour=9'), { scroll: false });
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'All hours'));
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    m.root.unmount();
+  });
+
+  it('drops the hourly view on an engine without the hour filter, rather than mislabel the whole day', async () => {
+    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
+    const m = await mount();
+    expect(m.text()).not.toContain('by hour');
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    m.root.unmount();
+  });
+
+  it('shows no hourly view on an engine without run_hours', async () => {
+    api.hours.mockResolvedValue({ unsupported: true });
+    nav.params = new URLSearchParams(`day=${day}`);
+    const m = await mount();
+    expect(m.text()).not.toContain('by hour');
     m.root.unmount();
   });
 });
