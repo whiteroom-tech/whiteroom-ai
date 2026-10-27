@@ -80,10 +80,6 @@ export function RunsPhoneList({ runs, groupOf, onOpen, footer }: {
   );
 }
 
-/**
- * Runs (README › Screens › 2a): one row per run, a run being one agent's
- * shift. Falls back to the event feed when the engine has no list_runs yet.
- */
 /** /dev/runs: sample data in place of the engine. */
 export interface RunsSample {
   /** Every sample run: the agent list, and whether flags and rule counts are known. */
@@ -96,6 +92,10 @@ export interface RunsSample {
   hours: (day: string) => { hour: number; runs: number }[];
 }
 
+/**
+ * Runs (README › Screens › 2a): one row per run, a run being one agent's
+ * shift. Falls back to the event feed when the engine has no list_runs yet.
+ */
 export function RunsTable({ preview, retentionDays }: {
   /** /dev/runs: sample data; nothing is fetched. */
   preview?: RunsSample;

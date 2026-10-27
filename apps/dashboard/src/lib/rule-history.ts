@@ -19,7 +19,6 @@ const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && t
 const same = (a: unknown, b: unknown) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 const norm = (s: GovernanceRuleSnapshot, f: Field) => (f === 'alsoNotify' ? s.alsoNotify === true : f === 'response' ? s.response ?? 'block' : s[f]);
 
-/** "Was …" / "Now …" sentences for a settings change; the description already says mode, Then and scope changes. */
 /**
  * A change in today's words. In the fleet-wide list the rule's name is
  * already shown ("Spend cap · …"), so "Removed Spend cap rule" reads
@@ -33,6 +32,7 @@ export function historyText(entry: Pick<GovernanceHistoryEntry, 'description' | 
   return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() : text;
 }
 
+/** "Was …" / "Now …" sentences for a settings change; the description already says mode, Then and scope changes. */
 export function changeDetail(entry: GovernanceHistoryEntry): { was: string; now: string } | null {
   const { before, after } = entry;
   if (!before || !after || same(before.params, after.params)) return null;

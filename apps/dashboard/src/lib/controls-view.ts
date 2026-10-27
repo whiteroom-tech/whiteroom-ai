@@ -232,7 +232,6 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
 
 // ── The edit model behind Save ──────────────────────────────────────
 
-/** A rule being edited. Numbers stay text while typed, so "1,0" isn't forced into 10. */
 /**
  * When a Loop breaker acts, from the number being typed: "Acts on the 100th
  * same call." Until that's a whole number, the saved threshold.
@@ -242,6 +241,7 @@ export function loopActs(typed: string, saved: number | undefined): string {
   return n && n > 0 ? `Acts on the ${ordinal(n)} same call.` : 'Acts on the call that reaches the limit.';
 }
 
+/** A rule being edited. Numbers stay text while typed, so "1,0" isn't forced into 10. */
 export interface RuleDraft {
   ruleType: GovernanceRuleType;
   mode: GovernanceMode;

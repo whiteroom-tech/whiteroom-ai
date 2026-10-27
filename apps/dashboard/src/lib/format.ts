@@ -38,7 +38,6 @@ export function fmtTokens(n: number): string {
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 86_400_000;
 
-/** "run" or "runs": the singular only for exactly one, never for a lower bound ("1+ runs"). */
 /** "1st", "2nd", "3rd", "11th", "100th", "102nd". */
 export function ordinal(n: number): string {
   const tens = n % 100;
@@ -46,6 +45,7 @@ export function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
+/** "run" or "runs": the singular only for exactly one, never for a lower bound ("1+ runs"). */
 export function plural(n: number, one: string, many = `${one}s`, atLeast = false): string {
   return n === 1 && !atLeast ? one : many;
 }
