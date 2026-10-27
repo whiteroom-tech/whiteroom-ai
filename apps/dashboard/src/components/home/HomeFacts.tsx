@@ -84,10 +84,12 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
       : <span key="flagged">{text}</span>);
   }
   if (todayRules) {
-    // Calls are the blocked and would-have-blocked ones; pauses, stops and alerts are other actions.
+    // "Caught" is any call a rule matched, in Block or Record only (the mockup's word,
+    // as on Controls: "120 caught this week, 0 blocked"); how many were really
+    // blocked is said beside it. Pauses, stops and alerts are other actions.
     const calls = todayRules.blocks + todayRules.wouldBlocks;
     const other = tallyTotal(todayRules) - calls;
-    parts.push(<span key="rules">rules caught {fmtCount(calls)} {plural(calls, 'call')} today{other > 0 && <> and acted {fmtCount(other)} other {plural(other, 'time')}</>}</span>);
+    parts.push(<span key="rules">rules caught {fmtCount(calls)} {plural(calls, 'call')} today{calls > 0 && <>, {fmtCount(todayRules.blocks)} blocked</>}{other > 0 && <>, and acted {fmtCount(other)} other {plural(other, 'time')}</>}</span>);
   }
   parts.push(<Link key="week" href={ROUTES.performance} className="wr-link">Last 7 days &rarr;</Link>);
 
