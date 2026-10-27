@@ -4,10 +4,9 @@ import { useCallback, useState } from 'react';
 import { FONT_MONO } from '@whiteroom/ui';
 import { auditSummary, performanceAgentScores, ruleActions } from '@/lib/whiteroom/client';
 import { usePoll } from '@/hooks/usePoll';
-import { homeWeek } from '@/components/home/HomeContent';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { localDay } from '@/lib/runs';
-import { shortTokens, type AgentWeek } from '@/lib/home-agents';
+import { agentWeekFrom, shortTokens, type AgentWeek } from '@/lib/home-agents';
 import { scoreParts } from '@/lib/agent-scores';
 import { tallyShort, tallyTotal } from '@/lib/governance';
 import { weekTokens } from '@/lib/agent-detail';
@@ -18,7 +17,8 @@ const figure = { fontFamily: FONT_MONO, fontSize: 'var(--fs-xl)', fontWeight: 60
 /**
  * One agent's last 7 days (redesign screen 3): tokens with and without
  * WhiteRoom, rule activity and score, with how the score is worked out. The
- * same reads as Home's agent list; a part that fails shows "—", never 0.
+ * same reads as Home's agent list. A part that has never loaded shows "—",
+ * never 0; a refresh that fails keeps the last figures.
  */
 export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
   fleetId: string;
@@ -40,7 +40,8 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview }: {
       ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: localDay() }, authKey).catch(() => null),
     ]);
     if (stale()) return;
-    setWeek(homeWeek(audit, scores, rules, null, start.getTime()).agents[agentId.toLowerCase()]);
+    // A read that failed keeps what loaded before; one that worked and doesn't mention the agent is none.
+    setWeek((prev) => agentWeekFrom(prev, agentId, audit, scores, rules));
     setLoaded(true);
   }, [fleetId, authKey, agentId]);
   usePoll(load, { intervalMs: 60_000, enabled: !!fleetId && !preview });
