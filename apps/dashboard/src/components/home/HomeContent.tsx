@@ -101,10 +101,12 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   }, [fleetId, authKey]);
 
   const fetchToday = useCallback(async (stale: () => boolean) => {
-    const res = await performanceFleetHourly(fleetId, hoursSinceLocalMidnight(), authKey);
+    // The day and its window are fixed when the read starts: a read that answers after midnight is still that day's.
+    const at = Date.now();
+    const res = await performanceFleetHourly(fleetId, hoursSinceLocalMidnight(at), authKey);
     if (stale()) return;
     if (res.error || !Array.isArray(res.hourly)) throw new Error('hourly unavailable');
-    setToday({ day: localDay(), ...todayTotals(res.hourly) });
+    setToday({ day: localDay(at), ...todayTotals(res.hourly, at) });
   }, [fleetId, authKey]);
 
   // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
@@ -152,10 +154,11 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
 
   // Today's flagged runs, for the fact line; older engines don't flag runs.
   const { refresh: refreshFlagged } = usePoll(async (stale) => {
-    const res = await listRuns(fleetId, { ...runsDays('today'), flagged: true, pageSize: 10 }, authKey).catch(() => null);
+    const at = Date.now();
+    const res = await listRuns(fleetId, { ...runsDays('today', at), flagged: true, pageSize: 10 }, authKey).catch(() => null);
     // A failed read keeps the last count; only an engine that can't flag runs clears it.
     if (stale() || !res) return;
-    setFlaggedToday('unsupported' in res || ignoresFlagged(res.runs) ? null : { day: localDay(), count: res.total });
+    setFlaggedToday('unsupported' in res || ignoresFlagged(res.runs) ? null : { day: localDay(at), count: res.total });
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
   // The last day with runs (up to 30 days back), for the quiet-day box: read only on a quiet day.
