@@ -7,7 +7,9 @@ import { join, relative } from 'node:path';
 // stuck at a fixed, too-small pixel size.
 const ROOTS = [join(__dirname, '..'), join(__dirname, '../../../../packages/ui/src')];
 // The WhiteRoom wordmark is a brand asset and keeps its fixed size.
-const ALLOWED = new Set(['components/citadel/FleetLogin.tsx:fontSize: 26', 'components/Sidebar.tsx:fontSize: 16']);
+// The phone tab bar's labels stay at 14px (--fs-xs at the default size): five
+// must fit a 320px phone, and its icons carry them at a larger Text size.
+const ALLOWED = new Set(['components/citadel/FleetLogin.tsx:fontSize: 26', 'components/Sidebar.tsx:fontSize: 16', 'app/globals.css:font-size: 14px']);
 // Standalone documents (email, downloadable reports) render outside the
 // dashboard, where the Text size setting doesn't apply.
 const STANDALONE = new Set(['lib/magic-link-email.ts', 'lib/sandbox/report.ts', 'lib/sandbox/practice/report.ts']);

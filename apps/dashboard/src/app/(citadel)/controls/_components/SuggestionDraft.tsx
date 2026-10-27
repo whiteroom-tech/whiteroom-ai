@@ -14,6 +14,7 @@ import { feedbackOrThrow } from '@/lib/diagnosis/feedback';
 import { RULE_LABEL, RULE_TITLE, STATUS_LABEL } from '@/lib/diagnosis/copy';
 import { FIELD, isRecId, readAmount, readSuggestion, type Suggestion } from '@/lib/diagnosis/suggestion';
 import { MONO } from '@/lib/diagnosis/ui';
+import { SegmentedControl } from '@whiteroom/ui';
 
 const panel = { width: 420, borderLeft: '1px solid var(--line)', overflowY: 'auto', padding: 24, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 } as const;
 
@@ -128,10 +129,10 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
         </dd>
         <dt style={{ color: 'var(--tx2)' }}>Mode</dt>
         <dd style={{ margin: 0 }}>
-          <span role="group" aria-label="Mode" style={{ display: 'inline-flex', border: '1px solid var(--line2)', borderRadius: 6, overflow: 'hidden' }}>
-            <button type="button" aria-pressed="true" style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'var(--brand-dim)', color: 'var(--brand)' }}>Record only</button>
-            <button type="button" disabled style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)', fontWeight: 600, border: 0, background: 'none', color: 'var(--tx3)', cursor: 'not-allowed' }}>Block</button>
-          </span>
+          <SegmentedControl<'record' | 'block'> label="Mode" value="record" onChange={() => {}} options={[
+            { value: 'record', label: 'Record only' },
+            { value: 'block', label: 'Block', disabled: true, title: 'A suggested rule starts in Record only.' },
+          ]} />
           <span style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 6 }}>Switch to Block after you&apos;ve seen what it would have done.</span>
         </dd>
       </dl>

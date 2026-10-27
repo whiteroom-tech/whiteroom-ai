@@ -145,7 +145,7 @@
 .wr-account-menu__count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--brand); }
 
 /* Keep the shared navigation usable on narrow screens without squeezing content. */
-.citadel-mobile-menu { display: none; }
+.citadel-mobile-menu, .wr-tabbar, .wr-menu-scrim { display: none; }
 @media (max-width: 720px) {
   .citadel-layout { grid-template-columns: 1fr !important; }
   .citadel-layout > aside { display: none !important; }
@@ -161,6 +161,17 @@
   .citadel-layout [id] { scroll-margin-top: calc(var(--wr-menu-h) + 8px); }
   .citadel-mobile-menu { display: flex; align-items: center; gap: 8px; height: var(--wr-menu-h); text-align: left; background: var(--card); color: var(--brand); border-bottom: 1px solid var(--line); padding: 0 16px; font-size: var(--fs-sm); flex-shrink: 0; position: sticky; top: 0; z-index: 25; }
   .citadel-layout.navigation-open > aside { display: flex !important; position: fixed; top: var(--wr-menu-h); bottom: 0; left: 0; width: 248px; height: auto; z-index: 30; }
+  /* The fleet shell: a bottom tab bar instead of the menu bar. More opens the
+     sidebar above the tab bar, over a scrim; the page ends clear of the bar. */
+  .wr-shell--tabs { --wr-menu-h: 0px; --wr-tabbar-h: 58px; padding-bottom: calc(var(--wr-tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  .wr-shell--tabs.navigation-open > aside { bottom: calc(var(--wr-tabbar-h) + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 48px); box-shadow: 0 8px 24px var(--shadow); }
+  .wr-menu-scrim { display: block; position: fixed; inset: 0; z-index: 29; background: var(--overlay); }
+  /* Each tab is at least as wide as its label. Labels hold at 14px (not the
+     Text size setting) so all five fit a 320px phone; the icons carry them. */
+  .wr-tabbar { display: grid; grid-template-columns: repeat(5, minmax(min-content, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .wr-tabbar__item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: var(--wr-tabbar-h); padding: 0 4px; border: 0; background: none; font: inherit; font-size: 14px; white-space: nowrap; font-weight: 500; line-height: 1; color: var(--tx2); text-decoration: none; cursor: pointer; }
+  .wr-tabbar__item.is-active { color: var(--brand); }
+  .wr-tabbar__item:focus-visible { outline: 2px solid var(--brand); outline-offset: -4px; border-radius: 10px; }
 
   /* Header: the fleet ID yields first; when the name, status and actions still don't
      fit (Agent detail, Runs), they wrap below; long names wrap rather than clip. */
@@ -216,6 +227,9 @@
 .gov-details summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--tx); }
 .gov-edhead, .gov-actbar { background: var(--card); }
 .gov-edhead__back, .gov-edhead__mode, .gov-remove-row { display: none; }
+.gov-scrim { display: none; }
+@keyframes gov-sheet-up { from { transform: translateY(24px); opacity: .6; } }
+@media (prefers-reduced-motion: reduce) { .gov-columns > .gov-panel.is-sheet { animation: none !important; } }
 .gov-edhead__mode { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; border-radius: 99px; padding: 4px 10px; background: var(--raised); color: var(--tx2); }
 .gov-edhead__mode.is-on { background: var(--warn-bg); color: var(--warn); }
 @media (max-width: 720px) {
@@ -226,9 +240,11 @@
   /* A Diagnosis suggestion draft goes first; with nothing open the side has nothing to show. */
   .gov-columns > .gov-panel { order: -1; border-left: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .gov-columns > .gov-panel.is-empty { display: none; }
-  /* The editor is a page of its own, over the menu bar: ‹ Controls goes back. */
-  .gov-columns > .gov-panel.is-sheet { position: fixed; inset: 0; z-index: 30; overflow-y: auto; border-bottom: 0; padding: 0 16px; }
-  .gov-edhead { position: sticky; top: 0; z-index: 2; height: 56px; margin: 0 -16px; padding: 0 16px 0 4px; gap: 8px !important; border-bottom: 1px solid var(--line); }
+  /* The editor is a bottom sheet over the page and the tab bar, the list
+     dimmed above it: ‹ Controls, the scrim or Escape goes back. */
+  .gov-columns > .gov-panel.is-sheet { position: fixed; left: 0; right: 0; bottom: 0; top: 40px; z-index: 40; overflow-y: auto; border: 1px solid var(--line2); border-bottom: 0; border-radius: 16px 16px 0 0; padding: 0 16px env(safe-area-inset-bottom, 0px); box-shadow: 0 -8px 24px var(--shadow); animation: gov-sheet-up .2s ease-out; }
+  .gov-scrim { display: block; position: fixed; inset: 0; z-index: 39; background: var(--overlay); }
+  .gov-edhead { position: sticky; top: 0; z-index: 2; height: 56px; margin: 0 -16px; padding: 0 16px 0 4px; gap: 8px !important; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
   .gov-edhead__back { display: flex; align-items: center; height: 44px; padding: 0 10px; border: 0; background: none; color: var(--brand); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; flex: none; }
   .gov-edhead__title { flex: 1; min-width: 0; font-size: var(--fs-md) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .gov-edhead__mode { display: inline-block; }
@@ -472,6 +488,13 @@
 
 /* ── Agent detail (components/agent) ── README › Screens › 3 */
 .wr-agent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+/* Home › Needs you rows: status, text, action. On phones the text takes the
+   width it needs and the action wraps below, so the sentence isn't a column. */
+.wr-needs-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+@media (max-width: 720px) {
+  .wr-needs-row { display: flex !important; flex-wrap: wrap; gap: 8px 12px !important; }
+  .wr-needs-row > :nth-child(2) { flex: 1 1 200px; }
+}
 .wr-agent-rule { display: grid; gap: 4px; padding: 12px 18px; color: inherit; text-decoration: none; transition: background-color .12s; }
 .wr-agent-rule:hover { background: var(--brand-dim); }
 .wr-agent-rule:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
