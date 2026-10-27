@@ -403,7 +403,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const cancelDialog = () => setDialog(null);
   // A toast's Undo runs after later renders: through this ref it sees the page as it is then
   // (an edit made since is asked about first), not as it was when the toast opened.
-  const live = useRef({ undoSaved: (_: GovernanceRule, __: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {} });
+  const live = useRef({ undoSaved: (_: GovernanceRule, __: GovernanceRule) => {}, restore: (_: GovernanceRule) => {}, undoAdded: (_: string) => {}, guard: (go: () => void) => go() });
 
   /** Undo of something this visit added: removes it again. */
   const undoAdded = async (ruleId: string) => {
@@ -561,13 +561,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   };
 
   /**
-   * The allowlist suggestion. For all agents: the models go into the fleet-wide
-   * allowlist (a new one in Record only when there's none). For one agent only:
-   * the engine checks every allowlist that covers an agent, so a model is
-   * allowed for one agent by giving that agent its own copy with the model
-   * added, and narrowing the original to the other agents.
+   * The allowlist suggestion: the models go into the fleet-wide allowlist (a new
+   * one in Record only when there's none). Not for one agent only: the engine
+   * applies every allowlist that covers an agent, so a copy for one agent can't
+   * let a model through, and narrowing the original would take the allowlist
+   * away from agents added later.
    */
-  const addSuggestedAllowlist = async (models: string[], onlyFor: string | null = null) => {
+  const addSuggestedAllowlist = async (models: string[]) => {
     if (saving) return;
     setDialog(null);
     setSaving(true);
@@ -577,55 +577,22 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const description = "Added Model allowlist in Record only (suggested)";
     // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
     const target = suggestedAllowlistTarget(rules);
-    const label = models.join(", ");
     try {
       if (!target) {
         const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
         showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created.id));
-      } else if (onlyFor) {
-        const prev = (target.params as ModelAllowlistParams).allowedModels;
-        const others = agents.filter((a) => a !== onlyFor);
-        // The copy first, so the agent is never left without an allowlist.
-        const { rule: copy } = await governanceCreateRule(fleetId, {
-          ruleType: "model_allowlist", mode: "watch", response: target.response, alsoNotify: target.alsoNotify,
-          params: { allowedModels: [...prev, ...models.filter((m) => !prev.includes(m))] }, appliesTo: [onlyFor],
-          description: `Added a copy of the ${RULE_LABELS.model_allowlist} rule for ${onlyFor}, also allowing ${label}`,
-        }, authKey);
-        let narrowed: GovernanceRule;
-        try {
-          ({ rule: narrowed } = await governanceUpdateRule(fleetId, target.id, { appliesTo: others, ifVersion: target.version, description: `Now covers every agent but ${onlyFor}` }, authKey));
-        } catch (e) {
-          // The original still covers everyone, so the copy alone changes nothing: take it away again.
-          await governanceDeleteRule(fleetId, copy.id, authKey).catch(() => setNotice(`A copy of the allowlist for ${onlyFor} was left in place. Remove it under Rules for specific agents.`));
-          throw e;
-        }
-        showToast(`${label} allowed for ${onlyFor}.`, () => void (async () => {
-          setSaving(true);
-          // Widen the original first: if a step fails, the agent is still covered (by both), never by neither.
-          let widened = false;
-          try {
-            await governanceUpdateRule(fleetId, target.id, { appliesTo: "all", ifVersion: narrowed.version }, authKey);
-            widened = true;
-            await governanceDeleteRule(fleetId, copy.id, authKey);
-            showToast("Change undone.");
-          } catch (e) {
-            if (widened) setError(`The allowlist covers every agent again, but its copy for ${onlyFor} couldn’t be removed. Remove it under Rules for specific agents.`);
-            else handleError(e, "undo the change");
-          }
-          finally { setSaving(false); void fetchData(); }
-        })());
       } else {
         const prev = (target.params as ModelAllowlistParams).allowedModels;
         const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description }, authKey);
-        const added = models.some((m) => !prev.includes(m));
-        showToast(added ? `${label} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => void (async () => {
+        const added = models.filter((m) => !prev.includes(m));
+        showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => live.current.guard(() => void (async () => {
           setSaving(true);
           try {
             await governanceUpdateRule(fleetId, target.id, { mode: target.mode, params: target.params, ifVersion: updated.version }, authKey);
             showToast("Change undone.");
           } catch (e) { handleError(e, "undo the change"); }
           finally { setSaving(false); void fetchData(); }
-        })());
+        })()));
       }
     } catch (e) { handleError(e, "add the suggested allowlist"); }
     // Busy until the list reloads and the suggestion goes, so a second click can't add another rule.
@@ -634,7 +601,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (target && selectedRef.current === target.id) setDraft(null);
   };
 
-  live.current = { undoSaved, restore: (r) => void restore(r), undoAdded: (id) => void undoAdded(id) };
+  // Every toast Undo asks about an unsaved edit first, as opening another rule does.
+  live.current = { undoSaved, restore: (r) => guard(() => void restore(r)), undoAdded: (id) => guard(() => void undoAdded(id)), guard };
 
   /** Shows one agent's rules (null: all); an open rule that isn't among them closes. */
   const changeAgent = (agent: string | null) => {
@@ -664,7 +632,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const allowlistMissing = allowlistTarget ? allowlistSuggestion!.filter((m) => !(allowlistTarget.params as ModelAllowlistParams).allowedModels.includes(m)) : [];
   // Who the allowlist caught since its last change: one agent can have the model just for itself.
   const allowCaught = allowlistTarget && allowlistTarget.mode === "watch" ? Object.entries(wouldOf(allowlistTarget)?.byAgent ?? {}).filter(([, n]) => n > 0) : [];
-  const allowOnlyFor = allowlistTarget && allowlistMissing.length && allowCaught.length === 1 && agents.length > 1 && agents.includes(allowCaught[0][0]) ? allowCaught[0][0] : null;
   const dups = duplicateRules(rules);
   const kwGaps = keywordGaps(rules, agents);
   const suggestionCount = kwGaps.length + dups.length + (overlap ? 1 : 0) + (allowlistSuggestion ? 1 : 0) + (suggestions.noCaching ? 1 : 0);
@@ -696,7 +663,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const hours = Math.min(SUGGESTION_HOURS, Math.max(1, Math.ceil((Date.now() - Date.parse(enforceWould.since)) / HOUR_MS)));
     for (const [a, n] of Object.entries(enforceWould.byAgent).slice(0, 5)) {
       if (!n) continue;
-      performanceAgent(fleetId, a, hours, authKey).then((p) => { if (!cancelled && !p.error) setAgentCalls((m) => ({ ...m, [`${enforceRule.id}:${a}`]: p.totals.calls })); }, () => {});
+      performanceAgent(fleetId, a, hours, authKey).then((p) => { if (!cancelled && !p.error) setAgentCalls((m) => ({ ...m, [callsKey(enforceRule, enforceWould.since!, a)]: p.totals.calls })); }, () => {});
     }
     return () => { cancelled = true; };
   }, [enforceRule, enforceWould, fleetId, authKey]);
@@ -1017,9 +984,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 Calls to {mono(allowlistMissing.join(", "))} won’t be caught once {allowlistMissing.length === 1 ? "it’s" : "they’re"} allowed.
               </p>
               <p className="ctl-cap" style={{ margin: 0 }}>
-                {allowOnlyFor
-                  ? <>Applies to all agents. Or allow it for {allowOnlyFor} only: {allowOnlyFor} gets its own copy of the allowlist, and the original then covers only the agents you have today, so agents added later aren’t covered by the allowlist until you add them.</>
-                  : <>Applies to all agents{allowlistTarget.mode === "off" ? ", in Record only" : ""}.</>}
+                Applies to all agents{allowlistTarget.mode === "off" ? ", in Record only" : ""}. An allowlist can’t make an exception for one agent yet.
               </p>
             </>
           ) : allowlistTarget
@@ -1028,8 +993,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         ) : null}
         busy={saving}
         choices={dialog?.kind === "allow" ? [
-          // The risky choice, said on the button: the original then covers a fixed list of agents.
-          ...(allowOnlyFor ? [{ label: `Allow for ${allowOnlyFor} only: agents added later lose the allowlist`, tone: "bad" as const, onClick: () => void addSuggestedAllowlist(dialog.models, allowOnlyFor) }] : []),
           { label: allowlistTarget && allowlistMissing.length ? "Allow for all agents" : allowlistTarget ? "Turn on in Record only" : "Add in Record only", tone: "primary" as const, onClick: () => void addSuggestedAllowlist(dialog.models) },
         ] : []}
         onCancel={cancelDialog}
@@ -1113,6 +1076,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   );
 }
 
+/** An agent's call count over the window a rule version's would-acts cover: a newer version or window never reads an older count. */
+const callsKey = (rule: GovernanceRule, since: string, agent: string) => `${rule.id}@${rule.version}@${since}:${agent}`;
+
 /** "Two identical loop breakers": each kind of rule, more than one. */
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
@@ -1141,7 +1107,7 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
   const n = watched && week ? week.wouldAct : watched && wouldAct ? Object.values(wouldAct.byAgent).reduce((a, b) => a + b, 0) : null;
   const since = watched && wouldAct?.since ? fmtDay(wouldAct.since) : null;
   const all = wouldAct && !wouldAct.unversioned && next.ruleType === "model_allowlist"
-    ? Object.entries(wouldAct.byAgent).filter(([a, c]) => c > 0 && agentCalls[`${rule.id}:${a}`] !== undefined && c >= agentCalls[`${rule.id}:${a}`] && (next.appliesTo === "all" || next.appliesTo.includes(a)))
+    ? Object.entries(wouldAct.byAgent).filter(([a, c]) => c > 0 && agentCalls[callsKey(rule, wouldAct.since ?? "", a)] !== undefined && c >= agentCalls[callsKey(rule, wouldAct.since ?? "", a)] && (next.appliesTo === "all" || next.appliesTo.includes(a)))
     : [];
   return (
     <>

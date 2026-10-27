@@ -1193,58 +1193,31 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
-  it('allowing a model for one agent only: that agent gets its own copy with the model, the original covers the rest', async () => {
+  it('the allowlist confirm shows who it caught and offers no one-agent exception (the engine has none)', async () => {
     api.models = ['claude-sonnet-4-5'];
     api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
     api.would = { r2: { 'lead-agent': 44 } };
-    created();
-    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.saved[id], ...ch, version: 2 } }));
     const m = await mount();
     await m.click(m.button('Add to allowlist…'));
     expect(dlg(m).textContent).toContain('the allowlist caught 44 calls from lead-agent');
-    expect(dlg(m).textContent).toContain('agents added later aren’t covered by the allowlist until you add them');
-    expect(m.button('Allow for lead-agent only: agents added later lose the allowlist')!.className).toContain('ctl-bad');
-    await m.click(m.button('Allow for lead-agent only: agents added later lose the allowlist'));
-    expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'model_allowlist', appliesTo: ['lead-agent'], params: { allowedModels: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5'] } }), 'k');
-    expect(api.update).toHaveBeenCalledWith('f1', 'r2', expect.objectContaining({ appliesTo: ['market-researcher'], ifVersion: 1 }), 'k');
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('claude-sonnet-4-5 allowed for lead-agent.');
-    await m.click(m.button('Undo'));
-    expect(api.update).toHaveBeenLastCalledWith('f1', 'r2', { appliesTo: 'all', ifVersion: 2 }, 'k');
-    expect(api.remove).toHaveBeenCalledWith('f1', 'c0', 'k');
+    expect(dlg(m).textContent).toContain('An allowlist can’t make an exception for one agent yet.');
+    expect([...dlg(m).querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Allow for all agents']);
     m.root.unmount();
   });
 
-  it('allowing for one agent: if narrowing the original fails, the copy is taken away again', async () => {
-    api.models = ['claude-sonnet-4-5'];
-    api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
-    api.would = { r2: { 'lead-agent': 44 } };
+  it('a toast Undo asks before throwing away an unsaved edit to another rule', async () => {
     created();
-    api.update.mockRejectedValue(new Error('down'));
     const m = await mount();
-    await m.click(m.button('Add to allowlist…'));
-    await m.click(m.button('Allow for lead-agent only: agents added later lose the allowlist'));
-    expect(api.create).toHaveBeenCalledTimes(1);
-    expect(api.remove).toHaveBeenCalledWith('f1', 'c0', 'k');
-    expect(m.text()).toMatch(/Couldn’t add the suggested allowlist/);
-    expect(m.el.querySelector('.wr-toast')).toBeNull();
-    m.root.unmount();
-  });
-
-  it('an Undo after the rule changed again somewhere else leaves it alone', async () => {
-    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule> & { ifVersion: number }) => {
-      const { ifVersion, ...rest } = ch;
-      const rule = { ...(api.saved[id] ?? RULES.find((r) => r.id === id)!), ...rest, version: ifVersion + 1 } as GovernanceRule;
-      // Someone else changes it straight after: the reload brings a newer version.
-      api.saved[id] = { ...rule, version: rule.version + 1 };
-      return { rule };
-    });
-    const m = await mount();
+    await m.click(m.row('$200'));
+    await m.click(m.button('Remove rule'));
+    await m.click([...dlg(m).querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     await m.click(m.row('$190'));
     await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
-    await m.click(m.button('Save'));
     await m.click(m.button('Undo'));
-    expect(api.update).toHaveBeenCalledTimes(1);
-    expect(m.el.querySelector('.wr-toast')!.textContent).toContain('This rule changed again since, so Undo left it as it is.');
+    expect(dlg(m).textContent).toContain('Discard your changes to Spend cap?');
+    expect(api.create).not.toHaveBeenCalled();
+    await m.click([...dlg(m).querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(api.create).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleType: 'spend_cap', mode: 'watch', params: { dailyCap: 200, scope: 'day', unit: 'dollars' } }), 'k');
     m.root.unmount();
   });
 
