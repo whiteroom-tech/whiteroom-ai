@@ -183,9 +183,9 @@ export interface ActivityRow {
 }
 
 const TAGS: Record<string, { label: string; tone: TagTone }> = {
-  handover_out: { label: 'Passed work', tone: 'ho' },
-  handover: { label: 'Passed work', tone: 'ho' },
-  handover_in: { label: 'Took over', tone: 'ho' },
+  handover_out: { label: 'Saved progress', tone: 'ho' },
+  handover: { label: 'Saved progress', tone: 'ho' },
+  handover_in: { label: 'Continued', tone: 'ho' },
   self_handover: { label: 'Smaller context', tone: 'ho' },
   agent_paused: { label: 'Paused', tone: 'warn' },
   governance_block: { label: 'Blocked', tone: 'block' },

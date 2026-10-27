@@ -1,61 +1,40 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Hint, Panel, FONT_MONO } from '@whiteroom/ui';
-import { listRuns } from '@/lib/whiteroom/client';
+import { Panel, FONT_MONO } from '@whiteroom/ui';
 import type { RunSummary } from '@/lib/whiteroom/types';
-import { HELP } from '@/lib/metric-definitions';
-import { fmtLength, fmtStarted, runHref, runsDays, standOut } from '@/lib/runs';
+import { fmtLength, fmtStarted, runHref, standOut } from '@/lib/runs';
 import { ROUTES } from '@/lib/routes';
 
+/** What the page knows about the agent's recent runs: still loading, the list, failed, or not offered by this engine. */
+export type RecentRunsState = { kind: 'loading' } | { kind: 'ok'; runs: RunSummary[] } | { kind: 'failed' } | { kind: 'unsupported' };
+
 /**
- * Agent detail › Recent runs (README › Screens › 3): the agent's newest runs
- * from the last 7 UTC days. Without list_runs it only links to Runs.
+ * Agent detail › Recent runs: the agent's newest runs from the last 7 days,
+ * one line each (number, start, length, what stood out). The page loads them,
+ * since the Now card links its last run from the same list. Without
+ * list_runs it only links to Runs.
  */
-export function RecentRuns({ fleetId, authKey, agentId, preview }: { fleetId: string; authKey?: string; agentId: string; preview?: RunSummary[] }) {
-  const [runs, setRuns] = useState<RunSummary[] | null>(preview ?? null);
-  const [hidden, setHidden] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (preview) return;
-    let live = true;
-    listRuns(fleetId, { ...runsDays('7d'), agentId, pageSize: 5 }, authKey).then(
-      (res) => { if (!live) return; if ('unsupported' in res) setHidden(true); else setRuns(res.runs); },
-      () => { if (live) setFailed(true); },
-    );
-    return () => { live = false; };
-  }, [fleetId, authKey, agentId, preview]);
-
-  // Without list_runs, keep the way to Runs (its event feed still works).
-  if (hidden) {
-    return (
-      <Panel title="Recent runs" actions={<Link href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}`} className="wr-link">All runs &rarr;</Link>}>
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Run summaries aren&rsquo;t available yet. Runs shows this agent&rsquo;s events.</p>
-      </Panel>
-    );
-  }
+export function RecentRuns({ agentId, state }: { agentId: string; state: RecentRunsState }) {
+  const all = <Link href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}`} className="wr-link">All runs &rarr;</Link>;
+  const note = (text: string) => <p style={{ margin: 0, padding: '14px 20px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{text}</p>;
   return (
-    <Panel
-      title={<>Recent runs<Hint text={HELP.recentRuns} /></>}
-      bodyPadding={0}
-      actions={<Link href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}`} className="wr-link">All runs &rarr;</Link>}
-    >
-      {runs === null ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{failed ? 'Couldn\u2019t load recent runs. Reload to try again.' : 'Loading\u2026'}</p>
-      ) : runs.length === 0 ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>No runs in the last 7 days.</p>
-      ) : runs.map((r) => (
-        <Link key={r.runId} href={runHref(r.runId)} className="wr-activity-row" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 500 }}>#{r.shift}</span>
-          <span style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginRight: 10 }}>{fmtStarted(r.startedAt)} · {fmtLength(r.lengthSeconds)}</span>
-            {standOut(r).text}
-          </span>
-          <span />
-        </Link>
-      ))}
+    <Panel title="Recent runs" bodyPadding={0} actions={all}>
+      {state.kind === 'unsupported' ? note('Recent runs aren’t available yet. Runs shows this agent’s events.')
+        : state.kind === 'loading' ? note('Loading…')
+          : state.kind === 'failed' ? note('Couldn’t load recent runs. Reload to try again.')
+            : state.runs.length === 0 ? note('No runs in the last 7 days.')
+              : state.runs.map((r) => {
+                const stood = standOut(r);
+                return (
+                  <Link key={r.runId} href={runHref(r.runId)} className="wr-agent-run">
+                    <span style={{ fontFamily: FONT_MONO }}>#{r.shift}</span>
+                    <span className="wr-agent-run__when">{fmtStarted(r.startedAt)}</span>
+                    <span className="wr-agent-run__len">{fmtLength(r.lengthSeconds)}</span>
+                    <span className="wr-agent-run__what" title={stood.tone === 'clean' ? undefined : stood.text}>{stood.tone === 'clean' ? '' : stood.text}</span>
+                  </Link>
+                );
+              })}
     </Panel>
   );
 }

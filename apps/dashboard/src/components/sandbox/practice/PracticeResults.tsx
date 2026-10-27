@@ -86,7 +86,6 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
 
   return (
     <div className={p.wrap}>
-      <div className={s.eyebrow}>WHITEROOM / SANDBOX / PRACTICE TEST</div>
       <div className={`${s.summary} ${tone}`}>
         <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)' }}>{head}</h2>
         <div>{[run.sourceFleetId, who, model, run.endedAt && when(run.endedAt)].filter(Boolean).join(' · ')}</div>
@@ -141,7 +140,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
             <dt>Runs</dt><dd>{r.runs}{r.scope ? ` · rerun of ${r.scope.length} ${plural(r.scope.length, 'check')}` : ''}</dd>
             <dt>CLI version</dt><dd>{r.tested.cli ?? '—'}</dd>
             <dt>Test version</dt><dd>{r.testVersion}</dd>
-            {r.how.memoryLimitAdjusted && <><dt>Memory</dt><dd>Memory limit adjusted during the test</dd></>}
+            {r.how.memoryLimitAdjusted && <><dt>Room</dt><dd>Given more room during the test</dd></>}
           </dl>
         </details>
         <p className={s.small}>{billedLine(r)}</p>

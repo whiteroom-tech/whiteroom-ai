@@ -163,14 +163,6 @@ export interface ListFleetsResult {
   error?: string;
 }
 
-export interface GetHandoverResult {
-  /** Pending, single-use: the agent gets it on its next call, then it's cleared. */
-  handoverDoc?: HandoverDoc;
-  /** The last doc already delivered, kept for people to read (engine #94). */
-  lastHandoverDoc?: HandoverDoc | null;
-  error?: string;
-}
-
 export interface ClaimFleetResult {
   success?: boolean;
   fleetId?: string;
@@ -806,7 +798,7 @@ export interface RuleWouldActResult {
   since?: string | null;
 }
 
-/** Settings › Audit integrity (engine audit_integrity, Phase 1 spec H2). */
+/** Settings › Audit trail (engine audit_integrity, Phase 1 spec H2). */
 export interface AuditIntegrity {
   fleetId: string;
   mode: 'legacy' | 'sequenced';

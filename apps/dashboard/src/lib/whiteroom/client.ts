@@ -25,7 +25,6 @@ import type {
   DeleteBedrockRoleResult,
   DeleteKeyResult,
   FleetReport,
-  GetHandoverResult,
   GovernanceListResult,
   GovernanceMode,
   GovernanceParams,
@@ -339,10 +338,6 @@ export async function fleetReport(fleetId: string, key?: string): Promise<FleetR
 export async function checkWatch(agentId: string, fleetId: string, key?: string): Promise<AgentInfo> {
   const agent = await apiCall<AgentInfo>({ action: 'check_watch', agent_id: agentId, fleet_id: fleetId }, key);
   return 'hold' in agent ? { ...agent, hold: activeHold(agent.hold) } : agent;
-}
-
-export function getHandover(agentId: string, fleetId: string, key?: string): Promise<GetHandoverResult> {
-  return apiCall<GetHandoverResult>({ action: 'get_handover', agent_id: agentId, fleet_id: fleetId }, key);
 }
 
 export function auditLog(
@@ -710,7 +705,7 @@ export function listRuns(
   }, key);
 }
 
-/** Settings › Audit integrity: how much of the chain is verified, and recorded gaps. */
+/** Settings › Audit trail: how much of the chain is verified, and recorded gaps. */
 export function auditIntegrity(fleetId: string, key?: string): Promise<AuditIntegrity> {
   return apiCall({ action: 'audit_integrity', fleet_id: fleetId }, key);
 }

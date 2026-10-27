@@ -67,9 +67,9 @@ describe('activity', () => {
 
   it('tags handovers, pauses and blocks', () => {
     expect(activityRow(e('self_handover', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Smaller context', tone: 'ho' });
-    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z', { toAgent: 'writer' }), now).tag).toEqual({ label: 'Passed work', tone: 'ho' });
-    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Passed work', tone: 'ho' });
-    expect(activityRow(e('handover_in', '2026-09-30T14:00:00Z', { fromAgent: 'lead' }), now).tag).toEqual({ label: 'Took over', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z', { toAgent: 'writer' }), now).tag).toEqual({ label: 'Saved progress', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Saved progress', tone: 'ho' });
+    expect(activityRow(e('handover_in', '2026-09-30T14:00:00Z', { fromAgent: 'lead' }), now).tag).toEqual({ label: 'Continued', tone: 'ho' });
     expect(activityRow(e('agent_paused', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Paused', tone: 'warn' });
     expect(activityRow(e('governance_block', '2026-09-30T14:00:00Z', { ruleType: 'spend_cap' }), now).tag?.label).toBe('Blocked');
     expect(activityRow(e('task_complete', '2026-09-30T14:00:00Z', { taskName: 'x' }), now).tag).toBeUndefined();

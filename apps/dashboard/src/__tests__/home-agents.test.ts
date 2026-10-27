@@ -60,8 +60,8 @@ describe('Home agents: one list', () => {
 describe('rule activity, short', () => {
   it('fits a card line, whatever the tally holds', async () => {
     const { tallyShort } = await import('@/lib/governance');
-    expect(tallyShort(tally({ blocks: 2, wouldBlocks: 47 }))).toBe('2 blocked · 47 in Record only');
-    expect(tallyShort(tally({ wouldBlocks: 3 }))).toBe('3 in Record only');
+    expect(tallyShort(tally({ blocks: 2, wouldBlocks: 47 }))).toBe('2 blocked · 47 would have acted');
+    expect(tallyShort(tally({ wouldBlocks: 3 }))).toBe('3 would have acted');
     expect(tallyShort({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 1, toldYou: 4 })).toBe('1 stopped · 2 paused · 1 blocked · 4 alerted you');
     expect(tallyShort(tally({}))).toBe('');
   });

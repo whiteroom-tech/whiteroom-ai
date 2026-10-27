@@ -363,7 +363,7 @@ export function RunsTable({ preview, retentionDays }: {
       <PageHeader title="Runs" fleetId={fleetId}>
         <SegmentedControl<RunsRange> label="Range" value={day ? null : range} onChange={(r) => changeFilter({ range: r })} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
         <Button onClick={() => void exportAll()} busy={exporting} busyLabel="Exporting…" disabled={!runs?.length}>Export .xlsx</Button>
-        <Link href="/settings#audit-integrity" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Audit integrity</Link>
+        <Link href="/settings#audit-integrity" style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Audit trail</Link>
       </PageHeader>
 
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, alignContent: 'start' }}>
