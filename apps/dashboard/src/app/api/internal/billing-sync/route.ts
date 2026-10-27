@@ -4,6 +4,7 @@ import { countAgents } from '@/lib/entitlements';
 import { billableAgents, planItem } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
 import { syncSecretMatches } from '@/lib/sync-secret';
+import { finishDeletedAccounts } from '@/lib/account-closing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,9 @@ const AGENT_COUNT_TIMEOUT_MS = 5_000;
  *    compares each Pro account's live agent count with the quantity Stripe
  *    bills and corrects Stripe when they differ. Stripe prorates the change
  *    onto the next invoice.
+ *
+ * 3. Deleted accounts. Once an account's 14-day deletion window has run out
+ *    and the engine has its closing time, its dashboard rows go.
  */
 export async function POST(req: Request): Promise<Response> {
   if (!syncSecretMatches(req.headers.get('x-wr-sync-secret'))) {
@@ -48,13 +52,18 @@ export async function POST(req: Request): Promise<Response> {
   const pro = process.env.STRIPE_SECRET_KEY
     ? await syncProQuantities()
     : { checked: 0, updated: 0, skipped: 0, deferred: 0 };
+  // Accounts whose 14-day deletion window has run out (lib/account-closing.ts).
+  const deletions = await finishDeletedAccounts().catch((err) => {
+    console.error('[billing-sync] could not finish deleted accounts:', err instanceof Error ? err.message : err);
+    return null;
+  });
 
-  // A failed trial pass is a 500 so Cloud Scheduler records the failure and
-  // retries. The Pro pass still ran, since it doesn't depend on it.
-  if (trials === null) {
-    return Response.json({ error: 'Could not queue expired trials.', pro }, { status: 500 });
+  // A failed trial or deletion pass is a 500 so Cloud Scheduler records the
+  // failure and retries. The other passes still ran; none depends on another.
+  if (trials === null || deletions === null) {
+    return Response.json({ error: trials === null ? 'Could not queue expired trials.' : 'Could not finish deleted accounts.', pro, deletions }, { status: 500 });
   }
-  return Response.json({ trialsQueued: trials, pro });
+  return Response.json({ trialsQueued: trials, pro, deletions });
 }
 
 /** Number of trials queued, or null if the database refused. */

@@ -4,6 +4,7 @@ import { appOrigin } from '@/lib/app-origin';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
+import { getClosing } from '@/lib/account-closing';
 import { countAgents, getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
 import { billableAgents, hasLiveSubscription, isPaidPlanId, isTrialActive, stripePriceId } from '@/lib/plans';
 
@@ -70,6 +71,10 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
 
   try {
     const user = await requireUser();
+    // A subscription started now would outlive the account, and block its removal.
+    if ((await getClosing(user.id))?.reason === 'deleted') {
+      return { ok: false, error: 'Cancel the account deletion before choosing a plan.' };
+    }
     if (hasLiveSubscription(await getSubscriptionRow(user.id))) {
       return { ok: false, error: 'You already have a subscription — change plans from Manage billing.' };
     }

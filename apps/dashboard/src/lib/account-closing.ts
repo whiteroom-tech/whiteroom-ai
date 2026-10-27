@@ -1,0 +1,228 @@
+// Deliberately NOT a 'use server' module: these take a user id, which a
+// server action would let any caller choose. The signed-in entry points are
+// in lib/account.ts.
+import 'server-only';
+
+import { appOrigin } from '@/lib/app-origin';
+import { db } from '@/lib/db';
+import { sendEmail } from '@/lib/email';
+import { accountClosingEmail } from '@/lib/magic-link-email';
+import { isActiveStatus, type PlanId } from '@/lib/plans';
+import { CLOSE_WINDOW_DAYS, closingDate, type Closing, type CloseReason } from '@/lib/closing-shared';
+
+export { CLOSE_WINDOW_DAYS, closingDate, type Closing, type CloseReason };
+
+// Account deletion and plan lapse (redesign Phase 7c, decision Q4).
+//
+// Deleting the account, or the plan lapsing, starts a 14-day window. During
+// it the fleets keep working and the owner can export or cancel. At the end
+// the engine closes every fleet the account owns (it refuses their calls and
+// revokes the WhiteRoom fleet key; the audit trail is kept), and a deleted
+// account's dashboard rows go (finishDeletedAccounts). The window lives on
+// users.closes_at / close_reason (migration 012) and reaches the engine with
+// each entitlement push, so the outbox delivers it like any limit change.
+
+type Queryable = { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null }> };
+
+function toClosing(row: Record<string, unknown> | undefined): Closing | null {
+  if (!row?.closes_at) return null;
+  const at = new Date(row.closes_at as string | Date);
+  if (Number.isNaN(at.getTime())) return null;
+  return { reason: row.close_reason === 'lapsed' ? 'lapsed' : 'deleted', closesAt: at.toISOString() };
+}
+
+/** The account's closing window, or null when it isn't closing. A window whose time has passed is still returned. */
+export async function getClosing(userId: string, q: Queryable = db()): Promise<Closing | null> {
+  const { rows } = await q.query(`SELECT closes_at, close_reason FROM users WHERE id = $1`, [userId]);
+  return toClosing(rows[0]);
+}
+
+/**
+ * Starts the window, unless one is already running. Returns the new window,
+ * or null when nothing started (one was running, or no such user), so only
+ * the caller that started it sends the email.
+ */
+export async function startClosing(q: Queryable, userId: string, reason: CloseReason): Promise<Closing | null> {
+  const { rows } = await q.query(
+    `UPDATE users SET closes_at = now() + make_interval(days => $3), close_reason = $2, updated_at = now()
+     WHERE id = $1 AND closes_at IS NULL
+     RETURNING closes_at, close_reason`,
+    [userId, reason, CLOSE_WINDOW_DAYS],
+  );
+  return toClosing(rows[0]);
+}
+
+/**
+ * Ends a window that hasn't run out, back to normal. `reason` limits it to
+ * that kind of window. Once the time has passed the fleets are closed and
+ * there is nothing to cancel. Returns whether a window was cancelled.
+ */
+export async function cancelClosing(q: Queryable, userId: string, reason?: CloseReason): Promise<boolean> {
+  const { rowCount } = await q.query(
+    `UPDATE users SET closes_at = NULL, close_reason = NULL, updated_at = now()
+     WHERE id = $1 AND closes_at > now() AND ($2::text IS NULL OR close_reason = $2)`,
+    [userId, reason ?? null],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Tells the owner a window has started. Best effort: the window is already
+ * stored, and the banner says the same on every page, so a failed send is
+ * logged rather than undoing it.
+ */
+export async function sendClosingEmail(userId: string, closing: Closing): Promise<void> {
+  try {
+    const { rows } = await db().query(`SELECT email FROM users WHERE id = $1`, [userId]);
+    const to = rows[0]?.email as string | undefined;
+    if (!to) return;
+    const { subject, html, text } = accountClosingEmail(closing.reason, closingDate(closing.closesAt), `${appOrigin()}/settings`);
+    await sendEmail({ to, subject, html, text });
+  } catch {
+    console.error(`[closing] couldn't send the ${closing.reason} email for user ${userId}`);
+  }
+}
+
+/**
+ * Keeps a lapse window in step with the plan, on every entitlement push:
+ * a plan that has lapsed ('expired') starts one; a plan that came back
+ * cancels it while it's still running. A deletion window is left alone
+ * either way. Returns the window to send to the engine.
+ */
+export async function reconcileLapse(userId: string, plan: PlanId): Promise<Closing | null> {
+  const current = await getClosing(userId);
+  if (plan === 'expired') {
+    if (current) return current;
+    const started = await startClosing(db(), userId, 'lapsed');
+    if (started) await sendClosingEmail(userId, started);
+    return started ?? (await getClosing(userId));
+  }
+  if (current?.reason === 'lapsed' && new Date(current.closesAt).getTime() > Date.now()) {
+    if (await cancelClosing(db(), userId, 'lapsed')) return null;
+    return getClosing(userId);
+  }
+  return current;
+}
+
+/** Deleted accounts finished per run. The rest wait for the next one. */
+const FINISH_BATCH = 100;
+
+/**
+ * Removes the dashboard rows of accounts whose deletion window has run out.
+ * Called by the billing sync (Cloud Scheduler).
+ *
+ * Only once the engine has acknowledged the account's last entitlement push
+ * (no undelivered outbox row): that push is what carried the closing time,
+ * and deleting the account first would leave nothing able to send it again.
+ * An account that can't be deleted now (a subscription started during the
+ * window, an organization it alone owns) is skipped and logged.
+ */
+export async function finishDeletedAccounts(): Promise<{ deleted: number; skipped: number }> {
+  const { rows } = await db().query(
+    `SELECT id FROM users u
+     WHERE close_reason = 'deleted' AND closes_at <= now()
+       AND NOT EXISTS (SELECT 1 FROM entitlement_outbox o WHERE o.user_id = u.id AND o.delivered_at IS NULL)
+     ORDER BY closes_at
+     LIMIT $1`,
+    [FINISH_BATCH],
+  );
+  let deleted = 0;
+  let skipped = 0;
+  for (const { id } of rows as Array<{ id: string }>) {
+    const client = await db().connect();
+    try {
+      await client.query('BEGIN');
+      // Re-checked under the lock: cancelled meanwhile, or not due after all.
+      const { rows: still } = await client.query(
+        `SELECT 1 FROM users WHERE id = $1 AND close_reason = 'deleted' AND closes_at <= now() FOR UPDATE`,
+        [id],
+      );
+      const blocked = still.length ? await deletionBlocker(client, id) : 'no longer due';
+      if (blocked) {
+        await client.query('ROLLBACK');
+        if (still.length) console.warn(`[closing] deletion of user ${id} skipped: ${blocked}`);
+        skipped++;
+        continue;
+      }
+      await deleteAccountRows(client, id);
+      await client.query('COMMIT');
+      deleted++;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error(`[closing] deletion of user ${id} failed:`, err instanceof Error ? err.message : err);
+      skipped++;
+    } finally {
+      client.release();
+    }
+  }
+  return { deleted, skipped };
+}
+
+/** Everything the dashboard holds for an account, inside the caller's transaction. */
+export async function deleteAccountRows(q: Queryable, userId: string): Promise<void> {
+  // user_fleets predates the adapter migration and its foreign key may not
+  // cascade, so clear it explicitly rather than relying on the constraint.
+  await q.query(`DELETE FROM user_fleets WHERE user_id = $1`, [userId]);
+  await q.query(`DELETE FROM email_change_requests WHERE user_id = $1`, [userId]);
+  await q.query(`DELETE FROM subscriptions WHERE user_id = $1`, [userId]);
+  // accounts and sessions cascade from users (001_nextauth.sql).
+  await q.query(`DELETE FROM users WHERE id = $1`, [userId]);
+}
+
+/**
+ * Why this account can't be deleted yet, or null. Runs inside the deletion
+ * transaction, when the window starts and again when it ends, with the same
+ * organization locks leaveOrganization takes.
+ *
+ * - A live Stripe subscription would keep billing after the row that links
+ *   it to a person is gone, leaving no way back to the billing portal
+ *   (audit F07). Cancel first.
+ * - Deleting the only owner of an organization that has other members
+ *   cascades the membership away and leaves nobody able to manage it — the
+ *   rule leave/remove/demote already enforce (audit F21).
+ */
+export async function deletionBlocker(q: Queryable, userId: string): Promise<string | null> {
+  const { rows: sub } = await q.query(
+    `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`,
+    [userId],
+  );
+  if (sub[0]?.stripe_subscription_id && isActiveStatus(String(sub[0].status))) {
+    return 'Cancel your subscription in Manage billing before deleting your account.';
+  }
+
+  const { rows: owned } = await q.query(
+    `SELECT org_id FROM organization_members WHERE user_id = $1 AND role = 'owner' AND status = 'active'`,
+    [userId],
+  );
+  const orgIds = owned.map((r) => r.org_id);
+  if (orgIds.length === 0) return null;
+
+  await q.query(`SELECT id FROM organizations WHERE id = ANY($1) FOR UPDATE`, [orgIds]);
+  const { rows: stranded } = await q.query(
+    `SELECT o.name FROM organizations o
+     WHERE o.id = ANY($1)
+       AND NOT EXISTS (SELECT 1 FROM organization_members m
+                       WHERE m.org_id = o.id AND m.user_id <> $2 AND m.role = 'owner' AND m.status = 'active')
+       AND EXISTS (SELECT 1 FROM organization_members m WHERE m.org_id = o.id AND m.user_id <> $2)`,
+    [orgIds, userId],
+  );
+  if (stranded.length === 0) return null;
+  return `You're the only owner of ${stranded[0].name ?? 'your organization'}. Make someone else an owner before deleting your account.`;
+}
+
+/**
+ * Whether migration 012 has added users.closes_at: true, false, or null when
+ * the check couldn't run (a cold-start connection failure doesn't block).
+ */
+export async function closingColumnsPresent(): Promise<boolean | null> {
+  try {
+    const { rows } = await db().query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+       WHERE table_name = 'users' AND column_name IN ('closes_at', 'close_reason')`,
+    );
+    const n = rows[0]?.n;
+    return typeof n === 'number' ? n === 2 : null;
+  } catch {
+    return null;
+  }
+}

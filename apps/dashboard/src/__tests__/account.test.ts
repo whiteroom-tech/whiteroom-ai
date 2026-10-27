@@ -128,9 +128,10 @@ describe('deleteAccount safeguards', () => {
     expect(deletedUser()).toBe(false);
   });
 
-  it('deletes when neither applies', async () => {
+  it('starts the 14-day deletion window when neither applies (nothing is deleted yet)', async () => {
     respond({ subscription: { stripe_subscription_id: 'sub_1', status: 'canceled' }, ownedOrgs: ['org-1'], stranded: [] });
-    await deleteAccount(USER.email);
-    expect(deletedUser()).toBe(true);
+    expect(await deleteAccount(USER.email)).toEqual({ ok: true });
+    expect(query.mock.calls.some((c) => String(c[0]).startsWith('UPDATE users SET closes_at = now()'))).toBe(true);
+    expect(deletedUser()).toBe(false);
   });
 });

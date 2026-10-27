@@ -17,7 +17,13 @@ import { db } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
-import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
+import { effectivePlan, isPaidPlanId, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
+import { reconcileLapse, type Closing } from '@/lib/account-closing';
+
+/** What a lapsed plan runs on during its closing window: the paid plan it had, or Starter after a trial. */
+export function gracePlan(sub: { plan: string } | null): PlanId {
+  return sub && isPaidPlanId(sub.plan) ? sub.plan : 'starter';
+}
 
 export interface SubscriptionRow {
   plan: string;
@@ -233,21 +239,39 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     return false;
   }
 
-  const [{ plan }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
+  const [{ plan, sub }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
+
+  // A lapsed plan starts the 14-day closing window, and one that came back
+  // cancels it (lib/account-closing.ts). Before the fleet check: an account
+  // with no fleet still gets the email and the banner.
+  let closing: Closing | null;
+  try {
+    closing = await reconcileLapse(userId, plan);
+  } catch (err) {
+    console.error('[entitlements] closing check failed');
+    return false;
+  }
   if (fleetIds.length === 0) return true;
 
-  const limits = limitsFor(plan);
+  // During the window the fleets keep working: a lapsed plan runs on the
+  // plan it had (Starter after a trial) until the window ends.
+  const windowOpen = !!closing && new Date(closing.closesAt).getTime() > Date.now();
+  const applied: PlanId = plan === 'expired' && windowOpen ? gracePlan(sub) : plan;
+  const limits = limitsFor(applied);
 
   const payload = {
     fleets: fleetIds.map((fleetId) => ({
       fleetId,
-      plan,
+      plan: applied,
       // The engine only ever gates on "is this allowed to run"; the nuance of
       // why (trial over vs. a cancelled subscription) stays on this side. An
       // inactive fleet refuses every agent, including ones already in it.
-      status: plan === 'expired' ? 'inactive' : 'active',
+      status: applied === 'expired' ? 'inactive' : 'active',
       maxAgents: limits.maxAgentsPerFleet,
       retentionDays: limits.retentionDays,
+      // When the fleet closes, or null: sent every time, so a cancel lands.
+      closesAt: closing?.closesAt ?? null,
+      closeReason: closing?.reason ?? null,
     })),
   };
 
@@ -262,6 +286,16 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
       return false;
+    }
+    // An engine that answers without `closed` doesn't know about closing and
+    // dropped the time: not delivered, so the outbox keeps it until one does.
+    // Otherwise a deleted account could be removed with its fleets still open.
+    if (closing) {
+      const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
+      if (!Array.isArray(body?.closed)) {
+        console.error('[entitlements] engine did not take the closing time; leaving pending');
+        return false;
+      }
     }
     return true;
   } catch (err) {
@@ -295,6 +329,8 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
           status: 'active',
           maxAgents: starter.maxAgentsPerFleet,
           retentionDays: starter.retentionDays,
+          // Closing follows the owner: a fleet nobody owns isn't closing.
+          closesAt: null,
         }],
       }),
     });

@@ -12,6 +12,7 @@ import { AppShell } from '@/components/AppShell';
 import { TextSizeControl } from '@/components/TextSizeControl';
 import { Banner, Button, Panel, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
 import {
+  cancelAccountDeletion,
   cancelEmailChange,
   deleteAccount,
   requestEmailChange,
@@ -24,6 +25,8 @@ import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentPlanStats } from '@/lib/metric-display';
+import { CLOSE_WINDOW_DAYS, closingDate, type Closing } from '@/lib/closing-shared';
+import { CLOSING_CHANGED } from '@/components/AccountClosingBanner';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -76,11 +79,14 @@ export function SettingsView({
   entitlement,
   purchasablePlans,
   billingResult,
+  closing = null,
 }: {
   account: AccountOverview;
   entitlement: Entitlement;
   purchasablePlans: PlanId[];
   billingResult: string | null;
+  /** The account's closing window (deleted or plan lapsed), or null. */
+  closing?: Closing | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -121,7 +127,7 @@ export function SettingsView({
           )}
 
           <ProfileSection account={account} pending={pending} run={run} />
-          <PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} />
+          <div id="plan"><PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} /></div>
           <DataPrivacySection />
           <SmallerHandoversSection />
           <div id="alerts"><AlertsSection /></div>
@@ -129,7 +135,7 @@ export function SettingsView({
           <EmailSection account={account} pending={pending} run={run} />
           <MethodsSection account={account} pending={pending} run={run} />
           <SessionsSection pending={pending} />
-          <DangerSection account={account} pending={pending} />
+          <div id="delete-account"><DangerSection account={account} closing={closing} pending={pending} /></div>
         </div>
       </main>
     </AppShell>
@@ -581,19 +587,54 @@ function SessionsSection({ pending }: { pending: boolean }) {
 
 // -- Danger --
 
-function DangerSection({ account, pending }: { account: AccountOverview; pending: boolean }) {
+export function DangerSection({ account, closing, pending }: { account: AccountOverview; closing: Closing | null; pending: boolean }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<Closing | null>(closing?.reason === 'deleted' ? closing : null);
+  useEffect(() => { setDeleting(closing?.reason === 'deleted' ? closing : null); }, [closing]);
 
   const matches = confirm.trim().toLowerCase() === (account.email ?? '').toLowerCase();
+
+  async function act(action: () => Promise<{ ok: true } | { ok: false; error: string }>, failure: string) {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await action();
+      if (!res.ok) { setError(res.error); return; }
+      setOpen(false);
+      setConfirm('');
+      window.dispatchEvent(new Event(CLOSING_CHANGED));
+      router.refresh();
+    } catch {
+      setError(failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (deleting) {
+    return (
+      <Section
+        title="Delete account"
+        tone="danger"
+        description={`Your account will be deleted on ${closingDate(deleting.closesAt)}. Until then your fleet keeps working, and you can download your data or cancel. After that, your WhiteRoom fleet key stops working and calls through it are refused. The audit trail is kept for 12 months.`}
+      >
+        {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: '0 0 12px' }}>{error}</p>}
+        <Button variant="secondary" disabled={pending || busy} onClick={() => void act(cancelAccountDeletion, 'Could not cancel the deletion.')}>
+          {busy ? 'Cancelling…' : 'Cancel deletion'}
+        </Button>
+      </Section>
+    );
+  }
 
   return (
     <Section
       title="Delete account"
       tone="danger"
-      description="Removes your profile and linked fleets. Cancel any paid subscription first, and hand over any organization you solely own. Your fleets keep running on the engine — they belong to whoever holds the fleet token — but this dashboard will no longer know about them."
+      description={`Deletes your account and fleet after ${CLOSE_WINDOW_DAYS} days. Cancel any paid subscription first, and hand over any organization you solely own.`}
     >
       {!open ? (
         <Button variant="danger" disabled={pending} onClick={() => setOpen(true)}>
@@ -601,6 +642,14 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
         </Button>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '62ch' }}>
+            <p style={{ margin: '0 0 6px' }}>What happens:</p>
+            <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+              <li>For the next {CLOSE_WINDOW_DAYS} days your fleet keeps working. You can download your data or cancel at any time.</li>
+              <li>After {CLOSE_WINDOW_DAYS} days your WhiteRoom fleet key stops working and calls through it are refused. Your account is removed.</li>
+              <li>The audit trail is kept for 12 months.</li>
+            </ul>
+          </div>
           <div>
             <label htmlFor="confirmDelete" style={labelStyle}>
               Type {account.email} to confirm
@@ -613,28 +662,17 @@ function DangerSection({ account, pending }: { account: AccountOverview; pending
               onChange={(e) => { setConfirm(e.target.value); setError(''); }}
             />
           </div>
-          {error && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: 0 }}>{error}</p>}
-          <div style={{ display: 'flex', gap: 10 }}>
+          {error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: 0 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Button
               variant="danger"
               disabled={!matches || busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  const res = await deleteAccount(confirm);
-                  if (!res.ok) { setError(res.error); setBusy(false); }
-                } catch (err) {
-                  // A NEXT_REDIRECT from the successful path also lands here;
-                  // it rethrows itself, so only real failures need surfacing.
-                  setError(err instanceof Error ? err.message : 'Could not delete the account.');
-                  setBusy(false);
-                }
-              }}
+              onClick={() => void act(() => deleteAccount(confirm), 'Could not delete the account.')}
             >
-              {busy ? 'Deleting…' : 'Permanently delete'}
+              {busy ? 'Deleting…' : `Delete in ${CLOSE_WINDOW_DAYS} days`}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => { setOpen(false); setConfirm(''); setError(''); }}>
-              Cancel
+              Keep my account
             </Button>
           </div>
         </div>
