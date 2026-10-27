@@ -282,6 +282,24 @@ describe('Runs › failures and engine limits', () => {
     m.root.unmount();
   });
 
+  it('keeps the day chart and its totals when a refresh of the counts fails, and hides it only without run_days', async () => {
+    const today = new Date().toLocaleDateString('en-CA');
+    api.daysFn = async () => ({ days: [{ day: today, runs: 47 }] });
+    api.list.mockImplementation(async () => ({ runs: [run(1)], total: 1, cursor: null }));
+    const m = await mount();
+    expect(m.el.querySelector('.wr-runchart__max')?.textContent).toBe('47');
+    api.daysFn = async () => { throw new Error('503'); };
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await flush();
+    expect(m.el.querySelector('.wr-runchart__max')?.textContent).toBe('47');
+    expect(m.el.querySelector('.wr-runs-table .wr-table__group')?.textContent).toContain('47 runs');
+    api.daysFn = async () => ({ unsupported: true });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await flush();
+    expect(m.el.querySelector('#runs-per-day')).toBeNull();
+    m.root.unmount();
+  });
+
   it('never puts one agent’s day totals over another agent’s rows', async () => {
     const today = new Date().toLocaleDateString('en-CA');
     api.daysFn = async () => ({ days: [{ day: today, runs: 47 }] });

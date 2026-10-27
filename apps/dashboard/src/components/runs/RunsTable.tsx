@@ -381,12 +381,20 @@ export function RunsTable({ preview, retentionDays }: {
   // list. It's extra: if it fails or the engine predates run_days, it hides.
   const loadStrip = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
-    const days = await runDays(fleetId, { fromDay: addDays(stripEnd, 1 - STRIP_DAYS), toDay: stripEnd, agentId: agent === 'all' ? undefined : agent }, authKey).catch(() => null);
+    let days: Awaited<ReturnType<typeof runDays>>;
+    try {
+      days = await runDays(fleetId, { fromDay: addDays(stripEnd, 1 - STRIP_DAYS), toDay: stripEnd, agentId: agent === 'all' ? undefined : agent }, authKey);
+    } catch (e) {
+      // An expired session signs out as the list would; any other failed refresh keeps the last counts (they're extra).
+      if (!stale() && isAuthError(e)) resetSession('Your session expired. Please sign in again.');
+      return;
+    }
     if (stale()) return;
-    const got = days && !('unsupported' in days) ? days : null;
-    setDayCountsFor(got ? { key: `${agent}|${stripEnd}`, days: got.days } : null);
-    setFlaggedUnavailable(!!got?.flaggedUnavailable);
-  }, [fleetId, authKey, agent, stripEnd, preview]);
+    // Only an engine without run_days hides the chart.
+    if ('unsupported' in days) { setDayCountsFor(null); setFlaggedUnavailable(false); return; }
+    setDayCountsFor({ key: `${agent}|${stripEnd}`, days: days.days });
+    setFlaggedUnavailable(!!days.flaggedUnavailable);
+  }, [fleetId, authKey, agent, stripEnd, preview, resetSession]);
   const { refresh: refreshStrip } = usePoll(loadStrip, { intervalMs: 60_000, enabled: auth.status === 'authenticated' && !unsupported && !preview });
   const firstStrip = useRef(true);
   useEffect(() => {
