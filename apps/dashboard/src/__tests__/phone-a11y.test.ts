@@ -238,6 +238,27 @@ describe('Home fact line', () => {
   });
 });
 
+describe('Undo after a Pause, resumed elsewhere', () => {
+  const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
+  it('stays through a refresh that hasn’t caught up, and goes once the pause is seen and then lifted', async () => {
+    api.pause.mockResolvedValue({ success: true, hold: { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z' } });
+    const agent = { agentId: 'code-reviewer', status: 'idle' };
+    const at = (x: object) => render(h(AgentActions, { agent: { ...agent, ...x }, fleetId: 'f1', onChanged: () => {} }));
+    await at({});
+    await act(async () => { (el.querySelector('[aria-label="Actions for code-reviewer"]') as HTMLButtonElement).click(); });
+    await act(async () => { button('Pause')!.click(); });
+    await flush();
+    // A refresh from before the pause landed: no hold yet, Undo stays.
+    await at({ hold: null });
+    expect(button('Undo')).toBeDefined();
+    await at({ hold: { state: 'paused', by: 'user:u1', reason: null, at: '2026-10-27T10:00:00.000Z' } });
+    expect(button('Undo')).toBeDefined();
+    // Someone else resumed it: there's no pause left to undo.
+    await at({ hold: null });
+    expect(button('Undo')).toBeUndefined();
+  });
+});
+
 describe('Undo checks the hold first', () => {
   const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement | undefined;
   const pauseThenUndo = async () => {

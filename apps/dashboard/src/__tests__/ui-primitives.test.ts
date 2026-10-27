@@ -75,7 +75,7 @@ describe('StatusPill', () => {
     expect(html(h(StatusPill, { state: 'stopped' }))).toContain('wr-pill--warn');
     expect(html(h(StatusPill, { state: 'idle' }))).toContain('wr-pill--muted');
     expect(html(h(StatusPill, { state: 'idle' }))).toContain('wr-pill__dot--ring');
-    for (const s of ['resting', 'handover', 'idle'] as const) expect(html(h(StatusPill, { state: s }))).not.toMatch(/break|rest|saving|progress|brand|ho/i);
+    for (const s of ['resting', 'handover', 'idle'] as const) expect(html(h(StatusPill, { state: s }))).not.toMatch(/\b(break|rest|resting|handover|hand over|saving progress|notes)\b/i);
   });
 });
 

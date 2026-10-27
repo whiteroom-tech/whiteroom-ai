@@ -84,8 +84,10 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
       : <span key="flagged">{text}</span>);
   }
   if (todayRules) {
-    const n = tallyTotal(todayRules);
-    parts.push(<span key="rules">rules caught {fmtCount(n)} {plural(n, 'call')} today</span>);
+    // Calls are the blocked and would-have-blocked ones; pauses, stops and alerts are other actions.
+    const calls = todayRules.blocks + todayRules.wouldBlocks;
+    const other = tallyTotal(todayRules) - calls;
+    parts.push(<span key="rules">rules caught {fmtCount(calls)} {plural(calls, 'call')} today{other > 0 && <> and acted {fmtCount(other)} other {plural(other, 'time')}</>}</span>);
   }
   parts.push(<Link key="week" href={ROUTES.performance} className="wr-link">Last 7 days &rarr;</Link>);
 

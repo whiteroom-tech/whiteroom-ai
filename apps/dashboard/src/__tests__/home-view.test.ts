@@ -85,5 +85,11 @@ describe("Home (mockup parity)", () => {
   it("words the week's rules", () => {
     expect(weekRules(tally(2, 0))).toBe("rules blocked 2 calls");
     expect(weekRules(tally(0, 0))).toBe("no rule activity");
+    expect(weekRules({ blocks: 0, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 1 })).toBe("rules acted 3 times");
+  });
+
+  it("counts only calls as calls in the fact line", () => {
+    const t = text(home({ todayRules: { blocks: 1, wouldBlocks: 4, paused: 2, stopped: 0, toldYou: 1 } }));
+    expect(t).toContain("rules caught 5 calls today and acted 3 other times");
   });
 });

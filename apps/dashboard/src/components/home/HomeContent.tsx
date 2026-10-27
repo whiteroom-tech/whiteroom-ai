@@ -12,7 +12,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
 import { AGENT_SORTS, FIND_FROM, homeWeek, loadWeekReads, shownAgents, TABLE_FROM, WEEK_POLL_MS, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { CHANGE_TYPES, dayLabel, lastActiveDay, latestChanges, ruleOutcomes, type ChangeRow } from '@/lib/home-changes';
-import { fetchControlActors } from '@/lib/control-actors';
+import { fetchControlActors, oldestTime, type ControlActor } from '@/lib/control-actors';
 import { addDays, ignoresFlagged, localDay, runHref, runsDays, zoneName } from '@/lib/runs';
 import { ROUTES } from '@/lib/routes';
 import {
@@ -121,6 +121,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     setTodayRules(res && !('unsupported' in res) ? tallyFromRuleActions(res.totals) : null);
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
+  const actorsRef = useRef<ControlActor[]>([]);
   // Latest changes: rule and agent changes only, read by type so a busy
   // fleet's call events can't push them out, with who made each one.
   const { refresh: refreshChanges } = usePoll(async (stale) => {
@@ -130,9 +131,17 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     // failed refresh, so the last good list stays and the card says so.
     if (reads.some((r) => !r || 'error' in r || !Array.isArray(r.entries))) { setChangesFailing(true); return; }
     const entries = reads.flatMap((r) => r!.entries);
-    const actors = await fetchControlActors(fleetId);
+    // Names from just before the oldest change read, added to the ones already
+    // known: a failed lookup (which returns none) never turns a name back into
+    // "a teammate".
+    const oldest = oldestTime(entries.map((e) => ({ time: String(e.timestamp ?? '') })));
+    const fresh = await fetchControlActors(fleetId, oldest);
     if (stale()) return;
-    setChanges(latestChanges(entries, actors, 4));
+    const key = (a: ControlActor) => `${a.userId}|${a.action}|${a.at}|${a.agentId ?? ''}|${a.ruleId ?? ''}`;
+    const known = new Map(actorsRef.current.map((a) => [key(a), a]));
+    for (const a of fresh) known.set(key(a), a);
+    actorsRef.current = [...known.values()];
+    setChanges(latestChanges(entries, actorsRef.current, 4));
     setChangesFailing(false);
   }, { intervalMs: 60_000, enabled: !!fleetId && !empty });
 
@@ -435,7 +444,7 @@ export function weekRules(t: GovernanceTally): string {
   if (t.wouldBlocks) bits.push(`would have blocked ${calls(t.wouldBlocks)}`);
   if (bits.length) return `rules ${bits.join(' and ')}`;
   const n = tallyTotal(t);
-  return n ? `rules caught ${calls(n)}` : 'no rule activity';
+  return n ? `rules acted ${fmtCount(n)} ${plural(n, 'time')}` : 'no rule activity';
 }
 
 /** Skeleton blocks at the final sizes while the first load runs; no spinner. */
