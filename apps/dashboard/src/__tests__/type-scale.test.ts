@@ -39,6 +39,18 @@ describe('type scale', () => {
     expect(bad).toEqual([]);
   });
 
+  // The Sandbox's CSS modules included: no stylesheet sets a pixel font size
+  // under the floor (the check above already refuses any fixed size).
+  it('sets no px font size below 14px in any stylesheet, CSS modules included', () => {
+    const MIN_TEXT_PX = 14;
+    const sheets = files(ROOTS[0]).filter((f) => f.endsWith('.css'));
+    const modules = sheets.filter((f) => f.endsWith('.module.css')).map((f) => relative(ROOTS[0], f));
+    expect(modules).toEqual(expect.arrayContaining(['components/sandbox/guided.module.css', 'components/sandbox/sandbox.module.css', 'components/sandbox/practice/practice.module.css']));
+    const small = sheets.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/font-size:\s*([\d.]+)px/g)]
+      .filter((m) => Number(m[1]) < MIN_TEXT_PX).map((m) => `${relative(ROOTS[0], f)}: ${m[0]}`));
+    expect(small).toEqual([]);
+  });
+
   it('keeps the smallest token at 14px or more', () => {
     const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
     const sizes = [...css.matchAll(/--fs-[a-z]+:\s*([\d.]+)rem/g)].map((m) => Number(m[1]) * 16);

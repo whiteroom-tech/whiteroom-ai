@@ -199,10 +199,12 @@ describe('Nothing happening? per test', () => {
   });
 });
 
-const SMALL_PX = (html: string) => [...html.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => Number(m[1])).filter((n) => n < 12);
+// The same floor as the --fs-* tokens (type-scale.test.ts): nothing renders smaller.
+const MIN_TEXT_PX = 14;
+const SMALL_PX = (html: string) => [...html.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => Number(m[1])).filter((n) => n < MIN_TEXT_PX);
 
 describe('readable text', () => {
-  it('renders no inline text below 12px in the Sandbox', () => {
+  it('renders no inline text below the 14px floor in the Sandbox', () => {
     const user = { previewUserId: 'u', previewPastTests: [] };
     const demoPassed = ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { demoEvidence: { status: 'observed', timestamp: '2026-10-12T10:00:00Z' } } })) as unknown as RunStatusResult['controls'];
     const runs: RunStatusResult[] = [
