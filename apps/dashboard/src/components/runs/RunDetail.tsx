@@ -12,7 +12,7 @@ import { ROUTES } from '@/lib/routes';
 import { clock } from '@/lib/home';
 import { fmtCount } from '@/lib/format';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
-import { collectRunEvents, collectRuns, flagsNote, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
+import { collectRunEvents, collectRuns, flagsNote, wouldActText, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
@@ -177,7 +177,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
 
   if (missing) {
     return (
-      <>
+      <div className="wr-runs-page">
         {crumb}
         <PageHeader title={title} fleetId={fleetId} />
         <div className="wr-page-body" style={{ padding: 24 }}>
@@ -187,7 +187,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             </p>
           </Panel>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -201,7 +201,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   const glyphs = new Set(rows.map((r) => r.glyph));
   const shaded = rows.some((r) => r.rule);
   return (
-    <>
+    <div className="wr-runs-page">
       {crumb}
       <PageHeader title={title} fleetId={fleetId} badge={<LiveStatus at={updatedAt} failing={failing && !!data} />}>
         <CopyLinkButton />
@@ -216,7 +216,8 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             {s.spend !== undefined && <> · <strong>{s.spend}</strong></>}
             {s.failed !== undefined && <> · <strong>{s.failed}</strong> failed</>}
             {!!s.blocked && <> · <strong>{s.blocked}</strong> blocked</>}
-            {s.wouldBlock !== undefined && <> · <strong>{s.wouldBlock}</strong> would have blocked</>}
+            {s.wouldBlock && <> · {s.wouldBlock.atLeast && 'at least '}<strong>{s.wouldBlock.n}</strong> would have blocked</>}
+            {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
             {s.models.map((m) => <span key={m}> · <span className="wr-run-summary__model">{m}</span></span>)}
           </p>
         )}
@@ -294,10 +295,10 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             </p>
           )}
         </section>
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>This run is part of your audit trail.</p>
+        <p style={{ marginBlock: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>This run is part of your audit trail.</p>
       </div>
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
-    </>
+    </div>
   );
 }
 

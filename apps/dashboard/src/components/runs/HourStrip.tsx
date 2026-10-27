@@ -41,12 +41,12 @@ export function HourStrip({ dayName, hours, selected, onPick, onBack }: {
   return (
     <section className="wr-panel wr-runchart" aria-labelledby="runs-by-hour">
       <div className="wr-runchart__head">
-        <h2 id="runs-by-hour" className="wr-panel__title">{dayName} by hour</h2>
+        <h2 id="runs-by-hour" className="wr-panel__title" tabIndex={-1}>{dayName} by hour</h2>
         <span className="wr-runchart__actions">
           {selected !== null && onPick && (
             <>
               <span className="wr-runchart__note">Showing {hourLabel(selected)}–{hourLabel((selected + 1) % 24)}</span>
-              <Button size={32} onClick={() => onPick(null)}>All hours</Button>
+              <Button size={32} onClick={() => { onPick(null); requestAnimationFrame(() => document.getElementById('runs-by-hour')?.focus()); }}>All hours</Button>
             </>
           )}
           <Button size={32} onClick={onBack}>Back to 30 days</Button>

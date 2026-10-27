@@ -44,6 +44,8 @@ describe('day chart', () => {
     expect(el.textContent).toContain('Flagged');
     expect(el.querySelector('.wr-runchart__max')?.textContent).toBe('47');
     expect(el.querySelectorAll('.wr-runchart__flag')).toHaveLength(1);
+    // Busiest-day wording never says "1 runs".
+    expect(el.querySelector('.wr-runchart__bars')?.getAttribute('aria-label')).toContain('with 47 runs.');
     expect(el.querySelectorAll('.wr-runchart__day.is-in')).toHaveLength(7);
     const busiest = el.querySelectorAll('.wr-runchart__day')[20];
     expect(busiest.getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs, 4 flagged');
@@ -58,6 +60,21 @@ describe('day chart', () => {
     expect(el.querySelectorAll('.wr-runchart__day')[20].getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs');
     expect(el.querySelector('.wr-runchart__flag')).toBeNull();
     await done();
+  });
+});
+
+describe('day chart rule activity', () => {
+  it('caps days with rule activity in amber and keys it, when the engine counts it', async () => {
+    const withRules = days(false).map((d, i) => ({ ...d, ruleActivity: i === 20 ? 6 : 0 }));
+    const { el, done } = await mount(h(DayStrip, { days: withRules, selected: null, inRange: () => true, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false }));
+    expect(el.querySelectorAll('.wr-runchart__bar.has-rule')).toHaveLength(1);
+    expect(el.textContent).toContain('Rule activity');
+    expect(el.querySelectorAll('.wr-runchart__day')[20].getAttribute('aria-label')).toBe('Mon, Sep 21: 47 runs, rule activity');
+    await done();
+    const one = await mount(h(DayStrip, { days: [{ day: '2026-09-01', runs: 1 }], selected: null, inRange: () => true, onPick: () => {}, title: 't', legend: 'l', flaggedKnown: false }));
+    expect(one.el.textContent).not.toContain('Rule activity');
+    expect(one.el.querySelector('.wr-runchart__bars')?.getAttribute('aria-label')).toContain('with 1 run.');
+    await one.done();
   });
 });
 

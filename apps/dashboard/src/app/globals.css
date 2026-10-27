@@ -785,6 +785,9 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-runchart__key.is-flag { background: var(--warn); }
 .wr-runchart__key.is-rule { height: 4px; background: var(--warn); }
 .wr-runchart__paging { display: inline-flex; gap: 2px; }
+.wr-runchart__paging [aria-disabled="true"] { opacity: .4; cursor: default; }
+.wr-runchart .wr-panel__title:focus { outline: none; }
+.wr-runchart .wr-panel__title:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
 .wr-runchart__actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wr-runchart__note { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .wr-runchart__plot { position: relative; }
@@ -832,13 +835,20 @@ section[aria-labelledby="runs-table-title"] .wr-panel__title { white-space: norm
 .wr-runs-opt input { margin-top: 5px; accent-color: var(--brand); }
 .wr-runs-auditbox { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; font-size: var(--fs-md); color: var(--tx); }
 
+/* Runs and Run: the header lines up with the 1480px content column below it, as in the mockup. */
+.wr-runs-page .wr-page-body > .wr-refresh-failed { margin-inline: auto; }
+.wr-runs-page { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+@media (min-width: 721px) {
+  .wr-runs-page > .citadel-page-header, .wr-runs-page > .wr-run-crumb { padding-inline: max(24px, calc((100% - 1480px) / 2)) !important; }
+}
+
 /* Run page: crumb above the title, the summary line, Rule activity and the timeline marks. */
 .wr-run-crumb { padding: 14px 24px 0; }
 .wr-run-crumb + .citadel-page-header { min-height: 3.5rem !important; }
-.wr-run-summary { margin: 0; font-size: var(--fs-card); line-height: 1.5; color: var(--tx); }
+.wr-run-summary { margin-block: 0; font-size: var(--fs-card); line-height: 1.5; color: var(--tx); }
 .wr-run-summary strong { font-weight: 600; font-variant-numeric: tabular-nums; }
 .wr-run-summary__model { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
-.wr-run-flags { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: var(--fs-sm); color: var(--tx2); }
+.wr-run-flags { display: flex; align-items: flex-start; gap: 8px; margin-block: 0; font-size: var(--fs-sm); color: var(--tx2); }
 .wr-run-flags strong { color: var(--tx); font-weight: 600; }
 .wr-run-mtag { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; font-weight: 500; white-space: nowrap; color: var(--tx2); }
 .wr-run-mtag::before { content: ""; width: 8px; height: 8px; border-radius: 99px; border: 1.5px solid currentColor; }

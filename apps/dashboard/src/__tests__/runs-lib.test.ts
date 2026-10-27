@@ -86,9 +86,9 @@ describe('what stood out', () => {
     expect(standOut(run({ blockedCalls: 1, failedCalls: 2 }))).toEqual({ tone: 'blocked', text: 'Blocked 1 call' });
     expect(standOut(run({ failedCalls: 2 }))).toEqual({ tone: 'failed', text: '2 calls failed' });
     // A Record only rule's would-acts are evidence too, and never read as a block.
-    expect(standOut({ ...run({}), wouldActCalls: 6 })).toEqual({ tone: 'rule', text: 'Would have blocked 6 calls' });
-    expect(standOut({ ...run({}), wouldActCalls: 1 }).text).toBe('Would have blocked 1 call');
-    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('Blocked 2 calls · would have blocked 1 more');
+    // wouldActCalls counts any Record only action (pause, stop, alert too), so it never claims a block.
+    expect(standOut({ ...run({}), wouldActCalls: 6 })).toEqual({ tone: 'rule', text: 'A Record only rule would have acted ×6' });
+    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('Blocked 2 calls · a Record only rule would have acted ×1');
     // An engine that doesn't count them (no field) can't be filtered by them.
     expect(ignoresRuleActivity([{}, {}])).toBe(true);
     expect(ignoresRuleActivity([{ wouldActCalls: 0 }])).toBe(false);
@@ -152,6 +152,11 @@ describe('run detail rows', () => {
     const blocked = timelineRow({ id: 'c2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [{ ruleId: 'r', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' }] });
     expect(blocked.rule).toEqual({ text: 'blocked: over the spend cap', mode: 'enforce' });
     expect(blocked.tag).toBeUndefined();
+    // A Record only rule that would pause, stop or alert is worded by its response, not as a block.
+    const pause = timelineRow({ id: 'c4', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'p', ruleType: 'spend_cap', mode: 'watch', response: 'pause', outcome: 'would_block', reason: 'budget_exceeded' }] });
+    expect(pause.rule).toEqual({ text: 'would have paused the agent: over the spend cap', mode: 'watch' });
+    // A rule's own name is used when the engine sends one.
+    expect(ruleActivityRow({ at: '', ruleId: 'r', ruleType: 'spend_cap', response: 'block', mode: 'enforce', occurrences: 1, ruleName: 'Daily cap' }).lead).toBe('Daily cap blocked');
     // A rule that acted leads a Record only one on the same call.
     const both = timelineRow({ id: 'c3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [
       { ruleId: 'w', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' },
@@ -163,12 +168,18 @@ describe('run detail rows', () => {
     vi.stubEnv('TZ', 'America/New_York');
     const head = { runId: 'a~4', agentId: 'a', shift: 4, startedAt: '2026-10-25T00:45:00Z', endedAt: '2026-10-25T00:45:24Z' };
     expect(runSummary({ ...head, calls: 6, spendMicros: 50_000, failedCalls: 0, blockedCalls: 0, wouldBlockCalls: 6, models: ['claude-sonnet-4-5'] }))
-      .toEqual({ started: 'Oct 24, 8:45 pm EDT', length: '24 s', calls: 6, spend: '$0.05', failed: 0, blocked: 0, wouldBlock: 6, models: ['claude-sonnet-4-5'] });
+      .toEqual({ started: 'Oct 24, 8:45 pm EDT', length: '24 s', calls: 6, spend: '$0.05', failed: 0, blocked: 0, wouldBlock: { n: 6, atLeast: false }, wouldAct: undefined, models: ['claude-sonnet-4-5'] });
     const old = runSummary(head, { calls: 6, failedCalls: 1, blockedCalls: 0, spendMicros: 50_000, unpricedAttempts: 1, wouldActCalls: 2 });
-    expect(old).toMatchObject({ calls: 6, failed: 1, spend: 'at least $0.05', wouldBlock: 2, models: [] });
-    // The linked count when the engine can tell, else its list_runs figure.
-    expect(runSummary({ ...head, wouldBlockCalls: null, wouldActCalls: 3 }).wouldBlock).toBe(3);
-    expect(runSummary({ ...head, wouldBlockCalls: 0, wouldActCalls: 3 }).wouldBlock).toBe(0);
+    expect(old).toMatchObject({ calls: 6, failed: 1, spend: 'at least $0.05', wouldBlock: undefined, wouldAct: 2, models: [] });
+    // No linked calls (older or unlinked runs): the list's figure, worded as actions. Zero is left out.
+    expect(runSummary({ ...head, wouldBlockCalls: null, wouldActCalls: 3 })).toMatchObject({ wouldBlock: undefined, wouldAct: 3 });
+    expect(runSummary({ ...head, wouldBlockCalls: 0, wouldActCalls: 3 })).toMatchObject({ wouldBlock: undefined, wouldAct: 3 });
+    expect(runSummary({ ...head, wouldBlockCalls: 0, wouldActCalls: 0 })).toMatchObject({ wouldBlock: undefined, wouldAct: undefined });
+    // The linked count is a lower bound when it's below the run's total, or a Record only row isn't linked.
+    expect(runSummary({ ...head, wouldBlockCalls: 2, wouldActCalls: 3 }).wouldBlock).toEqual({ n: 2, atLeast: true });
+    const unlinked = { at: '', ruleId: 'r', ruleType: 'model_allowlist' as const, response: 'block' as const, mode: 'watch' as const, occurrences: 4, eventIds: [] };
+    expect(runSummary({ ...head, wouldBlockCalls: 2, ruleActions: [unlinked] }).wouldBlock).toEqual({ n: 2, atLeast: true });
+    expect(runSummary({ ...head, wouldBlockCalls: 2, ruleActions: [{ ...unlinked, eventIds: ['call:1', 'call:2'] }] }).wouldBlock).toEqual({ n: 2, atLeast: false });
     expect(runSummary(head)).toMatchObject({ calls: undefined, spend: undefined });
   });
   it('never says nothing was blocked when a rule blocked', () => {
@@ -291,7 +302,9 @@ describe('exports', () => {
     expect(row[header.indexOf('Unpriced calls')]).toBe(2);
     // A run name and a link replace the raw id; the start is in the viewer's zone, named in the header.
     expect(row[header.indexOf('Run')]).toBe('a #2');
-    expect(row[header.indexOf('Started (America/New_York)')]).toBe('2026-09-30 16:00');
+    // Each time carries its UTC offset, so the daylight-saving fall-back hour is unambiguous.
+    expect(row[header.indexOf('Started (America/New_York)')]).toBe('2026-09-30 16:00 -04:00');
+    expect(header).toContain('Record only rule actions');
     expect(row[header.indexOf('Link')]).toBe('https://app.example/runs/a~2');
     expect(row[header.indexOf('What stood out')]).toBe('');
     expect(header).not.toContain('Started (UTC)');

@@ -170,15 +170,29 @@ export function flagText(f: RunFlag): string {
 export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'> & Partial<Pick<RunSummary, 'wouldActCalls'>>): { tone: StandOutTone; text: string } {
   const [first, ...more] = run.flags ?? [];
   if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${counted(more.length, 'more flag')}` : flagText(first) };
+  // wouldActCalls counts every Record only rule action (a would-block, pause, stop or alert), so it's
+  // worded as acting, never as blocking.
   const would = run.wouldActCalls ?? 0;
-  if (run.blockedCalls > 0) return { tone: 'blocked', text: `Blocked ${counted(run.blockedCalls, 'call')}${would ? ` · would have blocked ${would} more` : ''}` };
-  if (would > 0) return { tone: 'rule', text: `Would have blocked ${counted(would, 'call')}` };
+  if (run.blockedCalls > 0) return { tone: 'blocked', text: `Blocked ${counted(run.blockedCalls, 'call')}${would ? ` · ${wouldActText(would, false)}` : ''}` };
+  if (would > 0) return { tone: 'rule', text: wouldActText(would) };
   if (run.failedCalls > 0) return { tone: 'failed', text: `${counted(run.failedCalls, 'call')} failed` };
   const { calls, checked } = run.coverage;
   if (calls > 0 && checked === 0) return { tone: 'coverage', text: 'Not assessed: none of its calls could be read' };
   if (checked < calls) return { tone: 'coverage', text: `Partly checked: ${checked} of ${calls} calls could be read` };
   // The table shows a clean run as "—"; text-only places (an agent's recent runs, exports) use these words.
   return { tone: 'clean', text: 'Nothing unusual' };
+}
+
+/** "A Record only rule would have acted ×3": Record only rule actions when what they'd have done isn't known. */
+export function wouldActText(n: number, capital = true): string {
+  return `${capital ? 'A' : 'a'} Record only rule would have acted ×${n}`;
+}
+
+/** "-05:00": the viewer's UTC offset at `d`, so an export's times are unambiguous in a daylight-saving fall-back hour. */
+export function utcOffset(d: Date): string {
+  const m = -d.getTimezoneOffset();
+  const a = Math.abs(m);
+  return `${m < 0 ? '-' : '+'}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
 }
 
 /** "0:24", "12:05", "1:02:09": a run's length as a clock, for the Runs table. */
@@ -334,6 +348,10 @@ export function callToolsText(e: Pick<RunEvent, 'requestedTools'>): string {
 const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
   would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done,
 };
+/** A Record only rule's would-be outcome, by its response: it only blocks when the response is Block. */
+const WOULD_TEXT: Record<string, string> = {
+  block: 'would have been blocked', pause: 'would have paused the agent', stop: 'would have stopped the agent', notify: `would have ${NOTIFY.done}`,
+};
 
 /** A call's rule note: "would have been blocked: model not on the allowlist". */
 function callRule(e: RunEvent): TimelineRow['rule'] {
@@ -343,7 +361,8 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
   if (!a) return undefined;
   const more = all.filter((x) => x !== a);
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
-  return { text: `${CALL_OUTCOME_TEXT[a.outcome] ?? 'a rule acted'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
+  const did = a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
+  return { text: `${did ?? 'a rule acted'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
 }
 
 const START_EVENT = /^(watch_start|run_started)$/;
@@ -403,8 +422,16 @@ export type RunTotals = Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls
 
 /** The run's summary line, as parts: "Oct 24, 8:45 pm EDT", "24 s", the counts that are known, its models. */
 export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
-  started: string; length: string; calls?: number; spend?: string; failed?: number; blocked?: number; wouldBlock?: number; models: string[];
+  started: string; length: string; calls?: number; spend?: string; failed?: number; blocked?: number;
+  /** Calls a Record only rule would have blocked; `atLeast` when some of the run's rule actions aren't linked to calls. */
+  wouldBlock?: { n: number; atLeast: boolean };
+  /** Record only rule actions, when no would-block calls are known (older or unlinked runs): worded as acting. */
+  wouldAct?: number;
+  models: string[];
 } {
+  const linked = run.wouldBlockCalls;
+  const acted = run.wouldActCalls ?? fallback?.wouldActCalls;
+  const unlinked = (run.ruleActions ?? []).some((a) => a.mode !== 'enforce' && !a.eventIds?.length);
   const t = Date.parse(run.startedAt);
   const micros = run.spendMicros ?? fallback?.spendMicros;
   const unpriced = run.unpricedAttempts ?? fallback?.unpricedAttempts ?? 0;
@@ -416,8 +443,10 @@ export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
     spend: micros === undefined ? undefined : `${unpriced ? 'at least ' : ''}${usd(micros / 1e6)}`,
     failed: run.failedCalls ?? fallback?.failedCalls,
     blocked: run.blockedCalls ?? fallback?.blockedCalls,
-    // The linked count when the engine could tell; else list_runs' figure (older runs).
-    wouldBlock: run.wouldBlockCalls ?? run.wouldActCalls ?? fallback?.wouldActCalls,
+    // The linked would-block count is a lower bound: "at least" when some actions aren't linked, or it's
+    // below the run's Record only total. With none linked, the total is shown as actions. Zero is left out.
+    wouldBlock: linked ? { n: linked, atLeast: unlinked || (acted !== undefined && linked < acted) } : undefined,
+    wouldAct: !linked && acted ? acted : undefined,
     models: run.models ?? [],
   };
 }
@@ -437,7 +466,7 @@ export function flagsNote(actions: RunRuleAction[] | undefined): string {
 
 /** A Rule activity row: "Model allowlist would have blocked |5| calls: model not on the allowlist" (count bold). */
 export function ruleActivityRow(a: RunRuleAction): { lead: string; count: number | null; tail: string } {
-  const name = RULE_LABELS[a.ruleType] ?? 'A rule';
+  const name = a.ruleName ?? RULE_LABELS[a.ruleType] ?? 'A rule';
   const why = reasonText(a.reason);
   const n = a.occurrences;
   const would = a.mode === 'enforce' ? '' : 'would have ';
@@ -472,7 +501,7 @@ export async function collectRunEvents(get: (cursor: string | null) => Promise<R
   return { events, truncated: true };
 }
 
-/** Export this run: the summary, then every call and event in order, times in the run's zone. */
+/** Export this run: the summary, then every call and event in order, times in the viewer's zone. */
 export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTotals | null): Sheet[] {
   const s = runSummary(run, fallback);
   const summary: (string | number)[][] = [['Run', runName(run)], ['Agent', run.agentId], ['Started', s.started], ['Length', s.length]];
@@ -485,16 +514,17 @@ export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTota
   }
   if (s.failed !== undefined) summary.push(['Failed calls', s.failed]);
   if (s.blocked !== undefined) summary.push(['Blocked calls', s.blocked]);
-  if (s.wouldBlock !== undefined) summary.push(['Would have blocked', s.wouldBlock]);
+  if (s.wouldBlock) summary.push(['Would have blocked (calls)', s.wouldBlock.atLeast ? `at least ${s.wouldBlock.n}` : s.wouldBlock.n]);
+  if (s.wouldAct) summary.push(['Record only rule actions', s.wouldAct]);
   if (s.models.length) summary.push(['Models', s.models.join(', ')]);
   const rows = events.map((e) => {
     const r = timelineRow(e);
     const d = new Date(e.at);
-    return [`${localDay(d.getTime())} ${d.toLocaleTimeString('en-GB')}`, e.kind === 'call' ? 'Model call' : 'Event', r.text, e.model ?? '', r.tag?.label ?? '', r.rule ? `${r.rule.text} (${MODE_LABEL[r.rule.mode]})` : ''];
+    return [`${localDay(d.getTime())} ${d.toLocaleTimeString('en-GB')} ${utcOffset(d)}`, e.kind === 'call' ? 'Model call' : 'Event', r.text, e.model ?? '', r.tag?.label ?? '', r.rule ? `${r.rule.text} (${MODE_LABEL[r.rule.mode]})` : ''];
   });
   return [
     { name: 'Run', header: ['Field', 'Value'], rows: summary },
-    // Rows are in the viewer's zone, named by its IANA name, which holds across a daylight-saving change.
+    // Rows are in the viewer's zone, named by its IANA name; each time carries its UTC offset, so the fall-back hour is unambiguous.
     { name: 'What happened', header: [`Time (${viewerTimeZone()})`, 'Kind', 'What', 'Model', 'Outcome', 'Rule'], rows },
   ];
 }
@@ -542,12 +572,12 @@ export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
  * had no price, so that count gets its own column.
  */
 export function runsExportHeader(zone: string = viewerTimeZone()): string[] {
-  return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Would have blocked', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
+  return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Record only rule actions', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
 }
 export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {
   const d = new Date(r.startedAt);
   const p2 = (n: number) => String(n).padStart(2, '0');
-  const started = `${localDay(d.getTime())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  const started = `${localDay(d.getTime())} ${p2(d.getHours())}:${p2(d.getMinutes())} ${utcOffset(d)}`;
   const stood = standOut(r);
   return [runName(r), r.agentId, r.shift, started, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, r.wouldActCalls ?? '', Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, stood.tone === 'clean' ? '' : stood.text, `${origin}${runHref(r.runId)}`];
 }

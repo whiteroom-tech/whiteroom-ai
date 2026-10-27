@@ -719,8 +719,6 @@ export interface RunRuleAction {
   at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number;
   /** Timeline ids of the calls it was for, in timeline order (engine PR 298; empty on older rows, absent on older engines). */
   eventIds?: string[];
-  /** eventIds stops at a cap; the row covered more calls. */
-  callIdsCapped?: boolean;
   ruleName?: string | null;
   outcome?: CallRuleAction['outcome'];
   /** The decision's reason code (model_not_allowed, …). Absent on older engines. */

@@ -75,7 +75,7 @@ beforeEach(() => {
 describe('Runs › Show › Rule activity', () => {
   it('asks the engine for runs with rule activity and keeps the choice in the URL', async () => {
     const m = await mount();
-    expect(m.text()).toContain('Would have blocked 2 calls');
+    expect(m.text()).toContain('A Record only rule would have acted ×2');
     await m.click(m.radio('Rule activity'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ ruleActivity: true, flagged: false }), 'k');
     expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('show=rules'), { scroll: false });
@@ -121,7 +121,7 @@ describe('Runs › phones', () => {
     expect(rows).toHaveLength(1);
     const [top, stood, figures] = [...rows[0].children].map((c) => c.textContent ?? '');
     expect(top).toMatch(/^lead-agent#1\d{1,2}:\d{2} (am|pm)$/);
-    expect(stood).toContain('Would have blocked 2 calls');
+    expect(stood).toContain('A Record only rule would have acted ×2');
     expect(figures).toBe('23:00 · $1.92');
     expect(rows[0].getAttribute('href')).toBe('/runs/lead-agent~1');
     // The desktop table is still there for wide screens; CSS picks one. Its run is one real link.
@@ -182,6 +182,35 @@ describe('Runs › phones', () => {
     m.root.unmount();
   });
 
+  it('keeps rows Show more added when a poll starts while it loads and lands after it', async () => {
+    const page = (from: number, size: number) => ({ runs: Array.from({ length: size }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + size) });
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => page(Number(o.cursor ?? 0), o.pageSize));
+    const m = await mount();
+    let landMore: () => void = () => {};
+    let landPoll: () => void = () => {};
+    api.list.mockImplementationOnce(() => new Promise((res) => { landMore = () => res(page(25, 25)); }))
+      .mockImplementationOnce(() => new Promise((res) => { landPoll = () => res(page(0, 25)); }));
+    await act(async () => { ([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs') as HTMLElement).click(); });
+    // The poll starts while Show more is still loading.
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await act(async () => { landMore(); });
+    await flush();
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')).toHaveLength(50);
+    await act(async () => { landPoll(); });
+    await flush();
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')).toHaveLength(50);
+    m.root.unmount();
+  });
+
+  it('hides Show more while a new filter loads', async () => {
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => ({ runs: Array.from({ length: o.pageSize }, (_, i) => run(Number(o.cursor ?? 0) + i + 1)), total: 60, cursor: String(Number(o.cursor ?? 0) + o.pageSize) }));
+    const m = await mount();
+    api.list.mockImplementation(() => new Promise(() => {}));
+    await m.click(m.radio('Today'));
+    expect([...m.el.querySelectorAll('button')].some((b) => b.textContent === 'Show more runs')).toBe(false);
+    m.root.unmount();
+  });
+
   it('frees Show more when the load it asked for fails', async () => {
     api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
       const from = Number(o.cursor ?? 0);
@@ -236,10 +265,17 @@ describe('Runs › failures and engine limits', () => {
     const btn = (label: string) => m.el.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
     // runDays answers with no days, so the chart still draws 30 empty days.
     expect(m.text()).toContain('Runs per day · last 30 days');
-    expect(btn('Later 30 days').disabled).toBe(true);
+    expect(btn('Later 30 days').getAttribute('aria-disabled')).toBe('true');
     await m.click(btn('Earlier 30 days'));
     expect(m.text()).not.toContain('Runs per day · last 30 days');
-    expect(btn('Later 30 days').disabled).toBe(false);
+    expect(btn('Later 30 days').getAttribute('aria-disabled')).toBe('false');
+    // Paging back to today turns Later off; it stays focusable (aria-disabled), so focus isn't lost.
+    btn('Later 30 days').focus();
+    await m.click(btn('Later 30 days'));
+    expect(m.text()).toContain('Runs per day · last 30 days');
+    expect(btn('Later 30 days').getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(btn('Later 30 days'));
+    // A turned-off button does nothing.
     await m.click(btn('Later 30 days'));
     expect(m.text()).toContain('Runs per day · last 30 days');
     m.root.unmount();
@@ -287,13 +323,20 @@ describe('Runs › Export', () => {
     expect(dl.mock.calls[0][1]).toBe(`whiteroom-runs-${y}-to-${y}-lead-agent.xlsx`);
     expect(m.text()).toContain('for yesterday · lead-agent');
     m.root.unmount();
+    // With one agent picked already, a truncated export suggests a shorter range only.
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null }) => ({ runs: [run(Number(o.cursor ?? 0) + 1)], total: 9999, cursor: String(Number(o.cursor ?? 0) + 1) }));
+    const t = await mount();
+    await openAndDownload(t);
+    expect(t.text()).toContain('Pick a shorter range for the rest.');
+    t.root.unmount();
+    nav.params = new URLSearchParams();
   });
 
   it('says when it stopped at the newest runs, when the export failed, and when the engine can’t list runs', async () => {
     api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => ({ runs: [run(Number(o.cursor ?? 0) + 1)], total: 9999, cursor: String(Number(o.cursor ?? 0) + 1) }));
     let m = await mount();
     await openAndDownload(m);
-    expect(m.text()).toContain('Downloaded the newest 100 runs for the last 7 days.');
+    expect(m.text()).toContain('Downloaded the newest 100 runs for the last 7 days. Pick one agent or a shorter range for the rest.');
     m.root.unmount();
     api.list.mockReset();
     api.list.mockResolvedValueOnce({ runs: [run(1)], total: 1, cursor: null }).mockRejectedValue(new Error('503'));
@@ -381,6 +424,22 @@ describe('Runs › a day by hour', () => {
     m.root.unmount();
   });
 
+  it('moves focus to a stable place when the control used goes away', async () => {
+    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 0; });
+    const m = await mount();
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'All hours'));
+    expect(document.activeElement?.id).toBe('runs-by-hour');
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Back to 30 days'));
+    expect(document.activeElement?.id).toBe('runs-per-day');
+    await m.jump(day);
+    await m.click(m.el.querySelector('.wr-runs-chip') ?? undefined);
+    expect(document.activeElement?.id).toBe('runs-day');
+    raf.mockRestore();
+    m.root.unmount();
+  });
+
   it('applies a link’s hour only to the day it named', async () => {
     const old = new Date(Date.now() - 40 * 86_400_000).toLocaleDateString('en-CA');
     nav.params = new URLSearchParams(`day=${old}&hour=9`);
@@ -395,6 +454,8 @@ describe('Runs › a day by hour', () => {
     nav.params = new URLSearchParams(`day=${day}`);
     const m = await mount();
     expect(m.text()).not.toContain('by hour');
+    // Nor does the day chart invite picking a day for its hours.
+    expect(m.text()).not.toContain('select a day to see its hours');
     m.root.unmount();
   });
 

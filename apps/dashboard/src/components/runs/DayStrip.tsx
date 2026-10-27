@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { Button } from '@whiteroom/ui';
 import type { RunDayCount } from '@/lib/whiteroom/types';
+import { counted } from '@/lib/format';
 import { dayLabel, localDay } from '@/lib/runs';
 import { barHeight, barLabel, centreBar, tickIndexes } from './strip';
 
@@ -51,16 +52,20 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
   const busiest = days.reduce<RunDayCount | null>((b, d) => (!b || d.runs > b.runs ? d : b), null);
   const today = localDay();
   const ticks = tickIndexes(days.length);
+  // The engine counts rule activity per day (engine PR 298): an amber cap on those days, as on the hour chart.
+  const ruleKnown = days.some((d) => d.ruleActivity !== undefined);
   return (
     <section className="wr-panel wr-runchart" aria-labelledby="runs-per-day">
       <div className="wr-runchart__head">
-        <h2 id="runs-per-day" className="wr-panel__title">{title}</h2>
+        <h2 id="runs-per-day" className="wr-panel__title" tabIndex={-1}>{title}</h2>
         <span className="wr-runchart__legend">
           <span><span className="wr-runchart__key is-in" aria-hidden="true" />{legend}</span>
           {flaggedKnown && <span><span className="wr-runchart__key is-flag" aria-hidden="true" />Flagged</span>}
+          {ruleKnown && <span><span className="wr-runchart__key is-rule" aria-hidden="true" />Rule activity</span>}
           <span className="wr-runchart__paging">
-            <Button variant="ghost" size={28} aria-label="Earlier 30 days" title="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
-            <Button variant="ghost" size={28} aria-label="Later 30 days" title="Later 30 days" disabled={!onLater} onClick={onLater}>&rsaquo;</Button>
+            {/* aria-disabled, not disabled: a button that turns off as it's used keeps focus. */}
+            <Button variant="ghost" size={28} aria-label="Earlier 30 days" title="Earlier 30 days" aria-disabled={!onEarlier} onClick={() => onEarlier?.()}>&lsaquo;</Button>
+            <Button variant="ghost" size={28} aria-label="Later 30 days" title="Later 30 days" aria-disabled={!onLater} onClick={() => onLater?.()}>&rsaquo;</Button>
           </span>
         </span>
       </div>
@@ -70,11 +75,11 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
           <div
             className="wr-runchart__bars"
             role="group"
-            aria-label={`Runs per day${busiest && max > 0 ? `. Busiest day ${dayLabel(busiest.day, Date.now(), false)} with ${max} runs.` : ''}`}
+            aria-label={`Runs per day${busiest && max > 0 ? `. Busiest day ${dayLabel(busiest.day, Date.now(), false)} with ${counted(max, 'run')}.` : ''}`}
             style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
           >
             {days.map((d) => {
-              const label = barLabel(dayLabel(d.day), d.runs, { flagged: flaggedKnown ? d.flagged : undefined });
+              const label = barLabel(dayLabel(d.day), d.runs, { flagged: flaggedKnown ? d.flagged : undefined, ruleActivity: d.ruleActivity });
               const on = d.day === selected;
               const flagged = flaggedKnown && d.flagged ? Math.min(d.flagged, d.runs) : 0;
               return (
@@ -87,7 +92,7 @@ export function DayStrip({ days, selected, inRange, onPick, title, legend, flagg
                   title={label}
                   onClick={() => onPick(on ? null : d.day)}
                 >
-                  <span className="wr-runchart__bar" style={{ height: barHeight(d.runs, max) }}>
+                  <span className={`wr-runchart__bar${d.ruleActivity ? ' has-rule' : ''}`} style={{ height: barHeight(d.runs, max) }}>
                     {flagged > 0 && <span className="wr-runchart__flag" style={{ height: `max(2px, ${(flagged / d.runs) * 100}%)` }} />}
                   </span>
                 </button>

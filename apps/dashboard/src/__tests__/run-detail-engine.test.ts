@@ -31,7 +31,8 @@ describe('run page totals fallback', () => {
     const root = createRoot(el);
     await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
     await flush();
-    expect(el.querySelector('.wr-run-summary')?.textContent).toContain('6 model calls · $0.05 · 0 failed · 6 would have blocked');
+    // The list's figure counts every Record only action, so it's worded as acting, not blocking.
+    expect(el.querySelector('.wr-run-summary')?.textContent).toContain('6 model calls · $0.05 · 0 failed · A Record only rule would have acted ×6');
     // Another load (Events only) brings a new run object: no second lookup.
     const events = [...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent === 'Events only') as HTMLElement;
     await act(async () => { events.click(); });

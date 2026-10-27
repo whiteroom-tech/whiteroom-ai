@@ -97,6 +97,11 @@ export function RunsPhoneList({ runs, groupOf, onOpen }: {
   );
 }
 
+/** Focus `id` once the render that removed the focused control has landed. */
+function focusSoon(id: string) {
+  requestAnimationFrame(() => document.getElementById(id)?.focus());
+}
+
 /** /dev/runs: sample data in place of the engine. */
 export interface RunsSample {
   /** Every sample run: the agent list, and whether flags and rule counts are known. */
@@ -251,6 +256,8 @@ export function RunsTable({ preview, retentionDays }: {
     setHour(nextHour);
     if (nextView.day !== day || change.agent !== undefined) { setHoursOk(true); setHourPickOk(true); }
     setPreviewLimit(PAGE);
+    // Show more continues the old list's pages: not until the new filter's first page is in.
+    setNext(null);
     expanded.current = false;
     // The preview fetches nothing: it keeps its sample, and lists it below.
     if (!preview) setLoading(true);
@@ -312,6 +319,8 @@ export function RunsTable({ preview, retentionDays }: {
     try {
       const res = await listRuns(fleetId, { ...listQuery(), cursor: next, pageSize: PAGE }, authKey);
       if (currentFilter.current !== forFilter || 'unsupported' in res) return;
+      // A poll that started while this page loaded counted the shorter list: drop it when it lands.
+      listGen.current++;
       expanded.current = true;
       setRuns((prev) => {
         const have = new Set((prev ?? []).map((r) => r.runId));
@@ -419,7 +428,7 @@ export function RunsTable({ preview, retentionDays }: {
       setExportOpen(false);
       const days = shownView ? exportShown ?? spanLabel(view) : choice.span === 'yesterday' ? 'yesterday' : choice.span === '7d' ? 'the last 7 days' : 'the last 30 days';
       setToast(truncated
-        ? `Downloaded the newest ${fmtCount(all.length)} runs for ${days}. Pick one agent for the rest.`
+        ? `Downloaded the newest ${fmtCount(all.length)} runs for ${days}. ${agentId ? 'Pick a shorter range' : 'Pick one agent or a shorter range'} for the rest.`
         : `Downloaded ${counted(all.length, 'run')} for ${days} · ${agentId ?? 'all agents'} · times in ${zoneName()}.`);
     } catch (e) {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
@@ -451,7 +460,7 @@ export function RunsTable({ preview, retentionDays }: {
   const spanOnStrip = span.fromDay >= stripStart && span.toDay <= stripEnd;
   const spanRuns = strip && spanOnStrip ? strip.filter((d) => inSpan(d.day)).reduce((n, d) => n + d.runs, 0) : null;
   const spanName = spanLabel(view);
-  const legend = `${spanName.charAt(0).toUpperCase()}${spanName.slice(1)}${spanRuns !== null ? ` · ${counted(spanRuns, 'run')}` : ''} · select a day to see its hours`;
+  const legend = `${spanName.charAt(0).toUpperCase()}${spanName.slice(1)}${spanRuns !== null ? ` · ${counted(spanRuns, 'run')}` : ''}${hoursOk ? ' · select a day to see its hours' : ''}`;
   const md = (d: string) => (d === today ? 'today' : dayLabel(d, Date.now(), false).replace(/^\w+, /, ''));
   const chartTitle = `Runs per day · ${stripEnd === today ? 'last 30 days' : `${md(stripStart)} – ${md(stripEnd)}`}`;
 
@@ -465,7 +474,7 @@ export function RunsTable({ preview, retentionDays }: {
   const emptyText = `No ${flaggedOnly ? 'flagged runs' : rulesOnly ? 'runs with rule activity' : 'runs'} ${day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}${agent !== 'all' ? ` for ${agent}` : ''}.${flaggedOnly ? ' A run is flagged when it repeats the same call, or several calls fail in a row.' : rulesOnly ? ' A run shows here when a rule blocked a call or, in Record only, would have.' : ''}`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
+    <div className="wr-runs-page">
       <PageHeader title="Runs" fleetId={fleetId ?? (preview ? 'Demo fleet' : null)} badge={<LiveStatus at={updatedAt ?? (preview ? Date.now() : null)} failing={failing} />}>
         <SegmentedControl<RunsRange> label="Time range" value={day ? null : range} onChange={(r) => changeFilter({ range: r })} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
         <Button onClick={() => { setExportError(null); setExportOpen(true); }}>Export .xlsx</Button>
@@ -494,7 +503,7 @@ export function RunsTable({ preview, retentionDays }: {
               <label htmlFor="runs-day">Jump to day</label>
               <input id="runs-day" type="date" className="wr-date" value={day ?? ''} min={oldest ?? undefined} max={today} onChange={(e) => changeFilter({ day: validDay(e.target.value) })} />
               {day && (
-                <button type="button" className="wr-runs-chip" aria-label={`Clear ${dayLabel(day, Date.now(), false)}`} onClick={() => changeFilter({ day: null })}>
+                <button type="button" className="wr-runs-chip" aria-label={`Clear ${dayLabel(day, Date.now(), false)}`} onClick={() => { changeFilter({ day: null }); focusSoon('runs-day'); }}>
                   {dayLabel(day, Date.now(), false)}<span aria-hidden="true">✕</span>
                 </button>
               )}
@@ -515,7 +524,7 @@ export function RunsTable({ preview, retentionDays }: {
           />
         )}
         {day && hoursOk && hours && (
-          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={hourPickOk ? (h) => changeFilter({ hour: h }) : undefined} onBack={() => changeFilter({ day: null })} />
+          <HourStrip dayName={dayLabel(day, Date.now(), false)} hours={hours} selected={hour} onPick={hourPickOk ? (h) => changeFilter({ hour: h }) : undefined} onBack={() => { changeFilter({ day: null }); focusSoon('runs-per-day'); }} />
         )}
         {failing && runs && <RefreshFailed since={updatedAt} />}
 
@@ -556,7 +565,7 @@ export function RunsTable({ preview, retentionDays }: {
                 ]}
               />
               </div>
-              {more && (
+              {more && !loading && (
                 <div className="wr-table__foot">
                   <Button size={32} busy={moreBusy} busyLabel="Loading…" onClick={() => void showMore()}>Show more runs</Button>
                 </div>
@@ -566,7 +575,7 @@ export function RunsTable({ preview, retentionDays }: {
           </div>
         </section>
 
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+        <p style={{ marginBlock: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           {retentionDays ? <>Runs are kept {retentionDays} days on your plan.</> : <>Runs are kept as long as your plan keeps history.</>}
         </p>
       </div>
