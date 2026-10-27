@@ -11,7 +11,7 @@ import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
 import { blockedByPhrase, recentBlocksByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords, type GovernanceTally } from '@/lib/governance';
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
-import { AGENT_SORTS, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek } from '@/lib/home-agents';
+import { AGENT_SORTS, FIND_FROM, shortTokens, shownAgents, TABLE_FROM, type AgentSort, type AgentWeek } from '@/lib/home-agents';
 import { localDay, zoneName } from '@/lib/runs';
 import { AgentScoreWheel } from '@/components/performance/AgentScoreWheel';
 import { ROUTES } from '@/lib/routes';
@@ -110,13 +110,13 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
   // activity: extra, so a failure hides them rather than failing the page, and once a minute is enough.
   const { refresh: refreshWeek } = usePoll(async (stale) => {
-    const today = localDay();
+    const todayDay = localDay();
     const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
     const [audit, scores, weekRules, dayRules, hourly] = await Promise.all([
       auditSummary(fleetId, start, authKey).catch(() => null),
       performanceAgentScores(fleetId, 168, authKey).catch(() => null),
-      ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: today }, authKey).catch(() => null),
-      ruleActions(fleetId, { fromDay: today, toDay: today }, authKey).catch(() => null),
+      ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: todayDay }, authKey).catch(() => null),
+      ruleActions(fleetId, { fromDay: todayDay, toDay: todayDay }, authKey).catch(() => null),
       // The same 7 local days as the rest: from local midnight six days ago (whole UTC hours).
       performanceFleetHourly(fleetId, Math.ceil((Date.now() - start.getTime()) / 3_600_000) + 1, authKey).catch(() => null),
     ]);
@@ -212,8 +212,8 @@ export function HomeView({ report, agents, entries, today, todayFailing = false,
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<AgentSort>('attention');
   const weeks = week?.agents ?? {};
-  // Search and sort only while their controls are shown (above 6 agents): a fleet that shrinks can't stay filtered.
-  const finding = agents.length > 6;
+  // Search and sort only while their controls are shown (above FIND_FROM agents): a fleet that shrinks can't stay filtered.
+  const finding = agents.length > FIND_FROM;
   const sorted = shownAgents(agents, weeks, finding ? search : '', finding ? sort : 'attention');
   const weekOf = (id: string) => weeks[id.toLowerCase()];
   const quiet = !!today && today.calls === 0 && !todayFailing;

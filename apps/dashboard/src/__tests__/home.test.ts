@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
+  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, progressLine, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -80,17 +80,10 @@ describe('activity', () => {
     const [newest, older] = latestActivity([e('watch_start', '2026-10-03T09:15:00'), e('agent_paused', '2026-10-02T23:31:00')], 4, today);
     expect(newest.time).toBe('9:15 am');
     expect(older.time).toBe('Oct 2');
-    expect(lastEventByAgent([e('agent_paused', '2026-10-02T23:31:00')], today)['lead-agent'].time).toBe('Oct 2');
     // Epoch-ms timestamps too, as clock() accepts them: sorted, formatted, and kept as an agent's last event.
     const epoch = { ...e('watch_start', ''), timestamp: Date.parse('2026-10-03T09:15:00') } as unknown as AuditEntry;
     const mixed = latestActivity([e('agent_paused', '2026-10-03T08:00:00'), epoch, e('rest_start', '2026-10-03T07:00:00')], 4, today);
     expect(mixed.map((r) => r.time)).toEqual(['9:15 am', '8:00 am', '7:00 am']);
-    expect(lastEventByAgent([e('agent_paused', '2026-10-03T08:00:00'), epoch], today)['lead-agent']).toEqual({ time: '9:15 am', text: 'started a run' });
-  });
-
-  it('keeps the latest event per agent', () => {
-    const last = lastEventByAgent([e('watch_start', '2026-09-30T14:01:00Z'), e('rest_start', '2026-09-30T14:09:00Z'), e('watch_end', '2026-09-30T14:05:00Z')]);
-    expect(last['lead-agent'].text).toBe('went on break');
   });
 });
 
@@ -297,7 +290,6 @@ describe('handover subjects', () => {
   it('names the agent from fromAgent / toAgent when agentId is missing', () => {
     const e = { id: 'h', type: 'handover_out', timestamp: '2026-09-30T14:00:00Z', fromAgent: 'lead-agent', toAgent: 'writer-agent' } as AuditEntry;
     expect(activityRow(e).text.startsWith('lead-agent ')).toBe(true);
-    expect(lastEventByAgent([e])['lead-agent']).toBeDefined();
   });
 });
 

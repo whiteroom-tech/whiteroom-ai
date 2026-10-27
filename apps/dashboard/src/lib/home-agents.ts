@@ -29,6 +29,9 @@ export const AGENT_SORTS: { value: AgentSort; label: string }[] = [
 /** Above this many agents, Home opens on the table unless the viewer picked cards. */
 export const TABLE_FROM = 12;
 
+/** Above this many agents, Home shows Find and Sort. */
+export const FIND_FROM = 6;
+
 /** Agents whose id contains the search (any case), in the chosen order. Ties keep needs-attention order. */
 export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<string, AgentWeek>, search: string, sort: AgentSort): T[] {
   const q = search.trim().toLowerCase();

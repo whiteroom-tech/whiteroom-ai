@@ -226,18 +226,6 @@ export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.
     .map((e) => ({ ...activityRow(e, now), time: fmtWhen(eventTime(e) || '', now) }));
 }
 
-/** The last thing each agent did, for the Agents table's "Last event" column. */
-export function lastEventByAgent(entries: AuditEntry[], now: number = Date.now()): Record<string, { time: string; text: string }> {
-  const out: Record<string, { time: string; text: string; at: number }> = {};
-  for (const e of entries) {
-    const id = eventAgent(e);
-    const at = epochMs(e.timestamp);
-    if (!id || Number.isNaN(at) || (out[id] && out[id].at >= at)) continue;
-    out[id] = { time: fmtWhen(at, now), text: eventModel(e).said, at };
-  }
-  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { time: v.time, text: v.text }]));
-}
-
 // ── Live feed ────────────────────────────────────────────────────────────
 
 export type LiveKind = 'web' | 'tool' | 'file' | 'reply';

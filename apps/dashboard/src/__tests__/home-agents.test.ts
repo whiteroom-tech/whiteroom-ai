@@ -84,6 +84,14 @@ describe('Home view', () => {
     expect(html).not.toContain('Smaller context');
   });
 
+  it('says when today’s rule activity is unknown or nothing, never a made-up 0', () => {
+    const unknown = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: null });
+    expect(unknown).toContain('not available yet');
+    const none = view({ today: { calls: 5, costUsd: 0.1 }, todayRules: tally({}) });
+    expect(none).toContain('none today');
+    expect(none).not.toContain('/runs?show=rules');
+  });
+
   it('never cuts a name off, and shows each agent’s last 7 days', () => {
     const html = view({ week: { agents: { 'lead-agent': { used: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).toContain('a-very-long-agent-name-that-must-not-be-cut-off');
