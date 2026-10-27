@@ -32,9 +32,12 @@ describe('what the operator may do', () => {
     expect(canResume(resting(), now).allowed).toBe(true);
   });
 
-  it('offers one header action: Resume while held or paused, else Pause', () => {
+  it('offers one header action: Resume while held or on an older fleet\'s short pause, else Pause', () => {
     expect(headerAction(working)).toBe('pause');
     expect(headerAction(resting())).toBe('resume');
+    // On a Gov v1 fleet a short automatic pause still offers Pause, so the agent can be held.
+    expect(headerAction(resting({ govV1: true }))).toBe('pause');
+    expect(canPause(resting({ govV1: true })).allowed).toBe(true);
     expect(headerAction({ agentId: 'a', status: 'idle', hold: { state: 'stopped', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } })).toBe('resume');
   });
 
@@ -70,9 +73,9 @@ describe('the Now card', () => {
 });
 
 describe('Last 7 days rule activity', () => {
-  it('says blocked and would have blocked, or 0 caught', () => {
-    expect(weekRuleWords({ blocks: 2, wouldBlocks: 58 })).toEqual([{ count: 2, word: 'blocked' }, { count: 58, word: 'would have blocked' }]);
-    expect(weekRuleWords({ blocks: 0, wouldBlocks: 60 })).toEqual([{ count: 60, word: 'would have blocked' }]);
+  it('says blocked and would have acted, or 0 caught', () => {
+    expect(weekRuleWords({ blocks: 2, wouldBlocks: 58 })).toEqual([{ count: 2, word: 'blocked' }, { count: 58, word: 'would have acted' }]);
+    expect(weekRuleWords({ blocks: 0, wouldBlocks: 60 })).toEqual([{ count: 60, word: 'would have acted' }]);
     expect(weekRuleWords({ blocks: 0, wouldBlocks: 0 })).toEqual([{ count: 0, word: 'caught' }]);
   });
 });

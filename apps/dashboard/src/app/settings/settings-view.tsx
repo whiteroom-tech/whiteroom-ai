@@ -236,8 +236,12 @@ function ProfileSection({
   );
 }
 
-/** "Dec 26" for a plan date (stored at UTC midnight, so read in UTC). */
-const shortDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** "Dec 26", or "Jan 4, 2027" outside the current year, for a plan date (stored at UTC midnight, so read in UTC). */
+export function shortDay(iso: string, now: number = Date.now()): string {
+  const d = new Date(iso);
+  const otherYear = d.getUTCFullYear() !== new Date(now).getUTCFullYear();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(otherYear ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+}
 
 // -- Plan & billing --
 

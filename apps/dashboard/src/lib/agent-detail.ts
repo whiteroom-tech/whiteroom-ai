@@ -50,9 +50,14 @@ export function canResume(a: AgentInfo, now: number = Date.now()): ActionGate {
   return { allowed: true };
 }
 
-/** The header's one action: Resume while held or paused, otherwise Pause. */
+/**
+ * The header's one action: Resume while held, or (on an older fleet) during
+ * a short pause; otherwise Pause. On a Gov v1 fleet a short automatic pause
+ * still offers Pause, so the operator can hold the agent.
+ */
 export function headerAction(a: AgentInfo): 'pause' | 'resume' {
-  return a.hold || agentState(a) === 'resting' ? 'resume' : 'pause';
+  if (a.hold) return 'resume';
+  return agentState(a) === 'resting' && !a.govV1 ? 'resume' : 'pause';
 }
 
 /** The header's status words, with no pill: "Waiting for work", "Working", "Paused"… */
@@ -102,7 +107,7 @@ export function nowCard(a: AgentInfo, runs: RunSummary[] | null, fmtDate: (iso: 
   return { status, run, runId: match?.runId ?? null, runDate: match ? fmtDate(match.startedAt) : null, allTime };
 }
 
-/** Rule activity on the Last 7 days card: Home's words ("2 blocked · 58 would have blocked"), or "0 caught". */
+/** Rule activity on the Last 7 days card: Home's words ("2 blocked · 58 would have acted"), or "0 caught". */
 export function weekRuleWords(t: GovernanceTally): { count: number; word: string }[] {
   const out = tallyParts(t);
   return out.length ? out : [{ count: 0, word: 'caught' }];

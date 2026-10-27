@@ -169,11 +169,11 @@ export function KeyField({ credential, showKey, provider, onChange, onToggleShow
         {keyKind === 'empty' && `Use the same key your agent uses, so we can match its calls to this test. ${KEY_HELP[provider]}`}
         {keyKind === 'anthropic' && <span style={{ color: 'var(--ok)' }}>Anthropic key. Ready to start.</span>}
         {keyKind === 'openai' && <span style={{ color: 'var(--ok)' }}>OpenAI key. Ready to start.</span>}
-        {keyKind === 'fleet' && 'WhiteRoom fleet token. Pick Anthropic or OpenAI above for your agent’s provider.'}
+        {keyKind === 'fleet' && 'An older WhiteRoom fleet key (wr_…). Pick Anthropic or OpenAI above for your agent’s provider.'}
         {keyKind === 'account' && <span style={{ color: 'var(--bad)' }}>That’s your WhiteRoom fleet key. Paste your agent’s Anthropic or OpenAI key instead.</span>}
-        {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or a fleet token (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
+        {keyKind === 'unknown' && <span style={{ color: 'var(--bad)' }}>That doesn’t look like an Anthropic key (sk-ant-…), an OpenAI key (sk-…), or an older WhiteRoom fleet key (wr_…). For Azure OpenAI, Foundry or Bedrock, pick it above.</span>}
       </p>
-      {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have a WhiteRoom fleet token? Paste it instead.</p>}
+      {keyKind === 'empty' && <p id="sandbox-key-token" className={s.small} style={{ marginTop: 4 }}>Have an older WhiteRoom fleet key (wr_…)? Paste it instead.</p>}
     </div>
   );
 }
@@ -350,7 +350,7 @@ export const SANDBOX_LEAD = 'Test an agent before it goes live. Test runs never 
 /** Start screen: the three checks the results will show, by the same names. */
 export function CheckPreview() {
   return (
-    <SettingsCard id="sandbox-checks-preview" title="What the test checks">
+    <SettingsCard id="sandbox-checks-preview" title="What the test checks" level={3}>
       <ol className={s.previewList}>
         {SANDBOX_CHECKS.map((c) => (
           <li key={c.id} className={s.previewItem}>

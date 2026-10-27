@@ -30,7 +30,7 @@ function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] |
   const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
   return (
     <div style={{ margin: '16px 0' }}>
-      <SettingsCard id="practice-checks-preview" title="What the test checks">
+      <SettingsCard id="practice-checks-preview" title="What the test checks" level={3}>
         <ol className={s.previewList}>
           {scenarios.map((sc) => (
             <li key={sc} className={s.previewItem}>

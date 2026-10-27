@@ -8,16 +8,14 @@ import { withRunMode, type RunStatusResult } from './api';
 import { fmtCount, plural } from '@/lib/format';
 import { saveBlob } from '@/lib/download';
 
-/** The agent saved its progress and kept going on a long task. */
-export const SUMMARY_TYPES = new Set(['self_handover']);
-/** Its work went on in another agent: counted with the above, never described (customer copy says what, not how). */
-export const PARTNER_TYPES = new Set(['handover', 'paired_handover']);
+/** Events where the agent kept going on a long task. Counted once, never described (customer copy says what, not how). */
+export const KEPT_GOING_TYPES = new Set(['self_handover', 'handover', 'paired_handover']);
 
 const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
 
 /** "Kept going 2 times as the task ran long." for Checks. */
 export function memoryCheckDetail(log: readonly { type: string }[]): string {
-  const n = log.filter((e) => SUMMARY_TYPES.has(e.type) || PARTNER_TYPES.has(e.type)).length;
+  const n = log.filter((e) => KEPT_GOING_TYPES.has(e.type)).length;
   // With no matching log entry (e.g. a truncated log), don't claim a count.
   return n ? `Kept going ${times(n)} as the task ran long.` : 'Kept its place as the task ran long.';
 }
@@ -46,10 +44,8 @@ export interface TestReport {
   agents: { agentId: string; calls: number; tokens: number; shifts: number; shiftMinutes: number }[];
   calls: number;
   tokens: number;
-  /** Times it saved its progress on a long task (self_handover). */
-  handovers: number;
-  /** Times its work went on in another agent (handover, paired_handover). */
-  partnerHandoffs: number;
+  /** Times it kept going on a long task (KEPT_GOING_TYPES). */
+  keptGoing: number;
   firstEventAt: string | null;
   lastEventAt: string | null;
   /** First and last call: the agent's own activity, without later rests or watchdog handovers. */
@@ -83,14 +79,13 @@ export function buildTestReport(run: RunStatusResult, now: number = Date.now()):
     agents,
     calls: agents.reduce((n, a) => n + a.calls, 0),
     tokens: agents.reduce((n, a) => n + a.tokens, 0),
-    handovers: log.filter((e) => SUMMARY_TYPES.has(e.type)).length,
-    partnerHandoffs: log.filter((e) => PARTNER_TYPES.has(e.type)).length,
+    keptGoing: log.filter((e) => KEPT_GOING_TYPES.has(e.type)).length,
     firstEventAt: log[0]?.timestamp ?? null,
     lastEventAt: log.at(-1)?.timestamp ?? null,
     firstCallAt: log.find((e) => e.type === 'task_complete')?.timestamp ?? null,
     lastCallAt: log.findLast((e) => e.type === 'task_complete')?.timestamp ?? null,
     // Calls and saved progress in plain words; the internal task label and engine wording mean nothing to a reader.
-    events: log.map((e) => ({ at: e.timestamp, type: e.type, agentId: e.agentId, text: e.type === 'task_complete' ? 'made a call' : SUMMARY_TYPES.has(e.type) || PARTNER_TYPES.has(e.type) ? 'saved its progress and kept going' : eventModel(e as unknown as AuditEntry).said })),
+    events: log.map((e) => ({ at: e.timestamp, type: e.type, agentId: e.agentId, text: e.type === 'task_complete' ? 'made a call' : KEPT_GOING_TYPES.has(e.type) ? 'saved its progress and kept going' : eventModel(e as unknown as AuditEntry).said })),
   };
 }
 
@@ -108,17 +103,27 @@ export function spanText(from: string | null, to: string | null): string {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+/**
+ * An engine reason in plain words, or null. Engine reasons are free text that
+ * can name internal steps, so only known forms reach the readable report; the
+ * raw text stays in the technical details.
+ */
+export function plainReason(detail: string | null): string | null {
+  const status = detail?.match(/^upstream (\d{3})$/i);
+  return status ? `the model provider answered with an error, status ${status[1]}` : null;
+}
+
 /** The plain-language paragraph: what each check found, and no more. */
 export function summaryText(r: TestReport): string {
   const names = r.agents.map((a) => a.agentId).join(', ') || 'Your agent';
   const [connect, handoff, resume] = r.checks;
-  const why = (c: { detail: string | null }) => (c.detail ? ` (${c.detail})` : '');
+  const why = (c: { detail: string | null }) => { const p = plainReason(c.detail); return p ? ` (${p})` : ''; };
   if (connect.result === 'failed') return `${names} reached WhiteRoom, but its calls didn’t come back normally${why(connect)}.`;
   if (connect.result !== 'passed') return `${names} hasn’t completed a call through WhiteRoom in this test yet, so nothing could be checked.`;
   const parts = [`${names} made ${r.calls} ${plural(r.calls, 'call')} through WhiteRoom${r.calls > 1 ? ` over ${spanText(r.firstCallAt, r.lastCallAt)}` : ''}, and they came back normally.`];
   if (handoff.result === 'failed') return [...parts, `When the task ran long, it lost its place${why(handoff)}.`].join(' ');
   if (handoff.result !== 'passed') return [...parts, 'The task hadn’t run long by the time of this report, so that wasn’t checked.'].join(' ');
-  const kept = r.handovers + r.partnerHandoffs;
+  const kept = r.keptGoing;
   parts.push(`When the task ran long, it kept going${kept > 1 ? ` (${times(kept)})` : ''}.`);
   parts.push(resume.result === 'passed' ? 'Its next call went through normally.'
     : resume.result === 'failed' ? `Its next call didn’t work${why(resume)}.`
@@ -168,7 +173,7 @@ details{margin-top:12px}summary{cursor:pointer;font-weight:600}pre{white-space:p
 
 <h2>The three checks</h2>
 <div class="card"><table><thead><tr><th></th><th>Check</th><th>What it means</th><th>Result</th></tr></thead><tbody>
-${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.detail && c.result === 'failed' ? `<br><span class="muted">${esc(c.detail)}</span>` : ''}</td></tr>`).join('\n')}
+${r.checks.map((c) => `<tr><td class="${TONE[c.result]}">${ICON[c.result]}</td><td>${esc(c.label)}</td><td class="muted">${esc(c.meaning)}</td><td class="${TONE[c.result]}">${RESULT_TEXT[c.result]}${c.at ? ` <span class="muted mono">${esc(clock(c.at))}</span>` : ''}${c.result === 'failed' && plainReason(c.detail) ? `<br><span class="muted">${esc(plainReason(c.detail))}</span>` : ''}</td></tr>`).join('\n')}
 </tbody></table></div>
 
 <h2>What happened</h2>

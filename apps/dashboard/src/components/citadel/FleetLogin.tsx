@@ -69,14 +69,14 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
         <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
           <div>
             <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)', marginBottom: 8 }}>
-              Your fleet key or fleet token
+              Your WhiteRoom fleet key
             </label>
             <input
               id="fleet-token"
               type="password"
               value={loginToken}
               onChange={(e) => setLoginToken(e.target.value)}
-              placeholder="wr_... or sk-ant-..."
+              placeholder="sk-wr-… or an older wr_…"
               required
               style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, outline: 'none' }}
             />

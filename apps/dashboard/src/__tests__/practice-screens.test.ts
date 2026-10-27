@@ -34,7 +34,7 @@ describe('practice test screens', () => {
   it('setup shows who runs it, cost and cap, the checks, the key and the disclaimer', () => {
     const t = text(render('setup'));
     for (const s of ['Sample agent', 'No code, 1 run. Doesn’t test your agent.', 'Your agent', 'Needs a small adapter.', '1 run', '3 runs',
-      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', 'Never more than 120 calls, including control checks and memory summaries.',
+      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', 'Never more than 120 calls, including control checks.',
       'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up', 'Loop breaker · Enforce · 2 extra calls',
       'Spend cap · Enforce · Not checked: it would need real spending.', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
@@ -195,7 +195,7 @@ describe('practice tests on cloud providers (R7)', () => {
       expect(input).toContain('required=""');
       expect(startButton(html)).not.toContain('disabled=""');
     }
-    expect(text(render('setup-azure'))).toContain('Never more than 120 calls, billed by your Azure account. That includes control checks and memory summaries.');
+    expect(text(render('setup-azure'))).toContain('Never more than 120 calls, billed by your Azure account. That includes control checks.');
     expect(text(render('setup-foundry'))).toContain('billed by your Azure account');
     expect(text(render('setup-bedrock'))).toMatch(/approx\. \$[\d.]+–\$[\d.]+ at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account/);
   });
@@ -291,14 +291,14 @@ describe('the Sandbox screens practice tests are added to', () => {
   it('the start screen card, only once practice tests answered', () => {
     expect(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: null, open: null } }))).toBe('');
     expect(text(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: [], open: null } }))))
-      .toContain('Try your agent on practice tasks 5 practice tasks and a check of your rules · about 5–10 min · around 50 model calls on your key Set up a practice test →');
+      .toContain('Try your agent on practice tasks 5 practice tasks and a check of your rules · about 5–10 min for one run · around 50 model calls on your key Set up a practice test →');
   });
 
   it('Ready to go live gains one line, only when practice tests are available', () => {
     const passed = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [],
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: passed, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your rules · about 5–10 min · around 50 model calls on your key.';
+    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your rules · about 5–10 min for one run · around 50 model calls on your key.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     expect(without).not.toContain('practice test');
@@ -312,7 +312,7 @@ describe('the Sandbox screens practice tests are added to', () => {
     const cloud = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [], provider: 'azure-openai', endpointHost: 'acme.openai.azure.com',
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: cloud, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your rules · about 5–10 min · around 50 model calls on your key.';
+    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your rules · about 5–10 min for one run · around 50 model calls on your key.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     const withLine = flow({ fleet: 'prod-eu', rows: [], open: null });

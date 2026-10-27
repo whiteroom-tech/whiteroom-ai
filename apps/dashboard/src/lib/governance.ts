@@ -255,8 +255,10 @@ export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'w
 }
 
 /**
- * The same tally as counts and words, short enough for a card line, in the
- * mockup's outcome words: 2 "blocked", 47 "would have blocked".
+ * The same tally as counts and words, short enough for a card line: 2
+ * "blocked", 47 "would have acted". Record-only counts cover every response
+ * (block, pause, stop, alert) and the engine doesn't split them, so they
+ * can't honestly be called "would have blocked".
  */
 export function tallyParts(t: GovernanceTally): { count: number; word: string }[] {
   const out: { count: number; word: string }[] = [];
@@ -264,11 +266,11 @@ export function tallyParts(t: GovernanceTally): { count: number; word: string }[
   if (t.paused) out.push({ count: t.paused, word: 'paused' });
   if (t.blocks) out.push({ count: t.blocks, word: 'blocked' });
   if (t.toldYou) out.push({ count: t.toldYou, word: NOTIFY.done });
-  if (t.wouldBlocks) out.push({ count: t.wouldBlocks, word: 'would have blocked' });
+  if (t.wouldBlocks) out.push({ count: t.wouldBlocks, word: 'would have acted' });
   return out;
 }
 
-/** The tally as one card line: "2 blocked · 47 would have blocked". */
+/** The tally as one card line: "2 blocked · 47 would have acted". */
 export function tallyShort(t: GovernanceTally): string {
   return tallyParts(t).map((p) => `${p.count} ${p.word}`).join(' · ');
 }

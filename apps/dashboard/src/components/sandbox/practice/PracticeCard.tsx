@@ -51,6 +51,7 @@ export function PracticeCard({ entry }: { entry: PracticeEntry }) {
     <div className={p.entryCard}>
       <SettingsCard
         id="practice-card"
+        level={3}
         title={open ? 'Your practice test' : 'Try your agent on practice tasks'}
         sub={open
           ? (open.lifecycle === 'draft' ? 'Waiting for you to run it from your computer.' : open.lifecycle === 'finalizing' ? 'Finished. Working out the result.' : progressLine(open, Date.now()))

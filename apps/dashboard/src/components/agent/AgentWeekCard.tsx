@@ -68,7 +68,7 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
             : <strong style={figure}>{dash}</strong>}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {shown != null && <ScoreRing score={shown} size={52} />}
+          {shown != null && <ScoreRing score={shown} size={52} decorative />}
           <span><span style={label}>Score</span><br />{shown != null ? <span style={{ ...cap, color: 'var(--tx)' }}>{shown} out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
         </span>
       </div>

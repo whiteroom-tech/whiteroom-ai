@@ -24,3 +24,11 @@ describe('ScoreRing', () => {
     expect(ring(9)).toContain('stroke="var(--ok)"');
   });
 });
+
+describe('ScoreRing beside its own words', () => {
+  it('is hidden from screen readers when decorative', () => {
+    const html = renderToStaticMarkup(h(ScoreRing, { score: 8, decorative: true }));
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toContain('aria-label');
+  });
+});

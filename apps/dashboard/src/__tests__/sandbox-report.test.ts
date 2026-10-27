@@ -29,7 +29,7 @@ describe('sandbox test report', () => {
     const r = buildTestReport(run());
     expect(r.passed).toBe(3);
     expect(r.checks.map((c) => c.result)).toEqual(['passed', 'passed', 'passed']);
-    expect(r).toMatchObject({ calls: 20, tokens: 24310, handovers: 1, fleetId: 'sandbox-00000000-test-0000-0000-000000000000' });
+    expect(r).toMatchObject({ calls: 20, tokens: 24310, keptGoing: 1, fleetId: 'sandbox-00000000-test-0000-0000-000000000000' });
   });
 
   it('says only what the passed checks support, in plain words', () => {
@@ -70,9 +70,11 @@ describe('sandbox test report', () => {
     const withControls = (controls: unknown[]) => buildTestReport(run({ controls: controls as RunStatusResult['controls'] }));
     const noConnect = withControls([failed('core.connect', 'upstream 401')]);
     expect(noConnect.checks[0]).toMatchObject({ result: 'failed', detail: 'upstream 401' });
-    expect(summaryText(noConnect)).toBe('demo-agent reached WhiteRoom, but its calls didn’t come back normally (upstream 401).');
-    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('When the task ran long, it lost its place (no handover doc).');
-    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call didn’t work (next call failed)');
+    expect(summaryText(noConnect)).toBe('demo-agent reached WhiteRoom, but its calls didn’t come back normally (the model provider answered with an error, status 401).');
+    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).toContain('When the task ran long, it lost its place.');
+    // Engine reasons that aren't a known form stay out of the readable text.
+    expect(summaryText(withControls([control('core.connect', 25), failed('core.handoff', 'no handover doc')]))).not.toContain('handover');
+    expect(summaryText(withControls([control('core.connect', 25), control('core.handoff', 143), failed('core.resume', 'next call failed')]))).toContain('Its next call didn’t work.');
     const html = reportHtml(noConnect);
     expect(html).toContain('<td class="bad">Failed');
     expect(html).toMatch(/<h1 class="bad">0 of 3 checks passed/);
@@ -96,7 +98,7 @@ describe('sandbox test report', () => {
   it('times the calls, not rests or watchdog handovers after the agent stopped', () => {
     const later = run({ auditLog: [...run().auditLog!, { id: 'w', timestamp: t(900), type: 'self_handover', agentId: 'demo-agent' }] });
     const r = buildTestReport(later);
-    expect(r).toMatchObject({ firstCallAt: t(25), lastCallAt: t(25 + 19 * 16), handovers: 2 });
+    expect(r).toMatchObject({ firstCallAt: t(25), lastCallAt: t(25 + 19 * 16), keptGoing: 2 });
     expect(summaryText(r)).toContain('over 5 min 4 s');
     expect(reportHtml(r)).toContain('first to last call');
   });
@@ -104,12 +106,12 @@ describe('sandbox test report', () => {
   it('counts every time it kept going, and never says how', () => {
     const extra = (type: string, i: number) => ({ id: `x${i}`, timestamp: t(200 + i), type, agentId: 'demo-agent' });
     const both = buildTestReport(run({ auditLog: [...run().auditLog!, extra('paired_handover', 1), extra('handover', 2)] }));
-    expect(both).toMatchObject({ handovers: 1, partnerHandoffs: 2 });
+    expect(both).toMatchObject({ keptGoing: 3 });
     expect(summaryText(both)).toContain('When the task ran long, it kept going (3 times).');
     expect(both.events.filter((e) => e.text === 'saved its progress and kept going')).toHaveLength(3);
     expect(readable(reportHtml(both))).not.toMatch(/another agent|summar/);
     const partnerOnly = buildTestReport(run({ auditLog: run().auditLog!.filter((e) => e.type !== 'self_handover').concat(extra('paired_handover', 1)) }));
-    expect(partnerOnly).toMatchObject({ handovers: 0, partnerHandoffs: 1 });
+    expect(partnerOnly).toMatchObject({ keptGoing: 1 });
     expect(summaryText(partnerOnly)).toContain('When the task ran long, it kept going.');
   });
 
@@ -119,5 +121,14 @@ describe('sandbox test report', () => {
     const checks = html.slice(html.indexOf('The three checks'), html.indexOf('What happened'));
     expect(checks).not.toContain('proxied request abc');
     expect(html.slice(html.indexOf('Technical details'))).toContain('proxied request abc');
+  });
+});
+
+describe('engine reasons in plain words', () => {
+  it('words a provider error, and leaves unknown engine text out', async () => {
+    const { plainReason } = await import('@/lib/sandbox/report');
+    expect(plainReason('upstream 401')).toBe('the model provider answered with an error, status 401');
+    expect(plainReason('no handover doc')).toBeNull();
+    expect(plainReason(null)).toBeNull();
   });
 });

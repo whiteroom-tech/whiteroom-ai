@@ -145,7 +145,7 @@ describe('practice test cost (§1, §10 fixed copy)', () => {
     const e = callEstimate({ runs: 1, scope: null, controlCalls: 9, model: 'claude-haiku-4-5-20251001' });
     expect(e.cap).toBe(120);
     expect(e.cost).not.toBeNull();
-    expect(costLine(e, 1)).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\)\. Never more than 120 calls, including control checks and memory summaries\.$/);
+    expect(costLine(e, 1)).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\)\. Never more than 120 calls, including control checks\.$/);
     expect(costLine(callEstimate({ runs: 3, scope: null, controlCalls: 9, model: null }), 3)).toMatch(/usually \d+–\d+ model calls\. Never more than 120 calls a run \(360 in all\)/);
   });
 
@@ -334,10 +334,10 @@ describe('practice tests on cloud providers (R7, §17)', () => {
 
   it('cost: Azure and Foundry show only the cap, Bedrock Anthropic’s list prices marked approx.', () => {
     const est = (provider: 'azure-openai' | 'foundry' | 'bedrock-mantle', model: string, runs = 1) => callEstimate({ runs, scope: null, controlCalls: 0, model, provider });
-    expect(costLine(est('azure-openai', 'my-gpt-4o-mini'), 1)).toBe('Never more than 120 calls, billed by your Azure account. That includes control checks and memory summaries.');
-    expect(costLine(est('foundry', 'claude-haiku-4-5', 3), 3)).toBe('Never more than 120 calls a run (360 in all), billed by your Azure account. That includes control checks and memory summaries.');
+    expect(costLine(est('azure-openai', 'my-gpt-4o-mini'), 1)).toBe('Never more than 120 calls, billed by your Azure account. That includes control checks.');
+    expect(costLine(est('foundry', 'claude-haiku-4-5', 3), 3)).toBe('Never more than 120 calls a run (360 in all), billed by your Azure account. That includes control checks.');
     const bedrock = costLine(est('bedrock-mantle', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'), 1);
-    expect(bedrock).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account, including control checks and memory summaries\.$/);
+    expect(bedrock).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account, including control checks\.$/);
     expect(est('bedrock-mantle', 'anthropic.claude-haiku-4-5').cost).toEqual(callEstimate({ runs: 1, scope: null, controlCalls: 0, model: 'claude-haiku-4-5' }).cost);
     expect(rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'd', provider: 'azure-openai' })))
       .toBe('Rerun 1 check × 3 runs · never more than 30 model calls, billed by your Azure account.');

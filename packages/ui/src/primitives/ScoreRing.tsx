@@ -5,7 +5,12 @@ import { FONT_DISPLAY } from '../theme';
  * sits in the middle. One colour on purpose, brand and green from 9 up (no
  * red or amber tiers): the score is a summary, not an alarm.
  */
-export function ScoreRing({ score, size = 40 }: { score: number; size?: number }) {
+export function ScoreRing({ score, size = 40, decorative = false }: {
+  score: number;
+  size?: number;
+  /** The score is also given in words beside the ring: hide the ring from screen readers so it isn't read twice. */
+  decorative?: boolean;
+}) {
   // Out-of-range or missing scores draw as the nearest end of the scale, never NaN.
   const s = Number.isFinite(score) ? Math.max(0, Math.min(10, score)) : 0;
   const r = size * 0.4;
@@ -14,7 +19,7 @@ export function ScoreRing({ score, size = 40 }: { score: number; size?: number }
   const mid = size / 2;
   const label = Number.isInteger(s) ? String(s) : s.toFixed(1);
   return (
-    <svg className="wr-score-ring" width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`Score ${label} out of 10`} style={{ flex: 'none' }}>
+    <svg className="wr-score-ring" width={size} height={size} viewBox={`0 0 ${size} ${size}`} {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': `Score ${label} out of 10` })} style={{ flex: 'none' }}>
       <circle cx={mid} cy={mid} r={r} fill="none" stroke="var(--track)" strokeWidth={w} />
       <circle
         cx={mid} cy={mid} r={r} fill="none"

@@ -37,8 +37,8 @@ export function usualMinutes(runs: number): string {
   return `${lo * runs}–${hi * runs} min`;
 }
 
-/** What a practice test is, the one line every way into it uses: "5 practice tasks and a check of your rules · about 5–10 min · around 50 model calls on your key". */
-export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)} · around 50 model calls on your key`;
+/** What a practice test is, the one line every way into it uses: "5 practice tasks and a check of your rules · about 5–10 min for one run · around 50 model calls on your key". */
+export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)} for one run · around 50 model calls on your key`;
 
 /** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
 export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
@@ -231,8 +231,8 @@ const billing = (e: CallEstimate) => (e.billedBy ? `, billed by your ${e.billedB
 /** Setup's cost line. On Azure, only the cap: what the calls cost depends on the deployment. */
 export function costLine(e: CallEstimate, runs: number): string {
   const cap = runs > 1 ? `${CATALOG.runCallCap} calls a run (${e.cap} in all)` : `${e.cap} calls`;
-  if (e.billedBy === 'Azure') return `Never more than ${cap}${billing(e)}. That includes control checks and memory summaries.`;
-  return `On the key you test with: ${usualCalls(e)}. Never more than ${cap}${billing(e)}, including control checks and memory summaries.`;
+  if (e.billedBy === 'Azure') return `Never more than ${cap}${billing(e)}. That includes control checks.`;
+  return `On the key you test with: ${usualCalls(e)}. Never more than ${cap}${billing(e)}, including control checks.`;
 }
 
 /** The results' billing line, for the key the test used and its runs: "… never more than 120 a run (360 in all)." */

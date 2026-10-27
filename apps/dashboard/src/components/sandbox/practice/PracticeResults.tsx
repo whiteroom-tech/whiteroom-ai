@@ -140,7 +140,7 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
             <dt>Runs</dt><dd>{r.runs}{r.scope ? ` · rerun of ${r.scope.length} ${plural(r.scope.length, 'check')}` : ''}</dd>
             <dt>CLI version</dt><dd>{r.tested.cli ?? '—'}</dd>
             <dt>Test version</dt><dd>{r.testVersion}</dd>
-            {r.how.memoryLimitAdjusted && <><dt>Memory</dt><dd>Memory limit adjusted during the test</dd></>}
+            {r.how.memoryLimitAdjusted && <><dt>Room</dt><dd>Given more room during the test</dd></>}
           </dl>
         </details>
         <p className={s.small}>{billedLine(r)}</p>

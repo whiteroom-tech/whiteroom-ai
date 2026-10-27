@@ -113,6 +113,10 @@ const HOW_FILES = [
   '../components/sandbox/PastTests.tsx',
   '../components/sandbox/CloudProviderParts.tsx',
   '../components/sandbox/practice/PracticeCard.tsx',
+  '../components/sandbox/practice/PracticeSetup.tsx',
+  '../components/sandbox/practice/PracticeResults.tsx',
+  '../components/sandbox/practice/PracticeRunView.tsx',
+  '../lib/sandbox/practice/model.ts',
   '../lib/sandbox/report.ts',
 ];
 

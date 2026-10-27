@@ -47,3 +47,18 @@ describe('Settings as in the mockup', () => {
     expect(view(limit - 1).match(/At the limit/g)).toHaveLength(1);
   });
 });
+
+describe('plan dates and card headings', () => {
+  it('adds the year only outside the current one', async () => {
+    const { shortDay } = await import('@/app/settings/settings-view');
+    const now = Date.UTC(2026, 9, 27);
+    expect(shortDay('2026-12-26T00:00:00Z', now)).toBe('Dec 26');
+    expect(shortDay('2027-01-04T00:00:00Z', now)).toBe('Jan 4, 2027');
+  });
+
+  it('uses h3 for cards inside a section with its own h2', async () => {
+    const { SettingsCard } = await import('@/components/settings/SettingsCard');
+    expect(renderToStaticMarkup(h(SettingsCard, { id: 'x', title: 'T', level: 3 }))).toContain('<h3 id="x-title"');
+    expect(renderToStaticMarkup(h(SettingsCard, { id: 'x', title: 'T' }))).toContain('<h2 id="x-title"');
+  });
+});
