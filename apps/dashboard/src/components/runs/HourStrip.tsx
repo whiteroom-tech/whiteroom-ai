@@ -1,64 +1,76 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { FONT_MONO } from '@whiteroom/ui';
+import { Button } from '@whiteroom/ui';
+import type { RunHourCount } from '@/lib/whiteroom/types';
 import { hourLabel } from '@/lib/runs';
-import { barHeight, barLabel, centreBar } from './strip';
+import { barHeight, barLabel } from './strip';
+
+const TICKS = [0, 3, 6, 9, 12, 15, 18, 21];
 
 /**
- * A picked day's runs per hour: 24 bars. Picking a bar lists that hour's
- * runs; picking it again, or All hours, goes back to the whole day.
+ * A picked day's runs per hour: a card with 24 bars, each hour's count above
+ * its bar and an amber cap on hours with rule activity (when the engine counts
+ * it). Picking a bar lists that hour's runs; picking it again, or All hours,
+ * goes back to the whole day. Back to 30 days drops the day.
  */
-export function HourStrip({ dayName, hours, selected, onPick }: {
+export function HourStrip({ dayName, hours, selected, onPick, onBack }: {
   dayName: string;
-  hours: { hour: number; runs: number }[];
+  hours: RunHourCount[];
   selected: number | null;
   /** Absent when the engine can't list one hour's runs: the bars then only show counts. */
   onPick?: (hour: number | null) => void;
+  onBack: () => void;
 }) {
-  const byHour = new Map(hours.map((h) => [h.hour, h.runs]));
+  const byHour = new Map(hours.map((h) => [h.hour, h]));
   const max = Math.max(1, ...hours.map((h) => h.runs));
-  // Where the strip scrolls (phones), open on the busiest hour rather than midnight.
-  const wrap = useRef<HTMLDivElement>(null);
-  const busiest = hours.reduce<{ hour: number; runs: number } | null>((b, h) => (!b || h.runs > b.runs ? h : b), null)?.hour ?? null;
-  const hasRuns = busiest !== null;
-  const positionedFor = useRef<string | null>(null);
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el || positionedFor.current === dayName || busiest === null || el.scrollWidth <= el.clientWidth) return;
-    centreBar(el, busiest, 24);
-    positionedFor.current = dayName;
-    // Once per day, as soon as the day has a run: a poll that changes the busiest hour never pulls
-    // the person away from where they scrolled.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayName, hasRuns]);
+  const ruleKnown = hours.some((h) => h.ruleActivity !== undefined);
+  const hasRuns = hours.some((h) => h.runs > 0);
   return (
-    <section aria-label={`${dayName} by hour`} style={{ display: 'grid', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{dayName} by hour</h3>
-        {selected !== null && onPick && (
-          <button type="button" onClick={() => onPick(null)} style={{ padding: 0, border: 0, background: 'none', color: 'var(--brand)', fontWeight: 600, fontSize: 'var(--fs-sm)', cursor: 'pointer' }}>All hours</button>
-        )}
+    <section className="wr-panel wr-runchart" aria-labelledby="runs-by-hour">
+      <div className="wr-runchart__head">
+        <h2 id="runs-by-hour" className="wr-panel__title">{dayName} by hour</h2>
+        <span className="wr-runchart__actions">
+          {selected !== null && onPick && (
+            <>
+              <span className="wr-runchart__note">Showing {hourLabel(selected)}–{hourLabel((selected + 1) % 24)}</span>
+              <Button size={32} onClick={() => onPick(null)}>All hours</Button>
+            </>
+          )}
+          <Button size={32} onClick={onBack}>Back to 30 days</Button>
+        </span>
       </div>
-      {/* Phones scroll the hours sideways in here, so every bar stays tappable. */}
-      <div className="wr-strip-scroll is-hours" ref={wrap}>
-        <div className="wr-daystrip wr-hourstrip" role="group" aria-label={`Runs per hour, ${dayName}`}>
-          {Array.from({ length: 24 }, (_, h) => {
-            const n = byHour.get(h) ?? 0;
-            const on = h === selected;
-            const label = barLabel(hourLabel(h), n);
-            return (
-              <button key={h} type="button" className={`wr-daystrip__day${on ? ' is-selected' : ''}${selected === null ? ' is-in' : ''}`}
-                aria-pressed={on} aria-label={label} title={label} disabled={!onPick || (n === 0 && !on)} onClick={() => onPick?.(on ? null : h)}>
-                <span className="wr-daystrip__bar" style={{ height: barHeight(n, max) }} />
-              </button>
-            );
-          })}
-        </div>
-        <div aria-hidden className="wr-hourstrip-axis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-          {[0, 6, 12, 18].map((h) => <span key={h}>{hourLabel(h)}</span>)}
-        </div>
-      </div>
+      {!hasRuns ? (
+        <p className="wr-runchart__note" style={{ margin: 0 }}>No runs that day.</p>
+      ) : (
+        <>
+          <div>
+              <div className="wr-runchart__bars is-hours" role="group" aria-label={`Runs per hour on ${dayName}`}>
+                {Array.from({ length: 24 }, (_, h) => {
+                  const c = byHour.get(h);
+                  const n = c?.runs ?? 0;
+                  const rule = !!c?.ruleActivity;
+                  const on = h === selected;
+                  const label = barLabel(hourLabel(h), n, { ruleActivity: c?.ruleActivity });
+                  return (
+                    <button key={h} type="button" className={`wr-runchart__day is-in${on ? ' is-selected' : ''}`}
+                      aria-pressed={on} aria-label={label} title={label} disabled={!onPick || (n === 0 && !on)} onClick={() => onPick?.(on ? null : h)}>
+                      {n > 0 && <span className="wr-runchart__count">{n}</span>}
+                      <span className={`wr-runchart__bar${rule ? ' has-rule' : ''}`} style={{ height: n ? `max(4px, ${((n / max) * 72).toFixed(1)}%)` : barHeight(0, max) }} />
+                    </button>
+                  );
+                })}
+              </div>
+              <div aria-hidden className="wr-runchart__hticks">
+                {TICKS.map((h) => <span key={h}>{hourLabel(h)}</span>)}
+              </div>
+          </div>
+          <p className="wr-runchart__legend is-foot">
+            <span><span className="wr-runchart__key is-in" aria-hidden="true" />Runs started that hour</span>
+            {ruleKnown && <span><span className="wr-runchart__key is-rule" aria-hidden="true" />Hour with rule activity</span>}
+            {onPick && <span>Select an hour to see its runs</span>}
+          </p>
+        </>
+      )}
     </section>
   );
 }

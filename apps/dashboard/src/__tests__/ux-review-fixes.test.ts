@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { ordinal } from '@/lib/format';
 import { loopActs } from '@/lib/controls-view';
 import { historyText } from '@/lib/rule-history';
-import { flagsNote, ruleActivityCount, timelineRow } from '@/lib/runs';
+import { timelineRow } from '@/lib/runs';
 import { activityRow } from '@/lib/home';
-import type { RunRuleAction } from '@/lib/whiteroom/types';
+
 
 describe('ordinal', () => {
   it('uses the right ending', () => {
@@ -35,22 +35,6 @@ describe('Controls › Recent changes wording', () => {
     expect(historyText({ description: 'Watch → Enforce', ruleType: 'loop_breaker' }, true)).toBe('Record only → Block');
     // A rule's own history has no name in front, so the text stays whole.
     expect(historyText({ description: 'Removed Spend cap rule', ruleType: 'spend_cap' })).toBe('Removed Spend cap rule');
-  });
-});
-
-describe('Run page › flags and rule activity', () => {
-  const act = (x: Partial<RunRuleAction>): RunRuleAction => ({ at: '2026-10-27T09:04:00Z', ruleId: 'r1', ruleType: 'model_allowlist', response: 'block', mode: 'enforce', occurrences: 1, ...x });
-
-  it('never says nothing was blocked when a rule blocked', () => {
-    expect(flagsNote([act({})])).toBe('Flags only point things out. Blocks are listed under Rule activity.');
-    expect(flagsNote([act({ response: 'notify' })])).toBe('Flags only point things out. What rules did is listed under Rule activity.');
-    expect(flagsNote([act({ mode: 'watch' })])).toBe('Flags only point things out; they don’t block anything.');
-    expect(flagsNote(undefined)).toBe('Flags only point things out; they don’t block anything.');
-  });
-
-  it('counts rules and times apart', () => {
-    expect(ruleActivityCount([act({}), act({ ruleId: 'r2', mode: 'watch', occurrences: 3 })])).toBe('2 rules · 4 times');
-    expect(ruleActivityCount([act({})])).toBe('1 rule · 1 time');
   });
 });
 

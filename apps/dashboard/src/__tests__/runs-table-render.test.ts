@@ -45,7 +45,16 @@ async function mount(sample?: RunSummary[], retentionDays?: number) {
   await flush();
   const radio = (label: string) => [...el.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
   const click = async (b: Element | undefined) => { await act(async () => { (b as HTMLElement).click(); }); await flush(); };
-  return { el, root, radio, click, text: () => el.textContent ?? '' };
+  // Jump to day: set the date input as a person would.
+  const jump = async (d: string) => {
+    const input = el.querySelector('#runs-day') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, d);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+  };
+  return { el, root, radio, click, jump, text: () => el.textContent ?? '' };
 }
 
 beforeEach(() => {
@@ -65,7 +74,7 @@ beforeEach(() => {
 describe('Runs › Show › Rule activity', () => {
   it('asks the engine for runs with rule activity and keeps the choice in the URL', async () => {
     const m = await mount();
-    expect(m.text()).toContain('A Record only rule would have acted 2 times');
+    expect(m.text()).toContain('Would have blocked 2 calls');
     await m.click(m.radio('Rule activity'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ ruleActivity: true, flagged: false }), 'k');
     expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('show=rules'), { scroll: false });
@@ -95,39 +104,62 @@ describe('Runs › Show › Rule activity, in the preview (no engine)', () => {
     const m = await mount([run(1, { wouldActCalls: 2 }), run(2, { blockedCalls: 1, wouldActCalls: 0 }), run(3, { wouldActCalls: 0 })]);
     expect(m.text()).toMatch(/3 runs/);
     await m.click(m.radio('Rule activity'));
-    const rows = [...m.el.querySelectorAll('[role="row"]')].filter((r) => /#\d/.test(r.textContent ?? ''));
-    expect(rows.map((r) => r.textContent?.match(/#(\d+)/)?.[1])).toEqual(['1', '2']);
+    const rows = [...m.el.querySelectorAll('.wr-runs-table a.wr-runlink')];
+    expect(rows.map((r) => r.getAttribute('href'))).toEqual(['/runs/lead-agent~1', '/runs/lead-agent~2']);
     // Day totals count every run, so they're left out under a filter.
-    expect(m.text()).not.toMatch(/·\s*3 runs/);
+    expect([...m.el.querySelectorAll('.wr-table__group')].map((g) => g.textContent).join(' ')).not.toMatch(/runs?/);
     expect(api.list).not.toHaveBeenCalled();
     m.root.unmount();
   });
 });
 
 describe('Runs › phones', () => {
-  it('lists each run as a stacked row: run · agent · time, what stood out, then length and spend', async () => {
+  it('lists each run as a stacked row: agent and number · time, what stood out, then length and spend', async () => {
     const m = await mount([run(1, { lengthSeconds: 1380, spendMicros: 1_920_000, wouldActCalls: 2 })]);
     const rows = [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')];
     expect(rows).toHaveLength(1);
     const [top, stood, figures] = [...rows[0].children].map((c) => c.textContent ?? '');
-    expect(top).toMatch(/^#1·lead-agent\d{1,2}:\d{2} (am|pm)$/);
-    expect(stood).toContain('A Record only rule would have acted 2 times');
-    expect(figures).toBe('23 min · $1.92');
+    expect(top).toMatch(/^lead-agent#1\d{1,2}:\d{2} (am|pm)$/);
+    expect(stood).toContain('Would have blocked 2 calls');
+    expect(figures).toBe('23:00 · $1.92');
     expect(rows[0].getAttribute('href')).toBe('/runs/lead-agent~1');
-    // The desktop table is still there for wide screens; CSS picks one.
-    expect(m.el.querySelector('.wr-runs-table [role="grid"]')).not.toBeNull();
+    // The desktop table is still there for wide screens; CSS picks one. Its run is one real link.
+    expect(m.el.querySelector('.wr-runs-table a.wr-runlink')?.textContent).toBe('lead-agent #1');
     m.root.unmount();
   });
 
-  it('lists the same runs in both views, with one pager under them', async () => {
-    api.list.mockImplementation(async () => ({ runs: [run(1), run(2), run(3)], total: 60, cursor: 'next-page' }));
+  it('lists the same runs in both views, with one Show more under them that adds the next runs', async () => {
+    // The engine pages by offset: "3" is the cursor after three runs.
+    api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
+      const from = Number(o.cursor ?? 0);
+      return { runs: Array.from({ length: Math.min(o.pageSize, 3) }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + 3) };
+    });
     const m = await mount();
-    const phone = [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')].map((a) => a.getAttribute('href'));
-    const table = [...m.el.querySelectorAll('.wr-runs-table [role="row"]')].map((r) => r.textContent?.match(/#(\d+)/)?.[1]).filter(Boolean).map((n) => `/runs/lead-agent~${n}`);
-    expect(phone).toEqual(['/runs/lead-agent~1', '/runs/lead-agent~2', '/runs/lead-agent~3']);
-    expect(table).toEqual(phone);
-    expect([...m.el.querySelectorAll('button')].filter((b) => b.textContent?.includes('Older'))).toHaveLength(1);
-    expect(m.text().match(/1–3 of 60/g)).toHaveLength(1);
+    const phone = () => [...m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')].map((a) => a.getAttribute('href'));
+    const table = () => [...m.el.querySelectorAll('.wr-runs-table a.wr-runlink')].map((a) => a.getAttribute('href'));
+    expect(phone()).toHaveLength(25);
+    expect(table()).toEqual(phone());
+    expect(m.text()).toContain('Showing 25 of 60 runs · last 7 days');
+    const more = [...m.el.querySelectorAll('button')].filter((b) => b.textContent === 'Show more runs');
+    expect(more).toHaveLength(1);
+    await m.click(more[0]);
+    expect(phone()).toHaveLength(50);
+    expect(m.text()).toContain('Showing 50 of 60 runs');
+    m.root.unmount();
+  });
+
+  it('keeps the old rows, dimmed, while a new filter loads, and offers 30 days when a range is empty', async () => {
+    const m = await mount();
+    let release: () => void = () => {};
+    api.list.mockImplementation(() => new Promise((res) => { release = () => res({ runs: [], total: 0, cursor: null }); }));
+    await m.click(m.radio('Today'));
+    expect(m.el.querySelector('.wr-runs-body.is-loading a.wr-runlink')).not.toBeNull();
+    await act(async () => { release(); });
+    await flush();
+    expect(m.el.querySelector('.wr-runs-body.is-loading')).toBeNull();
+    expect(m.text()).toContain('No runs today.');
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show 30 days'));
+    expect(m.radio('30 days')?.getAttribute('aria-checked')).toBe('true');
     m.root.unmount();
   });
 });
@@ -152,12 +184,16 @@ describe('Runs › a day by hour', () => {
     m.root.unmount();
   });
 
-  it('exports just the picked hour, as the table shows', async () => {
+  it('exports just the picked hour when the dialog keeps "What’s shown now"', async () => {
     nav.params = new URLSearchParams(`day=${day}&hour=9`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
     const m = await mount();
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
     await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Export .xlsx'));
+    expect(m.text()).toContain('What’s shown now');
+    await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Download .xlsx'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ pageSize: 50, hour: 9, fromDay: day, toDay: day }), 'k');
+    expect(m.text()).toContain('Downloaded 1 run for');
     m.root.unmount();
   });
 
@@ -179,7 +215,7 @@ describe('Runs › a day by hour', () => {
     expect(m.el.querySelector('button[aria-label="9 am: 2 runs"]')!.hasAttribute('disabled')).toBe(true);
     honour = true;
     const calls = api.hours.mock.calls.length;
-    await m.click(m.el.querySelector('button[aria-label="Previous day"]') ?? undefined);
+    await m.jump(new Date(Date.now() - 2 * 86_400_000).toLocaleDateString('en-CA'));
     expect(m.text()).toContain('by hour');
     expect(m.el.querySelector('button[aria-label="9 am: 2 runs"]')!.hasAttribute('disabled')).toBe(false);
     // The hours load again for the new day (they have their own poll, keyed on day and agent).
@@ -193,7 +229,7 @@ describe('Runs › a day by hour', () => {
     const m = await mount();
     expect(m.text()).toContain('by hour');
     api.hours.mockImplementation(() => new Promise(() => {}));
-    await m.click(m.el.querySelector('button[aria-label="Previous day"]') ?? undefined);
+    await m.jump(new Date(Date.now() - 2 * 86_400_000).toLocaleDateString('en-CA'));
     // The new day's counts haven't arrived: no chart rather than the old day's bars.
     expect(m.text()).not.toContain('by hour');
     m.root.unmount();

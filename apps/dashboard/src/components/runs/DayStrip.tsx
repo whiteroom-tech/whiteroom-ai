@@ -1,79 +1,80 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { Button, FONT_MONO } from '@whiteroom/ui';
+import type { RunDayCount } from '@/lib/whiteroom/types';
 import { dayLabel, localDay } from '@/lib/runs';
-import { barHeight, barLabel, centreBar } from './strip';
+import { barHeight, barLabel, tickIndexes } from './strip';
 
 /**
- * Runs per day for 30 of the viewer's days, one bar each, with ‹ › to page
- * 30 days back or forward. Picking a bar shows that day; picking the picked
- * bar again goes back to the range. Bars inside the shown days are a step
- * brighter than the rest.
+ * Runs per day: a card with 30 of the viewer's days, one bar each, at true
+ * heights against the busiest day (its count sits top left). Bars for the
+ * days listed below are brand-coloured, the picked day is solid text colour,
+ * and flagged runs show as an amber segment at the foot of a bar when the
+ * engine counts them. Picking a bar shows that day; picking it again goes back.
  */
-export function DayStrip({ days, selected, inRange, onPick, onEarlier, onLater }: {
-  days: { day: string; runs: number }[];
+export function DayStrip({ days, selected, inRange, onPick, title, legend, flaggedKnown }: {
+  days: RunDayCount[];
   selected: string | null;
   inRange: (day: string) => boolean;
   onPick: (day: string | null) => void;
-  /** Absent when there's nothing earlier the plan keeps. */
-  onEarlier?: () => void;
-  /** Absent when the strip already ends today. */
-  onLater?: () => void;
+  /** "Runs per day · last 30 days". */
+  title: string;
+  /** "Last 7 days · 60 runs · select a day to see its hours". */
+  legend: string;
+  /** The engine sent per-day flagged counts: the amber segment and its key show. */
+  flaggedKnown: boolean;
 }) {
-  const first = days[0]?.day;
-  // Where the strip scrolls (phones): a new window opens on the picked day, else the newest; picking
-  // a day centres it; un-picking leaves the strip where it is.
-  const wrap = useRef<HTMLDivElement>(null);
-  const shownWindow = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el || el.scrollWidth <= el.clientWidth) return;
-    const i = selected ? days.findIndex((d) => d.day === selected) : -1;
-    const newWindow = shownWindow.current !== first;
-    shownWindow.current = first;
-    if (i < 0 && !newWindow) return;
-    if (i < 0) el.scrollLeft = el.scrollWidth;
-    else centreBar(el, i, days.length);
-    // Only when the window or the pick changes, never on a poll's re-render, so scrolling back isn't undone.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [first, selected, days.length]);
-  const last = days[days.length - 1]?.day;
-  const max = Math.max(1, ...days.map((d) => d.runs));
+  const max = Math.max(0, ...days.map((d) => d.runs));
+  const busiest = days.reduce<RunDayCount | null>((b, d) => (!b || d.runs > b.runs ? d : b), null);
+  const today = localDay();
+  const ticks = tickIndexes(days.length);
   return (
-    <div>
-      <div className="wr-strip-scroll" ref={wrap}>
-        <div className="wr-daystrip" role="group" aria-label="Runs per day">
-          {days.map((d) => {
-            const label = barLabel(dayLabel(d.day), d.runs);
-            const on = d.day === selected;
-            return (
-              <button
-                key={d.day}
-                type="button"
-                className={`wr-daystrip__day${on ? ' is-selected' : ''}${inRange(d.day) ? ' is-in' : ''}`}
-                aria-pressed={on}
-                aria-label={label}
-                title={label}
-                onClick={() => onPick(on ? null : d.day)}
-              >
-                <span className="wr-daystrip__bar" style={{ height: barHeight(d.runs, max) }} />
-              </button>
-            );
-          })}
+    <section className="wr-panel wr-runchart" aria-labelledby="runs-per-day">
+      <div className="wr-runchart__head">
+        <h2 id="runs-per-day" className="wr-panel__title">{title}</h2>
+        <span className="wr-runchart__legend">
+          <span><span className="wr-runchart__key is-in" aria-hidden="true" />{legend}</span>
+          {flaggedKnown && <span><span className="wr-runchart__key is-flag" aria-hidden="true" />Flagged</span>}
+        </span>
+      </div>
+      <div>
+          <div className="wr-runchart__plot">
+            {max > 0 && <span className="wr-runchart__max" aria-hidden="true">{max}</span>}
+            <div
+              className="wr-runchart__bars"
+              role="group"
+              aria-label={`Runs per day${busiest && max > 0 ? `. Busiest day ${dayLabel(busiest.day, Date.now(), false)} with ${max} runs.` : ''}`}
+              style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+            >
+              {days.map((d) => {
+                const label = barLabel(dayLabel(d.day), d.runs, { flagged: d.flagged });
+                const on = d.day === selected;
+                const flagged = flaggedKnown && d.flagged ? Math.min(d.flagged, d.runs) : 0;
+                return (
+                  <button
+                    key={d.day}
+                    type="button"
+                    className={`wr-runchart__day${on ? ' is-selected' : ''}${inRange(d.day) ? ' is-in' : ''}`}
+                    aria-pressed={on}
+                    aria-label={label}
+                    title={label}
+                    onClick={() => onPick(on ? null : d.day)}
+                  >
+                    <span className="wr-runchart__bar" style={{ height: barHeight(d.runs, max) }}>
+                      {flagged > 0 && <span className="wr-runchart__flag" style={{ height: `max(2px, ${(flagged / d.runs) * 100}%)` }} />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="wr-runchart__ticks" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
+            {ticks.map((i, k) => (
+              <span key={days[i].day} style={{ gridColumn: `${i + 1} / span 1`, justifySelf: k === 0 ? 'start' : k === ticks.length - 1 ? 'end' : 'center' }}>
+                {days[i].day === today ? 'Today' : dayLabel(days[i].day, Date.now(), false).replace(/^\w+, /, '')}
+              </span>
+            ))}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-        <Button variant="ghost" size={28} aria-label="Earlier 30 days" disabled={!onEarlier} onClick={onEarlier}>&lsaquo;</Button>
-        <span>{first ? dayLabel(first, Date.now(), false) : ''}</span>
-        <span style={{ marginLeft: 'auto' }}>{last ? (last === localDay() ? 'Today' : dayLabel(last, Date.now(), false)) : ''}</span>
-        <Button variant="ghost" size={28} aria-label="Later 30 days" disabled={!onLater} onClick={onLater}>&rsaquo;</Button>
-      </div>
-      {/* What the two bar shades mean (and the picked day's colour, once there is one). */}
-      <p className="wr-daystrip__legend">
-        <span><span className={`wr-daystrip__key ${selected ? 'is-selected' : 'is-in'}`} aria-hidden="true" />{selected ? 'Picked day' : 'Days listed below'}</span>
-        <span><span className="wr-daystrip__key" aria-hidden="true" />Other days</span>
-      </p>
-    </div>
+    </section>
   );
 }
