@@ -114,8 +114,8 @@ describe('Controls page', () => {
     expect(groups).toEqual(['Rules for all agents', 'Rules for specific agents', 'Off']);
     // Block rules come first in a group, with the one filled tag; Record only is plain.
     const all = [...m.el.querySelectorAll('.wr-panel')].find((p) => p.querySelector('.wr-panel__title')?.textContent === 'Rules for all agents')!;
-    expect([...all.querySelectorAll('.gov-row .wr-tag')].map((t) => t.textContent)).toEqual(['Block', 'Record only', 'Record only']);
-    expect(all.querySelector('.wr-tag--block')?.textContent).toBe('Block');
+    expect([...all.querySelectorAll('.gov-row .wr-tag')].map((t) => t.textContent)).toEqual(['Blocks', 'Record only', 'Record only']);
+    expect(all.querySelector('.wr-tag--block')?.textContent).toBe('Blocks');
     // Two rules can stop calls, so there's no warning about it.
     expect(m.text()).not.toContain('can stop calls');
     expect(m.text()).toContain('When an agent makes the same call 100 times in a run, block the call.');
@@ -130,6 +130,24 @@ describe('Controls page', () => {
     expect(m.row('$200').textContent).toContain('Would never act: the $190 cap would act first');
     expect(m.text()).toContain('Your $200 cap would never act. Both are in Record only');
     expect(m.text()).toContain('Pick a rule to change it');
+    m.root.unmount();
+  });
+
+  it('tags a Block-mode rule by what it does: an alert-only rule is never a red Block', async () => {
+    api.saved.r1 = { ...RULES[0], response: 'notify' };
+    const m = await mount();
+    const tag = m.row('100 times').querySelector('.wr-tag')!;
+    expect(tag.textContent).toBe('Alerts');
+    expect(tag.className).not.toContain('wr-tag--block');
+    m.root.unmount();
+  });
+
+  it('names the agent in the group titles when filtering', async () => {
+    nav.params = new URLSearchParams('agent=lead-agent');
+    const m = await mount();
+    const groups = [...m.el.querySelectorAll('.wr-panel__title')].map((t) => t.textContent);
+    expect(groups).toEqual(['Rules for all agents (including lead-agent)', 'Rules just for lead-agent (or a few agents)', 'Off']);
+    nav.params = new URLSearchParams();
     m.root.unmount();
   });
 

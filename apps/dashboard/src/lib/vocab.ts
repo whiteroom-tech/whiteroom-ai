@@ -19,6 +19,12 @@ export const MODE_MEANING: Record<RuleMode, string> = {
   enforce: 'Block: the rule acts on matching calls (alerts, blocks, pauses or stops).',
 };
 
+/**
+ * A rule's row tag: what it does now. Record only for watch; in Block mode, the response, so a rule
+ * that only alerts never wears a red "Block" (only real stops are filled).
+ */
+export const DOES_TAG: Record<'block' | 'pause' | 'stop' | 'notify', string> = { block: 'Blocks', pause: 'Pauses', stop: 'Stops', notify: 'Alerts' };
+
 /** The count of everything rules did or would have done. */
 export const RULE_ACTIVITY = 'Rule activity';
 

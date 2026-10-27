@@ -7,7 +7,7 @@
 
 import { HistoryLine } from "./_components/HistoryLine";
 import { undoFor, type Undo } from "@/lib/rule-history";
-import { MODE_GROUP, MODE_LABEL, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
+import { DOES_TAG, MODE_GROUP, MODE_LABEL, MODE_MEANING, RULE_ACTIVITY } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -426,7 +426,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         <span style={{ minWidth: 0, flex: "1 1 320px" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)', color: "var(--tx2)", marginBottom: 2 }}>
             {RULE_LABELS[r.ruleType]}
-            {r.mode !== "off" && <Tag tone={r.mode === "enforce" ? "block" : "muted"}>{MODE_LABEL[r.mode]}</Tag>}
+            {r.mode === "watch" && <Tag tone="muted">{MODE_LABEL.watch}</Tag>}
+            {r.mode === "enforce" && <Tag tone={(r.response ?? "block") === "notify" ? "brand" : "block"}>{DOES_TAG[r.response ?? "block"]}</Tag>}
           </span>
           {s.pre}<span style={{ fontFamily: FONT_MONO }}>{s.val}</span>{s.post}
         </span>

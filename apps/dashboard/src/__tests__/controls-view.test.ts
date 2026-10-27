@@ -227,7 +227,11 @@ describe('groups and per-rule counts', async () => {
     const counts = { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
     expect(rowStat(one, { byRuleId: { gr_1: counts }, onlyOfItsType: false })).toBe('4 blocked · last 7 days');
     expect(rowStat(rule({ id: 'gr_2', mode: 'enforce' }), { byRuleId: { gr_1: counts }, onlyOfItsType: false })).toBe('0 blocked · last 7 days');
-    // Without per-rule counts, two of a type can't be told apart: no number.
+    // Without per-rule counts, two of a type can't be told apart: no number; the only one of its type uses the type's.
     expect(rowStat(one, { byRuleType: { spend_cap: counts }, onlyOfItsType: false })).toBe('');
+    expect(rowStat(one, { byRuleType: { spend_cap: counts }, onlyOfItsType: true })).toBe('4 blocked · last 7 days');
+    // Viewing one agent: a rule for all agents can't show that agent's share from fleet-wide counts.
+    expect(rowStat(one, { byRuleId: { gr_1: counts }, onlyOfItsType: false, agent: 'lead' })).toBe('');
+    expect(rowStat(rule({ id: 'gr_3', mode: 'enforce', appliesTo: ['lead'] }), { byRuleId: { gr_3: counts }, onlyOfItsType: false, agent: 'lead' })).toBe('4 blocked · last 7 days');
   });
 });
