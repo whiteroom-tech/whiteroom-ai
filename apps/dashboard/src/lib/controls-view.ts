@@ -430,8 +430,8 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       const removed = p.keywords.filter((k) => !n.keywords.includes(k));
       if (removed.length) out.push(`No longer looks for ${removed.map((k) => `“${k}”`).join(', ')}`);
       if (!p.wholeWord && n.wholeWord) out.push('Matches whole words only, not parts of words');
-      if (p.where !== n.where && p.where !== 'incoming' && n.where !== 'both') out.push(`No longer looks in ${p.where === 'both' && n.where === 'incoming' ? 'model replies' : 'incoming data'}`);
-      if (p.where === 'incoming' && n.where === 'replies') out.push('No longer looks in incoming data');
+      const places = (w: KeywordParams['where']) => (w === 'both' ? ['incoming', 'replies'] : [w]);
+      for (const gone of places(p.where).filter((x) => !places(n.where).includes(x))) out.push(`No longer looks in ${gone === 'incoming' ? 'incoming data' : 'model replies'}`);
       return out;
     }
     default:

@@ -314,22 +314,24 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     }
   };
 
-  // Narrowing a rule for all agents can keep it and add a copy just for the picked agents instead.
-  // The copy starts in Record only, like any new rule; the original is left as it was.
-  const copyFor = async (next: GovernanceRule) => {
-    if (next.appliesTo === "all") return;
+  // Narrowing a rule for all agents can keep it and add a copy just for the picked agents instead:
+  // the original rule's settings (only the narrowing, none of the edit's other changes), in Record
+  // only like any new rule. The original is left as it was.
+  const copyFor = async (rule: GovernanceRule, agentsPicked: string[]) => {
+    if (!agentsPicked.length) return;
+    const next = { ...rule, appliesTo: agentsPicked };
     setDialog(null);
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
       const { rule: created } = await governanceCreateRule(fleetId, {
-        ruleType: next.ruleType, mode: "watch", response: next.response, alsoNotify: next.alsoNotify, params: next.params, appliesTo: next.appliesTo,
-        description: `Added a copy of the ${RULE_LABELS[next.ruleType]} rule for ${next.appliesTo.join(", ")}`,
+        ruleType: next.ruleType, mode: "watch", response: next.response, alsoNotify: next.alsoNotify, params: next.params, appliesTo: agentsPicked,
+        description: `Added a copy of the ${RULE_LABELS[next.ruleType]} rule for ${agentsPicked.join(", ")}`,
       }, authKey);
       setRules((rs) => [...rs, created]);
       if (selected) setDraft(draftFrom(selected));
-      setNotice(`Added a copy for ${next.appliesTo.join(", ")}, in Record only. The rule for all agents is unchanged.`);
+      setNotice(`Added a copy for ${agentsPicked.join(", ")}, in Record only. The rule for all agents is unchanged.`);
       void fetchData();
     } catch (e) {
       handleError(e, "add the copy");
@@ -669,7 +671,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
             {dialog.rule.appliesTo === "all" && dialog.next.appliesTo !== "all" && (
               <span style={{ display: "block", marginTop: 10 }}>
                 Agents added later won&rsquo;t be covered by a narrowed rule.{" "}
-                <Button size={28} variant="ghost" onClick={() => void copyFor(dialog.next)}>Keep it for all, and add a copy for {dialog.next.appliesTo.join(", ") || "these agents"}</Button>
+                {dialog.next.appliesTo.length > 0 && (
+                  <Button size={28} variant="ghost" onClick={() => void copyFor(dialog.rule, dialog.next.appliesTo as string[])}>Keep it for all, and add a copy for {dialog.next.appliesTo.join(", ")}</Button>
+                )}
               </span>
             )}
           </>

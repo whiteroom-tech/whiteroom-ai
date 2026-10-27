@@ -802,6 +802,8 @@ describe('Controls page, weakening a rule', () => {
     await m.click(m.row('$190'));
     await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
     await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
+    // Another edit in the same draft (a higher limit) stays out of the copy.
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '500');
     await m.click(m.button('Save'));
     expect(m.text()).toContain('Covers only lead-agent, not every agent');
     expect(m.text()).toContain('Agents added later won’t be covered by a narrowed rule.');

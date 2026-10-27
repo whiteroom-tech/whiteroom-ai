@@ -267,6 +267,8 @@ describe('weakening a rule', async () => {
     expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'incoming', wholeWord: false } })).toEqual(['No longer looks in model replies']);
     expect(weakenings(kw, { ...kw, params: { keywords: ['a', 'b'], where: 'replies', wholeWord: false } })).toEqual(['No longer looks in incoming data']);
     expect(weakenings({ ...kw, params: { keywords: ['a'], where: 'incoming', wholeWord: false } }, { ...kw, params: { keywords: ['a'], where: 'both', wholeWord: false } })).toEqual([]);
+    // A switch from one place to the other names the place dropped.
+    expect(weakenings({ ...kw, params: { keywords: ['a'], where: 'replies', wholeWord: false } }, { ...kw, params: { keywords: ['a'], where: 'incoming', wholeWord: false } })).toEqual(['No longer looks in model replies']);
     // A new unit or period can't be compared: it's asked about.
     expect(weakenings(cap, { ...cap, params: { dailyCap: 190, scope: 'run', unit: 'dollars' } })).toEqual(['Limit: $190 a day → $190 a run']);
     expect(weakenings(cap, { ...cap, params: { dailyCap: 50000, scope: 'day', unit: 'tokens' } })).toEqual(['Limit: $190 a day → 50,000 tokens a day']);
