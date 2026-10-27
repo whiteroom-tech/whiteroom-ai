@@ -26,6 +26,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   // Credentials (P0 #1): a rebind revokes everyone else's access and a
   // Bedrock mapping lets an AWS account spend as the fleet, so only its owner.
   'rebind_fleet_key', 'rotate_proxy_keys', 'store_bedrock_role', 'delete_bedrock_role',
+  // An agent's budget is its owner's to set, not the agent's.
+  'agent_budget_set',
 ]);
 
 /**

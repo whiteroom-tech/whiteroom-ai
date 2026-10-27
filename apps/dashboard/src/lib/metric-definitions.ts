@@ -32,6 +32,7 @@ export const HELP = {
   spend: "What the fleet's model calls cost in this time range.",
   failedCalls: 'The share of model calls that came back with an error.',
   costTracking: 'How fast the fleet spends in the hours it works (last 14 days), and about how many more calls today’s budget covers. The budget resets at your midnight.',
+  agentBudgets: 'A daily budget for one agent: its spend since your midnight, and about how many more calls the rest covers at its own cost per call. A budget never stops the agent; a Spend cap in Controls does.',
   agentHealthCheck: "An automatic review of each agent's recent work: cost, errors and habits.",
   recommendations: 'Changes that would save money or prevent problems, based on how your agents have been working.',
   historyKept: 'How long WhiteRoom keeps the record of what your agents did. Older records are deleted automatically.',

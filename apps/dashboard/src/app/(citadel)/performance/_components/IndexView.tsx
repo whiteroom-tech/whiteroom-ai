@@ -17,6 +17,7 @@ import type { PerformanceIndexResult, RecommendationDetail, FleetHourlyResult } 
 import { tallyTotal, tallyShort, type GovernanceCounts } from '@/lib/governance';
 import { StatCard } from '@whiteroom/ui';
 import { CostTrackingSection } from './CostTracking';
+import { AgentBudgetsSection } from './AgentBudgets';
 import { RecommendationsCard } from './Recommendations';
 import { ALREADY_CHANGED_NOTICE, MARKED_FIXED_TOAST } from '@/lib/diagnosis/copy';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
@@ -222,6 +223,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
         {loadedAt && <p style={{ margin: '8px 0 20px', fontSize: 'var(--fs-xs)', color: 'var(--tx3)' }}>Updated {fmtTime(loadedAt)}</p>}
         {/* Each its own full row: Cost prediction (a card with its own bottom margin), then tokens with vs without, then spend by model. */}
         <CostTrackingSection fleetId={fleetId} authKey={authKey} />
+        <AgentBudgetsSection fleetId={fleetId} authKey={authKey} agentIds={agentIds} />
         {savingsDays && <div style={{ marginBottom: 24 }}><SavingsChart days={savingsDays} /></div>}
         {s.models.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))', gap: 16, marginBottom: 24 }}>

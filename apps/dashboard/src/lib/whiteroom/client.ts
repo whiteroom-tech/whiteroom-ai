@@ -45,6 +45,7 @@ import type {
   FleetHourlyResult,
   AgentScoresResult,
   PerformanceCostForecastResult,
+  AgentBudgetsResult,
   SetBudgetResult,
   SetTokenBudgetResult,
   RegisterResult,
@@ -592,6 +593,16 @@ export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: st
 
 export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {
   return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
+}
+
+/** Each agent with a daily budget, against its spend since the viewer's midnight. */
+export function agentBudgetsGet(fleetId: string, key?: string): Promise<AgentBudgetsResult> {
+  return apiCall<AgentBudgetsResult>({ action: 'agent_budgets_get', fleet_id: fleetId, tz: viewerTimeZone() }, key);
+}
+
+/** Sets an agent's daily budget; null clears it. The owner's call (dashboard-only on the engine). */
+export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd: number | null, key?: string): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd }, key));
 }
 
 // -- Fleet governance rules (Controls page) --
