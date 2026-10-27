@@ -876,4 +876,5 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
 @media (max-width: 600px) {
   .wr-runchart__hticks { grid-template-columns: repeat(4, 1fr); }
   .wr-runchart__hticks > :nth-child(even) { display: none; }
+  .wr-runchart__ticks > :nth-child(2), .wr-runchart__ticks > :nth-child(4) { visibility: hidden; }
 }
