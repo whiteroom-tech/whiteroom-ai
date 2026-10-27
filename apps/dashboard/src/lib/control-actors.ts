@@ -59,6 +59,17 @@ export function historyWho(entry: { ruleId: string; time: string; by: string }, 
   return closest(actions.filter((a) => a.ruleId === entry.ruleId), entry.time)?.by ?? 'from the dashboard';
 }
 
+/**
+ * The person behind an agent change (pause, stop, removal): a "user:<id>" by
+ * name, else the dashboard row for that agent and action closest in time.
+ * Null when nobody can be named.
+ */
+export function agentChangeWho(change: { agentId: string; action: string; time: string; by?: string }, actions: ControlActor[]): string | null {
+  const named = change.by ? userName(change.by, actions) : null;
+  if (named) return named;
+  return closest(actions.filter((a) => a.agentId === change.agentId && a.action === change.action), change.time)?.by ?? null;
+}
+
 /** The oldest time in a list, as ISO; undefined when empty. */
 export function oldestTime(entries: { time: string }[]): string | undefined {
   const t = Math.min(...entries.map((e) => Date.parse(e.time)).filter(Number.isFinite));

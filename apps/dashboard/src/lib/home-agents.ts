@@ -44,8 +44,9 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   if (sort === 'name') return [...base].sort((x, y) => x.agentId.localeCompare(y.agentId));
   if (sort === 'used') return [...base].sort((x, y) => (week(y)?.used ?? 0) - (week(x)?.used ?? 0));
   if (sort === 'saved') return [...base].sort((x, y) => (week(y)?.saved ?? 0) - (week(x)?.saved ?? 0));
-  // Needs attention: held and silent agents first (sortAgents), then, among
-  // agents in the same state, those with rule activity this week.
+  // Needs attention (mockup): held and silent agents first, then agents with
+  // rule activity this week whatever their state, then sortAgents' order
+  // (working before waiting, then by name).
   const caught = (a: T) => (week(a)?.rules && tallyTotal(week(a)!.rules!) > 0 ? 0 : 1);
   const rank = new Map(base.map((a, i) => [a, i]));
   const held = (a: T) => (['paused', 'stopped', 'stale', 'disconnected'].includes(agentState(a)) ? 0 : 1);

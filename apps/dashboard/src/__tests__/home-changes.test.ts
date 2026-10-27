@@ -22,6 +22,11 @@ describe('Latest changes', () => {
     expect(changeRow(e('agent_resumed', { by: 'user:u1' }), actors, NOW)!.text).toBe('keyword-test resumed by R Haque');
     expect(changeRow(e('agent_stopped', { by: 'user:u9' }), actors, NOW)!.text).toBe('keyword-test stopped by a teammate');
     expect(changeRow(e('agent_stopped', { by: 'dashboard' }), [], NOW)!.text).toBe('keyword-test stopped from the dashboard');
+    // An older "dashboard" record is matched to the dashboard's row for that agent and action.
+    const rows = [{ action: 'pause_agent', agentId: 'keyword-test', ruleId: null, userId: 'u2', by: 'Sam Lee', at: at('2026-10-25T09:00:30') }, { action: 'deregister_agent', agentId: 'keyword-test', ruleId: null, userId: 'u2', by: 'Sam Lee', at: at('2026-10-25T09:00:10') }];
+    expect(changeRow(e('agent_paused', { by: 'dashboard' }), rows, NOW)!.text).toBe('keyword-test paused by Sam Lee');
+    expect(changeRow(e('deregister'), rows, NOW)!.text).toBe('keyword-test was removed by Sam Lee');
+    expect(changeRow(e('agent_stopped', { by: 'dashboard' }), rows, NOW)!.text).toBe('keyword-test stopped from the dashboard');
     expect(changeRow(e('task_complete'), [], NOW)).toBeNull();
     expect(changeRow(e('rest_start'), [], NOW)).toBeNull();
   });
@@ -51,6 +56,7 @@ describe('quiet day', () => {
     expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 })).toBe('');
     expect(ruleOutcomes({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 }, true)).toBe('0 blocked · 0 would have blocked');
     expect(ruleOutcomes({ blocks: 1, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 3 }, true)).toBe('2 paused · 1 blocked · 3 alerts · 0 would have blocked');
+    expect(ruleOutcomes({ blocks: 1200, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0 })).toBe('1,200 blocked');
   });
 });
 

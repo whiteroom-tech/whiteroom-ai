@@ -5,11 +5,11 @@
 import type { AuditEntry, RunDaysResult } from '@/lib/whiteroom/types';
 import type { ControlActor } from '@/lib/control-actors';
 import type { GovernanceTally } from '@/lib/governance';
-import { historyWho } from '@/lib/control-actors';
+import { agentChangeWho, historyWho } from '@/lib/control-actors';
 import { RULE_LABELS } from '@/lib/governance';
 import { historyText } from '@/lib/rule-history';
 import { ROUTES } from '@/lib/routes';
-import { fmtWhen, plural } from '@/lib/format';
+import { fmtCount, fmtWhen, plural } from '@/lib/format';
 
 /** The audit event types that are rule or agent changes. Home reads each one by type, so busy fleets can't push them out. */
 export const CHANGE_TYPES = ['governance_rule_changed', 'register', 'deregister', 'agent_paused', 'agent_stopped', 'agent_resumed'] as const;
@@ -47,17 +47,29 @@ export function changeRow(e: AuditEntry, actions: ControlActor[] = [], now: numb
     return { ...base, text: `${text}${actorPhrase(e.by, at, ruleId, actions)}`, href: ruleId ? `${ROUTES.controls}?rule=${encodeURIComponent(ruleId)}` : ROUTES.controls };
   }
   if (!agent) return null;
-  const said: Record<string, string> = {
-    register: 'joined the fleet',
-    deregister: 'left the fleet',
-    agent_paused: 'paused',
-    agent_stopped: 'stopped',
-    agent_resumed: 'resumed',
+  const type = String(e.type);
+  // What the dashboard records for each change, to name the person behind an older "dashboard" record.
+  const ACTION: Record<string, string> = { agent_paused: 'pause_agent', agent_stopped: 'stop_agent', agent_resumed: 'resume_agent', deregister: 'deregister_agent' };
+  const by = typeof e.by === 'string' ? e.by : undefined;
+  const person = ACTION[type] ? agentChangeWho({ agentId: agent, action: ACTION[type], time: at, by }, actions) : null;
+  const done = (verb: string) => {
+    if (person) return ` ${verb} by ${person}`;
+    if (by?.startsWith('rule:')) return ` ${verb} by a rule`;
+    if (by === 'api') return ` ${verb} through the API`;
+    if (by) return ` ${verb} from the dashboard`;
+    return ` ${verb}`;
   };
-  const verb = said[String(e.type)];
-  if (!verb) return null;
-  const who = e.type === 'agent_paused' || e.type === 'agent_stopped' || e.type === 'agent_resumed' ? actorPhrase(e.by, at, '', actions) : '';
-  return { ...base, text: `${agent} ${verb}${who}`, href: agentHref(agent) };
+  const said: Record<string, string> = {
+    register: ' joined the fleet',
+    // A removal names who did it when the dashboard recorded it.
+    deregister: person ? ` was removed by ${person}` : ' left the fleet',
+    agent_paused: done('paused'),
+    agent_stopped: done('stopped'),
+    agent_resumed: done('resumed'),
+  };
+  const text = said[type];
+  if (!text) return null;
+  return { ...base, text: `${agent}${text}`, href: agentHref(agent) };
 }
 
 /** The newest `n` changes from any mix of events, newest first; duplicates (same id) once. */
@@ -95,10 +107,10 @@ export function dayLabel(day: string): string {
  */
 export function ruleOutcomes(t: GovernanceTally, always = false): string {
   const bits: string[] = [];
-  if (t.stopped) bits.push(`${t.stopped} stopped`);
-  if (t.paused) bits.push(`${t.paused} paused`);
-  if (t.blocks || always) bits.push(`${t.blocks} blocked`);
-  if (t.toldYou) bits.push(`${t.toldYou} ${plural(t.toldYou, 'alert')}`);
-  if (t.wouldBlocks || always) bits.push(`${t.wouldBlocks} would have blocked`);
+  if (t.stopped) bits.push(`${fmtCount(t.stopped)} stopped`);
+  if (t.paused) bits.push(`${fmtCount(t.paused)} paused`);
+  if (t.blocks || always) bits.push(`${fmtCount(t.blocks)} blocked`);
+  if (t.toldYou) bits.push(`${fmtCount(t.toldYou)} ${plural(t.toldYou, 'alert')}`);
+  if (t.wouldBlocks || always) bits.push(`${fmtCount(t.wouldBlocks)} would have blocked`);
   return bits.join(' · ');
 }
