@@ -236,6 +236,9 @@ function ProfileSection({
   );
 }
 
+/** "Dec 26" for a plan date (stored at UTC midnight, so read in UTC). */
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
 // -- Plan & billing --
 
 function PlanSection({
@@ -273,7 +276,7 @@ function PlanSection({
   // On the free period, Starter is still worth offering: subscribing is how
   // they keep it once the 90 days are up.
   const offers = purchasablePlans.filter((p) => p !== plan || entitlement.onTrial);
-  const trialEnd = new Date(entitlement.trialEndsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const trialEnd = shortDay(entitlement.trialEndsAt);
   // ceil so an active trial never reads "0 days left"; capped because a DST
   // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
   const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / DAY_MS)));
@@ -286,7 +289,7 @@ function PlanSection({
             <strong style={{ fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[plan].name}</strong>
             {entitlement.onTrial && <span className="wr-settings-pill" data-tone="ok">free · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left</span>}
             {subscription?.planOverride && <span className="wr-settings-pill" data-tone="ok">comped</span>}
-            {subscription?.cancelAtPeriodEnd && <span className="wr-settings-pill" data-tone="warn">ends {subscription.currentPeriodEnd?.slice(0, 10)}</span>}
+            {subscription?.cancelAtPeriodEnd && <span className="wr-settings-pill" data-tone="warn">ends {subscription.currentPeriodEnd ? shortDay(subscription.currentPeriodEnd) : ''}</span>}
             {subscription?.status === 'past_due' && <span className="wr-settings-pill" data-tone="bad">payment failed</span>}
           </div>
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '4px 0 0' }}>{PLANS[plan].blurb}</p>

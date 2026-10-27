@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Button } from '@whiteroom/ui';
+import { Button, ScoreRing } from '@whiteroom/ui';
 import { usePoll } from '@/hooks/usePoll';
-import { ScoreRing } from '@/components/agent/ScoreRing';
 import { agentWeekFrom, loadWeekReads, WEEK_POLL_MS, type AgentWeek } from '@/lib/home-agents';
 import { fmtTokens } from '@/lib/format';
 import { RULE_ACTIVITY } from '@/lib/vocab';
@@ -47,7 +46,7 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
   const rules = week?.rules;
   const dash = loaded ? '—' : '…';
   const parts = score ? scoreParts(score) : [];
-  const working = scoreWorking(parts);
+  const working = scoreWorking(parts, score?.score);
   const ruleWords = rules ? weekRuleWords(rules) : null;
   return (
     <section className="wr-panel wr-agent-week" aria-labelledby="agent-week">
@@ -66,7 +65,7 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
             : <strong style={figure}>{dash}</strong>}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {score?.score != null && <ScoreRing score={Math.round(score.score)} />}
+          {score?.score != null && <ScoreRing score={Math.round(score.score)} size={52} />}
           <span><span style={label}>Score</span><br />{score?.score != null ? <span style={{ ...cap, color: 'var(--tx)' }}>{Math.round(score.score)} out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
         </span>
       </div>

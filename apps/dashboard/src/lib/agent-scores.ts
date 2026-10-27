@@ -85,9 +85,12 @@ export function scoreParts(a: Pick<AgentScore, 'completeRate' | 'costDiligence' 
   ];
 }
 
-/** A 0-100 part on the score's 0-10 scale, to two places only when it needs them: 100 → "10", 57 → "5.7", 84.6 → "8.46". The table and the worked sum both use it. */
+/** A 0-10 figure to as many places as it needs, up to three: 10 → "10", 5.7 → "5.7", 7.496 → "7.496". */
+const places = (v: number) => String(+v.toFixed(3));
+
+/** A 0-100 part on the score's 0-10 scale: 100 → "10", 57 → "5.7", 84.6 → "8.46". The table and the worked sum both use it. */
 export function outOfTen(value: number): string {
-  return String(+(value / 10).toFixed(2));
+  return places(value / 10);
 }
 
 /** The closed row of "How is the score worked out?": "Clean calls 10 · Speed 5.7 · Cost not scored yet". */
@@ -99,14 +102,15 @@ export function scoreSummary(parts: Pick<ScorePart, 'label' | 'value'>[]): strin
  * The worked sum under the table: "(10 + 5.7) ÷ 2 = 7.85 → 8". The score is
  * the average of the parts that have data, rounded. Null with none scored.
  */
-export function scoreWorking(parts: Pick<ScorePart, 'value'>[]): { sum: string; score: number } | null {
+export function scoreWorking(parts: Pick<ScorePart, 'value'>[], engineScore?: number | null): { sum: string; score: number } | null {
   // From the unrounded parts, as the engine averages them, so the sum ends on
   // the score the ring shows; parts print to two places only when they need it.
   const scored = parts.filter((p): p is { value: number } => p.value != null).map((p) => p.value / 10);
   if (scored.length === 0) return null;
   const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
-  const two = (v: number) => outOfTen(v * 10);
-  const score = Math.round(mean);
-  if (scored.length === 1) return { sum: `${two(mean)} → ${score}`, score };
-  return { sum: `(${scored.map(two).join(' + ')}) ÷ ${scored.length} = ${two(mean)} → ${score}`, score };
+  // Parts and mean to up to three places, so the rounding shows (7.496 → 7,
+  // never "7.5 → 7"); it ends on the score the ring shows, the engine's when it sent one.
+  const score = Math.round(engineScore ?? mean);
+  if (scored.length === 1) return { sum: `${places(mean)} → ${score}`, score };
+  return { sum: `(${scored.map(places).join(' + ')}) ÷ ${scored.length} = ${places(mean)} → ${score}`, score };
 }
