@@ -260,17 +260,25 @@ function PlanSection({
   const [busy, setBusy] = useState<string | null>(null);
   const { plan, limits, usage, subscription } = entitlement;
   const agents = agentsIncluded(plan, usage.agents);
+  // The account's free period, by date: a subscriber can be inside it too
+  // (Stripe carries the rest over as a trial), where onTrial is false.
+  const freeNow = Date.parse(entitlement.trialEndsAt) > Date.now();
+  // Not on a comped plan or a contract: nothing is billed there.
+  const selfServe = PLANS[plan].pricing !== null && !subscription?.planOverride;
   // This month's savings in cents: null while loading or unreadable ("—"
-  // shown). Only fetched once the free period is over.
-  const [monthShare, setMonthShare] = useState<number | null>(null);
-  // Not on a comped plan: nothing is billed there.
-  const showsShare = !entitlement.onTrial && PLANS[plan].pricing !== null && !subscription?.planOverride;
+  // shown), 'none' when no subscription bills savings (the line is hidden).
+  const [monthShare, setMonthShare] = useState<number | null | 'none'>(null);
+  const showsShare = selfServe && !freeNow && monthShare !== 'none';
+  const wantsShare = selfServe && !freeNow;
   useEffect(() => {
-    if (!showsShare) return;
+    if (!wantsShare) return;
     let live = true;
-    getMonthSavings().then((r) => { if (live) setMonthShare(r?.savedCents ?? null); }, () => { if (live) setMonthShare(null); });
+    getMonthSavings().then(
+      (r) => { if (live) setMonthShare(r === null ? null : 'savedCents' in r ? r.savedCents : 'none'); },
+      () => { if (live) setMonthShare(null); },
+    );
     return () => { live = false; };
-  }, [showsShare]);
+  }, [wantsShare]);
 
   async function go(action: () => Promise<{ ok: boolean; url?: string; error?: string; support?: boolean }>, key: string) {
     setBusy(key);
@@ -325,9 +333,9 @@ function PlanSection({
       </div>
 
       {showsShare && (
-        <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>{monthShareLine(plan, monthShare ?? null)}</p>
+        <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>{monthShareLine(plan, monthShare)}</p>
       )}
-      {entitlement.onTrial && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
+      {selfServe && freeNow && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
 
       <div className="wr-settings-stats">
         <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} over={usage.fleets > limits.maxFleets ? `${usage.fleets - limits.maxFleets} over the ${PLANS[plan].name} limit` : undefined} />

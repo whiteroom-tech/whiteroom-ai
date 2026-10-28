@@ -80,10 +80,23 @@ function trialEndMs(trialEndsAt: string | null): number {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
+/**
+ * The first UTC day billed for a subscription: the first whole day after
+ * the later of its Stripe trial, its start, and the account's own free
+ * period (which Stripe can't carry as a trial in its last 48 hours).
+ */
+export function firstBillableDay(sub: { start_date: number; trial_end?: number | null }, trialEndsAt: string | null): string {
+  return firstWholeDay(Math.max(sub.trial_end ?? 0, sub.start_date, Math.ceil(trialEndMs(trialEndsAt) / 1000)));
+}
+
 // -- Reads --
 
-/** Every fleet this account owns, with the token to read it. Linked-but-not-owned fleets bill their owner. */
-async function ownedFleetKeys(userId: string): Promise<Array<{ fleetId: string; token: string }>> {
+/**
+ * Every fleet this account owns, with the token to read it. Linked-but-not-
+ * owned fleets bill their owner. Null when an owned fleet has no token that
+ * can be read: its savings would be missing from the total.
+ */
+async function ownedFleetKeys(userId: string): Promise<Array<{ fleetId: string; token: string }> | null> {
   const { rows } = await db().query(
     `SELECT 'users' AS "table", fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed FROM users WHERE id = $1 AND fleet_id IS NOT NULL
      UNION ALL
@@ -91,12 +104,16 @@ async function ownedFleetKeys(userId: string): Promise<Array<{ fleetId: string; 
     [userId],
   );
   const owners = await fleetOwners([...new Set(rows.map((r) => r.fleetId as string))]);
+  const owned = new Set<string>();
   const keys = new Map<string, string>();
   for (const r of rows) {
-    if (keys.has(r.fleetId) || owners.get(r.fleetId) !== userId) continue;
+    if (owners.get(r.fleetId) !== userId) continue;
+    owned.add(r.fleetId);
+    if (keys.has(r.fleetId)) continue;
     const token = readCred(`${r.table}.fleet_token` as CredColumn, userId, r.plain, r.sealed);
     if (token) keys.set(r.fleetId, token);
   }
+  if (keys.size < owned.size) return null;
   return [...keys].map(([fleetId, token]) => ({ fleetId, token }));
 }
 
@@ -104,12 +121,14 @@ async function ownedFleetKeys(userId: string): Promise<Array<{ fleetId: string; 
  * The account's billable savings per UTC day since `fromDay`, in micro-dollars,
  * summed across the fleets it owns: the engine's audit_summary savingsByDay
  * ("Saved by WhiteRoom", priced at the account's own model prices; unpriced
- * savings aren't in it). Null when any fleet can't be read, or the engine is
- * too old to split savings by day: a partial figure would under-bill a day
- * that can't be corrected afterwards.
+ * savings aren't in it). Null when any owned fleet can't be read (no usable
+ * token, or the engine refused), or the engine is too old to split savings
+ * by day: a partial figure would under-bill a day that can't be corrected
+ * afterwards. An account with no fleets saved nothing: an empty map.
  */
 export async function savingsByUtcDay(userId: string, fromDay: string): Promise<Map<string, number> | null> {
   const fleets = await ownedFleetKeys(userId);
+  if (!fleets) return null;
   const from = new Date(`${fromDay}T00:00:00Z`);
   try {
     const summaries = await Promise.all(fleets.map((f) => auditSummary(f.fleetId, from, f.token, undefined, 'UTC')));
@@ -200,6 +219,7 @@ export async function reportSavings(
   sub: { status: string; start_date: number; trial_end?: number | null },
   deps: Pick<BillingDeps, 'savingsByUtcDay'>,
   now: number,
+  deadline: number = Infinity,
 ): Promise<Pick<AccountResult, 'events' | 'savingsUnavailable'>> {
   const eventName = savingsMeterEvent();
   if (!eventName || sub.status === 'trialing') return { events: 0, savingsUnavailable: false };
@@ -209,14 +229,15 @@ export async function reportSavings(
   const { days, dropped } = daysToReport({
     now,
     reportedThrough: customer.metadata?.[REPORTED_THROUGH_KEY] ?? null,
-    // Never before the account's own free period ends, even when Stripe
-    // couldn't carry its last hours over as a trial.
-    firstDay: firstWholeDay(Math.max(sub.trial_end ?? 0, sub.start_date, Math.ceil(trialEndMs(account.trialEndsAt) / 1000))),
+    firstDay: firstBillableDay(sub, account.trialEndsAt),
   });
   if (dropped) {
+    // Handed to a person once: the mark moves past them, so the same range
+    // isn't logged again on the next run while savings stay unreadable.
     console.error(
       `[billing-sync] savings for user ${account.userId} (customer ${account.customerId}) from ${dropped.from} to ${dropped.to} are older than the catch-up window and were not reported to Stripe; bill them by hand`,
     );
+    await s.customers.update(account.customerId, { metadata: { [REPORTED_THROUGH_KEY]: dropped.to } });
   }
   if (days.length === 0) return { events: 0, savingsUnavailable: false };
 
@@ -225,6 +246,8 @@ export async function reportSavings(
 
   let events = 0;
   for (const day of days) {
+    // Out of time: the rest wait, unmarked, for the next run.
+    if (Date.now() > deadline) break;
     const cents = savingsCents(byDay.get(day));
     // The day is marked reported BEFORE its event is sent. The other order
     // can bill a day twice: an event sent, then a failed mark, and the
@@ -301,25 +324,36 @@ export async function syncAccountBilling(
   account: BillingAccount,
   deps: BillingDeps,
   now: number = Date.now(),
+  deadline: number = Infinity,
 ): Promise<AccountResult | null> {
   const sub = await s.subscriptions.retrieve(account.subscriptionId);
   const found = planItem(sub.items.data);
   if (!found || priceFor(found.item.price.id)?.kind === 'legacy') return null;
-  const reported = await reportSavings(s, account, sub, deps, now);
-  const fee = await syncFee(s, account, found.plan, sub.items.data, deps, now);
+  const reported = await reportSavings(s, account, sub, deps, now, deadline);
+  // Past the deadline the fee waits for the next run too: it's idempotent.
+  const fee = Date.now() > deadline ? null : await syncFee(s, account, found.plan, sub.items.data, deps, now);
   return { ...reported, fee };
 }
 
 /**
- * The account's billable savings this calendar month (UTC) so far, in cents,
- * counted as the sync bills them: only whole days after the free period, each
- * day rounded down. Days with no subscription after the free period ran out
- * have no agents running, so they add nothing. Null when it can't be read.
+ * The first day a subscription is billed for savings, or null when it bills
+ * none: not one of ours, or still on a retired price.
  */
-export async function monthToDateSavingsCents(userId: string, trialEndsAt: string | null, now: number = Date.now()): Promise<number | null> {
+export async function billedFrom(s: BillingStripe, subscriptionId: string, trialEndsAt: string | null): Promise<string | null> {
+  const sub = await s.subscriptions.retrieve(subscriptionId);
+  const found = planItem(sub.items.data);
+  if (!found || priceFor(found.item.price.id)?.kind === 'legacy') return null;
+  return firstBillableDay(sub, trialEndsAt);
+}
+
+/**
+ * The account's billable savings this calendar month (UTC) so far, in cents,
+ * counted as the sync bills them: only days from `firstDay` (see
+ * firstBillableDay), each day rounded down. Null when it can't be read.
+ */
+export async function monthToDateSavingsCents(userId: string, firstDay: string, now: number = Date.now()): Promise<number | null> {
   const monthStart = `${utcDay(now).slice(0, 7)}-01`;
-  const firstBillable = firstWholeDay(Math.ceil(trialEndMs(trialEndsAt) / 1000));
-  const from = firstBillable > monthStart ? firstBillable : monthStart;
+  const from = firstDay > monthStart ? firstDay : monthStart;
   if (from > utcDay(now)) return 0;
   const byDay = await savingsByUtcDay(userId, from);
   if (!byDay) return null;

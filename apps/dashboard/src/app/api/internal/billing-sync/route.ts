@@ -21,6 +21,14 @@ const TRIAL_BATCH = 500;
 const BILLING_BUDGET_MS = 60_000;
 
 /**
+ * How far past the budget an account already started may keep reporting
+ * days. Checked between Stripe calls (each day, then the fee), so one slow
+ * account stops part-way, its remaining days unmarked for the next run,
+ * instead of pushing the run past the scheduler's deadline.
+ */
+const ACCOUNT_GRACE_MS = 30_000;
+
+/**
  * Billing housekeeping that nothing else triggers. Called by Cloud Scheduler.
  *
  * 1. Expired trials. A trial ends because time passes, not because anything
@@ -152,7 +160,7 @@ async function syncSavingsBilling(): Promise<BillingPass> {
         customerId: row.stripe_customer_id,
         subscriptionId: row.stripe_subscription_id,
         trialEndsAt: row.trial_ends_at ?? null,
-      }, { savingsByUtcDay, feeSeats });
+      }, { savingsByUtcDay, feeSeats }, Date.now(), deadline + ACCOUNT_GRACE_MS);
       if (!result) continue;
       pass.events += result.events;
       if (result.savingsUnavailable) pass.skipped++;

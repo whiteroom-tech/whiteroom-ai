@@ -86,8 +86,11 @@ describe('billing sync: savings share and fee', () => {
     const body = await (await run(SECRET)).json();
 
     expect(body.billing).toEqual({ checked: 1, events: 2, feesAdded: 1, feesUpdated: 0, skipped: 0, deferred: 0 });
-    const [client, acct, deps] = mocks.syncAccount.mock.calls[0];
+    const [client, acct, deps, , deadline] = mocks.syncAccount.mock.calls[0];
     expect(client).toBe(fakeStripe);
+    // The run's budget plus a grace period, so one slow account stops between days.
+    expect(deadline).toBeGreaterThan(Date.now() + 80_000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 90_000);
     expect(acct).toEqual({ userId: 'u1', customerId: 'cus_u1', subscriptionId: 'sub_u1', trialEndsAt: '2026-09-01 00:00:00+00' });
     expect(Object.keys(deps).sort()).toEqual(['feeSeats', 'savingsByUtcDay']);
   });

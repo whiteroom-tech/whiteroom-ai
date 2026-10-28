@@ -12,7 +12,7 @@ vi.mock('@/lib/whiteroom/client', () => ({ auditSummary: mocks.auditSummary }));
 vi.mock('@/lib/cred-seal', () => ({ readCred: (_c: string, _u: string, plain: string | null) => plain }));
 
 const {
-  addUtcDays, daysToReport, feeSeats, firstWholeDay, meterIdentifier, monthToDateSavingsCents,
+  addUtcDays, billedFrom, daysToReport, feeSeats, firstBillableDay, firstWholeDay, meterIdentifier, monthToDateSavingsCents,
   REPORTED_THROUGH_KEY, reportSavings, savingsByUtcDay, syncAccountBilling, syncFee,
 } = await import('@/lib/savings-billing');
 
@@ -144,12 +144,31 @@ describe('reporting savings to the meter', () => {
     expect(ids).toEqual(['wr:u1:2026-10-26', 'wr:u1:2026-10-26']);
   });
 
-  it('logs owed days older than the catch-up window for a person to bill', async () => {
+  it('logs owed days older than the catch-up window once, for a person to bill', async () => {
     const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-18' });
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({}), NOW);
+    // Savings stay unreadable: the window's days wait, but the old range is handed over once.
+    const unreadable = { savingsByUtcDay: vi.fn(async () => null) };
+    await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), unreadable, NOW);
+    expect(error).toHaveBeenCalledTimes(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining('from 2026-10-19 to 2026-10-22 are older than the catch-up window'));
+    expect(s.customer.metadata[REPORTED_THROUGH_KEY]).toBe('2026-10-22');
+    await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), unreadable, NOW);
+    expect(error).toHaveBeenCalledTimes(1);
     error.mockRestore();
+  });
+
+  it('stops between days at the deadline, leaving the rest unmarked', async () => {
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-24' });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    s.billing.meterEvents.create.mockImplementation(async () => { clock.mockReturnValue(5_000); return {}; });
+    try {
+      const res = await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({ '2026-10-25': 30_000, '2026-10-26': 30_000 }), NOW, 2_000);
+      expect(res.events).toBe(1);
+      expect(s.customer.metadata[REPORTED_THROUGH_KEY]).toBe('2026-10-25');
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('is idempotent: a second run the same night sends nothing', async () => {
@@ -190,7 +209,7 @@ describe('reporting savings to the meter', () => {
   });
 
   it('reports nothing, and keeps the days for later, when savings cannot be read', async () => {
-    const s = fakeStripe();
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-22' });
     const res = await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), { savingsByUtcDay: vi.fn(async () => null) }, NOW);
     expect(res).toEqual({ events: 0, savingsUnavailable: true });
     expect(s.billing.meterEvents.create).not.toHaveBeenCalled();
@@ -277,6 +296,20 @@ describe('one account', () => {
   });
 });
 
+describe('the first billed day', () => {
+  it('is the later of the Stripe trial, the start and the account free period, as a whole day', async () => {
+    expect(firstBillableDay({ start_date: at('2026-10-01'), trial_end: at('2026-10-10', 15) }, '2026-10-05T00:00:00Z')).toBe('2026-10-11');
+    expect(firstBillableDay({ start_date: at('2026-10-20', 9) }, '2026-09-01T00:00:00Z')).toBe('2026-10-21');
+    expect(firstBillableDay({ start_date: at('2026-10-01') }, '2026-10-15T00:00:00Z')).toBe('2026-10-15');
+  });
+
+  it('is null for a subscription on a retired price or none of ours', async () => {
+    expect(await billedFrom(fakeStripe({ start_date: at('2026-10-20', 9) }), 'sub_1', null)).toBe('2026-10-21');
+    expect(await billedFrom(fakeStripe({ items: [{ id: 'si_old', price: { id: 'price_s_old' } }] }), 'sub_1', null)).toBeNull();
+    expect(await billedFrom(fakeStripe({ items: [{ id: 'si_x', price: { id: 'price_x' } }] }), 'sub_1', null)).toBeNull();
+  });
+});
+
 describe('reading an account\'s savings', () => {
   const fleetRows = [
     { table: 'users', fleetId: 'f-own', plain: 'tok-own', sealed: null },
@@ -298,6 +331,21 @@ describe('reading an account\'s savings', () => {
     expect(mocks.auditSummary).toHaveBeenCalledWith('f-own', new Date('2026-10-26T00:00:00Z'), 'tok-own', undefined, 'UTC');
   });
 
+  // Its savings would be missing from the total, and a billed day can't be corrected.
+  it('is null when an owned fleet has no token that can be read', async () => {
+    mocks.query.mockResolvedValue({ rows: [...fleetRows, { table: 'user_fleets', fleetId: 'f-own3', plain: null, sealed: null }] });
+    mocks.fleetOwners.mockResolvedValue(new Map([['f-own', 'u1'], ['f-linked', 'someone-else'], ['f-own2', 'u1'], ['f-own3', 'u1']]));
+    mocks.auditSummary.mockResolvedValue({ savingsByDay: [] });
+    expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
+    expect(mocks.auditSummary).not.toHaveBeenCalled();
+  });
+
+  it('is an empty map, not null, for an account with no fleets', async () => {
+    mocks.query.mockResolvedValue({ rows: [] });
+    mocks.fleetOwners.mockResolvedValue(new Map());
+    expect(await savingsByUtcDay('u1', '2026-10-26')).toEqual(new Map());
+  });
+
   it('is null when any fleet fails, or the engine cannot split savings by day', async () => {
     mocks.auditSummary.mockResolvedValueOnce({ savingsByDay: [] }).mockRejectedValueOnce(new Error('engine down'));
     expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
@@ -313,7 +361,7 @@ describe('reading an account\'s savings', () => {
       ],
     });
     // 2 owned fleets: Oct 1 = 2.01 dollars (201 cents), Oct 2 = 18 000 micros (1 cent).
-    expect(await monthToDateSavingsCents('u1', '2026-08-01T00:00:00Z', NOW)).toBe(202);
+    expect(await monthToDateSavingsCents('u1', '2026-08-01', NOW)).toBe(202);
     expect(mocks.auditSummary.mock.calls[0][1]).toEqual(new Date('2026-10-01T00:00:00Z'));
   });
 
@@ -325,10 +373,10 @@ describe('reading an account\'s savings', () => {
       ],
     });
     // Free until mid-morning Oct 10: billing starts Oct 11.
-    expect(await monthToDateSavingsCents('u1', '2026-10-10T09:00:00Z', NOW)).toBe(20);
+    expect(await monthToDateSavingsCents('u1', firstBillableDay({ start_date: at('2026-10-01') }, '2026-10-10T09:00:00Z'), NOW)).toBe(20);
     expect(mocks.auditSummary.mock.calls[0][1]).toEqual(new Date('2026-10-11T00:00:00Z'));
     mocks.auditSummary.mockClear();
-    expect(await monthToDateSavingsCents('u1', '2026-11-20T00:00:00Z', NOW)).toBe(0);
+    expect(await monthToDateSavingsCents('u1', '2026-11-20', NOW)).toBe(0);
     expect(mocks.auditSummary).not.toHaveBeenCalled();
   });
 });

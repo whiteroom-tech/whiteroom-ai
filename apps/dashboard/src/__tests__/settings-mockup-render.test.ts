@@ -67,6 +67,17 @@ describe('Settings plan: savings share and soft agent counts', () => {
     expect(t).not.toMatch(/\$200|per agent|90 days|5 agents included/);
   });
 
+  // Subscribed inside the free period: Stripe carries the rest as a trial.
+  it('says Free until for a subscriber still inside the free period', () => {
+    const t = text(renderToStaticMarkup(h(SettingsView, {
+      closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
+      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'trialing', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null }, trialEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+    })));
+    expect(t).toMatch(/Free until [A-Z][a-z]{2} \d+/);
+    expect(t).not.toContain('This month:');
+  });
+
   it('says when the free period ends instead of a share', () => {
     const t = view(1);
     expect(t).toMatch(/Free until [A-Z][a-z]{2} \d+/);
