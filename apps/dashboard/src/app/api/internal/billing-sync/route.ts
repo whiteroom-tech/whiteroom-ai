@@ -1,8 +1,7 @@
 import type { PoolClient } from 'pg';
 import { db } from '@/lib/db';
-import { countAgents } from '@/lib/entitlements';
-import { billableAgents, planItem } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
+import { feeSeats, savingsByUtcDay, syncAccountBilling, type BillingStripe } from '@/lib/savings-billing';
 import { syncSecretMatches } from '@/lib/sync-secret';
 import { cancelClosedSubscriptions, finishDeletedAccounts } from '@/lib/account-closing';
 
@@ -13,18 +12,13 @@ export const dynamic = 'force-dynamic';
 const TRIAL_BATCH = 500;
 
 /**
- * How long the Pro pass may run before leaving the rest for the next run.
+ * How long the savings pass may run before leaving the rest for the next run.
  * Well inside Cloud Scheduler's default 3-minute attempt deadline, so a slow
- * engine shortens a run instead of getting it killed partway.
+ * engine shortens a run instead of getting it killed partway. An account left
+ * over is first in line next run, and its missed days are caught up then
+ * (lib/savings-billing.ts CATCH_UP_DAYS).
  */
-const PRO_BUDGET_MS = 60_000;
-
-/**
- * How long one account's agent count may take. Shorter than fetchFleetUsage's
- * default so a slow engine costs a few seconds per account, not ten, and the
- * budget above still covers a useful number of them.
- */
-const AGENT_COUNT_TIMEOUT_MS = 5_000;
+const BILLING_BUDGET_MS = 60_000;
 
 /**
  * Billing housekeeping that nothing else triggers. Called by Cloud Scheduler.
@@ -34,11 +28,10 @@ const AGENT_COUNT_TIMEOUT_MS = 5_000;
  *    engine. This queues one entitlement sync per expired trial, and the
  *    outbox sweep delivers it.
  *
- * 2. Pro agent counts. Pro bills per agent across the account, and agents
- *    join fleets through the engine, which never calls the dashboard. This
- *    compares each Pro account's live agent count with the quantity Stripe
- *    bills and corrects Stripe when they differ. Stripe prorates the change
- *    onto the next invoice.
+ * 2. Savings share and platform fee. For each subscription that can bill,
+ *    each completed day's billable savings goes to the Stripe meter, and
+ *    from day 61 the monthly fee is added to the subscription and kept at
+ *    the right quantity (lib/savings-billing.ts).
  *
  * 3. Closed accounts. Once an account's fleet has closed, any Stripe
  *    subscription that can still bill is cancelled; a deleted account's
@@ -50,9 +43,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const trials = await queueExpiredTrials();
-  const pro = process.env.STRIPE_SECRET_KEY
-    ? await syncProQuantities()
-    : { checked: 0, updated: 0, skipped: 0, deferred: 0 };
+  const billing = process.env.STRIPE_SECRET_KEY
+    ? await syncSavingsBilling()
+    : { checked: 0, events: 0, feesAdded: 0, feesUpdated: 0, skipped: 0, deferred: 0 };
   // Closed fleets bill nothing: their Stripe subscriptions are cancelled
   // first, so no account is removed while one can still charge.
   // A subscription that fails to cancel is logged and retried next run.
@@ -79,14 +72,14 @@ export async function POST(req: Request): Promise<Response> {
     : closedSubscriptions.failed > 0 ? `Could not cancel ${closedSubscriptions.failed} closed account subscription(s).`
     : deletions === null ? 'Could not finish deleted accounts.'
     : null;
-  if (failed) return Response.json({ error: failed, pro, closedSubscriptions, deletions }, { status: 500 });
-  return Response.json({ trialsQueued: trials, pro, closedSubscriptions, deletions });
+  if (failed) return Response.json({ error: failed, billing, closedSubscriptions, deletions }, { status: 500 });
+  return Response.json({ trialsQueued: trials, billing, closedSubscriptions, deletions });
 }
 
 /** Number of trials queued, or null if the database refused. */
 async function queueExpiredTrials(): Promise<number | null> {
   // connect() is inside the try: a pool that can't reach the database is the
-  // same "database refused" as a failed query, and must not skip the Pro pass.
+  // same "database refused" as a failed query, and must not skip the billing pass.
   let client: PoolClient | null = null;
   try {
     client = await db().connect();
@@ -122,63 +115,52 @@ async function queueExpiredTrials(): Promise<number | null> {
   }
 }
 
-async function syncProQuantities(): Promise<{ checked: number; updated: number; skipped: number; deferred: number }> {
-  if (!process.env.STRIPE_PRICE_PRO) return { checked: 0, updated: 0, skipped: 0, deferred: 0 };
+interface BillingPass {
+  checked: number;
+  /** Meter events sent. */
+  events: number;
+  feesAdded: number;
+  feesUpdated: number;
+  /** Accounts left for the next run: savings unreadable, or an error. */
+  skipped: number;
+  deferred: number;
+}
 
+async function syncSavingsBilling(): Promise<BillingPass> {
   const { rows } = await db().query(
-    `SELECT user_id, stripe_subscription_id, billed_agents
-     FROM subscriptions
-     WHERE plan = 'pro'
-       AND status IN ('active', 'trialing', 'past_due')
-       AND stripe_subscription_id IS NOT NULL
+    `SELECT s.user_id, s.stripe_customer_id, s.stripe_subscription_id, u.trial_ends_at::text
+     FROM subscriptions s JOIN users u ON u.id = s.user_id
+     WHERE s.plan IN ('starter', 'pro')
+       AND s.status IN ('active', 'trialing', 'past_due')
+       AND s.stripe_subscription_id IS NOT NULL
+       AND s.stripe_customer_id LIKE 'cus\\_%'
      -- Least recently checked first (never-checked before everything), so
      -- when the time budget cuts a run short, the accounts it didn't reach
      -- are first in line next time. See migration 008.
-     ORDER BY billing_checked_at NULLS FIRST, user_id`,
+     ORDER BY s.billing_checked_at NULLS FIRST, s.user_id`,
   );
 
-  const deadline = Date.now() + PRO_BUDGET_MS;
-  let updated = 0;
-  let skipped = 0;
-  let checked = 0;
+  const client: BillingStripe = stripe();
+  const deadline = Date.now() + BILLING_BUDGET_MS;
+  const pass: BillingPass = { checked: 0, events: 0, feesAdded: 0, feesUpdated: 0, skipped: 0, deferred: 0 };
   for (const row of rows) {
     if (Date.now() > deadline) break;
-    checked++;
+    pass.checked++;
     try {
-      const agents = await countAgents(row.user_id, { timeoutMs: AGENT_COUNT_TIMEOUT_MS });
-      // Engine unreachable: leave the bill alone rather than guess.
-      if (agents === null) {
-        skipped++;
-        continue;
-      }
-      const want = billableAgents(agents);
-      if (want === row.billed_agents) continue;
-
-      // billed_agents is only a cache of Stripe's quantity. Check the real
-      // item before writing, so a stale cache can't cause a pointless update.
-      const sub = await stripe().subscriptions.retrieve(row.stripe_subscription_id);
-      const found = planItem(sub.items.data);
-      if (found?.plan !== 'pro') {
-        skipped++;
-        continue;
-      }
-      const { item } = found;
-      if (item.quantity !== want) {
-        await stripe().subscriptionItems.update(item.id, {
-          quantity: want,
-          proration_behavior: 'create_prorations',
-        });
-        updated++;
-      }
-      // The webhook for the update writes this too. Writing it here as well
-      // stops the next run from checking Stripe again if that webhook is late.
-      await db().query(
-        `UPDATE subscriptions SET billed_agents = $2, updated_at = now() WHERE user_id = $1`,
-        [row.user_id, want],
-      );
+      const result = await syncAccountBilling(client, {
+        userId: row.user_id,
+        customerId: row.stripe_customer_id,
+        subscriptionId: row.stripe_subscription_id,
+        trialEndsAt: row.trial_ends_at ?? null,
+      }, { savingsByUtcDay, feeSeats });
+      if (!result) continue;
+      pass.events += result.events;
+      if (result.savingsUnavailable) pass.skipped++;
+      if (result.fee === 'added') pass.feesAdded++;
+      if (result.fee === 'updated') pass.feesUpdated++;
     } catch (err) {
-      skipped++;
-      console.error(`[billing-sync] quantity sync failed for user ${row.user_id}:`, err instanceof Error ? err.message : err);
+      pass.skipped++;
+      console.error(`[billing-sync] billing sync failed for user ${row.user_id}:`, err instanceof Error ? err.message : err);
     } finally {
       // Every outcome counts as checked, including a skip or an error, or the
       // account that keeps failing would stay first and eat every run's
@@ -189,5 +171,6 @@ async function syncProQuantities(): Promise<{ checked: number; updated: number; 
     }
   }
 
-  return { checked, updated, skipped, deferred: rows.length - checked };
+  pass.deferred = rows.length - pass.checked;
+  return pass;
 }

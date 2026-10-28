@@ -21,7 +21,7 @@ export default function Page() {
       }}
       entitlement={{
         plan: 'starter', planName: 'Starter', limits: limitsFor('starter'), subscription: null,
-        trialEndsAt: new Date(Date.now() + 60 * 86_400_000).toISOString(), onTrial: true,
+        trialEndsAt: new Date(Date.now() + 20 * 86_400_000).toISOString(), onTrial: true,
         usage: { fleets: 1, agents: 7 },
       }}
       // Both plans, as on a live account with Stripe set up.

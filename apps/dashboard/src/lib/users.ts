@@ -5,6 +5,7 @@ import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { newTrialEndsAt } from '@/lib/plans';
 
 export interface UserProvisioning {
   apiKey: string | null;
@@ -68,8 +69,8 @@ export async function upsertUserProvisioning(input: {
     const fleetTokenEnc = input.fleetToken ? sealCred('users.fleet_token', userId, input.fleetToken) : null;
 
     await client.query(
-      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      `INSERT INTO users (id, email, name, api_key, fleet_id, fleet_token, api_key_enc, fleet_token_enc, trial_ends_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
        ON CONFLICT (id) DO UPDATE SET
          email = EXCLUDED.email,
          name = EXCLUDED.name,
@@ -83,6 +84,9 @@ export async function upsertUserProvisioning(input: {
         userId, session?.user?.email ?? null, session?.user?.name ?? null,
         plainUnlessSealed(apiKeyEnc, input.apiKey), input.fleetId, plainUnlessSealed(fleetTokenEnc, input.fleetToken),
         apiKeyEnc, fleetTokenEnc,
+        // Only on a new row (the update leaves it alone): the column's
+        // database default is the old 90 days.
+        newTrialEndsAt(),
       ],
     );
     await enqueueEntitlementSync(client, userId, 'provisioning_upsert');

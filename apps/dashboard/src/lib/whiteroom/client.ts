@@ -745,9 +745,10 @@ export function exportAuditFullPage(
 /**
  * Audit totals since `from`. With `hoursBack`, the engine uses the same hour
  * window as performance_index instead (older engines ignore it and use `from`).
+ * `tz` sets the days savingsByDay is split into (default: the viewer's zone).
  */
-export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number): Promise<AuditSummaryResult> {
-  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone(), ...(hoursBack ? { hours_back: hoursBack } : {}) }, key);
+export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number, tz: string = viewerTimeZone()): Promise<AuditSummaryResult> {
+  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz, ...(hoursBack ? { hours_back: hoursBack } : {}) }, key);
 }
 
 /** Would-act counts per agent for one rule version (engine rule_would_act). */

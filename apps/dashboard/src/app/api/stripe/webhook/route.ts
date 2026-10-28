@@ -145,9 +145,9 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
   const found = planItem(sub.items.data);
   const plan = found?.plan ?? 'none';
-  // Only Pro is billed per agent; a Starter quantity is always 1 and means
-  // nothing to the billing sync.
-  const billedAgents = found?.plan === 'pro' ? (found.item.quantity ?? null) : null;
+  // No plan bills per agent any more (savings share plus a flat fee), so the
+  // old per-agent quantity cache is cleared rather than kept stale.
+  const billedAgents = null;
 
   await db().query(
     `INSERT INTO subscriptions (

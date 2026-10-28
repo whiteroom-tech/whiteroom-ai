@@ -253,8 +253,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   delete process.env.WR_ENTITLEMENT_SYNC_SECRET;
-  delete process.env.STRIPE_PRICE_STARTER;
-  delete process.env.STRIPE_PRICE_PRO;
+  delete process.env.STRIPE_PRICE_STARTER_SHARE;
+  delete process.env.STRIPE_PRICE_PRO_SHARE;
 });
 
 function pushed() {
@@ -578,7 +578,7 @@ describe('the engine reports a fleet closed that the dashboard thinks open', () 
     expect(ms(world.user.closes_at)).toBeLessThanOrEqual(Date.now());
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('the engine reports the fleet closed'));
 
-    process.env.STRIPE_PRICE_STARTER = 'price_starter';
+    process.env.STRIPE_PRICE_STARTER_SHARE = 'price_starter';
     expect(await startCheckout('starter')).toMatchObject({ ok: false, support: true, error: expect.stringContaining('info@whiteroom.tech') });
     expect(stripeApi.createSession).not.toHaveBeenCalled();
   });
@@ -603,7 +603,7 @@ describe('the engine reports a fleet closed that the dashboard thinks open', () 
 
 describe('checkout on a closing account', () => {
   beforeEach(() => {
-    process.env.STRIPE_PRICE_STARTER = 'price_starter';
+    process.env.STRIPE_PRICE_STARTER_SHARE = 'price_starter';
     stripeApi.createCustomer.mockResolvedValue({ id: 'cus_1' });
     stripeApi.createSession.mockResolvedValue({ url: 'https://checkout.example.test/s' });
   });

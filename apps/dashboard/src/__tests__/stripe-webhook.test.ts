@@ -56,9 +56,9 @@ function subscription(items: Array<{ price: string; quantity: number }>) {
   };
 }
 
-/** The plan and billed_agents the upsert wrote: parameters 4 and 8. */
+/** The plan and billed_agents the latest upsert wrote: parameters 4 and 8. */
 function written() {
-  const upsert = mocks.query.mock.calls.find((c) => String(c[0]).includes('INSERT INTO subscriptions'));
+  const upsert = mocks.query.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO subscriptions')).at(-1);
   const params = upsert?.[1] as unknown[];
   return { plan: params[3], billedAgents: params[7] };
 }
@@ -68,6 +68,10 @@ beforeEach(() => {
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
   process.env.STRIPE_PRICE_STARTER = 'price_starter';
   process.env.STRIPE_PRICE_PRO = 'price_pro';
+  process.env.STRIPE_PRICE_STARTER_SHARE = 'price_starter_share';
+  process.env.STRIPE_PRICE_PRO_SHARE = 'price_pro_share';
+  process.env.STRIPE_PRICE_STARTER_FEE = 'price_starter_fee';
+  process.env.STRIPE_PRICE_PRO_FEE = 'price_pro_fee';
   // rowCount 1 means the idempotency claim succeeds; everything else is a write.
   mocks.query.mockResolvedValue({ rowCount: 1, rows: [] });
   mocks.sync.mockResolvedValue(true);
@@ -78,24 +82,32 @@ beforeEach(() => {
 });
 
 describe('stripe webhook: subscription upsert', () => {
-  it('records the Pro agent quantity', async () => {
-    expect((await deliver(subscription([{ price: 'price_pro', quantity: 9 }]))).status).toBe(200);
-    expect(written()).toEqual({ plan: 'pro', billedAgents: 9 });
+  it('maps a savings-share subscription to its plan, with no agent quantity', async () => {
+    expect((await deliver(subscription([{ price: 'price_pro_share', quantity: 1 }]))).status).toBe(200);
+    expect(written()).toEqual({ plan: 'pro', billedAgents: null });
   });
 
-  it('records no agent quantity for Starter', async () => {
+  it('still maps a subscription on a retired price', async () => {
+    await deliver(subscription([{ price: 'price_pro', quantity: 9 }]));
+    expect(written()).toEqual({ plan: 'pro', billedAgents: null });
     await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
     expect(written()).toEqual({ plan: 'starter', billedAgents: null });
   });
 
-  // An add-on or a portal plan switch can put another item first; reading
-  // position 0 would have called this subscription 'none'.
-  it('finds the plan item by price, not by position', async () => {
+  // The fee item, an add-on or a portal plan switch can put another item
+  // first; reading position 0 would have got the plan wrong.
+  it('finds the plan by its share item, whichever item is first', async () => {
     await deliver(subscription([
       { price: 'price_addon', quantity: 3 },
-      { price: 'price_pro', quantity: 12 },
+      { price: 'price_starter_fee', quantity: 4 },
+      { price: 'price_pro_share', quantity: 1 },
     ]));
-    expect(written()).toEqual({ plan: 'pro', billedAgents: 12 });
+    expect(written()).toEqual({ plan: 'pro', billedAgents: null });
+  });
+
+  it('maps a subscription with only the fee item to that fee\'s plan', async () => {
+    await deliver(subscription([{ price: 'price_starter_fee', quantity: 2 }]));
+    expect(written()).toEqual({ plan: 'starter', billedAgents: null });
   });
 
   it('grants nothing for a subscription on a price that is not ours', async () => {
