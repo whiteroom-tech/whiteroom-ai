@@ -462,8 +462,18 @@ export async function resumeAgent(fleetId: string, agentId: string, key?: string
 
 // -- Performance --
 
-export function performanceIndex(fleetId: string, hoursBack?: number, key?: string): Promise<PerformanceIndexResult> {
-  return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, hours_back: hoursBack ?? 24 }, key);
+/** A window of the viewer's days as instants; `to` null ends now. */
+export interface ReadWindow { from: Date; to: Date | null }
+
+/** `window` instead of hours_back: from (and to, when it ends before now). Older engines take only a from in the last 14 days. */
+export function performanceIndex(fleetId: string, hoursBack?: number, key?: string, window?: ReadWindow): Promise<PerformanceIndexResult> {
+  return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, ...windowBody(window, hoursBack ?? 24) }, key);
+}
+
+/** from/to for a window, else hours_back. */
+function windowBody(window: ReadWindow | undefined, hoursBack: number | undefined): Record<string, unknown> {
+  if (!window) return { hours_back: hoursBack };
+  return { from: window.from.toISOString(), ...(window.to ? { to: window.to.toISOString() } : {}) };
 }
 
 export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
@@ -491,15 +501,21 @@ export function performanceFeedback(
   }, key);
 }
 
+/**
+ * With `window`, its hours; `hoursBack` then goes too, for engines that only
+ * read hours_back (they ignore from/to).
+ */
 export function performanceFleetHourly(
   fleetId: string,
   hoursBack?: number,
   key?: string,
+  window?: ReadWindow,
 ): Promise<FleetHourlyResult> {
   return apiCall<FleetHourlyResult>({
     action: 'performance_fleet_hourly',
     fleet_id: fleetId,
-    hours_back: hoursBack,
+    ...windowBody(window, hoursBack),
+    ...(window && hoursBack ? { hours_back: hoursBack } : {}),
   }, key);
 }
 
@@ -743,12 +759,16 @@ export function exportAuditFullPage(
 
 /** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
 /**
- * Audit totals since `from`. With `hoursBack`, the engine uses the same hour
- * window as performance_index instead (older engines ignore it and use `from`).
+ * Audit totals since `from`, up to `to` when given (older engines ignore it
+ * and read to now). With `hoursBack`, the engine uses the same hour window as
+ * performance_index instead (older engines ignore it and use `from`).
  * `tz` sets the days savingsByDay is split into (default: the viewer's zone).
  */
-export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number, tz: string = viewerTimeZone()): Promise<AuditSummaryResult> {
-  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz, ...(hoursBack ? { hours_back: hoursBack } : {}) }, key);
+export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number, tz: string = viewerTimeZone(), to?: Date | null): Promise<AuditSummaryResult> {
+  return apiCall<AuditSummaryResult>({
+    action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz,
+    ...(hoursBack ? { hours_back: hoursBack } : {}), ...(to && !hoursBack ? { to: to.toISOString() } : {}),
+  }, key);
 }
 
 /** Would-act counts per agent for one rule version (engine rule_would_act). */

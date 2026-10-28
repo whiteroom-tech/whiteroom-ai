@@ -19,9 +19,19 @@ export function lookbackText(hours: number | null | undefined): string | null {
   return d === 1 ? 'last day' : `last ${d} days`;
 }
 
-/** "last 7 days" → "prior 7 days", for the trend lines. */
-export function priorLabel(rangeLabel: string): string {
-  return rangeLabel.replace(/^last /, 'prior ');
+/**
+ * The prior period's name, for the trend lines: "last 7 days" → "prior 7 days".
+ * Other ranges ("today", "Oct 1 – Oct 20") are named by the window's length
+ * (`period`, the engine's): "prior 15 h", "prior 20 days".
+ */
+export function priorLabel(rangeLabel: string, period?: { start: string; end: string }): string {
+  if (rangeLabel.startsWith('last ') || !period) return rangeLabel.replace(/^last /, 'prior ');
+  const ms = Date.parse(period.end) - Date.parse(period.start);
+  if (!(ms > 0)) return 'prior period';
+  const days = Math.round(ms / 86_400_000);
+  // Whole days, give or take a DST hour.
+  if (days >= 1 && Math.abs(ms - days * 86_400_000) <= 3_600_000) return `prior ${days} ${plural(days, 'day')}`;
+  return `prior ${Math.max(1, Math.round(ms / 3_600_000))} h`;
 }
 
 /** Whole-percent change from `before` to `now`; null when there's nothing to compare with. */

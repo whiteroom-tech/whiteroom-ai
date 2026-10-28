@@ -163,8 +163,7 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
   };
 
   const hourly = hourlyData?.hourly ?? [];
-  // The selected range (the second half of the hourly rows), and what the
-  // Spend card says about completeness.
+  // The selected range's hours, and what the Spend card says about completeness.
   const { shown: displayHourly, gapLine, partial: spendPartial } = spendSummary(hourly, s.unpricedAttempts);
 
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
@@ -182,7 +181,7 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
   const ruleTally = { ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked };
   const ruleTotal = tallyTotal(ruleTally);
-  const prior = priorLabel(rangeLabel);
+  const prior = priorLabel(rangeLabel, data.period);
   const prev = data.previous;
   const callsTrend = trendText(pctChange(s.totalCalls, prev?.totalCalls), prior);
   const speed = latencyTrend(s.avgLatencyMs, prev?.avgLatencyMs, prior);

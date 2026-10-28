@@ -78,17 +78,33 @@ export function daysBetween(a: string, b: string): number {
  * before `oldest` (what the plan keeps), and at most MAX_SPAN_DAYS long. When
  * it's too long, the end the person just moved (`moved`) wins.
  */
-export function clampSpan(from: string, to: string, opts: { today: string; oldest?: string | null; moved?: 'from' | 'to' }): { from: string; to: string } {
+export function clampSpan(from: string, to: string, opts: { today: string; oldest?: string | null; moved?: 'from' | 'to'; maxDays?: number }): { from: string; to: string } {
+  const max = opts.maxDays ?? MAX_SPAN_DAYS;
   let f = from <= to ? from : to;
   let t = from <= to ? to : from;
   if (t > opts.today) t = opts.today;
   if (opts.oldest && f < opts.oldest) f = opts.oldest;
   if (f > t) f = t;
-  if (daysBetween(f, t) + 1 > MAX_SPAN_DAYS) {
-    if (opts.moved === 'from') t = addDays(f, MAX_SPAN_DAYS - 1);
-    else f = addDays(t, 1 - MAX_SPAN_DAYS);
+  if (daysBetween(f, t) + 1 > max) {
+    if (opts.moved === 'from') t = addDays(f, max - 1);
+    else f = addDays(t, 1 - max);
   }
   return { from: f, to: t };
+}
+
+/** Midnight starting the viewer's local `day`, as an instant. */
+export function dayStart(day: string): Date {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/**
+ * A view's days as instants: from local midnight of the first day; to local
+ * midnight after the last day, or null ("now") when the last day is today.
+ */
+export function viewInstants(view: RunsView, now: number = Date.now()): { from: Date; to: Date | null } {
+  const { fromDay, toDay } = runsWindow(view, now);
+  return { from: dayStart(fromDay), to: toDay >= localDay(now) ? null : dayStart(addDays(toDay, 1)) };
 }
 
 /** The first day the plan still keeps, or null when the plan isn't known. */

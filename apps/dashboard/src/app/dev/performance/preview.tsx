@@ -10,7 +10,10 @@ import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost } from '@/lib/format';
 import type { GovernanceCounts } from '@/lib/governance';
 import type { DaySavings } from '@/lib/analytics-metrics';
-import { latencyTrend, pctChange, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
+import { clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsView } from '@/lib/runs';
+import { PERF_MAX_DAYS, perfOldest } from '@/lib/performance-range';
 import { fmtLatency, SpendByModel } from '@/app/(citadel)/performance/_components/perf-utils';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
@@ -137,19 +140,35 @@ export function PerformancePreview() {
   const [sample, setSample] = useState<Sample>('quiet');
   const empty = sample === 'empty';
   const failed = sample === 'problem' ? 6 : 0;
+  // The range menu, as on the page: it changes the labels; the sample figures stay.
+  const [range, setRange] = useState<RunsView>({ range: '7d', day: null });
+  const span = runsWindow(range);
+  const label = spanLabel(range);
+  const w = viewInstants(range);
+  const prior = priorLabel(label, { start: w.from.toISOString(), end: (w.to ?? new Date()).toISOString() });
+  const moveEnd = (end: 'from' | 'to', day: string) => {
+    const c = clampSpan(end === 'from' ? day : span.fromDay, end === 'to' ? day : span.toDay, { today: localDay(), oldest: perfOldest(30), moved: end, maxDays: PERF_MAX_DAYS });
+    setRange({ range: 'custom', day: null, from: c.from, to: c.to });
+  };
   return (
     <AppShell>
       <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<LiveStatus at={Date.now()} />}>
         <SegmentedControl<Sample> label="Sample week" value={sample} onChange={setSample} options={[{ value: 'quiet', label: 'Quiet week' }, { value: 'problem', label: 'Has a problem', dot: 'warn' }, { value: 'empty', label: 'No data' }]} />
+        <RangeMenu value={range.range} onChange={(r) => { const d = runsDays('30d'); setRange(r === 'custom' ? { range: r, day: null, from: d.fromDay, to: d.toDay } : { range: r, day: null }); }} />
       </PageHeader>
+      {range.range === 'custom' && (
+        <div className="wr-runs-filters" style={{ padding: '16px 24px 0' }}>
+          <RangeDates idPrefix="perf" fromDay={span.fromDay} toDay={span.toDay} oldest={perfOldest(30)} today={localDay()} maxDays={PERF_MAX_DAYS} onFrom={(d) => moveEnd('from', d)} onTo={(d) => moveEnd('to', d)} />
+        </div>
+      )}
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
         {/* The same order as the page: lead line, Cost, Control, Performance, closing line. */}
         <p className="wr-perf-lead">
-          Last 7 days: <strong>{empty ? '$0.00' : fmtCost(CARDS.spendMicros)}</strong> spent · {rulesCaughtText(empty ? 0 : 120, 0)} · <strong>{failed}</strong> failed calls
+          {label.charAt(0).toUpperCase() + label.slice(1)}: <strong>{empty ? '$0.00' : fmtCost(CARDS.spendMicros)}</strong> spent · {rulesCaughtText(empty ? 0 : 120, 0)} · <strong>{failed}</strong> failed calls
           {!empty && <> · <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{sample === 'problem' ? 2 : 1} {sample === 'problem' ? 'recommendations' : 'recommendation'} ↓</button></>}
         </p>
         <section aria-labelledby="pv-cost">
-          <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta="last 7 days" />
+          <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={label} />
           {!empty && (
             <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
               <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={<>{CARDS.calls} model calls<span style={{ display: 'block', marginTop: 8, color: 'var(--tx3)' }}>Includes calls from agents without a name since Oct 19.</span></>} />
@@ -159,22 +178,22 @@ export function PerformancePreview() {
           )}
           <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : WEEK} usdByDay={USD_BY_DAY} defaultOpen={sample === 'problem'} />
           {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} defaultOpen />}
-          {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend="spend per call ↓21% vs prior 7 days" stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
+          {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend={`spend per call ↓21% vs ${prior}`} stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
         </section>
         {!empty && (
           <>
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-control">
-              <SectionHeader id="pv-control" title="Control" sub="What your rules caught." meta={<>last 7 days · <a href="#" className="wr-link">Manage rules in Controls →</a></>} />
+              <SectionHeader id="pv-control" title="Control" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage rules in Controls →</a></>} />
               <ControlSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unavailable={false} />
             </section>
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-performance">
-              <SectionHeader id="pv-performance" title="Performance" sub="How well your agents worked, and what to look at." meta="last 7 days" />
+              <SectionHeader id="pv-performance" title="Performance" sub="How well your agents worked, and what to look at." meta={label} />
               <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
                 <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={String(failed)} sub={`of ${CARDS.calls} calls · ${failed ? ((failed / CARDS.calls) * 100).toFixed(1) : 0}%`} />
-                <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub={(() => { const t = latencyTrend(CARDS.latencyMs, CARDS.prevLatencyMs, 'prior 7 days')!; return <span style={{ color: 'var(--ok)' }}>{t.text}</span>; })()} />
-                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={trendText(pctChange(CARDS.calls, CARDS.prevCalls), 'prior 7 days')} />
+                <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub={(() => { const t = latencyTrend(CARDS.latencyMs, CARDS.prevLatencyMs, prior)!; return <span style={{ color: 'var(--ok)' }}>{t.text}</span>; })()} />
+                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={trendText(pctChange(CARDS.calls, CARDS.prevCalls), prior)} />
               </div>
               {sample === 'quiet'
                 ? <div className="wr-perf-row"><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>

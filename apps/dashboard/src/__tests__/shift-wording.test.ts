@@ -8,7 +8,7 @@ const FILES = [
   '../lib/diagnosis/copy.ts',
   '../lib/diagnosis/model.ts',
   '../app/(citadel)/performance/_components/Diagnosis.tsx',
-  '../app/(citadel)/performance/page.tsx',
+  '../app/(citadel)/performance/_components/PerformancePage.tsx',
   '../components/agent/AgentDetail.tsx',
   '../lib/home.ts',
   '../components/sandbox/TestRunFlow.tsx',
