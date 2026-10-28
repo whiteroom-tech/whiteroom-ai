@@ -20,11 +20,12 @@ const { SettingsView } = await import('@/app/settings/settings-view');
 const { limitsFor } = await import('@/lib/plans');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-type ViewOpts = { plan?: 'starter' | 'pro' | 'expired'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'> };
-const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'] }: ViewOpts = {}) => text(renderToStaticMarkup(h(SettingsView, {
+type ViewOpts = { plan?: 'starter' | 'pro' | 'expired'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean };
+const comp = { plan: 'none', status: 'active', planOverride: 'pro', stripeCustomerId: 'pending_u', stripeSubscriptionId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null };
+const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false }: ViewOpts = {}) => text(renderToStaticMarkup(h(SettingsView, {
   closing: null, billingResult: null, purchasablePlans: purchasable,
   account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: null, trialEndsAt: new Date(Date.now() + (onTrial ? 30 : -30) * 86_400_000).toISOString(), onTrial, usage: { fleets: 1, agents } },
+  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? 30 : -30) * 86_400_000).toISOString(), onTrial, usage: { fleets: 1, agents } },
   samples: { audit: { fleetId: 'f', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } } },
 })));
 
@@ -76,6 +77,10 @@ describe('Settings plan: savings share and soft agent counts', () => {
     const t = view(1, { plan: 'pro', onTrial: false });
     expect(t).toContain('This month: — saved · your share —');
     expect(t).not.toContain('Free until');
+  });
+
+  it('shows no share on a comped plan: nothing is billed there', () => {
+    expect(view(1, { plan: 'pro', onTrial: false, comped: true })).not.toContain('This month:');
   });
 
   it('offers no Subscribe button until the share prices are set', () => {

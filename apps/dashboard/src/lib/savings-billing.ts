@@ -219,18 +219,31 @@ export async function reportSavings(
   let events = 0;
   for (const day of days) {
     const cents = savingsCents(byDay.get(day));
-    if (cents > 0) {
-      await s.billing.meterEvents.create({
-        event_name: eventName,
-        identifier: meterIdentifier(account.userId, day),
-        // The day's last second, so it lands in that day's billing period.
-        timestamp: Date.parse(`${day}T00:00:00Z`) / 1000 + DAY_S - 1,
-        payload: { stripe_customer_id: account.customerId, value: String(cents) },
-      });
-      events++;
-    }
-    // After each day, so a failure part-way never resends a day already sent.
+    // The day is marked reported BEFORE its event is sent. The other order
+    // can bill a day twice: an event sent, then a failed mark, and the
+    // resend a night later falls outside Stripe's identifier dedupe window.
+    // This order can at worst miss a day, which is logged below for a person
+    // to bill by hand. A failed mark sends nothing and the day is retried.
     await s.customers.update(account.customerId, { metadata: { [REPORTED_THROUGH_KEY]: day } });
+    if (cents === 0) continue;
+    const event = {
+      event_name: eventName,
+      identifier: meterIdentifier(account.userId, day),
+      // The day's last second, so it lands in that day's billing period.
+      timestamp: Date.parse(`${day}T00:00:00Z`) / 1000 + DAY_S - 1,
+      payload: { stripe_customer_id: account.customerId, value: String(cents) },
+    };
+    try {
+      // One immediate retry: seconds apart, the identifier makes it safe.
+      await s.billing.meterEvents.create(event).catch(() => s.billing.meterEvents.create(event));
+    } catch (err) {
+      console.error(
+        `[billing-sync] savings for user ${account.userId} on ${day} (${cents} cents, customer ${account.customerId}) were not reported to Stripe; bill them by hand:`,
+        err instanceof Error ? err.message : err,
+      );
+      throw err;
+    }
+    events++;
   }
   return { events, savingsUnavailable: false };
 }

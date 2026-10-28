@@ -31,8 +31,7 @@ import type { Entitlement } from '@/lib/entitlements';
 import { AUDIT_KEPT, PLANS, TRIAL_DAYS, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentsIncluded, monthShareLine } from '@/lib/metric-display';
 import { getMonthSavings } from '@/lib/plan-savings';
-import { SUPPORT_EMAIL } from '@/lib/closing-shared';
-import { CLOSE_WINDOW_DAYS, isClosingOpen, type ClosingState } from '@/lib/closing-shared';
+import { CLOSE_WINDOW_DAYS, isClosingOpen, SUPPORT_EMAIL, type ClosingState } from '@/lib/closing-shared';
 import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
 import { plural, DAY_MS } from '@/lib/format';
 
@@ -264,7 +263,8 @@ function PlanSection({
   // This month's savings in cents: null while loading or unreadable ("—"
   // shown). Only fetched once the free period is over.
   const [monthShare, setMonthShare] = useState<number | null>(null);
-  const showsShare = !entitlement.onTrial && PLANS[plan].pricing !== null;
+  // Not on a comped plan: nothing is billed there.
+  const showsShare = !entitlement.onTrial && PLANS[plan].pricing !== null && !subscription?.planOverride;
   useEffect(() => {
     if (!showsShare) return;
     let live = true;

@@ -108,6 +108,35 @@ describe('reporting savings to the meter', () => {
     expect(s.customers.update.mock.calls.map((c) => c[1].metadata[REPORTED_THROUGH_KEY])).toEqual(['2026-10-25', '2026-10-26']);
   });
 
+  // Marked before sending: a failure can only miss a day (logged), never bill it twice.
+  it('marks each day before sending it, retries a failed send once, then logs the day for a person', async () => {
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-25' });
+    const order: string[] = [];
+    s.customers.update.mockImplementation(async (_id: string, p: { metadata: Record<string, string> }) => { order.push(`mark ${p.metadata[REPORTED_THROUGH_KEY]}`); return {}; });
+    s.billing.meterEvents.create.mockImplementation(async (p) => { order.push(`send ${p.identifier}`); throw new Error('stripe down'); });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({ '2026-10-26': 30_000 }), NOW)).rejects.toThrow('stripe down');
+
+    expect(order).toEqual(['mark 2026-10-26', 'send wr:u1:2026-10-26', 'send wr:u1:2026-10-26']);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('on 2026-10-26 (3 cents, customer cus_1) were not reported'), 'stripe down');
+  });
+
+  it('sends nothing when the day cannot be marked, so it is retried next run', async () => {
+    const s = fakeStripe();
+    s.customers.update.mockRejectedValue(new Error('stripe down'));
+    await expect(reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({ '2026-10-26': 30_000 }), NOW)).rejects.toThrow();
+    expect(s.billing.meterEvents.create).not.toHaveBeenCalled();
+  });
+
+  it('succeeds on the immediate retry with the same identifier', async () => {
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-25' });
+    s.billing.meterEvents.create.mockRejectedValueOnce(new Error('blip'));
+    expect(await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({ '2026-10-26': 30_000 }), NOW)).toEqual({ events: 1, savingsUnavailable: false });
+    const ids = s.billing.meterEvents.create.mock.calls.map((c) => c[0].identifier);
+    expect(ids).toEqual(['wr:u1:2026-10-26', 'wr:u1:2026-10-26']);
+  });
+
   it('is idempotent: a second run the same night sends nothing', async () => {
     const s = fakeStripe();
     const sub = await s.subscriptions.retrieve();
