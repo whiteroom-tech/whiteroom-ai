@@ -212,9 +212,10 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   // Flagged runs: unknown while loading or after a failed read; an engine without run flags flags none.
   const flaggedKnown = !flagged.loading && !flagged.failed;
   const flaggedRuns = flaggedRunCount(flagged) ?? 0;
-  const needs = openCount === null ? null
-    : openCount > 0 || flaggedRuns > 0 ? { recs: openCount, flagged: flaggedRuns }
-    : flaggedKnown ? { recs: 0, flagged: 0 } : null;
+  // Each count shows once known; "nothing needs you" only when both are known and zero.
+  const recsShown = openCount ?? 0;
+  const needs = recsShown > 0 || flaggedRuns > 0 ? { recs: recsShown, flagged: flaggedRuns }
+    : openCount === 0 && flaggedKnown ? { recs: 0, flagged: 0 } : null;
   const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
   const unnamed = s.unnamedCalls ?? 0;
   // Savings are input (the context is what gets smaller), so they compare with the input the

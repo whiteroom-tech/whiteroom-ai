@@ -191,4 +191,14 @@ describe('Needs you', () => {
     expect(document.activeElement?.id).toBe('agent-health-heading');
     m.root.unmount();
   });
+
+  it('shows known flagged runs even while the recommendations can\'t be read', async () => {
+    api.list.mockRejectedValue(new Error('down'));
+    flags.count = 3;
+    const m = await mount();
+    expect(needsYou(m.el)).toContain('3 runs flagged ↓');
+    expect(needsYou(m.el)).not.toContain('recommendation');
+    expect(needsYou(m.el)).not.toContain('Nothing needs you');
+    m.root.unmount();
+  });
 });
