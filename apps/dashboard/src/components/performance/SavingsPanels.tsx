@@ -115,8 +115,12 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
   );
 }
 
-/** "today", "in the last 7 days", "from Oct 1 – Oct 10": the range as an empty state reads it. */
+/**
+ * The range as an empty state reads it: "today", "in the last 7 days", "on Sat, Oct 24" (one
+ * day), "between Oct 1 – Oct 10" (a span: its label has an en dash).
+ */
 export function noCallsWhen(label: string): string {
   if (label === 'today') return 'today';
-  return label.startsWith('last ') ? `in the ${label}` : `from ${label}`;
+  if (label.startsWith('last ')) return `in the ${label}`;
+  return label.includes('–') ? `between ${label}` : `on ${label}`;
 }

@@ -136,6 +136,12 @@ describe('Input tokens empty state', () => {
   it('reads the range naturally', () => {
     expect(noCallsWhen('today')).toBe('today');
     expect(noCallsWhen('last 7 days')).toBe('in the last 7 days');
-    expect(noCallsWhen('Oct 1 – Oct 10')).toBe('from Oct 1 – Oct 10');
+    expect(noCallsWhen('last 30 days')).toBe('in the last 30 days');
+    expect(noCallsWhen('Oct 1 – Oct 10')).toBe('between Oct 1 – Oct 10');
+    expect(noCallsWhen('Sat, Oct 24')).toBe('on Sat, Oct 24');
+  });
+  it('says it in the card when the range had no calls', () => {
+    const html = renderToStaticMarkup(h(IndexView, { ...props(DATA, 'today'), hourlyData: { hourly: [] }, govSavings: { tokensSaved: 0, costSaved: 0, partial: false } } as never));
+    expect(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain('No model calls today.');
   });
 });
