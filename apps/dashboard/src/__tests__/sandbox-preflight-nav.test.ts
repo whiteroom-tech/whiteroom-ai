@@ -85,6 +85,24 @@ describe('the pre-flight follows the address', () => {
     expect(el.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('a named test stays on screen when the list then says practice tests are off', async () => {
+    engine.list.mockRejectedValue(new PracticeError('off', 404, 'practice_unavailable'));
+    await go(`run=${RUN_ID}`);
+    expect(text()).toContain("Didn't pass · Fails gracefully");
+    expect(text()).not.toContain('Practice tests aren’t available yet');
+  });
+
+  it('a stale named test with a failing list shows one error and leaves no unhandled rejection', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    engine.list.mockRejectedValue(new PracticeError('off', 404, 'practice_unavailable'));
+    engine.run.mockRejectedValue(new PracticeError('That test wasn’t found.', 404));
+    await go(`run=${RUN_ID}`);
+    await new Promise((r) => setTimeout(r, 0));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it('practice tests off still shows the calm page, named test or not', async () => {
     engine.list.mockRejectedValue(new PracticeError('off', 404, 'practice_unavailable'));
     engine.run.mockRejectedValue(new PracticeError('off', 404, 'practice_unavailable'));

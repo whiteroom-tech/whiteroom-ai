@@ -139,16 +139,15 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       if (!f) throw new PracticeError('Sign in and connect a fleet first: practice tests run on your fleet’s key and controls.', 401);
       if (!live) return;
       setFleet(f);
-      // Practice tests off on this engine is the calm page; any other failure only leaves Past tests' practice rows out.
-      const listing = listPracticeRuns(f).catch((e) => { if (unavailable(e)) throw e; return null; });
       const named = asked.current;
       if (named) {
+        // The run in the address decides the page; the rows only fill Past tests, so any list failure is ignored.
+        listPracticeRuns(f).then((listed) => { if (live) setRows(listed); }, () => {});
         await showRun(f, named);
-        const listed = await listing;
-        if (live && listed) setRows(listed);
         return;
       }
-      const listed = await listing;
+      // Practice tests off on this engine is the calm page; any other failure only leaves Past tests' practice rows out.
+      const listed = await listPracticeRuns(f).catch((e) => { if (unavailable(e)) throw e; return null; });
       if (!live) return;
       if (listed) setRows(listed);
       const id = listed?.find((r) => isOpen(r.lifecycle))?.id;
