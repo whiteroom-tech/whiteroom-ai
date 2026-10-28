@@ -133,8 +133,9 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   const waitFor = (o: GovernanceResponse): string | null => {
     const from = waitUntil(o);
     if (from === null) return null;
-    // Not in Watch now, or in Watch since a time the history doesn't say.
-    if (from === 'record-first' || from === 'unknown') return 'needs 24 hours in Watch first';
+    if (from === 'record-first') return 'needs 24 hours in Watch first';
+    // In Watch, but the history doesn't say since when: waiting won't open it.
+    if (from === 'unknown') return 'needs 24 hours in Watch first (we can’t see when it started watching)';
     const today = dayKey();
     const day = dayKey(from) === today ? 'today' : dayKey(from) === addDays(today, 1) ? 'tomorrow' : formatInZone(from, { month: 'short', day: 'numeric' });
     return `from ${fmtTime(from)} ${day}, after 24 hours in Watch`;
@@ -244,7 +245,9 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p className="gov-eyebrow">Who</p>
+        {/* Narrowing a rule for all agents: Save asks whether to keep it for everyone and add a copy, or move it. */}
+        <p className="gov-eyebrow ctl-q">Who{rule.appliesTo === 'all' && draft.appliesTo !== 'all' && draft.appliesTo.length > 0
+          && <Hint text="When you save, you’ll choose: keep this rule for everyone and add a copy, or move it." size={12} />}</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
       </section>
 

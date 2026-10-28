@@ -515,6 +515,16 @@ describe('Controls page, editing', () => {
     m.root.unmount();
   });
 
+  it('a rule in Watch whose history doesn’t say since when keeps Stop closed, and says why', async () => {
+    api.govV1 = true;
+    const m = await mount();
+    await m.open('Only claude');
+    const stop = (await m.option('Stop the agent'))!;
+    expect(stop.disabled).toBe(true);
+    expect(stop.textContent).toBe('Stop the agent · needs 24 hours in Watch first (we can’t see when it started watching)');
+    m.root.unmount();
+  });
+
   it('after a day in Watch, Stop is confirmed by typing who it covers', async () => {
     api.govV1 = true;
     api.history = [{ id: 'h1', ruleId: 'r2', ruleType: 'model_allowlist', description: 'Added new Model allowlist rule', by: 'test', time: new Date(Date.now() - 2 * 86_400_000).toISOString() }];
@@ -1076,6 +1086,8 @@ describe('Controls page, weakening a rule', () => {
     await m.open('$190');
     await choose(m.el.querySelector('select[aria-label="Which agents this rule applies to"]') as HTMLSelectElement, 'some');
     await choose(m.el.querySelector('select[aria-label="Add an agent"]') as HTMLSelectElement, 'lead-agent');
+    // Who's ⓘ says Save will ask.
+    expect(m.el.querySelector('aside [aria-label*="keep this rule for everyone and add a copy, or move it"]')).toBeTruthy();
     // Another edit in the same draft (a higher limit) stays out of the copy.
     await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '500');
     await m.click(m.button('Save'));
