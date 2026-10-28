@@ -646,15 +646,12 @@ a.wr-agent-name:hover { color: var(--brand); text-decoration: underline; }
 .wr-ptable .is-r { text-align: right; font-variant-numeric: tabular-nums; }
 .wr-ptable .is-muted { color: var(--tx3); }
 /* Tokens: with WhiteRoom vs without. */
-.wr-tokens__head { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 20px 20px 16px; }
-.wr-tokens__meta { text-align: right; }
 .wr-tokens__totals { display: grid; grid-template-columns: minmax(150px, auto) 1fr; gap: 10px 16px; align-items: center; padding: 0 20px; margin-bottom: 8px; }
 .wr-tokens__track { display: flex; align-items: center; gap: 10px; min-width: 0; font-variant-numeric: tabular-nums; }
 .wr-tokens__track strong { font-weight: 600; white-space: nowrap; }
 .wr-tokens__bar { flex: 0 0 auto; height: 22px; border-radius: 4px; min-width: 3px; }
 .wr-tokens__bar--without { background: var(--line2); }
 .wr-tokens__bar--with { background: var(--brand); }
-.wr-tokens__diff { margin: 4px 0 0; padding: 0 20px 16px; }
 .wr-tokens__byday { padding: 4px 20px 20px; }
 .wr-tokens__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; align-items: end; height: 132px; padding: 0 4px; border-bottom: 1px solid var(--line); }
 .wr-tokens__day { display: flex; justify-content: center; align-items: flex-end; gap: 6px; height: 100%; }
