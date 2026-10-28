@@ -363,7 +363,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const gate = action === 'resume' ? resumeGate : pauseGate;
   const stopGate = !!agent?.govV1 && agent.hold?.state !== 'stopped';
   const model = lastModel(entries);
-  const activity = latestActivity(entries, 8);
+  const activity = latestActivity(entries, 8, Date.now(), { agentShown: true });
   const breakEnd = agent ? breakEndsAt(agent) : null;
   const health = agentHealthLine(diagnosis, agentId, now);
   const card = agent ? nowCard(agent, runs.kind === 'ok' ? runs.runs : null, shortDate) : null;

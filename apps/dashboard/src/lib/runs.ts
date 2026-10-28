@@ -404,7 +404,8 @@ export function timelineRow(e: RunEvent, prevModel: string | null = null): Timel
   // A rule event's "×N" also counts repeats folded in from before it, which can
   // be the previous run's; the Rule activity card above counts this run exactly.
   const detail = isRule ? { ...(e.detail ?? {}), occurrences: undefined } : e.detail;
-  const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0]);
+  // A run is one agent's, named in the page title: rows skip its name.
+  const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0], Date.now(), { agentShown: true });
   const glyph: TimelineGlyph = START_EVENT.test(e.type) ? 'start' : DONE_EVENT.test(e.type) ? 'done' : BAD_EVENT.test(e.type) ? 'bad' : 'event';
   return { id: e.id, time: row.time, sameTime: false, text: glyph === 'start' ? 'Run started' : row.text, tag: row.tag, glyph };
 }
