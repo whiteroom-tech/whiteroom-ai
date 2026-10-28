@@ -9,7 +9,7 @@ import { RULE_LABELS } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, ruleSentence } from '@/lib/controls-view';
-import { fmtCost, fmtCount, fmtTokens, plural } from '@/lib/format';
+import { fmtCost, fmtCount, fmtEnergy, fmtTokens, plural } from '@/lib/format';
 
 /** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
 export function lookbackText(hours: number | null | undefined): string | null {
@@ -64,10 +64,23 @@ export function fewerTokens(saved: number, used: number): string | null {
 }
 
 /** Saved by WhiteRoom's caption: what the dollars stand for. */
-export function savedCaption(tokensSaved: number, usedTokens: number | null, cacheMicros: number): string {
-  const fewer = usedTokens != null ? fewerTokens(tokensSaved, usedTokens) : tokensSaved > 0 ? `${fmtTokens(tokensSaved)} fewer tokens` : null;
-  if (fewer) return `${fewer}${cacheMicros > 0 ? ' · plus cache reads' : ''} · estimated`;
+export function savedCaption(tokensSaved: number, cacheMicros: number): string {
+  // The tokens are Smaller context's card, beside this one: here, what the dollars are.
+  if (tokensSaved > 0) return `estimated, at your model prices${cacheMicros > 0 ? ' · includes cache reads' : ''}`;
   return cacheMicros > 0 ? 'from cache reads · estimated' : 'nothing saved in this range';
+}
+
+/**
+ * Smaller context's card, for the range shown (as every Cost figure is): how much less went to
+ * the models, the tokens and the energy. The same tokens as "Tokens: with WhiteRoom vs without".
+ * `used` null: not known yet.
+ */
+export function rangeContextCard(saved: number, used: number | null): { value: string; sub: string } {
+  if (used === null) return { value: '—', sub: 'not available yet' };
+  if (!(saved > 0)) return { value: '—', sub: 'nothing saved in this range' };
+  const pct = Math.round((saved / (used + saved)) * 100);
+  const energy = fmtEnergy(saved);
+  return { value: `${pct}%`, sub: `less sent to models · ${fmtTokens(saved)} fewer tokens${energy ? ` · ${energy} saved` : ''}` };
 }
 
 /** Totals over the chart's days: tokens with WhiteRoom and the estimate without it. */

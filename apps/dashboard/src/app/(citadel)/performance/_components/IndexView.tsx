@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { fleetReport, performanceRecommendationsList } from '@/lib/whiteroom/client';
+import { performanceRecommendationsList } from '@/lib/whiteroom/client';
 import Link from 'next/link';
 import { ROUTES } from '@/lib/routes';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
@@ -9,12 +9,12 @@ import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { TokensCompare } from '@/components/performance/SavingsPanels';
-import { fmtCost, fmtCount, fmtKwh, partialMark } from '@/lib/format';
+import { fmtCost, fmtCount, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
 import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
-import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, tokenTotals, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import type { WorkingHourRate } from '@/lib/performance-overview';
@@ -37,7 +37,7 @@ const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 const REC_PAGE_SIZE = 15;
 const REC_FILTER_DEBOUNCE_MS = 300;
 
-export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
+export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
   workingHour = null, rules = null, byRuleId, rangeUsedTokens = null, usdByDay = null, showUnnamedNote = false, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
@@ -152,26 +152,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
     if (await diagnosis.checkNow()) void fetchRecs();
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
-  // Smaller context: the fleet report's compression ratio over all time (it doesn't follow the range; the card says so).
-  // null until it loads, if it can't, or if the engine doesn't send it: never shown as 0.
-  // Kept with the fleet it came from, so another fleet's figure never shows after a switch.
-  const [compressionFor, setCompressionFor] = useState<{ fleetId: string; value: number | null; kwh: number | null } | null>(null);
-  const compression = compressionFor?.fleetId === fleetId ? compressionFor.value : null;
-  const energyAllTime = compressionFor?.fleetId === fleetId ? compressionFor.kwh : null;
-  // Read again with each page refresh (loadedAt); a failed read keeps the last figure. A read
-  // still in flight for this fleet isn't started again (a cached page then a fresh one is one
-  // read). An answer for a fleet or key that's no longer current is dropped.
-  const compressionReading = useRef<string | null>(null);
-  const shownReading = useRef('');
-  useEffect(() => { shownReading.current = `${fleetId}|${authKey ?? ''}`; }, [fleetId, authKey]);
-  useEffect(() => {
-    const reading = `${fleetId}|${authKey ?? ''}`;
-    if (compressionReading.current === reading) return;
-    compressionReading.current = reading;
-    fleetReport(fleetId, authKey)
-      .then((r) => { if (!r.error && shownReading.current === reading) setCompressionFor({ fleetId, value: r.energySavings?.compressionRatio ?? null, kwh: parseFloat(r.energySavings?.estimatedEnergySaved ?? '') || null }); }, () => {})
-      .finally(() => { if (compressionReading.current === reading) compressionReading.current = null; });
-  }, [fleetId, authKey, loadedAt]);
   const seeFindings = () => {
     setDiagnosisNotice(null);
     setRecStatus('open');
@@ -210,8 +190,10 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
   const speed = latencyTrend(s.avgLatencyMs, prev?.avgLatencyMs, prior);
   const openRecs = recStatus === 'open' && !recError ? recTotal : null;
   const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
-  const kwh = energyAllTime != null ? fmtKwh(energyAllTime) : null;
   const rangeName = rangeLabel.charAt(0).toUpperCase() + rangeLabel.slice(1);
+  // Smaller context follows the range, from the same tokens as the with-vs-without chart below it.
+  const rangeTokens = savingsDays ? tokenTotals(savingsDays) : null;
+  const context = rangeContextCard(rangeTokens ? rangeTokens.saved : savings.govTokensSaved, rangeTokens ? rangeTokens.used : rangeUsedTokens ?? null);
   const toPerformance = () => {
     document.getElementById('perf-performance')?.scrollIntoView({ block: 'start' });
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
@@ -248,14 +230,14 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
             label="Saved by WhiteRoom"
             hint={HELP.savings}
             value={auditFailed ? '—' : <span style={{ color: savings.totalMicros > 0 ? 'var(--ok)' : undefined }}>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</span>}
-            sub={auditFailed ? UNAVAILABLE : savedCaption(savings.govTokensSaved, rangeUsedTokens, savings.cacheMicros)}
+            sub={auditFailed ? UNAVAILABLE : savedCaption(savings.govTokensSaved, savings.cacheMicros)}
           />
           <StatCard
             variant="card"
             label="Smaller context"
             hint={HELP.smallerContext}
-            value={<span style={{ color: compression != null && compression > 0 ? 'var(--ok)' : undefined }}>{smallerContextCard(compression).value}</span>}
-            sub={<>{smallerContextCard(compression).sub}{kwh && <span style={{ display: 'block', marginTop: 8 }}>{kwh} saved all time</span>}</>}
+            value={<span style={{ color: context.value !== '—' ? 'var(--ok)' : undefined }}>{context.value}</span>}
+            sub={auditFailed ? UNAVAILABLE : context.sub}
           />
         </div>
         {/* Tokens with vs without, then Cost prediction (folded), then Spend by model (folded). */}
@@ -316,8 +298,3 @@ function fmtPctShort(rate: number): string {
   return rate === 0 ? '0%' : `${(rate * 100).toFixed(1)}%`;
 }
 /** The Smaller context card's figure and line: unknown is "—", never 0; it covers all time, not the range. */
-export function smallerContextCard(compression: number | null): { value: string; sub: string } {
-  if (compression === null) return { value: '—', sub: 'not available yet' };
-  if (compression <= 0) return { value: '—', sub: 'nothing saved yet' };
-  return { value: `${compression.toFixed(1)}%`, sub: 'less sent to models, on average · all time' };
-}

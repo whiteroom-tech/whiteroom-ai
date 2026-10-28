@@ -10,8 +10,7 @@ import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost } from '@/lib/format';
 import type { GovernanceCounts } from '@/lib/governance';
 import type { DaySavings } from '@/lib/analytics-metrics';
-import { latencyTrend, pctChange, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
-import { smallerContextCard } from '@/app/(citadel)/performance/_components/IndexView';
+import { latencyTrend, pctChange, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { fmtLatency, SpendByModel } from '@/app/(citadel)/performance/_components/perf-utils';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
@@ -131,7 +130,7 @@ const COUNTS: GovernanceCounts = {
 
 type Sample = 'quiet' | 'problem' | 'empty';
 
-const CARDS = { spendMicros: 3_170_000, calls: 479, savedMicros: 2_340_000, savedTokens: 3_180_000, usedTokens: 1_740_000, perHourMicros: 354_000, compression: 90.84, kwh: 7.8, failed: 0, latencyMs: 2100, prevLatencyMs: 3280, prevCalls: 165 };
+const CARDS = { spendMicros: 3_170_000, calls: 479, savedMicros: 2_340_000, savedTokens: 3_180_000, usedTokens: 1_740_000, perHourMicros: 354_000, failed: 0, latencyMs: 2100, prevLatencyMs: 3280, prevCalls: 165 };
 
 export function PerformancePreview() {
   // One sample at a time, so each card shows once, as on the real page.
@@ -154,8 +153,8 @@ export function PerformancePreview() {
           {!empty && (
             <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
               <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={<>{CARDS.calls} model calls<span style={{ display: 'block', marginTop: 8, color: 'var(--tx3)' }}>Includes calls from agents without a name since Oct 19.</span></>} />
-              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, CARDS.usedTokens, 0)} />
-              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{smallerContextCard(CARDS.compression).value}</span>} sub={<>{smallerContextCard(CARDS.compression).sub}<span style={{ display: 'block', marginTop: 8 }}>≈{CARDS.kwh} kWh saved all time</span></>} />
+              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, 0)} />
+              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
             </div>
           )}
           <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : WEEK} usdByDay={USD_BY_DAY} defaultOpen={sample === 'problem'} />

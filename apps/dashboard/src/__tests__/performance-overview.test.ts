@@ -5,7 +5,7 @@ import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
   checkGroups, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  predictionNote, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
+  predictionNote, rangeContextCard, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -60,10 +60,15 @@ describe('savings and spend', () => {
   it('says how many fewer tokens and about what share', () => {
     expect(fewerTokens(3_180_000, 1_740_000)).toBe('3.18M fewer tokens · about 65% less');
     expect(fewerTokens(0, 10)).toBeNull();
-    expect(savedCaption(3_180_000, 1_740_000, 0)).toBe('3.18M fewer tokens · about 65% less · estimated');
-    expect(savedCaption(3_180_000, null, 5)).toBe('3.18M fewer tokens · plus cache reads · estimated');
-    expect(savedCaption(0, 10, 5)).toBe('from cache reads · estimated');
-    expect(savedCaption(0, 10, 0)).toBe('nothing saved in this range');
+    // The dollars' caption says what they are; the tokens are Smaller context's card.
+    expect(savedCaption(3_180_000, 0)).toBe('estimated, at your model prices');
+    expect(savedCaption(3_180_000, 5)).toBe('estimated, at your model prices · includes cache reads');
+    expect(savedCaption(0, 5)).toBe('from cache reads · estimated');
+    expect(savedCaption(0, 0)).toBe('nothing saved in this range');
+    // Smaller context for the range: the same share as the with-vs-without chart.
+    expect(rangeContextCard(3_180_000, 1_740_000)).toEqual({ value: '65%', sub: 'less sent to models · 3.18M fewer tokens · ≈1.3 kWh saved' });
+    expect(rangeContextCard(0, 10)).toEqual({ value: '—', sub: 'nothing saved in this range' });
+    expect(rangeContextCard(5, null)).toEqual({ value: '—', sub: 'not available yet' });
     expect(tokenTotals([{ day: 'a', used: 10, saved: 30 }, { day: 'b', used: 5, saved: 0 }])).toEqual({ used: 15, without: 45, saved: 30 });
   });
   it('dates the price list and splits spend by model, biggest first', () => {

@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
 
-const { IndexView, smallerContextCard } = await import('@/app/(citadel)/performance/_components/IndexView');
+const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
 
 const DATA = {
   fleetId: 'f1',
@@ -65,7 +65,10 @@ describe('Performance overview layout', () => {
     expect(withPrev).toMatch(/Cost prediction \$0\.354 an hour while agents work, last 14 days/);
     expect(withPrev).toMatch(/Model calls .*99 ↑ 200% vs prior 24 h/);
     expect(withPrev).toMatch(/Typical response .*1\.9s ↓ 50% faster vs prior 24 h/);
-    expect(withPrev).toMatch(/3\.18M fewer tokens · about 65% less · estimated/);
+    // Every Cost figure follows the range: Saved says what its dollars are, Smaller context has the range's tokens.
+    expect(withPrev).toMatch(/Saved by WhiteRoom \$2\.34 estimated, at your model prices/);
+    expect(withPrev).toMatch(/Smaller context 65% less sent to models · 3\.18M fewer tokens · ≈1\.3 kWh saved/);
+    expect(withPrev).not.toMatch(/all time/);
     // No prior window (older engine): the plain lines.
     const plain = text(view());
     expect(plain).toMatch(/Typical response .*1\.9s median time per call/);
@@ -93,8 +96,6 @@ describe('Performance overview, what it leaves out', () => {
 
 describe('Smaller context card', () => {
   it('shows the ratio over all time, nothing saved as —, and unknown as — never 0', () => {
-    expect(smallerContextCard(90.84)).toEqual({ value: '90.8%', sub: 'less sent to models, on average · all time' });
-    expect(smallerContextCard(0)).toEqual({ value: '—', sub: 'nothing saved yet' });
-    expect(smallerContextCard(null)).toEqual({ value: '—', sub: 'not available yet' });
+    // Smaller context follows the range, like every Cost figure (rangeContextCard is tested in performance-overview).
   });
 });
