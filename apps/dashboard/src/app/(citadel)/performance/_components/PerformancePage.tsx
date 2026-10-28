@@ -6,7 +6,7 @@ import { performanceIndex, performanceEvidence, performanceFeedback, performance
 import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsRange, type RunsView } from '@/lib/runs';
 import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
-import { agentTotalsFromBuckets, dailySavingsFromBuckets, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { agentTotalsFromBuckets, cacheSavedTotal, dailySavingsFromBuckets, savedByDay, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { useViewerZone } from '@/hooks/useViewerZone';
@@ -165,10 +165,7 @@ export function PerformancePage({ retentionDays }: {
         byRuleId: undefined,
         weekHourly: weekHourlyFrom(holdsWeek, hourlyShown, weekHourlyRead ? weekHourlyOwn : cachedWeek),
         usdByDay: week?.savingsByDay ? savedByDay(week.savingsByDay, week.cacheByDay) : null,
-        cacheSaved: audit?.cacheByDay ? {
-          micros: audit.cacheByDay.reduce((n, d) => n + d.usdMicros, 0),
-          unpricedReadTokens: audit.cacheByDay.reduce((n, d) => n + d.unpricedReadTokens, 0),
-        } : null,
+        cacheSaved: cacheSavedTotal(audit?.cacheByDay),
       };
       const snapshot = {
         indexData: idx,
@@ -362,9 +359,3 @@ export function PerformancePage({ retentionDays }: {
   );
 }
 
-/** Each day's "Saved by WhiteRoom" in micros: smaller context plus, from newer engines, the caching WhiteRoom added. */
-function savedByDay(context: Array<{ day: string; usdMicros: number }>, cache?: Array<{ day: string; usdMicros: number }>): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const d of [...context, ...(cache ?? [])]) out[d.day] = (out[d.day] ?? 0) + d.usdMicros;
-  return out;
-}

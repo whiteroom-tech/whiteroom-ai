@@ -36,6 +36,19 @@ export function savingsDollars(buckets: SavingsBucket[], engine?: SavingsTotals)
   return { tokensSaved, costSaved: estimateCost(tokensSaved), partial: false };
 }
 
+/** Each day's "Saved by WhiteRoom" in micros: smaller context plus, from newer engines, the caching WhiteRoom added (as billing adds them). */
+export function savedByDay(context: Array<{ day: string; usdMicros: number }>, cache?: Array<{ day: string; usdMicros: number }>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const d of [...context, ...(cache ?? [])]) out[d.day] = (out[d.day] ?? 0) + d.usdMicros;
+  return out;
+}
+
+/** A range's caching WhiteRoom added, summed from the engine's per-day figures; null when the engine doesn't split them. */
+export function cacheSavedTotal(days: Array<{ usdMicros: number; unpricedReadTokens: number }> | undefined): { micros: number; unpricedReadTokens: number } | null {
+  if (!days) return null;
+  return { micros: days.reduce((n, d) => n + d.usdMicros, 0), unpricedReadTokens: days.reduce((n, d) => n + d.unpricedReadTokens, 0) };
+}
+
 /** Prompt-cache figures for the Performance page. */
 export interface CacheFigures {
   /** Read savings less the write premium, never below zero (micro-dollars): caching WhiteRoom added only. */
