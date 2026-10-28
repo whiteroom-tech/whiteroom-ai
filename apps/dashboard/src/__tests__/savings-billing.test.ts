@@ -285,6 +285,21 @@ describe('one account', () => {
     expect(res).toEqual({ events: 1, savingsUnavailable: false, fee: 'added' });
   });
 
+  it('leaves the fee for the next run once past the deadline', async () => {
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-25' });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    s.billing.meterEvents.create.mockImplementation(async () => { clock.mockReturnValue(5_000); return {}; });
+    try {
+      const res = await syncAccountBilling(s, ACCOUNT, { ...savings({ '2026-10-26': 30_000 }), feeSeats: vi.fn(async () => 1) }, NOW, 2_000);
+      expect(res).toEqual({ events: 1, savingsUnavailable: false, fee: null });
+      expect(s.subscriptionItems.create).not.toHaveBeenCalled();
+      expect(s.subscriptionItems.update).not.toHaveBeenCalled();
+      expect(s.subscriptionItems.del).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('leaves a subscription on a retired price, or none of ours, alone', async () => {
     const deps = { ...savings({ '2026-10-26': 30_000 }), feeSeats: vi.fn(async () => 1) };
     const legacy = fakeStripe({ items: [{ id: 'si_old', quantity: 1, price: { id: 'price_s_old' } }] });

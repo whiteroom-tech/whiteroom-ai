@@ -268,8 +268,8 @@ function PlanSection({
   // This month's savings in cents: null while loading or unreadable ("—"
   // shown), 'none' when no subscription bills savings (the line is hidden).
   const [monthShare, setMonthShare] = useState<number | null | 'none'>(null);
-  const showsShare = selfServe && !freeNow && monthShare !== 'none';
   const wantsShare = selfServe && !freeNow;
+  const showsShare = wantsShare && monthShare !== 'none';
   useEffect(() => {
     if (!wantsShare) return;
     let live = true;
