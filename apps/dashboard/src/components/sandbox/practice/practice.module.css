@@ -16,11 +16,6 @@
 .meta { font-size: var(--fs-sm); color:var(--tx3); }
 .warnText { color:var(--warn); }
 
-.tasks { list-style:none; margin:10px 0 0; padding:0; display:grid; gap:4px; font-size: var(--fs-sm); }
-.task { display:flex; gap:8px; align-items:baseline; color:var(--tx3); }
-.taskDone { color:var(--tx2); }
-.taskNow { color:var(--tx); font-weight:600; }
-.taskMark { width:14px; flex:none; text-align:center; font-family:var(--font-mono); }
 
 .group { margin:14px 0 0; }
 .groupTitle { font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:600; letter-spacing:.1em; color:var(--tx3); margin:0 0 2px; text-transform:uppercase; }
@@ -39,3 +34,12 @@
   .copyRow { flex-direction:column; align-items:stretch; }
   .copyRow > button { margin:0; width:100%; min-height:40px; }
 }
+
+/* The seven pre-flight rows: a neutral mark for Not set up, Not checked and rows still to come. */
+.rows { list-style:none; margin:0; padding:0; }
+.checkMuted { background:var(--sunk); color:var(--tx3); }
+.members { margin-top:6px; font-size: var(--fs-sm); }
+.members > summary { cursor:pointer; color:var(--tx2); }
+.member { padding:6px 0 0 12px; border-left:2px solid var(--line); margin:6px 0 0; }
+.memberName { color:var(--tx); font-weight:600; }
+.memberText { color:var(--tx2); line-height:1.5; }

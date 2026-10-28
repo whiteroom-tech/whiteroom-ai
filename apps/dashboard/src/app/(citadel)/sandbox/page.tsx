@@ -1,7 +1,7 @@
 'use client';
 
-import { TestRunsContent } from '@/components/citadel/TestRunsContent';
+import { SandboxEntry } from '@/components/sandbox/SandboxEntry';
 
 export default function SandboxPage() {
-  return <TestRunsContent />;
+  return <SandboxEntry />;
 }

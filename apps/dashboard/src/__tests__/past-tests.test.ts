@@ -64,10 +64,10 @@ describe("Past tests", () => {
     expect(html).toMatch(/role="row" tabindex="0"/);
   });
 
-  it("says when there are no tests yet", () => {
-    const html = renderToStaticMarkup(createElement(PastTests, { preview: [], onDemo: () => {} }));
+  it("says when there are no tests yet, and links the sample report (the demo, §7)", () => {
+    const html = renderToStaticMarkup(createElement(PastTests, { preview: [] }));
     expect(html).toContain("No tests yet.");
-    expect(html).toContain("Run the demo</button> to see what you’ll get.");
+    expect(html).toContain('href="/sandbox/practice?demo=1">See a sample report</a> to see what you’ll get.');
   });
 
   it("shows only what history keeps, and says the rest isn't kept", () => {

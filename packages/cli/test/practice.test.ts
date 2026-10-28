@@ -43,7 +43,7 @@ describe("practice run: the sample agent and the starters complete Template A", 
     assert.match(r.stdout, /Using the key in ANTHROPIC_API_KEY \(ends 91c0\)\./);
     assert.match(r.stdout, /Sending your key to 127\.0\.0\.1:\d+ to start the practice test\./);
     assert.match(r.stdout, /Practice task 1 of 1: Finishes a job correctly/);
-    assert.match(r.stdout, /Passed · all 11 checks · 3 runs/);
+    assert.match(r.stdout, /Passed · all 12 checks · 3 runs/);
     assert.match(r.stdout, /not as a certificate/);
     assert.match(r.stdout, /app\.whiteroom\.tech\/sandbox/);
     assert.equal(r.stderr.match(/WhiteRoom is saving a summary of your agent's memory\. Waiting until it's saved\./g)?.length, 1);

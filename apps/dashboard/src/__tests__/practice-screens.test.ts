@@ -26,47 +26,46 @@ const DISCLAIMER = "Practice tasks use made-up records and WhiteRoom's test tool
 
 describe('practice test screens', () => {
   it.each(Object.keys(PRACTICE_STATES) as (keyof typeof PRACTICE_STATES)[])('%s: plain words only (rule 7, no "readiness")', (state) => {
-    // `Watch` is allowed only as the Controls mode label in a control row.
-    const words = text(render(state)).replace(/· Watch\b/g, '');
+    // `Watch` is allowed only as the Controls mode label: on a rule, and in a row's reason (D3).
+    const words = text(render(state)).replace(/· Watch\b|\band Watch\b|\bWatch: |Watch can’t see/g, '');
     expect(words).not.toMatch(/handover|hand over|\bshifts?\b|\bwatch|context|compress|readiness|\battempt|\bprobe|evidence|\bsafe\b|certified|guarantee/i);
   });
 
-  it('setup shows who runs it, cost and cap, the checks, the key and the disclaimer', () => {
+  it('setup: pick the agent, then the seven rows, the cost and cap, the key and the disclaimer (§7 steps 1–2)', () => {
     const t = text(render('setup'));
-    for (const s of ['Sample agent', 'No code, 1 run. Doesn’t test your agent.', 'Your agent', 'Needs a small adapter.', '1 run', '3 runs',
-      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', 'Never more than 120 calls, including control checks.',
-      'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up', 'Loop breaker · Enforce · 2 extra calls',
-      'Spend cap · Enforce · Not checked: it would need real spending.', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+    for (const s of ['1. Pick agent', 'Agent · active most recently', 'Your agent needs a small adapter.', '1 run', '3 runs',
+      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', '2. What we’ll test', 'Never more than 130 calls, including control checks.',
+      'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up',
+      'Loop breaker + call rate Will be checked · 2 rules · Enforce and Watch · 8 extra calls', 'Spend cap Will be checked · Enforce · 1 extra call',
+      'Allowlists + keywords Will be checked · 2 rules · Enforce · no extra calls', 'Start test', 'No agent yet? Use our sample', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+    expect(render('setup')).toMatch(/<option value="support-bot" selected="">/);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
-    // A fleet with no agents yet: the sample agent, since Your agent needs one that has called through WhiteRoom.
+    // A fleet with no agents yet: the sample agent, since your agent needs to have called through WhiteRoom.
     const none = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, setup: { ...PRACTICE_STATES.setup.setup!, agents: [] } } }));
-    expect(text(none)).toContain('Run your agent through WhiteRoom once first, so it shows up here.');
-    const radios = none.match(/<input[^>]*name="practice-who"[^>]*>/g) ?? [];
-    expect(radios).toHaveLength(2);
-    expect(radios[0]).toContain('checked=""');
-    expect(radios[1]).toContain('disabled=""');
-    expect(text(render('setup-new-agent'))).toContain('Pause and Stop: not checked on this fleet.');
+    expect(text(none)).toContain('No agent has called through WhiteRoom yet, so WhiteRoom’s sample agent runs the tasks. It checks your guardrails, not your own agent.');
+    expect(text(none)).not.toContain('Use my agent');
+    expect(text(none)).not.toContain('No agent yet? Use our sample');
+    expect(none).not.toContain('name="practice-who"');
+    expect(text(render('setup-new-agent'))).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
 
   it('setup explains the adapter and links to how it works; the summary names no call count of its own', () => {
     const html = render('setup');
-    expect(text(html)).toContain('Needs a small adapter. A short script that passes each practice task to your agent. We give you a starter. How it works');
+    expect(text(html)).toContain('Your agent needs a small adapter. A short script that passes each practice task to your agent. We give you a starter. How it works');
     expect(html).toContain('href="https://www.npmjs.com/package/@whiteroom-ai/cli#connecting-your-own-agent"');
     // The cost line is the only place the model calls are counted.
     expect(text(html)).not.toMatch(/around \d+ model calls/);
   });
 
-  it('the controls preview lists Pause and Stop on a fleet with no rules, and says so when the controls couldn’t be read', () => {
+  it('the guardrail rows on a fleet with no rules, and when the controls couldn’t be read', () => {
     const setup = (controls: PracticeControlCheck[] | null) => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, controls } })));
-    const pauseOnly = setup([{ id: 'ctl.pause_stop', label: 'Pause and Stop', mode: null, agents: [], checked: true, note: null, calls: 2 }]);
-    expect(pauseOnly).toContain('Pause and Stop');
-    expect(pauseOnly).not.toContain('No controls set');
-    expect(pauseOnly).not.toContain('Pause and Stop: not checked');
+    const pauseOnly = setup([{ id: 'ctl.pause_stop', label: 'Pause and Stop', mode: null, agents: [], checked: true, note: null, setup: 'ok', calls: 2 }]);
+    expect(pauseOnly).toContain('Human pause/stop Will be checked · 2 extra calls');
+    for (const name of ['Spend cap', 'Loop breaker + call rate', 'Allowlists + keywords']) expect(pauseOnly).toContain(`${name} Not set up · No rule yet. · Add in Controls`);
     const unknown = setup(null);
-    expect(unknown).toContain('Couldn’t read this fleet’s controls just now.');
-    expect(unknown).not.toContain('No controls set');
-    expect(unknown).not.toContain('Pause and Stop: not checked');
-    expect(setup([])).toContain('No controls set on this fleet yet');
+    expect(unknown.match(/Not checked · Couldn’t read this fleet’s controls just now\./g)).toHaveLength(4);
+    expect(unknown).not.toContain('Add in Controls');
+    expect(setup([])).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
 
   it('a fleet whose calls go through a proxy URL or a cloud provider, with no Fleet key key to pick, is refused before Start', () => {
@@ -100,7 +99,8 @@ describe('practice test screens', () => {
     const t = text(html);
     expect(t).toContain('Practice tests aren’t available yet');
     expect(t).toContain('Try again later.');
-    expect(html).toMatch(/<a[^>]*href="\/sandbox"[^>]*>← Back to Sandbox<\/a>/);
+    // The connection test, without the redirect back here.
+    expect(html).toMatch(/<a[^>]*href="\/sandbox\?connection=1"[^>]*>← Back to Sandbox<\/a>/);
     expect(html).not.toContain('role="alert"');
     expect(t).not.toMatch(/couldn’t read|Try again<|readiness|WhiteRoom server/i);
     // Even with a refusal left over, only the calm page shows.
@@ -151,7 +151,8 @@ describe('practice test screens', () => {
 
   it('results: verdict, fixes, how we know, what was tested, next step, disclaimer and retention', () => {
     const passed = text(render('passed'));
-    for (const s of ['Passed · all 11 checks · 3 runs', "How we know: Checked against the test tools' records", 'How we know: Seen by WhiteRoom',
+    for (const s of ['Passed · all 12 checks · 3 runs', 'The agent', 'The guardrails', 'Finishes the job correctly Passed · Passed in 3 of 3 runs.',
+      'Loop breaker + call rate Passed · Enforce: blocked. Watch: would have blocked.', 'Spend cap Passed · Enforce: blocked. Tested with a tiny limit.', "How we know: Checked against the test tools' records", 'How we know: Seen by WhiteRoom',
       'Call rate · Watch', 'Download report', 'What was tested', '(sent by the CLI, not verified)', 'Adapter (reported by the CLI)', DISCLAIMER,
       'Full details kept until', 'Test r-7f3a']) expect(passed).toContain(s);
     expect(text(render('passed-1run'))).toContain('Run it 3 times');
@@ -160,7 +161,10 @@ describe('practice test screens', () => {
     expect(sample).toContain('Reports come from a test of your own agent.');
     expect(sample).not.toContain('Download report');
     const failed = text(render('failed'));
-    expect(failed).toMatch(/Didn't pass · 1 check failed.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
+    expect(failed).toMatch(/Didn't pass · Fails gracefully.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
+    expect(failed).toContain("Fails gracefully Didn't pass · Saves once when a tool times out: Passed in 2 of 3 runs.");
+    // A rule that doesn't cover the agent under test: Not set up for it, with the way to add it (§3b).
+    expect(text(render('not-set-up'))).toContain('Spend cap Not set up · Not set up for support-bot. · Add in Controls');
     expect(failed).toContain('Rerun failed checks');
     const incomplete = text(render('incomplete'));
     expect(incomplete).toMatch(/What stopped the test.*Test problem \(not your agent\): Anthropic hit a rate limit or quota \(HTTP 429\)\./);
@@ -203,9 +207,9 @@ describe('practice tests on cloud providers (R7)', () => {
       expect(input).toContain('required=""');
       expect(startButton(html)).not.toContain('disabled=""');
     }
-    expect(text(render('setup-azure'))).toContain('Never more than 120 calls, billed by your Azure account. That includes control checks.');
+    expect(text(render('setup-azure'))).toContain('Never more than 130 calls, billed by your Azure account. That includes control checks.');
     expect(text(render('setup-foundry'))).toContain('billed by your Azure account');
-    expect(text(render('setup-bedrock'))).toMatch(/approx\. \$[\d.]+–\$[\d.]+ at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account/);
+    expect(text(render('setup-bedrock'))).toMatch(/approx\. \$[\d.]+–\$[\d.]+ at Anthropic’s list prices\)\. Never more than 130 calls, billed by your AWS account/);
   });
 
   it('a cloud key with no model yet: Start waits for one', () => {
@@ -288,25 +292,27 @@ describe('the Sandbox screens practice tests are added to', () => {
     const rows = [...PRACTICE_ROWS, { ...PRACTICE_ROWS[0], id: 'r-00000000-0000-4000-8000-000000000000', lifecycle: 'active' as const, endedAt: null }];
     const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows })));
     expect(t).toMatch(/Passed 18\/18 Practice/);
+    // The failing row by name, from the engine's `failed` (no report fetched).
+    expect(t).toMatch(/Didn't pass · Fails gracefully 18\/18 Practice/);
     expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice/);
     expect(t).toMatch(/Didn't finish 2\/6 Practice \(sample\)/);
     expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed 4 Your agent/);
     expect(t).toContain('Past tests 6');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));
-    expect(text(open)).toMatch(/Practice test ended .* 11 of 11 checks passed .* WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days\. Open the result/);
+    expect(text(open)).toMatch(/Practice test ended .* 12 of 12 checks passed .* WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days\. Open the result/);
   });
 
   it('the start screen card, only once practice tests answered', () => {
     expect(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: null, open: null } }))).toBe('');
     expect(text(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: [], open: null } }))))
-      .toContain('Try your agent on practice tasks 5 practice tasks and a check of your rules · about 5–10 min for one run Set up a practice test →');
+      .toContain('Try your agent on practice tasks 7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run Set up a practice test →');
   });
 
   it('Ready to go live gains one line, only when practice tests are available', () => {
     const passed = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [],
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: passed, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your rules · about 5–10 min for one run.';
+    const line = 'Want more confidence before going live? Run a practice test : 7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     expect(without).not.toContain('practice test');
@@ -320,7 +326,7 @@ describe('the Sandbox screens practice tests are added to', () => {
     const cloud = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [], provider: 'azure-openai', endpointHost: 'acme.openai.azure.com',
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: cloud, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your rules · about 5–10 min for one run.';
+    const line = 'Want more confidence before going live? Run a practice test : 7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     const withLine = flow({ fleet: 'prod-eu', rows: [], open: null });

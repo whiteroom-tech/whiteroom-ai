@@ -34,7 +34,12 @@ export interface RunArgs {
   url?: string;
   /** --key-env: the variable the run's key is read from, when several are set. */
   keyEnv?: string;
+  /** --require: rows that must be Passed in Enforce, or the result exits 1 (pre-flight D6). */
+  require?: readonly string[];
 }
+
+/** This run's --require rows, for wherever its result is printed. */
+let required: readonly string[] = [];
 
 interface Progress {
   done: number;
@@ -72,7 +77,7 @@ interface ControlRequest {
 function sessionEnding(r: Reply): Ending {
   const reason = r.body?.reason;
   // The run already finished (WhiteRoom finished it meanwhile): its result, not a refusal. Without one, tasks/next replays it.
-  if (r.body?.done || reason === "finished") return r.body?.report ? results(r.body.report) : { ...ending(3, copy.finished(r.body?.verdict)), result: true, replay: true };
+  if (r.body?.done || reason === "finished") return r.body?.report ? results(r.body.report, required) : { ...ending(3, copy.finished(r.body?.verdict)), result: true, replay: true };
   if (r.status === REDIRECTED) return ending(3, copy.redirected);
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
@@ -95,6 +100,7 @@ const print = (e: Ending, out = say) => {
 const fail = (e: Ending) => print(e, e.result ? say : warn);
 
 export async function practiceRun(a: RunArgs): Promise<number> {
+  required = a.require ?? [];
   // ── Preflight: nothing is sent until every check passes ──
   const old = nodeTooOld();
   if (old) return fail(ending(2, old));
@@ -316,7 +322,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     if (e.replay) {
       engine.signal = null;
       const r = await engine.post("/api/readiness/tasks/next", { key }).catch(() => null);
-      if (r?.status === 200 && r.body?.done && r.body.report) return print(results(r.body.report));
+      if (r?.status === 200 && r.body?.done && r.body.report) return print(results(r.body.report, required));
     }
     return fail(e);
   };

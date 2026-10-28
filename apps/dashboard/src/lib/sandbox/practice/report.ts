@@ -1,11 +1,12 @@
 // The practice test report a customer downloads (spec §9.8): one static HTML
 // page built in the browser, like lib/sandbox/report.ts. Allowlisted fields
-// only: verdict, check names and results, failed checks with their fix lines,
+// only: verdict, the seven rows (status and reason) with each row's check names
+// and results, failed checks with their fix lines,
 // runs, date, fleet, agent name and the disclaimer. Never what was tested,
 // limits, call counts or when a tool failure fired. No script; a CSP meta
 // blocks anything the page might otherwise load.
 
-import { DISCLAIMER, fixLine, headline, STATUS_LABEL } from './model';
+import { DISCLAIMER, fixLine, groupRows, headline, ROW_GROUPS, ROW_STATUS_LABEL, STATUS_LABEL } from './model';
 import type { PracticeReport } from './types';
 import { plural } from '@/lib/format';
 import { formatInZone } from '@/lib/zone-time';
@@ -13,6 +14,8 @@ import { formatInZone } from '@/lib/zone-time';
 /** Control, C1 and bidi characters, which could make the file read differently from what it says (§9.7). */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 const esc = (s: unknown) => String(s ?? '').replace(UNSAFE, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const ROW_TONE = { passed: 'ok', failed: 'bad', not_set_up: 'wait', not_checked: 'wait' } as const;
 
 export const REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 
@@ -22,6 +25,7 @@ export const canDownload = (r: PracticeReport) => !r.sample && !r.scope;
 export function practiceReportHtml(id: string, r: PracticeReport, endedAt: string): string {
   const date = formatInZone(endedAt, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) || '—';
   const tone = r.verdict === 'passed' ? 'ok' : r.verdict === 'not_passed' ? 'bad' : 'wait';
+  const rows = groupRows(r);
   const fixes = r.checks.filter((c) => c.required && c.status !== 'passed' && c.status !== 'unsupported').map((c) => ({ label: c.label, fix: fixLine(c, r) })).filter((c) => c.fix);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -38,10 +42,10 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px
 <p class="muted">WHITEROOM · PRACTICE TEST REPORT</p>
 <h1 class="${tone}">${esc(headline(r))}</h1>
 <p class="muted">Fleet ${esc(r.tested.fleet)} · Agent ${esc(r.tested.agent)} · ${r.runs} ${plural(r.runs, 'run')} · ${esc(date)} · Test ${esc(id)}</p>
-<h2>Checks</h2>
+${ROW_GROUPS.map((g) => `<h2>${esc(g)}</h2>
 <div class="card"><table><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>
-${r.checks.map((c) => `<tr><td>${esc(c.mode ? `${c.label} · ${c.mode}` : c.label)}</td><td class="${c.status === 'passed' ? 'ok' : c.status === 'failed' ? 'bad' : 'wait'}">${esc(STATUS_LABEL[c.status])}</td></tr>`).join('\n')}
-</tbody></table></div>
+${rows.filter((x) => x.row.group === g).map((x) => `<tr><td><strong>${esc(x.row.name)}</strong>${x.members.map((c) => `<br><span class="muted">${esc(c.mode ? `${c.label} · ${c.mode}` : c.label)}: ${esc(STATUS_LABEL[c.status])}</span>`).join('')}</td><td class="${ROW_TONE[x.status]}">${esc(ROW_STATUS_LABEL[x.status])}<br><span class="muted">${esc(x.reason)}</span></td></tr>`).join('\n')}
+</tbody></table></div>`).join('\n')}
 ${fixes.length ? `<h2>${r.verdict === 'incomplete' ? 'What stopped the test' : 'What to fix'}</h2>
 <div class="card">${fixes.map((c) => `<p><strong>${esc(c.label)}</strong><br>${esc(c.fix)}</p>`).join('\n')}</div>` : ''}
 <p class="muted">${esc(DISCLAIMER)}</p>

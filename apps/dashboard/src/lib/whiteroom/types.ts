@@ -714,6 +714,8 @@ export interface GovernanceListResult {
   rules: GovernanceRule[];
   history: GovernanceHistoryEntry[];
   agents: string[];
+  /** When each agent was last active (null: never); absent from older engines. */
+  lastActiveAt?: Record<string, string | null>;
   /** Pause and Stop responses are offered (Gov v1 fleets). */
   govV1?: boolean;
 }

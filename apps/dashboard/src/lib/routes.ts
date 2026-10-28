@@ -7,6 +7,10 @@ export const ROUTES = {
   controls: '/controls',
   sandbox: '/sandbox',
   practiceTest: '/sandbox/practice',
+  /** The connection test, for fleets the pre-flight refuses: /sandbox without the redirect (§7 Redirect). */
+  connectionTest: '/sandbox?connection=1',
+  /** The pre-flight's sample report: made-up results, nothing runs (§7 Demo). */
+  practiceDemo: '/sandbox/practice?demo=1',
   fleetKey: '/fleet-key',
   settings: '/settings',
   organization: '/organization',

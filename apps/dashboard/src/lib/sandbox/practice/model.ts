@@ -6,7 +6,6 @@
 
 import CATALOG from '@practice-contract/catalog.json';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
-import { isEmptyKeywordRule, parseControlLabel, sameRuleKey } from './engine-labels';
 import { counted, fmtDay } from '@/lib/format';
 import type {
   PracticeCheck, PracticeControlCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource,
@@ -39,11 +38,12 @@ export function usualMinutes(runs: number): string {
 }
 
 /**
- * What a practice test is, the one line every way into it uses: "5 practice
- * tasks and a check of your rules · about 5–10 min for one run". The model
+ * What a pre-flight is, the one line every way into it uses: "7 checks, 3 for
+ * your agent and 4 for its guardrails · about 5–10 min for one run". The model
  * calls are said once, by setup's cost line, worked out from the plan.
  */
-export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)} for one run`;
+const AGENT_ROWS = CATALOG.rows.filter((r) => r.group === CATALOG.rows[0].group).length;
+export const PRACTICE_SUMMARY = `${CATALOG.rows.length} checks, ${AGENT_ROWS} for your agent and ${CATALOG.rows.length - AGENT_ROWS} for its guardrails · about ${usualMinutes(1)} for one run`;
 
 /** Where the CLI's README explains the adapter that connects your own agent. */
 export const ADAPTER_HELP_URL = 'https://www.npmjs.com/package/@whiteroom-ai/cli#connecting-your-own-agent';
@@ -156,6 +156,28 @@ export function keyOptions(src: PracticeSource): { keys: PracticeProviderKey[]; 
   return { keys, direct, initial: used?.displayPrefix ?? (direct && (agentDirect || !keys.length) ? null : keys[0]?.displayPrefix ?? null) };
 }
 
+/**
+ * Why a practice test can't start here (§7: the old "Test my agent" stays for
+ * these): an IAM-role fleet; a fleet with its own host, or a cloud agent, with
+ * no Fleet key key to test with. The sample agent calls with the fleet's own
+ * key, so a cloud agent's fleet can still run it.
+ */
+export function practiceBlock(src: PracticeSource, o: { sample: boolean; hasKey: boolean }): 'role' | 'host' | 'cloud' | null {
+  if (src.blocked === 'bedrock_role') return 'role';
+  if (src.provider === 'proxy-url' && !o.hasKey) return 'host';
+  if (src.provider === 'cloud' && !o.sample && !o.hasKey) return 'cloud';
+  return null;
+}
+
+/** /sandbox: fleets the practice test refuses keep the connection test; every other fleet goes to the pre-flight. */
+export const keepsConnectionTest = (src: PracticeSource) => practiceBlock(src, { sample: false, hasKey: keyOptions(src).keys.length > 0 }) !== null;
+
+/** The agent setup starts on (§7 step 1): the most recently active, else the first by name. */
+export function defaultAgent(agents: readonly string[], lastActiveAt: Record<string, string | null> = {}): string {
+  const at = (a: string) => { const t = Date.parse(lastActiveAt[a] ?? ''); return Number.isNaN(t) ? -Infinity : t; };
+  return agents.reduce<string | null>((best, a) => (best === null || at(a) > at(best) ? a : best), null) ?? '';
+}
+
 /** The key line: which variable to set, to which key (§10 fixed copy; R7 names the Fleet key key). Both direct variables while the provider isn't known. */
 export function keyLine(choice: PracticeKeyChoice | null, fleet: string): { before: string; keyVar: string; after: string } {
   const own = ` to the key your agent uses with ${fleet}.`;
@@ -252,69 +274,144 @@ export function billedLine(r: Pick<PracticeReport, 'runs' | 'tested'>): string {
   return `Model calls were billed to the key you tested with${key}, never more than ${cap}.`;
 }
 
-// ── Control checks (§6): what setup says will be checked ─────────────────
+// ── The seven rows (pre-flight D1): the checks in two groups ─────────────
 
-/**
- * The control checks the dashboard shows and counts: keyword rules with no
- * keywords are left out, so the rule list and the cost line agree.
- */
-export const shownControls = (checks: PracticeControlCheck[]) => checks.filter((c) => !isEmptyKeywordRule(c));
-/** "ctl.spend_cap.gr_1" → "spend_cap"; "ctl.pause_stop" is its own type. */
-const ruleType = (id: string) => id.split('.')[1] ?? id;
-const MODE_ORDER = ['Enforce', 'Watch', 'Off'];
+/** One of the seven pre-flight rows, from the engine's catalog: its members are check-id prefixes. */
+export type PreflightRow = (typeof CATALOG.rows)[number];
+export const ROWS: readonly PreflightRow[] = CATALOG.rows;
+/** "The agent", "The guardrails", in the catalog's order. */
+export const ROW_GROUPS = [...new Set(ROWS.map((r) => r.group))];
+export type RowStatus = keyof typeof CATALOG.rowStatusLabels;
+export const ROW_STATUS_LABEL: Record<RowStatus, string> = CATALOG.rowStatusLabels;
 
-/** One line of setup's rule list: every rule of one type, as the engine planned them. */
-export interface ControlTypeLine {
-  type: string;
-  text: string;
+/** A member prefix ending in "." takes every check under it ("a."); else the id itself or its rules ("ctl.spend_cap" → "ctl.spend_cap.gr_1"). */
+const isMember = (id: string, prefix: string) => (prefix.endsWith('.') ? id.startsWith(prefix) : id === prefix || id.startsWith(`${prefix}.`));
+export const membersOf = <T extends { id: string }>(row: PreflightRow, checks: readonly T[]): T[] => checks.filter((c) => row.members.some((m) => isMember(c.id, m)));
+/** The row a check belongs to. */
+export const rowOf = (checkId: string) => ROWS.find((r) => r.members.some((m) => isMember(checkId, m)));
+const isGuardrail = (row: PreflightRow) => row.members.every((m) => m.startsWith('ctl.'));
+const PAUSE_STOP = 'pause_stop';
+
+/** The rule behind a control check, as the engine says (structured, never read from the label): off, not covering the agent, or set up. */
+type Setup = Pick<PracticeControlCheck, 'setup' | 'notCoveredAgent'>;
+const setUp = (c: Setup) => (c.setup ?? 'ok') === 'ok' && !c.notCoveredAgent;
+/** Why none of a row's rules apply: "Not set up for support-bot." or "Off in Controls." */
+function notSetUpReason(members: readonly Setup[]): string {
+  const agent = members.find((c) => c.notCoveredAgent)?.notCoveredAgent;
+  return agent ? `Not set up for ${agent}.` : 'Off in Controls.';
+}
+/** "Enforce: blocked", "Watch: would have blocked" (D3), or both when the row's rules differ. */
+function modeReason(modes: readonly (string | null | undefined)[]): string {
+  const said = [];
+  if (modes.includes(CATALOG.controls.modes.enforce)) said.push('Enforce: blocked');
+  if (modes.includes(CATALOG.controls.modes.watch)) said.push('Watch: would have blocked');
+  return said.join('. ');
+}
+/** An engine note without its own "Not checked: ", since the row already says so. */
+const plainNote = (note: string) => {
+  const t = note.startsWith('Not checked: ') ? note.slice('Not checked: '.length) : note;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/** A row as a result shows it: one of four statuses, one plain reason, and the checks it was judged on. */
+export interface RowResult {
+  row: PreflightRow;
+  status: RowStatus;
+  reason: string;
+  /** Not set up: the way to add the rule is Controls. */
+  addInControls: boolean;
+  members: PracticeCheck[];
 }
 
 /**
- * Setup's rule list (pre-flight Phase 1): one line per rule type, from the
- * check ids `ctl.<ruleType>.<ruleId>` (`ctl.pause_stop` stands alone). Each
- * line says how many rules, their modes, the extra calls and, when some can't
- * be checked, the shared reason. Rules with the same settings, mode and agents
- * (read from the engine's label, see engine-labels.ts) are flagged as
- * identical; keyword rules with no keywords are left out.
- * "Spend cap · 7 rules · 5 identical spend caps · Enforce · Not checked: it would need real spending."
+ * The seven rows of a report (D1, §3b), from structured fields only: a row is
+ * Didn't pass if any of its checks failed; Passed when every check of a rule
+ * set up for the agent passed (Watch passes when it would have acted, D3);
+ * Not set up when it has no rule, or its rules are Off or don't cover the
+ * agent (D2: never a failure); else Not checked, with the first open check's
+ * reason.
  */
-export function controlTypeLines(checks: PracticeControlCheck[]): ControlTypeLine[] {
-  const byType = new Map<string, PracticeControlCheck[]>();
-  for (const c of shownControls(checks)) {
-    const t = ruleType(c.id);
-    byType.set(t, [...(byType.get(t) ?? []), c]);
-  }
-  return [...byType].map(([type, rules]) => {
-    const labels = CATALOG.controls.labels as Record<string, string>;
-    const name = labels[type] ?? parseControlLabel(rules[0].label).name;
-    const parts = [name];
-    if (rules.length > 1) parts.push(counted(rules.length, 'rule'));
-    // Identical: same settings (from the label), mode and agents. The biggest such set is flagged; labels without settings never are.
-    const same = new Map<string, number>();
-    for (const r of rules) { const k = sameRuleKey(r); if (k !== null) same.set(k, (same.get(k) ?? 0) + 1); }
-    const identical = Math.max(0, ...same.values());
-    if (identical > 1) {
-      const noun = name.toLowerCase();
-      parts.push(`${identical} identical ${noun.endsWith('s') ? noun : `${noun}s`}`);
+export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResult[] {
+  return ROWS.map((row) => {
+    const members = membersOf(row, r.checks);
+    const out = (status: RowStatus, reason: string, addInControls = false): RowResult => ({ row, status, reason, addInControls, members });
+    if (!members.length) {
+      if (r.scope) return out('not_checked', 'Not part of this rerun.');
+      if (row.id === PAUSE_STOP) return out('not_checked', 'Pause and Stop aren’t on for this fleet.');
+      return isGuardrail(row) ? out('not_set_up', 'No rule yet.', true) : out('not_checked', 'Didn’t run.');
     }
-    const modes = MODE_ORDER.map((m) => [m, rules.filter((r) => r.mode === m).length] as const).filter(([, n]) => n > 0);
-    if (modes.length === 1) parts.push(modes[0][0]);
-    else if (modes.length > 1) parts.push(modes.map(([m, n]) => `${n} ${m}`).join(', '));
-    const checked = rules.filter((r) => r.checked);
-    const skipped = rules.filter((r) => !r.checked);
-    const calls = checked.reduce((n, r) => n + (r.calls ?? 0), 0);
-    if (checked.length) parts.push(calls ? counted(calls, 'extra call') : 'no extra calls');
-    if (skipped.length) {
-      const note = skipped[0].note ?? 'Not checked.';
-      parts.push(checked.length ? `${skipped.length} ${note.charAt(0).toLowerCase()}${note.slice(1)}` : note);
+    const failed = members.find((c) => c.status === 'failed');
+    if (failed) return out('failed', isGuardrail(row) ? failed.summary : `${failed.label}: ${failed.summary}`);
+    const live = members.filter(setUp);
+    if (!live.length) return out('not_set_up', notSetUpReason(members), true);
+    if (live.every((c) => c.status === 'passed')) {
+      if (!isGuardrail(row)) return out('passed', live[0].summary);
+      if (row.id === PAUSE_STOP) return out('passed', 'Paused and stopped. Only a person could resume it.');
+      const tested = row.id === 'spend_cap' ? ' Tested with a tiny limit.' : row.id === 'keyword' && live.some((c) => c.id.startsWith('ctl.keyword')) ? ' Keywords tested with a test word.' : '';
+      return out('passed', `${modeReason(live.map((c) => c.mode))}.${tested}`);
     }
-    return { type, text: parts.join(' · ') };
+    const open = live.find((c) => c.status !== 'passed')!;
+    const why = open.status === 'unsupported' ? plainNote(open.summary) : open.summary || STATUS_LABEL[open.status];
+    return out('not_checked', `${why}${open.testProblem ? ' (not your agent)' : ''}`);
   });
 }
 
-/** The control checks' extra calls on the agent's key (shown checks only), only the rows a rerun covers when it names some. */
+/** What setup says a row will do, before anything runs (§7 step 2): checked, or Not set up / Not checked with why. */
+export interface RowPlan {
+  row: PreflightRow;
+  status: 'will_check' | 'not_set_up' | 'not_checked';
+  reason: string;
+  addInControls: boolean;
+  /** The checks or rules the row covers, by name. */
+  members: string[];
+}
+export const WILL_CHECK = 'Will be checked';
+
+/**
+ * The seven rows as setup previews them: the agent rows from the catalog's
+ * checks, the guardrails from the engine's planned control checks (null: they
+ * couldn't be read). Empty keyword rules aren't planned by the engine.
+ */
+export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
+  return ROWS.map((row) => {
+    const out = (status: RowPlan['status'], reason: string, members: string[], addInControls = false): RowPlan => ({ row, status, reason, addInControls, members });
+    if (!isGuardrail(row)) {
+      const checks = membersOf(row, CATALOG.checks);
+      return out('will_check', counted(checks.length, 'check'), checks.map((c) => c.label));
+    }
+    if (!controls) return out('not_checked', 'Couldn’t read this fleet’s controls just now.', []);
+    const members = membersOf(row, controls);
+    const names = members.map((c) => (c.mode ? `${c.label} · ${c.mode}` : c.label));
+    if (!members.length) return row.id === PAUSE_STOP ? out('not_checked', 'Pause and Stop aren’t on for this fleet.', []) : out('not_set_up', 'No rule yet.', [], true);
+    const live = members.filter(setUp);
+    if (!live.length) return out('not_set_up', notSetUpReason(members), names, true);
+    const checked = live.filter((c) => c.checked);
+    if (!checked.length) return out('not_checked', plainNote(live.find((c) => c.note)?.note ?? 'Not checked.'), names);
+    const modes = [...new Set(checked.map((c) => c.mode).filter(Boolean))].join(' and ');
+    const calls = checked.reduce((n, c) => n + (c.calls ?? 0), 0);
+    return out('will_check', [members.length > 1 && counted(members.length, 'rule'), modes, calls ? counted(calls, 'extra call') : 'no extra calls'].filter(Boolean).join(' · '), names);
+  });
+}
+
+/** The pre-flight's five steps (§7 Phase 2). */
+export const PREFLIGHT_STEPS = [
+  { title: 'Pick agent', sub: 'The one active most recently' },
+  { title: 'What we’ll test', sub: `${ROWS.length} checks in ${ROW_GROUPS.length} groups` },
+  { title: 'Run', sub: 'One command on your computer' },
+  { title: 'Live', sub: 'The checks fill in' },
+  { title: 'Report', sub: 'Every result, to download' },
+] as const;
+
+/** Which step a screen is on: setup covers 1 and 2, a test waiting for the CLI is 3, a running one 4, a result 5. */
+export function preflightStep(view: 'setup' | 'run' | 'results', run: Pick<PracticeRun, 'lifecycle'> | null): number {
+  if (view === 'setup') return 0;
+  if (view === 'results') return 4;
+  return run?.lifecycle === 'draft' ? 2 : 3;
+}
+
+/** The control checks' extra calls on the agent's key, only the rows a rerun covers when it names some. */
 export function controlCalls(checks: PracticeControlCheck[], scope: string[] | null = null): number {
-  return shownControls(checks).filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
+  return checks.filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
 }
 
 // ── Results (§8) ─────────────────────────────────────────────────────────
@@ -326,14 +423,19 @@ const required = (r: PracticeReport) => r.checks.filter((c) => c.required);
 /** Required checks that didn't pass. */
 export const openChecks = (r: PracticeReport) => required(r).filter((c) => c.status !== 'passed');
 
-/** "Passed · all 9 checks · 3 runs", "Didn't pass · 1 check failed", "Didn't finish · 2 checks couldn't run (not your agent)". */
+/** The rows these failed checks belong to, by name and in row order: "Spend cap, Fails gracefully"; empty when none is a row's. */
+export function failedRowNames(failed: readonly string[]): string {
+  return ROWS.filter((row) => failed.some((id) => rowOf(id) === row)).map((row) => row.name).join(', ');
+}
+
+/** "Passed · all 9 checks · 3 runs", "Didn't pass · Spend cap", "Didn't finish · 2 checks couldn't run (not your agent)". */
 export function headline(r: PracticeReport): string {
   const runs = counted(r.runs, 'run');
   if (r.verdict === 'passed') {
     const scope = r.scope && [...new Set(required(r).map((c) => c.scenario))].join(', ');
     return `${VERDICT_LABEL.passed} · ${scope ? `${scope} only` : `all ${counted(required(r).length, 'check')}`} · ${runs}`;
   }
-  if (r.verdict === 'not_passed') return `${VERDICT_LABEL.not_passed} · ${counted(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`;
+  if (r.verdict === 'not_passed') return `${VERDICT_LABEL.not_passed} · ${failedRowNames(r.checks.filter((c) => c.status === 'failed').map((c) => c.id)) || `${counted(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`}`;
   const open = openChecks(r);
   const ours = open.length > 0 && open.every((c) => c.testProblem);
   return `${VERDICT_LABEL.incomplete} · ${open.length ? `${counted(open.length, 'check')} couldn't run` : 'no checks could run'}${ours ? ' (not your agent)' : ''}`;
@@ -449,9 +551,11 @@ export const isOpen = (l: PracticeRun['lifecycle']) => l === 'draft' || l === 'a
 export function pastResult(row: PracticeRunRow): { label: string; tone: 'brand' | 'warn' | 'muted' } {
   const verdict: PracticeVerdict = row.lifecycle === 'finished' && row.verdict ? row.verdict : 'incomplete';
   const tone = verdict === 'passed' ? 'brand' : verdict === 'not_passed' ? 'warn' : 'muted';
-  if (!row.rerun) return { label: VERDICT_LABEL[verdict], tone };
+  // The failing rows, by name (engine `failed`: the required checks that failed).
+  const names = verdict === 'not_passed' && row.failed?.length ? failedRowNames(row.failed) : '';
+  if (!row.rerun) return { label: names ? `${VERDICT_LABEL[verdict]} · ${names}` : VERDICT_LABEL[verdict], tone };
   const n = row.checks ? ` (${counted(row.checks.total, 'check')})` : '';
-  const words: Record<PracticeVerdict, string> = { passed: `passed${n}`, not_passed: `didn’t pass${n}`, incomplete: 'didn’t finish' };
+  const words: Record<PracticeVerdict, string> = { passed: `passed${n}`, not_passed: names ? `didn’t pass · ${names}` : `didn’t pass${n}`, incomplete: 'didn’t finish' };
   return { label: `Rerun · ${words[verdict]}`, tone };
 }
 
@@ -485,14 +589,28 @@ export function progressLine(run: PracticeRun, now: number): string {
   return `Practice tasks: ${p.done} of ${p.total} done${which} · ${since} min so far, ${usual}`;
 }
 
-/** Each practice task of the test and where it stands, for the running list. */
-export function taskList(run: PracticeRun): { name: string; state: 'done' | 'now' | 'todo' }[] {
+/** The practice tasks a row's checks are judged on: its agent checks' tasks, or the control step. */
+function rowTasks(row: PreflightRow): (Scenario | 'controls')[] {
+  if (isGuardrail(row)) return ['controls'];
+  return [...new Set(membersOf(row, CATALOG.checks).map((c) => c.task as Scenario))];
+}
+
+/**
+ * The seven rows while a test runs (§7 step 4, §9): each row's progress from
+ * the tasks done so far (`skip`: not part of this rerun). Pass or fail comes
+ * with the report, not before.
+ */
+export function liveRows(run: Pick<PracticeRun, 'runs' | 'scope' | 'progress'>): { row: PreflightRow; state: 'done' | 'now' | 'todo' | 'skip' }[] {
   const plan = planOf(run.scope);
+  const order = Array.from({ length: run.runs }, () => plan).flat();
   const done = run.progress?.done ?? 0;
-  return Array.from({ length: run.runs }, (_, k) => plan.map((s) => ({ s, k }))).flat().map(({ s, k }, i) => ({
-    name: `${TASK_NAMES[s]}${run.runs > 1 ? ` · run ${k + 1}` : ''}`,
-    state: i < done ? 'done' : i === done && run.progress ? 'now' : 'todo',
-  }));
+  return ROWS.map((row) => {
+    const tasks = rowTasks(row);
+    const at = order.flatMap((s, i) => (tasks.includes(s) ? [i] : []));
+    if (!at.length) return { row, state: 'skip' as const };
+    const state = at.every((i) => i < done) ? 'done' as const : run.progress && at.some((i) => i <= done) ? 'now' as const : 'todo' as const;
+    return { row, state };
+  });
 }
 
 /** "29:47", counting down to the run code's expiry; null once it has expired. */

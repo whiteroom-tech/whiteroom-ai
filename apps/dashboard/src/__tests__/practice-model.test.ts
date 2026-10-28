@@ -7,9 +7,9 @@ import contract from '@practice-contract/contract.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlTypeLines, costLine, fixLine, headline,
+  billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, costLine, fixLine, headline,
   CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
-  rerunKey, rerunScope, runKeyChoice, taskList,
+  rerunKey, rerunScope, runKeyChoice, liveRows, failedRowNames,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
 import type { PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource } from '@/lib/sandbox/practice/types';
@@ -68,15 +68,13 @@ describe('practice test setup: the agent’s model and where its calls go', () =
     expect(keyOptions(src)).toMatchObject({ initial: used, direct: false });
   });
 
-  it('renders the control checks as the engine planned them, and counts a rerun’s', () => {
+  it('counts the control checks’ extra calls as the engine planned them, and a rerun’s', () => {
     const checks = fixture<{ controls: { checks: PracticeControlCheck[] } }>('tasks.next.controls').controls.checks;
-    expect(controlTypeLines(checks).map((l) => l.text)).toEqual([
-      'Pause and Stop · 1 extra call', 'Model allowlist · Enforce · no extra calls', 'Loop breaker · Enforce · 2 extra calls', 'Call rate · Watch · 6 extra calls',
-      'Spend cap · Enforce · Not checked: it would need real spending.',
-    ]);
-    expect(controlCalls(checks)).toBe(9);
-    expect(controlCalls(checks, [checks[2].id])).toBe(2);
-    expect(controlCalls(checks, ['ctl'])).toBe(9);
+    // Engine E1: every planned row says whether its rule is set up for the agent under test.
+    expect(checks.every((c) => c.setup === 'ok')).toBe(true);
+    expect(controlCalls(checks)).toBe(11);
+    expect(controlCalls(checks, [checks[2].id])).toBe(checks[2].calls);
+    expect(controlCalls(checks, ['ctl'])).toBe(11);
   });
 
   it('R7: reads the Fleet key keys, and never lets one it can’t read be picked', async () => {
@@ -106,20 +104,23 @@ describe('practice test setup: the agent’s model and where its calls go', () =
 describe('practice test results (§8)', () => {
   it('headlines each verdict', () => {
     const r = fullReport();
-    expect(headline(r)).toBe('Passed · all 11 checks · 3 runs');
+    expect(headline(r)).toBe('Passed · all 12 checks · 3 runs');
     expect(passCaveat(r)).toBeNull();
     expect(passCaveat({ ...r, runs: 1 })).toMatch(/Run it 3 times/);
     expect(passCaveat({ ...r, sample: true })).toMatch(/sample agent/);
-    expect(headline(withCheck(r, 'c.timeout', { status: 'failed', reason: 'key_not_reused' }, 'not_passed'))).toBe("Didn't pass · 1 check failed");
+    expect(headline(withCheck(r, 'c.timeout', { status: 'failed', reason: 'key_not_reused' }, 'not_passed'))).toBe("Didn't pass · Fails gracefully");
+    // Every failing row is named, in row order.
+    const two = withCheck(withCheck(r, 'c.timeout', { status: 'failed' }, 'not_passed'), r.checks.find((c) => c.id.startsWith('ctl.spend_cap'))!.id, { status: 'failed' }, 'not_passed');
+    expect(headline(two)).toBe("Didn't pass · Fails gracefully, Spend cap");
     const ours = withCheck(withCheck(r, 'a.result', { status: 'error', testProblem: true }, 'incomplete'), 'b.result', { status: 'error', testProblem: true }, 'incomplete');
     expect(headline(ours)).toBe("Didn't finish · 2 checks couldn't run (not your agent)");
     expect(headline(withCheck(ours, 'b.result', { status: 'not_tested', testProblem: false }, 'incomplete'))).toBe("Didn't finish · 2 checks couldn't run");
   });
 
-  it('names a rerun’s scope, and the unsupported spend cap never counts', () => {
+  it('names a rerun’s scope; the spend cap is checked now (engine E1)', () => {
     const one = fixture<{ report: PracticeReport }>('runs.report').report;
     expect(headline(one)).toBe('Passed · Finishes a job correctly only · 1 run');
-    expect(fullReport().checks.find((c) => c.id.startsWith('ctl.spend_cap'))?.required).toBe(false);
+    expect(fullReport().checks.find((c) => c.id.startsWith('ctl.spend_cap'))).toMatchObject({ required: true, status: 'passed', setup: 'ok' });
   });
 
   it('reruns the failed checks, or the ones that didn’t run', () => {
@@ -141,12 +142,12 @@ describe('practice test results (§8)', () => {
 });
 
 describe('practice test cost (§1, §10 fixed copy)', () => {
-  it('caps a run at 120 calls, control checks included', () => {
+  it('caps a run at 130 calls, control checks included', () => {
     const e = callEstimate({ runs: 1, scope: null, controlCalls: 9, model: 'claude-haiku-4-5-20251001' });
-    expect(e.cap).toBe(120);
+    expect(e.cap).toBe(130);
     expect(e.cost).not.toBeNull();
-    expect(costLine(e, 1)).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\)\. Never more than 120 calls, including control checks\.$/);
-    expect(costLine(callEstimate({ runs: 3, scope: null, controlCalls: 9, model: null }), 3)).toMatch(/usually \d+–\d+ model calls\. Never more than 120 calls a run \(360 in all\)/);
+    expect(costLine(e, 1)).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(≈ \$[\d.]+–\$[\d.]+ at list price\)\. Never more than 130 calls, including control checks\.$/);
+    expect(costLine(callEstimate({ runs: 3, scope: null, controlCalls: 9, model: null }), 3)).toMatch(/usually \d+–\d+ model calls\. Never more than 130 calls a run \(390 in all\)/);
   });
 
   it('confirms a rerun with its calls and cap before a new code', () => {
@@ -211,10 +212,14 @@ describe('practice test progress and Past tests', () => {
     expect(progressLine(r, now)).toBe('Practice tasks: 7 of 18 done (run 2 of 3) · 12 min so far, usually 15–30 min in total');
     expect(lostContact(r, now)).toBe(false);
     expect(lostContact(run({ progress: { done: 7, total: 18, lastContactAt: '2026-10-12T14:18:00Z' } }), now)).toBe(true);
-    const list = taskList(r);
-    expect(list).toHaveLength(18);
-    expect(list[6]).toEqual({ name: 'Finishes a job correctly · run 2', state: 'done' });
-    expect(list[7].state).toBe('now');
+    // The seven rows fill in as tasks finish: run 2 has finished A and is on B's short version.
+    const live = (done: number, p: Partial<PracticeRun> = {}) => liveRows(run({ progress: { done, total: 18, lastContactAt: '2026-10-12T14:19:30Z' }, ...p })).map((x) => `${x.row.id}:${x.state}`);
+    expect(live(7)).toEqual(['finishes_job:now', 'long_task:now', 'fails_gracefully:now', 'spend_cap:now', 'loop_breaker:now', 'keyword:now', 'pause_stop:now']);
+    expect(live(1, { runs: 1 })).toEqual(['finishes_job:done', 'long_task:now', 'fails_gracefully:todo', 'spend_cap:todo', 'loop_breaker:todo', 'keyword:todo', 'pause_stop:todo']);
+    expect(live(6, { runs: 1 }).every((x) => x.endsWith(':done'))).toBe(true);
+    expect(liveRows(run({ progress: null, runs: 1 })).every((x) => x.state === 'todo')).toBe(true);
+    // A rerun of one check: the other rows aren't part of it.
+    expect(live(0, { runs: 1, scope: ['c.timeout'] })).toEqual(['finishes_job:skip', 'long_task:skip', 'fails_gracefully:now', 'spend_cap:skip', 'loop_breaker:skip', 'keyword:skip', 'pause_stop:skip']);
     expect(codeCountdown('2026-10-12T14:49:47Z', now)).toBe('29:47');
     expect(codeCountdown('2026-10-12T14:19:00Z', now)).toBeNull();
   });
@@ -229,6 +234,11 @@ describe('practice test progress and Past tests', () => {
     expect(pastTasks({ ...row, lifecycle: 'cancelled', scope: null, tasks: { finished: 4, total: 6 } })).toBe('4/6');
     expect(pastTasks({ ...row, scope: null, runs: 3, verdict: 'incomplete', tasks: { finished: 0, total: 18 } })).toBe('0/18');
     expect(pastResult({ ...row, rerun: false, verdict: 'not_passed' }).label).toBe("Didn't pass");
+    // Engine E1's `failed` names the failing rows, without fetching the report.
+    expect(row.failed).toEqual([]);
+    expect(pastResult({ ...row, rerun: false, verdict: 'not_passed', failed: ['c.timeout', 'ctl.spend_cap.gr_1'] }).label).toBe("Didn't pass · Fails gracefully, Spend cap");
+    expect(pastResult({ ...row, verdict: 'not_passed', failed: ['ctl.loop_breaker.gr_2'] }).label).toBe('Rerun · didn’t pass · Loop breaker + call rate');
+    expect(failedRowNames(['ctl.call_rate.x', 'ctl.loop_breaker.y', 'unknown.id'])).toBe('Loop breaker + call rate');
     expect(pastResult({ ...row, lifecycle: 'interrupted', verdict: null }).label).toBe('Rerun · didn’t finish');
     expect(pastKind({ sample: true })).toBe('Practice (sample)');
     expect(practiceAgent(true, 'readiness-sample')).toBe('WhiteRoom’s sample agent');
@@ -242,7 +252,13 @@ describe('practice test report (§9.8)', () => {
     const html = practiceReportHtml('r-7f3a2c1e', r, '2026-10-12T14:20:00Z');
     expect(html).toContain(`<meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}">`);
     expect(html).not.toMatch(/<script|<link|<img|src=/i);
-    expect(html).toContain("Didn't pass · 1 check failed");
+    expect(html).toContain("Didn't pass · Fails gracefully");
+    // The same seven rows as the screen, in their two groups, each with its status and reason.
+    expect(html).toContain('<h2>The agent</h2>');
+    expect(html).toContain('<h2>The guardrails</h2>');
+    expect(html).toMatch(/<strong>Fails gracefully<\/strong>.*<td class="bad">Didn&#39;t pass|<strong>Fails gracefully<\/strong>.*<td class="bad">Didn't pass/);
+    expect(html).toMatch(/<strong>Spend cap<\/strong>.*<td class="ok">Passed<br><span class="muted">Enforce: blocked\. Tested with a tiny limit\.<\/span>/);
+    expect(html).toMatch(/<strong>Allowlists \+ keywords<\/strong>.*<td class="ok">Passed/);
     expect(html).toContain('Saves once when a tool times out');
     expect(html).toContain('Fix: send the same key.</p>');
     expect(html).toContain('not as a certificate');
@@ -283,9 +299,9 @@ describe('practice tests on cloud providers (R7, §17)', () => {
 
   it('the results’ billing line names the key the test used, and the cap over all its runs', () => {
     const tested = (proxyKeyDisplayPrefix: string | null, keyHint: string | null) => ({ proxyKeyDisplayPrefix, keyHint }) as PracticeReport['tested'];
-    expect(billedLine({ runs: 1, tested: tested(null, null) })).toBe('Model calls were billed to the key you tested with, never more than 120.');
+    expect(billedLine({ runs: 1, tested: tested(null, null) })).toBe('Model calls were billed to the key you tested with, never more than 130.');
     expect(billedLine({ runs: 3, tested: tested('sk-wr-5aaa000000000000', '5wAA') }))
-      .toBe('Model calls were billed to the key you tested with (from Fleet key, ending 5wAA), never more than 120 a run (360 in all).');
+      .toBe('Model calls were billed to the key you tested with (from Fleet key, ending 5wAA), never more than 130 a run (390 in all).');
   });
 
   it('defaults to the Fleet key key the agent’s latest call came with, not the fleet’s own key', () => {
@@ -334,10 +350,10 @@ describe('practice tests on cloud providers (R7, §17)', () => {
 
   it('cost: Azure and Foundry show only the cap, Bedrock Anthropic’s list prices marked approx.', () => {
     const est = (provider: 'azure-openai' | 'foundry' | 'bedrock-mantle', model: string, runs = 1) => callEstimate({ runs, scope: null, controlCalls: 0, model, provider });
-    expect(costLine(est('azure-openai', 'my-gpt-4o-mini'), 1)).toBe('Never more than 120 calls, billed by your Azure account. That includes control checks.');
-    expect(costLine(est('foundry', 'claude-haiku-4-5', 3), 3)).toBe('Never more than 120 calls a run (360 in all), billed by your Azure account. That includes control checks.');
+    expect(costLine(est('azure-openai', 'my-gpt-4o-mini'), 1)).toBe('Never more than 130 calls, billed by your Azure account. That includes control checks.');
+    expect(costLine(est('foundry', 'claude-haiku-4-5', 3), 3)).toBe('Never more than 130 calls a run (390 in all), billed by your Azure account. That includes control checks.');
     const bedrock = costLine(est('bedrock-mantle', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'), 1);
-    expect(bedrock).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account, including control checks\.$/);
+    expect(bedrock).toMatch(/^On the key you test with: usually \d+–\d+ model calls \(approx\. \$\d\.\d\d–\$\d\.\d\d at Anthropic’s list prices\)\. Never more than 130 calls, billed by your AWS account, including control checks\.$/);
     expect(est('bedrock-mantle', 'anthropic.claude-haiku-4-5').cost).toEqual(callEstimate({ runs: 1, scope: null, controlCalls: 0, model: 'claude-haiku-4-5' }).cost);
     expect(rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'd', provider: 'azure-openai' })))
       .toBe('Rerun 1 check × 3 runs · never more than 30 model calls, billed by your Azure account.');

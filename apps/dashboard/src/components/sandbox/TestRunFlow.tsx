@@ -16,6 +16,7 @@ import { buildTestReport, checkLabel, memoryCheckDetail, reportSource, SANDBOX_C
 import { ROUTES } from '@/lib/routes';
 import s from './guided.module.css';
 import { PastTests } from './PastTests';
+import { StepsRail } from './StepsRail';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { PracticeCard, type PracticeEntry, usePracticeEntry } from './practice/PracticeCard';
 import { PRACTICE_SUMMARY } from '@/lib/sandbox/practice/model';
@@ -410,24 +411,6 @@ export function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChan
         );
       })}
     </div>
-  );
-}
-
-function StepsRail({ current }: { current: number }) {
-  return (
-    <ol className={s.rail} aria-label="Test steps">
-      {SANDBOX_STEPS.map((step, i) => {
-        const done = i < current;
-        const now = i === current;
-        return (
-          <li key={step.title} className={`${s.railStep} ${now ? s.railStepCurrent : ''}`} aria-current={now ? 'step' : undefined}>
-            <span className={`${s.railNum} ${done ? s.railNumDone : now ? s.railNumCurrent : ''}`}>{done ? CHECK_ICON_PASS : i + 1}</span>
-            <span className={`${s.railTitle} ${!done && !now ? s.railTitleTodo : ''}`}>{step.title}</span>
-            <span className={s.railSub}>{step.sub}</span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -1078,7 +1061,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     <main className={s.content}>
       {phase !== 'workspace' && <div className="wr-setup-leadwrap" style={{ marginBottom: 8 }}><PageLead>{SANDBOX_LEAD}</PageLead></div>}
       <div className={s.layout}>
-      <StepsRail current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
+      <StepsRail steps={SANDBOX_STEPS} current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
       <div className={s.body}>
       {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Retry</button></div>}
       {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Check now</button></div>}
@@ -1092,9 +1075,9 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
         <div className={s.btnRow}>
           <button className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => setPhase('setup')}>Test my agent →</button>
-          <button className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => void begin('demo')}>See a demo first</button>
+          <Link className={`${s.btn} ${s.btnSecondary}`} href={ROUTES.practiceDemo}>See a sample report</Link>
         </div>
-        <p className={s.small} style={{ marginTop: 10 }}>You’ll need the provider key your agent uses. The demo needs nothing.</p>
+        <p className={s.small} style={{ marginTop: 10 }}>You’ll need the provider key your agent uses. The sample report needs nothing.</p>
         <PracticeCard entry={practice} />
       </> : phase === 'setup' ? <>
         {/* ═══ SETUP ═══ */}
@@ -1284,7 +1267,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {run && <div className={s.footer}>{lastUpdated ? `Updated ${formatInZone(lastUpdated, { hour: 'numeric', minute: '2-digit', second: '2-digit' })} · ` : ''}{isDemo ? 'Demo' : `Test ${run.sandboxId}`}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
       </>}
 
-      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} practice={practice.rows ?? undefined} onDemo={busy ? undefined : () => void begin('demo')} />}
+      {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} practice={practice.rows ?? undefined} />}
       </div>
       </div>
 

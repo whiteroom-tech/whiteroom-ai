@@ -13,7 +13,8 @@ import {
   adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, keyFromEnv, keyHeader, keyVarOf, nodeTooOld, providerByShape, targetOrigin, words,
 } from "../src/practice/preflight.js";
 import { finalText } from "../src/practice/run.js";
-import { clean, copy, hideSecret, results, type Report } from "../src/practice/text.js";
+import { clean, copy, hideSecret, parseRequire, results, type Report } from "../src/practice/text.js";
+import { practice } from "../src/practice/index.js";
 import { fixture, startStub, type Stub } from "./stub.js";
 
 describe("preflight", () => {
@@ -173,8 +174,9 @@ describe("results (§8)", () => {
   it("Passed: all required checks, runs, disclaimer, dashboard; exit 0", () => {
     const r = results(report());
     assert.equal(r.code, 0);
-    assert.equal(r.lines[1], "Passed · all 11 checks · 3 runs");
-    assert.ok(r.lines.includes("  Spend cap · Enforce: Not checked: it would need real spending."));
+    assert.equal(r.lines[1], "Passed · all 12 checks · 3 runs");
+    // Engine E1: the spend cap is checked now, with a tiny limit.
+    assert.ok(r.lines.includes("  Passed: Spend cap · Enforce (Your cap works. Tested with a tiny limit: the call after it was blocked.)"));
     assert.match(r.lines.at(-1)!, /app\.whiteroom\.tech\/sandbox.*Past tests/);
   });
 
@@ -214,6 +216,71 @@ describe("results (§8)", () => {
     assert.match(results(rep).lines.join("\n"), /Run it 3 times/);
     rep.sample = true;
     assert.match(results(rep).lines.join("\n"), /sample agent/);
+  });
+});
+
+describe("--require (pre-flight D6)", () => {
+  const report = () => structuredClone((fixture("tasks.next.done").response as { report: Report }).report);
+  const ctl = (rep: Report, prefix: string) => rep.checks.find((c) => c.id.startsWith(prefix))!;
+
+  it("takes the catalog's row ids, and refuses unknown ones", () => {
+    assert.deepEqual(parseRequire("spend_cap, keyword,spend_cap"), ["spend_cap", "keyword"]);
+    const bad = parseRequire("spend_cap,budget");
+    assert.ok(!Array.isArray(bad) && /Unknown check for --require: budget\. Use any of: finishes_job, long_task, fails_gracefully, spend_cap, loop_breaker, keyword, pause_stop\./.test(bad.problem));
+    assert.ok(!Array.isArray(parseRequire(" , ")));
+  });
+
+  it("exits 2 on an unknown id before anything runs", async () => {
+    const errs: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => (errs.push(String(chunk)), true)) as typeof process.stderr.write;
+    try {
+      assert.equal(await practice(["run", "--require", "nope"]), 2);
+    } finally {
+      process.stderr.write = write;
+    }
+    assert.match(errs.join(""), /Unknown check for --require: nope/);
+  });
+
+  it("a required row Passed in Enforce keeps exit 0", () => {
+    const r = results(report(), ["finishes_job", "spend_cap", "pause_stop"]);
+    assert.equal(r.code, 0);
+    assert.ok(!r.lines.some((l) => l.includes("--require")));
+  });
+
+  it("Watch, Not checked and Not set up all exit 1, each named", () => {
+    // The fixture's call rate is in Watch: the loop breaker row passed, but not in Enforce.
+    let r = results(report(), ["loop_breaker"]);
+    assert.equal(r.code, 1);
+    assert.ok(r.lines.includes("Required checks (--require) that didn't pass"));
+    assert.ok(r.lines.includes("  Loop breaker + call rate: Passed in Watch, not Enforce"));
+    // The fixture's model allowlist passed in Enforce; without it the row has no rule: Not set up.
+    assert.equal(results(report(), ["keyword"]).code, 0);
+    const rep = report();
+    rep.checks = rep.checks.filter((c) => !c.id.startsWith("ctl.model_allowlist"));
+    assert.ok(results(rep, ["keyword"]).lines.includes("  Allowlists + keywords: Not set up"));
+    // A rule that doesn't cover the agent under test is Not set up for it.
+    Object.assign(ctl(rep, "ctl.spend_cap"), { status: "unsupported", required: false, setup: "not_set_up", notCoveredAgent: "support-bot" });
+    assert.ok(results(rep, ["spend_cap"]).lines.includes("  Spend cap: Not set up"));
+    // Couldn't be checked: Not checked.
+    Object.assign(ctl(rep, "ctl.spend_cap"), { status: "unsupported", setup: "ok", notCoveredAgent: undefined });
+    assert.ok(results(rep, ["spend_cap"]).lines.includes("  Spend cap: Not checked"));
+    // A rerun's rows outside it weren't checked.
+    const one = report();
+    one.scope = ["c.timeout"];
+    one.checks = one.checks.filter((c) => c.id === "c.timeout");
+    assert.ok(results(one, ["finishes_job"]).lines.includes("  Finishes the job correctly: Not checked"));
+  });
+
+  it("keeps Didn't pass and Didn't finish as they are, naming the failed row", () => {
+    const rep = report();
+    Object.assign(rep.checks.find((c) => c.id === "c.timeout")!, { status: "failed" });
+    rep.verdict = "not_passed";
+    const r = results(rep, ["fails_gracefully"]);
+    assert.equal(r.code, 1);
+    assert.ok(r.lines.includes("  Fails gracefully: Didn't pass"));
+    rep.verdict = "incomplete";
+    assert.equal(results(rep, ["fails_gracefully"]).code, 3);
   });
 });
 

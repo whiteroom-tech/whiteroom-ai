@@ -3,12 +3,20 @@
 import { type RefObject, useState } from 'react';
 import { CopyButton, FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, lostContact, progressLine, type PracticeKeyChoice, type StarterLang, taskList,
+  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, liveRows, lostContact, progressLine, type PracticeKeyChoice, type StarterLang,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 import { plural } from '@/lib/format';
+import { RowGroups, type RowItem } from './PreflightRows';
+
+const LIVE_LABEL = { done: 'Done', now: 'In progress', todo: 'To do', skip: 'Not part of this rerun' } as const;
+
+/** The seven rows while the test runs (§9 Live): progress only; pass or fail comes with the report. */
+export function liveItems(run: PracticeRun): RowItem[] {
+  return liveRows(run).map(({ row, state }) => ({ row, tone: state === 'done' ? 'pass' : state === 'now' ? 'now' : 'muted', label: LIVE_LABEL[state] }));
+}
 
 function Command({ text, label }: { text: string; label: string }) {
   return (
@@ -109,17 +117,11 @@ export function PracticeRunView({ run, code, keyChoice = null, now, busy, headin
         {lost && <div className={s.error} role="alert">Lost contact with your computer. Check it’s awake and online, with the terminal still open. The test ends on its own after 5 minutes without contact.</div>}
         <div className={s.card}>
           <p style={{ color: 'var(--tx)' }}>{run.lifecycle !== 'finalizing' ? progressLine(run, now) : allDone(run) ? 'Every practice task is done. The result shows here in a moment.' : 'Working out the result from the practice tasks that ran. It shows here in a moment.'}</p>
-          {run.lifecycle === 'active' && (
-            <ol className={p.tasks} aria-label="Practice tasks">
-              {taskList(run).map((t, i) => (
-                <li key={i} className={`${p.task} ${t.state === 'done' ? p.taskDone : t.state === 'now' ? p.taskNow : ''}`}>
-                  <span className={p.taskMark} aria-hidden="true">{t.state === 'done' ? '✓' : t.state === 'now' ? '›' : '·'}</span>
-                  <span>{t.name}<span className={s.srOnly}>{t.state === 'done' ? ', done' : t.state === 'now' ? ', running' : ''}</span></span>
-                </li>
-              ))}
-            </ol>
-          )}
         </div>
+        <section className={s.card} aria-label="Checks">
+          <p className={s.small}>Connected: your computer started the test. Each check shows its result when the report is ready.</p>
+          <RowGroups items={liveItems(run)} />
+        </section>
       </>}
       {run.lifecycle !== 'finalizing' && <div className={s.btnRow}><button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={onEnd}>End test</button></div>}
     </div>

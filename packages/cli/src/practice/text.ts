@@ -125,6 +125,9 @@ export interface Check {
   summary?: string | null;
   fix?: string | null;
   mode?: string | null;
+  /** Control checks: whether the rule is set up for the agent under test ("off": Off in Controls; "not_set_up": it doesn't cover the agent). */
+  setup?: "ok" | "not_set_up" | "off";
+  notCoveredAgent?: string;
 }
 export interface Report {
   verdict: "passed" | "not_passed" | "incomplete";
@@ -136,8 +139,46 @@ export interface Report {
 
 const STATUS = CATALOG.statusLabels;
 
-/** The results screen in the terminal, and its exit code: 0 Passed, 1 Didn't pass, 3 Didn't finish. */
-export function results(r: Report): Ending {
+// ── --require (pre-flight D6): rows CI insists on ────────────────────────
+
+const ROW_IDS = CATALOG.rows.map((x) => x.id);
+
+/** --require's comma list as row ids, or the usage problem (an unknown id, or none). */
+export function parseRequire(value: string): string[] | { problem: string } {
+  const ids = [...new Set(value.split(",").map((s) => s.trim()).filter(Boolean))];
+  const unknown = ids.filter((id) => !ROW_IDS.includes(id));
+  if (!ids.length || unknown.length) {
+    return { problem: `${unknown.length ? `Unknown check for --require: ${unknown.join(", ")}.` : "--require needs at least one check."} Use any of: ${ROW_IDS.join(", ")}.` };
+  }
+  return ids;
+}
+
+const isMember = (id: string, prefix: string) => (prefix.endsWith(".") ? id.startsWith(prefix) : id === prefix || id.startsWith(`${prefix}.`));
+const setUp = (c: Check) => (c.setup ?? "ok") === "ok" && !c.notCoveredAgent;
+
+/**
+ * Why a required row doesn't count as passed, or null when it does: Passed
+ * in Enforce. A row passes when every check of a rule set up for the agent
+ * passed and none failed; a guardrail must also be in Enforce on every rule
+ * that counted (Watch, Not checked and Not set up all fail, D6).
+ */
+export function requiredRowProblem(r: Report, rowId: string): string | null {
+  const row = CATALOG.rows.find((x) => x.id === rowId)!;
+  const members = r.checks.filter((c) => row.members.some((m) => isMember(c.id, m)));
+  if (members.some((c) => c.status === "failed")) return CATALOG.rowStatusLabels.failed;
+  const live = members.filter(setUp);
+  if (!live.length) {
+    // No rule (Pause and Stop need none), or its rules are Off or don't cover the agent.
+    const noRule = !members.length && row.members.every((m) => m.startsWith("ctl.")) && row.id !== "pause_stop";
+    return members.length || noRule ? CATALOG.rowStatusLabels.not_set_up : CATALOG.rowStatusLabels.not_checked;
+  }
+  if (!live.every((c) => c.status === "passed")) return CATALOG.rowStatusLabels.not_checked;
+  const notEnforced = live.some((c) => c.mode != null && c.mode !== CATALOG.controls.modes.enforce);
+  return notEnforced ? `${CATALOG.rowStatusLabels.passed} in ${CATALOG.controls.modes.watch}, not ${CATALOG.controls.modes.enforce}` : null;
+}
+
+/** The results screen in the terminal, and its exit code: 0 Passed, 1 Didn't pass, 3 Didn't finish. With --require, a required row not Passed in Enforce turns a pass into 1. */
+export function results(r: Report, require: readonly string[] = []): Ending {
   const required = r.checks.filter((c) => c.required);
   const runs = plural(r.runs, "run");
   const failed = required.filter((c) => c.status === "failed");
@@ -171,6 +212,12 @@ export function results(r: Report): Ending {
     for (const c of fixes) lines.push(`  ${c.label}: ${c.fix}`);
   }
   const next = code === 1 ? "Rerun failed checks" : code === 3 ? "Rerun checks that didn't run" : !r.sample && r.runs === 1 ? "Run it 3 times" : "Past tests";
+  const missed = require.map((id) => ({ id, why: requiredRowProblem(r, id) })).filter((x) => x.why);
+  if (missed.length) {
+    lines.push("", "Required checks (--require) that didn't pass");
+    for (const m of missed) lines.push(`  ${CATALOG.rows.find((x) => x.id === m.id)!.name}: ${m.why}`);
+    if (code === 0) code = 1;
+  }
   lines.push("", CATALOG.disclaimer, next === "Past tests" ? `See the full result in the dashboard (${DASHBOARD}), under Past tests.` : `${button(next)}.`);
   return { code, lines, result: true };
 }

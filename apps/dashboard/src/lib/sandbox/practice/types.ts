@@ -28,8 +28,15 @@ export interface PracticeCheck {
   fix: string | null;
   mode?: string | null;
   agents?: 'all' | string[];
+  /** Control checks: whether the rule is set up for the agent under test (engine E1); absent reads as set up. */
+  setup?: PracticeRuleSetup;
+  /** The agent under test, when the rule doesn't cover it. */
+  notCoveredAgent?: string;
   failedCalls?: PracticeFailedCalls;
 }
+
+/** Whether a control check's rule applies to the agent under test: Off in Controls, not covering it, or set up. */
+export type PracticeRuleSetup = 'ok' | 'not_set_up' | 'off';
 
 export interface PracticeReport {
   testVersion: number;
@@ -88,6 +95,8 @@ export interface PracticeRunRow {
   createdAt: string;
   endedAt: string | null;
   checks: { passed: number; total: number } | null;
+  /** The required checks that failed (engine E1), so the row that failed can be named; absent from older engines. */
+  failed?: string[];
   /** Tasks finished of those planned; the control checks count as one task a run. */
   tasks: { finished: number; total: number };
 }
@@ -118,6 +127,8 @@ export interface PracticeControlCheck {
   agents: 'all' | string[];
   checked: boolean;
   note: string | null;
+  setup?: PracticeRuleSetup;
+  notCoveredAgent?: string;
   calls: number | null;
 }
 

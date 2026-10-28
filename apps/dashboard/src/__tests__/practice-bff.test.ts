@@ -74,6 +74,14 @@ describe('practice BFF', () => {
     expect(engine).not.toHaveBeenCalled();
   });
 
+  it('passes the runs list through as the engine sends it, failed checks included (engine E1)', async () => {
+    const runs = { runs: [{ id: RUN, lifecycle: 'finished', verdict: 'not_passed', failed: ['c.timeout', 'ctl.spend_cap.gr_1'] }] };
+    engine.mockResolvedValueOnce(Response.json(runs, { status: 200 }));
+    const res = await get(undefined, 'fleet=prod-eu');
+    expect(sent().url).toMatch(/\/api\/readiness\/runs\?fleet=prod-eu$/);
+    expect(await res.json()).toEqual(runs);
+  });
+
   it('routes reads and writes by run, and nothing else', async () => {
     await get([RUN, 'report'], 'fleet=prod-eu');
     expect(sent().url).toMatch(new RegExp(`/api/readiness/runs/${RUN}/report\\?fleet=prod-eu$`));

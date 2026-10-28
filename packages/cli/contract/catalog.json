@@ -1,5 +1,5 @@
 {
-  "testVersion": 1,
+  "testVersion": 2,
   "observers": {
     "whiteroom": "Seen by WhiteRoom",
     "records": "Checked against the test tools' records",
@@ -121,7 +121,7 @@
     "C_timeout": 10,
     "C_fail": 10
   },
-  "controlCallsMax": 31,
+  "controlCallsMax": 41,
   "controls": {
     "scenario": "Your controls",
     "labels": {
@@ -154,7 +154,7 @@
     "no_summary",
     "fault_not_fired"
   ],
-  "runCallCap": 120,
+  "runCallCap": 130,
   "minutesPerRun": [
     5,
     10
@@ -193,5 +193,72 @@
     "bedrock_role": "This fleet reaches AWS Bedrock through an IAM role, which practice tests don't support.",
     "key_not_found": "That key isn't on Fleet key any more. Pick another key.",
     "model_required": "Enter the model your agent uses: the deployment name on Azure, or a Bedrock model ID like anthropic.claude-haiku-4-5."
+  },
+  "rows": [
+    {
+      "id": "finishes_job",
+      "name": "Finishes the job correctly",
+      "group": "The agent",
+      "members": [
+        "a."
+      ]
+    },
+    {
+      "id": "long_task",
+      "name": "Survives a long task",
+      "group": "The agent",
+      "members": [
+        "b."
+      ]
+    },
+    {
+      "id": "fails_gracefully",
+      "name": "Fails gracefully",
+      "group": "The agent",
+      "members": [
+        "c."
+      ]
+    },
+    {
+      "id": "spend_cap",
+      "name": "Spend cap",
+      "group": "The guardrails",
+      "members": [
+        "ctl.spend_cap"
+      ]
+    },
+    {
+      "id": "loop_breaker",
+      "name": "Loop breaker + call rate",
+      "group": "The guardrails",
+      "members": [
+        "ctl.loop_breaker",
+        "ctl.call_rate"
+      ]
+    },
+    {
+      "id": "keyword",
+      "name": "Allowlists + keywords",
+      "group": "The guardrails",
+      "members": [
+        "ctl.model_allowlist",
+        "ctl.tool_list",
+        "ctl.keyword"
+      ]
+    },
+    {
+      "id": "pause_stop",
+      "name": "Human pause/stop",
+      "group": "The guardrails",
+      "members": [
+        "ctl.pause_stop"
+      ]
+    }
+  ],
+  "rowStatusLabels": {
+    "passed": "Passed",
+    "failed": "Didn't pass",
+    "not_set_up": "Not set up",
+    "not_checked": "Not checked"
   }
 }
