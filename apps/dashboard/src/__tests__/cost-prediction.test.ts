@@ -109,6 +109,20 @@ async function mount(api: ReturnType<typeof fakeApi>) {
 }
 
 describe('Cost prediction card', () => {
+  it('labels an agent with an hourly rate Hourly cost', async () => {
+    const api = fakeApi(res([agent('code-reviewer', { burnRateUsdPerHour: 0.354, costPerTaskUsd: 0.0081 })]));
+    const m = await mount(api);
+    await act(async () => { m.button('Cost prediction').click(); });
+    expect(m.text()).toMatch(/Hourly cost.*\$0\.354 an hour while it works/);
+  });
+
+  it('says an agent with no priced calls has no hourly cost to show yet', async () => {
+    const api = fakeApi(res([agent('code-reviewer', { costPerTaskUsd: null, burnRateUsdPerHour: null })]));
+    const m = await mount(api);
+    await act(async () => { m.button('Cost prediction').click(); });
+    expect(m.text()).toMatch(/Cost\s*No priced calls yet to estimate from\./);
+  });
+
   it('starts folded; unfolded, it shows one agent and works out what a budget and a token limit allow as you type', async () => {
     const api = fakeApi(res([agent('code-reviewer', { costPerTaskUsd: 0.0081, tokensPerTask: 1221 }), agent('lead-agent')]));
     const m = await mount(api);
@@ -117,6 +131,9 @@ describe('Cost prediction card', () => {
     await act(async () => { m.button('Cost prediction').click(); });
     expect((m.el.querySelector('select') as HTMLSelectElement).value).toBe('code-reviewer');
     expect(m.text()).toContain('$0.0081 a model call · last 14 days');
+    // No hourly rate for this agent yet: its line is labelled Cost, not Hourly cost.
+    expect(m.text()).toMatch(/Cost\s*\$0\.0081 a model call/);
+    expect(m.text()).not.toContain('Hourly cost');
     expect(m.text()).toContain('Enter a budget to see how many model calls it allows.');
     const [usd, tok] = m.inputs();
     await m.type(usd, '20');

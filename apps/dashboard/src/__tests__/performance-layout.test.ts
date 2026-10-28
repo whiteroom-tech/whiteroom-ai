@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
 
-const { IndexView, smallerContextCard } = await import('@/app/(citadel)/performance/_components/IndexView');
+const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
 
 const DATA = {
   fleetId: 'f1',
@@ -17,7 +17,7 @@ const DATA = {
 };
 
 const props = (data: object = DATA, rangeLabel = 'last 24 h') => ({
-  data, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: { spend_cap: { blocks: 2, wouldBlocks: 57 } } },
+  data, hourlyData: { hourly: [] }, auditFailed: false, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: { spend_cap: { blocks: 2, wouldBlocks: 57 } } },
   savingsDays: null, agentIds: null, rangeLabel, fleetId: 'f1', authKey: 'k',
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
 });
@@ -37,10 +37,11 @@ describe('Performance overview layout', () => {
     expect(text).toContain('Per-agent numbers and scores are on Home → Agents');
   });
 
-  it('puts spend, savings, the hourly cost and smaller context under Cost, and rule activity under Control', () => {
+  it('puts spend, savings and smaller context under Cost (hourly cost is in Cost prediction), and rule activity under Control', () => {
     const html = view();
     const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
-    for (const label of ['Spend', 'Saved by WhiteRoom', 'Hourly cost', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    for (const label of ['Spend', 'Saved by WhiteRoom', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    expect(cost).not.toContain('>Hourly cost<');
     expect(cost).not.toContain('Average per hour');
     expect(cost).toContain('$0.912');
     expect(cost).toContain('99 model calls');
@@ -54,16 +55,20 @@ describe('Performance overview layout', () => {
     for (const label of ['Failed calls', 'Typical response', 'Model calls']) expect(perf).toContain(`>${label}<`);
   });
 
-  it('works out the card figures: the working-hour rate, trends against the prior window, and the typical response', () => {
+  it('works out the figures: the fleet hourly cost, trends against the prior window, and the typical response', () => {
     const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     const withPrev = text(renderToStaticMarkup(h(IndexView, {
       ...props(), data: { ...DATA, previous: { period: { start: '', end: '' }, totalCalls: 33, totalCost: 456_000, pricedAttempts: 33, unpricedAttempts: 0, avgLatencyMs: 3800 } },
       workingHour: { usdPerHour: 0.354, lookbackHours: 336 }, rangeUsedTokens: 1_740_000, govSavings: { tokensSaved: 3_180_000, costSaved: 2.34, partial: false },
     } as never)));
-    expect(withPrev).toMatch(/Hourly cost .*\$0\.354 an hour while agents work · last 14 days/);
+    // The fleet's hourly cost sits on Cost prediction's folded row; each agent's own is inside it.
+    expect(withPrev).toMatch(/Cost prediction \$0\.354 an hour while agents work, last 14 days/);
     expect(withPrev).toMatch(/Model calls .*99 ↑ 200% vs prior 24 h/);
     expect(withPrev).toMatch(/Typical response .*1\.9s ↓ 50% faster vs prior 24 h/);
-    expect(withPrev).toMatch(/3\.18M fewer tokens · about 65% less · estimated/);
+    // Every Cost figure follows the range: Saved says what its dollars are, Smaller context has the range's tokens.
+    expect(withPrev).toMatch(/Saved by WhiteRoom \$2\.34 estimated, at your model prices/);
+    expect(withPrev).toMatch(/Smaller context 65% less sent to models · 3\.18M fewer tokens · ≈1\.3 kWh saved/);
+    expect(withPrev).not.toMatch(/all time/);
     // No prior window (older engine): the plain lines.
     const plain = text(view());
     expect(plain).toMatch(/Typical response .*1\.9s median time per call/);
@@ -77,7 +82,7 @@ describe('Performance overview, what it leaves out', () => {
   it('has no More detail toggle, Calls per hour chart or By agent table, but does show its sections', () => {
     const html = renderToStaticMarkup(h(IndexView, {
       data: DATA, hourlyData: { hourly: Array.from({ length: 48 }, (_, i) => ({ hour: new Date(Date.UTC(2026, 9, 25, i)).toISOString(), calls: 4, costMicros: 19_000, errors: 0 })) },
-      auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: { 'lead-agent': { blocks: 2, wouldBlocks: 0 }, writer: { blocks: 0, wouldBlocks: 57 } }, byRule: {} },
+      auditFailed: false, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: { 'lead-agent': { blocks: 2, wouldBlocks: 0 }, writer: { blocks: 0, wouldBlocks: 57 } }, byRule: {} },
       savingsDays: null, agentIds: ['lead-agent', 'writer'], rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
       onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
     } as never));
@@ -90,9 +95,13 @@ describe('Performance overview, what it leaves out', () => {
 });
 
 describe('Smaller context card', () => {
-  it('shows the ratio over all time, nothing saved as —, and unknown as — never 0', () => {
-    expect(smallerContextCard(90.84)).toEqual({ value: '90.8%', sub: 'less sent to models, on average · all time' });
-    expect(smallerContextCard(0)).toEqual({ value: '—', sub: 'nothing saved yet' });
-    expect(smallerContextCard(null)).toEqual({ value: '—', sub: 'not available yet' });
+  const text = (p: Record<string, unknown>) => renderToStaticMarkup(h(IndexView, { ...props(), ...p } as never)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  it('takes the range from the with-vs-without days when there are any', () => {
+    const t = text({ savingsDays: [{ day: '2026-10-26', used: 1_000_000, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }], rangeUsedTokens: 999 });
+    expect(t).toMatch(/Smaller context 75% less sent to models · 3M fewer tokens/);
+  });
+  it('says it is unknown, never 0, when the tokens used are unknown, and why when the savings failed to load', () => {
+    expect(text({ savingsDays: null, rangeUsedTokens: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
+    expect(text({ auditFailed: true })).toMatch(/Smaller context — couldn’t load, retrying on the next refresh/);
   });
 });
