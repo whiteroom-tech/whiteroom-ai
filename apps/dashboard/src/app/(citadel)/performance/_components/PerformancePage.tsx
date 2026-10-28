@@ -23,9 +23,6 @@ import { feedbackOrThrow, sendWithFindingRecovery } from '@/lib/diagnosis/feedba
 import { IndexView, type FeedbackResult } from './IndexView';
 import { EvidenceView } from './AgentEvidence';
 
-/** P0 #2 changelog: unnamed calls now count in the overview. Shown for a month after the change. */
-const UNNAMED_CALLS_NOTE_UNTIL = Date.parse('2026-11-19T00:00:00Z');
-
 type ViewMode = 'index' | 'evidence';
 
 /** An agent's own page: where ?view=agent and agent links now go. */
@@ -350,7 +347,6 @@ export function PerformancePage({ retentionDays }: {
 
         {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
           workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null}
-          showUnnamedNote={Date.now() < UNNAMED_CALLS_NOTE_UNTIL}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

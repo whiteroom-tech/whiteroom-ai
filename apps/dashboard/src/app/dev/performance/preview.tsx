@@ -10,7 +10,7 @@ import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost } from '@/lib/format';
 import type { GovernanceCounts } from '@/lib/governance';
 import type { DaySavings } from '@/lib/analytics-metrics';
-import { latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { countTrend, latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, savedCaption, trendText } from '@/lib/performance-overview';
 import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
 import { addDays, clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsView } from '@/lib/runs';
 import { PERF_MAX_DAYS, perfOldest } from '@/lib/performance-range';
@@ -130,7 +130,7 @@ const COUNTS: GovernanceCounts = {
 
 type Sample = 'quiet' | 'problem' | 'empty';
 
-const CARDS = { spendMicros: 3_170_000, calls: 479, savedMicros: 2_340_000, savedTokens: 3_180_000, usedTokens: 1_740_000, perHourMicros: 354_000, failed: 0, latencyMs: 2100, prevLatencyMs: 3280, prevCalls: 165 };
+const CARDS = { spendMicros: 3_170_000, calls: 479, savedMicros: 2_340_000, savedTokens: 3_180_000, usedTokens: 1_740_000, perHourMicros: 354_000, failed: 0, latencyMs: 2100, prevLatencyMs: 3280, prevCalls: 165, prevSpendMicros: 2_480_000 };
 
 export function PerformancePreview() {
   // One sample at a time, so each card shows once, as on the real page.
@@ -159,42 +159,47 @@ export function PerformancePreview() {
         </div>
       )}
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
-        {/* The same order as the page: lead line, Cost, Control, Performance, closing line. */}
+        {/* The same order as the page: Needs you, Cost, Rules, Reliability, Recommendations, closing line. */}
         <p className="wr-perf-lead">
-          {label.charAt(0).toUpperCase() + label.slice(1)}: <strong>{empty ? '$0.00' : fmtCost(CARDS.spendMicros)}</strong> spent · {rulesCaughtText(empty ? 0 : 120, 0)} · <strong>{failed}</strong> failed calls
-          {!empty && <> · <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{sample === 'problem' ? 2 : 1} {sample === 'problem' ? 'recommendations' : 'recommendation'} ↓</button></>}
+          <span className="wr-lbl">Needs you</span>{' '}
+          {empty
+            ? <span className="wr-cap">Nothing needs you right now.</span>
+            : <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{sample === 'problem' ? 2 : 1} {sample === 'problem' ? 'recommendations' : 'recommendation'} ↓</button>}
         </p>
         <section aria-labelledby="pv-cost">
           <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={label} />
           {!empty && (
             <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
-              <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={<>{CARDS.calls} model calls<span style={{ display: 'block', marginTop: 8, color: 'var(--tx3)' }}>Includes calls from agents without a name since Oct 19.</span></>} />
+              <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={trendText(pctChange(CARDS.spendMicros, CARDS.prevSpendMicros), prior)} />
               <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, 0)} />
-              <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
+              <StatCard variant="card" label="Less input sent" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
             </div>
           )}
           <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'} />
-          {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} defaultOpen />}
           {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend={`spend per call ↓21% vs ${prior}`} stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
+          {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} />}
+          {sample === 'problem' && <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>12 calls {label} came from agents without a name: in these totals, but no agent’s.</p>}
         </section>
         {!empty && (
           <>
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-control">
-              <SectionHeader id="pv-control" title="Control" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage rules in Controls →</a></>} />
+              <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage in Controls →</a></>} />
               <ControlSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unavailable={false} />
             </section>
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-performance">
-              <SectionHeader id="pv-performance" title="Performance" sub="How well your agents worked, and what to look at." meta={label} />
+              <SectionHeader id="pv-performance" title="Reliability" sub="How well your agents worked." meta={label} />
               <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
                 <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={String(failed)} sub={`of ${CARDS.calls} calls · ${failed ? ((failed / CARDS.calls) * 100).toFixed(1) : 0}%`} />
                 <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub={(() => { const t = latencyTrend(CARDS.latencyMs, CARDS.prevLatencyMs, prior)!; return <span style={{ color: 'var(--ok)' }}>{t.text}</span>; })()} />
-                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={trendText(pctChange(CARDS.calls, CARDS.prevCalls), prior)} />
+                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={countTrend(CARDS.calls, CARDS.prevCalls, prior)} />
               </div>
-              {sample === 'quiet'
-                ? <div className="wr-perf-row"><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
-                : <div className="wr-perf-row"><Insights key="problem" runs={FLAGGED} health={PROBLEM} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
+              {sample === 'quiet' ? <Insights key="quiet" runs={[]} health={QUIET} /> : <Insights key="problem" runs={FLAGGED} health={PROBLEM} />}
+            </section>
+            <hr className="wr-perf-rule" />
+            <section aria-label="Recommendations">
+              {sample === 'quiet' ? <Recs key="quiet-recs" recs={RECS_QUIET} /> : <Recs key="problem-recs" recs={RECS_PROBLEM} />}
             </section>
           </>
         )}

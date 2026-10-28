@@ -36,18 +36,22 @@ describe('dailySavings', () => {
   });
 });
 
-describe('Tokens: with WhiteRoom vs without', () => {
+describe('See how it adds up', () => {
   const days = [
     { day: '2026-10-21', used: 0, saved: 0 },
     { day: '2026-10-22', used: 50_100, saved: 1_569_900 },
     { day: '2026-10-23', used: 1_670_000, saved: 960_000 },
   ];
-  it('shows the two totals, the difference in words, and each day folded under By day', () => {
+  it('shows the two totals, the energy estimate and each day, the totals on the closed row', () => {
     const html = renderToStaticMarkup(h(TokensCompare, { days, usdByDay: { '2026-10-22': 1_260_000 }, defaultOpen: true }));
     expect(html).toContain('Without WhiteRoom, est.');
     expect(html).toContain('>4.25M<');
     expect(html).toContain('>1.72M<');
-    expect(html).toContain('2.53M fewer tokens · about 60% less');
+    expect(html).toContain('4.25M without · 1.72M with · by day');
+    // The percent and tokens saved are the card's: not repeated on screen (the chart's label still says them).
+    expect(html.replace(/aria-label="[^"]*"/g, '')).not.toContain('fewer tokens');
+    expect(html).toContain('less energy, estimated');
+    expect(html).toContain('By day, last 7 days');
     expect(html).toContain('1.57M saved');
     expect(html).toContain('$1.26');
     expect(html).toContain('aria-expanded="true"');
@@ -69,8 +73,10 @@ describe('Tokens: with WhiteRoom vs without', () => {
     expect(html).toContain('960K saved');
     expect(html).not.toContain('wr-tokens__usd');
   });
-  it('starts with By day folded, and says so when nothing ran', () => {
-    expect(renderToStaticMarkup(h(TokensCompare, { days }))).toContain('aria-expanded="false"');
-    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]] }))).toContain('No model calls in the last 7 days.');
+  it('starts folded, and says so when nothing ran', () => {
+    const closed = renderToStaticMarkup(h(TokensCompare, { days }));
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).not.toContain('Without WhiteRoom, est.');
+    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]], defaultOpen: true }))).toContain('No model calls in the last 7 days.');
   });
 });

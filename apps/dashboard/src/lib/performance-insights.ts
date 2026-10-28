@@ -56,13 +56,19 @@ export function untrackedSignals(): string[] {
 /** The list opens on what needs you. */
 export const DEFAULT_REC_STATUS = 'open';
 
+/** Below this many recommendations listed, a filter is clutter: they all fit at a glance. */
+export const REC_FILTER_MIN = 5;
+
 /**
- * Whether Recommendations offers an agent filter: when its rows (fleet-wide,
- * not range-scoped) come from more than one agent, when the range's traffic
- * does, when the traffic list couldn't load, or while a filter is typed.
+ * Whether Recommendations offers an agent filter: while a filter is typed, or
+ * when at least REC_FILTER_MIN are listed and its rows (fleet-wide, not
+ * range-scoped) come from more than one agent, the range's traffic does, or
+ * the traffic list couldn't load.
  */
-export function showRecAgentFilter(recs: { agentId: string }[], agentIds: string[] | null, typed: string): boolean {
-  return typed !== '' || agentIds === null || agentIds.length > 1 || new Set(recs.map((r) => r.agentId)).size > 1;
+export function showRecAgentFilter(recs: { agentId: string }[], agentIds: string[] | null, typed: string, total: number): boolean {
+  if (typed !== '') return true;
+  if (total < REC_FILTER_MIN) return false;
+  return agentIds === null || agentIds.length > 1 || new Set(recs.map((r) => r.agentId)).size > 1;
 }
 
 /** An older engine recommendation's title from its detector id: "review_cache_behavior" → "Cache behavior". */

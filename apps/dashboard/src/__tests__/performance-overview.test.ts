@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
-  checkGroups, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
+  checkGroups, countTrend, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
+  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleModeCounts, rulesCaughtText, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -22,6 +22,15 @@ const RULES = [
   rule('gr_m', 'model_allowlist', 'watch', { allowedModels: ['claude-haiku-4-5'] }),
   rule('gr_off', 'call_rate', 'off', { maxCalls: 10 }),
 ];
+
+describe('count trends', () => {
+  it('says the difference in calls, signed, or no change; nothing without a prior figure', () => {
+    expect(countTrend(477, 99, 'prior 7 days')).toBe('+378 vs prior 7 days');
+    expect(countTrend(10, 12, 'prior day')).toBe('−2 vs prior day');
+    expect(countTrend(5, 5, 'prior day')).toBe('no change vs prior day');
+    expect(countTrend(5, undefined, 'prior day')).toBeNull();
+  });
+});
 
 describe('lookbacks', () => {
   it('says hours under a day and pluralises days', () => {
@@ -66,7 +75,7 @@ describe('savings and spend', () => {
     expect(savedCaption(0, 5)).toBe('from cache reads · estimated');
     expect(savedCaption(0, 0)).toBe('nothing saved in this range');
     // Smaller context for the range: the same share as the with-vs-without chart.
-    expect(rangeContextCard(3_180_000, 1_740_000)).toEqual({ value: '65%', sub: 'less input sent to models · 3.18M fewer input tokens · ≈1.3 kWh saved' });
+    expect(rangeContextCard(3_180_000, 1_740_000)).toEqual({ value: '65%', sub: '3.18M fewer input tokens' });
     // Input is plain plus cached input; output isn't counted.
     expect(inputTokensOf({ inputTokens: 10, cacheReadTokens: 5, cacheWriteTokens: 2 })).toBe(17);
     expect([...inputByLocalDay([{ hour: new Date(2026, 9, 26, 23).toISOString(), inputTokens: 4 }, { hour: new Date(2026, 9, 27, 1).toISOString(), inputTokens: 6, cacheReadTokens: 1 }])]).toEqual([['2026-10-26', 4], ['2026-10-27', 7]]);
@@ -110,12 +119,6 @@ describe('Control', () => {
       ['Keywords', 1, null, null],
     ]);
   });
-  it('lists every rule type and agent, the quiet types on one row', () => {
-    const types = ruleTypeRows(COUNTS);
-    expect(types.active.map((r) => r.label)).toEqual(['Model allowlist', 'Spend cap', 'Loop breaker', 'Keywords']);
-    expect(types.quiet).toEqual(['Tool list', 'Call rate']);
-    expect(ruleAgentRows(COUNTS).map((r) => r.agent)).toEqual(['code-reviewer', 'lead-agent', '']);
-  });
 });
 
 describe('Agent health', () => {
@@ -142,8 +145,8 @@ describe('Agent health', () => {
     expect(tones).toEqual([['Repeating the same call', 'neutral'], ['Unusually expensive days', 'neutral'], ['A tool keeps failing', 'ok']]);
   });
   it('heads the card with what ran and what still needs data', () => {
-    expect(healthHeadline({ fine: 17, needsData: 22, openFindings: 0 })).toEqual({ title: 'No issues in 17 checks', sub: '22 more checks need more data before they can run', tone: 'ok' });
-    expect(healthHeadline({ fine: 1, needsData: 1, openFindings: 1 })).toEqual({ title: '1 problem in 2 checks', sub: '1 more check needs more data before it can run', tone: 'warn' });
+    expect(healthHeadline({ fine: 17, needsData: 22, openFindings: 0 })).toEqual({ title: 'No issues in 17 checks', sub: '22 more checks run as your agents do more work', tone: 'ok' });
+    expect(healthHeadline({ fine: 1, needsData: 1, openFindings: 1 })).toEqual({ title: '1 problem in 2 checks', sub: '1 more check runs as your agents do more work', tone: 'warn' });
     expect(healthHeadline({ fine: 0, needsData: 3, openFindings: 0 }).title).toBe('No checks could run yet');
     expect(healthCounts({ fine: 17, needsData: 22, openFindings: 0 })).toBe('17 passed · 22 need more data');
     expect(healthCounts({ fine: 1, needsData: 1, openFindings: 2 })).toBe('2 problems · 1 passed · 1 needs more data');

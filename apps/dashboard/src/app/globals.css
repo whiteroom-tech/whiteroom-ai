@@ -693,12 +693,12 @@ a.wr-agent-name:hover { color: var(--brand); text-decoration: underline; }
 /* Spend by model. */
 .wr-models__bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; margin: 4px 0 12px; }
 .wr-models__key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; }
-/* Control. */
-.wr-ctrl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 24px; padding: 20px; }
+/* Rules: one line, the top rules folded below. */
+.wr-rules-line { margin: 0; padding: 16px 20px; font-size: var(--fs-md); line-height: 1.5; color: var(--tx); }
+.wr-rules-top { padding: 0 20px 12px; }
 .wr-ctrl__row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--tx); text-decoration: none; }
 a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: underline; }
 .wr-ctrl__name { flex: 1 1 160px; min-width: 0; }
-.wr-ctrl__all { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 24px; padding: 0 20px 20px; }
 /* Agent health, mockup layout. */
 .wr-health { margin-bottom: 0; border-radius: 14px; overflow: hidden; }
 .wr-health__head { padding: 14px 20px; }

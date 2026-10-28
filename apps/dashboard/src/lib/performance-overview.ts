@@ -9,7 +9,7 @@ import { RULE_LABELS } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, notSetUp, ruleSentence } from '@/lib/controls-view';
-import { fmtCost, fmtCount, fmtEnergy, fmtTokens, plural } from '@/lib/format';
+import { fmtCost, fmtCount, fmtTokens, plural } from '@/lib/format';
 import { dayKey, formatDayKey } from '@/lib/zone-time';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 
@@ -47,6 +47,14 @@ export function trendText(change: number | null, prior: string): string | null {
   if (change === null) return null;
   if (change === 0) return `no change vs ${prior}`;
   return `${change > 0 ? '↑' : '↓'} ${fmtCount(Math.abs(change))}% vs ${prior}`;
+}
+
+/** A count's trend in calls, not a percent (a small base makes percents loud): "+378 vs prior 7 days". */
+export function countTrend(now: number, before: number | null | undefined, prior: string): string | null {
+  if (before == null || !Number.isFinite(now)) return null;
+  const d = now - before;
+  if (d === 0) return `no change vs ${prior}`;
+  return `${d > 0 ? '+' : '−'}${fmtCount(Math.abs(d))} vs ${prior}`;
 }
 
 /** Typical response's trend: faster is good (green), slower is a warning. */
@@ -91,8 +99,8 @@ export function rangeContextCard(saved: number, used: number | null): { value: s
   if (used === null) return { value: '—', sub: 'not available yet' };
   if (!(saved > 0)) return { value: '—', sub: 'nothing saved in this range' };
   const pct = Math.round((saved / (used + saved)) * 100);
-  const energy = fmtEnergy(saved);
-  return { value: `${pct}%`, sub: `less input sent to models · ${fmtTokens(saved)} fewer input tokens${energy ? ` · ${energy} saved` : ''}` };
+  // The energy estimate is in "See how it adds up", with the tokens it comes from.
+  return { value: `${pct}%`, sub: `${fmtTokens(saved)} fewer input tokens` };
 }
 
 /** Totals over the chart's days: tokens with WhiteRoom and the estimate without it. */
@@ -183,23 +191,6 @@ export function topCaught(counts: GovernanceCounts | null, byRuleId: Record<stri
     });
 }
 
-/** All rules and agents, rule-type table: types with activity, then the quiet ones on one muted row. */
-export function ruleTypeRows(counts: GovernanceCounts): { active: Array<{ label: string; blocked: number; wouldBlock: number }>; quiet: string[] } {
-  const all = Object.entries(counts.byRule) as [GovernanceRuleType, GovernanceTally][];
-  const active = all.filter(([, t]) => t.blocks + t.wouldBlocks > 0)
-    .sort(([, x], [, y]) => y.blocks + y.wouldBlocks - (x.blocks + x.wouldBlocks))
-    .map(([type, t]) => ({ label: RULE_LABELS[type], blocked: t.blocks, wouldBlock: t.wouldBlocks }));
-  return { active, quiet: all.filter(([, t]) => t.blocks + t.wouldBlocks === 0).map(([type]) => RULE_LABELS[type]) };
-}
-
-/** All rules and agents, agent table: agents a rule caught, most first; '' (no agent) reads "Unnamed agent". */
-export function ruleAgentRows(counts: GovernanceCounts): Array<{ agent: string; blocked: number; wouldBlock: number }> {
-  return Object.entries(counts.byAgent)
-    .filter(([, t]) => t.blocks + t.wouldBlocks > 0)
-    .sort(([a, x], [b, y]) => y.blocks + y.wouldBlocks - (x.blocks + x.wouldBlocks) || a.localeCompare(b))
-    .map(([agent, t]) => ({ agent, blocked: t.blocks, wouldBlock: t.wouldBlocks }));
-}
-
 // -- Agent health ---------------------------------------------------------------
 
 export interface CheckGroup {
@@ -248,7 +239,7 @@ export function healthHeadline(s: { fine: number; needsData: number; openFinding
   const title = s.openFindings > 0
     ? `${s.openFindings} ${plural(s.openFindings, 'problem')} in ${ran} ${plural(ran, 'check')}`
     : ran > 0 ? `No issues in ${ran} ${plural(ran, 'check')}` : 'No checks could run yet';
-  const sub = s.needsData > 0 ? `${s.needsData} more ${plural(s.needsData, 'check needs', 'checks need')} more data before ${s.needsData === 1 ? 'it' : 'they'} can run` : null;
+  const sub = s.needsData > 0 ? `${s.needsData} more ${plural(s.needsData, 'check runs', 'checks run')} as your agents do more work` : null;
   return { title, sub, tone: s.openFindings > 0 ? 'warn' : 'ok' };
 }
 

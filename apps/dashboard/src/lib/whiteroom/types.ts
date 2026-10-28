@@ -265,6 +265,8 @@ export interface PerformanceIndexResult {
     errorRate: number;
     /** Calls stopped by a governance rule in Enforce (absent on older engines). */
     blockedCount?: number;
+    /** Calls from agents without a name, in every total but credited to no agent (absent on older engines). */
+    unnamedCalls?: number;
     models: PerformanceModelSummary[];
     /** Prompt caching over the window, priced per model (absent on older engines). */
     cache?: CacheSummary;
