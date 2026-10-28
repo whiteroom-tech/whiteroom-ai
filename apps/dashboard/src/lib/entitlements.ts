@@ -29,8 +29,6 @@ export interface SubscriptionRow {
   stripeSubscriptionId: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
-  /** Agents the Pro subscription is billed for, as Stripe last reported it. */
-  billedAgents: number | null;
   /** When a paid subscription stopped being active (null: active, or lapsed before this was recorded). */
   lapsedAt: string | null;
 }
@@ -52,7 +50,7 @@ export interface Entitlement {
 export async function getSubscriptionRow(userId: string, q: Queryable = db()): Promise<SubscriptionRow | null> {
   const { rows } = await q.query(
     `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
-            current_period_end::text, cancel_at_period_end, billed_agents, lapsed_at::text
+            current_period_end::text, cancel_at_period_end, lapsed_at::text
      FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
@@ -66,7 +64,6 @@ export async function getSubscriptionRow(userId: string, q: Queryable = db()): P
     stripeSubscriptionId: r.stripe_subscription_id,
     currentPeriodEnd: r.current_period_end,
     cancelAtPeriodEnd: r.cancel_at_period_end,
-    billedAgents: r.billed_agents ?? null,
     lapsedAt: r.lapsed_at ?? null,
   };
 }
@@ -90,7 +87,7 @@ export async function resolvePlan(userId: string, q: Queryable = db()): Promise<
 
 /**
  * Total agents across every fleet this user controls, as the engine counts
- * them — the same number the engine admits against and Pro is billed on.
+ * them: the number Settings shows against the plan's included agents.
  * Null when the engine can't be reached, so callers never mistake an outage
  * for an account with no agents.
  */

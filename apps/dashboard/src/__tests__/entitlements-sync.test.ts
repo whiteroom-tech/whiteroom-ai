@@ -44,12 +44,14 @@ describe('syncEntitlementsToEngine', () => {
     expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'expired', status: 'inactive', maxAgents: 0 });
   });
 
-  it('keeps a trial account on Starter limits', async () => {
+  // Starter's 3 agents are soft: the engine gets only the runaway guard, never 3.
+  it('keeps a trial account on Starter limits, with the runaway guard as its agent cap', async () => {
     account({ sub: null, trialEndsAt: new Date(Date.now() + 86_400_000).toISOString() });
     await syncEntitlementsToEngine('u1');
-    expect(pushed()).toMatchObject({ plan: 'starter', status: 'active', maxAgents: 3, retentionDays: 30 });
+    expect(pushed()).toMatchObject({ plan: 'starter', status: 'active', maxAgents: 500, retentionDays: 30 });
   });
 
+  // Pro's 7 is soft too: the same guard, not 7.
   it('sends Pro limits for a paying Pro account after the trial', async () => {
     account({
       sub: { plan: 'pro', status: 'active', plan_override: null, stripe_customer_id: 'cus_1' },

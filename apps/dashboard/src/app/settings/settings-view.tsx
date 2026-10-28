@@ -28,9 +28,10 @@ import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { AlertsStatus, CompressionPreview, DataSettings } from '@/lib/whiteroom/client';
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import type { Entitlement } from '@/lib/entitlements';
-import { AUDIT_KEPT, PLANS, TRIAL_DAYS, formatPrice, hasLiveSubscription, type PlanId } from '@/lib/plans';
-import { agentPlanStats } from '@/lib/metric-display';
-import { CLOSE_WINDOW_DAYS, isClosingOpen, type ClosingState } from '@/lib/closing-shared';
+import { AUDIT_KEPT, PLANS, TRIAL_DAYS, hasLiveSubscription, type PlanId } from '@/lib/plans';
+import { agentsIncluded, monthShareLine } from '@/lib/metric-display';
+import { getMonthSavings } from '@/lib/plan-savings';
+import { CLOSE_WINDOW_DAYS, isClosingOpen, SUPPORT_EMAIL, type ClosingState } from '@/lib/closing-shared';
 import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
 import { plural, DAY_MS } from '@/lib/format';
 
@@ -258,6 +259,26 @@ function PlanSection({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { plan, limits, usage, subscription } = entitlement;
+  const agents = agentsIncluded(plan, usage.agents);
+  // The account's free period, by date: a subscriber can be inside it too
+  // (Stripe carries the rest over as a trial), where onTrial is false.
+  const freeNow = Date.parse(entitlement.trialEndsAt) > Date.now();
+  // Not on a comped plan or a contract: nothing is billed there.
+  const selfServe = PLANS[plan].pricing !== null && !subscription?.planOverride;
+  // This month's savings in cents: null while loading or unreadable ("—"
+  // shown), 'none' when no subscription bills savings (the line is hidden).
+  const [monthShare, setMonthShare] = useState<number | null | 'none'>(null);
+  const wantsShare = selfServe && !freeNow;
+  const showsShare = wantsShare && monthShare !== 'none';
+  useEffect(() => {
+    if (!wantsShare) return;
+    let live = true;
+    getMonthSavings().then(
+      (r) => { if (live) setMonthShare(r === null ? null : 'savedCents' in r ? r.savedCents : 'none'); },
+      () => { if (live) setMonthShare(null); },
+    );
+    return () => { live = false; };
+  }, [wantsShare]);
 
   async function go(action: () => Promise<{ ok: boolean; url?: string; error?: string; support?: boolean }>, key: string) {
     setBusy(key);
@@ -278,11 +299,14 @@ function PlanSection({
   // second subscription), so the cards route there instead.
   const subscribed = hasLiveSubscription(subscription);
   // On the free period, Starter is still worth offering: subscribing is how
-  // they keep it once the 90 days are up.
-  const offers = purchasablePlans.filter((p) => p !== plan || entitlement.onTrial);
+  // they keep it once the free days are up.
+  // Never on a custom contract or a comped plan: a Checkout there would start
+  // a second, self-serve bill beside it.
+  const contracted = plan === 'enterprise' || !!subscription?.planOverride;
+  const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
   const trialEnd = shortDay(entitlement.trialEndsAt);
   // ceil so an active trial never reads "0 days left"; capped because a DST
-  // shift inside the window can push a fresh 90-day trial to 90 days and an hour.
+  // shift inside the window can push a fresh trial to its length and an hour.
   const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / DAY_MS)));
 
   return (
@@ -308,14 +332,29 @@ function PlanSection({
         )}
       </div>
 
+      {showsShare && (
+        <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>{monthShareLine(plan, monthShare)}</p>
+      )}
+      {selfServe && freeNow && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
+
       <div className="wr-settings-stats">
         <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} over={usage.fleets > limits.maxFleets ? `${usage.fleets - limits.maxFleets} over the ${PLANS[plan].name} limit` : undefined} />
         {/* Live registered agents, never 0 when the engine can't be reached (M16).
-            Pro's billed quantity is Stripe's last confirmed one, which can lag a change. */}
-        {plan !== 'pro' && usage.agents !== null ? (
+            The plan's agent count is soft: going over it stops nothing. */}
+        {agents ? (
+          <div className="wr-settings-stat" data-warn={agents.over ? '' : undefined}>
+            <div className="wr-settings-stat__label">Agents</div>
+            <div className="wr-settings-stat__num">{agents.value}</div>
+            {agents.over && (
+              <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>
+                Nothing stops · <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'inherit' }}>Talk to us about larger fleets</a>
+              </div>
+            )}
+          </div>
+        ) : usage.agents !== null && plan === 'expired' ? (
           <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} over={usage.agents > limits.maxAgentsPerFleet ? `${usage.agents - limits.maxAgentsPerFleet} over the ${PLANS[plan].name} limit` : undefined} />
         ) : (
-          agentPlanStats(plan, usage.agents, subscription?.billedAgents).map((s) => <Stat key={s.label} label={s.label} value={s.value} />)
+          <Stat label="Agents registered" value={usage.agents === null ? 'Unavailable' : String(usage.agents)} />
         )}
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
@@ -323,17 +362,17 @@ function PlanSection({
         History means calls and runs. The audit trail is kept for {AUDIT_KEPT}.
       </p>
 
-      {offers.length > 0 && (
-        <div className="wr-settings-plans">
-          {offers.map((p) => (
-            <div key={p} className="wr-settings-plan">
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
-                <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{formatPrice(PLANS[p].pricing?.monthlyCents ?? null)}/mo</strong>
-              </div>
-              <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
-              </ul>
+      <div className="wr-settings-plans">
+        {(['starter', 'pro', 'enterprise'] as const).map((p) => (
+          <div key={p} className="wr-settings-plan">
+            <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
+            <p style={{ fontSize: 'var(--fs-sm)', margin: '6px 0 0' }}>{PLANS[p].priceLine}</p>
+            <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+            {p === 'enterprise' ? (
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--secondary wr-btn--h32">Talk to us</a>
+            ) : canBuy(p) && (
               <Button
                 variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
                 disabled={busy !== null || pending}
@@ -345,10 +384,10 @@ function PlanSection({
                     ? `Subscribe (free until ${trialEnd})`
                     : `Switch to ${PLANS[p].name}`}
               </Button>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+          </div>
+        ))}
+      </div>
     </Section>
   );
 }

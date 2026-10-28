@@ -145,15 +145,11 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
   const found = planItem(sub.items.data);
   const plan = found?.plan ?? 'none';
-  // Only Pro is billed per agent; a Starter quantity is always 1 and means
-  // nothing to the billing sync.
-  const billedAgents = found?.plan === 'pro' ? (found.item.quantity ?? null) : null;
-
   await db().query(
     `INSERT INTO subscriptions (
        user_id, stripe_customer_id, stripe_subscription_id, plan, status,
-       current_period_end, cancel_at_period_end, billed_agents, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+       current_period_end, cancel_at_period_end, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
      ON CONFLICT (user_id) DO UPDATE SET
        stripe_customer_id     = EXCLUDED.stripe_customer_id,
        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
@@ -161,12 +157,11 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
        status                 = EXCLUDED.status,
        current_period_end     = EXCLUDED.current_period_end,
        cancel_at_period_end   = EXCLUDED.cancel_at_period_end,
-       billed_agents          = EXCLUDED.billed_agents,
        -- The moment a paid subscription stops being active, kept until it's active again.
        lapsed_at              = CASE
-                                  WHEN EXCLUDED.status = ANY($9) THEN NULL
+                                  WHEN EXCLUDED.status = ANY($8) THEN NULL
                                   WHEN subscriptions.lapsed_at IS NOT NULL THEN subscriptions.lapsed_at
-                                  WHEN subscriptions.status = ANY($9) THEN now()
+                                  WHEN subscriptions.status = ANY($8) THEN now()
                                 END,
        updated_at             = now()`,
     [
@@ -177,7 +172,6 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
       sub.status,
       periodEnd(sub),
       sub.cancel_at_period_end ?? false,
-      billedAgents,
       ACTIVE_STATUS_LIST,
     ],
   );

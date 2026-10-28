@@ -56,11 +56,11 @@ function subscription(items: Array<{ price: string; quantity: number }>) {
   };
 }
 
-/** The plan and billed_agents the upsert wrote: parameters 4 and 8. */
+/** The plan the latest upsert wrote (parameter 4), and whether it still writes the retired per-agent cache. */
 function written() {
-  const upsert = mocks.query.mock.calls.find((c) => String(c[0]).includes('INSERT INTO subscriptions'));
+  const upsert = mocks.query.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO subscriptions')).at(-1);
   const params = upsert?.[1] as unknown[];
-  return { plan: params[3], billedAgents: params[7] };
+  return { plan: params[3], writesBilledAgents: String(upsert?.[0]).includes('billed_agents') };
 }
 
 beforeEach(() => {
@@ -68,6 +68,10 @@ beforeEach(() => {
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
   process.env.STRIPE_PRICE_STARTER = 'price_starter';
   process.env.STRIPE_PRICE_PRO = 'price_pro';
+  process.env.STRIPE_PRICE_STARTER_SHARE = 'price_starter_share';
+  process.env.STRIPE_PRICE_PRO_SHARE = 'price_pro_share';
+  process.env.STRIPE_PRICE_STARTER_FEE = 'price_starter_fee';
+  process.env.STRIPE_PRICE_PRO_FEE = 'price_pro_fee';
   // rowCount 1 means the idempotency claim succeeds; everything else is a write.
   mocks.query.mockResolvedValue({ rowCount: 1, rows: [] });
   mocks.sync.mockResolvedValue(true);
@@ -78,29 +82,37 @@ beforeEach(() => {
 });
 
 describe('stripe webhook: subscription upsert', () => {
-  it('records the Pro agent quantity', async () => {
-    expect((await deliver(subscription([{ price: 'price_pro', quantity: 9 }]))).status).toBe(200);
-    expect(written()).toEqual({ plan: 'pro', billedAgents: 9 });
+  it('maps a savings-share subscription to its plan, with no agent quantity', async () => {
+    expect((await deliver(subscription([{ price: 'price_pro_share', quantity: 1 }]))).status).toBe(200);
+    expect(written()).toEqual({ plan: 'pro', writesBilledAgents: false });
   });
 
-  it('records no agent quantity for Starter', async () => {
+  it('still maps a subscription on a retired price', async () => {
+    await deliver(subscription([{ price: 'price_pro', quantity: 9 }]));
+    expect(written()).toEqual({ plan: 'pro', writesBilledAgents: false });
     await deliver(subscription([{ price: 'price_starter', quantity: 1 }]));
-    expect(written()).toEqual({ plan: 'starter', billedAgents: null });
+    expect(written()).toEqual({ plan: 'starter', writesBilledAgents: false });
   });
 
-  // An add-on or a portal plan switch can put another item first; reading
-  // position 0 would have called this subscription 'none'.
-  it('finds the plan item by price, not by position', async () => {
+  // The fee item, an add-on or a portal plan switch can put another item
+  // first; reading position 0 would have got the plan wrong.
+  it('finds the plan by its share item, whichever item is first', async () => {
     await deliver(subscription([
       { price: 'price_addon', quantity: 3 },
-      { price: 'price_pro', quantity: 12 },
+      { price: 'price_starter_fee', quantity: 4 },
+      { price: 'price_pro_share', quantity: 1 },
     ]));
-    expect(written()).toEqual({ plan: 'pro', billedAgents: 12 });
+    expect(written()).toEqual({ plan: 'pro', writesBilledAgents: false });
+  });
+
+  it('maps a subscription with only the fee item to that fee\'s plan', async () => {
+    await deliver(subscription([{ price: 'price_starter_fee', quantity: 2 }]));
+    expect(written()).toEqual({ plan: 'starter', writesBilledAgents: false });
   });
 
   it('grants nothing for a subscription on a price that is not ours', async () => {
     await deliver(subscription([{ price: 'price_retired', quantity: 4 }]));
-    expect(written()).toEqual({ plan: 'none', billedAgents: null });
+    expect(written()).toEqual({ plan: 'none', writesBilledAgents: false });
   });
 
   it('pushes the new limits to the engine', async () => {
@@ -148,7 +160,7 @@ describe('stripe webhook: a subscription on a closing account', () => {
     const upsert = mocks.query.mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO subscriptions'));
     const sql = String(upsert?.[0]);
     // Only a change from an active status sets it; a later write keeps it; active again clears it.
-    const active = upsert?.[1][8] as string[];
+    const active = upsert?.[1][7] as string[];
     expect(active).toEqual(['active', 'trialing', 'past_due']);
 
     // Runs the upsert's own CASE clauses, in order, over a run of Stripe writes.
@@ -157,9 +169,9 @@ describe('stripe webhook: a subscription on a closing account', () => {
     expect(clauses.length).toBeGreaterThan(0);
     const write = (row: { status: string; lapsedAt: string | null }, next: string, now: string) => {
       const cond: Record<string, boolean> = {
-        'EXCLUDED.status = ANY($9)': active.includes(next),
+        'EXCLUDED.status = ANY($8)': active.includes(next),
         'subscriptions.lapsed_at IS NOT NULL': row.lapsedAt !== null,
-        'subscriptions.status = ANY($9)': active.includes(row.status),
+        'subscriptions.status = ANY($8)': active.includes(row.status),
       };
       const value: Record<string, string | null> = { NULL: null, 'subscriptions.lapsed_at': row.lapsedAt, 'now()': now };
       for (const [when, then] of clauses) {

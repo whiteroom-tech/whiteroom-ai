@@ -1020,7 +1020,7 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
 .wr-settings-stat__label { font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
 .wr-settings-stat__num { font-family: var(--font-display); font-size: var(--fs-num); line-height: 46px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 6px 0 4px; }
 .wr-settings-plans { display: flex; flex-wrap: wrap; gap: 16px; }
-.wr-settings-plan { flex: 1 1 280px; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.wr-settings-plan { flex: 1 1 220px; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
 .wr-settings-plan ul { list-style: disc; }
 @media (max-width: 720px) {
   .wr-setup-page { padding: 16px 16px 64px; }

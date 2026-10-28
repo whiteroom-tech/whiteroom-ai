@@ -1,8 +1,8 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import Resend from 'next-auth/providers/resend';
-import PostgresAdapter from '@auth/pg-adapter';
 import { db } from '@/lib/db';
+import { authAdapter } from '@/lib/auth-adapter';
 import { authCookieOptions, csrfCookieName, sessionCookieName } from '@/lib/auth-cookies';
 import { resolvePostLoginUrl } from '@/lib/auth-redirect';
 import { magicLinkEmail } from '@/lib/magic-link-email';
@@ -36,7 +36,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // user id in a session is now the users.id the adapter issued rather than
   // the raw Google `sub` — see migrations/001_nextauth.sql for the backfill
   // that keeps pre-adapter rows attached to their Google account.
-  adapter: PostgresAdapter(db()),
+  adapter: authAdapter(),
   providers: [
     Google,
     Resend({

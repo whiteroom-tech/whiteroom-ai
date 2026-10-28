@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   clientQuery: vi.fn(),
-  countAgents: vi.fn(),
-  retrieve: vi.fn(),
-  updateItem: vi.fn(),
+  syncAccount: vi.fn(),
   finishDeleted: vi.fn(),
   cancelClosed: vi.fn(),
 }));
@@ -21,14 +19,14 @@ vi.mock('@/lib/db', () => ({
     },
   }),
 }));
-vi.mock('@/lib/entitlements', () => ({ countAgents: mocks.countAgents }));
-vi.mock('@/lib/account-closing', () => ({ finishDeletedAccounts: mocks.finishDeleted, cancelClosedSubscriptions: mocks.cancelClosed }));
-vi.mock('@/lib/stripe', () => ({
-  stripe: () => ({
-    subscriptions: { retrieve: mocks.retrieve },
-    subscriptionItems: { update: mocks.updateItem },
-  }),
+vi.mock('@/lib/savings-billing', () => ({
+  syncAccountBilling: mocks.syncAccount,
+  savingsByUtcDay: vi.fn(),
+  feeSeats: vi.fn(),
 }));
+vi.mock('@/lib/account-closing', () => ({ finishDeletedAccounts: mocks.finishDeleted, cancelClosedSubscriptions: mocks.cancelClosed }));
+const fakeStripe = vi.hoisted(() => ({ marker: 'stripe' }));
+vi.mock('@/lib/stripe', () => ({ stripe: () => fakeStripe }));
 
 const { POST } = await import('@/app/api/internal/billing-sync/route');
 
@@ -40,20 +38,19 @@ function run(secret?: string) {
   return POST(new Request('https://app.whiteroom.tech/api/internal/billing-sync', { method: 'POST', headers }));
 }
 
-function proSubscription(quantity: number) {
-  return { items: { data: [{ id: 'si_1', quantity, price: { id: 'price_pro' } }] } };
+function account(id: string) {
+  return { user_id: id, stripe_customer_id: `cus_${id}`, stripe_subscription_id: `sub_${id}`, trial_ends_at: '2026-09-01 00:00:00+00' };
 }
+
+const NOTHING = { events: 0, savingsUnavailable: false, fee: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.WR_ENTITLEMENT_SYNC_SECRET = SECRET;
   process.env.STRIPE_SECRET_KEY = 'sk_test_x';
-  process.env.STRIPE_PRICE_PRO = 'price_pro';
   mocks.clientQuery.mockResolvedValue({ rows: [] });
   mocks.query.mockReset().mockResolvedValue({ rows: [] });
-  mocks.countAgents.mockReset();
-  mocks.retrieve.mockReset();
-  mocks.updateItem.mockReset();
+  mocks.syncAccount.mockReset().mockResolvedValue(NOTHING);
   mocks.finishDeleted.mockReset().mockResolvedValue({ deleted: 0, skipped: 0, blocked: 0 });
   mocks.cancelClosed.mockReset().mockResolvedValue({ cancelled: 0, failed: 0 });
 });
@@ -79,94 +76,98 @@ describe('billing sync', () => {
     expect(sqls.at(-1)).toBe('COMMIT');
   });
 
-  it('raises the Stripe quantity when the account has added agents', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 5 }] });
-    mocks.query.mockResolvedValue({ rows: [] });
-    mocks.countAgents.mockResolvedValue(8);
-    mocks.retrieve.mockResolvedValue(proSubscription(5));
+});
+
+describe('billing sync: savings share and fee', () => {
+  it('bills each active subscription with its account, free-period end and both readers', async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [account('u1')] });
+    mocks.syncAccount.mockResolvedValue({ events: 2, savingsUnavailable: false, fee: 'added' });
 
     const body = await (await run(SECRET)).json();
 
-    expect(body.pro).toEqual({ checked: 1, updated: 1, skipped: 0, deferred: 0 });
-    expect(mocks.updateItem).toHaveBeenCalledWith('si_1', { quantity: 8, proration_behavior: 'create_prorations' });
+    expect(body.billing).toEqual({ checked: 1, events: 2, feesAdded: 1, feesUpdated: 0, skipped: 0, deferred: 0 });
+    const [client, acct, deps, , deadline] = mocks.syncAccount.mock.calls[0];
+    expect(client).toBe(fakeStripe);
+    // The run's budget plus a grace period, so one slow account stops between days.
+    expect(deadline).toBeGreaterThan(Date.now() + 80_000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 90_000);
+    expect(acct).toEqual({ userId: 'u1', customerId: 'cus_u1', subscriptionId: 'sub_u1', trialEndsAt: '2026-09-01 00:00:00+00' });
+    expect(Object.keys(deps).sort()).toEqual(['feeSeats', 'savingsByUtcDay']);
   });
 
-  it('leaves Stripe alone when the count already matches', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 8 }] });
-    mocks.countAgents.mockResolvedValue(8);
-
+  it('reads only subscriptions that can bill, on a real Stripe customer, least recently checked first', async () => {
     await run(SECRET);
-
-    expect(mocks.retrieve).not.toHaveBeenCalled();
-    expect(mocks.updateItem).not.toHaveBeenCalled();
+    const select = String(mocks.query.mock.calls.find((c) => String(c[0]).includes('FROM subscriptions'))?.[0]);
+    expect(select).toContain("s.plan IN ('starter', 'pro')");
+    expect(select).toContain("s.status IN ('active', 'trialing', 'past_due')");
+    expect(select).toContain("LIKE 'cus\\_%'");
+    expect(select).toContain('ORDER BY s.billing_checked_at NULLS FIRST');
   });
 
-  // An outage must not look like an account with no agents: billing 1 agent
-  // because the engine was redeploying would undercharge until the next run.
-  it('skips an account when the engine cannot say how many agents it has', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 8 }] });
-    mocks.countAgents.mockResolvedValue(null);
+  it('counts an account whose savings could not be read as skipped', async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [account('u1')] });
+    mocks.syncAccount.mockResolvedValue({ events: 0, savingsUnavailable: true, fee: 'updated' });
+    const body = await (await run(SECRET)).json();
+    expect(body.billing).toEqual({ checked: 1, events: 0, feesAdded: 0, feesUpdated: 1, skipped: 1, deferred: 0 });
+  });
+
+  it('keeps going past one account Stripe refuses, and marks every account checked', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.query.mockResolvedValueOnce({ rows: [account('a'), account('b'), account('c')] });
+    mocks.syncAccount
+      .mockResolvedValueOnce(NOTHING)
+      .mockRejectedValueOnce(new Error('stripe down'))
+      .mockResolvedValueOnce(null);
 
     const body = await (await run(SECRET)).json();
 
-    expect(body.pro).toEqual({ checked: 1, updated: 0, skipped: 1, deferred: 0 });
-    expect(mocks.updateItem).not.toHaveBeenCalled();
+    expect(body.billing).toEqual({ checked: 3, events: 0, feesAdded: 0, feesUpdated: 0, skipped: 1, deferred: 0 });
+    const marked = mocks.query.mock.calls
+      .filter((c) => String(c[0]).includes('SET billing_checked_at'))
+      .map((c) => (c[1] as string[])[0]);
+    expect(marked).toEqual(['a', 'b', 'c']);
   });
 
-  it('never sets a zero quantity', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 3 }] });
-    mocks.query.mockResolvedValue({ rows: [] });
-    mocks.countAgents.mockResolvedValue(0);
-    mocks.retrieve.mockResolvedValue(proSubscription(3));
+  it('stops at the time budget and reports the rest as deferred', async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [account('a'), account('b'), account('c')] });
+    // Each account takes 40s of a 60s budget: the first two start in time.
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    mocks.syncAccount.mockImplementation(async () => {
+      clock += 40_000;
+      return NOTHING;
+    });
 
-    await run(SECRET);
+    try {
+      const body = await (await run(SECRET)).json();
+      expect(body.billing).toMatchObject({ checked: 2, deferred: 1 });
+      expect(mocks.syncAccount).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
 
-    expect(mocks.updateItem).toHaveBeenCalledWith('si_1', expect.objectContaining({ quantity: 1 }));
+  it('is skipped without Stripe configured', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const body = await (await run(SECRET)).json();
+    expect(mocks.syncAccount).not.toHaveBeenCalled();
+    expect(body.billing.checked).toBe(0);
+  });
+
+  it('still runs the billing pass, then returns 500, when the database refuses a connection', async () => {
+    connectFails.current = true;
+    try {
+      mocks.query.mockResolvedValueOnce({ rows: [account('u1')] });
+      const res = await run(SECRET);
+      expect(res.status).toBe(500);
+      expect((await res.json()).billing.checked).toBe(1);
+    } finally {
+      connectFails.current = false;
+    }
   });
 });
 
 describe('billing sync edge cases', () => {
-  it('rewrites a stale cache without touching Stripe when Stripe already agrees', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 5 }] });
-    mocks.query.mockResolvedValue({ rows: [] });
-    mocks.countAgents.mockResolvedValue(8);
-    mocks.retrieve.mockResolvedValue(proSubscription(8));
-
-    const body = await (await run(SECRET)).json();
-
-    expect(mocks.updateItem).not.toHaveBeenCalled();
-    expect(body.pro.updated).toBe(0);
-    const cacheWrite = mocks.query.mock.calls.find((c) => String(c[0]).includes('SET billed_agents'));
-    expect(cacheWrite?.[1]).toEqual(['u1', 8]);
-  });
-
-  it('skips a subscription that has no Pro item', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 5 }] });
-    mocks.countAgents.mockResolvedValue(8);
-    mocks.retrieve.mockResolvedValue({ items: { data: [{ id: 'si_x', quantity: 1, price: { id: 'price_other' } }] } });
-
-    const body = await (await run(SECRET)).json();
-
-    expect(body.pro).toEqual({ checked: 1, updated: 0, skipped: 1, deferred: 0 });
-    expect(mocks.updateItem).not.toHaveBeenCalled();
-  });
-
-  it('keeps going past one account Stripe refuses', async () => {
-    mocks.query.mockResolvedValueOnce({
-      rows: [
-        { user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 5 },
-        { user_id: 'u2', stripe_subscription_id: 'sub_2', billed_agents: 5 },
-      ],
-    });
-    mocks.query.mockResolvedValue({ rows: [] });
-    mocks.countAgents.mockResolvedValue(8);
-    mocks.retrieve.mockRejectedValueOnce(new Error('stripe down')).mockResolvedValue(proSubscription(5));
-
-    const body = await (await run(SECRET)).json();
-
-    expect(body.pro).toEqual({ checked: 2, updated: 1, skipped: 1, deferred: 0 });
-  });
-
   // A 200 here would tell Cloud Scheduler all is well while expired fleets
   // keep running.
   it('returns 500 and rolls back when expired trials cannot be queued', async () => {
@@ -183,99 +184,6 @@ describe('billing sync edge cases', () => {
   });
 });
 
-describe('billing sync rotation and budget', () => {
-  beforeEach(() => {
-    mocks.query.mockResolvedValue({ rows: [] });
-  });
-
-  it('orders accounts by when they were last checked, never-checked first', async () => {
-    await run(SECRET);
-    const select = mocks.query.mock.calls.find((c) => String(c[0]).includes('FROM subscriptions'));
-    expect(String(select?.[0])).toContain('ORDER BY billing_checked_at NULLS FIRST');
-  });
-
-  // The bug this guards: an account whose count already matched was never
-  // marked, so it stayed at the front and the same accounts used up every run.
-  it('marks every account it looks at as checked, whatever the outcome', async () => {
-    mocks.query.mockResolvedValueOnce({
-      rows: [
-        { user_id: 'matches', stripe_subscription_id: 'sub_1', billed_agents: 8 },
-        { user_id: 'offline', stripe_subscription_id: 'sub_2', billed_agents: 8 },
-        { user_id: 'errors', stripe_subscription_id: 'sub_3', billed_agents: 2 },
-      ],
-    });
-    mocks.countAgents.mockImplementation(async (id: string) => (id === 'offline' ? null : 8));
-    mocks.retrieve.mockRejectedValue(new Error('stripe down'));
-
-    await run(SECRET);
-
-    const marked = mocks.query.mock.calls
-      .filter((c) => String(c[0]).includes('SET billing_checked_at'))
-      .map((c) => (c[1] as string[])[0]);
-    expect(marked).toEqual(['matches', 'offline', 'errors']);
-  });
-
-  it('stops at the time budget and reports the rest as deferred', async () => {
-    mocks.query.mockResolvedValueOnce({
-      rows: ['a', 'b', 'c'].map((id) => ({ user_id: id, stripe_subscription_id: `sub_${id}`, billed_agents: 8 })),
-    });
-    // Each account takes 40s of a 60s budget: the first two start in time.
-    let clock = 1_000_000;
-    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
-    mocks.countAgents.mockImplementation(async () => {
-      clock += 40_000;
-      return 8;
-    });
-
-    try {
-      const body = await (await run(SECRET)).json();
-      expect(body.pro).toEqual({ checked: 2, updated: 0, skipped: 0, deferred: 1 });
-      expect(mocks.countAgents).toHaveBeenCalledTimes(2);
-    } finally {
-      now.mockRestore();
-    }
-  });
-
-  it('asks the engine with a short per-account timeout', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 8 }] });
-    mocks.countAgents.mockResolvedValue(8);
-    await run(SECRET);
-    expect(mocks.countAgents).toHaveBeenCalledWith('u1', { timeoutMs: 5_000 });
-  });
-
-  it('finds the Pro item by price even when it is not first', async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 5 }] });
-    mocks.countAgents.mockResolvedValue(8);
-    mocks.retrieve.mockResolvedValue({
-      items: {
-        data: [
-          { id: 'si_addon', quantity: 1, price: { id: 'price_addon' } },
-          { id: 'si_pro', quantity: 5, price: { id: 'price_pro' } },
-        ],
-      },
-    });
-
-    await run(SECRET);
-
-    expect(mocks.updateItem).toHaveBeenCalledWith('si_pro', { quantity: 8, proration_behavior: 'create_prorations' });
-  });
-
-  it('still runs the Pro pass, then returns 500, when the database refuses a connection', async () => {
-    connectFails.current = true;
-    try {
-      mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 8 }] });
-      mocks.countAgents.mockResolvedValue(8);
-
-      const res = await run(SECRET);
-
-      expect(res.status).toBe(500);
-      expect((await res.json()).pro.checked).toBe(1);
-    } finally {
-      connectFails.current = false;
-    }
-  });
-});
-
 describe('billing sync: deleted accounts', () => {
   it('finishes accounts whose deletion window has run out, after the other passes, and reports it', async () => {
     mocks.finishDeleted.mockResolvedValue({ deleted: 2, skipped: 1, blocked: 1 });
@@ -288,13 +196,12 @@ describe('billing sync: deleted accounts', () => {
   it('returns 500 when that pass fails, with the other passes still run', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.finishDeleted.mockRejectedValue(new Error('database refused'));
-    mocks.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', stripe_subscription_id: 'sub_1', billed_agents: 8 }] });
-    mocks.countAgents.mockResolvedValue(8);
+    mocks.query.mockResolvedValueOnce({ rows: [account('u1')] });
     const res = await run(SECRET);
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe('Could not finish deleted accounts.');
-    expect(body.pro.checked).toBe(1);
+    expect(body.billing.checked).toBe(1);
   });
 
   it('is not run without the sync secret', async () => {

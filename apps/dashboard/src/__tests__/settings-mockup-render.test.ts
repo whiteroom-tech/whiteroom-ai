@@ -12,6 +12,7 @@ vi.mock('@/lib/account', () => ({
 vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
+vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
 vi.mock('@/components/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => children }));
 
@@ -19,10 +20,12 @@ const { SettingsView } = await import('@/app/settings/settings-view');
 const { limitsFor } = await import('@/lib/plans');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-const view = (agents: number) => text(renderToStaticMarkup(h(SettingsView, {
-  closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
+type ViewOpts = { plan?: 'starter' | 'pro' | 'expired' | 'enterprise'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean };
+const comp = { plan: 'none', status: 'active', planOverride: 'pro', stripeCustomerId: 'pending_u', stripeSubscriptionId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null };
+const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false }: ViewOpts = {}) => text(renderToStaticMarkup(h(SettingsView, {
+  closing: null, billingResult: null, purchasablePlans: purchasable,
   account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-  entitlement: { plan: 'starter', planName: 'Starter', limits: limitsFor('starter'), subscription: null, trialEndsAt: new Date(Date.now() + 30 * 86_400_000).toISOString(), onTrial: true, usage: { fleets: 1, agents } },
+  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? 30 : -30) * 86_400_000).toISOString(), onTrial, usage: { fleets: 1, agents } },
   samples: { audit: { fleetId: 'f', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } } },
 })));
 
@@ -39,12 +42,67 @@ describe('Settings as in the mockup', () => {
     expect(t).not.toMatch(/\bnotes?\b|summar|break/i);
   });
 
-  it('says when a limit is reached, and how far over it is', () => {
-    const limit = limitsFor('starter').maxAgentsPerFleet;
-    expect(view(limit)).toContain('At the limit: another one is refused');
-    expect(view(limit + 4)).toContain('4 over the Starter limit');
-    // Below it, only the fleet (1 of 1 here) says so.
-    expect(view(limit - 1).match(/At the limit/g)).toHaveLength(1);
+  it('says when the fleet limit is reached', () => {
+    expect(view(1)).toContain('At the limit: another one is refused');
+  });
+});
+
+describe('Settings plan: savings share and soft agent counts', () => {
+  it('counts agents against what the plan includes, and nothing stops over it', () => {
+    expect(view(2)).toContain('Agents 2 of 3 included');
+    expect(view(2)).not.toContain('Nothing stops');
+    const over = view(9, { plan: 'pro', onTrial: false });
+    expect(over).toContain('Agents 9 of 7 included Nothing stops · Talk to us about larger fleets');
+    // Agents are never "at the limit".
+    expect(over).not.toContain('At the limit');
+    expect(over).not.toMatch(/over the Pro limit/);
+  });
+
+  it('shows the three plans with their prices, and Enterprise as talk to us', () => {
+    const t = view(1);
+    expect(t).toContain('Starter 20% of what WhiteRoom saves you. Free for your first 30 days; $10 a month per user from day 61.');
+    expect(t).toContain('Pro 10% of what WhiteRoom saves you. Free for your first 30 days; $300 a month per organization from day 61.');
+    expect(t).toContain('Enterprise Custom. Talk to us.');
+    expect(t).toContain('Up to 7 agents; larger fleets: talk to us');
+    expect(t).not.toMatch(/\$200|per agent|90 days|5 agents included/);
+  });
+
+  // Subscribed inside the free period: Stripe carries the rest as a trial.
+  it('says Free until for a subscriber still inside the free period', () => {
+    const t = text(renderToStaticMarkup(h(SettingsView, {
+      closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
+      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'trialing', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null }, trialEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+    })));
+    expect(t).toMatch(/Free until [A-Z][a-z]{2} \d+/);
+    expect(t).not.toContain('This month:');
+  });
+
+  it('says when the free period ends instead of a share', () => {
+    const t = view(1);
+    expect(t).toMatch(/Free until [A-Z][a-z]{2} \d+/);
+    expect(t).not.toContain('This month:');
+  });
+
+  it('shows a dash for this month while it loads, once the free period is over', () => {
+    const t = view(1, { plan: 'pro', onTrial: false });
+    expect(t).toContain('This month: — saved · your share —');
+    expect(t).not.toContain('Free until');
+  });
+
+  it('shows no share on a comped plan: nothing is billed there', () => {
+    expect(view(1, { plan: 'pro', onTrial: false, comped: true })).not.toContain('This month:');
+  });
+
+  it('offers no Subscribe or Switch on Enterprise or a comped plan', () => {
+    expect(view(1, { plan: 'enterprise', onTrial: false })).not.toMatch(/Subscribe|Switch to/);
+    expect(view(1, { plan: 'pro', onTrial: false, comped: true })).not.toMatch(/Subscribe|Switch to/);
+    expect(view(1, { plan: 'pro', onTrial: false })).toContain('Switch to Starter');
+  });
+
+  it('offers no Subscribe button until the share prices are set', () => {
+    expect(view(1, { purchasable: [] })).not.toMatch(/Subscribe|Switch to/);
+    expect(view(1)).toContain('Subscribe (free until');
   });
 });
 
