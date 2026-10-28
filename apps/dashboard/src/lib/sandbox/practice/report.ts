@@ -8,6 +8,7 @@
 import { DISCLAIMER, fixLine, headline, STATUS_LABEL } from './model';
 import type { PracticeReport } from './types';
 import { plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 /** Control, C1 and bidi characters, which could make the file read differently from what it says (§9.7). */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
@@ -19,7 +20,7 @@ export const REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-u
 export const canDownload = (r: PracticeReport) => !r.sample && !r.scope;
 
 export function practiceReportHtml(id: string, r: PracticeReport, endedAt: string): string {
-  const date = new Date(endedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const date = formatInZone(endedAt, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) || '—';
   const tone = r.verdict === 'passed' ? 'ok' : r.verdict === 'not_passed' ? 'bad' : 'wait';
   const fixes = r.checks.filter((c) => c.required && c.status !== 'passed' && c.status !== 'unsupported').map((c) => ({ label: c.label, fix: fixLine(c, r) })).filter((c) => c.fix);
   return `<!doctype html>

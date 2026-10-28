@@ -6,6 +6,8 @@ import { getHistory, getPastReport, type PastTest } from '@/lib/sandbox/api';
 import { pastTestReport, saveReportFile } from '@/lib/sandbox/report';
 import { analytics } from '@/lib/analytics';
 import { HELP } from '@/lib/metric-definitions';
+import { fmtTime } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 import { isOpen, pastKind, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
 import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { PracticePastDetail } from './practice/PracticePastDetail';
@@ -34,13 +36,12 @@ export function pastResult(t: Pick<PastTest, 'overall' | 'totalTasks' | 'destroy
 
 /** "Sep 30, 1:52 pm" in the viewer's time zone. */
 function ended(iso: string): string {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase()}`;
+  return `${formatInZone(iso, { month: 'short', day: 'numeric' })}, ${fmtTime(iso)}`;
 }
 
 /** "Sep 30, 2026, 1:52 pm". */
 function endedFull(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
+  return formatInZone(iso, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
 }
 
 /** Fetches an ended test's kept report and saves it, in the live download's format. Throws when it can't. */

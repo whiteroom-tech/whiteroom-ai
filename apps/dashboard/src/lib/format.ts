@@ -1,6 +1,7 @@
 // Shared display formatters for the dashboard pages. Pure functions, no React.
 
 import { estimateCost } from './analytics-metrics';
+import { dayKey, formatInZone } from './zone-time';
 
 // Re-exported so display code has one import for cost math + formatting; the
 // implementation (and its tests) stay in analytics-metrics.
@@ -74,15 +75,15 @@ export function fmtCost(micros: number): string {
 export function fmtDay(ts: string | number | Date, now: number = Date.now()): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(!sameYear && { year: 'numeric' }) });
+  const sameYear = dayKey(d.getTime()).slice(0, 4) === dayKey(now).slice(0, 4);
+  return formatInZone(d, { month: 'short', day: 'numeric', ...(!sameYear && { year: 'numeric' }) });
 }
 
 /** "2:15 pm" today, else "Oct 1": a time column that's never mistaken for today. '' for an unreadable time. */
 export function fmtWhen(ts: string | number | Date, now: number = Date.now()): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toDateString() === new Date(now).toDateString() ? fmtTime(d) : fmtDay(d, now);
+  return dayKey(d.getTime()) === dayKey(now) ? fmtTime(d) : fmtDay(d, now);
 }
 
 /** "2:15 pm" in the viewer's time zone: the one clock-time wording. '' for an unreadable time. */
@@ -90,7 +91,7 @@ export function fmtTime(ts: string | number | Date): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
   // ICU puts a narrow no-break space before "PM"; normalise it so copy and tests match.
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
+  return formatInZone(d, { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
 }
 
 /** "just now", "5 min ago", "2 hours ago", "3 days ago": the one relative-time wording. '' for an unreadable time. */

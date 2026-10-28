@@ -21,6 +21,7 @@ import { PracticeCard, type PracticeEntry, usePracticeEntry } from './practice/P
 import { PRACTICE_SUMMARY } from '@/lib/sandbox/practice/model';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 import { plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 type Phase = 'start' | 'setup' | 'workspace';
 type WorkspaceTab = 'setup' | 'results' | 'activity';
@@ -1052,7 +1053,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
             <span className={`${s.activityDot} ${dotClass}`} />
             <div>
               <div className={s.activityType}>{eventLabel(e.type)}</div>
-              <div className={s.activityMeta}>{e.agentId ?? 'System'} · {new Date(e.timestamp).toLocaleTimeString()}</div>
+              <div className={s.activityMeta}>{e.agentId ?? 'System'} · {formatInZone(e.timestamp, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</div>
             </div>
           </li>
         );
@@ -1278,7 +1279,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         </div>}
 
         {/* Footer */}
-        {run && <div className={s.footer}>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()} · ` : ''}Test {run.sandboxId}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
+        {run && <div className={s.footer}>{lastUpdated ? `Updated ${formatInZone(lastUpdated, { hour: 'numeric', minute: '2-digit', second: '2-digit' })} · ` : ''}Test {run.sandboxId}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
       </>}
 
       {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} practice={practice.rows ?? undefined} onDemo={busy ? undefined : () => void begin('demo')} />}

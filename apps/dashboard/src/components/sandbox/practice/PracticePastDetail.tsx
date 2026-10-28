@@ -8,9 +8,10 @@ import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
 import { plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 /** "Sep 30, 2026, 1:52 pm". */
-const full = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
+const full = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
 
 /** A practice test's Past tests row, opened beneath it like a Sandbox test’s. */
 export function PracticePastDetail({ row, onClose }: { row: PracticeRunRow; onClose: () => void }) {

@@ -3,6 +3,13 @@
 // can silently drift out of sync with the dashboard.
 
 import type { CacheSummary, SavingsTotals } from './whiteroom/types';
+import { addDays, dayKey } from './zone-time';
+
+/** The viewer's last `days` calendar days ending today, oldest first (calendar days, so DST can't skip one). */
+function lastDays(days: number, nowMs: number): string[] {
+  const today = dayKey(nowMs);
+  return Array.from({ length: Math.max(0, days) }, (_, i) => addDays(today, i - days + 1));
+}
 
 /**
  * Dollars for saved tokens when the engine doesn't price them (older
@@ -72,14 +79,9 @@ export function cacheFigures(cache: CacheSummary | undefined, hourly: Array<{ in
   };
 }
 
-/** YYYY-MM-DD in the browser's local timezone. */
-function localDay(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/** Local YYYY-MM-DD from an ISO timestamp string. */
+/** The viewer's YYYY-MM-DD from an ISO timestamp string. */
 export function localDayFromTs(ts: string): string {
-  return localDay(new Date(ts));
+  return dayKey(Date.parse(ts));
 }
 
 /**
@@ -89,10 +91,8 @@ export function localDayFromTs(ts: string): string {
 export function getCutoff(range: string, nowMs: number): string {
   const days = range === 'today' ? 0 : range === '7d' ? 6 : range === '30d' ? 29 : null;
   if (days === null) return '1970-01-01';
-  const cutoff = new Date(nowMs);
   // Calendar days, not 24-hour durations: DST changes the length of a day.
-  cutoff.setDate(cutoff.getDate() - days);
-  return localDay(cutoff);
+  return addDays(dayKey(nowMs), -days);
 }
 
 /**
@@ -218,13 +218,7 @@ export function dailySavingsFromBuckets(buckets: SavingsBucket[], days: number, 
     used.set(b.day, (used.get(b.day) ?? 0) + b.used);
     saved.set(b.day, (saved.get(b.day) ?? 0) + bucketSaved(b));
   }
-  const d = new Date(nowMs);
-  const order: string[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(d);
-    day.setDate(d.getDate() - i);
-    order.push(localDay(day));
-  }
+  const order = lastDays(days, nowMs);
   return order.map((day) => ({ day, used: used.get(day) ?? 0, saved: saved.get(day) ?? 0 }));
 }
 
@@ -265,13 +259,7 @@ export interface DaySavings { day: string; used: number; saved: number }
  * Saved uses the per-agent-day math (agentDaySavings), as Run History did.
  */
 export function dailySavings(entries: SavingsEntry[], days: number, nowMs: number): DaySavings[] {
-  const order: string[] = [];
-  const d = new Date(nowMs);
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(d);
-    day.setDate(d.getDate() - i); // calendar days, so DST can't skip one
-    order.push(localDay(day));
-  }
+  const order = lastDays(days, nowMs);
   const first = order[0];
   const ranged = entries.map((e) => ({ e, day: localDayFromTs(e.timestamp) })).filter(({ day }) => day >= first);
   const used = new Map<string, number>();

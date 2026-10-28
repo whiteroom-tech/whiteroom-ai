@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList } from '@/lib/whiteroom/client';
-import { clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsRange, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsRange, type RunsView } from '@/lib/runs';
 import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
 import { agentTotalsFromBuckets, dailySavingsFromBuckets, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { useViewerZone } from '@/hooks/useViewerZone';
 import { NO_EXTRAS, readSnapshot, saveSnapshot, updateSnapshot, type OverviewExtras } from '@/lib/performance-snapshot';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
@@ -121,9 +122,7 @@ export function PerformancePage({ retentionDays }: {
     const key = `${days.fromDay}|${days.toDay}`;
     const w = viewInstants(rangeView);
     try {
-      const weekStart = new Date();
-      weekStart.setHours(0, 0, 0, 0);
-      weekStart.setDate(weekStart.getDate() - 6); // the Savings chart's 7 calendar days
+      const weekStart = dayStart(addDays(localDay(), -6)); // the Savings chart's 7 calendar days
       // Totals the engine computes over the whole stored audit trail (Phase 1
       // spec H1): the range for savings and rule counts, and 7 calendar days
       // for the chart.
@@ -255,14 +254,15 @@ export function PerformancePage({ retentionDays }: {
   // The Savings chart is 7 local calendar days: reload just after local
   // midnight so it moves to the new day even when nothing else refreshes.
   const [midnights, setMidnights] = useState(0);
+  // A new saved zone moves midnight, so the timer is re-armed for it.
+  const zone = useViewerZone();
   useEffect(() => {
     if (!authenticated || view !== 'index') return;
-    const next = new Date();
-    next.setHours(24, 0, 5, 0);
+    const next = dayStart(addDays(localDay(), 1)).getTime() + 5_000;
     // Bumping `midnights` re-runs this effect, which arms the next midnight.
-    const t = setTimeout(() => { fetchIndex(); setMidnights((n) => n + 1); }, next.getTime() - Date.now());
+    const t = setTimeout(() => { fetchIndex(); setMidnights((n) => n + 1); }, next - Date.now());
     return () => clearTimeout(t);
-  }, [authenticated, view, fetchIndex, midnights]);
+  }, [authenticated, view, fetchIndex, midnights, zone]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
   async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> {

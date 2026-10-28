@@ -5,6 +5,7 @@
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
 import { fmtCount, plural, timeAgo } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -217,7 +218,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
   const tool = String(measures.toolName ?? '');
   const time = (c: EvidenceCall) => {
     const d = new Date(when(c));
-    return Number.isFinite(d.getTime()) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+    return Number.isFinite(d.getTime()) ? formatInZone(d, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
   };
   const byTime = [...calls].sort((a, b) => when(b).localeCompare(when(a)));
   switch (detector) {

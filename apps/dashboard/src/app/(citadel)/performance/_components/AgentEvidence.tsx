@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { performanceRecommendationExport, performanceRecommendationGet } from '@/lib/whiteroom/client';
 import { fmtDay, plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 import type { PerformanceEvidenceResult, RecommendationGetResult, DiagnosisDetectorId } from '@/lib/whiteroom/types';
 import { FONT_MONO } from '@whiteroom/ui';
 import { Badge, CARD, H3 } from './primitives';
@@ -162,7 +163,7 @@ export function EvidenceView({ data, fleetId, recommendationId, authKey }: { dat
                         </>
                       )}
                       <td style={{ padding: 8 }}><Badge status={String(c.terminal ?? 'unknown')} /></td>
-                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{c.requestStart ? new Date(String(c.requestStart)).toLocaleTimeString() : '--'}</td>
+                      <td style={{ padding: 8, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx3)' }}>{c.requestStart ? formatInZone(String(c.requestStart), { hour: 'numeric', minute: '2-digit', second: '2-digit' }) || '--' : '--'}</td>
                     </tr>
                   ))}
                 </tbody>

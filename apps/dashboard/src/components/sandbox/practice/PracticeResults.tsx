@@ -12,10 +12,11 @@ import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 import { plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 const OBSERVERS = CATALOG.observers as Record<PracticeCheck['observer'], string>;
-const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const day = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric' });
+const when = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 const ICON = {
   pass: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5" /></svg>,

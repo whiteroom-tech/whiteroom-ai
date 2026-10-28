@@ -38,7 +38,8 @@ describe('Settings as in the mockup', () => {
     expect(t).toContain('Audit trail Every event is linked to the one before it');
     expect(t).not.toContain('Audit integrity');
     expect(t).toContain('Time zone');
-    expect(t).toMatch(/For now, dates use this browser.{1,8}s time zone/);
+    expect(t).toMatch(/Dates and days use your browser.{1,8}s time zone/);
+    expect(t).not.toContain('For now');
     expect(t).not.toMatch(/\bnotes?\b|summar|break/i);
   });
 

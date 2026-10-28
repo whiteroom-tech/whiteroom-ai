@@ -9,6 +9,7 @@ import { addDays, collectRuns, dayLabel, ignoresFlagged, localDay, unusualSummar
 import { agentSignals } from '@/lib/performance-insights';
 import { ROUTES } from '@/lib/routes';
 import { fmtCount } from '@/lib/format';
+import { formatDayKey } from '@/lib/zone-time';
 
 const DAYS = 7;
 
@@ -77,8 +78,7 @@ export function flaggedRunCount(f: FlaggedRuns): number | null {
 
 /** "Fri", for the axis under the day bars. */
 function weekday(day: string): string {
-  const [y, m, d] = day.split('-').map(Number);
-  return new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short' });
+  return formatDayKey(day, { weekday: 'short' });
 }
 
 /**

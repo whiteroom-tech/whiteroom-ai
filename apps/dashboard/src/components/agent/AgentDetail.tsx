@@ -9,6 +9,7 @@ import type { AgentInfo, AuditEntry, FleetDiagnosis, GovernanceRule, RunSummary 
 import type { AgentWeek } from '@/lib/home-agents';
 import { usePoll } from '@/hooks/usePoll';
 import { fmtTime } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 import { ROUTES } from '@/lib/routes';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
@@ -28,7 +29,7 @@ import {
 type Pending = 'pausing' | 'stopping' | 'resuming' | 'removing' | null;
 
 /** "Oct 24" in the viewer's time zone. */
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const shortDate = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric' });
 
 /**
  * Agent detail: one agent's last 7 days and score, a health line when the
