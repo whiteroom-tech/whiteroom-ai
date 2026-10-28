@@ -7,7 +7,8 @@ import type { TagTone } from '@whiteroom/ui';
 import { activityRow, clock, usd } from '@/lib/home';
 import { REASON_LABELS, RULE_LABELS } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
-import { counted, fmtTime, DAY_MS, plural } from '@/lib/format';
+import { counted, fmtTime, plural } from '@/lib/format';
+import { addDays as addZoneDays, daysBetween as zoneDaysBetween, clockOf, dayKey, formatDayKey, formatInZone, hourOf, offsetLabel, startOfDay, viewerZone, zoneAbbr } from '@/lib/zone-time';
 
 export type RunsPreset = 'today' | '7d' | '30d';
 export type RunsRange = RunsPreset | 'custom';
@@ -21,20 +22,21 @@ export type RunsView = { range: RunsRange; day: string | null; from?: string | n
 /** IANA zone names the engine accepts: "UTC", "GMT", "America/New_York", "America/Argentina/Salta". Matches run-id.ts in the engine. */
 export const TIME_ZONE_NAME = /^[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/;
 
-/**
- * The viewer's IANA time zone, which Runs' days are in. Browsers report IANA
- * names; if one ever didn't fit, days here stay local while the engine would
- * read UTC, so that (unseen) case falls back to UTC rather than a 400.
- */
-/** The column name for the viewer's zone in exports: its IANA name, or "local time" when the browser doesn't give one we trust. */
+/** The column name for the viewer's zone in exports: its IANA name, or "local time" when it isn't one we trust. */
 export function exportZoneLabel(): string {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return tz && TIME_ZONE_NAME.test(tz) ? tz : 'local time';
+  const tz = viewerZone();
+  return TIME_ZONE_NAME.test(tz) ? tz : 'local time';
 }
 
+/**
+ * The viewer's IANA time zone (the saved one, else the browser's), which
+ * Runs' days are in and which the engine is sent as `tz`. Browsers report IANA
+ * names; if one ever didn't fit, the engine would refuse it, so that (unseen)
+ * case falls back to UTC rather than a 400.
+ */
 export function viewerTimeZone(): string {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return tz && TIME_ZONE_NAME.test(tz) ? tz : 'UTC';
+  const tz = viewerZone();
+  return TIME_ZONE_NAME.test(tz) ? tz : 'UTC';
 }
 
 /** A ?day= that's a real date and not after today, else null. */
@@ -42,16 +44,14 @@ export function validDay(v: string | null, now: number = Date.now()): string | n
   return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && addDays(v, 0) === v && v <= localDay(now) ? v : null;
 }
 
-/** "2026-09-30" for the viewer's local day holding `ms`. */
+/** "2026-09-30" for the viewer's day holding `ms`. */
 export function localDay(ms: number = Date.now()): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return dayKey(ms);
 }
 
 /** The calendar day `n` days after `day` (negative for before). */
 export function addDays(day: string, n: number): string {
-  const [y, m, d] = day.split('-').map(Number);
-  return localDay(new Date(y, m - 1, d + n, 12).getTime());
+  return addZoneDays(day, n);
 }
 
 /** The viewer's local days: today, or the last 7 / 30 including today. */
@@ -70,7 +70,7 @@ export function runsWindow(view: RunsView, now: number = Date.now()): { fromDay:
 
 /** Whole days from `a` to `b` (b − a). */
 export function daysBetween(a: string, b: string): number {
-  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
+  return zoneDaysBetween(a, b);
 }
 
 /**
@@ -92,10 +92,9 @@ export function clampSpan(from: string, to: string, opts: { today: string; oldes
   return { from: f, to: t };
 }
 
-/** Midnight starting the viewer's local `day`, as an instant. */
+/** Midnight starting the viewer's `day`, as an instant. */
 export function dayStart(day: string): Date {
-  const [y, m, d] = day.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  return new Date(startOfDay(day));
 }
 
 /**
@@ -123,8 +122,7 @@ export function stripEndFor(span: { fromDay: string; toDay: string }, end: strin
 
 /** "Tue, Sep 30"; with `relative`, "Today · Wed, Oct 1" and "Yesterday · …" for the two latest days. */
 export function dayLabel(day: string, now: number = Date.now(), relative = true): string {
-  const [y, m, d] = day.split('-').map(Number);
-  const text = new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const text = formatDayKey(day, { weekday: 'short', month: 'short', day: 'numeric' });
   if (!relative) return text;
   const today = localDay(now);
   if (day === today) return `Today · ${text}`;
@@ -156,7 +154,7 @@ export function ignoresFlagged(runs: Pick<RunSummary, 'flags'>[]): boolean {
 
 /** The hour (0–23) a run started, in the viewer's time zone. */
 export function localHour(iso: string): number {
-  return new Date(iso).getHours();
+  return hourOf(Date.parse(iso));
 }
 
 /** True when the engine ignored the hour filter (before it took `hour`): a run from another hour came back. */
@@ -215,9 +213,7 @@ export function wouldActText(n: number): string {
 
 /** "-05:00": the viewer's UTC offset at `d`, so an export's times are unambiguous in a daylight-saving fall-back hour. */
 export function utcOffset(d: Date): string {
-  const m = -d.getTimezoneOffset();
-  const a = Math.abs(m);
-  return `${m < 0 ? '-' : '+'}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
+  return offsetLabel(d.getTime());
 }
 
 /** "0:24", "12:05", "1:02:09": a run's length as a clock, for the Runs table. */
@@ -238,7 +234,7 @@ export function runName(r: { agentId: string; shift: number }): string {
 function dateAndTime(iso: string): { date: string; time: string } {
   const d = new Date(iso);
   return {
-    date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    date: formatInZone(d, { month: 'short', day: 'numeric' }),
     time: fmtTime(d),
   };
 }
@@ -251,8 +247,7 @@ export function fmtStarted(iso: string): string {
 
 /** The viewer's time zone abbreviation, e.g. "PDT", for the footer. */
 export function zoneName(now: number = Date.now()): string {
-  const part = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(new Date(now)).find((p) => p.type === 'timeZoneName');
-  return part?.value ?? 'local time';
+  return zoneAbbr(now);
 }
 
 /** The range a view covers, in words: "last 7 days", "today", "Oct 1 – Oct 20". */
@@ -546,7 +541,7 @@ export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTota
   const rows = events.map((e) => {
     const r = timelineRow(e);
     const d = new Date(e.at);
-    return [`${localDay(d.getTime())} ${d.toLocaleTimeString('en-GB')} ${utcOffset(d)}`, e.kind === 'call' ? 'Model call' : 'Event', r.text, e.model ?? '', r.tag?.label ?? '', r.rule ? `${r.rule.text} (${MODE_LABEL[r.rule.mode]})` : ''];
+    return [`${localDay(d.getTime())} ${clockOf(d.getTime())} ${utcOffset(d)}`, e.kind === 'call' ? 'Model call' : 'Event', r.text, e.model ?? '', r.tag?.label ?? '', r.rule ? `${r.rule.text} (${MODE_LABEL[r.rule.mode]})` : ''];
   });
   return [
     { name: 'Run', header: ['Field', 'Value'], rows: summary },
@@ -581,7 +576,7 @@ export async function loadRunPage(
 export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
   const header = ['Time', 'Agent', 'Run number', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
   const row = (e: AuditEntry) => [
-    new Date(e.timestamp).toLocaleString('en-US', { hour12: false }), e.agentId || '', e.watchNumber, e.type || '',
+    formatInZone(e.timestamp, { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: false }), e.agentId || '', e.watchNumber, e.type || '',
     e.type === 'task_complete' ? e.taskName || '' : '', e.tokensUsed, e.minutesSpent, e.remaining,
     (Array.isArray(e.details) ? e.details : []).map((d) => (d.args ? `${d.name}(${d.args})` : d.name)).join('  |  '),
   ];
@@ -602,8 +597,7 @@ export function runsExportHeader(zone: string = exportZoneLabel()): string[] {
 }
 export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {
   const d = new Date(r.startedAt);
-  const p2 = (n: number) => String(n).padStart(2, '0');
-  const started = `${localDay(d.getTime())} ${p2(d.getHours())}:${p2(d.getMinutes())} ${utcOffset(d)}`;
+  const started = `${localDay(d.getTime())} ${clockOf(d.getTime()).slice(0, 5)} ${utcOffset(d)}`;
   const stood = standOut(r);
   return [runName(r), r.agentId, r.shift, started, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, r.wouldActCalls ?? '', Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, stood.tone === 'clean' ? '' : stood.text, `${origin}${runHref(r.runId)}`];
 }

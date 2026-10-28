@@ -13,8 +13,9 @@
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
-import { DAY_MS, fmtCount, HOUR_MS, plural, timeAgo } from '@/lib/format';
+import { fmtCount, HOUR_MS, plural, timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
+import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 
 export type { AuditEntry, ToolDetail };
 
@@ -175,7 +176,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
 function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): string {
   const t = (v: unknown) => {
     const d = new Date(String(v ?? ''));
-    return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase() : null;
+    return Number.isFinite(d.getTime()) ? formatInZone(d, { hour: 'numeric', minute: '2-digit' }).toLowerCase() : null;
   };
   const from = t(e.from), to = t(e.to);
   if (!from || !to) return style === 'between' ? 'around then' : 'times unknown';
@@ -204,23 +205,23 @@ export function relTime(timestamp: unknown, now: number = Date.now()): string {
   if (!Number.isFinite(ms)) return '';
   // Within a day, the shared wording; older events show their date instead.
   if (now - ms < 23.5 * HOUR_MS) return timeAgo(ms, now);
-  return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return formatInZone(ms, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 function clockTime(timestamp: unknown): string {
   const d = new Date(String(timestamp ?? ''));
   if (!Number.isFinite(d.getTime())) return '--:--';
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatInZone(d, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 export function feedDayLabel(timestamp: unknown, now: number = Date.now()): string {
   const d = new Date(String(timestamp ?? ''));
   if (!Number.isFinite(d.getTime())) return '';
-  const today = new Date(now);
-  const yesterday = new Date(now - DAY_MS);
-  if (d.toDateString() === today.toDateString()) return 'TODAY';
-  if (d.toDateString() === yesterday.toDateString()) return 'YESTERDAY';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+  const day = dayKey(d.getTime());
+  const today = dayKey(now);
+  if (day === today) return 'TODAY';
+  if (day === addDays(today, -1)) return 'YESTERDAY';
+  return formatInZone(d, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
 }
 
 // ── Tool calls → plain English ───────────────────────────

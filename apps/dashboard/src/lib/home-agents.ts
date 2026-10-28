@@ -6,7 +6,7 @@ import { agentState, hourTotals, sortAgents } from '@/lib/home';
 import { ruleActionsByAgent, tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
 import { HOUR_MS } from '@/lib/format';
-import { localDay } from '@/lib/runs';
+import { addDays, dayStart, localDay } from '@/lib/runs';
 import { auditSummary, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
 import type { AgentInfo, AgentScore } from '@/lib/whiteroom/types';
 
@@ -61,7 +61,7 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
  * half-hour zone, up to 30 minutes before it).
  */
 export function weekWindow(now: number = Date.now()): { start: Date; hours: number } {
-  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
+  const start = dayStart(addDays(localDay(now), -6));
   return { start, hours: (Math.floor(now / HOUR_MS) + 1) - Math.floor(start.getTime() / HOUR_MS) };
 }
 

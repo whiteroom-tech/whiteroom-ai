@@ -12,7 +12,7 @@ import type { GovernanceCounts } from '@/lib/governance';
 import type { DaySavings } from '@/lib/analytics-metrics';
 import { latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
-import { clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsView } from '@/lib/runs';
 import { PERF_MAX_DAYS, perfOldest } from '@/lib/performance-range';
 import { fmtLatency, SpendByModel } from '@/app/(citadel)/performance/_components/perf-utils';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
@@ -96,11 +96,7 @@ function Recs({ recs }: { recs: RecommendationDetail[] }) {
 }
 
 // Tokens with vs without, one sample week shaped like the mockup's: busy midweek, a big Saturday, quiet days.
-const week = (rows: Array<[number, number]>): DaySavings[] => rows.map(([used, saved], i) => {
-  const d = new Date();
-  d.setDate(d.getDate() - (rows.length - 1 - i));
-  return { day: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, used, saved };
-});
+const week = (rows: Array<[number, number]>): DaySavings[] => rows.map(([used, saved], i) => ({ day: addDays(localDay(), i - (rows.length - 1)), used, saved }));
 const WEEK = week([[0, 0], [50_100, 1_569_900], [19_600, 656_400], [0, 0], [1_670_000, 960_000], [0, 0], [0, 0]]);
 const USD_BY_DAY = Object.fromEntries(WEEK.filter((d) => d.saved).map((d) => [d.day, Math.round(d.saved * 0.8)]));
 

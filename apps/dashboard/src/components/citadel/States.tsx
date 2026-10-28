@@ -2,10 +2,10 @@
 // the same way.
 
 import { Button, Icon } from '@whiteroom/ui';
+import { fmtTime } from '@/lib/format';
 
 function clockTime(ms: number): string {
-  // Some ICU versions put a narrow no-break space before am/pm.
-  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
+  return fmtTime(ms);
 }
 
 /**

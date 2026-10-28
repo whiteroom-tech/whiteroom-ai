@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button } from '@whiteroom/ui';
 import { cancelAccountDeletion, getAccountClosing } from '@/lib/account';
+import { viewerZone } from '@/lib/zone-time';
 import {
   blockedMessage,
   closingDate,
@@ -97,7 +98,7 @@ export function AccountClosingBanner() {
   const [error, setError] = useState('');
   // The viewer's zone, read after mount so server and browser render alike.
   const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
-  useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
+  useEffect(() => { setTimeZone(viewerZone()); }, []);
 
   const load = useCallback((fresh: boolean) => {
     readClosing(fresh).then(

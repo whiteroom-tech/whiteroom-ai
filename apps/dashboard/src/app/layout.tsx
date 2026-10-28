@@ -6,6 +6,7 @@ import { Providers } from './providers';
 import { headers } from 'next/headers';
 import { auth } from '@/auth';
 import { NONCE_HEADER } from '@/lib/csp';
+import { savedTimeZone } from '@/lib/saved-zone';
 
 export const metadata: Metadata = {
   title: { default: 'WhiteRoom', template: '%s · WhiteRoom' },
@@ -24,6 +25,7 @@ const THEME_BOOT = "try{var t=localStorage.getItem('wr_theme');if(t==='light'||t
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
+  const timeZone = await savedTimeZone(session?.user?.id);
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
@@ -35,7 +37,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body className="bg-navy-950 text-navy-50 antialiased">
-        <Providers session={session}>
+        <Providers session={session} timeZone={timeZone}>
           <AnalyticsInit />
           {children}
         </Providers>

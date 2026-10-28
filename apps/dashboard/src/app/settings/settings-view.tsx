@@ -33,7 +33,8 @@ import { agentsIncluded, monthShareLine } from '@/lib/metric-display';
 import { getMonthSavings } from '@/lib/plan-savings';
 import { CLOSE_WINDOW_DAYS, isClosingOpen, SUPPORT_EMAIL, type ClosingState } from '@/lib/closing-shared';
 import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
-import { plural, DAY_MS } from '@/lib/format';
+import { fmtTime, plural } from '@/lib/format';
+import { browserZone as readBrowserZone, dayKey, daysBetween, savedViewerZone, setViewerZone, viewerZone } from '@/lib/zone-time';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -172,8 +173,11 @@ function ProfileSection({
   const [name, setName] = useState(account.name ?? '');
   const [timezone, setTimezone] = useState(account.timezone ?? '');
   const [browserZone, setBrowserZone] = useState('your local zone');
+  // The zone dates use now: the saved one (when this browser knows it), else null for the browser's.
+  const [inUse, setInUse] = useState<string | null>(null);
   // After mount: the server's zone isn't the viewer's, and rendering it would mismatch hydration.
-  useEffect(() => { setBrowserZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local zone'); }, []);
+  useEffect(() => { setBrowserZone(readBrowserZone() || 'your local zone'); }, []);
+  useEffect(() => { setInUse(savedViewerZone()); }, [account.timezone]);
 
   // Populated after mount, never during render.
   //
@@ -220,16 +224,21 @@ function ProfileSection({
           </select>
         </div>
       </div>
-      {/* M15: dashboard dates follow the browser whatever is picked here; say exactly that. */}
+      {/* Say plainly which zone every date and day on the dashboard is in. */}
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '10px 0 14px' }}>
-        Saved with your profile. For now, dates use this browser&apos;s time zone ({browserZone}).
+        {inUse ? <>Dates and days use {inUse}.</> : <>Dates and days use your browser&apos;s time zone ({browserZone}).</>}
       </p>
       {/* Applies at once and lives in this browser; Save profile doesn't change it. */}
       <div style={labelStyle}>Text size</div>
       <div style={{ marginBottom: 18 }}><TextSizeControl /></div>
       <Button
         disabled={pending || !dirty}
-        onClick={() => run(() => updateProfile({ name, timezone: timezone || null }), 'Profile saved.')}
+        onClick={() => run(async () => {
+          const res = await updateProfile({ name, timezone: timezone || null });
+          // Every date on the dashboard moves to the new zone at once, not on the next load.
+          if (res.ok) { setViewerZone(timezone || null); setInUse(savedViewerZone()); }
+          return res;
+        }, 'Profile saved.')}
       >
         Save profile
       </Button>
@@ -424,6 +433,10 @@ function EmailSection({
   run: (a: () => Promise<{ ok: boolean; error?: string }>, s: string) => void;
 }) {
   const [newEmail, setNewEmail] = useState('');
+  // In the viewer's zone, so after mount: the server would write its own.
+  const expiresIso = account.pendingEmailChange?.expiresAt;
+  const [expiresAt, setExpiresAt] = useState('');
+  useEffect(() => { setExpiresAt(expiresIso ? fmtTime(expiresIso) : ''); }, [expiresIso]);
 
   return (
     <Section
@@ -456,7 +469,7 @@ function EmailSection({
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--warn)' }}>
             Waiting on confirmation at{' '}
             <span style={{ fontFamily: FONT_MONO }}>{account.pendingEmailChange.newEmail}</span>. The link expires at{' '}
-            {new Date(account.pendingEmailChange.expiresAt).toLocaleTimeString()}.
+            {expiresAt}.
           </div>
           <Button
             variant="secondary"
@@ -585,7 +598,7 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
   // The viewer's zone, read after mount so server and browser render alike;
   // the banner counts in the same one.
   const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
-  useEffect(() => { setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); }, []);
+  useEffect(() => { setTimeZone(viewerZone()); }, []);
   // A change from here or from the banner (cancel, keep): read the page's state again.
   useEffect(() => {
     const changed = () => router.refresh();
@@ -716,6 +729,5 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
  * free period is longer than today's 30 days.
  */
 export function freeDaysLeft(trialEndsAt: string, now: number = Date.now()): number {
-  const midnight = (ms: number) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
-  return Math.max(1, Math.round((midnight(Date.parse(trialEndsAt)) - midnight(now)) / DAY_MS));
+  return Math.max(1, daysBetween(dayKey(now), dayKey(Date.parse(trialEndsAt))));
 }

@@ -7,6 +7,7 @@ import type { AuditEntry } from '@/lib/whiteroom/types';
 import { withRunMode, type RunStatusResult } from './api';
 import { fmtCount, plural } from '@/lib/format';
 import { saveBlob } from '@/lib/download';
+import { formatInZone, viewerZone, zoneAbbr } from '@/lib/zone-time';
 
 /** Events where the agent kept going on a long task. Counted once, never described (customer copy says what, not how). */
 export const KEPT_GOING_TYPES = new Set(['self_handover', 'handover', 'paired_handover']);
@@ -92,9 +93,9 @@ export function buildTestReport(run: RunStatusResult, now: number = Date.now()):
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // Readable times are in the downloader's zone, named once in the header; the
 // technical section stays UTC.
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : '—');
-const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).toLowerCase();
-const zoneName = (iso: string) => new Intl.DateTimeFormat('en-US', { timeZoneName: 'long' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')?.value ?? 'local time';
+const when = (iso: string | null) => (iso ? formatInZone(iso, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) || '—' : '—');
+const clock = (iso: string) => formatInZone(iso, { hour: 'numeric', minute: '2-digit', second: '2-digit' }).toLowerCase();
+const zoneName = (iso: string) => zoneAbbr(Date.parse(iso), viewerZone(), 'long');
 
 /** "8 min 38 s". */
 export function spanText(from: string | null, to: string | null): string {

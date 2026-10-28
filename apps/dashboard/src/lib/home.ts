@@ -6,6 +6,7 @@ import type { AgentState, TagTone } from '@whiteroom/ui';
 import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport, ShiftMeasures } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { fmtTime, fmtWhen, plural, HOUR_MS } from '@/lib/format';
+import { dayKey, startOfDay } from '@/lib/zone-time';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
 
 // ── Agents ───────────────────────────────────────────────────────────────
@@ -400,9 +401,7 @@ export function matchesFilter(row: LiveRow, f: LiveFilter): boolean {
  * up to 30 minutes early; whole-hour zones start exactly at midnight.
  */
 function localTodayStart(now: number): number {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return Math.floor(d.getTime() / HOUR_MS) * HOUR_MS;
+  return Math.floor(startOfDay(dayKey(now)) / HOUR_MS) * HOUR_MS;
 }
 
 /**
@@ -412,8 +411,7 @@ function localTodayStart(now: number): number {
  * quiet while that hour has calls; Home says so when this is above 0.
  */
 export function todayLeadMinutes(now: number = Date.now()): number {
-  const midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
-  return Math.round((midnight.getTime() - localTodayStart(now)) / 60_000);
+  return Math.round((startOfDay(dayKey(now)) - localTodayStart(now)) / 60_000);
 }
 
 /** Hours to ask for so the window reaches back to the start of the viewer's today. */

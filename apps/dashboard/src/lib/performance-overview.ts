@@ -10,6 +10,7 @@ import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, ruleSentence } from '@/lib/controls-view';
 import { fmtCost, fmtCount, fmtEnergy, fmtTokens, plural } from '@/lib/format';
+import { dayKey, formatDayKey } from '@/lib/zone-time';
 
 /** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
 export function lookbackText(hours: number | null | undefined): string | null {
@@ -102,8 +103,8 @@ export function tokenTotals(days: DaySavings[]): { used: number; without: number
 
 /** "Prices from Oct 19" from the catalogue's version date; a version that isn't a date is named as is. */
 export function pricesFrom(version: string): string {
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(version) ? new Date(`${version}T12:00:00`) : null;
-  return d && !Number.isNaN(d.getTime()) ? `Prices from ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.` : `Prices: ${version}.`;
+  const ok = /^\d{4}-\d{2}-\d{2}$/.test(version) && !Number.isNaN(Date.parse(`${version}T12:00:00Z`));
+  return ok ? `Prices from ${formatDayKey(version, { month: 'short', day: 'numeric' })}.` : `Prices: ${version}.`;
 }
 
 /** Each model's share of spend, biggest first, for the stacked bar. */
@@ -297,7 +298,7 @@ export function inputByLocalDay(points: Array<{ hour: string; inputTokens: numbe
   for (const p of points) {
     const t = Date.parse(p.hour);
     if (Number.isNaN(t)) continue;
-    const day = new Date(t).toLocaleDateString('en-CA');
+    const day = dayKey(t);
     out.set(day, (out.get(day) ?? 0) + inputTokensOf(p));
   }
   return out;

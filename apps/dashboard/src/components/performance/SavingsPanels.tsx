@@ -3,16 +3,17 @@
 import { useId, useState } from 'react';
 import type { DaySavings } from '@/lib/analytics-metrics';
 import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
+import { formatDayKey } from '@/lib/zone-time';
 import { fewerTokens, tokenTotals } from '@/lib/performance-overview';
 import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 
 const PLOT_H = 100;
 
 function weekday(day: string): string {
-  return new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+  return formatDayKey(day, { weekday: 'short' });
 }
 function weekdayLong(day: string): string {
-  return new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
+  return formatDayKey(day, { weekday: 'long' });
 }
 
 /**

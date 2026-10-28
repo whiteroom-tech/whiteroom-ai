@@ -10,6 +10,7 @@ import { RULE_LABELS } from '@/lib/governance';
 import { historyText } from '@/lib/rule-history';
 import { ROUTES } from '@/lib/routes';
 import { fmtCount, fmtWhen, plural } from '@/lib/format';
+import { formatDayKey } from '@/lib/zone-time';
 
 /** The audit event types that are rule or agent changes. Home reads each one by type, so busy fleets can't push them out. */
 export const CHANGE_TYPES = ['governance_rule_changed', 'register', 'deregister', 'agent_paused', 'agent_stopped', 'agent_resumed'] as const;
@@ -99,8 +100,7 @@ export function lastActiveDay(res: RunDaysResult | null, today: string): { day: 
 
 /** "Sat, Oct 24" for a local YYYY-MM-DD. */
 export function dayLabel(day: string): string {
-  const [y, m, d] = day.split('-').map(Number);
-  return new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return formatDayKey(day, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 /**

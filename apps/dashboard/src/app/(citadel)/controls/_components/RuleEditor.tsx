@@ -17,6 +17,7 @@ import type {
 import { RESPONSE_EFFECT, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
 import { fmtTime } from '@/lib/format';
+import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
@@ -134,7 +135,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     if (from === null) return null;
     if (from === 'record-first') return 'needs 24 hours in Record only first';
     if (from === 'unknown') return 'needs 24 hours in Record only first (we can’t see when this rule started recording)';
-    const day = new Date(from).toDateString() === new Date().toDateString() ? 'today' : new Date(from).toDateString() === new Date(Date.now() + 86_400_000).toDateString() ? 'tomorrow' : new Date(from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const today = dayKey();
+    const day = dayKey(from) === today ? 'today' : dayKey(from) === addDays(today, 1) ? 'tomorrow' : formatInZone(from, { month: 'short', day: 'numeric' });
     return `available from ${fmtTime(from)} ${day} (needs 24 hours in Record only first)`;
   };
 

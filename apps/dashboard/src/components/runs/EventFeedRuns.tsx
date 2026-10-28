@@ -7,6 +7,7 @@ import { Banner, Button, Panel, SegmentedControl, SelectChip, FONT_MONO } from '
 import { auditLog, isAuthError } from '@/lib/whiteroom/client';
 import { getCutoff, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
 import { fmtTime } from '@/lib/format';
+import { formatDayKey } from '@/lib/zone-time';
 import { ROUTES } from '@/lib/routes';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
@@ -30,7 +31,7 @@ const RANGE_LABEL: Record<AnalyticsRange, string> = { today: 'Today', '7d': '7D'
 function rangeDescription(range: AnalyticsRange, nowMs: number): string {
   if (range === 'recent') return 'all loaded history';
   if (range === 'today') return 'today, since midnight';
-  const since = new Date(getCutoff(range, nowMs) + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const since = formatDayKey(getCutoff(range, nowMs), { weekday: 'short', month: 'short', day: 'numeric' });
   return `${range === '7d' ? 7 : 30} calendar days, since ${since}`;
 }
 
