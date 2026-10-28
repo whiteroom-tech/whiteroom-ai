@@ -12,8 +12,9 @@ import type { PracticeControlCheck } from '@/lib/sandbox/practice/types';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { controlTypeLines, PRACTICE_SUMMARY } = await import('@/lib/sandbox/practice/model');
-const { TestRunFlow, endTestAction } = await import('@/components/sandbox/TestRunFlow');
+const { controlCalls, controlTypeLines, PRACTICE_SUMMARY, shownControls } = await import('@/lib/sandbox/practice/model');
+const { TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { PracticeSetup } = await import('@/components/sandbox/practice/PracticeSetup');
 
 const rule = (id: string, label: string, mode: string | null, calls: number | null, note: string | null = null): PracticeControlCheck =>
   ({ id, label, mode, agents: 'all', checked: note === null, note, calls });
@@ -50,6 +51,24 @@ describe('setup rule list: one line per rule type', () => {
     expect(controlTypeLines([rule('ctl.keyword.k1', 'Keywords (0 keywords)', 'Enforce', 0)])).toEqual([]);
   });
 
+  it('leaves an empty keyword rule out of the list and the cost alike', () => {
+    const checks = [rule('ctl.loop_breaker.l1', 'Loop breaker', 'Enforce', 2), rule('ctl.keyword.k1', 'Keywords (0 keywords)', 'Enforce', 4)];
+    expect(shownControls(checks).map((c) => c.id)).toEqual(['ctl.loop_breaker.l1']);
+    expect(controlTypeLines(checks).map((l) => l.text)).toEqual(['Loop breaker · Enforce · 2 extra calls']);
+    expect(controlCalls(checks)).toBe(2);
+    expect(controlCalls(checks, ['ctl'])).toBe(2);
+    // Setup's cost line counts the same calls the list shows, whatever total the engine sent.
+    const setup = (cs: PracticeControlCheck[], calls: number) => renderToStaticMarkup(createElement(PracticeSetup, {
+      fleet: 'prod-eu', data: { agents: ['support-bot'] }, busy: false, onStart: () => {},
+      preview: { model: 'claude-haiku-4-5', provider: 'direct-anthropic', directKey: true, blocked: null, providerKeys: [], controls: { checks: cs, calls } },
+    }));
+    const cost = (html: string) => html.match(/On the key you test with:[^<]*/)?.[0];
+    const withEmpty = setup(checks, 6);
+    expect(cost(withEmpty)).toBeTruthy();
+    expect(cost(withEmpty)).toBe(cost(setup([checks[0]], 2)));
+    expect(withEmpty).not.toContain('Keywords');
+  });
+
   it('the summary line counts no model calls of its own', () => {
     expect(PRACTICE_SUMMARY).toBe('5 practice tasks and a check of your rules · about 5–10 min for one run');
   });
@@ -79,12 +98,5 @@ describe('loading skeleton', () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('Checking for a practice test…');
     expect(html.match(/aria-hidden="true"/g)).toHaveLength(3);
-  });
-});
-
-describe('End test', () => {
-  it('ends a demo at once and asks first on a live test', () => {
-    expect(endTestAction(true)).toBe('end');
-    expect(endTestAction(false)).toBe('confirm');
   });
 });

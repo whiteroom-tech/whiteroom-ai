@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlTypeLines, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
+  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, controlTypeLines, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
   PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
@@ -132,7 +132,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
   const keyChoice = choice ?? directChoice(src);
   const est = callEstimate({
-    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? src.controls.calls : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
+    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
   });
   const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };

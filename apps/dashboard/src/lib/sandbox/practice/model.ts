@@ -255,8 +255,13 @@ export function billedLine(r: Pick<PracticeReport, 'runs' | 'tested'>): string {
 
 /** A rule's label without the engine's " #2" for the second rule of a kind. */
 const baseLabel = (label: string) => label.replace(/ #\d+$/, '');
-/** A keyword rule with no keywords: nothing to check, so setup doesn't list it. */
+/** A keyword rule with no keywords: nothing to check. */
 const emptyKeywords = (c: PracticeControlCheck) => c.id.startsWith('ctl.keyword') && /\(0 keywords?\)/.test(c.label);
+/**
+ * The control checks the dashboard shows and counts: keyword rules with no
+ * keywords are left out, so the rule list and the cost line agree.
+ */
+export const shownControls = (checks: PracticeControlCheck[]) => checks.filter((c) => !emptyKeywords(c));
 /** "ctl.spend_cap.gr_1" → "spend_cap"; "ctl.pause_stop" is its own type. */
 const ruleType = (id: string) => id.split('.')[1] ?? id;
 const MODE_ORDER = ['Enforce', 'Watch', 'Off'];
@@ -277,7 +282,7 @@ export interface ControlTypeLine {
  */
 export function controlTypeLines(checks: PracticeControlCheck[]): ControlTypeLine[] {
   const byType = new Map<string, PracticeControlCheck[]>();
-  for (const c of checks.filter((c) => !emptyKeywords(c))) {
+  for (const c of shownControls(checks)) {
     const t = ruleType(c.id);
     byType.set(t, [...(byType.get(t) ?? []), c]);
   }
@@ -309,9 +314,9 @@ export function controlTypeLines(checks: PracticeControlCheck[]): ControlTypeLin
   });
 }
 
-/** The control checks' extra calls on the agent's key, only the rows a rerun covers when it names some. */
+/** The control checks' extra calls on the agent's key (shown checks only), only the rows a rerun covers when it names some. */
 export function controlCalls(checks: PracticeControlCheck[], scope: string[] | null = null): number {
-  return checks.filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
+  return shownControls(checks).filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
 }
 
 // ── Results (§8) ─────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@ export function SkeletonCard({ label, lines = ['55%', '40%', '65%'], height, chi
     <div
       role={label ? 'status' : undefined}
       aria-busy={label ? true : undefined}
-      style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: height ? undefined : '16px 18px', height, display: 'grid', gap: 8, alignContent: 'start', ...style }}
+      style={{ position: 'relative', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: height ? undefined : '16px 18px', height, display: 'grid', gap: 8, alignContent: 'start', ...style }}
     >
       {label && <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>{label}</span>}
       {!height && lines.map((w, i) => <Skeleton key={i} width={w} height={heights[i % heights.length]} />)}
