@@ -129,6 +129,21 @@ describe('reporting savings to the meter', () => {
     expect(error).toHaveBeenCalledWith(expect.stringContaining('on 2026-10-26 (3 cents, customer cus_1) were not reported'), 'stripe down');
   });
 
+  // A run killed between the mark and the send leaves this line with no event in Stripe.
+  it('logs each day with savings before marking it', async () => {
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-24' });
+    const order: string[] = [];
+    const info = vi.spyOn(console, 'info').mockImplementation((line: string) => { order.push(line); });
+    s.customers.update.mockImplementation(async (_id: string, p: { metadata: Record<string, string> }) => { order.push(`mark ${p.metadata[REPORTED_THROUGH_KEY]}`); return {}; });
+    await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({ '2026-10-25': 0, '2026-10-26': 30_000 }), NOW);
+    expect(order).toEqual([
+      'mark 2026-10-25',
+      '[billing-sync] reporting savings for user u1 on 2026-10-26: 3 cents (customer cus_1)',
+      'mark 2026-10-26',
+    ]);
+    info.mockRestore();
+  });
+
   it('sends nothing when the day cannot be marked, so it is retried next run', async () => {
     const s = fakeStripe();
     s.customers.update.mockRejectedValue(new Error('stripe down'));

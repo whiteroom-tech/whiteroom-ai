@@ -252,8 +252,11 @@ export async function reportSavings(
     // The day is marked reported BEFORE its event is sent. The other order
     // can bill a day twice: an event sent, then a failed mark, and the
     // resend a night later falls outside Stripe's identifier dedupe window.
-    // This order can at worst miss a day, which is logged below for a person
-    // to bill by hand. A failed mark sends nothing and the day is retried.
+    // This order can at worst miss a day, for a person to bill by hand: a
+    // failed send is logged below, and the line before the mark lets a run
+    // killed between the two be found (a "reporting" line with no event in
+    // Stripe). A failed mark sends nothing and the day is retried.
+    if (cents > 0) console.info(`[billing-sync] reporting savings for user ${account.userId} on ${day}: ${cents} cents (customer ${account.customerId})`);
     await s.customers.update(account.customerId, { metadata: { [REPORTED_THROUGH_KEY]: day } });
     if (cents === 0) continue;
     const event = {
