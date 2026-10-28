@@ -22,6 +22,11 @@ const props = (data: object = DATA, rangeLabel = 'last 24 h') => ({
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
 });
 const view = (data: object = DATA, rangeLabel = 'last 24 h') => renderToStaticMarkup(h(IndexView, props(data, rangeLabel) as never));
+/** 48 hourly rows (the range's 24 and the 24 before), the range's carrying `input` tokens in all: plain, cache read, cache write. */
+const rangeHours = (input: number, start = Date.UTC(2026, 9, 25)) => ({ hourly: Array.from({ length: 48 }, (_, i) => {
+  const each = i >= 24 ? input / 24 : 0;
+  return { hour: new Date(start + i * 3_600_000).toISOString(), calls: 1, costMicros: 0, errorCount: 0, inputTokens: each / 2, outputTokens: 999_999, cacheReadTokens: each / 4, cacheWriteTokens: each / 4 };
+}) });
 
 describe('Performance overview layout', () => {
   it('reads Cost, then Control, then Performance', () => {
@@ -59,7 +64,7 @@ describe('Performance overview layout', () => {
     const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     const withPrev = text(renderToStaticMarkup(h(IndexView, {
       ...props(), data: { ...DATA, previous: { period: { start: '', end: '' }, totalCalls: 33, totalCost: 456_000, pricedAttempts: 33, unpricedAttempts: 0, avgLatencyMs: 3800 } },
-      workingHour: { usdPerHour: 0.354, lookbackHours: 336 }, rangeUsedTokens: 1_740_000, govSavings: { tokensSaved: 3_180_000, costSaved: 2.34, partial: false },
+      workingHour: { usdPerHour: 0.354, lookbackHours: 336 }, hourlyData: rangeHours(1_740_000), govSavings: { tokensSaved: 3_180_000, costSaved: 2.34, partial: false },
     } as never)));
     // The fleet's hourly cost sits on Cost prediction's folded row; each agent's own is inside it.
     expect(withPrev).toMatch(/Cost prediction \$0\.354 an hour while agents work, last 14 days/);
@@ -67,7 +72,8 @@ describe('Performance overview layout', () => {
     expect(withPrev).toMatch(/Typical response .*1\.9s ↓ 50% faster vs prior 24 h/);
     // Every Cost figure follows the range: Saved says what its dollars are, Smaller context has the range's tokens.
     expect(withPrev).toMatch(/Saved by WhiteRoom \$2\.34 estimated, at your model prices/);
-    expect(withPrev).toMatch(/Smaller context 65% less sent to models · 3\.18M fewer tokens · ≈1\.3 kWh saved/);
+    // Input against input: output tokens (999,999 an hour here) aren't counted.
+    expect(withPrev).toMatch(/Smaller context 65% less input sent to models · 3\.18M fewer input tokens · ≈1\.3 kWh saved/);
     expect(withPrev).not.toMatch(/all time/);
     // No prior window (older engine): the plain lines.
     const plain = text(view());
@@ -96,29 +102,31 @@ describe('Performance overview, what it leaves out', () => {
 
 describe('Smaller context card', () => {
   const text = (p: Record<string, unknown>) => renderToStaticMarkup(h(IndexView, { ...props(), ...p } as never)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  it('follows the picked range, not the 7-day chart, and so do the with-vs-without totals', () => {
+  it('follows the picked range, input against input, and so do the with-vs-without totals', () => {
     // The 7 calendar days hold more than the picked range: the card and the totals show the range.
     const t = text({
-      savingsDays: [{ day: '2026-10-26', used: 1_000_000, saved: 9_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }],
-      rangeUsedTokens: 1_000_000, govSavings: { tokensSaved: 3_000_000, costSaved: 1, partial: false },
+      savingsDays: [{ day: '2026-10-26', used: 0, saved: 9_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }],
+      hourlyData: rangeHours(1_000_000), govSavings: { tokensSaved: 3_000_000, costSaved: 1, partial: false },
     });
-    expect(t).toMatch(/Smaller context 75% less sent to models · 3M fewer tokens/);
-    expect(t).toMatch(/Tokens: with WhiteRoom vs without .* last 24 h/);
+    expect(t).toMatch(/Smaller context 75% less input sent to models · 3M fewer input tokens/);
+    expect(t).toMatch(/Input tokens: with WhiteRoom vs without .* last 24 h/);
     expect(t).toMatch(/3M fewer tokens · about 75% less/);
-    expect(t).toMatch(/By day last 7 days, tokens with and without WhiteRoom each day/);
   });
-  it('keeps the 7-day By day when the picked range has no calls, and falls back to the 7 days without a range read', () => {
-    const week = [{ day: '2026-10-26', used: 1_000_000, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }];
-    const quiet = text({ savingsDays: week, rangeUsedTokens: 0, govSavings: { tokensSaved: 0, costSaved: 0, partial: false } });
+  it('draws By day from the week\'s input per day, and keeps it when the picked range has no calls', () => {
+    const week = [{ day: '2026-10-26', used: 0, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }];
+    const weekHourly = { hourly: [{ hour: new Date(2026, 9, 26, 12).toISOString(), calls: 1, costMicros: 0, errorCount: 0, inputTokens: 1_000_000, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }] };
+    const quiet = text({ savingsDays: week, weekHourly, hourlyData: rangeHours(0), govSavings: { tokensSaved: 0, costSaved: 0, partial: false } });
     expect(quiet).toMatch(/No model calls in the last 24 h/);
     expect(quiet).toMatch(/By day last 7 days/);
-    // No range read (older engine or a failed read): the totals are the 7 days', labelled so.
-    const fallback = text({ savingsDays: week, rangeUsedTokens: null });
-    expect(fallback).toMatch(/Tokens: with WhiteRoom vs without .* last 7 days/);
+    // No range read: the totals are the 7 days' input, labelled so.
+    const fallback = text({ savingsDays: week, weekHourly, hourlyData: null });
+    expect(fallback).toMatch(/Input tokens: with WhiteRoom vs without .* last 7 days/);
     expect(fallback).toMatch(/3M fewer tokens · about 75% less/);
+    // Without the week's input by hour, By day isn't drawn (it can't say input per day).
+    expect(text({ savingsDays: week, hourlyData: rangeHours(1_000_000), govSavings: { tokensSaved: 3_000_000, costSaved: 1, partial: false } })).not.toMatch(/By day/);
   });
   it('says it is unknown, never 0, when the tokens used are unknown, and why when the savings failed to load', () => {
-    expect(text({ savingsDays: null, rangeUsedTokens: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
+    expect(text({ savingsDays: null, hourlyData: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
     expect(text({ auditFailed: true })).toMatch(/Smaller context — couldn’t load, retrying on the next refresh/);
   });
 });

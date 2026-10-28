@@ -14,7 +14,7 @@ import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
 import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
-import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, inputByLocalDay, inputTokensOf, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import type { WorkingHourRate } from '@/lib/performance-overview';
@@ -37,9 +37,11 @@ const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 const REC_PAGE_SIZE = 15;
 const REC_FILTER_DEBOUNCE_MS = 300;
 
-export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
-  workingHour = null, rules = null, byRuleId, rangeUsedTokens = null, usdByDay = null, showUnnamedNote = false, predictionApi }: {
+export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
+  workingHour = null, rules = null, byRuleId, usdByDay = null, showUnnamedNote = false, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
+  /** The last 7 days by hour, for By day's input per day; null when it couldn't be read. */
+  weekHourly?: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
   auditFailed: boolean;
   govSavings: GovSavings | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
@@ -60,8 +62,6 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
   rules?: GovernanceRule[] | null;
   /** Rule activity per rule id (newer engines). */
   byRuleId?: Record<string, RuleActionCounts>;
-  /** Tokens the agents used in the range (audit buckets), for "about N% less"; null when unknown. */
-  rangeUsedTokens?: number | null;
   /** Dollars saved per local day (engine savingsByDay), micros; null on older engines. */
   usdByDay?: Record<string, number> | null;
   /** Spend's caption about calls from agents without a name (shown for a month after the change). */
@@ -190,8 +190,18 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
   const rangeName = rangeLabel.charAt(0).toUpperCase() + rangeLabel.slice(1);
   // Smaller context and the with-vs-without totals follow the range (the range's audit read);
   // only the chart's By day stays the last 7 calendar days.
-  const context = rangeContextCard(savings.govTokensSaved, rangeUsedTokens ?? null);
-  const rangeTokens = rangeUsedTokens != null ? { used: rangeUsedTokens, saved: savings.govTokensSaved, label: rangeLabel } : null;
+  // Savings are input (the context is what gets smaller), so they compare with the input the
+  // range's calls sent (plain and cached), not input and output together.
+  const rangeInput = hourlyData ? displayHourly.reduce((n, p) => n + inputTokensOf(p), 0) : null;
+  const context = rangeContextCard(savings.govTokensSaved, rangeInput);
+  const rangeTokens = rangeInput != null ? { used: rangeInput, saved: savings.govTokensSaved, label: rangeLabel } : null;
+  // By day: each day's input from the week's hourly rows, beside what it saved. Without them the
+  // chart can't say input per day, so it isn't drawn.
+  const inputDays = useMemo(() => {
+    if (!savingsDays || !weekHourly) return null;
+    const input = inputByLocalDay(weekHourly.hourly);
+    return savingsDays.map((d) => ({ ...d, used: input.get(d.day) ?? 0 }));
+  }, [savingsDays, weekHourly]);
   const toPerformance = () => {
     document.getElementById('perf-performance')?.scrollIntoView({ block: 'start' });
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
@@ -239,7 +249,7 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
           />
         </div>
         {/* Tokens with vs without, then Cost prediction (folded), then Spend by model (folded). */}
-        {savingsDays && <TokensCompare days={savingsDays} usdByDay={usdByDay} range={rangeTokens} />}
+        {(rangeTokens || inputDays) && <TokensCompare days={inputDays} usdByDay={usdByDay} range={rangeTokens} />}
         <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} fleetHourly={workingHour} {...(predictionApi && { api: predictionApi })} />
         {s.models.length > 0 && (
           <SpendByModel

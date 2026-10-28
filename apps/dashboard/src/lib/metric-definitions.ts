@@ -8,7 +8,7 @@ export function liveFeedHelp(ttlHours: number): string {
 
 /** Hover help for labels, shown through the ⓘ Hint next to each label. */
 export const HELP = {
-  smallerContext: "How much less your agents sent to the models with WhiteRoom than they would have without it, in the range shown.",
+  smallerContext: "How much less input your agents sent to the models with WhiteRoom than they would have without it, in the range shown. Input includes cached input; output isn't counted.",
   hourlySpend: 'What your agents spend in an hour while they work: the average over recent hours with model calls. Quiet hours don’t pull it down.',
   modelCalls: 'Each time an agent asks the AI model something, that counts as one call.',
   typicalResponse: 'The median time a model call takes, start to finish: half of calls are faster.',

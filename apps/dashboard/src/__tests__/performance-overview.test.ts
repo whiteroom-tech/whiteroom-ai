@@ -5,7 +5,7 @@ import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
   checkGroups, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  predictionNote, rangeContextCard, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
+  inputByLocalDay, inputTokensOf, predictionNote, rangeContextCard, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -66,7 +66,10 @@ describe('savings and spend', () => {
     expect(savedCaption(0, 5)).toBe('from cache reads · estimated');
     expect(savedCaption(0, 0)).toBe('nothing saved in this range');
     // Smaller context for the range: the same share as the with-vs-without chart.
-    expect(rangeContextCard(3_180_000, 1_740_000)).toEqual({ value: '65%', sub: 'less sent to models · 3.18M fewer tokens · ≈1.3 kWh saved' });
+    expect(rangeContextCard(3_180_000, 1_740_000)).toEqual({ value: '65%', sub: 'less input sent to models · 3.18M fewer input tokens · ≈1.3 kWh saved' });
+    // Input is plain plus cached input; output isn't counted.
+    expect(inputTokensOf({ inputTokens: 10, cacheReadTokens: 5, cacheWriteTokens: 2 })).toBe(17);
+    expect([...inputByLocalDay([{ hour: new Date(2026, 9, 26, 23).toISOString(), inputTokens: 4 }, { hour: new Date(2026, 9, 27, 1).toISOString(), inputTokens: 6, cacheReadTokens: 1 }])]).toEqual([['2026-10-26', 4], ['2026-10-27', 7]]);
     expect(rangeContextCard(0, 10)).toEqual({ value: '—', sub: 'nothing saved in this range' });
     expect(rangeContextCard(5, null)).toEqual({ value: '—', sub: 'not available yet' });
     expect(tokenTotals([{ day: 'a', used: 10, saved: 30 }, { day: 'b', used: 5, saved: 0 }])).toEqual({ used: 15, without: 45, saved: 30 });
