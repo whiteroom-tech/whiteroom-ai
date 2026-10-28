@@ -836,6 +836,8 @@ export interface AuditSummaryResult {
   savingsByAgent?: Record<string, { tokens: number; usdMicros: number | null }>;
   /** The same savings per local day, oldest first, adding up to `savings` (absent on older engines). */
   savingsByDay?: Array<{ day: string; tokens: number; usdMicros: number; unpricedTokens: number }>;
+  /** The prompt caching WhiteRoom added, per local day, net of write premiums; with savingsByDay, each day's "Saved by WhiteRoom" (absent on older engines). */
+  cacheByDay?: Array<{ day: string; usdMicros: number; unpricedReadTokens: number }>;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 

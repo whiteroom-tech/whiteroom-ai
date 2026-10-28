@@ -119,12 +119,14 @@ async function ownedFleetKeys(userId: string): Promise<Array<{ fleetId: string; 
 
 /**
  * The account's billable savings per UTC day since `fromDay`, in micro-dollars,
- * summed across the fleets it owns: the engine's audit_summary savingsByDay
- * ("Saved by WhiteRoom", priced at the account's own model prices; unpriced
- * savings aren't in it). Null when any owned fleet can't be read (no usable
- * token, or the engine refused), or the engine is too old to split savings
- * by day: a partial figure would under-bill a day that can't be corrected
- * afterwards. An account with no fleets saved nothing: an empty map.
+ * summed across the fleets it owns: "Saved by WhiteRoom" as Home and
+ * Performance show it, the engine's audit_summary savingsByDay (smaller
+ * context) plus cacheByDay (the caching WhiteRoom added), priced at the
+ * account's own model prices; unpriced savings aren't in it. Null when any
+ * owned fleet can't be read (no usable token, or the engine refused), or the
+ * engine is too old to split savings by day: a partial figure would
+ * under-bill a day that can't be corrected afterwards. An account with no
+ * fleets saved nothing: an empty map.
  */
 export async function savingsByUtcDay(userId: string, fromDay: string): Promise<Map<string, number> | null> {
   const fleets = await ownedFleetKeys(userId);
@@ -134,8 +136,8 @@ export async function savingsByUtcDay(userId: string, fromDay: string): Promise<
     const summaries = await Promise.all(fleets.map((f) => auditSummary(f.fleetId, from, f.token, undefined, 'UTC')));
     const byDay = new Map<string, number>();
     for (const s of summaries) {
-      if (!s.savingsByDay) return null;
-      for (const d of s.savingsByDay) byDay.set(d.day, (byDay.get(d.day) ?? 0) + (d.usdMicros ?? 0));
+      if (!s.savingsByDay || !s.cacheByDay) return null;
+      for (const d of [...s.savingsByDay, ...s.cacheByDay]) byDay.set(d.day, (byDay.get(d.day) ?? 0) + (d.usdMicros ?? 0));
     }
     return byDay;
   } catch {
