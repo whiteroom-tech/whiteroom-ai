@@ -78,4 +78,47 @@ describe('Needs you', () => {
     expect(needsYou(m.el)).toContain('Nothing needs you right now.');
     m.root.unmount();
   });
+
+  async function dismissFromPast(m: { el: HTMLElement }) {
+    const past = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show past recommendations')!;
+    await act(async () => { past.click(); });
+    await flush();
+    const options = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Options')!;
+    await act(async () => { options.click(); });
+    const dismiss = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Dismiss')!;
+    await act(async () => { dismiss.click(); });
+    await flush();
+  }
+
+  it('hides the line, never a stale count, when that reread fails', async () => {
+    for (const fail of [() => Promise.reject(new Error('down')), async () => ({ error: 'nope', recommendations: [], cursor: null, total: 0 })]) {
+      api.list.mockReset();
+      api.list.mockResolvedValue(reply(1));
+      const m = await mount();
+      expect(needsYou(m.el)).toContain('1 recommendation ↓');
+      api.list.mockImplementation(async (_f: string, opts: { status?: string; pageSize?: number }) => (opts.pageSize === 1 ? fail() : reply(1)));
+      await dismissFromPast(m);
+      expect(needsYou(m.el)).toBeNull();
+      m.root.unmount();
+    }
+  });
+
+  it('keeps a newer Open list\'s count over a reread that answers late', async () => {
+    api.list.mockResolvedValue(reply(1));
+    const m = await mount();
+    let late!: (v: unknown) => void;
+    api.list.mockImplementation((_f: string, opts: { status?: string; pageSize?: number }) =>
+      opts.pageSize === 1 ? new Promise((r) => { late = r; }) : Promise.resolve(opts.status === 'open' ? reply(3) : reply(1)));
+    await dismissFromPast(m);
+    // Back to the Open list: its read lands first, with 3 open.
+    const open = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'open')!;
+    await act(async () => { open.click(); });
+    await flush();
+    expect(needsYou(m.el)).toContain('3 recommendations ↓');
+    // The older reread answers afterwards: ignored.
+    await act(async () => { late(reply(0)); });
+    await flush();
+    expect(needsYou(m.el)).toContain('3 recommendations ↓');
+    m.root.unmount();
+  });
 });

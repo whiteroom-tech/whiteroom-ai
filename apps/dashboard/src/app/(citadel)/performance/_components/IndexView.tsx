@@ -142,7 +142,9 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
       // Another list on screen (past ones, or filtered): "Needs you" rereads its own count.
       if (recStatus !== 'open' || recAgentQuery.trim()) {
         const req = ++openReq.current;
-        void performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey).then((r) => { if (!r.error && openReq.current === req) setOpenCount(r.total); }, () => {});
+        // A failed read hides the line rather than leave a count that may be wrong.
+        const land = (n: number | null) => { if (openReq.current === req) setOpenCount(n); };
+        void performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey).then((r) => land(r.error ? null : r.total), () => land(null));
       }
     }
     return result;
