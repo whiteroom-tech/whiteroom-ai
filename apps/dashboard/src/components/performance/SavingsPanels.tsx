@@ -56,7 +56,7 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
         <span className="wr-cap wr-tokens__meta">{label}{energy ? ` · ${energy} saved` : ''}</span>
       </div>
       {empty ? (
-        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls in the {label}.</p>
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls {noCallsWhen(label)}.</p>
       ) : (
         <>
           <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
@@ -113,4 +113,14 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
       )}
     </div>
   );
+}
+
+/**
+ * The range as an empty state reads it: "today", "in the last 7 days", "on Sat, Oct 24" (one
+ * day), "between Oct 1 – Oct 10" (a span: its label has an en dash).
+ */
+export function noCallsWhen(label: string): string {
+  if (label === 'today') return 'today';
+  if (label.startsWith('last ')) return `in the ${label}`;
+  return label.includes('–') ? `between ${label}` : `on ${label}`;
 }

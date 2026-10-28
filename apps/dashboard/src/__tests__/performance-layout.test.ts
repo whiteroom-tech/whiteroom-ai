@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
 
 const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
+const { noCallsWhen } = await import('@/components/performance/SavingsPanels');
 
 const DATA = {
   fleetId: 'f1',
@@ -128,5 +129,19 @@ describe('Smaller context card', () => {
   it('says it is unknown, never 0, when the tokens used are unknown, and why when the savings failed to load', () => {
     expect(text({ savingsDays: null, hourlyData: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
     expect(text({ auditFailed: true })).toMatch(/Smaller context — couldn’t load, retrying on the next refresh/);
+  });
+});
+
+describe('Input tokens empty state', () => {
+  it('reads the range naturally', () => {
+    expect(noCallsWhen('today')).toBe('today');
+    expect(noCallsWhen('last 7 days')).toBe('in the last 7 days');
+    expect(noCallsWhen('last 30 days')).toBe('in the last 30 days');
+    expect(noCallsWhen('Oct 1 – Oct 10')).toBe('between Oct 1 – Oct 10');
+    expect(noCallsWhen('Sat, Oct 24')).toBe('on Sat, Oct 24');
+  });
+  it('says it in the card when the range had no calls', () => {
+    const html = renderToStaticMarkup(h(IndexView, { ...props(DATA, 'today'), hourlyData: { hourly: [] }, govSavings: { tokensSaved: 0, costSaved: 0, partial: false } } as never));
+    expect(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain('No model calls today.');
   });
 });
