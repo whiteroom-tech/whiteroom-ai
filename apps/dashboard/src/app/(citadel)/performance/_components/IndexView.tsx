@@ -262,7 +262,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
             // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
             value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`}
             sub={<>
-              {spendTrend ?? (prev ? `nothing spent in the ${prior}` : rangeLabel)}
+              {spendTrend ?? (!prev ? rangeLabel : s.totalCost > 0 ? `nothing spent in the ${prior}` : `none in the ${prior} either`)}
               {spendNotes.length > 0 && <span style={{ display: 'block', marginTop: 8, color: 'var(--warn-tx)' }}>{spendNotes.join(' · ')}</span>}
             </>}
           />

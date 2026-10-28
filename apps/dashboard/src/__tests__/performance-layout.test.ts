@@ -90,6 +90,12 @@ describe('Performance overview layout', () => {
     // Nothing spent before: no percent to show, so it says so.
     const fromNothing = text(view({ ...DATA, previous: { period: { start: '', end: '' }, totalCalls: 0, totalCost: 0, pricedAttempts: 0, unpricedAttempts: 0, avgLatencyMs: null } }));
     expect(fromNothing).toMatch(/Spend .*\$0\.912 nothing spent in the prior 24 h/);
+    const quiet = { ...DATA, summary: { ...DATA.summary, totalCost: 0 } };
+    const prior = (cost: number) => ({ period: { start: '', end: '' }, totalCalls: 0, totalCost: cost, pricedAttempts: 0, unpricedAttempts: 0, avgLatencyMs: null });
+    // Nothing spent in either: it doesn't suggest this range had spend.
+    expect(text(view({ ...quiet, previous: prior(0) }))).toMatch(/Spend .*\$0\.00 none in the prior 24 h either/);
+    // Spent before, nothing now: the drop.
+    expect(text(view({ ...quiet, previous: prior(500_000) }))).toMatch(/Spend .*\$0\.00 ↓ 100% vs prior 24 h/);
     // Unpriced calls make spend a lower bound ("+").
     expect(text(view({ ...DATA, summary: { ...DATA.summary, unpricedAttempts: 3 } }))).toMatch(/\$0\.912\+/);
   });
