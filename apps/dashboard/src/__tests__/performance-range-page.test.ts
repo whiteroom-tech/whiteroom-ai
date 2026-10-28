@@ -86,8 +86,7 @@ describe('Performance range', () => {
     api.hourly.mockResolvedValueOnce({ hourly: [] });
     api.audit.mockResolvedValue(null);
     const { el, root } = await open('range=30d');
-    await act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
-    expect(el.textContent).toContain('30 days and Custom aren’t available yet. Showing 7 days.');
+    await vi.waitFor(() => expect(el.textContent).toContain('30 days and Custom aren’t available yet. Showing 7 days.'));
     expect(radio(el, '30 days').disabled).toBe(true);
     expect(radio(el, 'Custom').disabled).toBe(true);
     expect(radio(el, '7 days').getAttribute('aria-checked')).toBe('true');
