@@ -28,34 +28,12 @@ const FAILED_RUN: RunStatusResult = {
 };
 
 const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
-const controls = (track: 'liveEvidence' | 'demoEvidence', observed: number) =>
+const controls = (track: 'liveEvidence', observed: number) =>
   ['core.connect', 'core.handoff', 'core.resume'].map((controlId, i) => ({
     controlId, name: controlId,
     result: i < observed ? { [track]: { status: 'observed', timestamp: ago(60 - i * 10) } } : {},
   })) as unknown as RunStatusResult['controls'];
 const agent = (totalTasks: number) => ({ agentId: 'support-bot', role: 'worker', status: 'active', watchMinutes: 2, watchCount: 1, totalTasks, totalTokens: totalTasks * 1200, pairedWith: null, currentWatch: { watchNumber: 1, minutesWorked: 0.7, tokensUsed: 2400, tasksCompleted: totalTasks } });
-
-/** The demo, as it looks once the engine's script has run: demo-agent passes its work to demo-agent-b. */
-const DEMO_RUN: RunStatusResult = {
-  sandboxId: 'preview-demo',
-  mode: 'demo',
-  expiresInSeconds: 1787,
-  controls: controls('demoEvidence', 3),
-  agents: [{ ...agent(1), agentId: 'demo-agent' }, { ...agent(1), agentId: 'demo-agent-b' }],
-  auditLog: [
-    { id: 'd1', timestamp: ago(80), type: 'register', agentId: 'demo-agent' },
-    { id: 'd2', timestamp: ago(78), type: 'watch_start', agentId: 'demo-agent' },
-    { id: 'd3', timestamp: ago(75), type: 'task_complete', agentId: 'demo-agent' },
-    { id: 'd4', timestamp: ago(72), type: 'register', agentId: 'demo-agent-b' },
-    { id: 'd5', timestamp: ago(70), type: 'handover', agentId: 'demo-agent' },
-    { id: 'd6', timestamp: ago(68), type: 'watch_start', agentId: 'demo-agent-b' },
-    { id: 'd7', timestamp: ago(65), type: 'task_complete', agentId: 'demo-agent-b' },
-    { id: 'd8', timestamp: ago(60), type: 'demo_activity', agentId: null },
-    { id: 'd9', timestamp: ago(55), type: 'policy_decision', agentId: 'demo-agent' },
-    { id: 'd10', timestamp: ago(50), type: 'policy_enforcement_verified', agentId: null },
-    { id: 'd11', timestamp: ago(45), type: 'policy_chain_verified', agentId: null },
-  ],
-};
 
 /** A live Anthropic test with every check passed. */
 const PASSED_RUN: RunStatusResult = {
@@ -89,7 +67,7 @@ const IDLE_RUN: RunStatusResult = { ...WAITING_RUN, sandboxId: 'preview-idle', e
 /** How long the page has "seen" each sample test: idle help counts from then, not from a test length. */
 const SEEN_FOR: Partial<Record<PreviewState, number>> = { waiting: 10, idle: 120 };
 
-const PREVIEW_STATES = { failed: FAILED_RUN, demo: DEMO_RUN, passed: PASSED_RUN, waiting: WAITING_RUN, idle: IDLE_RUN } as const;
+const PREVIEW_STATES = { failed: FAILED_RUN, passed: PASSED_RUN, waiting: WAITING_RUN, idle: IDLE_RUN } as const;
 /** "empty": the start screen with no past tests. */
 export type PreviewState = keyof typeof PREVIEW_STATES | 'empty';
 

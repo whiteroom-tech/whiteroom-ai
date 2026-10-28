@@ -1,6 +1,6 @@
-// Sandbox pre-flight Phase 1 (spec Oct 28 §7, §9): a connection-test demo
-// still open has no countdown, no test ID and a plain End; the loading states
-// are skeletons from @whiteroom/ui. Phase 2's rows: sandbox-preflight.test.ts.
+// Sandbox pre-flight Phase 1 (spec Oct 28 §7, §9): the connection test's
+// countdown says it is the link's lifetime; the loading states are skeletons
+// from @whiteroom/ui. Phase 2's rows: sandbox-preflight.test.ts.
 
 import { describe, expect, it, vi } from 'vitest';
 import { createElement, type FC } from 'react';
@@ -13,17 +13,11 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 
-describe('the demo', () => {
+describe('a live connection test', () => {
   const render = (previewRun: RunStatusResult) => renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewPastTests: [], previewRun }));
   const run = (o: Partial<RunStatusResult>): RunStatusResult => ({ sandboxId: '7f3a0000-0000-4000-8000-000000000000', mode: 'connected', expiresInSeconds: 1500, agents: [], auditLog: [], controls: [], ...o });
 
-  it('has no countdown and no test ID; a live test keeps both', () => {
-    const demo = render(run({ mode: 'demo' }));
-    expect(demo).not.toContain('Test ends in');
-    // The footer says Demo, not the test's ID.
-    expect(demo).not.toContain('Test 7f3a0000');
-    expect(demo).toMatch(/class="[^"]*footer[^"]*">Demo</);
-    expect(demo).toContain('End test');
+  it('a live test shows its countdown and its test ID', () => {
     const live = render(run({}));
     expect(live).toContain('Test ends in');
     expect(live).toContain('Test 7f3a0000-0000-4000-8000-000000000000');

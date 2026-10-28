@@ -7,7 +7,7 @@ import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { FONT_DISPLAY, FONT_MONO, CopyButton, SkeletonCard } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
+import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
 import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, isSandboxProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
@@ -78,35 +78,11 @@ export const EVENT_LABELS: Record<string, string> = {
   policy_chain_failed: 'Controls check failed',
   policy_enforcement_verified: 'Control applied',
   policy_enforcement_failed: 'Control not applied',
-  demo_activity: 'Demo step',
   unnamed_call_refused: 'Call refused: no agent name',
   quota_exceeded: 'Plan limit reached',
   state_recovered: 'Picked up again after a restart',
   unclean_stop: 'Stopped unexpectedly',
 };
-
-/**
- * The demo walkthrough: one step per check, and what each check says once the
- * demo has passed it (`detail`; the first check counts calls like a live test).
- * The engine's demo runs two agents: demo-agent finishes a task, then its
- * work goes on in demo-agent-b, which finishes the next one. The copy says
- * what the reader sees, never how WhiteRoom does it.
- * Its script also runs a safety-rule test, which isn't one of these checks, so
- * it isn't shown.
- */
-export const DEMO_STORY: { title: string; text: string; detail?: string }[] = [
-  { title: 'Your agent connects', text: 'A demo agent sends its calls through WhiteRoom and finishes a task. Nothing about its calls changes.' },
-  {
-    title: SANDBOX_CHECKS[1].label,
-    text: 'The demo task runs long, and the work keeps going without losing its place.',
-    detail: 'The work kept going without losing its place.',
-  },
-  {
-    title: SANDBOX_CHECKS[2].label,
-    text: 'The next call goes through normally and finishes the next task.',
-    detail: 'The next call went through normally and finished the next task.',
-  },
-];
 
 /** The Activity tab's name for an event. Unlisted engine types still read as plain words. */
 export function eventLabel(type: string): string {
@@ -138,14 +114,14 @@ export function detectKey(value: string): KeyKind {
 }
 
 /** What a new test sends: a cloud test only its endpoint, a pasted key or fleet token as itself, and a live Anthropic or OpenAI test names its provider so status reports it back. */
-export function runOptions(mode: 'demo' | 'connected', provider: SandboxProvider, credential: string, target?: { provider: CloudProvider; endpoint: string }) {
+export function runOptions(provider: SandboxProvider, credential: string, target?: { provider: CloudProvider; endpoint: string }) {
   const pasted = credential.trim();
   const kind = detectKey(pasted);
-  const live = mode === 'connected' && !target;
+  const live = !target;
   const pastedToken = live && kind === 'fleet' ? pasted : undefined;
   const apiKey = live && (kind === 'anthropic' || kind === 'openai') ? pasted : undefined;
   const named = live && !isCloudProvider(provider) ? provider : undefined;
-  const opts = { mode, apiKey, selectedCatalogIds: [] as string[], policyMode: 'observe' as const, ...(named ? { provider: named } : {}) };
+  const opts = { mode: 'connected' as const, apiKey, selectedCatalogIds: [] as string[], policyMode: 'observe' as const, ...(named ? { provider: named } : {}) };
   return { opts: target ? { ...opts, provider: target.provider, endpoint: target.endpoint } : opts, pastedToken };
 }
 
@@ -204,7 +180,7 @@ export function agentNameNote(run: RunStatusResult | null): string | null {
  * when it names one, else the choice on this page (restored from storage).
  */
 export function directProviderOf(run: RunStatusResult | null, picked: SandboxProvider): DirectProvider {
-  if (run?.sandboxId && run.mode !== 'demo' && (run.provider === 'anthropic' || run.provider === 'openai')) return run.provider;
+  if (run?.sandboxId && (run.provider === 'anthropic' || run.provider === 'openai')) return run.provider;
   return picked === 'openai' ? 'openai' : 'anthropic';
 }
 
@@ -230,7 +206,7 @@ export function endTestText(run: Pick<RunStatusResult, 'reportsKept'> | null): s
 }
 
 function connectionVerified(status: RunStatusResult | null) {
-  return status?.mode !== 'demo' && status?.controls?.some(c => c.controlId === 'core.connect' && isObserved(status, c));
+  return status?.controls?.some(c => c.controlId === 'core.connect' && isObserved(status, c));
 }
 
 function diagStage(run: RunStatusResult | null): number {
@@ -273,15 +249,9 @@ function formatTimer(seconds: number | null | undefined): string {
 }
 
 export function checkGuidance(controlId: string, status: string | undefined, run: RunStatusResult | null, provider: SandboxProvider): { detail: string; action?: string; failed?: boolean; progress?: { current: number; total: number; label: string } } {
-  // The demo walkthrough reveals one check per step.
-  const demoStep = SANDBOX_CHECKS.findIndex(c => c.id === controlId) + 1;
-  if (status === 'unrevealed') return { detail: `Shown in step ${demoStep} of the walkthrough.` };
   const agent = run?.agents?.[0];
   const calls = run?.agents?.reduce((sum, a) => sum + a.totalTasks, 0) ?? 0;
   if (status === 'observed') {
-    // The demo's checks say what its walkthrough showed.
-    const demoDetail = run?.mode === 'demo' ? DEMO_STORY[demoStep - 1]?.detail : undefined;
-    if (demoDetail) return { detail: demoDetail };
     if (controlId === 'core.connect') {
       const failed = failedCallsOf(run);
       return { detail: `${callCount(calls)} went through WhiteRoom and got a normal reply.${failed ? ` ${callCount(failed.count)} failed.` : ''}` };
@@ -291,7 +261,6 @@ export function checkGuidance(controlId: string, status: string | undefined, run
     }
     return { detail: 'Its next call went through normally.' };
   }
-  if (run?.mode === 'demo') return { detail: 'The demo fills this in a moment.' };
   if (controlId === 'core.connect') {
     const failed = failedCallsOf(run);
     if (failed) return { detail: failedCallsCheckDetail(failed, provider), action: failedCallNotice(failed, provider, run?.endpointHost).next, failed: true };
@@ -309,7 +278,6 @@ export function checkGuidance(controlId: string, status: string | undefined, run
     };
   }
   const handoff = run?.controls?.find(c => c.controlId === 'core.handoff');
-  // Demos returned above, so only live evidence matters here.
   const handoffDone = !!handoff && isObserved(run, handoff);
   if (!handoffDone) return { detail: 'Happens after the long-task check.' };
   return { detail: 'Waiting for your agent’s next call.', action: 'Keep your agent running for one more call.' };
@@ -331,18 +299,16 @@ const TIMER_ICON = <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" strok
 
 /** The steps rail (README › Sandbox), mapped onto this flow's real stages. */
 export const SANDBOX_STEPS = [
-  { title: 'Start a test', sub: 'Paste the key your agent uses, or see the demo' },
+  { title: 'Start a test', sub: 'Paste the key your agent uses' },
   { title: 'Point your agent', sub: 'Use the test URL' },
   { title: 'Run one task', sub: 'Calls show up as they arrive' },
   { title: 'Results', sub: 'Three checks, and a report to keep' },
 ] as const;
 
 /** Which rail step is current: 0 before a test exists, then by what the test has seen. */
-export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stage: number; allPassed: boolean; expired: boolean; demo: boolean; demoScene?: number }): number {
+export function sandboxStep(phase: 'start' | 'setup' | 'workspace', opts: { stage: number; allPassed: boolean; expired: boolean }): number {
   if (phase !== 'workspace') return 0;
-  // The demo walkthrough moves the rail one step per scene, ending on Results.
-  if (opts.demo && opts.demoScene !== undefined && !opts.expired) return Math.min(3, 1 + opts.demoScene);
-  if (opts.allPassed || opts.expired || opts.demo) return 3;
+  if (opts.allPassed || opts.expired) return 3;
   return opts.stage >= 3 ? 2 : 1;
 }
 
@@ -418,17 +384,12 @@ export function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChan
 
 type Control = NonNullable<RunStatusResult['controls']>[number];
 
-/** A check's evidence on the track the user watches: demo evidence in a demo, live evidence otherwise. */
-export function evidenceOf(run: RunStatusResult | null, control: Control) {
-  return run?.mode === 'demo' ? control.result?.demoEvidence : control.result?.liveEvidence;
+/** The check passed, from the test's live calls. */
+export function isObserved(_run: RunStatusResult | null, control: Control): boolean {
+  return control.result?.liveEvidence?.status === 'observed';
 }
 
-/** The check passed, on the track the user watches. */
-export function isObserved(run: RunStatusResult | null, control: Control): boolean {
-  return evidenceOf(run, control)?.status === 'observed';
-}
-
-/** Every check observed on the track the user watches (demo or live). */
+/** Every check observed. */
 export function allChecksPassed(run: RunStatusResult | null): boolean {
   const controls = run?.controls ?? [];
   return controls.length > 0 && controls.every(c => isObserved(run, c));
@@ -442,7 +403,6 @@ export function checksPassedCount(run: RunStatusResult | null): number {
 /** What the page tracks about a test between status reads. Its id never leaves the page. */
 export interface RunSnapshot {
   id: string;
-  demo: boolean;
   provider: SandboxProvider;
   /** A call went through WhiteRoom (Connect stage 3 or later). */
   called: boolean;
@@ -461,15 +421,15 @@ export type EndedBy = 'user' | 'expired' | 'other';
 export function runSnapshot(run: RunStatusResult | null, provider: SandboxProvider): RunSnapshot | null {
   if (!run?.sandboxId) return null;
   return {
-    id: run.sandboxId, demo: run.mode === 'demo', provider,
+    id: run.sandboxId, provider,
     called: diagStage(run) >= 3, passed: allChecksPassed(run), checksPassed: checksPassedCount(run),
     expired: run.expiresInSeconds === 0, endSent: false,
   };
 }
 
 /** sandbox_test_ended: the mode, how many checks had passed and why it ended. Never an id. */
-export function testEndedEvent(t: Pick<RunSnapshot, 'demo' | 'checksPassed'>, endedBy: EndedBy): SandboxEvent {
-  return { name: 'sandbox_test_ended', props: { mode: t.demo ? 'demo' : 'connected', checks_passed: t.checksPassed, ended_by: endedBy } };
+export function testEndedEvent(t: Pick<RunSnapshot, 'checksPassed'>, endedBy: EndedBy): SandboxEvent {
+  return { name: 'sandbox_test_ended', props: { mode: 'connected', checks_passed: t.checksPassed, ended_by: endedBy } };
 }
 
 /**
@@ -490,16 +450,16 @@ export function runTransition(prev: RunSnapshot | null, next: RunSnapshot | null
   if (prev && !prev.endSent && ending && (!next || next.id !== prev.id)) events.push(testEndedEvent(prev, ending));
   if (!prev || !next || prev.id !== next.id) return { events, showResults: false, keep: next };
   const keep = { ...next, endSent: prev.endSent };
-  if (!next.demo && next.called && !prev.called) events.push({ name: 'sandbox_first_call', props: { provider: next.provider } });
-  if (!next.demo && next.passed && !prev.passed) events.push({ name: 'sandbox_checks_passed', props: { provider: next.provider } });
+  if (next.called && !prev.called) events.push({ name: 'sandbox_first_call', props: { provider: next.provider } });
+  if (next.passed && !prev.passed) events.push({ name: 'sandbox_checks_passed', props: { provider: next.provider } });
   if (next.expired && !prev.expired && !prev.endSent) { events.push(testEndedEvent(next, 'expired')); keep.endSent = true; }
   const finished = (x: RunSnapshot) => x.passed || x.expired;
-  return { events, showResults: !next.demo && finished(next) && !finished(prev), keep };
+  return { events, showResults: finished(next) && !finished(prev), keep };
 }
 
-/** sandbox_test_started: the mode, and the provider picked for a live test. */
-export function testStartedEvent(mode: 'demo' | 'connected', provider: SandboxProvider): SandboxEvent {
-  return { name: 'sandbox_test_started', props: { mode, provider: mode === 'demo' ? undefined : provider } };
+/** sandbox_test_started: the mode, and the provider picked. */
+export function testStartedEvent(provider: SandboxProvider): SandboxEvent {
+  return { name: 'sandbox_test_started', props: { mode: 'connected', provider } };
 }
 
 /** "Nothing happening?": which test it belongs to, whether it's open, and which test it already opened itself for. */
@@ -523,7 +483,7 @@ export function helpReducer(state: HelpState, action: HelpAction): HelpState {
  * agent, and an unnamed one is logged as refused.
  */
 export function hasNoCalls(run: RunStatusResult | null): boolean {
-  return !!run?.sandboxId && run.mode !== 'demo' && run.expiresInSeconds !== 0 && !callArrived(run);
+  return !!run?.sandboxId && run.expiresInSeconds !== 0 && !callArrived(run);
 }
 
 /** A checklist step's state: a failure leads; a step can be done early (step 2, once any call arrives). */
@@ -608,7 +568,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [error, setError] = useState('');
   const [reconnecting, setReconnecting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [scene, setScene] = useState(0);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [pollTick, setPollTick] = useState(0);
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
@@ -620,7 +579,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const ownerRef = useRef<string | undefined>(undefined);
   const modalRef = useRef<HTMLDivElement>(null);
   const verified = connectionVerified(run);
-  const isDemo = run?.mode === 'demo';
   const expired = run?.expiresInSeconds === 0;
   const fleetId = run?.sandboxId ? `sandbox-${run.sandboxId}` : '';
   const agentId = run?.agents?.[0]?.agentId ?? PLACEHOLDER_AGENT;
@@ -630,11 +588,11 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const proxyKey = run?.sandboxId && shownKey?.sandboxId === run.sandboxId ? shownKey.proxyKey : null;
   const cloud = isCloudProvider(provider) ? provider : null;
   const endpointInput = cloud ? endpoints[cloud] ?? '' : '';
-  // Demos and Anthropic/OpenAI tests use the fleet-header recipe, as before.
+  // Anthropic/OpenAI tests use the fleet-header recipe, as before.
   const directProvider = directProviderOf(run, provider);
   // A live cloud test, by what the engine reports (an engine that reports no
   // provider at all falls back to the choice made at start).
-  const liveCloud = !run || isDemo ? null
+  const liveCloud = !run ? null
     : isCloudProvider(run.provider) ? run.provider
     : run.provider === undefined ? cloud : null;
   // The provider this test's calls go to, for naming it when they fail.
@@ -653,7 +611,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const track = useCallback((e: SandboxEvent) => { if (!previewUserId) analytics.capture(e.name, e.props); }, [previewUserId]);
   const noCalls = hasNoCalls(run);
   // Practice tests: the start screen's card and Past tests rows, and the line on Ready to go live.
-  const practice = usePracticeEntry(!!session?.user?.id && !booting && (phase === 'start' || (allPassed && !isDemo)), previewPractice);
+  const practice = usePracticeEntry(!!session?.user?.id && !booting && (phase === 'start' || allPassed), previewPractice);
 
   // The provider follows the pasted key; a fleet token doesn't say, so the
   // user picks it.
@@ -694,12 +652,12 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   // Once every check passes, fill the production snippet with the user's own
   // fleet instead of a placeholder.
   useEffect(() => {
-    if (!allPassed || isDemo || prodFleetId) return;
+    if (!allPassed || prodFleetId) return;
     fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
       .then((d: { fleetId?: string } | null) => { if (d?.fleetId) setProdFleetId(d.fleetId); })
       .catch(() => {});
-  }, [allPassed, isDemo, prodFleetId]);
+  }, [allPassed, prodFleetId]);
 
   // Once per page: someone opened the Sandbox.
   const opened = useRef(false);
@@ -785,7 +743,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         if (isSandboxProvider(st.provider)) setProvider(st.provider);
         setRun(withRunMode(st));
         setPhase('workspace');
-        setWsTab(connectionVerified(st) || st.mode === 'demo' || st.expiresInSeconds === 0 ? 'results' : 'setup');
+        setWsTab(connectionVerified(st) || st.expiresInSeconds === 0 ? 'results' : 'setup');
       }
       setLastUpdated(new Date());
     }).catch(() => { if (!disposed) setError('Could not load your test. Check your connection and retry.'); })
@@ -850,11 +808,11 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
   // Warn before unload when a live test is running
   useEffect(() => {
-    if (phase !== 'workspace' || !run?.sandboxId || isDemo) return;
+    if (phase !== 'workspace' || !run?.sandboxId) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [phase, run?.sandboxId, isDemo]);
+  }, [phase, run?.sandboxId]);
 
   // Modal focus trap
   useEffect(() => {
@@ -880,9 +838,9 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     finally { setBusy(false); }
   }, []);
 
-  const begin = (mode: 'demo' | 'connected', target?: { provider: CloudProvider; endpoint: string }) => act(async () => {
+  const begin = (target?: { provider: CloudProvider; endpoint: string }) => act(async () => {
     try {
-      const { opts, pastedToken } = runOptions(mode, provider, credential, target);
+      const { opts, pastedToken } = runOptions(provider, credential, target);
       let created;
       try {
         created = await createRun(opts, pastedToken);
@@ -903,7 +861,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       const { proxyKey: issuedProxyKey, ...result } = created;
       if (result.error || !result.sandboxId) throw new Error(result.error ?? 'Could not create your test.');
       // Remembered only once the engine accepted it, so a reload shows the right code.
-      if (mode === 'connected') { safeSet(PROVIDER_STORAGE, provider); setLastUsed(provider); }
+      safeSet(PROVIDER_STORAGE, provider); setLastUsed(provider);
       if (issuedProxyKey) {
         saveProxyKey(result.sandboxId, issuedProxyKey);
         setShownKey({ sandboxId: result.sandboxId, proxyKey: issuedProxyKey });
@@ -913,23 +871,18 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         safeSet('wr_sandbox_token', result.fleetToken);
         window.dispatchEvent(new Event('storage'));
       }
-      track(testStartedEvent(mode, provider));
-      setRun({ ...result, mode, agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : 'provider' in opts && opts.provider ? { provider: opts.provider } : {}) });
-      setPhase('workspace'); setWsTab(mode === 'demo' ? 'results' : 'setup');
-      if (mode === 'demo') {
-        const d = await startDemo(result.sandboxId);
-        if (d.error) throw new Error(d.error);
-        setScene(0);
-      }
+      track(testStartedEvent(provider));
+      setRun({ ...result, mode: 'connected', agents: [], ...(target ? { provider: target.provider, endpointHost: new URL(target.endpoint).hostname } : 'provider' in opts && opts.provider ? { provider: opts.provider } : {}) });
+      setPhase('workspace'); setWsTab('setup');
     } finally { setCredential(''); setShowKey(false); }
   });
 
   const startTest = () => {
-    if (!cloud) { void begin('connected'); return; }
+    if (!cloud) { void begin(); return; }
     const check = cloudStart(cloud, endpointInput);
     if (!check.ok) { setEndpointError(check.error); return; }
     setEndpointError('');
-    void begin('connected', { provider: check.provider, endpoint: check.endpoint });
+    void begin({ provider: check.provider, endpoint: check.endpoint });
   };
 
   // Anthropic vs OpenAI follows a pasted sk- key; the choice decides only for a fleet token.
@@ -993,9 +946,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
   // ── Render checks list ──
   const renderChecks = (controls: NonNullable<RunStatusResult['controls']>) => controls.map(c => {
-    const ev = evidenceOf(run, c);
-    // The demo walkthrough reveals one check per step.
-    const status = isDemo && SANDBOX_CHECKS.findIndex(x => x.id === c.controlId) > scene ? 'unrevealed' : ev?.status;
+    const status = c.result?.liveEvidence?.status;
     const passed = status === 'observed';
     const guide = checkGuidance(c.controlId, status, run, testProvider);
     return (
@@ -1023,7 +974,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     const limit = activityExpanded ? allEntries.length : 20;
     const entries = allEntries.slice(0, limit);
     const hasMore = allEntries.length > limit;
-    if (!entries.length) return <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', textAlign: 'center', padding: '32px 0' }}>{phase === 'workspace' && !isDemo ? 'Nothing yet. Events appear here as soon as your agent makes a call.' : 'Demo events are made up to show the flow.'}</p>;
+    if (!entries.length) return <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx3)', textAlign: 'center', padding: '32px 0' }}>{'Nothing yet. Events appear here as soon as your agent makes a call.'}</p>;
     return (
       <><ul className={s.activity}>{entries.map(e => {
         const type = e.type;
@@ -1049,9 +1000,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   return <>
     {/* ── Topbar (workspace only) ── */}
     {phase === 'workspace' && run && (
-      <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'Demo' : 'Live test'}</span>}>
-        {/* A demo has no link to run out, so no countdown. */}
-        {!isDemo && <TestTimer seconds={displaySeconds} expired={!!expired} />}
+      <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${s.live}`}>Live test</span>}>
+        <TestTimer seconds={displaySeconds} expired={!!expired} />
       </PageHeader>
     )}
 
@@ -1061,7 +1011,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     <main className={s.content}>
       {phase !== 'workspace' && <div className="wr-setup-leadwrap" style={{ marginBottom: 8 }}><PageLead>{SANDBOX_LEAD}</PageLead></div>}
       <div className={s.layout}>
-      <StepsRail steps={SANDBOX_STEPS} current={sandboxStep(phase, { stage, allPassed, expired: !!expired, demo: !!isDemo, demoScene: isDemo ? scene : undefined })} />
+      <StepsRail steps={SANDBOX_STEPS} current={sandboxStep(phase, { stage, allPassed, expired: !!expired })} />
       <div className={s.body}>
       {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Retry</button></div>}
       {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Check now</button></div>}
@@ -1115,7 +1065,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           const banner = (tone: string, head: string, rest: string) => (
             <div className={`${s.summary} ${tone}`}><h2 ref={summaryHeading} tabIndex={-1} className={s.summaryHead}>{head}</h2>{rest && ` ${rest}`}</div>
           );
-          if (isDemo) return banner('', 'This is a demo.', 'It uses made-up data to show the flow. It doesn’t test your agent.');
           if (allPassed) return banner(s.summaryPass, `All ${total} checks passed.`, 'Your agent works through WhiteRoom.');
           const nextCheck = controls.find(c => !isObserved(run, c));
           const nextLabel = nextCheck ? checkLabel(nextCheck.controlId, nextCheck.name).toLowerCase() : '';
@@ -1132,13 +1081,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY }}>1. Point your agent at this test</h3>
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 10px' }}>Point your agent at the test URL with this setup. Your agent’s provider key stays where it is.</p>
           <div className={s.selectRow}>
-            {isDemo ? <>
-              <button className={`${s.selectPill} ${directProvider === 'anthropic' ? s.selectPillOn : ''}`} onClick={() => setProvider('anthropic')}>Anthropic</button>
-              <button className={`${s.selectPill} ${directProvider === 'openai' ? s.selectPillOn : ''}`} onClick={() => setProvider('openai')}>OpenAI</button>
-            </> : (
-              // The test is tied to the key it started with, so its provider is fixed.
-              <span className={s.small} style={{ alignSelf: 'center' }}>{liveCloud ? providerSummary(liveCloud, run?.endpointHost) : provider === 'openai' ? 'OpenAI' : 'Anthropic'}</span>
-            )}
+            {/* The test is tied to the key it started with, so its provider is fixed. */}
+            <span className={s.small} style={{ alignSelf: 'center' }}>{liveCloud ? providerSummary(liveCloud, run?.endpointHost) : provider === 'openai' ? 'OpenAI' : 'Anthropic'}</span>
             <span style={{ width: 12 }} />
             {setupChoices(testProvider).map(l => (
               <button key={l} type="button" className={`${s.selectPill} ${language === l ? s.selectPillOn : ''}`} aria-pressed={language === l} onClick={() => setLanguage(l)}>{l === 'env' ? 'No code change' : l}</button>
@@ -1154,11 +1098,11 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           </> : <>
             <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{recipe}</pre>
             <CopyButton text={recipe} disabled={!!liveCloud && !proxyKey} />
-            {!isDemo && agentNameNote(run) && <p className={s.small} style={{ marginTop: 8 }}>{agentNameNote(run)}</p>}
+            {agentNameNote(run) && <p className={s.small} style={{ marginTop: 8 }}>{agentNameNote(run)}</p>}
           </>}
           {liveCloud && !proxyKey && <ProxyKeyNotice disabled={busy || !!expired} onRecover={() => { void recoverProxyKey(); }} />}
 
-          {!isDemo && <>
+          <>
             <h3 className={s.sectionTitle} style={{ fontFamily: FONT_DISPLAY, marginTop: 20 }}>2. Run your agent</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Run one normal task. This updates as soon as its calls arrive.</p>
             <div className={s.diag}>
@@ -1195,27 +1139,15 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
                 <li>If your provider returns an error or a rate limit, the call doesn’t count. Check your key has credit.</li>
               </ul>
             </details>
-          </>}
+          </>
         </WorkspacePanel>
 
         {/* ── Results tab ── */}
         <WorkspacePanel tab="results" active={wsTab === 'results'}>
-          {isDemo && (
-            <div className={s.card} style={{ marginBottom: 16 }}>
-              <h2 style={{ fontFamily: FONT_DISPLAY }}>{DEMO_STORY[scene].title}</h2>
-              <p>{DEMO_STORY[scene].text}</p>
-              <div className={s.btnRow}>
-                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === 0} onClick={() => setScene(v => v - 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 'var(--fs-sm)' }}>Previous</button>
-                <span className={s.small} style={{ alignSelf: 'center' }}>Step {scene + 1} of {DEMO_STORY.length}</span>
-                <button className={`${s.btn} ${s.btnSecondary}`} disabled={scene === DEMO_STORY.length - 1} onClick={() => setScene(v => v + 1)} style={{ minHeight: 32, padding: '4px 14px', fontSize: 'var(--fs-sm)' }}>Next</button>
-              </div>
-            </div>
-          )}
-
           {renderChecks(run?.controls ?? [])}
 
           {/* Production card when all passed */}
-          {allPassed && !isDemo && (
+          {allPassed && (
             <div className={s.prod}>
               <div className={s.prodTitle} style={{ fontFamily: FONT_DISPLAY }}>Ready to go live</div>
               {liveCloud ? <CloudGoLive provider={liveCloud} /> : language === 'env' ? <>
@@ -1235,18 +1167,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
             </div>
           )}
 
-          {isDemo && <div className={s.btnRow}>
-            <button className={`${s.btn} ${s.btnPrimary}`} onClick={() => act(async () => {
-              if (!run?.sandboxId) return;
-              const result = await destroyRun(run.sandboxId);
-              if (result.error || !result.success) throw new Error(result.error ?? 'Could not end this test. Retry.');
-              ending.current = 'user';
-              clearSandboxToken();
-              setRun(null); setConfirmEnd(false);
-              setPhase('setup');
-            })} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Now test my agent →</button>
-          </div>}
-
           <p className={s.small} style={{ marginTop: 12 }}>These checks show your agent works through WhiteRoom. They don’t check that its answers are correct. Use them to help decide, not as a certificate.</p>
         </WorkspacePanel>
 
@@ -1258,13 +1178,12 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
 
         {/* Test actions, on every tab. On Checks, a passed live test's card already offers the report. */}
         {run && <div className={s.btnRow}>
-          {!(allPassed && !isDemo && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>}
-          {/* A demo has nothing to lose, so End ends it at once; a live test asks first. */}
-          <button className={`${s.btn} ${s.btnGhost}`} disabled={isDemo && busy} onClick={() => (isDemo ? void end() : setConfirmEnd(true))}>End test</button>
+          {!(allPassed && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>}
+          <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
         </div>}
 
         {/* Footer */}
-        {run && <div className={s.footer}>{lastUpdated ? `Updated ${formatInZone(lastUpdated, { hour: 'numeric', minute: '2-digit', second: '2-digit' })} · ` : ''}{isDemo ? 'Demo' : `Test ${run.sandboxId}`}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
+        {run && <div className={s.footer}>{lastUpdated ? `Updated ${formatInZone(lastUpdated, { hour: 'numeric', minute: '2-digit', second: '2-digit' })} · ` : ''}{`Test ${run.sandboxId}`}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
       </>}
 
       {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} practice={practice.rows ?? undefined} />}
