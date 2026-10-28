@@ -63,6 +63,9 @@ describe('activity', () => {
 
   it('keeps agent ids exactly as stored', () => {
     expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now).text).toBe('lead-agent started a run');
+    // On a page already about the agent (its page, its run) its own rows skip its name; Controls rows keep theirs.
+    expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now, { agentShown: true }).text).toBe('Started a run');
+    expect(activityRow(e('governance_rule_changed', '2026-09-30T14:00:00Z'), now, { agentShown: true }).text).toMatch(/^Controls:/);
   });
 
   it('tags handovers, pauses and blocks', () => {

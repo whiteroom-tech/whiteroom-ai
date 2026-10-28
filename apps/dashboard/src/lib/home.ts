@@ -215,11 +215,14 @@ function epochMs(ts: unknown): number {
  * One fleet event in plain words. Agent ids stay exactly as stored (the
  * shared feed capitalises them; the redesign's copy rules don't).
  */
-export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRow {
+export function activityRow(e: AuditEntry, now: number = Date.now(), opts: { agentShown?: boolean } = {}): ActivityRow {
   const m = eventModel(e, now);
   // Fleet-level events (WhiteRoom itself) name no agent.
   const subject = m.type === 'governance_rule_changed' ? 'Controls:' : m.who === 'WhiteRoom' ? 'WhiteRoom' : eventAgent(e) || 'An agent';
-  return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: TAGS[m.type] };
+  // On a page already about one agent (its page, one of its runs), its own events skip its name: "Finished "fetch_page"".
+  const own = opts.agentShown && subject !== 'Controls:' && subject !== 'WhiteRoom';
+  const text = own ? m.said.charAt(0).toUpperCase() + m.said.slice(1) : `${subject} ${m.said}`;
+  return { key: m.key, time: clock(e.timestamp), text, tag: TAGS[m.type] };
 }
 
 /** Epoch ms of an event; 0 for an unreadable timestamp, so it sorts last instead of breaking the sort. */
@@ -229,11 +232,11 @@ function eventTime(e: AuditEntry): number {
 }
 
 /** The newest `n` events, newest first. An event from before today shows its date, not a time that reads as today's. */
-export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.now()): ActivityRow[] {
+export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.now(), opts: { agentShown?: boolean } = {}): ActivityRow[] {
   return [...entries]
     .sort((a, b) => eventTime(b) - eventTime(a))
     .slice(0, n)
-    .map((e) => ({ ...activityRow(e, now), time: fmtWhen(eventTime(e) || '', now) }));
+    .map((e) => ({ ...activityRow(e, now, opts), time: fmtWhen(eventTime(e) || '', now) }));
 }
 
 // ── Live feed ────────────────────────────────────────────────────────────
