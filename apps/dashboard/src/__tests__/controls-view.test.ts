@@ -14,7 +14,7 @@ const rule = (over: Partial<GovernanceRule>): GovernanceRule => ({
 describe('rule sentences', () => {
   it('reads each rule type as one sentence, with the values apart', () => {
     expect(ruleSentence(rule({}))).toEqual({ pre: 'When an agent spends more than ', val: '$190', post: ' in a day, it would block the call.' });
-    // Only a rule in Block does it; Record only and Off say what it would do.
+    // Only a rule in Enforce does it; Watch and Off say what it would do.
     expect(ruleSentenceText(rule({ mode: 'enforce' }))).toBe('When an agent spends more than $190 in a day, block the call.');
     expect(ruleSentenceText(rule({ mode: 'off', response: 'notify' }))).toBe('When an agent spends more than $190 in a day, it would alert you.');
     expect(ruleSentenceText(rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' }, response: 'notify' }))).toBe('When an agent spends more than 50,000 tokens in a run, it would alert you.');
@@ -71,8 +71,8 @@ describe('the agent filter and groups', () => {
     // A rule that covers no agents isn't lost: it's not set up.
     expect(ruleGroups([rule({ id: 'none', appliesTo: [] })]).unset.map((r) => r.id)).toEqual(['none']);
     expect(leadCounts([rule({ appliesTo: [] })]).total).toBe(0);
-    expect(modeCount(g.all)).toBe('1 Block · 1 Record only');
-    expect(modeCount([lb, { ...lb, id: 'x' }])).toBe('2 Block · 0 Record only');
+    expect(modeCount(g.all)).toBe('1 Enforce · 1 Watch');
+    expect(modeCount([lb, { ...lb, id: 'x' }])).toBe('2 Enforce · 0 Watch');
     // The lead line leaves out rules that aren't set up.
     expect(leadCounts([all, lead, other, tools])).toEqual({ total: 3, enforce: 1, alert: 0, watch: 1, off: 1 });
   });
@@ -85,12 +85,12 @@ describe('the agent filter and groups', () => {
     expect(leadCounts([empty, set]).total).toBe(1);
   });
 
-  it('counts a rule that only alerts apart from Block: it never stops a call', () => {
+  it('counts a rule that only alerts apart from Enforce: it never stops a call', () => {
     const alerts = rule({ mode: 'enforce', response: 'notify' });
     const blocks = rule({ mode: 'enforce', response: 'block' });
     const watch = rule({ mode: 'watch' });
-    expect(modeCount([alerts, watch])).toBe('0 Block · 1 Alert only · 1 Record only');
-    expect(modeCount([blocks, alerts])).toBe('1 Block · 1 Alert only · 0 Record only');
+    expect(modeCount([alerts, watch])).toBe('0 Enforce · 1 Alert only · 1 Watch');
+    expect(modeCount([blocks, alerts])).toBe('1 Enforce · 1 Alert only · 0 Watch');
     expect(leadCounts([alerts, blocks, watch])).toMatchObject({ total: 3, enforce: 1, alert: 1, watch: 1 });
   });
 
@@ -156,7 +156,7 @@ describe('spend cap overlap', () => {
 
 
 describe('row counts and the editor status', () => {
-  const week = (n: Partial<Record<'blocked' | 'wouldAct' | 'toldYou', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });
+  const week = (n: Partial<Record<'blocked' | 'paused' | 'wouldAct' | 'toldYou', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });
 
   it('Block: the last 7 days, per rule id or when it is the only one of its type', () => {
     const r = rule({ id: 'gr_1', mode: 'enforce' });
@@ -190,16 +190,18 @@ describe('row counts and the editor status', () => {
   it('says what the rule is doing now, in one sentence', () => {
     const now = Date.parse('2026-10-27T12:00:00Z');
     const since = '2026-10-23T12:00:00Z';
-    expect(ruleStatus(rule({ mode: 'enforce' }), { week: week({ blocked: 6 }) })).toBe('Blocking for all agents. Blocked 6 times in the last 7 days.');
-    expect(ruleStatus(rule({ mode: 'enforce', appliesTo: ['lead'] }), { week: week({}) })).toBe('Blocking for lead. Nothing caught in the last 7 days.');
-    expect(ruleStatus(rule({ mode: 'enforce', response: 'notify' }), {})).toBe('Alerting you for all agents.');
-    expect(ruleStatus(rule({}), { wouldAct: { byAgent: { 'code-reviewer': 44 }, since }, now })).toBe('Would have blocked code-reviewer 44 times since it was last changed 4 days ago.');
-    expect(ruleStatus(rule({}), { wouldAct: { byAgent: { a: 1, b: 2 }, since }, now })).toBe('Would have blocked b and a 3 times in all since it was last changed 4 days ago.');
-    expect(ruleStatus(rule({}), { wouldAct: { byAgent: {}, since }, now })).toBe('Record only for all agents. Nothing caught since it was last changed 4 days ago.');
-    expect(ruleStatus(rule({}), { week: week({ wouldAct: 3 }) })).toBe('Record only for all agents. Would have acted 3 times in the last 7 days.');
-    expect(ruleStatus(rule({ mode: 'off' }), {})).toBe('Off. Records nothing.');
-    expect(ruleStatus(rule({}), { neverFirst: '$190' })).toBe('This cap never triggers. The $190 cap covers the same agents and catches it first.');
-    expect(ruleStatus(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), {})).toBe('Does nothing until you add a tool.');
+    expect(ruleStatus(rule({ mode: 'enforce' }), { week: week({ blocked: 6 }) })).toBe('Enforcing for all agents · 6 blocked in 7 days');
+    expect(ruleStatus(rule({ mode: 'enforce', appliesTo: ['lead'] }), { week: week({}) })).toBe('Enforcing for lead · nothing caught in 7 days');
+    expect(ruleStatus(rule({ mode: 'enforce', response: 'notify' }), {})).toBe('Alerting you for all agents');
+    expect(ruleStatus(rule({ mode: 'enforce', response: 'notify' }), { week: week({ toldYou: 1 }) })).toBe('Alerting you for all agents · 1 alert in 7 days');
+    expect(ruleStatus(rule({ mode: 'enforce', response: 'pause' }), { week: week({ paused: 2 }) })).toBe('Enforcing for all agents · 2 paused in 7 days');
+    expect(ruleStatus(rule({}), { wouldAct: { byAgent: { 'code-reviewer': 44 }, since }, now })).toBe('Would have blocked code-reviewer 44 times since its last change 4 days ago');
+    expect(ruleStatus(rule({}), { wouldAct: { byAgent: { a: 1, b: 2 }, since }, now })).toBe('Would have blocked b and a 3 times in all since its last change 4 days ago');
+    expect(ruleStatus(rule({}), { wouldAct: { byAgent: {}, since }, now })).toBe('Watching all agents · nothing caught since its last change 4 days ago');
+    expect(ruleStatus(rule({}), { week: week({ wouldAct: 3 }) })).toBe('Watching all agents · would have acted 3 times in 7 days');
+    expect(ruleStatus(rule({ mode: 'off' }), {})).toBe('Off · records nothing');
+    expect(ruleStatus(rule({}), { neverFirst: '$190' })).toBe('Never triggers · the $190 cap catches it first');
+    expect(ruleStatus(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), {})).toBe('Does nothing until you add a tool');
   });
 });
 
@@ -241,10 +243,10 @@ describe('editing a rule', () => {
     expect(draftProblem({ ...loop, number: '2.5' })).toBe('Enter a whole number from 1 to 10,000.');
     expect(draftProblem({ ...spend, appliesTo: [] })).toBe('Pick at least one agent, or choose All agents.');
     const models = draftFrom(rule({ ruleType: 'model_allowlist', params: { allowedModels: [] } }));
-    expect(draftProblem({ ...models, mode: 'enforce' })).toBe('Pick at least one model before you turn on Block.');
+    expect(draftProblem({ ...models, mode: 'enforce' })).toBe('Pick at least one model before you turn on Enforce.');
     expect(draftProblem(models)).toBeNull();
     const tools = draftFrom(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }));
-    expect(draftProblem({ ...tools, mode: 'enforce' })).toBe('Pick at least one tool before you turn on Block.');
+    expect(draftProblem({ ...tools, mode: 'enforce' })).toBe('Pick at least one tool before you turn on Enforce.');
     expect(draftProblem({ ...tools, mode: 'enforce', params: { blockedTools: ['shell'] } })).toBeNull();
     expect(draftChanges({ ...spend, number: '0' }, rule({}))).toBeNull();
   });
@@ -286,9 +288,9 @@ describe('typed numbers, units and responses', () => {
 
 describe('what can stop calls', async () => {
   const { stopping } = await import('@/lib/controls-view');
-  it('counts only rules in Block that can act', () => {
+  it('counts only rules in Enforce that can act', () => {
     const a = rule({ id: 'a', mode: 'watch' }), b = rule({ id: 'b', mode: 'enforce' }), c = rule({ id: 'c', appliesTo: ['lead'], mode: 'enforce', response: 'notify' }), d = rule({ id: 'd', mode: 'off' });
-    // An Alert me rule in Block doesn't stop anything.
+    // An Only alert me rule in Enforce doesn't stop anything.
     expect(stopping([a, b, c, d]).map((r) => r.id)).toEqual(['b']);
     // Nor does one with nothing picked yet (a tool list with no tools acts on nothing).
     expect(stopping([rule({ id: 'e', mode: 'enforce', ruleType: 'tool_list', params: { blockedTools: [] } })])).toEqual([]);
@@ -299,8 +301,8 @@ describe('weakening a rule', async () => {
   const { weakenings } = await import('@/lib/controls-view');
   it('names every way a change makes the rule weaker, and nothing for a stronger one', () => {
     const cap = rule({ mode: 'enforce', response: 'pause', alsoNotify: false, params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
-    expect(weakenings(cap, { ...cap, mode: 'off' })).toEqual(['Mode: Block → Off']);
-    expect(weakenings(cap, { ...cap, response: 'notify' })).toEqual(['Then: pause the agent → alert you']);
+    expect(weakenings(cap, { ...cap, mode: 'off' })).toEqual(['Mode: Enforce → Off']);
+    expect(weakenings(cap, { ...cap, response: 'notify' })).toEqual(['When enforced: pause the agent → alert you']);
     expect(weakenings(cap, { ...cap, appliesTo: ['lead'] })).toEqual(['Covers only lead, not every agent']);
     expect(weakenings({ ...cap, appliesTo: ['lead', 'writer'] }, { ...cap, appliesTo: ['lead'] })).toEqual(['No longer covers writer']);
     expect(weakenings(cap, { ...cap, params: { dailyCap: 250, scope: 'day', unit: 'dollars' } })).toEqual(['Limit: $190 → $250']);
@@ -366,49 +368,80 @@ describe('sameValue', async () => {
   });
 });
 
-describe('What happens: one choice for mode and response', async () => {
-  const { whatHappens, chooseWhatHappens, recordAs, whatHappensOptions, whenSentence, keywordsHidden, duplicateRules, draftFrom, weakenings, spendOverlap: overlap } = await import('@/lib/controls-view');
+describe('What happens: Off · Watch · Enforce, and the action when enforced', async () => {
+  const { chooseMode, chooseAction, MODE_CHOICES, responseChoices, whatHappensLine, whenSentence, keywordsHidden, duplicateRules, draftFrom, weakenings, spendOverlap: overlap } = await import('@/lib/controls-view');
   const { actionAvailableFrom } = await import('@/lib/controls-guard');
+  const shape = (d: { mode: string; response: string; alsoNotify: boolean }) => [d.mode, d.response, d.alsoNotify];
 
-  it('maps each option to a mode and response, and back, losing nothing', () => {
-    const saved = rule({ mode: 'watch', response: 'pause', alsoNotify: false });
-    const d = draftFrom(saved);
-    expect(whatHappens(d)).toBe('watch');
-    // Off and Record only keep the response.
-    const off = chooseWhatHappens(d, 'off', saved);
-    expect([off.mode, off.response]).toEqual(['off', 'pause']);
-    const back = chooseWhatHappens(off, 'watch', saved);
-    expect([back.mode, back.response]).toEqual(['watch', 'pause']);
-    for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
-      const on = chooseWhatHappens(d, r, saved);
-      expect([on.mode, on.response, whatHappens(on)]).toEqual(['enforce', r, r]);
-    }
-    // Clicking through the actions and back changes nothing: the saved response and alert return.
-    const alerting = { ...chooseWhatHappens(d, 'block', saved), alsoNotify: true };
-    const returned = chooseWhatHappens(chooseWhatHappens(alerting, 'stop', saved), 'watch', saved);
-    expect([returned.response, returned.alsoNotify]).toEqual(['pause', false]);
-    // What Record only records is picked on its own, and kept through Off.
-    const recordsStop = recordAs(d, 'stop');
-    expect([recordsStop.mode, recordsStop.response]).toEqual(['watch', 'stop']);
-    expect(chooseWhatHappens(recordsStop, 'off', saved).response).toBe('stop');
-    // Every engine combination is reachable.
-    for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
-      for (const m of ['off', 'watch'] as const) {
-        const x = chooseWhatHappens(recordAs(d, r), m, saved);
-        expect([x.mode, x.response]).toEqual([m, r]);
-      }
-      expect(chooseWhatHappens(d, r, saved).mode).toBe('enforce');
-    }
-    const blockAlert = { ...chooseWhatHappens(d, 'block', saved), alsoNotify: true };
-    expect([blockAlert.mode, blockAlert.response, blockAlert.alsoNotify]).toEqual(['enforce', 'block', true]);
+  it('offers three modes, in order', () => {
+    expect(MODE_CHOICES).toEqual(['off', 'watch', 'enforce']);
   });
 
-  it('offers Pause and Stop only where the fleet has them, but always the rule’s own', () => {
-    expect(whatHappensOptions(false, 'block')).toEqual(['off', 'watch', 'block', 'notify']);
-    expect(whatHappensOptions(true, 'block')).toEqual(['off', 'watch', 'block', 'pause', 'stop', 'notify']);
-    expect(whatHappensOptions(false, 'stop')).toEqual(['off', 'watch', 'block', 'stop', 'notify']);
-    // The saved rule's response stays offered whatever the draft has.
-    expect(whatHappensOptions(false, 'pause', 'block')).toEqual(['off', 'watch', 'block', 'pause', 'notify']);
+  it('loads every saved shape as it is: mode, action and alert, notify included', () => {
+    for (const mode of ['off', 'watch', 'enforce'] as const) {
+      for (const response of ['block', 'pause', 'stop', 'notify'] as const) {
+        for (const alsoNotify of [false, true]) {
+          expect(shape(draftFrom(rule({ mode, response, alsoNotify })))).toEqual([mode, response, alsoNotify]);
+        }
+      }
+    }
+    // An older rule without a response blocks.
+    expect(draftFrom(rule({ mode: 'enforce', response: undefined })).response).toBe('block');
+  });
+
+  it('maps Off and Watch to their modes, keeping the action, and Enforce to the action picked', () => {
+    const saved = rule({ mode: 'watch', response: 'pause', alsoNotify: false });
+    const d = draftFrom(saved);
+    expect(shape(chooseMode(d, 'off', saved))).toEqual(['off', 'pause', false]);
+    expect(shape(chooseMode(chooseMode(d, 'off', saved), 'watch', saved))).toEqual(['watch', 'pause', false]);
+    // Enforce keeps the rule's own action when it can be picked.
+    expect(shape(chooseMode(d, 'enforce', saved))).toEqual(['enforce', 'pause', false]);
+    for (const r of ['block', 'pause', 'stop', 'notify'] as const) {
+      expect(shape(chooseAction(chooseMode(d, 'enforce', saved), r))).toEqual(['enforce', r, false]);
+    }
+    // "Also alert me" is Block's: kept with Block, cleared by another action (Pause and Stop always alert).
+    const blockAlert = { ...chooseAction(d, 'block'), alsoNotify: true };
+    expect(shape(blockAlert)).toEqual(['enforce', 'block', true]);
+    expect(shape(chooseAction(blockAlert, 'stop'))).toEqual(['enforce', 'stop', false]);
+    // Watch with Block and an alert goes to Enforce with both.
+    const watchAlert = rule({ mode: 'watch', response: 'block', alsoNotify: true });
+    expect(shape(chooseMode(draftFrom(watchAlert), 'enforce', watchAlert))).toEqual(['enforce', 'block', true]);
+  });
+
+  it('leaving Enforce puts back the saved action and alert, so trying actions changes nothing', () => {
+    const saved = rule({ mode: 'watch', response: 'pause', alsoNotify: false });
+    const tried = { ...chooseAction(chooseMode(draftFrom(saved), 'enforce', saved), 'block'), alsoNotify: true };
+    expect(shape(chooseMode(tried, 'watch', saved))).toEqual(['watch', 'pause', false]);
+    expect(shape(chooseMode(tried, 'off', saved))).toEqual(['off', 'pause', false]);
+    // An alert-only rule stepping down and back up is still alert-only.
+    const alerts = rule({ mode: 'enforce', response: 'notify' });
+    expect(shape(chooseMode(chooseMode(draftFrom(alerts), 'watch', alerts), 'enforce', alerts))).toEqual(['enforce', 'notify', false]);
+  });
+
+  it('Enforce takes the first action that can be picked now when the rule’s own has to wait', () => {
+    const saved = rule({ mode: 'watch', response: 'stop' });
+    const noStop = (r: string) => r !== 'stop';
+    expect(shape(chooseMode(draftFrom(saved), 'enforce', saved, responseChoices(true), noStop))).toEqual(['enforce', 'block', false]);
+    // Keywords on incoming data: Block, Pause and Stop wait; Only alert me never does.
+    const onlyAlert = (r: string) => r === 'notify';
+    expect(shape(chooseMode(draftFrom(saved), 'enforce', saved, responseChoices(true), onlyAlert))).toEqual(['enforce', 'notify', false]);
+  });
+
+  it('offers Pause and Stop only where the fleet has them, but always the rule’s own; Only alert me always', () => {
+    expect(responseChoices(false, 'block')).toEqual(['block', 'notify']);
+    expect(responseChoices(true, 'block')).toEqual(['block', 'pause', 'stop', 'notify']);
+    expect(responseChoices(false, 'stop')).toEqual(['block', 'stop', 'notify']);
+    expect(responseChoices(false, 'pause', 'block')).toEqual(['block', 'pause', 'notify']);
+  });
+
+  it('says what the pick does in one plain line', () => {
+    expect(whatHappensLine({ mode: 'off', response: 'block', alsoNotify: false })).toBe('Off: does nothing and records nothing.');
+    expect(whatHappensLine({ mode: 'watch', response: 'stop', alsoNotify: false })).toBe('Watch: records what it would do; every call goes through.');
+    expect(whatHappensLine({ mode: 'enforce', response: 'block', alsoNotify: false })).toBe('Enforce: blocks the call. The agent keeps going.');
+    expect(whatHappensLine({ mode: 'enforce', response: 'block', alsoNotify: true })).toBe('Enforce: blocks the call and alerts you. The agent keeps going.');
+    expect(whatHappensLine({ mode: 'enforce', response: 'pause', alsoNotify: false })).toMatch(/^Enforce: pauses the agent and alerts you\./);
+    expect(whatHappensLine({ mode: 'enforce', response: 'stop', alsoNotify: false })).toMatch(/^Enforce: stops the agent and alerts you\./);
+    expect(whatHappensLine({ mode: 'enforce', response: 'notify', alsoNotify: false })).toBe('Enforce: alerts you. The call goes through.');
   });
 
   it('says When as one sentence', () => {
@@ -438,7 +471,7 @@ describe('What happens: one choice for mode and response', async () => {
     expect(duplicateRules([hidden('a'), hidden('b')])).toEqual([]);
   });
 
-  it('says from when an action that needs a day in Record only can be picked', () => {
+  it('says from when an action that needs a day in Watch can be picked', () => {
     const now = Date.parse('2026-10-27T12:00:00Z');
     const added = (hoursAgo: number) => [{ id: 'h', ruleId: 'r', ruleType: 'spend_cap' as const, description: 'Added new Spend cap rule', by: 't', time: new Date(now - hoursAgo * 3_600_000).toISOString() }];
     expect(actionAvailableFrom('r', added(2), 'watch', now)).toBe(now + 22 * 3_600_000);

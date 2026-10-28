@@ -27,8 +27,8 @@ function userFacingWatch(source: string): string[] {
 
 // Customer copy says what WhiteRoom does, never how: runs, progress notes and
 // smaller context, not shifts, handovers or compression. Engine identifiers
-// keep their names. Rule modes use lib/vocab.ts: Record only and Block, never
-// Watch only or Enforce.
+// keep their names. Rule modes use lib/vocab.ts: Watch and Enforce (Oct 28),
+// never Watch only or the retired Record only.
 const COPY_FILES = [
   ...FILES,
   '../lib/activity.ts',
@@ -59,7 +59,7 @@ const COPY_FILES = [
   '../../../../packages/ui/src/primitives/StatusPill.tsx',
 ];
 
-const BANNED = /\bshifts?\b|\bhand(s|ed|ing)? (work )?over\b|\bhandovers?\b|\bcompress(ed|ion)?\b|\bWatch only\b|\bEnforc(e|es|ing)\b|\byour API key\b/i;
+const BANNED = /\bshifts?\b|\bhand(s|ed|ing)? (work )?over\b|\bhandovers?\b|\bcompress(ed|ion)?\b|\bWatch only\b|\bRecord only\b|\byour API key\b/i;
 
 function userFacingText(source: string, jsx: boolean): string[] {
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

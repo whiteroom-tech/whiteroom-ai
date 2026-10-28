@@ -6,7 +6,7 @@
  * daily budget or a token limit to see how many model calls that allows.
  * Saving keeps the budget for that agent. A budget only predicts and never
  * stops the agent; "Also add a Spend cap at this amount" adds a real rule, in
- * Record only.
+ * Watch.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -141,7 +141,7 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
     try {
       const already = existingCap(await api.rules(forFleet, authKey), name, usdVal);
       const ruleId = already ? already.id : (await api.addCap(forFleet, name, usdVal, authKey)).id;
-      done(already ? `${saved} A Spend cap at this amount is already set.` : `${saved} Added a Spend cap at ${fmtCost(usdVal * 1_000_000)} a day, in Record only.`, ruleId);
+      done(already ? `${saved} A Spend cap at this amount is already set.` : `${saved} Added a Spend cap at ${fmtCost(usdVal * 1_000_000)} a day, in Watch.`, ruleId);
     } catch (e) {
       const plain = refusalText((e as { reason?: string }).reason);
       done(`${saved} The Spend cap wasn’t added. ${plain ?? 'Add a Spend cap in Controls.'}`);
@@ -184,7 +184,7 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
               {today && <p className="wr-cap" style={{ margin: 0 }}>{today}</p>}
               <label className="wr-pred__check">
                 <input type="checkbox" checked={alsoCap} disabled={usdVal === null} onChange={(e) => setAlsoCap(e.target.checked)} />
-                <span>Also add a Spend cap at this amount <span className="wr-cap">(starts in Record only)</span></span>
+                <span>Also add a Spend cap at this amount <span className="wr-cap">(starts in Watch)</span></span>
               </label>
               <p className="wr-cap" style={{ margin: 0 }}>
                 A budget never stops {agent}. To stop it, <Link href={ROUTES.controls} className="wr-link">set a spend cap</Link>.

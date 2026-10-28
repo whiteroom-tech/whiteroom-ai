@@ -751,7 +751,7 @@ export interface RunSummary {
   coverage: { calls: number; checked: number };
   /** What stood out (engine P2.1). Absent from older engines. */
   flags?: RunFlag[];
-  /** Times a Record-only rule would have acted in this run (engine E1a). Absent from older engines. */
+  /** Times a Watch rule would have acted in this run (engine E1a). Absent from older engines. */
   wouldActCalls?: number;
 }
 
@@ -806,9 +806,9 @@ export interface RunHeader {
   unpricedAttempts?: number;
   failedCalls?: number;
   blockedCalls?: number;
-  /** Calls a Record-only rule would have blocked (distinct linked calls, a lower bound); null when it can't be told. */
+  /** Calls a Watch rule would have blocked (distinct linked calls, a lower bound); null when it can't be told. */
   wouldBlockCalls?: number | null;
-  /** list_runs' figure for the run (times a Record-only rule would have acted): the fallback for older runs. */
+  /** list_runs' figure for the run (times a Watch rule would have acted): the fallback for older runs. */
   wouldActCalls?: number;
   /** The run's rule actions couldn't be read: Rule activity is unknown, not empty. */
   ruleActionsUnavailable?: boolean;

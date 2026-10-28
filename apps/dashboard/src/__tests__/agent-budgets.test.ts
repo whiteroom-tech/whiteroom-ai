@@ -16,7 +16,7 @@ describe('agent budget helpers', () => {
     for (const bad of ['', '0', '-3', 'ten', '2000000', '1e5', '0x10', '.5e1', '0.001']) expect(parseBudget(bad)).toBeNull();
   });
 
-  it('builds a Spend cap for just that agent, in Record only, and finds one already there', () => {
+  it('builds a Spend cap for just that agent, in Watch, and finds one already there', () => {
     expect(capRuleFor('lead-agent', 10)).toEqual({ ruleType: 'spend_cap', mode: 'watch', response: 'block', params: { dailyCap: 10, scope: 'day', unit: 'dollars' }, appliesTo: ['lead-agent'] });
     expect(existingCap([cap(['lead-agent'], 10)], 'lead-agent', 10)?.id).toBe('gr_10');
     // Not the same cap: other amount, other agents too, fleet-wide, or in tokens.

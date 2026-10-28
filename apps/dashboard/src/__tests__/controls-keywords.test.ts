@@ -44,7 +44,7 @@ describe('Keywords in plain words', () => {
   });
 
   it('needs a keyword before Enforce, and is offered as a new rule', () => {
-    expect(draftProblem({ ...draftFrom(kw({ params: { keywords: [], where: 'incoming', wholeWord: true } })), mode: 'enforce' })).toBe('Pick at least one keyword before you turn on Block.');
+    expect(draftProblem({ ...draftFrom(kw({ params: { keywords: [], where: 'incoming', wholeWord: true } })), mode: 'enforce' })).toBe('Pick at least one keyword before you turn on Enforce.');
     expect(RULE_TEMPLATES.find((t) => t.type === 'keyword')).toMatchObject({ title: 'Flag keywords', isNew: true });
   });
 

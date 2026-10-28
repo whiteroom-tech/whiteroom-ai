@@ -13,7 +13,7 @@ import type {
   GovernanceRuleType,
   PerformanceIndexResult,
 } from './whiteroom/types';
-import { NOTIFY } from './vocab';
+import { MODE_LABEL, NOTIFY } from './vocab';
 
 export const GOVERNANCE_BLOCK = 'governance_block';
 export const GOVERNANCE_WOULD_BLOCK = 'governance_would_block';
@@ -220,20 +220,20 @@ export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: Go
   return { ...tallyFromRuleActions(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tallyFromRuleActions(c)])) };
 }
 
-/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would have acted (Record only)". */
+/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would have acted (Watch)". */
 export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'warn' | 'tx2' }[] {
   const out: { text: string; tone: 'bad' | 'warn' | 'tx2' }[] = [];
   if (t.stopped) out.push({ text: `${t.stopped} stopped`, tone: 'bad' });
   if (t.paused) out.push({ text: `${t.paused} paused`, tone: 'bad' });
   if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
   if (t.toldYou) out.push({ text: `${t.toldYou} ${NOTIFY.done}`, tone: 'tx2' });
-  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (Record only)`, tone: 'warn' });
+  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (${MODE_LABEL.watch})`, tone: 'warn' });
   return out;
 }
 
 /**
  * The same tally as counts and words, short enough for a card line: 2
- * "blocked", 47 "would have acted". Record-only counts cover every response
+ * "blocked", 47 "would have acted". Watch counts cover every response
  * (block, pause, stop, alert) and the engine doesn't split them, so they
  * can't honestly be called "would have blocked".
  */

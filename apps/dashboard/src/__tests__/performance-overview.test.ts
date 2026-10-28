@@ -88,8 +88,8 @@ describe('Control', () => {
     expect(rulesCaughtText(120, 0)).toBe('rules caught 120 times, none blocked');
     expect(rulesCaughtText(3, 1)).toBe('rules caught 3 times, 1 blocked');
     expect(rulesCaughtText(0, 0)).toBe('rules caught nothing');
-    expect(ruleModeCounts(RULES)).toBe('5 rules: 1 Block · 3 Record only · 1 Off');
-    expect(ruleModeCounts([...RULES, { ...RULES[0], id: 'gr_alert', mode: 'enforce', response: 'notify' }])).toBe('6 rules: 1 Block · 1 Alert only · 3 Record only · 1 Off');
+    expect(ruleModeCounts(RULES)).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
+    expect(ruleModeCounts([...RULES, { ...RULES[0], id: 'gr_alert', mode: 'enforce', response: 'notify' }])).toBe('6 rules: 1 Enforce · 1 Alert only · 3 Watch · 1 Off');
   });
   it('names the top rules by id, with each one’s value when a type has several, and a removed one plainly', () => {
     const acts = (blocked: number, wouldAct: number) => ({ blocked, wouldAct, paused: 0, stopped: 0, toldYou: 0 });

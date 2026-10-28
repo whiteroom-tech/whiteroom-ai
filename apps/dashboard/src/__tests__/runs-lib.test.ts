@@ -85,10 +85,10 @@ describe('what stood out', () => {
   it('leads with a rule block, then would-have-blocked, then failures', () => {
     expect(standOut(run({ blockedCalls: 1, failedCalls: 2 }))).toEqual({ tone: 'blocked', text: 'Blocked 1 call' });
     expect(standOut(run({ failedCalls: 2 }))).toEqual({ tone: 'failed', text: '2 calls failed' });
-    // A Record only rule's would-acts are evidence too, and never read as a block.
-    // wouldActCalls counts any Record only action (pause, stop, alert too), so it never claims a block.
-    expect(standOut({ ...run({}), wouldActCalls: 6 })).toEqual({ tone: 'rule', text: '6 would have acted (Record only)' });
-    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('Blocked 2 calls · 1 would have acted (Record only)');
+    // A Watch rule's would-acts are evidence too, and never read as a block.
+    // wouldActCalls counts any Watch action (pause, stop, alert too), so it never claims a block.
+    expect(standOut({ ...run({}), wouldActCalls: 6 })).toEqual({ tone: 'rule', text: '6 would have acted (Watch)' });
+    expect(standOut({ ...run({ blockedCalls: 2 }), wouldActCalls: 1 }).text).toBe('Blocked 2 calls · 1 would have acted (Watch)');
     // An engine that doesn't count them (no field) can't be filtered by them.
     expect(ignoresRuleActivity([{}, {}])).toBe(true);
     expect(ignoresRuleActivity([{ wouldActCalls: 0 }])).toBe(false);
@@ -129,7 +129,7 @@ describe('run detail rows', () => {
     expect(timelineRow({ id: 'e1', kind: 'event', at, type: 'watch_end', detail: { agentId: 'a' } }).glyph).toBe('done');
     // A finished task is part of the run, not its end.
     expect(timelineRow({ id: 'e3', kind: 'event', at, type: 'task_complete', detail: { agentId: 'a' } }).glyph).toBe('event');
-    // A Record only rule's would-block, or a stop that isn't a rule's, is no ✕.
+    // A Watch rule's would-block, or a stop that isn't a rule's, is no ✕.
     expect(timelineRow({ id: 'e4', kind: 'event', at, type: 'governance_would_block', detail: { agentId: 'a', ruleType: 'spend_cap' } }).glyph).toBe('event');
     expect(timelineRow({ id: 'e5', kind: 'event', at, type: 'agent_stopped', detail: { agentId: 'a' } }).glyph).toBe('event');
     expect(timelineRow({ id: 'e2', kind: 'event', at, type: 'governance_block', detail: { agentId: 'a', ruleType: 'spend_cap' } }).glyph).toBe('bad');
@@ -152,12 +152,12 @@ describe('run detail rows', () => {
     const blocked = timelineRow({ id: 'c2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [{ ruleId: 'r', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' }] });
     expect(blocked.rule).toEqual({ text: 'blocked: over the spend cap', mode: 'enforce' });
     expect(blocked.tag).toBeUndefined();
-    // A Record only rule that would pause, stop or alert is worded by its response, not as a block.
+    // A Watch rule that would pause, stop or alert is worded by its response, not as a block.
     const pause = timelineRow({ id: 'c4', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'p', ruleType: 'spend_cap', mode: 'watch', response: 'pause', outcome: 'would_block', reason: 'budget_exceeded' }] });
     expect(pause.rule).toEqual({ text: 'would have paused the agent: over the spend cap', mode: 'watch' });
     // A rule's own name is used when the engine sends one.
     expect(ruleActivityRow({ at: '', ruleId: 'r', ruleType: 'spend_cap', response: 'block', mode: 'enforce', occurrences: 1, ruleName: 'Daily cap' }).lead).toBe('Daily cap blocked');
-    // A rule that acted leads a Record only one on the same call.
+    // A rule that acted leads a Watch one on the same call.
     const both = timelineRow({ id: 'c3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [
       { ruleId: 'w', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' },
       { ruleId: 'e', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' },
@@ -175,7 +175,7 @@ describe('run detail rows', () => {
     expect(runSummary({ ...head, wouldBlockCalls: null, wouldActCalls: 3 })).toMatchObject({ wouldBlock: undefined, wouldAct: 3 });
     expect(runSummary({ ...head, wouldBlockCalls: 0, wouldActCalls: 3 })).toMatchObject({ wouldBlock: undefined, wouldAct: 3 });
     expect(runSummary({ ...head, wouldBlockCalls: 0, wouldActCalls: 0 })).toMatchObject({ wouldBlock: undefined, wouldAct: undefined });
-    // The linked count is a lower bound when it's below the run's total, or a Record only row isn't linked.
+    // The linked count is a lower bound when it's below the run's total, or a Watch row isn't linked.
     expect(runSummary({ ...head, wouldBlockCalls: 2, wouldActCalls: 3 }).wouldBlock).toEqual({ n: 2, atLeast: true });
     const unlinked = { at: '', ruleId: 'r', ruleType: 'model_allowlist' as const, response: 'block' as const, mode: 'watch' as const, occurrences: 4, eventIds: [] };
     expect(runSummary({ ...head, wouldBlockCalls: 2, ruleActions: [unlinked] }).wouldBlock).toEqual({ n: 2, atLeast: true });
@@ -194,8 +194,8 @@ describe('run detail rows', () => {
     expect(ruleActivityRow(a)).toEqual({ lead: 'Model allowlist would have blocked', count: 5, tail: 'calls: model not on the allowlist' });
     expect(ruleActivityRow({ ...a, occurrences: 1, reason: undefined })).toEqual({ lead: 'Model allowlist would have blocked', count: 1, tail: 'call' });
     expect(ruleActivityRow({ ...a, ruleType: 'spend_cap', response: 'pause', mode: 'enforce', occurrences: 1, reason: null }).lead).toBe('Spend cap paused the agent');
-    expect(ruleActivityFooter([a])).toBe('These rules are Record only, so the calls went through.');
-    expect(ruleActivityFooter([a, { ...a, mode: 'enforce' }])).toBe('Record only rules let their calls through; rules set to Block acted.');
+    expect(ruleActivityFooter([a])).toBe('These rules are in Watch, so the calls went through.');
+    expect(ruleActivityFooter([a, { ...a, mode: 'enforce' }])).toBe('Rules in Watch let their calls through; rules set to Enforce acted.');
     expect(ruleActivityLink([a, a])).toEqual({ href: '/controls?rule=gr_1', text: 'Open Model allowlist in Controls' });
     expect(ruleActivityLink([a, { ...a, ruleId: 'gr_2' }]).href).toBe('/controls');
   });
@@ -304,7 +304,7 @@ describe('exports', () => {
     expect(row[header.indexOf('Run')]).toBe('a #2');
     // Each time carries its UTC offset, so the daylight-saving fall-back hour is unambiguous.
     expect(row[header.indexOf('Started (America/New_York)')]).toBe('2026-09-30 16:00 -04:00');
-    expect(header).toContain('Record only rule actions');
+    expect(header).toContain('Watch rule actions');
     // A zone the browser doesn't name (or names oddly) is called local time, never UTC.
     const spy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({ timeZone: '' } as Intl.ResolvedDateTimeFormatOptions);
     expect(runsExportHeader()).toContain('Started (local time)');

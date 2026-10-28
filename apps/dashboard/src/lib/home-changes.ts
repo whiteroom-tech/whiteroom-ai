@@ -104,7 +104,7 @@ export function dayLabel(day: string): string {
 }
 
 /**
- * A tally in the outcome words: "2 blocked · 60 would have acted". A Record-only
+ * A tally in the outcome words: "2 blocked · 60 would have acted". A Watch
  * hit can be a would-be pause, stop or alert as well as a block, so it says
  * "acted" (as tallyShort does). '' for none, unless `always`, which keeps
  * "0 blocked · 0 would have acted" (the Rule activity card, where a zero is the answer).

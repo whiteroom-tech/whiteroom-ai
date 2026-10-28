@@ -101,7 +101,7 @@ describe('which rules turn on refusals for unnamed calls (engine fleetHasEnforci
   });
 });
 
-describe('Record only time from history snapshots', async () => {
+describe('Watch time from history snapshots', async () => {
   const { actionAvailableFrom, keywordBlockCheck } = await import('@/lib/controls-guard');
   const H = 3_600_000;
   const t0 = Date.parse('2026-10-20T00:00:00Z');

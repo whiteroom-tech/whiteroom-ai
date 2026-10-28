@@ -31,6 +31,6 @@ export const HELP = {
   slackWebhook: 'A private link from Slack that lets WhiteRoom post into one channel.',
   pastTests: 'Your earlier Sandbox tests: when each one ended, whether its checks passed (Not tested means no call came back OK), and how many tasks it ran.',
   shift: 'One stretch of an agent’s working time.',
-  recordOnlyBlock: 'Record only: a rule records what it would have done and lets the call through. Block: it acts on the call.',
+  recordOnlyBlock: 'Watch: a rule records what it would have done and lets the call through. Enforce: it acts on the call.',
   tryLast7Days: 'Replays last week’s real activity against a rule and shows what it would have done. Nothing changes.',
 } as const;

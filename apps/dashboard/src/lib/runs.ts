@@ -183,14 +183,14 @@ export function flagText(f: RunFlag): string {
 
 /**
  * The run table's "What stood out", from what the run's record shows. A flag
- * leads, then a block, a Record-only "would have blocked", or failed calls.
+ * leads, then a block, a Watch "would have blocked", or failed calls.
  * Otherwise coverage: "Nothing unusual" (a dash in the table) only when every
  * call could be read, never a clean answer for something that wasn't measured.
  */
 export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'> & Partial<Pick<RunSummary, 'wouldActCalls'>>): { tone: StandOutTone; text: string } {
   const [first, ...more] = run.flags ?? [];
   if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${counted(more.length, 'more flag')}` : flagText(first) };
-  // wouldActCalls counts every Record only rule action (a would-block, pause, stop or alert), so it's
+  // wouldActCalls counts every Watch rule action (a would-block, pause, stop or alert), so it's
   // worded as acting, never as blocking.
   const would = run.wouldActCalls ?? 0;
   if (run.blockedCalls > 0) return { tone: 'blocked', text: `Blocked ${counted(run.blockedCalls, 'call')}${would ? ` · ${wouldActText(would)}` : ''}` };
@@ -204,11 +204,11 @@ export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blocke
 }
 
 /**
- * "3 would have acted (Record only)": Record only rule actions when what they'd have done isn't known.
+ * "3 would have acted (Watch)": Watch rule actions when what they'd have done isn't known.
  * The same words as Home's and the agent page's rule tallies.
  */
 export function wouldActText(n: number): string {
-  return `${n} would have acted (Record only)`;
+  return `${n} would have acted (${MODE_LABEL.watch})`;
 }
 
 /** "-05:00": the viewer's UTC offset at `d`, so an export's times are unambiguous in a daylight-saving fall-back hour. */
@@ -368,7 +368,7 @@ export function callToolsText(e: Pick<RunEvent, 'requestedTools'>): string {
 const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
   would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done,
 };
-/** A Record only rule's would-be outcome, by its response: it only blocks when the response is Block. */
+/** A Watch rule's would-be outcome, by its response: it only blocks when the response is Block. */
 const WOULD_TEXT: Record<string, string> = {
   block: 'would have been blocked', pause: 'would have paused the agent', stop: 'would have stopped the agent', notify: `would have ${NOTIFY.done}`,
 };
@@ -376,7 +376,7 @@ const WOULD_TEXT: Record<string, string> = {
 /** A call's rule note: "would have been blocked: model not on the allowlist". */
 function callRule(e: RunEvent): TimelineRow['rule'] {
   const all = e.ruleActions ?? [];
-  // A rule that acted leads; else a Record only rule that would have blocked; else whatever came first.
+  // A rule that acted leads; else a Watch rule that would have blocked; else whatever came first.
   const a = all.find((x) => x.mode === 'enforce') ?? all.find((x) => x.outcome === 'would_block') ?? all[0];
   if (!a) return undefined;
   const more = all.filter((x) => x !== a);
@@ -386,7 +386,7 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
 }
 
 const START_EVENT = /^(watch_start|run_started)$/;
-// A rule that really acted (a Record only "would block" is not one).
+// A rule that really acted (a Watch "would block" is not one).
 const BAD_EVENT = /^governance_(block|blocked|pause|stop)$/;
 // The run's own end; a finished task within the run stays a plain event.
 const DONE_EVENT = /^(watch_end|run_ended|run_finished)$/;
@@ -444,9 +444,9 @@ export type RunTotals = Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls
 /** The run's summary line, as parts: "Oct 24, 8:45 pm EDT", "24 s", the counts that are known, its models. */
 export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
   started: string; length: string; calls?: number; spend?: string; failed?: number; blocked?: number;
-  /** Calls a Record only rule would have blocked; `atLeast` when some of the run's rule actions aren't linked to calls. */
+  /** Calls a Watch rule would have blocked; `atLeast` when some of the run's rule actions aren't linked to calls. */
   wouldBlock?: { n: number; atLeast: boolean };
-  /** Record only rule actions, when no would-block calls are known (older or unlinked runs): worded as acting. */
+  /** Watch rule actions, when no would-block calls are known (older or unlinked runs): worded as acting. */
   wouldAct?: number;
   models: string[];
 } {
@@ -465,7 +465,7 @@ export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
     failed: run.failedCalls ?? fallback?.failedCalls,
     blocked: run.blockedCalls ?? fallback?.blockedCalls,
     // The linked would-block count is a lower bound: "at least" when some actions aren't linked, or it's
-    // below the run's Record only total. With none linked, the total is shown as actions. Zero is left out.
+    // below the run's Watch total. With none linked, the total is shown as actions. Zero is left out.
     wouldBlock: linked ? { n: linked, atLeast: unlinked || (acted !== undefined && linked < acted) } : undefined,
     wouldAct: !linked && acted ? acted : undefined,
     models: run.models ?? [],
@@ -499,9 +499,9 @@ export function ruleActivityRow(a: RunRuleAction): { lead: string; count: number
 export function ruleActivityFooter(actions: RunRuleAction[]): string {
   const watch = actions.some((a) => a.mode !== 'enforce');
   const enforce = actions.some((a) => a.mode === 'enforce');
-  if (watch && !enforce) return 'These rules are Record only, so the calls went through.';
-  if (enforce && !watch) return 'These rules are set to Block, so they acted.';
-  return 'Record only rules let their calls through; rules set to Block acted.';
+  if (watch && !enforce) return 'These rules are in Watch, so the calls went through.';
+  if (enforce && !watch) return 'These rules are set to Enforce, so they acted.';
+  return 'Rules in Watch let their calls through; rules set to Enforce acted.';
 }
 
 /** The Rule activity header link: one rule opens itself in Controls, several open Controls. */
@@ -536,7 +536,7 @@ export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTota
   if (s.failed !== undefined) summary.push(['Failed calls', s.failed]);
   if (s.blocked !== undefined) summary.push(['Blocked calls', s.blocked]);
   if (s.wouldBlock) summary.push(['Would have blocked (calls)', s.wouldBlock.atLeast ? `at least ${s.wouldBlock.n}` : s.wouldBlock.n]);
-  if (s.wouldAct) summary.push(['Record only rule actions', s.wouldAct]);
+  if (s.wouldAct) summary.push(['Watch rule actions', s.wouldAct]);
   if (s.models.length) summary.push(['Models', s.models.join(', ')]);
   const rows = events.map((e) => {
     const r = timelineRow(e);
@@ -593,7 +593,7 @@ export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
  * had no price, so that count gets its own column.
  */
 export function runsExportHeader(zone: string = exportZoneLabel()): string[] {
-  return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Record only rule actions', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
+  return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Watch rule actions', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
 }
 export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {
   const d = new Date(r.startedAt);

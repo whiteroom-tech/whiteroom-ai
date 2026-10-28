@@ -1,27 +1,27 @@
 'use client';
 
 // The selected rule as three questions (Rashad, Oct 27): When (a sentence,
-// with Change to edit it), Who, and What happens (one choice for mode and
-// response). Nothing reaches the engine until Save.
+// with Change to edit it), Who, and What happens (Off · Watch · Enforce, and
+// when enforced, one action; Oct 28). Nothing reaches the engine until Save.
 
 import { HistoryLine } from './HistoryLine';
 import type { Undo } from '@/lib/rule-history';
-import { DOES_TAG, MODE_LABEL } from '@/lib/vocab';
+import { MODE_LABEL, modeTagText } from '@/lib/vocab';
 import { useEffect, useState } from 'react';
-import type { GovernanceResponse } from '@/lib/whiteroom/types';
+import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
-import { Banner, Button, FONT_MONO, Hint } from '@whiteroom/ui';
+import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
   GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
-import { RESPONSE_EFFECT, RULE_LABELS } from '@/lib/governance';
+import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
 import { fmtTime } from '@/lib/format';
 import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseWhatHappens, draftParams, emptyPick, recordAs, responseChoices, sendsAlert, WHAT_HAPPENS_LABEL, whatHappens, whatHappensOptions, whenSentence, type RuleDraft, type WhatHappens } from '@/lib/controls-view';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
@@ -35,14 +35,12 @@ const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   both: 'Acts before the call reaches the model, and on the reply before the agent gets it.',
 };
 const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
-/** The one line under What happens, for an action. */
-const DOES: Record<GovernanceResponse, string> = { ...RESPONSE_EFFECT, notify: 'You get an alert. The call goes through.' };
 /** Fine print for When, behind its ⓘ. */
 const WHEN_NOTES: Partial<Record<GovernanceRule['ruleType'], string>> = {
   spend_cap: 'Dollar limits are estimates.',
   loop_breaker: 'Calls to the tools listed under Not counting never count as a loop.',
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
-  tool_list: 'In Block, a streamed call is checked before it streams, so its text arrives all at once. In Record only, streamed calls aren’t checked.',
+  tool_list: 'In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.',
 };
 const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.';
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
@@ -59,7 +57,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   alertChannel: boolean | null;
   /** This rule's own history, newest first. */
   history: GovernanceHistoryEntry[];
-  /** The fleet's whole rule history, for the time an action needs in Record only first. */
+  /** The fleet's whole rule history, for the time an action needs in Watch first. */
   ruleHistory: GovernanceHistoryEntry[];
   /** Open When for editing at once (a rule just added). */
   startOpen?: boolean;
@@ -100,44 +98,47 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     setParams({ keywords: [...keywords, typed] });
     setKeyword('');
   };
-  // Alert me, Pause and Stop alert; Block does when asked to.
+  // Only alert me, Pause and Stop alert; Block does when asked to.
   const alerts = sendsAlert(draft);
   // A rule with nothing to act on yet, or a number that doesn't read, opens with When expanded.
   const [whenOpen, setWhenOpen] = useState(() => startOpen || !!emptyPick(rule) || 'error' in draftParams(draft));
   const when = whenSentence({ ruleType: rule.ruleType, params: asRule.params });
   const where = rule.ruleType === 'keyword' ? (p as KeywordParams).where : null;
   const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : ACTS[rule.ruleType];
-  const whenHint = [timing, WHEN_NOTES[rule.ruleType], where && where !== 'incoming' ? REPLY_NOTE : ''].filter(Boolean).join(' ');
-  const choice = whatHappens(draft);
-  const choiceLine = choice === 'off' ? 'Does nothing and records nothing.'
-    : choice === 'watch' ? 'Records what it would do and lets every call through.'
-    : DOES[choice];
+  // What the fleet spends a day, to set a dollars-a-day cap by: behind When's ⓘ with the fine print.
+  const dailyCap = rule.ruleType === 'spend_cap' && (p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day';
+  const days = (n: number) => (n === 1 ? 'day' : `${n} days`);
+  const spendNotes = !dailyCap ? [] : [
+    ...agentSpend.map((a) => `${a.agent} spends about ${usd(a.perDay)} a day (last ${days(a.days)}).`),
+    ...(fleetDailySpend !== null && (draft.appliesTo === 'all' || !agentSpend.length) ? [`Your fleet spends about ${usd(fleetDailySpend.perDay)} a day, all agents together (last ${days(fleetDailySpend.days)}).`] : []),
+  ];
+  const whenHint = [...spendNotes, timing, WHEN_NOTES[rule.ruleType], where && where !== 'incoming' ? REPLY_NOTE : ''].filter(Boolean).join(' ');
   // Re-read once a waiting period ends, so the option it held back opens on its own.
   const [, setTick] = useState(0);
-  /** When an action can be picked, if it has to wait (a day in Record only first); null when it can now. */
-  const waitUntil = (o: WhatHappens) => {
-    // The wait is for acting: Off and Record only (whatever it records) never wait.
-    if (o === 'off' || o === 'watch' || (rule.mode === 'enforce' && rule.response === o)) return null;
+  /** When an action can be picked, if it has to wait (a day in Watch first); null when it can now. Off and Watch never wait. */
+  const waitUntil = (o: GovernanceResponse) => {
+    if (rule.mode === 'enforce' && rule.response === o) return null;
     const needs = stopCheck(rule, { mode: 'enforce', response: o }, ruleHistory).kind === 'blocked'
       || keywordBlockCheck(rule, { mode: 'enforce', response: o, params: asRule.params }, ruleHistory).kind === 'blocked';
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
-  const options = whatHappensOptions(govV1, rule.response ?? 'block', draft.response);
-  const nextOpen = Math.min(...options.map(waitUntil).filter((t): t is number => typeof t === 'number'));
+  const actions = responseChoices(govV1, rule.response ?? 'block', draft.response);
+  const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;
     const t = setTimeout(() => setTick((n) => n + 1), Math.min(2 ** 31 - 1, Math.max(0, nextOpen - Date.now()) + 1000));
     return () => clearTimeout(t);
   }, [nextOpen]);
   /** Why an action can't be picked yet, with when it can; null when it can. */
-  const waitFor = (o: WhatHappens): string | null => {
+  const waitFor = (o: GovernanceResponse): string | null => {
     const from = waitUntil(o);
     if (from === null) return null;
-    if (from === 'record-first') return 'needs 24 hours in Record only first';
-    if (from === 'unknown') return 'needs 24 hours in Record only first (we can’t see when this rule started recording)';
+    if (from === 'record-first') return 'needs 24 hours in Watch first';
+    // In Watch, but the history doesn't say since when: waiting won't open it.
+    if (from === 'unknown') return 'needs 24 hours in Watch first (we can’t see when it started watching)';
     const today = dayKey();
     const day = dayKey(from) === today ? 'today' : dayKey(from) === addDays(today, 1) ? 'tomorrow' : formatInZone(from, { month: 'short', day: 'numeric' });
-    return `available from ${fmtTime(from)} ${day} (needs 24 hours in Record only first)`;
+    return `from ${fmtTime(from)} ${day}, after 24 hours in Watch`;
   };
 
   return (
@@ -146,7 +147,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
         <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
         <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
-        <span className={`gov-edhead__mode${draft.mode === 'enforce' ? ' is-on' : ''}`}>{draft.mode === 'enforce' ? DOES_TAG[draft.response] : MODE_LABEL[draft.mode]}{dirty ? ' · unsaved' : ''}</span>
+        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
       <p className="ctl-status">{status}</p>
@@ -241,54 +242,44 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         )}
         <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>
         </>}
-        {rule.ruleType === 'spend_cap' && (p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && agentSpend.map((a) => (
-          <p key={a.agent} style={help}><span style={{ fontFamily: FONT_MONO }}>{a.agent}</span> spends about {usd(a.perDay)} a day (last {a.days === 1 ? 'day' : `${a.days} days`}).</p>
-        ))}
-        {rule.ruleType === 'spend_cap' && (p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day' && fleetDailySpend !== null && (draft.appliesTo === 'all' || !agentSpend.length) && (
-          <p style={help}>Your fleet spends about {usd(fleetDailySpend.perDay)} a day, all agents together (last {fleetDailySpend.days === 1 ? 'day' : `${fleetDailySpend.days} days`}).</p>
-        )}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p className="gov-eyebrow">Who</p>
+        {/* Narrowing a rule for all agents: Save asks whether to keep it for everyone and add a copy, or move it. */}
+        <p className="gov-eyebrow ctl-q">Who{rule.appliesTo === 'all' && draft.appliesTo !== 'all' && draft.appliesTo.length > 0
+          && <Hint text="When you save, you’ll choose: keep this rule for everyone and add a copy, or move it." size={12} />}</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
-        {rule.appliesTo === 'all' && draft.appliesTo !== 'all' && draft.appliesTo.length > 0 && (
-          <p style={help}>When you save, you’ll choose: keep this rule for everyone and add a copy, or move it.</p>
-        )}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="gov-eyebrow ctl-q" id="ctl-what">What happens{canAct(asRule) && <Hint text={UNNAMED_CALLS_ENFORCE} size={12} />}</p>
-        <div role="radiogroup" aria-labelledby="ctl-what" className="ctl-choices">
-          {options.map((o) => {
-            const wait = waitFor(o);
-            return (
-              <label key={o} className={`ctl-choice${choice === o ? ' is-on' : ''}${wait ? ' is-off' : ''}`}>
-                <input type="radio" name={`what-${rule.id}`} value={o} checked={choice === o} disabled={!!wait} onChange={() => onDraft(chooseWhatHappens(draft, o, rule))} />
-                <span>{WHAT_HAPPENS_LABEL[o]}{wait && <span className="ctl-choice__why"> · {wait}</span>}</span>
-              </label>
-            );
-          })}
+        {/* Hugs its content on a wide screen; takes the row on a phone (gov-fill). */}
+        <div className="gov-fill" style={{ alignSelf: 'flex-start', display: 'flex', maxWidth: '100%' }}>
+          <SegmentedControl<GovernanceMode> label="What happens" value={draft.mode}
+            onChange={(m) => onDraft(chooseMode(draft, m, rule, actions, (r) => !waitFor(r)))}
+            options={MODE_CHOICES.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </div>
-        {choice === 'watch' && (
-          <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-            Records:
-            <select className="gov-field" aria-label="What Record only records" value={draft.response} onChange={(e) => onDraft(recordAs(draft, e.target.value as GovernanceResponse))}
-              style={{ ...field, padding: '0 8px', cursor: 'pointer' }}>
-              {responseChoices(govV1, rule.response ?? 'block', draft.response).map((r) => <option key={r} value={r}>{WHAT_HAPPENS_LABEL[r]}</option>)}
+        {draft.mode === 'enforce' && (
+          <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-md)' }}>
+            When enforced:
+            {/* An action that needs a day in Watch first stays in the list, disabled, saying when it opens. */}
+            <select className="gov-field" aria-label="When enforced" value={draft.response} onChange={(e) => onDraft(chooseAction(draft, e.target.value as GovernanceResponse))}
+              style={{ ...field, padding: '0 8px', cursor: 'pointer', maxWidth: '100%' }}>
+              {actions.map((r) => {
+                const wait = waitFor(r);
+                return <option key={r} value={r} disabled={!!wait}>{`${RESPONSE_LABEL[r]}${wait ? ` · ${wait}` : ''}`}</option>;
+              })}
             </select>
           </label>
         )}
-        <p style={help}>
-          {choiceLine}
-          {draft.mode === 'enforce' && rule.mode !== 'enforce' && ' You’ll confirm before it starts.'}
-        </p>
-        {draft.mode !== 'off' && draft.response === 'block' && (
+        {/* Block's own alert. Only in Enforce: a rule in Watch sends no alerts. Pause and Stop always alert; Only alert me is the alert. */}
+        {draft.mode === 'enforce' && draft.response === 'block' && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-sm)', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
             <input type="checkbox" checked={draft.alsoNotify} onChange={(e) => set({ alsoNotify: e.target.checked })} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
-            Also send me an alert
+            Also alert me
           </label>
         )}
+        <p style={help}>{whatHappensLine(draft)}</p>
         {alerts && alertChannel === false && (
           <p style={{ ...help, color: 'var(--warn-tx)' }}>No alert channel is connected. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link></p>
         )}
@@ -299,16 +290,16 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
       {/* On a phone Remove sits at the end of the rule, and the bar below shows only once something changed. */}
       <div className="gov-remove-row">
-        <Button variant="danger" className="ctl-bad" onClick={onRemove} disabled={saving}>Remove rule</Button>
+        <Button variant="ghost" className="ctl-remove" onClick={onRemove} disabled={saving}>Remove rule</Button>
       </div>
       <div className={`gov-actbar${dirty || saving ? ' is-dirty' : ''}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
         <Button variant="primary" onClick={onSave} disabled={!dirty} busy={saving} busyLabel="Saving…" className="gov-actbar__save">Save</Button>
         <Button variant="secondary" onClick={onDiscard} disabled={!dirty || saving} className="gov-actbar__discard">Discard changes</Button>
-        <Button variant="danger" onClick={onRemove} disabled={saving} className="gov-remove ctl-bad" style={{ marginLeft: 'auto' }}>Remove rule</Button>
+        <Button variant="ghost" onClick={onRemove} disabled={saving} className="gov-remove ctl-remove" style={{ marginLeft: 'auto' }}>Remove rule</Button>
       </div>
 
       <details className="gov-details">
-        <summary>What the agent sees when a call is blocked</summary>
+        <summary>What the agent sees</summary>
         <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
           {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
         </pre>

@@ -16,7 +16,7 @@ import { collectRunEvents, collectRuns, flagsNote, wouldActText, flagText, GLYPH
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
-/** A mode as the mockup tags it: filled brand "● Block", hollow "○ Record only". */
+/** A mode as the mockup tags it: filled brand "● Enforce", hollow "○ Watch". */
 export function ModeMark({ mode }: { mode: 'watch' | 'enforce' }) {
   return <span className={`wr-run-mtag${mode === 'enforce' ? ' is-block' : ''}`}>{MODE_LABEL[mode]}</span>;
 }
