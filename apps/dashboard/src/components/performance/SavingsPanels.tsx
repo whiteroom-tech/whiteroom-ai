@@ -17,14 +17,24 @@ function weekdayLong(day: string): string {
 
 /**
  * Tokens: with WhiteRoom vs without. Two total bars and the difference in
- * words; the same per day, with what each day saved, folds out under By day. Always the last 7 days,
- * whatever the page range; the header says so. `usdByDay` (engine
+ * words, for the page's range when `range` is given (as Smaller context's card
+ * above it), else for the 7 days; the same per day, with what each day saved,
+ * folds out under By day, always the last 7 calendar days. `usdByDay` (engine
  * savingsByDay, absent on older engines) adds each day's dollars to its label.
  */
-export function TokensCompare({ days, usdByDay, defaultOpen = false }: { days: DaySavings[]; usdByDay?: Record<string, number> | null; defaultOpen?: boolean }) {
+export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
+  days: DaySavings[];
+  usdByDay?: Record<string, number> | null;
+  /** The page range's totals and its label ("last 24 h"); the bars and words follow it. */
+  range?: { used: number; saved: number; label: string } | null;
+  defaultOpen?: boolean;
+}) {
   const [byDay, setByDay] = useState(defaultOpen);
   const byDayId = useId();
-  const { used, without, saved } = tokenTotals(days);
+  const week = tokenTotals(days);
+  const { used, saved } = range ?? week;
+  const without = used + saved;
+  const label = range?.label ?? 'last 7 days';
   const energy = fmtEnergy(saved);
   const empty = without === 0;
   const max = Math.max(...days.map((d) => d.used + d.saved), 0);
@@ -41,13 +51,13 @@ export function TokensCompare({ days, usdByDay, defaultOpen = false }: { days: D
           <h3 className="wr-pcard__title">Tokens: with WhiteRoom vs without</h3>
           <p className="wr-cap" style={{ margin: '2px 0 0' }}>What your agents sent to the models, compared with what they would have sent without WhiteRoom.</p>
         </div>
-        <span className="wr-cap wr-tokens__meta">last 7 days{energy ? ` · ${energy} saved` : ''}</span>
+        <span className="wr-cap wr-tokens__meta">{label}{energy ? ` · ${energy} saved` : ''}</span>
       </div>
       {empty ? (
-        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls in the last 7 days.</p>
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls in the {label}.</p>
       ) : (
         <>
-          <div className="wr-tokens__totals" role="img" aria-label={`Last 7 days: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
+          <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
             <span className="wr-lbl">Without WhiteRoom, est.</span>
             <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--without" style={{ width: 'calc((100% - 72px) * 1)' }} /><strong>{fmtTokens(without)}</strong></div>
             <span className="wr-lbl" style={{ color: 'var(--tx)' }}>With WhiteRoom</span>
@@ -57,7 +67,7 @@ export function TokensCompare({ days, usdByDay, defaultOpen = false }: { days: D
             {fewer ? <strong style={{ color: 'var(--ok)' }}>{fewer}</strong> : <strong>Nothing saved yet</strong>}
             <span className="wr-cap"> · estimated</span>
           </p>
-          <Disclosure label="By day" note={saved > 0 ? 'tokens with and without WhiteRoom, each day' : undefined} open={byDay} onToggle={() => setByDay((v) => !v)} controls={byDayId}>
+          <Disclosure label="By day" note={week.saved > 0 ? 'last 7 days, tokens with and without WhiteRoom each day' : undefined} open={byDay} onToggle={() => setByDay((v) => !v)} controls={byDayId}>
           <div className="wr-tokens__byday">
           <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>
             {days.map((d) => {
