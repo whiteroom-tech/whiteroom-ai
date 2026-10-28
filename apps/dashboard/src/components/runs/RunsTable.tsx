@@ -13,6 +13,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
+import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { reportStatuses, usd } from '@/lib/home';
 import { addDays, clampSpan, collectRuns, dayLabel, hourLabel, exportDays, fmtClockLength, fmtStarted, ignoresFlagged, ignoresHour, ignoresRuleActivity, localDay, MAX_SPAN_DAYS, oldestKept, runHref, runsDays, runsExportHeader, runsExportRow, RUNS_LIST_URL_KEY, RUNS_RANGES, runsTitle, runsWindow, spanLabel, standOut, stripDays, stripEndFor, validDay, zoneName, type ExportSpan, type RunsRange, type RunsShow, type RunsView } from '@/lib/runs';
@@ -25,7 +26,6 @@ import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 const PAGE = 25;
 /** An export reads at most this many pages of 50; past it, the file says it's the newest N. */
 const EXPORT_MAX_PAGES = 100;
-const RANGE_LABEL: Record<RunsRange, string> = { today: 'Today', '7d': '7 days', '30d': '30 days', custom: 'Custom' };
 
 function isRange(v: string | null): v is RunsRange {
   return (RUNS_RANGES as (string | null)[]).includes(v);
@@ -499,7 +499,7 @@ export function RunsTable({ preview, retentionDays }: {
   return (
     <div className="wr-runs-page">
       <PageHeader title="Runs" fleetId={fleetId ?? (preview ? 'Demo fleet' : null)} badge={<LiveStatus at={updatedAt ?? (preview ? Date.now() : null)} failing={failing} />}>
-        <SegmentedControl<RunsRange> label="Time range" value={day ? null : range} onChange={(r) => changeFilter({ range: r })} size={26} options={RUNS_RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))} />
+        <RangeMenu value={day ? null : range} onChange={(r) => changeFilter({ range: r })} />
         <Button onClick={() => { setExportError(null); setExportOpen(true); }}>Export .xlsx</Button>
         <Button onClick={() => setAuditOpen(true)}>Check audit trail</Button>
       </PageHeader>
@@ -515,12 +515,8 @@ export function RunsTable({ preview, retentionDays }: {
           )}
           <SelectChip label="Agent" value={agent} onChange={(a) => changeFilter({ agent: a })} options={agentOptions} height={30} />
           {range === 'custom' && !day ? (
-            <span className="wr-runs-filters__dates" title={`Up to ${MAX_SPAN_DAYS} days at a time`}>
-              <label htmlFor="runs-from">From</label>
-              <input id="runs-from" type="date" className="wr-date" value={span.fromDay} min={oldest ?? undefined} max={today} onChange={(e) => { if (validDay(e.target.value)) changeFilter({ from: e.target.value }); }} />
-              <label htmlFor="runs-to">to</label>
-              <input id="runs-to" type="date" className="wr-date" value={span.toDay} min={oldest ?? undefined} max={today} onChange={(e) => { if (validDay(e.target.value)) changeFilter({ to: e.target.value }); }} />
-            </span>
+            <RangeDates idPrefix="runs" fromDay={span.fromDay} toDay={span.toDay} oldest={oldest} today={today} maxDays={MAX_SPAN_DAYS}
+              onFrom={(d) => changeFilter({ from: d })} onTo={(d) => changeFilter({ to: d })} />
           ) : (
             <span className="wr-runs-filters__dates">
               <label htmlFor="runs-day">Jump to day</label>

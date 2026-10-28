@@ -1,4 +1,4 @@
-// The Performance overview as last shown, per fleet and range, so coming back to
+// The Performance overview as last shown, per fleet and range (its days), so coming back to
 // the page shows it at once while a fresh copy loads (instead of a loading line
 // on every visit). Memory only: it lasts until the tab reloads, and never
 // outlives the figures' own refresh, which always runs.
@@ -35,27 +35,28 @@ export interface PerformanceSnapshot {
   extras?: OverviewExtras;
 }
 
-// A few fleets × three ranges is plenty; the oldest entry goes first.
+// A few fleets × a few ranges is plenty; the oldest entry goes first.
 const MAX_ENTRIES = 12;
 const snapshots = new Map<string, PerformanceSnapshot>();
 
-const keyOf = (fleetId: string, hoursBack: number) => `${fleetId}\n${hoursBack}`;
+/** `range`: the days shown, e.g. "2026-10-21|2026-10-27". */
+const keyOf = (fleetId: string, range: string) => `${fleetId}\n${range}`;
 
-export function readSnapshot(fleetId: string | null | undefined, hoursBack: number): PerformanceSnapshot | undefined {
-  return fleetId ? snapshots.get(keyOf(fleetId, hoursBack)) : undefined;
+export function readSnapshot(fleetId: string | null | undefined, range: string): PerformanceSnapshot | undefined {
+  return fleetId ? snapshots.get(keyOf(fleetId, range)) : undefined;
 }
 
-export function saveSnapshot(fleetId: string, hoursBack: number, snapshot: PerformanceSnapshot): void {
-  const key = keyOf(fleetId, hoursBack);
+export function saveSnapshot(fleetId: string, range: string, snapshot: PerformanceSnapshot): void {
+  const key = keyOf(fleetId, range);
   snapshots.delete(key);
   snapshots.set(key, snapshot);
   while (snapshots.size > MAX_ENTRIES) snapshots.delete(snapshots.keys().next().value!);
 }
 
 /** Later figures for an overview already saved (rule counts arrive after the rest). */
-export function updateSnapshot(fleetId: string, hoursBack: number, patch: Partial<PerformanceSnapshot>): void {
-  const current = snapshots.get(keyOf(fleetId, hoursBack));
-  if (current) snapshots.set(keyOf(fleetId, hoursBack), { ...current, ...patch });
+export function updateSnapshot(fleetId: string, range: string, patch: Partial<PerformanceSnapshot>): void {
+  const current = snapshots.get(keyOf(fleetId, range));
+  if (current) snapshots.set(keyOf(fleetId, range), { ...current, ...patch });
 }
 
 export function clearSnapshots(): void {

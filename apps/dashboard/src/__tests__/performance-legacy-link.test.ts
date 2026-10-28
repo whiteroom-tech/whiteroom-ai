@@ -23,7 +23,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   performanceIndex: api.index, performanceFleetHourly: pending, auditSummary: pending, performanceCostForecast: pending, governanceList: pending,
 }));
 
-const { default: PerformancePage } = await import('@/app/(citadel)/performance/page');
+const { PerformancePage } = await import('@/app/(citadel)/performance/_components/PerformancePage');
 
 beforeEach(() => { nav.replace.mockReset(); nav.push.mockReset(); api.index.mockReset(); api.index.mockReturnValue(new Promise(() => {})); });
 
