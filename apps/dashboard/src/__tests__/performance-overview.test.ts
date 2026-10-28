@@ -5,7 +5,7 @@ import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
   checkGroups, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  inputByLocalDay, inputTokensOf, predictionNote, rangeContextCard, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
+  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -158,5 +158,23 @@ describe('Cost prediction folded note', () => {
     expect(predictionNote(undefined, undefined)).toBeUndefined();
     // No lookback known: no window after the figure.
     expect(predictionNote({ usdPerHour: 0.3544, lookbackHours: null }, undefined)).toBe('$0.354 an hour while agents work');
+  });
+});
+
+describe('By day week read', () => {
+  it('uses the range read when it holds the 7 days, else its own, and never one with an error', () => {
+    const weekStart = new Date(2026, 9, 21);
+    const range = { from: new Date(2026, 8, 28), to: null };
+    expect(rangeHoldsWeek(range, weekStart)).toBe(true);
+    expect(rangeHoldsWeek({ from: new Date(2026, 9, 27), to: null }, weekStart)).toBe(false);
+    // A custom range ending in the past doesn't hold the latest days.
+    expect(rangeHoldsWeek({ from: new Date(2026, 8, 28), to: new Date(2026, 9, 25) }, weekStart)).toBe(false);
+    const ok: { hourly: never[]; error?: string } = { hourly: [] }, bad: { hourly: never[]; error?: string } = { hourly: [], error: 'down' };
+    expect(weekHourlyFrom(true, ok, bad)).toBe(ok);
+    expect(weekHourlyFrom(false, ok, bad)).toBeNull();
+    expect(weekHourlyFrom(false, bad, ok)).toBe(ok);
+    expect(weekHourlyFrom(false, ok, null)).toBeNull();
+    expect(weekHourlyFrom(true, bad, ok)).toBeNull();
+    expect(WEEK_HOURS).toBeGreaterThanOrEqual(168 + 24);
   });
 });

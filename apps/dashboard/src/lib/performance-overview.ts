@@ -312,10 +312,16 @@ export const WEEK_HOURS = 192;
 export const WEEK_READ_TTL_MS = 10 * 60_000;
 
 /**
- * By day's hourly rows: the range's own read when it already reaches WEEK_HOURS back,
- * else the separate week read; null when that failed or came back with an error.
+ * By day's hourly rows: the range's own read when it already holds the 7 days (it ends now
+ * and starts at or before the first of them), else the separate week read; null when the
+ * read used failed or came back with an error.
  */
-export function weekHourlyFrom<T extends { error?: string }>(hoursBack: number, rangeRead: T | null, weekRead: T | null | undefined): T | null {
-  if (hoursBack * 2 >= WEEK_HOURS) return rangeRead && !rangeRead.error ? rangeRead : null;
-  return weekRead && !weekRead.error ? weekRead : null;
+export function weekHourlyFrom<T extends { error?: string }>(rangeHoldsWeek: boolean, rangeRead: T | null, weekRead: T | null | undefined): T | null {
+  const read = rangeHoldsWeek ? rangeRead : weekRead;
+  return read && !read.error ? read : null;
+}
+
+/** Whether a range (instants; `to` null = now) holds the 7 calendar days starting at `weekStart`. */
+export function rangeHoldsWeek(w: { from: Date; to: Date | null }, weekStart: Date): boolean {
+  return w.to === null && w.from.getTime() <= weekStart.getTime();
 }
