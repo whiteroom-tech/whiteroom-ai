@@ -53,7 +53,7 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
     <div className="wr-pcard wr-tokens" style={{ marginBottom: 16, overflow: 'hidden' }}>
       <Disclosure first label="See how it adds up" note={note} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>
         <p className="wr-cap" style={{ margin: 0, padding: '4px 20px 12px' }}>
-          The input your agents sent to the models, {label}, with WhiteRoom and an estimate without it. Includes cached input; output isn’t counted.
+          The input your agents sent to the models {inRange(label)}, with WhiteRoom and an estimate without it. Includes cached input; output isn’t counted.
         </p>
         {empty ? (
           <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls {inRange(label)}.</p>
