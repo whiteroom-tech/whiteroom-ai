@@ -16,16 +16,16 @@ vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) 
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
 vi.mock('@/components/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => children }));
 
-const { SettingsView } = await import('@/app/settings/settings-view');
+const { SettingsView, freeDaysLeft } = await import('@/app/settings/settings-view');
 const { limitsFor } = await import('@/lib/plans');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 type ViewOpts = { plan?: 'starter' | 'pro' | 'expired' | 'enterprise'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean };
 const comp = { plan: 'none', status: 'active', planOverride: 'pro', stripeCustomerId: 'pending_u', stripeSubscriptionId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null };
-const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false }: ViewOpts = {}) => text(renderToStaticMarkup(h(SettingsView, {
+const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false, freeDays = 30 }: ViewOpts & { freeDays?: number } = {}) => text(renderToStaticMarkup(h(SettingsView, {
   closing: null, billingResult: null, purchasablePlans: purchasable,
   account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? 30 : -30) * 86_400_000).toISOString(), onTrial, usage: { fleets: 1, agents } },
+  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? freeDays : -30) * 86_400_000).toISOString(), onTrial, usage: { fleets: 1, agents } },
   samples: { audit: { fleetId: 'f', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } } },
 })));
 
@@ -78,10 +78,23 @@ describe('Settings plan: savings share and soft agent counts', () => {
     expect(t).not.toContain('This month:');
   });
 
-  it('says when the free period ends instead of a share', () => {
+  it('says when the free period ends instead of a share, once, with the real days left', () => {
     const t = view(1);
-    expect(t).toMatch(/Free until [A-Z][a-z]{2} \d+/);
+    expect(t).toMatch(/free until [A-Z][a-z]{2} \d+ · 30 days left/);
+    // Said once as the badge (the Subscribe button's own "(free until …)" is the button's).
+    expect(t.match(/free until [A-Z][a-z]{2} \d+ · /g)).toHaveLength(1);
+    expect(t).not.toMatch(/Free until [A-Z][a-z]{2} \d+(?! ·)/);
     expect(t).not.toContain('This month:');
+    // An older account's longer free period counts its real days, not 30.
+    expect(view(1, { freeDays: 63 })).toContain('· 63 days left');
+  });
+
+  it('counts free days left by calendar day, whatever the hour', () => {
+    const now = new Date(2026, 9, 28, 23, 30).getTime();
+    expect(freeDaysLeft(new Date(2026, 11, 30, 0, 15).toISOString(), now)).toBe(63);
+    expect(freeDaysLeft(new Date(2026, 9, 30, 1, 0).toISOString(), now)).toBe(2);
+    // Ends later today: still 1, never 0.
+    expect(freeDaysLeft(new Date(2026, 9, 28, 23, 50).toISOString(), now)).toBe(1);
   });
 
   it('shows a dash for this month while it loads, once the free period is over', () => {

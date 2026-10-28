@@ -28,7 +28,7 @@ import { openBillingPortal, startCheckout } from '@/lib/billing';
 import type { AlertsStatus, CompressionPreview, DataSettings } from '@/lib/whiteroom/client';
 import type { AuditIntegrity } from '@/lib/whiteroom/types';
 import type { Entitlement } from '@/lib/entitlements';
-import { AUDIT_KEPT, PLANS, TRIAL_DAYS, hasLiveSubscription, type PlanId } from '@/lib/plans';
+import { AUDIT_KEPT, PLANS, hasLiveSubscription, type PlanId } from '@/lib/plans';
 import { agentsIncluded, monthShareLine } from '@/lib/metric-display';
 import { getMonthSavings } from '@/lib/plan-savings';
 import { CLOSE_WINDOW_DAYS, isClosingOpen, SUPPORT_EMAIL, type ClosingState } from '@/lib/closing-shared';
@@ -305,9 +305,7 @@ function PlanSection({
   const contracted = plan === 'enterprise' || !!subscription?.planOverride;
   const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
   const trialEnd = shortDay(entitlement.trialEndsAt);
-  // ceil so an active trial never reads "0 days left"; capped because a DST
-  // shift inside the window can push a fresh trial to its length and an hour.
-  const trialDaysLeft = Math.min(TRIAL_DAYS, Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now()) / DAY_MS)));
+  const trialDaysLeft = freeDaysLeft(entitlement.trialEndsAt);
 
   return (
     <Section title="Plan" description="Limits apply to every fleet on the account">
@@ -315,7 +313,7 @@ function PlanSection({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <strong style={{ fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[plan].name}</strong>
-            {entitlement.onTrial && <span className="wr-settings-pill" data-tone="ok">free · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left</span>}
+            {entitlement.onTrial && <span className="wr-settings-pill" data-tone="ok">free until {trialEnd} · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left</span>}
             {subscription?.planOverride && <span className="wr-settings-pill" data-tone="ok">comped</span>}
             {subscription?.cancelAtPeriodEnd && <span className="wr-settings-pill" data-tone="warn">ends {subscription.currentPeriodEnd ? shortDay(subscription.currentPeriodEnd) : ''}</span>}
             {subscription?.status === 'past_due' && <span className="wr-settings-pill" data-tone="bad">payment failed</span>}
@@ -335,7 +333,8 @@ function PlanSection({
       {showsShare && (
         <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>{monthShareLine(plan, monthShare)}</p>
       )}
-      {selfServe && freeNow && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
+      {/* Subscribed inside the free period: the badge is gone, so the line says when billing starts. */}
+      {selfServe && freeNow && !entitlement.onTrial && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
 
       <div className="wr-settings-stats">
         <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} over={usage.fleets > limits.maxFleets ? `${usage.fleets - limits.maxFleets} over the ${PLANS[plan].name} limit` : undefined} />
@@ -708,4 +707,15 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
       )}
     </Section>
   );
+}
+
+/**
+ * Days left in the free period, as calendar days from today to the end day in the viewer's
+ * zone: "Dec 30" is 63 days from Oct 28 whatever the hour. Rounded, so a DST day (23 or 25
+ * hours) doesn't tip it; at least 1 while it hasn't ended. Not capped: an older account's
+ * free period is longer than today's 30 days.
+ */
+export function freeDaysLeft(trialEndsAt: string, now: number = Date.now()): number {
+  const midnight = (ms: number) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  return Math.max(1, Math.round((midnight(Date.parse(trialEndsAt)) - midnight(now)) / DAY_MS));
 }
