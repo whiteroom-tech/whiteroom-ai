@@ -5,7 +5,7 @@ import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
   checkGroups, countTrend, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleModeCounts, rulesCaughtText, savedCaption, tokenTotals, topCaught, trendText,
+  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleModeCounts, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -93,10 +93,7 @@ describe('savings and spend', () => {
 });
 
 describe('Control', () => {
-  it('sums up what rules caught', () => {
-    expect(rulesCaughtText(120, 0)).toBe('rules caught 120 times, none blocked');
-    expect(rulesCaughtText(3, 1)).toBe('rules caught 3 times, 1 blocked');
-    expect(rulesCaughtText(0, 0)).toBe('rules caught nothing');
+  it('counts the rules by mode', () => {
     expect(ruleModeCounts(RULES)).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
     expect(ruleModeCounts([...RULES, { ...RULES[0], id: 'gr_alert', mode: 'enforce', response: 'notify' }])).toBe('6 rules: 1 Enforce · 1 Alert only · 3 Watch · 1 Off');
     // Not set up (nothing picked, or no agents): left out, as Controls counts.

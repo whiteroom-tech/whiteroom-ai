@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Performance › Rules: what the rules caught, read only. One line (blocked,
  * would have acted, the rules by mode), and the rules that caught the most

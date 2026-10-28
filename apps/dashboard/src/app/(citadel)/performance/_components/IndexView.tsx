@@ -85,6 +85,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   // "Needs you": the open count from the last unfiltered Open read; null until there is one, so
   // it never says nothing needs you before it knows, nor blinks while the list reloads.
   const [openCount, setOpenCount] = useState<number | null>(null);
+  // Every open-count read takes a number; only the newest one's answer is kept.
+  const openReq = useRef(0);
   // Monotonic request id: a response only lands if it is still the newest
   // request, so an out-of-order reply can't show the wrong list or store a
   // stale cursor for "Load more".
@@ -112,7 +114,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-      if (opts.status === 'open' && !opts.agentId) setOpenCount(res.total);
+      if (opts.status === 'open' && !opts.agentId && !cursor) { openReq.current++; setOpenCount(res.total); }
     } catch {
       if (!stale()) setRecError('Failed to load recommendations.');
     } finally {
@@ -139,7 +141,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
       void fetchRecs();
       // Another list on screen (past ones, or filtered): "Needs you" rereads its own count.
       if (recStatus !== 'open' || recAgentQuery.trim()) {
-        void performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey).then((r) => { if (!r.error) setOpenCount(r.total); }, () => {});
+        const req = ++openReq.current;
+        void performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey).then((r) => { if (!r.error && openReq.current === req) setOpenCount(r.total); }, () => {});
       }
     }
     return result;
