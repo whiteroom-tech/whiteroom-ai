@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { SkeletonCard } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList } from '@/lib/whiteroom/client';
@@ -282,7 +283,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       )}
 
       {view === 'unavailable' && <PracticeUnavailable />}
-      {view === 'loading' && <p>Checking for a practice test…</p>}
+      {view === 'loading' && <SkeletonCard label="Checking for a practice test…" style={{ maxWidth: 480 }} />}
       {view === 'setup' && fleet && setup && <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />}
       {view === 'run' && run && (
         <PracticeRunView run={run} code={code} keyChoice={runKeyChoice(run) ?? keyChoice} now={now} heading={heading} busy={busy} onNewCode={() => { void renewCode(); }} onEnd={() => setConfirm({ kind: 'end', id: run.id })} />

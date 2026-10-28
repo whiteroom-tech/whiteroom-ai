@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
-import { FONT_DISPLAY, FONT_MONO, CopyButton } from '@whiteroom/ui';
+import { FONT_DISPLAY, FONT_MONO, CopyButton, SkeletonCard } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, startDemo, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
@@ -376,7 +376,7 @@ export function timerSpoken(seconds: number | null | undefined, expired: boolean
 function TestTimer({ seconds, expired }: { seconds: number | null; expired: boolean }) {
   const ended = expired || seconds === 0;
   return (
-    <span className={`${s.timer} ${timerColor(seconds)}`} title="The test ends automatically. Results stay in Past tests.">
+    <span className={`${s.timer} ${timerColor(seconds)}`} title="The test link lasts 30 minutes, then the test ends. Results stay in Past tests.">
       {TIMER_ICON}
       <span aria-hidden="true">{ended ? 'Test ended' : <>Test ends in <span className={s.timerValue}>{formatTimer(seconds)}</span></>}</span>
       <span className={s.srOnly}>{timerSpoken(seconds, expired)}</span>
@@ -1067,7 +1067,8 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     {/* ── Topbar (workspace only) ── */}
     {phase === 'workspace' && run && (
       <PageHeader title="Sandbox" badge={<span className={`${s.badgeMode} ${isDemo ? s.demo : s.live}`}>{isDemo ? 'Demo' : 'Live test'}</span>}>
-        <TestTimer seconds={displaySeconds} expired={!!expired} />
+        {/* A demo has no link to run out, so no countdown. */}
+        {!isDemo && <TestTimer seconds={displaySeconds} expired={!!expired} />}
       </PageHeader>
     )}
 
@@ -1082,10 +1083,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
       {error && <div className={s.error}>{error} <button className={s.btn} onClick={() => { setError(''); setPollTick(v => v + 1); }} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Retry</button></div>}
       {reconnecting && <div className={s.notice}>Reconnecting. Your last received results are shown. <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => setPollTick(v => v + 1)} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Check now</button></div>}
 
-      {booting ? <p>Checking for an existing test…</p> : phase === 'start' ? <>
+      {booting ? <SkeletonCard label="Checking for an existing test…" style={{ maxWidth: 480 }} /> : phase === 'start' ? <>
         {/* ═══ START ═══ */}
         <h2 ref={heading} tabIndex={-1} className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
-        <p className={s.pageSub}>Check your agent works through WhiteRoom before you use it for real. About 3 minutes; it doesn’t touch your live fleet.</p>
+        <p className={s.pageSub}>Check your agent works through WhiteRoom before you use it for real. About 3 minutes; it doesn’t touch your live fleet. The test link lasts 30 minutes.</p>
 
         <CheckPreview />
 
@@ -1121,7 +1122,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         </div>
       </> : <>
         {/* ═══ WORKSPACE ═══ */}
-        {expired && <div className={s.notice}>This test has ended (tests last 30 minutes). Your results are below. Download them before you start a new test.</div>}
+        {expired && <div className={s.notice}>This test has ended (the test link lasts 30 minutes). Your results are below. Download them before you start a new test.</div>}
 
         {/* Summary banner */}
         {run && (() => {
@@ -1275,11 +1276,12 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {/* Test actions, on every tab. On Checks, a passed live test's card already offers the report. */}
         {run && <div className={s.btnRow}>
           {!(allPassed && !isDemo && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>}
-          <button className={`${s.btn} ${s.btnGhost}`} onClick={() => setConfirmEnd(true)}>End test</button>
+          {/* A demo has nothing to lose, so End ends it at once; a live test asks first. */}
+          <button className={`${s.btn} ${s.btnGhost}`} disabled={isDemo && busy} onClick={() => (isDemo ? void end() : setConfirmEnd(true))}>End test</button>
         </div>}
 
         {/* Footer */}
-        {run && <div className={s.footer}>{lastUpdated ? `Updated ${formatInZone(lastUpdated, { hour: 'numeric', minute: '2-digit', second: '2-digit' })} · ` : ''}Test {run.sandboxId}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
+        {run && <div className={s.footer}>{lastUpdated ? `Updated ${formatInZone(lastUpdated, { hour: 'numeric', minute: '2-digit', second: '2-digit' })} · ` : ''}{isDemo ? 'Demo' : `Test ${run.sandboxId}`}{liveCloud ? ` · ${providerSummary(liveCloud, run.endpointHost)}` : ''}{expired ? ' · Expired' : ''}</div>}
       </>}
 
       {!booting && phase === 'start' && <PastTests preview={previewUserId ? (previewPastTests ?? []) : undefined} practice={practice.rows ?? undefined} onDemo={busy ? undefined : () => void begin('demo')} />}

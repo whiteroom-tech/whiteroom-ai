@@ -3,7 +3,7 @@
 import { type RefObject, useState } from 'react';
 import { CopyButton, FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, lostContact, progressLine, type PracticeKeyChoice, type StarterLang, taskList,
+  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, lostContact, progressLine, type PracticeKeyChoice, type StarterLang, taskList,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
@@ -50,6 +50,7 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
     {cmd.starter && (
       <div className={p.step}>
         <p className={p.stepTitle}>{++n}. Get the starter adapter</p>
+        <p className={p.meta}>{ADAPTER_EXPLAINER} <a className={s.linkBtn} href={ADAPTER_HELP_URL} target="_blank" rel="noopener noreferrer">How it works</a></p>
         <div className={s.selectRow} role="group" aria-label="Adapter language">
           {(['js', 'python'] as const).map((l) => (
             <button key={l} type="button" className={`${s.selectPill} ${lang === l ? s.selectPillOn : ''}`} aria-pressed={lang === l} onClick={() => setLang(l)}>{l === 'js' ? 'JavaScript' : 'Python'}</button>

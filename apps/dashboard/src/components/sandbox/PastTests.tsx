@@ -8,17 +8,22 @@ import { analytics } from '@/lib/analytics';
 import { HELP } from '@/lib/metric-definitions';
 import { fmtTime } from '@/lib/format';
 import { formatInZone } from '@/lib/zone-time';
-import { isOpen, pastKind, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
+import { isOpen, pastKind, VERDICT_LABEL, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
 import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { PracticePastDetail } from './practice/PracticePastDetail';
 import s from './guided.module.css';
 
+/** Connection-test results in the same words as practice tests: Passed or Didn't pass. */
 const RESULT: Record<PastTest['overall'], { label: string; tone: 'brand' | 'warn' | 'muted' }> = {
-  pass: { label: 'All checks passed', tone: 'brand' },
-  partial: { label: 'Some checks passed', tone: 'warn' },
-  fail: { label: 'Checks didn’t pass', tone: 'muted' },
-  empty: { label: 'Not tested', tone: 'muted' },
+  pass: { label: VERDICT_LABEL.passed, tone: 'brand' },
+  partial: { label: VERDICT_LABEL.not_passed, tone: 'warn' },
+  fail: { label: VERDICT_LABEL.not_passed, tone: 'warn' },
+  empty: { label: 'Not checked', tone: 'muted' },
 };
+
+/** A test with nothing checked, no tasks and no report: it carries nothing, so Past tests leaves it out. */
+export const isEmptyTest = (t: Pick<PastTest, 'overall' | 'totalTasks' | 'destroyedAt' | 'hasReport'>) =>
+  pastResult(t) === 'empty' && t.totalTasks === 0 && !t.hasReport;
 
 /** When the engine started recording "empty" (engine PR 207, live 2026-10-12 15:42 UTC). */
 export const EMPTY_RECORDED_SINCE = Date.parse('2026-10-12T15:42:00Z');
@@ -27,7 +32,7 @@ export const EMPTY_RECORDED_SINCE = Date.parse('2026-10-12T15:42:00Z');
  * The result to show. Before engine PR 207 a test that ended with nothing
  * checked was recorded as "partial". Its task count only counts calls that
  * came back OK, so an older "partial" with 0 tasks means no call ever worked:
- * Not tested. Newer records are shown as stored.
+ * nothing checked. Newer records are shown as stored.
  */
 export function pastResult(t: Pick<PastTest, 'overall' | 'totalTasks' | 'destroyedAt'>): PastTest['overall'] {
   const legacy = Date.parse(t.destroyedAt) < EMPTY_RECORDED_SINCE;
@@ -115,10 +120,10 @@ export function PastTestDetail({ test, onClose, onDownload = downloadPastReport 
 /** A Past tests row: a Sandbox test, or a finished practice test (spec rev 5.6 §10). */
 type Row = { key: string; at: string; test: PastTest; practice?: undefined } | { key: string; at: string; test?: undefined; practice: PracticeRunRow };
 
-/** Sandbox tests and finished practice tests together, newest first. */
+/** Sandbox tests (empty ones left out) and finished practice tests together, newest first. */
 export function pastRows(tests: PastTest[], practice: PracticeRunRow[] = []): Row[] {
   const rows: Row[] = [
-    ...tests.map((t) => ({ key: t.sandboxId, at: t.destroyedAt, test: t })),
+    ...tests.filter((t) => !isEmptyTest(t)).map((t) => ({ key: t.sandboxId, at: t.destroyedAt, test: t })),
     ...practice.filter((r) => !isOpen(r.lifecycle)).map((r) => ({ key: r.id, at: r.endedAt ?? r.createdAt, practice: r })),
   ];
   return rows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));

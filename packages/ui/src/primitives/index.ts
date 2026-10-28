@@ -11,3 +11,4 @@ export * from './Hint';
 export * from './DataTable';
 export * from './Toast';
 export * from './ScoreRing';
+export * from './Skeleton';

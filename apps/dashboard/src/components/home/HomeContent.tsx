@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button, Hint, SegmentedControl, SelectChip, StatCard, StatusPill } from '@whiteroom/ui';
+import { Button, Hint, SegmentedControl, SelectChip, SkeletonCard, StatCard, StatusPill } from '@whiteroom/ui';
 import { auditLog, checkWatch, fleetReport, isAuthError, listRuns, performanceFleetHourly, ruleActions, runDays } from '@/lib/whiteroom/client';
 import type { AgentHold, AgentInfo, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
@@ -477,20 +477,15 @@ export function weekRules(t: GovernanceTally): string {
 
 /** Skeleton blocks at the final sizes while the first load runs; no spinner. */
 function HomeSkeleton({ failing }: { failing: boolean }) {
-  const block = (w: string, h: number) => <div style={{ width: w, height: h, borderRadius: 5, background: 'var(--sunk)' }} />;
   return (
     <div className="wr-page-body" style={{ flex: 1, minHeight: 0 }}>
       <div className="wr-home" aria-busy="true">
         {failing && <p role="status" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Couldn&rsquo;t load the fleet yet. Retrying&hellip;</p>}
         <div className="wr-home-strip">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '16px 18px', display: 'grid', gap: 8 }}>
-              {block('55%', 12)}{block('40%', 28)}{block('65%', 10)}
-            </div>
-          ))}
+          {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)}
         </div>
-        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, height: 220 }} />
-        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, height: 190 }} />
+        <SkeletonCard height={220} />
+        <SkeletonCard height={190} />
       </div>
     </div>
   );
