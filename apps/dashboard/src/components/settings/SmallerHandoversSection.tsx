@@ -114,7 +114,7 @@ export function SmallerHandoversSection({ sample }: { sample?: CompressionPrevie
         title="Turn on smaller context?"
         body={preview.cleared.length
           ? 'Changes that have passed testing start applying to what your agents receive from their next call. You can switch back to Preview or Off at any time.'
-          : 'None of the changes has passed testing yet, so nothing your agents receive changes for now. Changes start applying as they pass, without asking again.'}
+          : 'No change has passed testing yet, so nothing changes for your agents. Each one applies once it passes.'}
         confirmLabel="Turn on"
         cancelLabel="Keep current setting"
         tone="neutral"

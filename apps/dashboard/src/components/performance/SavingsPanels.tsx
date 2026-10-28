@@ -55,7 +55,7 @@ export function TokensCompare({ days, usdByDay, defaultOpen = false }: { days: D
           </div>
           <p className="wr-tokens__diff">
             {fewer ? <strong style={{ color: 'var(--ok)' }}>{fewer}</strong> : <strong>Nothing saved yet</strong>}
-            <span className="wr-cap"> · estimated from how much each agent would have sent without WhiteRoom</span>
+            <span className="wr-cap"> · estimated</span>
           </p>
           <Disclosure label="By day" note={saved > 0 ? 'tokens with and without WhiteRoom, each day' : undefined} open={byDay} onToggle={() => setByDay((v) => !v)} controls={byDayId}>
           <div className="wr-tokens__byday">

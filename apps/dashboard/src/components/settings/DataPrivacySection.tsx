@@ -158,7 +158,7 @@ export function DataPrivacySection({ preview }: { preview?: DataSettings } = {})
       <Row
         title="Live feed"
         text={settings.content_capture
-          ? 'What your agents said and did, with credentials removed. Deleted automatically after a short time (the live feed shows how long), never part of the audit record.'
+          ? 'What your agents said and did, credentials removed. Deleted after a short time (the live feed shows how long); never in the audit record.'
           : liveFeedLocked(settings)
             ? 'Live feed is off. It can’t be turned on while personal details are removed.'
             : 'Live feed is off for this fleet. Turning it on starts recording from now; nothing earlier comes back.'}
@@ -168,7 +168,7 @@ export function DataPrivacySection({ preview }: { preview?: DataSettings } = {})
       <Row
         last
         title="Personal details"
-        text="Email addresses and phone numbers in saved progress and the live feed (names aren’t detected). Keep them if your agents need them, like lead or support agents."
+        text="Emails and phone numbers in saved progress and the live feed (not names). Keep them if your agents need them, like lead or support agents."
         control={<SegmentedControl label="Personal details" value={settings.personal_data}
           options={[{ value: 'keep', label: 'Keep' }, { value: 'exclude', label: 'Remove' }]}
           onChange={(v) => {

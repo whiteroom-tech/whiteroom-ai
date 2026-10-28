@@ -38,7 +38,7 @@ export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
   const channels: AlertChannel[] = status.teams === undefined ? ['slack'] : ['slack', 'teams'];
 
   return (
-    <SettingsCard id="alerts" title="Alerts" sub={`A ${channels.length > 1 ? 'Slack or Teams' : 'Slack'} message when a rule alerts you, pauses or stops an agent, or blocks a call you asked to hear about. Each links to the run.`}>
+    <SettingsCard id="alerts" title="Alerts" sub={`A ${channels.length > 1 ? 'Slack or Teams' : 'Slack'} message when a rule alerts, pauses or stops an agent, or blocks a call you asked about. Each links to the run.`}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} preview={!!preview} />)}
       </div>

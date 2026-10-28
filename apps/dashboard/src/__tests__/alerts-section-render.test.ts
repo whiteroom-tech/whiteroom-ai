@@ -39,7 +39,7 @@ beforeEach(() => { api.status = { slack: null, teams: null }; api.setTeams.mockR
 describe('Settings › Alerts', () => {
   it('offers Slack and Microsoft Teams, each on its own', async () => {
     const m = await mount();
-    expect(m.text()).toContain('A Slack or Teams message when a rule alerts you');
+    expect(m.text()).toContain('A Slack or Teams message when a rule alerts');
     expect(m.button('Connect Slack')).toBeTruthy();
     expect(m.button('Connect Teams')).toBeTruthy();
     m.root.unmount();

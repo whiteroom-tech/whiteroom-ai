@@ -159,7 +159,7 @@ export function AuditIntegritySection({ preview }: { preview?: AuditIntegrity } 
         <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 6px' }}>Events before tracking started aren’t covered.</p>
       )}
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '0 0 14px', maxWidth: '62ch' }}>
-        Not yet anchored outside WhiteRoom, so it can’t yet prove the history to someone who doesn’t trust WhiteRoom’s records. Kept for {AUDIT_KEPT}.
+        Not yet provable outside WhiteRoom’s own records. Kept for {AUDIT_KEPT}.
       </p>
       {tracked && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
