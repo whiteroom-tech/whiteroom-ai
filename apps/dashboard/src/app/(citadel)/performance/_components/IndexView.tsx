@@ -188,8 +188,6 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const openRecs = recStatus === 'open' && !recError ? recTotal : null;
   const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
   const rangeName = rangeLabel.charAt(0).toUpperCase() + rangeLabel.slice(1);
-  // Smaller context and the with-vs-without totals follow the range (the range's audit read);
-  // only the chart's By day stays the last 7 calendar days.
   // Savings are input (the context is what gets smaller), so they compare with the input the
   // range's calls sent (plain and cached), not input and output together.
   const rangeInput = hourlyData ? displayHourly.reduce((n, p) => n + inputTokensOf(p), 0) : null;

@@ -302,3 +302,20 @@ export function inputByLocalDay(points: Array<{ hour: string; inputTokens: numbe
   }
   return out;
 }
+
+/**
+ * Hours read for By day's input per day: the 7 calendar days start at local midnight 6 days
+ * ago (under 168 hours back), and a day more covers a DST shift with room to spare.
+ */
+export const WEEK_HOURS = 192;
+/** How long By day's own read is reused: it changes by the day, not by the 30-second refresh. */
+export const WEEK_READ_TTL_MS = 10 * 60_000;
+
+/**
+ * By day's hourly rows: the range's own read when it already reaches WEEK_HOURS back,
+ * else the separate week read; null when that failed or came back with an error.
+ */
+export function weekHourlyFrom<T extends { error?: string }>(hoursBack: number, rangeRead: T | null, weekRead: T | null | undefined): T | null {
+  if (hoursBack * 2 >= WEEK_HOURS) return rangeRead && !rangeRead.error ? rangeRead : null;
+  return weekRead && !weekRead.error ? weekRead : null;
+}
