@@ -117,6 +117,8 @@ describe('Cost prediction card', () => {
     await act(async () => { m.button('Cost prediction').click(); });
     expect((m.el.querySelector('select') as HTMLSelectElement).value).toBe('code-reviewer');
     expect(m.text()).toContain('$0.0081 a model call · last 14 days');
+    // The picked agent's hourly cost, labelled (it moved here from the top of the page).
+    expect(m.text()).toMatch(/Hourly cost.*\$0\.0081 a model call/);
     expect(m.text()).toContain('Enter a budget to see how many model calls it allows.');
     const [usd, tok] = m.inputs();
     await m.type(usd, '20');

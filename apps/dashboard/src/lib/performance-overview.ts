@@ -9,7 +9,7 @@ import { RULE_LABELS } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, ruleSentence } from '@/lib/controls-view';
-import { fmtCount, fmtTokens, plural } from '@/lib/format';
+import { fmtCost, fmtCount, fmtTokens, plural } from '@/lib/format';
 
 /** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
 export function lookbackText(hours: number | null | undefined): string | null {
@@ -232,4 +232,29 @@ export function healthCounts(s: { fine: number; needsData: number; openFindings:
     s.fine ? `${s.fine} passed` : '',
     s.needsData ? `${s.needsData} need${s.needsData === 1 ? 's' : ''} more data` : '',
   ].filter(Boolean).join(' · ');
+}
+
+/** Hourly cost: the fleet's spend per working hour (engine performance_cost_forecast). */
+export interface WorkingHourRate {
+  usdPerHour: number;
+  lookbackHours: number | null;
+  /** Recent calls had no price on file: the rate is unknown, not $0. */
+  unpriced?: boolean;
+}
+
+/**
+ * Cost prediction's folded note: the whole fleet's hourly cost, then `rest` (the budgets note).
+ * "$0.354 an hour while agents work, last 14 days · 1 agent with a budget". Hourly cost is per
+ * agent inside the card, so the fleet figure is only this note. `null`: it couldn't be read;
+ * `undefined`: not passed (the note is just `rest`).
+ */
+export function predictionNote(fleetHourly: WorkingHourRate | null | undefined, rest: string | undefined): string | undefined {
+  let hourly = '';
+  if (fleetHourly === null) hourly = 'hourly cost couldn’t load';
+  else if (fleetHourly?.unpriced) hourly = 'hourly cost: recent calls have no price on file yet';
+  else if (fleetHourly && fleetHourly.usdPerHour > 0) {
+    const since = lookbackText(fleetHourly.lookbackHours);
+    hourly = `${fmtCost(Math.round(fleetHourly.usdPerHour * 1_000_000))} an hour while agents work${since ? `, ${since}` : ''}`;
+  }
+  return [hourly, rest].filter(Boolean).join(' · ') || undefined;
 }

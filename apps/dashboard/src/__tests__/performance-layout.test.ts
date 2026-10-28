@@ -62,7 +62,7 @@ describe('Performance overview layout', () => {
       workingHour: { usdPerHour: 0.354, lookbackHours: 336 }, rangeUsedTokens: 1_740_000, govSavings: { tokensSaved: 3_180_000, costSaved: 2.34, partial: false },
     } as never)));
     // The fleet's hourly cost sits on Cost prediction's folded row; each agent's own is inside it.
-    expect(withPrev).toMatch(/Cost prediction \$0\.354 an hour for all agents/);
+    expect(withPrev).toMatch(/Cost prediction \$0\.354 an hour while agents work, last 14 days/);
     expect(withPrev).toMatch(/Model calls .*99 ↑ 200% vs prior 24 h/);
     expect(withPrev).toMatch(/Typical response .*1\.9s ↓ 50% faster vs prior 24 h/);
     expect(withPrev).toMatch(/3\.18M fewer tokens · about 65% less · estimated/);

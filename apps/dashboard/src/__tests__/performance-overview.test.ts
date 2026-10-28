@@ -5,7 +5,7 @@ import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
   checkGroups, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
+  predictionNote, ruleAgentRows, ruleModeCounts, rulesCaughtText, ruleTypeRows, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -137,5 +137,16 @@ describe('Agent health', () => {
     expect(healthHeadline({ fine: 0, needsData: 3, openFindings: 0 }).title).toBe('No checks could run yet');
     expect(healthCounts({ fine: 17, needsData: 22, openFindings: 0 })).toBe('17 passed · 22 need more data');
     expect(healthCounts({ fine: 1, needsData: 1, openFindings: 2 })).toBe('2 problems · 1 passed · 1 needs more data');
+  });
+});
+
+describe('Cost prediction folded note', () => {
+  it('leads with the fleet hourly cost, says when it is unknown, and keeps the budgets note', () => {
+    expect(predictionNote({ usdPerHour: 0.3544, lookbackHours: 336 }, '1 agent with a budget')).toBe('$0.354 an hour while agents work, last 14 days · 1 agent with a budget');
+    expect(predictionNote({ usdPerHour: 0.5, lookbackHours: 336, unpriced: true }, undefined)).toBe('hourly cost: recent calls have no price on file yet');
+    expect(predictionNote(null, 'pick an agent to see what a budget allows')).toBe('hourly cost couldn’t load · pick an agent to see what a budget allows');
+    // No spend while working: nothing to say about the fleet; not passed at all: just the budgets note.
+    expect(predictionNote({ usdPerHour: 0, lookbackHours: 336 }, 'x')).toBe('x');
+    expect(predictionNote(undefined, undefined)).toBeUndefined();
   });
 });

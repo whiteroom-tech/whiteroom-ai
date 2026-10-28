@@ -25,13 +25,8 @@ import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 import { fmtLatency, SpendByModel } from './perf-utils';
 
-/** Hourly cost: the fleet's spend per working hour (engine performance_cost_forecast). */
-export interface WorkingHourRate {
-  usdPerHour: number;
-  lookbackHours: number | null;
-  /** Recent calls had no price on file: the rate is unknown, not $0. */
-  unpriced?: boolean;
-}
+import type { WorkingHourRate } from '@/lib/performance-overview';
+export type { WorkingHourRate };
 
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 export type FeedbackResult = 'done' | 'closed' | 'failed';
@@ -235,7 +230,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
       <section aria-labelledby="perf-cost">
         <SectionHeader id="perf-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={rangeLabel} />
-        {/* Hourly cost lives in Cost prediction, per agent (Rashad, Oct 27); the fleet figure is its folded note. */}
+        {/* Hourly cost is per agent, so it lives in Cost prediction; the fleet figure is that card's folded note. */}
         <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
           <StatCard
             variant="card"

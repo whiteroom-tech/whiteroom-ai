@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Button, SelectChip, Toast } from '@whiteroom/ui';
+import { Button, Hint, SelectChip, Toast } from '@whiteroom/ui';
 import { agentBudgetSet, agentBudgetsGet, governanceCreateRule, governanceList } from '@/lib/whiteroom/client';
 import type { AgentBudgetsResult, GovernanceRule } from '@/lib/whiteroom/types';
 import { capRuleFor, existingCap, MAX_AGENT_BUDGET_USD, parseBudget, refusalText } from '@/lib/agent-budgets';
@@ -22,7 +22,8 @@ import { fmtCost, fmtCount } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { usePoll } from '@/hooks/usePoll';
 import { Disclosure } from './primitives';
-import type { WorkingHourRate } from './IndexView';
+import { predictionNote, type WorkingHourRate } from '@/lib/performance-overview';
+import { HELP } from '@/lib/metric-definitions';
 
 /** What the card reads and writes. The dev preview passes its own, so a sample fleet is never written to. */
 export interface CostPredictionApi {
@@ -159,7 +160,7 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
             <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="wr-pred__form">
               <div className="wr-pred__agent">
                 <SelectChip label="Agent" value={agent} onChange={(v) => setPicked(v)} height={30} options={agents.map((a) => ({ value: a.agentId, label: a.agentId }))} />
-                <span className="wr-cap"><span className="wr-lbl" style={{ marginRight: 6 }}>Hourly cost</span><span style={{ color: 'var(--tx)' }}>{cost ?? 'No priced calls yet to estimate from.'}</span></span>
+                <span className="wr-cap"><span className="wr-lbl" style={{ marginRight: 6 }}>Hourly cost<Hint text={HELP.hourlySpend} size={12} /></span><span style={{ color: 'var(--tx)' }}>{cost ?? 'No priced calls yet to estimate from.'}</span></span>
               </div>
               <div className="wr-pred__fields">
                 <label className="wr-pred__field" htmlFor={usdId}>
@@ -204,8 +205,3 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
   );
 }
 
-/** The folded row's note: the whole fleet's hourly cost first, when known ("$0.36 an hour for all agents"), then the budgets note. */
-export function predictionNote(fleetHourly: WorkingHourRate | null | undefined, rest: string | undefined): string | undefined {
-  const hourly = fleetHourly && !fleetHourly.unpriced && fleetHourly.usdPerHour > 0 ? `${fmtCost(Math.round(fleetHourly.usdPerHour * 1_000_000))} an hour for all agents` : '';
-  return [hourly, rest].filter(Boolean).join(' · ') || undefined;
-}
