@@ -144,12 +144,15 @@ describe('fold-out rows', () => {
 
 describe('recommendations agent filter', () => {
   it('shows when the rows come from more than one agent, even if only one had traffic in the range', () => {
-    expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], ['a'], '')).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], ['a'], '', 5)).toBe(true);
   });
   it('hides with one agent everywhere; shows with traffic from several, unknown traffic, or a typed filter', () => {
-    expect(showRecAgentFilter([{ agentId: 'a' }], ['a'], '')).toBe(false);
-    expect(showRecAgentFilter([], ['a', 'b'], '')).toBe(true);
-    expect(showRecAgentFilter([], null, '')).toBe(true);
-    expect(showRecAgentFilter([{ agentId: 'a' }], ['a'], 'x')).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }], ['a'], '', 5)).toBe(false);
+    expect(showRecAgentFilter([], ['a', 'b'], '', 5)).toBe(true);
+    expect(showRecAgentFilter([], null, '', 5)).toBe(true);
+    expect(showRecAgentFilter([{ agentId: 'a' }], ['a'], 'x', 0)).toBe(true);
+  });
+  it('hides below 5 listed, whatever the agents: they all fit at a glance', () => {
+    expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], ['a', 'b'], '', 4)).toBe(false);
   });
 });
