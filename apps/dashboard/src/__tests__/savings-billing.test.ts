@@ -351,12 +351,15 @@ describe('reading an account\'s savings', () => {
     mocks.fleetOwners.mockResolvedValue(new Map([['f-own', 'u1'], ['f-linked', 'someone-else'], ['f-own2', 'u1']]));
   });
 
-  it('sums each UTC day across the fleets the account owns, and only those', async () => {
+  it('sums each UTC day across the fleets the account owns, and only those, cache savings included', async () => {
     mocks.auditSummary.mockImplementation(async (fleetId: string) => ({
       savingsByDay: [{ day: '2026-10-26', usdMicros: fleetId === 'f-own' ? 100_000 : 25_000, tokens: 0, unpricedTokens: 0 }],
+      // "Saved by WhiteRoom" is smaller context plus the caching WhiteRoom added, as Home and Performance show it.
+      cacheByDay: [{ day: '2026-10-26', usdMicros: 3_000, unpricedReadTokens: 0 }, { day: '2026-10-27', usdMicros: 7_000, unpricedReadTokens: 0 }],
     }));
     const byDay = await savingsByUtcDay('u1', '2026-10-26');
-    expect(byDay?.get('2026-10-26')).toBe(125_000);
+    expect(byDay?.get('2026-10-26')).toBe(131_000);
+    expect(byDay?.get('2026-10-27')).toBe(14_000);
     expect(mocks.auditSummary.mock.calls.map((c) => c[0]).sort()).toEqual(['f-own', 'f-own2']);
     expect(mocks.auditSummary).toHaveBeenCalledWith('f-own', new Date('2026-10-26T00:00:00Z'), 'tok-own', undefined, 'UTC');
   });
@@ -365,7 +368,7 @@ describe('reading an account\'s savings', () => {
   it('is null when an owned fleet has no token that can be read', async () => {
     mocks.query.mockResolvedValue({ rows: [...fleetRows, { table: 'user_fleets', fleetId: 'f-own3', plain: null, sealed: null }] });
     mocks.fleetOwners.mockResolvedValue(new Map([['f-own', 'u1'], ['f-linked', 'someone-else'], ['f-own2', 'u1'], ['f-own3', 'u1']]));
-    mocks.auditSummary.mockResolvedValue({ savingsByDay: [] });
+    mocks.auditSummary.mockResolvedValue({ savingsByDay: [], cacheByDay: [] });
     expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
     expect(mocks.auditSummary).not.toHaveBeenCalled();
   });
@@ -377,9 +380,12 @@ describe('reading an account\'s savings', () => {
   });
 
   it('is null when any fleet fails, or the engine cannot split savings by day', async () => {
-    mocks.auditSummary.mockResolvedValueOnce({ savingsByDay: [] }).mockRejectedValueOnce(new Error('engine down'));
+    mocks.auditSummary.mockResolvedValueOnce({ savingsByDay: [], cacheByDay: [] }).mockRejectedValueOnce(new Error('engine down'));
     expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
     mocks.auditSummary.mockResolvedValue({});
+    expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
+    // An engine without the cache split would leave part of each day unbilled.
+    mocks.auditSummary.mockResolvedValue({ savingsByDay: [] });
     expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
   });
 
@@ -389,6 +395,7 @@ describe('reading an account\'s savings', () => {
         { day: '2026-10-01', usdMicros: 1_005_000, tokens: 0, unpricedTokens: 0 },
         { day: '2026-10-02', usdMicros: 9_000, tokens: 0, unpricedTokens: 0 },
       ],
+      cacheByDay: [],
     });
     // 2 owned fleets: Oct 1 = 2.01 dollars (201 cents), Oct 2 = 18 000 micros (1 cent).
     expect(await monthToDateSavingsCents('u1', '2026-08-01', NOW)).toBe(202);
@@ -401,6 +408,7 @@ describe('reading an account\'s savings', () => {
         { day: '2026-10-10', usdMicros: 500_000, tokens: 0, unpricedTokens: 0 },
         { day: '2026-10-11', usdMicros: 100_000, tokens: 0, unpricedTokens: 0 },
       ],
+      cacheByDay: [],
     });
     // Free until mid-morning Oct 10: billing starts Oct 11.
     expect(await monthToDateSavingsCents('u1', firstBillableDay({ start_date: at('2026-10-01') }, '2026-10-10T09:00:00Z'), NOW)).toBe(20);

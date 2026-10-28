@@ -90,6 +90,8 @@ describe('Control', () => {
     expect(rulesCaughtText(0, 0)).toBe('rules caught nothing');
     expect(ruleModeCounts(RULES)).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
     expect(ruleModeCounts([...RULES, { ...RULES[0], id: 'gr_alert', mode: 'enforce', response: 'notify' }])).toBe('6 rules: 1 Enforce · 1 Alert only · 3 Watch · 1 Off');
+    // Not set up (nothing picked, or no agents): left out, as Controls counts.
+    expect(ruleModeCounts([...RULES, rule('gr_kw', 'keyword', 'watch', { keywords: [] }), { ...RULES[1], id: 'gr_none', appliesTo: [] }])).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
   });
   it('names the top rules by id, with each one’s value when a type has several, and a removed one plainly', () => {
     const acts = (blocked: number, wouldAct: number) => ({ blocked, wouldAct, paused: 0, stopped: 0, toldYou: 0 });

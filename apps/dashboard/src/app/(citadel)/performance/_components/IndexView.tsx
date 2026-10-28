@@ -38,7 +38,7 @@ const REC_PAGE_SIZE = 15;
 const REC_FILTER_DEBOUNCE_MS = 300;
 
 export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
-  workingHour = null, rules = null, byRuleId, usdByDay = null, showUnnamedNote = false, predictionApi }: {
+  workingHour = null, rules = null, byRuleId, usdByDay = null, cacheSaved = null, showUnnamedNote = false, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** The last 7 days by hour, for By day's input per day; null when it couldn't be read. */
   weekHourly?: FleetHourlyResult | null;
@@ -64,6 +64,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   byRuleId?: Record<string, RuleActionCounts>;
   /** Dollars saved per local day (engine savingsByDay), micros; null on older engines. */
   usdByDay?: Record<string, number> | null;
+  /** The range's caching WhiteRoom added, from the engine's per-day figures (what billing sums); null on older engines. */
+  cacheSaved?: { micros: number; unpricedReadTokens: number } | null;
   /** Spend's caption about calls from agents without a name (shown for a month after the change). */
   showUnnamedNote?: boolean;
   /** The dev preview's Cost prediction reads and writes. */
@@ -169,14 +171,17 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const cache = useMemo(() => cacheFigures(s.cache, displayHourly), [s.cache, displayHourly]);
   const savings = useMemo(() => {
     const govCostMicros = govSavings ? govSavings.costSaved * 1_000_000 : 0;
+    // The caching WhiteRoom added, day by day as billing adds it up; the range's own figure on older engines.
+    const cacheMicros = cacheSaved?.micros ?? cache.savedMicros;
+    const unpricedReads = cacheSaved?.unpricedReadTokens ?? cache.unpricedReadTokens;
     return {
-      totalMicros: cache.savedMicros + govCostMicros,
-      cacheMicros: cache.savedMicros,
+      totalMicros: cacheMicros + govCostMicros,
+      cacheMicros,
       govTokensSaved: govSavings?.tokensSaved ?? 0,
       // Some saved tokens or cache reads had no price: the dollars are a lower bound.
-      partial: !!govSavings?.partial || cache.unpricedReadTokens > 0,
+      partial: !!govSavings?.partial || unpricedReads > 0,
     };
-  }, [cache, govSavings]);
+  }, [cache, cacheSaved, govSavings]);
 
   const failedCalls = Math.round(s.errorRate * s.totalCalls);
   const ruleTally = { ...(govCounts ?? { wouldBlocks: 0 }), blocks: blocked };

@@ -8,7 +8,7 @@ import type { GovernanceCounts, GovernanceTally } from '@/lib/governance';
 import { RULE_LABELS } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
-import { alertOnly, ruleSentence } from '@/lib/controls-view';
+import { alertOnly, notSetUp, ruleSentence } from '@/lib/controls-view';
 import { fmtCost, fmtCount, fmtEnergy, fmtTokens, plural } from '@/lib/format';
 import { dayKey, formatDayKey } from '@/lib/zone-time';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
@@ -126,7 +126,9 @@ export function rulesCaughtText(total: number, blocked: number): string {
 // -- Control ------------------------------------------------------------------
 
 /** "8 rules: 1 Enforce · 7 Watch · 0 Off" (and "· 1 Alert only" when a rule only alerts: it never blocks). */
-export function ruleModeCounts(rules: GovernanceRule[]): string {
+export function ruleModeCounts(all: GovernanceRule[]): string {
+  // Only rules that are set up, as Controls counts them: one with nothing picked yet does nothing.
+  const rules = all.filter((r) => !notSetUp(r));
   const n = (m: GovernanceRule['mode']) => rules.filter((r) => r.mode === m).length;
   const alert = rules.filter(alertOnly).length;
   return `${fmtCount(rules.length)} ${plural(rules.length, 'rule')}: ${n('enforce') - alert} ${MODE_LABEL.enforce}${alert ? ` · ${alert} ${NOTIFY.tag}` : ''} · ${n('watch')} ${MODE_LABEL.watch} · ${n('off')} ${MODE_LABEL.off}`;

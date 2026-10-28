@@ -15,11 +15,13 @@ export interface OverviewExtras {
   byRuleId: Record<string, RuleActionCounts> | undefined;
   /** The last 7 days by hour (By day's input per day); null when it couldn't be read. */
   weekHourly: FleetHourlyResult | null;
-  /** Dollars saved per local day, micros (engine savingsByDay). */
+  /** Dollars saved per local day, micros (engine savingsByDay plus cacheByDay). */
   usdByDay: Record<string, number> | null;
+  /** The range's caching WhiteRoom added, summed from the engine's cacheByDay as billing sums it; null on older engines. */
+  cacheSaved?: { micros: number; unpricedReadTokens: number } | null;
 }
 
-export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null };
+export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null, cacheSaved: null };
 
 export interface PerformanceSnapshot {
   indexData: PerformanceIndexResult;
