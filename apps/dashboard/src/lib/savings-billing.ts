@@ -57,15 +57,17 @@ export function firstWholeDay(seconds: number): string {
  * The completed days still to report, oldest first: from the day after the
  * last one reported (or the first billable day), back at most CATCH_UP_DAYS
  * before yesterday, through yesterday. Today isn't over, so it waits.
+ * `dropped` is the range owed but older than that window (null when none):
+ * it is not reported, and is logged for a person to bill.
  */
-export function daysToReport({ now, reportedThrough, firstDay }: { now: number; reportedThrough: string | null; firstDay: string }): string[] {
+export function daysToReport({ now, reportedThrough, firstDay }: { now: number; reportedThrough: string | null; firstDay: string }): { days: string[]; dropped: { from: string; to: string } | null } {
   const yesterday = addUtcDays(utcDay(now), -1);
-  let from = addUtcDays(yesterday, -CATCH_UP_DAYS);
-  if (firstDay > from) from = firstDay;
-  if (reportedThrough && addUtcDays(reportedThrough, 1) > from) from = addUtcDays(reportedThrough, 1);
+  const windowStart = addUtcDays(yesterday, -CATCH_UP_DAYS);
+  const owedFrom = reportedThrough && addUtcDays(reportedThrough, 1) > firstDay ? addUtcDays(reportedThrough, 1) : firstDay;
+  const from = owedFrom > windowStart ? owedFrom : windowStart;
   const days: string[] = [];
   for (let d = from; d <= yesterday; d = addUtcDays(d, 1)) days.push(d);
-  return days;
+  return { days, dropped: owedFrom < windowStart ? { from: owedFrom, to: addUtcDays(windowStart, -1) } : null };
 }
 
 /** The meter event's identifier for one account-day: the same on every resend. */
@@ -204,13 +206,18 @@ export async function reportSavings(
 
   const customer = await s.customers.retrieve(account.customerId);
   if (customer.deleted) return { events: 0, savingsUnavailable: false };
-  const days = daysToReport({
+  const { days, dropped } = daysToReport({
     now,
     reportedThrough: customer.metadata?.[REPORTED_THROUGH_KEY] ?? null,
     // Never before the account's own free period ends, even when Stripe
     // couldn't carry its last hours over as a trial.
     firstDay: firstWholeDay(Math.max(sub.trial_end ?? 0, sub.start_date, Math.ceil(trialEndMs(account.trialEndsAt) / 1000))),
   });
+  if (dropped) {
+    console.error(
+      `[billing-sync] savings for user ${account.userId} (customer ${account.customerId}) from ${dropped.from} to ${dropped.to} are older than the catch-up window and were not reported to Stripe; bill them by hand`,
+    );
+  }
   if (days.length === 0) return { events: 0, savingsUnavailable: false };
 
   const byDay = await deps.savingsByUtcDay(account.userId, days[0]);

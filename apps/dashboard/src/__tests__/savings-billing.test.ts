@@ -65,19 +65,26 @@ afterEach(() => {
 
 describe('which days to report', () => {
   it('reports yesterday, and catches up at most 3 missed days before it', () => {
-    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-25', firstDay: '2026-01-01' })).toEqual(['2026-10-26']);
-    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-01', firstDay: '2026-01-01' }))
+    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-25', firstDay: '2026-01-01' }).days).toEqual(['2026-10-26']);
+    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-01', firstDay: '2026-01-01' }).days)
       .toEqual(['2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26']);
-    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-01-01' })).toHaveLength(4);
+    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-01-01' }).days).toHaveLength(4);
+  });
+
+  it('names the owed days older than the window, and only those', () => {
+    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-18', firstDay: '2026-01-01' }).dropped).toEqual({ from: '2026-10-19', to: '2026-10-22' });
+    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-10-20' }).dropped).toEqual({ from: '2026-10-20', to: '2026-10-22' });
+    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-22', firstDay: '2026-01-01' }).dropped).toBeNull();
+    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-10-23' }).dropped).toBeNull();
   });
 
   it('never resends a day already reported, nor reports today', () => {
-    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-26', firstDay: '2026-01-01' })).toEqual([]);
+    expect(daysToReport({ now: NOW, reportedThrough: '2026-10-26', firstDay: '2026-01-01' }).days).toEqual([]);
   });
 
   it('starts no earlier than the first whole billable day', () => {
-    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-10-26' })).toEqual(['2026-10-26']);
-    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-10-27' })).toEqual([]);
+    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-10-26' }).days).toEqual(['2026-10-26']);
+    expect(daysToReport({ now: NOW, reportedThrough: null, firstDay: '2026-10-27' }).days).toEqual([]);
   });
 
   it('counts a part-day as not billable', () => {
@@ -135,6 +142,14 @@ describe('reporting savings to the meter', () => {
     expect(await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({ '2026-10-26': 30_000 }), NOW)).toEqual({ events: 1, savingsUnavailable: false });
     const ids = s.billing.meterEvents.create.mock.calls.map((c) => c[0].identifier);
     expect(ids).toEqual(['wr:u1:2026-10-26', 'wr:u1:2026-10-26']);
+  });
+
+  it('logs owed days older than the catch-up window for a person to bill', async () => {
+    const s = fakeStripe({}, { [REPORTED_THROUGH_KEY]: '2026-10-18' });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await reportSavings(s, ACCOUNT, await s.subscriptions.retrieve(), savings({}), NOW);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('from 2026-10-19 to 2026-10-22 are older than the catch-up window'));
+    error.mockRestore();
   });
 
   it('is idempotent: a second run the same night sends nothing', async () => {

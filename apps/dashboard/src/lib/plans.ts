@@ -233,15 +233,7 @@ export function limitsFor(plan: PlanId): PlanLimits {
   return PLANS[plan].limits;
 }
 
-/**
- * Stripe price IDs for a paid plan. `share` is the metered savings-share
- * price (tied to the STRIPE_SAVINGS_METER_EVENT meter), `fee` the licensed
- * monthly platform fee, `legacy` the retired flat/per-agent price, kept only
- * so a subscription still on it maps to its plan.
- *
- * Read at call time rather than module load so `next build`'s page-data pass
- * doesn't need them, the same reason lib/db.ts builds its pool lazily.
- */
+/** The three Stripe prices a paid plan can have. */
 export type PriceKind = 'share' | 'fee' | 'legacy';
 
 const PRICE_ENV: Record<PaidPlanId, Record<PriceKind, string>> = {
@@ -249,6 +241,16 @@ const PRICE_ENV: Record<PaidPlanId, Record<PriceKind, string>> = {
   pro: { share: 'STRIPE_PRICE_PRO_SHARE', fee: 'STRIPE_PRICE_PRO_FEE', legacy: 'STRIPE_PRICE_PRO' },
 };
 
+/**
+ * A paid plan's Stripe price ID of one kind, or null when unset. `share` is
+ * the metered savings-share price (tied to the STRIPE_SAVINGS_METER_EVENT
+ * meter), `fee` the licensed monthly platform fee, `legacy` the retired
+ * flat/per-agent price, kept only so a subscription still on it maps to its
+ * plan.
+ *
+ * Read at call time rather than module load so `next build`'s page-data pass
+ * doesn't need them, the same reason lib/db.ts builds its pool lazily.
+ */
 export function stripePriceId(plan: PlanId, kind: PriceKind = 'share'): string | null {
   if (!isPaidPlanId(plan)) return null;
   return process.env[PRICE_ENV[plan][kind]] || null;
