@@ -14,7 +14,7 @@ import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
 import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
-import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, tokenTotals, trendText } from '@/lib/performance-overview';
+import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rangeContextCard, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import type { WorkingHourRate } from '@/lib/performance-overview';
@@ -189,9 +189,10 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
   const openRecs = recStatus === 'open' && !recError ? recTotal : null;
   const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
   const rangeName = rangeLabel.charAt(0).toUpperCase() + rangeLabel.slice(1);
-  // Smaller context follows the range, from the same tokens as the with-vs-without chart below it.
-  const rangeTokens = savingsDays ? tokenTotals(savingsDays) : null;
-  const context = rangeContextCard(rangeTokens ? rangeTokens.saved : savings.govTokensSaved, rangeTokens ? rangeTokens.used : rangeUsedTokens ?? null);
+  // Smaller context and the with-vs-without totals follow the range (the range's audit read);
+  // only the chart's By day stays the last 7 calendar days.
+  const context = rangeContextCard(savings.govTokensSaved, rangeUsedTokens ?? null);
+  const rangeTokens = rangeUsedTokens != null ? { used: rangeUsedTokens, saved: savings.govTokensSaved, label: rangeLabel } : null;
   const toPerformance = () => {
     document.getElementById('perf-performance')?.scrollIntoView({ block: 'start' });
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
@@ -239,7 +240,7 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
           />
         </div>
         {/* Tokens with vs without, then Cost prediction (folded), then Spend by model (folded). */}
-        {savingsDays && <TokensCompare days={savingsDays} usdByDay={usdByDay} />}
+        {savingsDays && <TokensCompare days={savingsDays} usdByDay={usdByDay} range={rangeTokens} />}
         <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} fleetHourly={workingHour} {...(predictionApi && { api: predictionApi })} />
         {s.models.length > 0 && (
           <SpendByModel

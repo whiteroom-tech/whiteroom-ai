@@ -96,9 +96,26 @@ describe('Performance overview, what it leaves out', () => {
 
 describe('Smaller context card', () => {
   const text = (p: Record<string, unknown>) => renderToStaticMarkup(h(IndexView, { ...props(), ...p } as never)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  it('takes the range from the with-vs-without days when there are any', () => {
-    const t = text({ savingsDays: [{ day: '2026-10-26', used: 1_000_000, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }], rangeUsedTokens: 999 });
+  it('follows the picked range, not the 7-day chart, and so do the with-vs-without totals', () => {
+    // The 7 calendar days hold more than the picked range: the card and the totals show the range.
+    const t = text({
+      savingsDays: [{ day: '2026-10-26', used: 1_000_000, saved: 9_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }],
+      rangeUsedTokens: 1_000_000, govSavings: { tokensSaved: 3_000_000, costSaved: 1, partial: false },
+    });
     expect(t).toMatch(/Smaller context 75% less sent to models · 3M fewer tokens/);
+    expect(t).toMatch(/Tokens: with WhiteRoom vs without .* last 24 h/);
+    expect(t).toMatch(/3M fewer tokens · about 75% less/);
+    expect(t).toMatch(/By day last 7 days, tokens with and without WhiteRoom each day/);
+  });
+  it('keeps the 7-day By day when the picked range has no calls, and falls back to the 7 days without a range read', () => {
+    const week = [{ day: '2026-10-26', used: 1_000_000, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }];
+    const quiet = text({ savingsDays: week, rangeUsedTokens: 0, govSavings: { tokensSaved: 0, costSaved: 0, partial: false } });
+    expect(quiet).toMatch(/No model calls in the last 24 h/);
+    expect(quiet).toMatch(/By day last 7 days/);
+    // No range read (older engine or a failed read): the totals are the 7 days', labelled so.
+    const fallback = text({ savingsDays: week, rangeUsedTokens: null });
+    expect(fallback).toMatch(/Tokens: with WhiteRoom vs without .* last 7 days/);
+    expect(fallback).toMatch(/3M fewer tokens · about 75% less/);
   });
   it('says it is unknown, never 0, when the tokens used are unknown, and why when the savings failed to load', () => {
     expect(text({ savingsDays: null, rangeUsedTokens: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
