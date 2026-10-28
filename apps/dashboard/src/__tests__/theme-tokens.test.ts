@@ -111,7 +111,7 @@ describe('globals.css', () => {
   // Base rules for components must be top-level; a breakpoint may only
   // adjust them. A dropped brace still parses, it just nests what follows.
   it('declares each component base rule at the top level', () => {
-    const base = ['.wr-key-field', '.wr-key-list', '.wr-input', '.wr-copy-chip', '.wr-steps', '.wr-perf-strip', '.wr-perf-row', '.wr-panel', '.wr-btn'];
+    const base = ['.wr-key-field', '.wr-key-list', '.wr-input', '.wr-copy-chip', '.wr-steps', '.wr-perf-strip', '.wr-panel', '.wr-btn'];
     const topLevel = new Set<string>();
     postcss.parse(css).walkRules((r) => { if (r.parent?.type === 'root') r.selectors.forEach((sel) => topLevel.add(sel)); });
     expect(base.filter((sel) => !topLevel.has(sel))).toEqual([]);

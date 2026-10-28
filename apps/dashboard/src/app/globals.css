@@ -530,8 +530,6 @@ a.wr-btn { text-decoration: none; }
 
 /* Performance (README › Performance) */
 .wr-perf-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.wr-perf-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; margin-bottom: 24px; }
-.wr-perf-row > * { margin-bottom: 0 !important; min-width: 0; }
 /* Performance › Agent health: verdict + one folded row per source. */
 .wr-health { margin-bottom: 24px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
 .wr-health--warn { border-color: var(--warn-line); }
@@ -554,7 +552,6 @@ a.wr-btn { text-decoration: none; }
 @media (max-width: 720px) { .wr-health__label { flex-basis: auto; } .wr-health__status { margin-left: 0; } }
 @media (max-width: 1100px) {
   .wr-perf-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .wr-perf-row { grid-template-columns: minmax(0, 1fr); }
 }
 /* Control's one card and Performance's two fill their row at every width, so no section leaves a gap. */
 .wr-perf-strip.wr-perf-strip--1 { grid-template-columns: minmax(0, 1fr); }
@@ -609,8 +606,7 @@ a.wr-btn { text-decoration: none; }
 .wr-perf-lead .wr-btn { vertical-align: middle; }
 .wr-perf-rule { border: 0; border-top: 1px solid var(--line); margin: 48px 0 32px; }
 .wr-perf-strip, .wr-perf-strip.wr-perf-strip--3 { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; }
-.wr-perf-row { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); align-items: stretch; margin-bottom: 0; }
-@media (max-width: 1100px) { .wr-perf-strip { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); } .wr-perf-row { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); } }
+@media (max-width: 1100px) { .wr-perf-strip { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); } }
 .wr-pcard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
 .wr-pcard--pad { padding: 20px; }
 .wr-pcard__head { padding: 16px 20px; }
