@@ -34,7 +34,8 @@ import { getMonthSavings } from '@/lib/plan-savings';
 import { CLOSE_WINDOW_DAYS, isClosingOpen, SUPPORT_EMAIL, type ClosingState } from '@/lib/closing-shared';
 import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
 import { fmtTime, plural } from '@/lib/format';
-import { browserZone as readBrowserZone, dayKey, daysBetween, savedViewerZone, setViewerZone, viewerZone } from '@/lib/zone-time';
+import { browserZone as readBrowserZone, dayKey, daysBetween, setViewerZone } from '@/lib/zone-time';
+import { useSavedViewerZone, useViewerZone } from '@/hooks/useViewerZone';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -174,10 +175,9 @@ function ProfileSection({
   const [timezone, setTimezone] = useState(account.timezone ?? '');
   const [browserZone, setBrowserZone] = useState('your local zone');
   // The zone dates use now: the saved one (when this browser knows it), else null for the browser's.
-  const [inUse, setInUse] = useState<string | null>(null);
+  const inUse = useSavedViewerZone();
   // After mount: the server's zone isn't the viewer's, and rendering it would mismatch hydration.
   useEffect(() => { setBrowserZone(readBrowserZone() || 'your local zone'); }, []);
-  useEffect(() => { setInUse(savedViewerZone()); }, [account.timezone]);
 
   // Populated after mount, never during render.
   //
@@ -233,17 +233,25 @@ function ProfileSection({
       <div style={{ marginBottom: 18 }}><TextSizeControl /></div>
       <Button
         disabled={pending || !dirty}
-        onClick={() => run(async () => {
-          const res = await updateProfile({ name, timezone: timezone || null });
-          // Every date on the dashboard moves to the new zone at once, not on the next load.
-          if (res.ok) { setViewerZone(timezone || null); setInUse(savedViewerZone()); }
-          return res;
-        }, 'Profile saved.')}
+        onClick={() => run(() => saveProfile({ name, timezone: timezone || null }), 'Profile saved.')}
       >
         Save profile
       </Button>
     </Section>
   );
+}
+
+/**
+ * Save the profile and, once saved, switch every date on the dashboard to the
+ * new zone at once rather than on the next load. `update` is the server action.
+ */
+export async function saveProfile(
+  input: { name: string; timezone: string | null },
+  update: typeof updateProfile = updateProfile,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await update(input);
+  if (res.ok) setViewerZone(input.timezone);
+  return res;
 }
 
 /** "Dec 26", or "Jan 4, 2027" outside the current year, for a plan date (stored at UTC midnight, so read in UTC). */
@@ -433,10 +441,9 @@ function EmailSection({
   run: (a: () => Promise<{ ok: boolean; error?: string }>, s: string) => void;
 }) {
   const [newEmail, setNewEmail] = useState('');
-  // In the viewer's zone, so after mount: the server would write its own.
+  // In the viewer's zone, so only once hydrated (the server would write its own).
   const expiresIso = account.pendingEmailChange?.expiresAt;
-  const [expiresAt, setExpiresAt] = useState('');
-  useEffect(() => { setExpiresAt(expiresIso ? fmtTime(expiresIso) : ''); }, [expiresIso]);
+  const expiresAt = useViewerZone() !== null && expiresIso ? fmtTime(expiresIso) : '';
 
   return (
     <Section
@@ -597,8 +604,8 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
   const [busy, setBusy] = useState(false);
   // The viewer's zone, read after mount so server and browser render alike;
   // the banner counts in the same one.
-  const [timeZone, setTimeZone] = useState<string | undefined>('UTC');
-  useEffect(() => { setTimeZone(viewerZone()); }, []);
+  // UTC while hydrating (or when the browser names no zone); then the viewer's, following a new saved zone at once.
+  const timeZone = useViewerZone() || 'UTC';
   // A change from here or from the banner (cancel, keep): read the page's state again.
   useEffect(() => {
     const changed = () => router.refresh();

@@ -7,11 +7,16 @@
 // sends the engine) is in that one zone. With nothing saved it's the
 // browser's zone, as before.
 //
+// It's a module value rather than React context because plain helpers (the
+// engine client, exports, lib/runs) read it outside any component. Components
+// that stay mounted across a change subscribe with useViewerZone().
+//
 // Days are "YYYY-MM-DD" keys in that zone. Everything goes through Intl with
 // an explicit timeZone, never Date's local getters, so the browser's (or a
 // test runner's) own zone never leaks in.
 
 let saved: string | null = null;
+const listeners = new Set<() => void>();
 
 /** True when this runtime's Intl knows `tz` (Node and browsers ship different zone databases). */
 export function isKnownZone(tz: string): boolean {
@@ -32,9 +37,28 @@ export function browserZone(): string {
   }
 }
 
-/** Use `tz` for every date from now on; null (or a zone this browser doesn't know) means the browser's zone. */
-export function setViewerZone(tz: string | null | undefined): void {
-  saved = tz && isKnownZone(tz) ? tz : null;
+/**
+ * Use `tz` for every date from now on; null (or a zone this browser doesn't
+ * know) means the browser's zone. Subscribers hear of a change unless `quiet`
+ * (Providers sets it while rendering, where telling other components would be
+ * an update during render; it tells them after commit instead).
+ */
+export function setViewerZone(tz: string | null | undefined, opts: { quiet?: boolean } = {}): void {
+  const next = tz && isKnownZone(tz) ? tz : null;
+  if (next === saved) return;
+  saved = next;
+  if (!opts.quiet) notifyViewerZone();
+}
+
+/** Tell subscribers the zone may have changed. */
+export function notifyViewerZone(): void {
+  for (const l of [...listeners]) l();
+}
+
+/** Hear of zone changes; returns the unsubscribe. */
+export function subscribeViewerZone(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
 
 /** The zone saved on the account, or null when dates follow the browser. */
