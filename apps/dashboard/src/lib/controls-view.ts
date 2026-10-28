@@ -140,6 +140,8 @@ export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0,
 export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string | null {
   if (rule.ruleType === 'keyword') return keywordTotal(rule.params as KeywordParams) ? null : 'a keyword';
   if (rule.ruleType === 'tool_list') return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
+  // The engine skips an allowlist with no models (it would refuse every call), so it does nothing yet.
+  if (rule.ruleType === 'model_allowlist') return (rule.params as ModelAllowlistParams).allowedModels.length ? null : 'a model';
   return null;
 }
 

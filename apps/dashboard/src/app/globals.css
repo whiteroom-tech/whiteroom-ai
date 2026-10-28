@@ -121,6 +121,9 @@
 
 /* Page content: at most 1480px wide, centred, on every page body. */
 .wr-page-body > * { width: 100%; max-width: 1480px; margin-inline: auto; box-sizing: border-box; }
+/* A page body laid out as a grid (Runs, a run) scrolls: its rows keep their content's height. Without this
+   the scroll box squeezes cards that clip their overflow (.wr-panel) to fit, and their rows can't be reached. */
+.wr-page-body { grid-auto-rows: max-content; }
 .wr-shell ::placeholder { color: var(--tx3); opacity: 1; }
 .wr-stat-card { box-shadow: var(--card-shadow, none); }
 
@@ -1068,14 +1071,14 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
 .wr-agent-actions__error { position: absolute; top: calc(100% + 4px); right: 0; z-index: 19; display: flex; align-items: flex-start; gap: 8px; width: 240px; padding: 8px 10px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-size: var(--fs-sm); text-align: left; }
 .wr-agent-actions__dismiss { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-left: auto; border: 0; border-radius: 4px; background: none; color: inherit; cursor: pointer; }
 .wr-agent-actions__dismiss:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
-.wr-home-tablebox { overflow-x: auto; }
-/* Wide enough for the whole table: no scroll box, so a row's ⋯ menu is never clipped. */
+.wr-home-tablebox { overflow-x: auto; position: relative; } /* relative: its screen-reader-only labels are clipped by the box, not stretching the page */
+/* Wide enough for the whole table (about 1110px with the score and ⋯ columns): no scroll box, so a row’s ⋯ menu is never clipped. */
 .wr-home-section { container-type: inline-size; }
-@container (min-width: 900px) { .wr-home-tablebox { overflow: visible; } }
+@container (min-width: 1160px) { .wr-home-tablebox { overflow: visible; } }
 /* Narrower, the table scrolls: the last rows' menus open upward, inside the box. */
 .wr-home-table tbody tr:nth-last-child(-n+2):not(:nth-child(-n+2)) :is(.wr-agent-actions__menu, .wr-agent-actions__error) { top: auto; bottom: calc(100% + 4px); }
 /* With one or two rows there's no room above either: the scrolling box keeps room below for a menu or a note. */
-@container (max-width: 899px) { .wr-home-tablebox:has(tbody > tr:last-child:nth-child(-n+2)) { padding-bottom: 132px; } }
+@container (max-width: 1159px) { .wr-home-tablebox:has(tbody > tr:last-child:nth-child(-n+2)) { padding-bottom: 132px; } }
 .wr-home-table { width: 100%; min-width: 880px; border-collapse: collapse; font-size: var(--fs-md); }
 .wr-home-table th { padding: 10px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
 .wr-home-table td { padding: 16px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }

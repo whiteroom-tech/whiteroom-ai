@@ -77,6 +77,14 @@ describe('the agent filter and groups', () => {
     expect(leadCounts([all, lead, other, tools])).toEqual({ total: 3, enforce: 1, alert: 0, watch: 1, off: 1 });
   });
 
+  it('files an allowlist with no models under not set up: the engine skips it', () => {
+    const empty = rule({ ruleType: 'model_allowlist', mode: 'watch', params: { allowedModels: [] } });
+    const set = rule({ ruleType: 'model_allowlist', mode: 'watch', params: { allowedModels: ['m'] } });
+    expect(ruleGroups([empty, set]).unset).toEqual([empty]);
+    expect(rowCount(empty, { onlyOfItsType: false }).text).toBe('Does nothing until you add a model');
+    expect(leadCounts([empty, set]).total).toBe(1);
+  });
+
   it('counts a rule that only alerts apart from Block: it never stops a call', () => {
     const alerts = rule({ mode: 'enforce', response: 'notify' });
     const blocks = rule({ mode: 'enforce', response: 'block' });
