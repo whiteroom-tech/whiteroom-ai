@@ -67,6 +67,11 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
             {fewer ? <strong style={{ color: 'var(--ok)' }}>{fewer}</strong> : <strong>Nothing saved yet</strong>}
             <span className="wr-cap"> · estimated</span>
           </p>
+        </>
+      )}
+      {/* By day is the 7 days: it shows whenever they have calls, even when the picked range has none. */}
+      {max > 0 && (
+        <>
           <Disclosure label="By day" note={week.saved > 0 ? 'last 7 days, tokens with and without WhiteRoom each day' : undefined} open={byDay} onToggle={() => setByDay((v) => !v)} controls={byDayId}>
           <div className="wr-tokens__byday">
           <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>

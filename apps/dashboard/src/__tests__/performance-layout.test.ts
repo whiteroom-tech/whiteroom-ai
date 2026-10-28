@@ -107,6 +107,16 @@ describe('Smaller context card', () => {
     expect(t).toMatch(/3M fewer tokens · about 75% less/);
     expect(t).toMatch(/By day last 7 days, tokens with and without WhiteRoom each day/);
   });
+  it('keeps the 7-day By day when the picked range has no calls, and falls back to the 7 days without a range read', () => {
+    const week = [{ day: '2026-10-26', used: 1_000_000, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }];
+    const quiet = text({ savingsDays: week, rangeUsedTokens: 0, govSavings: { tokensSaved: 0, costSaved: 0, partial: false } });
+    expect(quiet).toMatch(/No model calls in the last 24 h/);
+    expect(quiet).toMatch(/By day last 7 days/);
+    // No range read (older engine or a failed read): the totals are the 7 days', labelled so.
+    const fallback = text({ savingsDays: week, rangeUsedTokens: null });
+    expect(fallback).toMatch(/Tokens: with WhiteRoom vs without .* last 7 days/);
+    expect(fallback).toMatch(/3M fewer tokens · about 75% less/);
+  });
   it('says it is unknown, never 0, when the tokens used are unknown, and why when the savings failed to load', () => {
     expect(text({ savingsDays: null, rangeUsedTokens: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
     expect(text({ auditFailed: true })).toMatch(/Smaller context — couldn’t load, retrying on the next refresh/);
