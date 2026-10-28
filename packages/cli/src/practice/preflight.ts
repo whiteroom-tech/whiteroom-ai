@@ -159,7 +159,7 @@ export function hiddenPrompt(question: string, stdin: Terminal = process.stdin):
   stdin.setEncoding("utf8");
   stdin.resume();
   return new Promise((resolvePrompt, reject) => {
-    let s = "";
+    let raw = "";
     const done = () => {
       stdin.off("data", onData);
       stdin.setRawMode(false);
@@ -167,13 +167,19 @@ export function hiddenPrompt(question: string, stdin: Terminal = process.stdin):
       stderr.write("\n");
     };
     const onData = (chunk: string) => {
-      // A terminal with bracketed paste wraps a paste in ESC[200~ … ESC[201~.
-      for (const ch of chunk.replace(/\x1b\[20[01]~/g, "")) {
-        if (ch === "\r" || ch === "\n") return done(), resolvePrompt(s.trim());
-        if (ch === "\u0003") return done(), reject(new Interrupted());
+      raw += chunk;
+      const end = raw.search(/[\r\n\u0003]/);
+      if (end < 0) return;
+      if (raw[end] === "\u0003") return done(), reject(new Interrupted());
+      // A terminal with bracketed paste wraps a paste in ESC[200~ … ESC[201~, and a
+      // marker can arrive split across chunks, so it's removed from the whole line.
+      let s = "";
+      for (const ch of raw.slice(0, end).replace(/\x1b\[20[01]~/g, "")) {
         if (ch === "\u007f" || ch === "\b") s = s.slice(0, -1);
         else if (ch >= " ") s += ch;
       }
+      done();
+      resolvePrompt(s.trim());
     };
     stdin.on("data", onData);
   });
