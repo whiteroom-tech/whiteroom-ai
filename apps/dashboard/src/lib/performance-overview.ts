@@ -90,7 +90,7 @@ export function rangeContextCard(saved: number, used: number | null): { value: s
   if (!(saved > 0)) return { value: '—', sub: 'nothing saved in this range' };
   const pct = Math.round((saved / (used + saved)) * 100);
   const energy = fmtEnergy(saved);
-  return { value: `${pct}%`, sub: `less sent to models · ${fmtTokens(saved)} fewer tokens${energy ? ` · ${energy} saved` : ''}` };
+  return { value: `${pct}%`, sub: `less input sent to models · ${fmtTokens(saved)} fewer input tokens${energy ? ` · ${energy} saved` : ''}` };
 }
 
 /** Totals over the chart's days: tokens with WhiteRoom and the estimate without it. */
@@ -280,4 +280,48 @@ export function predictionNote(fleetHourly: WorkingHourRate | null | undefined, 
     hourly = `${fmtCost(Math.round(fleetHourly.usdPerHour * 1_000_000))} an hour while agents work${since ? `, ${since}` : ''}`;
   }
   return [hourly, rest].filter(Boolean).join(' · ') || undefined;
+}
+
+/**
+ * Input tokens a model call's hour carried: plain input plus cached input read and written.
+ * What WhiteRoom makes smaller is the input (the context), so savings compare with this, not
+ * with input and output together.
+ */
+export function inputTokensOf(p: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }): number {
+  return (p.inputTokens || 0) + (p.cacheReadTokens || 0) + (p.cacheWriteTokens || 0);
+}
+
+/** Input tokens per local day ("2026-10-27"), from hourly rows. */
+export function inputByLocalDay(points: Array<{ hour: string; inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const p of points) {
+    const t = Date.parse(p.hour);
+    if (Number.isNaN(t)) continue;
+    const day = new Date(t).toLocaleDateString('en-CA');
+    out.set(day, (out.get(day) ?? 0) + inputTokensOf(p));
+  }
+  return out;
+}
+
+/**
+ * Hours read for By day's input per day: the 7 calendar days start at local midnight 6 days
+ * ago (under 168 hours back), and a day more covers a DST shift with room to spare.
+ */
+export const WEEK_HOURS = 192;
+/** How long By day's own read is reused: it changes by the day, not by the 30-second refresh. */
+export const WEEK_READ_TTL_MS = 10 * 60_000;
+
+/**
+ * By day's hourly rows: the range's own read when it already holds the 7 days (it ends now
+ * and starts at or before the first of them), else the separate week read; null when the
+ * read used failed or came back with an error.
+ */
+export function weekHourlyFrom<T extends { error?: string }>(rangeHoldsWeek: boolean, rangeRead: T | null, weekRead: T | null | undefined): T | null {
+  const read = rangeHoldsWeek ? rangeRead : weekRead;
+  return read && !read.error ? read : null;
+}
+
+/** Whether a range (instants; `to` null = now) holds the 7 calendar days starting at `weekStart`. */
+export function rangeHoldsWeek(w: { from: Date; to: Date | null }, weekStart: Date): boolean {
+  return w.to === null && w.from.getTime() <= weekStart.getTime();
 }

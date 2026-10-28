@@ -13,6 +13,7 @@ import { NO_EXTRAS, readSnapshot, saveSnapshot, updateSnapshot, type OverviewExt
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import type { PerformanceIndexResult, PerformanceEvidenceResult, FleetHourlyResult } from '@/lib/whiteroom/types';
+import { rangeHoldsWeek, WEEK_HOURS, WEEK_READ_TTL_MS, weekHourlyFrom } from '@/lib/performance-overview';
 import { countsFromRuleActions, governanceFromSummary, type GovernanceCounts } from '@/lib/governance';
 import { Banner } from '@whiteroom/ui';
 import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
@@ -106,6 +107,8 @@ export function PerformancePage({ retentionDays }: {
   // is still the newest request for that key, so rapid Today→7 days→30 days clicks (or
   // switching agents mid-flight) can't render a stale response.
   const indexReq = useRef(0);
+  // By day's week of hourly rows, kept a few minutes per fleet (WEEK_READ_TTL_MS).
+  const weekRead = useRef<{ fleetId: string; at: number; data: FleetHourlyResult } | null>(null);
   const evidenceReq = useRef(0);
 
   const fetchIndex = useCallback(async () => {
@@ -124,7 +127,12 @@ export function PerformancePage({ retentionDays }: {
       // Totals the engine computes over the whole stored audit trail (Phase 1
       // spec H1): the range for savings and rule counts, and 7 calendar days
       // for the chart.
-      const [idx, hourly, audit, week, forecast, rules] = await Promise.all([
+      // By day needs the week's input by hour: the range's read when it holds the 7 days, else
+      // its own read, reused for a few minutes (it changes by the day, not each refresh).
+      const holdsWeek = rangeHoldsWeek(w, weekStart);
+      const cachedWeek = weekRead.current?.fleetId === fleetId && Date.now() - weekRead.current.at < WEEK_READ_TTL_MS ? weekRead.current.data : null;
+      const weekHourlyRead = holdsWeek || cachedWeek ? null : performanceFleetHourly(fleetId, WEEK_HOURS, authKey).catch(() => null);
+      const [idx, hourly, audit, week, forecast, rules, weekHourlyOwn] = await Promise.all([
         // An engine older than explicit windows refuses 30 days with its own reason.
         performanceIndex(fleetId, undefined, authKey, w).catch((e: unknown) => { if (windowUnsupported({ error: e }, w.to)) return null; throw e; }),
         performanceFleetHourly(fleetId, legacyHoursBack(w), authKey, w),
@@ -134,8 +142,10 @@ export function PerformancePage({ retentionDays }: {
         performanceCostForecast(fleetId, undefined, authKey).catch(() => null),
         // Control: the rules, for their modes and names.
         governanceList(fleetId, authKey).then((r) => r.rules ?? null, () => null),
+        weekHourlyRead,
       ]);
       if (stale()) return;
+      if (weekHourlyRead && weekHourlyOwn && !weekHourlyOwn.error) weekRead.current = { fleetId, at: Date.now(), data: weekHourlyOwn };
       // 30 days or Custom on an engine that can't read them: off, with a note, and back to 7 days.
       if (!idx || windowUnsupported(idx, w.to)) {
         setWindowsOff(true);
@@ -154,7 +164,7 @@ export function PerformancePage({ retentionDays }: {
           ? { usdPerHour: forecast.burnRateUsdPerHour, lookbackHours: forecast.burnLookbackHours ?? null, unpriced: !!forecast.costUnavailable } : null,
         rules,
         byRuleId: undefined,
-        rangeUsedTokens: audit?.savingsBuckets ? audit.savingsBuckets.reduce((n, b) => n + b.used, 0) : null,
+        weekHourly: weekHourlyFrom(holdsWeek, hourlyShown, weekHourlyRead ? weekHourlyOwn : cachedWeek),
         usdByDay: week?.savingsByDay ? Object.fromEntries(week.savingsByDay.map((d) => [d.day, d.usdMicros])) : null,
       };
       const snapshot = {
@@ -338,7 +348,7 @@ export function PerformancePage({ retentionDays }: {
         {loading && !indexData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
         {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
-          workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} rangeUsedTokens={extra.rangeUsedTokens} usdByDay={extra.usdByDay}
+          workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay}
           showUnnamedNote={Date.now() < UNNAMED_CALLS_NOTE_UNTIL}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}

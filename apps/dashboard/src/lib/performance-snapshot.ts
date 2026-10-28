@@ -13,13 +13,13 @@ export interface OverviewExtras {
   rules: GovernanceRule[] | null;
   /** Rule activity per rule id (engine rule_actions, newer engines). */
   byRuleId: Record<string, RuleActionCounts> | undefined;
-  /** Tokens used in the range, for "about N% less". */
-  rangeUsedTokens: number | null;
+  /** The last 7 days by hour (By day's input per day); null when it couldn't be read. */
+  weekHourly: FleetHourlyResult | null;
   /** Dollars saved per local day, micros (engine savingsByDay). */
   usdByDay: Record<string, number> | null;
 }
 
-export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, rangeUsedTokens: null, usdByDay: null };
+export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null };
 
 export interface PerformanceSnapshot {
   indexData: PerformanceIndexResult;
