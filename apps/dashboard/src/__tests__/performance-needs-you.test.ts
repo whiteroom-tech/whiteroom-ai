@@ -121,4 +121,20 @@ describe('Needs you', () => {
     expect(needsYou(m.el)).toContain('3 recommendations ↓');
     m.root.unmount();
   });
+
+  it('hides the line when a later Open read fails', async () => {
+    api.list.mockResolvedValue(reply(1));
+    const m = await mount();
+    expect(needsYou(m.el)).toContain('1 recommendation ↓');
+    // Show past, then back to Open: that read fails.
+    const past = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show past recommendations')!;
+    await act(async () => { past.click(); });
+    await flush();
+    api.list.mockRejectedValue(new Error('down'));
+    const open = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'open')!;
+    await act(async () => { open.click(); });
+    await flush();
+    expect(needsYou(m.el)).toBeNull();
+    m.root.unmount();
+  });
 });

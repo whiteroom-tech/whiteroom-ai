@@ -86,13 +86,18 @@ describe('Performance overview layout', () => {
     // No prior window (older engine): the plain lines.
     const plain = text(view());
     expect(plain).toMatch(/Typical response .*1\.9s median time per call/);
+    expect(plain).toMatch(/Spend .*\$0\.912 last 24 h/);
+    // Nothing spent before: no percent to show, so it says so.
+    const fromNothing = text(view({ ...DATA, previous: { period: { start: '', end: '' }, totalCalls: 0, totalCost: 0, pricedAttempts: 0, unpricedAttempts: 0, avgLatencyMs: null } }));
+    expect(fromNothing).toMatch(/Spend .*\$0\.912 nothing spent in the prior 24 h/);
     // Unpriced calls make spend a lower bound ("+").
     expect(text(view({ ...DATA, summary: { ...DATA.summary, unpricedAttempts: 3 } }))).toMatch(/\$0\.912\+/);
   });
 
   it('counts calls from agents without a name when there are any, and sums Saved from the per-day figures billing uses', () => {
     const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    expect(text(view({ ...DATA, summary: { ...DATA.summary, unnamedCalls: 12 } }))).toMatch(/12 calls last 24 h came from agents without a name/);
+    expect(text(view({ ...DATA, summary: { ...DATA.summary, unnamedCalls: 12 } }))).toMatch(/12 calls in the last 24 h came from agents without a name/);
+    expect(text(view({ ...DATA, summary: { ...DATA.summary, unnamedCalls: 1 } }, 'Sat, Oct 24'))).toMatch(/1 call on Sat, Oct 24 came from/);
     expect(text(view())).not.toMatch(/without a name/);
     const saved = text(renderToStaticMarkup(h(IndexView, { ...props(), govSavings: { tokensSaved: 10, costSaved: 1, partial: false }, cacheSaved: { micros: 500_000, unpricedReadTokens: 0 } } as never)));
     expect(saved).toMatch(/Saved by WhiteRoom \$1\.50/);

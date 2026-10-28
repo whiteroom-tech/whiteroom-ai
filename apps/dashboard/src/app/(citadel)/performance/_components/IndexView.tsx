@@ -8,7 +8,7 @@ import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
-import { TokensCompare } from '@/components/performance/SavingsPanels';
+import { noCallsWhen, TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost, fmtCount, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
@@ -101,6 +101,9 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const fetchRecs = useCallback(async (cursor?: string) => {
     const req = ++recReq.current;
     const stale = () => recReq.current !== req;
+    // An unfiltered first page of Open is what "Needs you" counts: its answer, or a failure, is the newest count.
+    const countsOpen = recStatus === 'open' && !recAgentQuery.trim() && !cursor;
+    const setOpen = (n: number | null) => { if (countsOpen) { openReq.current++; setOpenCount(n); } };
     setRecLoading(true);
     try {
       const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: REC_PAGE_SIZE, includeSummaries: true };
@@ -109,14 +112,15 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
       if (cursor) opts.cursor = cursor;
       const res = await performanceRecommendationsList(fleetId, opts, authKey);
       if (stale()) return;
-      if (res.error) { setRecError(res.error); return; }
+      // A failed read hides "Needs you" rather than leave a count that may be wrong.
+      if (res.error) { setRecError(res.error); setOpen(null); return; }
       setRecError(null);
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-      if (opts.status === 'open' && !opts.agentId && !cursor) { openReq.current++; setOpenCount(res.total); }
+      setOpen(res.total);
     } catch {
-      if (!stale()) setRecError('Failed to load recommendations.');
+      if (!stale()) { setRecError('Failed to load recommendations.'); setOpen(null); }
     } finally {
       if (!stale()) setRecLoading(false);
     }
@@ -278,7 +282,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
         <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} fleetHourly={workingHour} {...(predictionApi && { api: predictionApi })} />
         {unnamed > 0 && (
           <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>
-            {fmtCount(unnamed)} {unnamed === 1 ? 'call' : 'calls'} {rangeLabel} came from agents without a name: in these totals, but no agent’s.
+            {fmtCount(unnamed)} {unnamed === 1 ? 'call' : 'calls'} {noCallsWhen(rangeLabel)} came from agents without a name: in these totals, but no agent’s.
           </p>
         )}
       </section>
