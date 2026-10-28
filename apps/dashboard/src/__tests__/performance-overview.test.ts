@@ -148,5 +148,7 @@ describe('Cost prediction folded note', () => {
     // No spend while working: nothing to say about the fleet; not passed at all: just the budgets note.
     expect(predictionNote({ usdPerHour: 0, lookbackHours: 336 }, 'x')).toBe('x');
     expect(predictionNote(undefined, undefined)).toBeUndefined();
+    // No lookback known: no window after the figure.
+    expect(predictionNote({ usdPerHour: 0.3544, lookbackHours: null }, undefined)).toBe('$0.354 an hour while agents work');
   });
 });

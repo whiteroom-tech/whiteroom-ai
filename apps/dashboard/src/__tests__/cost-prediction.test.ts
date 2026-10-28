@@ -109,6 +109,13 @@ async function mount(api: ReturnType<typeof fakeApi>) {
 }
 
 describe('Cost prediction card', () => {
+  it('says an agent with no priced calls has no hourly cost to show yet', async () => {
+    const api = fakeApi(res([agent('code-reviewer', { costPerTaskUsd: null, burnRateUsdPerHour: null })]));
+    const m = await mount(api);
+    await act(async () => { m.button('Cost prediction').click(); });
+    expect(m.text()).toMatch(/Hourly cost\s*No priced calls yet to estimate from\./);
+  });
+
   it('starts folded; unfolded, it shows one agent and works out what a budget and a token limit allow as you type', async () => {
     const api = fakeApi(res([agent('code-reviewer', { costPerTaskUsd: 0.0081, tokensPerTask: 1221 }), agent('lead-agent')]));
     const m = await mount(api);

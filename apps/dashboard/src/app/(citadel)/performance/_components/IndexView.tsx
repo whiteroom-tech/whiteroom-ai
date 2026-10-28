@@ -17,6 +17,7 @@ import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
 import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
+import type { WorkingHourRate } from '@/lib/performance-overview';
 import { CostPredictionSection, type CostPredictionApi } from './CostPrediction';
 import { ControlSummary } from './ControlSummary';
 import { RecommendationsCard } from './Recommendations';
@@ -25,8 +26,6 @@ import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
 import { statusLine } from '@/lib/diagnosis/model';
 import { fmtLatency, SpendByModel } from './perf-utils';
 
-import type { WorkingHourRate } from '@/lib/performance-overview';
-export type { WorkingHourRate };
 
 /** How a feedback click ended. `closed`: the recommendation had changed elsewhere, so nothing was applied. */
 export type FeedbackResult = 'done' | 'closed' | 'failed';

@@ -204,4 +204,3 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
     </div>
   );
 }
-
