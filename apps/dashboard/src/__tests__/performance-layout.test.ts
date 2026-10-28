@@ -32,7 +32,7 @@ const rangeHours = (input: number, start = Date.UTC(2026, 9, 25)) => ({ hourly: 
 describe('Performance overview layout', () => {
   it('reads Cost, then Rules, then Reliability, then Recommendations', () => {
     const html = view();
-    const order = ['id="perf-cost"', 'id="perf-control"', 'id="perf-performance"', 'id="recommendations"'].map((id) => html.indexOf(id));
+    const order = ['id="perf-cost"', 'id="perf-rules"', 'id="perf-reliability"', 'id="recommendations"'].map((id) => html.indexOf(id));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
@@ -47,7 +47,7 @@ describe('Performance overview layout', () => {
 
   it('puts spend, savings and less input sent under Cost (hourly cost is in Cost prediction), and one rules line under Rules', () => {
     const html = view();
-    const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
+    const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-rules"'));
     for (const label of ['Spend', 'Saved by WhiteRoom', 'Less input sent']) expect(cost).toContain(`>${label}<`);
     expect(cost).not.toContain('>Hourly cost<');
     expect(cost).not.toContain('Average per hour');
@@ -55,14 +55,14 @@ describe('Performance overview layout', () => {
     // Calls are Reliability's card: not repeated under Spend.
     expect(cost).not.toContain('99 model calls');
     expect(cost).toContain('Spend by model');
-    const control = html.slice(html.indexOf('id="perf-control"'), html.indexOf('id="perf-performance"'));
+    const control = html.slice(html.indexOf('id="perf-rules"'), html.indexOf('id="perf-reliability"'));
     expect(control).toMatch(/2<\/strong> blocked · <strong[^>]*>57<\/strong> would have acted/);
     expect(control).toContain('What your rules caught most');
     // Each rule is in Controls and each agent's activity on Home: no table here.
     expect(control).not.toContain('All rules and agents');
     expect(control).not.toContain('Suggestions in Controls');
     expect(control).toContain('href="/controls"');
-    const perf = html.slice(html.indexOf('id="perf-performance"'));
+    const perf = html.slice(html.indexOf('id="perf-reliability"'));
     for (const label of ['Failed calls', 'Typical response', 'Model calls']) expect(perf).toContain(`>${label}<`);
   });
 
@@ -113,7 +113,7 @@ describe('Performance overview, what it leaves out', () => {
       savingsDays: null, agentIds: ['lead-agent', 'writer'], rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
       onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
     } as never));
-    expect(html).toContain('id="perf-performance"');
+    expect(html).toContain('id="perf-reliability"');
     expect(html).toContain('>Spend<');
     expect(html).not.toContain('More detail');
     expect(html).not.toContain('Calls per hour');

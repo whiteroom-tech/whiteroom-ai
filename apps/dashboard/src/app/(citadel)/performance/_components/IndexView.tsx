@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { performanceRecommendationsList } from '@/lib/whiteroom/client';
 import Link from 'next/link';
 import { ROUTES } from '@/lib/routes';
-import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
+import { flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -209,7 +209,12 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const callsTrend = countTrend(s.totalCalls, prev?.totalCalls, prior);
   const spendTrend = trendText(pctChange(s.totalCost, prev?.totalCost), prior);
   const speed = latencyTrend(s.avgLatencyMs, prev?.avgLatencyMs, prior);
-  const openRecs = openCount;
+  // Flagged runs: unknown while loading or after a failed read; an engine without run flags flags none.
+  const flaggedKnown = !flagged.loading && !flagged.failed;
+  const flaggedRuns = flaggedRunCount(flagged) ?? 0;
+  const needs = openCount === null ? null
+    : openCount > 0 || flaggedRuns > 0 ? { recs: openCount, flagged: flaggedRuns }
+    : flaggedKnown ? { recs: 0, flagged: 0 } : null;
   const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
   const unnamed = s.unnamedCalls ?? 0;
   // Savings are input (the context is what gets smaller), so they compare with the input the
@@ -224,6 +229,9 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
     const input = inputByLocalDay(weekHourly.hourly);
     return savingsDays.map((d) => ({ ...d, used: input.get(d.day) ?? 0 }));
   }, [savingsDays, weekHourly]);
+  const toHealth = () => {
+    document.getElementById('agent-health-heading')?.scrollIntoView({ block: 'start' });
+  };
   const toRecommendations = () => {
     document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
@@ -231,13 +239,15 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
 
   return (
     <>
-      {/* What needs you, always in the same place; the figures are in the sections below. Never "all clear": that's for the cards to show. */}
-      {openRecs != null && (
+      {/* What needs you, always in the same place: open recommendations and flagged runs. It says
+          nothing needs you only once both are known; the figures are in the sections below. */}
+      {needs && (
         <p className="wr-perf-lead">
           <span className="wr-lbl">Needs you</span>{' '}
-          {openRecs > 0
-            ? <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={toRecommendations}>{openRecs} {openRecs === 1 ? 'recommendation' : 'recommendations'} ↓</button>
-            : <span className="wr-cap">Nothing needs you right now.</span>}
+          {needs.recs === 0 && needs.flagged === 0 && <span className="wr-cap">Nothing needs you right now.</span>}
+          {needs.recs > 0 && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={toRecommendations}>{needs.recs} {needs.recs === 1 ? 'recommendation' : 'recommendations'} ↓</button>}
+          {needs.recs > 0 && needs.flagged > 0 && ' '}
+          {needs.flagged > 0 && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={toHealth}>{needs.flagged} {needs.flagged === 1 ? 'run' : 'runs'} flagged ↓</button>}
         </p>
       )}
 
@@ -291,15 +301,15 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
 
       <hr className="wr-perf-rule" />
 
-      <section aria-labelledby="perf-control">
-        <SectionHeader id="perf-control" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
+      <section aria-labelledby="perf-rules">
+        <SectionHeader id="perf-rules" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
         <ControlSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unavailable={auditFailed} />
       </section>
 
       <hr className="wr-perf-rule" />
 
-      <section aria-labelledby="perf-performance">
-        <SectionHeader id="perf-performance" title="Reliability" sub="How well your agents worked." meta={rangeLabel} />
+      <section aria-labelledby="perf-reliability">
+        <SectionHeader id="perf-reliability" title="Reliability" sub="How well your agents worked." meta={rangeLabel} />
         <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
           <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtCount(failedCalls)} sub={`of ${fmtCount(s.totalCalls)} ${s.totalCalls === 1 ? 'call' : 'calls'} · ${fmtPctShort(s.errorRate)}`} />
           <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(s.avgLatencyMs)}

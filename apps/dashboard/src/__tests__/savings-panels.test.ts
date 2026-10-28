@@ -79,4 +79,15 @@ describe('See how it adds up', () => {
     expect(closed).not.toContain('Without WhiteRoom, est.');
     expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]], defaultOpen: true }))).toContain('No model calls in the last 7 days.');
   });
+  it('says on the closed row what is inside: the totals, By day, or neither', () => {
+    const note = (html: string) => html.match(/wr-disc__note">([^<]*)</)?.[1] ?? null;
+    // Calls in the range and in the 7 days.
+    expect(note(renderToStaticMarkup(h(TokensCompare, { days })))).toBe('4.25M without · 1.72M with · by day');
+    // Calls in the range, no input per day.
+    expect(note(renderToStaticMarkup(h(TokensCompare, { days: null, range: { used: 10, saved: 30, label: 'today' } })))).toBe('40 without · 10 with');
+    // None in the range, some in the 7 days.
+    expect(note(renderToStaticMarkup(h(TokensCompare, { days, range: { used: 0, saved: 0, label: 'today' } })))).toBe('by day');
+    // None at all.
+    expect(note(renderToStaticMarkup(h(TokensCompare, { days: null, range: { used: 0, saved: 0, label: 'today' } })))).toBeNull();
+  });
 });

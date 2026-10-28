@@ -165,6 +165,7 @@ export function PerformancePreview() {
           {empty
             ? <span className="wr-cap">Nothing needs you right now.</span>
             : <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{sample === 'problem' ? 2 : 1} {sample === 'problem' ? 'recommendations' : 'recommendation'} ↓</button>}
+          {sample === 'problem' && <> <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{FLAGGED.length} {FLAGGED.length === 1 ? 'run' : 'runs'} flagged ↓</button></>}
         </p>
         <section aria-labelledby="pv-cost">
           <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={label} />

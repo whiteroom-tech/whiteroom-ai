@@ -12,7 +12,8 @@ const api = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), performanceRecommendationsList: api.list }));
 // The page's other reads aren't what this tests.
 vi.mock('@/lib/diagnosis/useDiagnosis', () => ({ useDiagnosis: () => ({ data: null, run: null, justRan: false, refresh: async () => {}, checkNow: async () => false }) }));
-vi.mock('@/components/performance/UnusualBehaviour', () => ({ useFlaggedRuns: () => ({ runs: [], truncated: false, failed: false, loading: false }), flaggedRunCount: () => 0, UnusualDetails: () => null }));
+const flags = vi.hoisted(() => ({ state: { runs: [] as unknown[], truncated: false, failed: false, loading: false }, count: 0 }));
+vi.mock('@/components/performance/UnusualBehaviour', () => ({ useFlaggedRuns: () => flags.state, flaggedRunCount: () => flags.count, UnusualDetails: () => null }));
 vi.mock('@/app/(citadel)/performance/_components/CostPrediction', () => ({ CostPredictionSection: () => null }));
 const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
 
@@ -30,22 +31,22 @@ const viewProps = (fleetId = 'f1', onFeedback = async () => 'done' as const) => 
   rangeLabel: 'last 24 h', fleetId, authKey: 'k', onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback, feedbackLoading: null, feedbackError: null,
 });
 
-async function mount(onFeedback = async () => 'done' as const) {
+async function mount() {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => {
-    root.render(h(IndexView, {
-      data: DATA, hourlyData: { hourly: [] }, auditFailed: false, govSavings: null, govCounts: null, savingsDays: null, agentIds: null,
-      rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k', onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback, feedbackLoading: null, feedbackError: null,
-    } as never));
-  });
+  await act(async () => { root.render(h(IndexView, viewProps() as never)); });
   await flush();
   return { el, root };
 }
 const needsYou = (el: HTMLElement) => el.querySelector('.wr-perf-lead')?.textContent ?? null;
 
-afterEach(() => { api.list.mockReset(); document.body.innerHTML = ''; });
+afterEach(() => {
+  api.list.mockReset();
+  document.body.innerHTML = '';
+  flags.state = { runs: [], truncated: false, failed: false, loading: false };
+  flags.count = 0;
+});
 
 describe('Needs you', () => {
   it('says nothing until the open list is read, then the count or that nothing does', async () => {
@@ -156,5 +157,22 @@ describe('Needs you', () => {
     await flush();
     expect(needsYou(m.el)).toContain('Nothing needs you right now.');
     m.root.unmount();
+  });
+
+  it('counts flagged runs too, and says nothing needs you only once they are known', async () => {
+    api.list.mockResolvedValue(reply(0));
+    flags.count = 2;
+    const flagged = await mount();
+    expect(needsYou(flagged.el)).toContain('2 runs flagged ↓');
+    expect(needsYou(flagged.el)).not.toContain('Nothing needs you');
+    flagged.root.unmount();
+
+    flags.count = 0;
+    for (const state of [{ loading: true, failed: false }, { loading: false, failed: true }]) {
+      flags.state = { runs: [], truncated: false, ...state };
+      const unknown = await mount();
+      expect(needsYou(unknown.el)).toBeNull();
+      unknown.root.unmount();
+    }
   });
 });

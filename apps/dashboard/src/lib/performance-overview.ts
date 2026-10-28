@@ -91,8 +91,9 @@ export function savedCaption(tokensSaved: number, cacheMicros: number): string {
 }
 
 /**
- * Less input sent's card, for the range shown (as every Cost figure is): how much less went to
- * the models, the tokens and the energy. The same tokens as "Tokens: with WhiteRoom vs without".
+ * Less input sent's card, for the range shown (as every Cost figure is): how much less input
+ * went to the models, and the tokens. The same tokens as "See how it adds up", which also has
+ * the energy estimate.
  * `used` null: not known yet.
  */
 export function rangeContextCard(saved: number, used: number | null): { value: string; sub: string } {
