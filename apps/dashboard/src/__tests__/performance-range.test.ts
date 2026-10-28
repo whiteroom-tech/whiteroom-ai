@@ -61,6 +61,10 @@ describe('Performance range, as on Runs', () => {
     // An older engine reads to now whatever `to` says.
     expect(windowUnsupported({ period: { end: '2026-10-27T17:00:00.000Z' } }, to)).toBe(true);
     expect(windowUnsupported({ period: { end: to.toISOString() } }, to)).toBe(false);
+    // Second-precision output from a current engine is still that end.
+    expect(windowUnsupported({ period: { end: '2026-10-11T04:00:00Z' } }, new Date('2026-10-11T04:00:00.400Z'))).toBe(false);
+    // An older engine's end of this hour, 15 minutes after a :45 zone's midnight.
+    expect(windowUnsupported({ period: { end: '2026-10-11T05:00:00Z' } }, new Date('2026-10-11T04:45:00Z'))).toBe(true);
     expect(windowUnsupported({ period: { end: '2026-10-27T17:00:00.000Z' } }, null)).toBe(false);
   });
 

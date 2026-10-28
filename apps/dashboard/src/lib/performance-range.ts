@@ -55,9 +55,11 @@ export function legacyHoursBack(w: ReadWindow, now: number = Date.now()): number
 /**
  * True when the engine is older than explicit windows: it refuses a start
  * past 14 days with its own reason, or answers a window ending in the past
- * as if it ended now.
+ * as if it ended now. A current engine ends the window at `to` itself; an
+ * older one at the end of the current hour, at least 15 minutes past any
+ * local midnight `to` can be, so a minute's leeway tells them apart.
  */
 export function windowUnsupported(r: { error: unknown } | { period?: { end: string } }, to: Date | null): boolean {
   if ('error' in r) return r.error instanceof WhiteRoomApiError && r.error.status === 400 && /within the last 14 days/.test(r.error.reason ?? '');
-  return to !== null && !!r.period && Date.parse(r.period.end) !== to.getTime();
+  return to !== null && !!r.period && Date.parse(r.period.end) - to.getTime() > 60_000;
 }

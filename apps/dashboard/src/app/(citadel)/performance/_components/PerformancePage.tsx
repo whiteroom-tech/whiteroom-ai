@@ -62,7 +62,8 @@ export function PerformancePage({ retentionDays }: {
   // from-day/to-day (at most 31 days, within what the plan keeps).
   const oldest = perfOldest(retentionDays);
   const [rangeView, setRangeView] = useState<RunsView>(() => perfViewFromParams(searchParams, oldest));
-  // The engine can't read 30 days or Custom (older than explicit windows): those are off, with a note.
+  // The engine can't read 30 days or Custom (older than explicit windows): those are off, with a note,
+  // until the page loads again (an engine upgrade shows on the next load).
   const [windowsOff, setWindowsOff] = useState(false);
   const span = runsWindow(rangeView);
   const rangeKey = `${span.fromDay}|${span.toDay}`;
