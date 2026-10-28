@@ -25,6 +25,11 @@ const REC = { id: 'rec1', detector: 'review_cache_behavior', agentId: 'a', statu
 const reply = (total: number) => ({ recommendations: total ? [REC] : [], cursor: null, total });
 const flush = () => act(async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); });
 
+const viewProps = (fleetId = 'f1', onFeedback = async () => 'done' as const) => ({
+  data: DATA, hourlyData: { hourly: [] }, auditFailed: false, govSavings: null, govCounts: null, savingsDays: null, agentIds: null,
+  rangeLabel: 'last 24 h', fleetId, authKey: 'k', onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback, feedbackLoading: null, feedbackError: null,
+});
+
 async function mount(onFeedback = async () => 'done' as const) {
   const el = document.createElement('div');
   document.body.appendChild(el);
@@ -135,6 +140,21 @@ describe('Needs you', () => {
     await act(async () => { open.click(); });
     await flush();
     expect(needsYou(m.el)).toBeNull();
+    m.root.unmount();
+  });
+
+  it('forgets the last fleet\'s count when the fleet changes', async () => {
+    api.list.mockResolvedValueOnce(reply(1));
+    const m = await mount();
+    expect(needsYou(m.el)).toContain('1 recommendation ↓');
+    let next!: (v: unknown) => void;
+    api.list.mockReturnValueOnce(new Promise((r) => { next = r; }));
+    await act(async () => { m.root.render(h(IndexView, viewProps('f2') as never)); });
+    await flush();
+    expect(needsYou(m.el)).toBeNull();
+    await act(async () => { next(reply(0)); });
+    await flush();
+    expect(needsYou(m.el)).toContain('Nothing needs you right now.');
     m.root.unmount();
   });
 });

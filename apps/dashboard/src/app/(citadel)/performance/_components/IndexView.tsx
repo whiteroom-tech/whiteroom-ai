@@ -87,6 +87,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const [openCount, setOpenCount] = useState<number | null>(null);
   // Every open-count read takes a number; only the newest one's answer is kept.
   const openReq = useRef(0);
+  // Another fleet: its count isn't known yet, and a read still out for the last one is dropped.
+  useEffect(() => { openReq.current++; setOpenCount(null); }, [fleetId]);
   // Monotonic request id: a response only lands if it is still the newest
   // request, so an out-of-order reply can't show the wrong list or store a
   // stale cursor for "Load more".
