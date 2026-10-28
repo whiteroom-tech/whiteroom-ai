@@ -92,10 +92,10 @@ export function modelShares(models: PerformanceModelSummary[]): Array<{ model: P
 
 // -- Lead line ----------------------------------------------------------------
 
-/** "rules caught 120 calls, none blocked" / "rules caught 3 calls, 1 blocked" / "rules caught nothing". */
+/** "rules caught 120 times, none blocked" / "rules caught 3 times, 1 blocked" / "rules caught nothing". Times, not calls: two rules on one call count twice. */
 export function rulesCaughtText(total: number, blocked: number): string {
   if (total <= 0) return 'rules caught nothing';
-  return `rules caught ${fmtCount(total)} ${plural(total, 'call')}, ${blocked > 0 ? `${fmtCount(blocked)} blocked` : 'none blocked'}`;
+  return `rules caught ${fmtCount(total)} ${plural(total, 'time')}, ${blocked > 0 ? `${fmtCount(blocked)} blocked` : 'none blocked'}`;
 }
 
 // -- Control ------------------------------------------------------------------

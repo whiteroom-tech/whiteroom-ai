@@ -9,7 +9,7 @@ import { usePoll } from '@/hooks/usePoll';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { RULE_LABELS } from '@/lib/governance';
-import { ruleSentence, rulesFor } from '@/lib/controls-view';
+import { ruleCondition, rulesFor } from '@/lib/controls-view';
 import { RuleDoesTag } from '@/components/RuleDoesTag';
 import { plural } from '@/lib/format';
 
@@ -63,7 +63,8 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
         <>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {on.map((r) => {
-              const s = ruleSentence(r);
+              // The condition only, as on Controls; the tag beside the name says what the rule does.
+              const s = ruleCondition(r);
               return (
                 <li key={r.id} style={{ borderTop: '1px solid var(--line)' }}>
                   <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(r.id)}`} className="wr-agent-rule">

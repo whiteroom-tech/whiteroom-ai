@@ -407,7 +407,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
             </div>
           )}
           <p className="wr-home-note" style={{ marginTop: 8 }}>
-            {sort === 'attention' || !finding ? 'Agents that need attention are listed first. ' : ''}Score is out of 10: the average of clean calls, speed and (once a task type is set) cost. Select an agent for its runs and settings.
+            {sort === 'attention' || !finding ? 'Agents needing attention first. ' : ''}Score out of 10: clean calls, speed and cost (once a task type is set), averaged.
           </p>
         </section>
 
@@ -456,7 +456,7 @@ function savedTitle(w: AgentWeek): string | undefined {
   return w.saved && w.savedUsd != null ? `${fmtTokens(w.saved)} tokens saved, about ${usd(w.savedUsd)} at this agent's prices (est.)` : undefined;
 }
 
-/** "$3.17 spent, rules would have acted on 120 calls": the spend and the rules each when known; '' when neither is. */
+/** "$3.17 spent, rules would have acted 120 times": the spend and the rules each when known; '' when neither is. */
 export function weekSentence(w: HomeWeek): string {
   const parts: string[] = [];
   if (w.costUsd !== null) parts.push(`${usd(w.costUsd)}${partialMark(w.partial)} spent`);
@@ -464,12 +464,12 @@ export function weekSentence(w: HomeWeek): string {
   return parts.join(', ');
 }
 
-/** The week's rules in a sentence: "rules would have acted on 120 calls". */
+/** The week's rules in a sentence: "rules would have acted 120 times" (times, not calls: two rules on one call count twice). */
 export function weekRules(t: GovernanceTally): string {
   const calls = (n: number) => `${fmtCount(n)} ${plural(n, 'call')}`;
   const bits: string[] = [];
   if (t.blocks) bits.push(`blocked ${calls(t.blocks)}`);
-  if (t.wouldBlocks) bits.push(`would have acted on ${calls(t.wouldBlocks)}`);
+  if (t.wouldBlocks) bits.push(`would have acted ${fmtCount(t.wouldBlocks)} ${plural(t.wouldBlocks, 'time')}`);
   if (bits.length) return `rules ${bits.join(' and ')}`;
   const n = tallyTotal(t);
   return n ? `rules acted ${fmtCount(n)} ${plural(n, 'time')}` : 'no rule activity';

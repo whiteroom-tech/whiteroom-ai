@@ -40,12 +40,12 @@ describe('Rules on this agent, loading', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     api.list.mockResolvedValueOnce({ fleetId: 'f', rules: [RULE], history: [], agents: ['a'] });
     const m = await mount();
-    expect(m.el.textContent).toContain('it would block the call');
+    expect(m.el.textContent).toContain('Over 60 calls a minute');
     api.list.mockRejectedValueOnce(new Error('down'));
     await act(async () => { vi.advanceTimersByTime(60_000); });
     await flush();
     expect(api.list).toHaveBeenCalledTimes(2);
-    expect(m.el.textContent).toContain('it would block the call');
+    expect(m.el.textContent).toContain('Over 60 calls a minute');
     expect(m.el.textContent).not.toContain('Retrying');
     m.root.unmount();
   });

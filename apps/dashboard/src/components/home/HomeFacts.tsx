@@ -12,7 +12,7 @@ import { ROUTES } from '@/lib/routes';
 
 /**
  * Home's fact line (mockup): "No agents on hold · 0 flagged runs today ·
- * rules caught 0 calls today · Last 7 days →". Held agents are named with a
+ * rules caught 0 times today · Last 7 days →". Held agents are named with a
  * link each; one removed while held has its Resume here, since it has no
  * agent page. A part whose data the engine doesn't send is left out.
  */
@@ -84,12 +84,12 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
       : <span key="flagged">{text}</span>);
   }
   if (todayRules) {
-    // "Caught" is any call a rule matched, in Block or Record only (the mockup's word,
+    // "Caught" counts each time a rule matched a call (two rules on one call count twice), in Block or Record only (the mockup's word,
     // as on Controls: "120 caught this week, 0 blocked"); how many were really
     // blocked is said beside it. Pauses, stops and alerts are other actions.
     const calls = todayRules.blocks + todayRules.wouldBlocks;
     const other = tallyTotal(todayRules) - calls;
-    parts.push(<span key="rules">rules caught {fmtCount(calls)} {plural(calls, 'call')} today{calls > 0 && <>, {fmtCount(todayRules.blocks)} blocked</>}{other > 0 && <>, and acted {fmtCount(other)} other {plural(other, 'time')}</>}</span>);
+    parts.push(<span key="rules">rules caught {fmtCount(calls)} {plural(calls, 'time')} today{calls > 0 && <>, {fmtCount(todayRules.blocks)} blocked</>}{other > 0 && <>, and acted {fmtCount(other)} other {plural(other, 'time')}</>}</span>);
   }
   parts.push(<Link key="week" href={ROUTES.performance} className="wr-link">Last 7 days &rarr;</Link>);
 

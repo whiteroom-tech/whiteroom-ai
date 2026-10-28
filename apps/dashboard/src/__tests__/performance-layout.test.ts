@@ -33,7 +33,7 @@ describe('Performance overview layout', () => {
 
   it('opens with one line for the range, and closes with the link to Home → Agents', () => {
     const text = view().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    expect(text).toMatch(/Last 24 h: \$0\.912 spent · rules caught 59 calls, 2 blocked · 2 failed calls/);
+    expect(text).toMatch(/Last 24 h: \$0\.912 spent · rules caught 59 times, 2 blocked · 2 failed calls/);
     expect(text).toContain('Per-agent numbers and scores are on Home → Agents');
   });
 

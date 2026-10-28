@@ -75,7 +75,7 @@ describe('Home view', () => {
   it('says the day starts at the viewer’s midnight, and leads a quiet day with the week', () => {
     const html = view({ week: { agents: {}, calls: 1234, costUsd: 3.17, partial: false, rules: tally({ wouldBlocks: 120 }) } });
     expect(html).toMatch(/Today.*since 12:00 am/);
-    expect(textOf(html)).toContain('Quiet so far today. This week: $3.17 spent, rules would have acted on 120 calls. View runs');
+    expect(textOf(html)).toContain('Quiet so far today. This week: $3.17 spent, rules would have acted 120 times. View runs');
     // A lower bound says so.
     expect(view({ week: { agents: {}, calls: 3, costUsd: 1, partial: true, rules: null } })).toContain('$1.00+ spent');
   });
@@ -111,7 +111,7 @@ describe('Home view', () => {
     const big = view({ report: REPORT(many.length), agents: many });
     expect(big).toContain('class="wr-home-table"');
     expect(big).toContain('aria-label="Find an agent"');
-    expect(big).toContain('Agents that need attention are listed first.');
+    expect(big).toContain('Agents needing attention first.');
     expect(view({ report: REPORT(many.length), agents: many, view: 'cards' })).not.toContain('class="wr-home-table"');
     expect(view({})).not.toContain('aria-label="Find an agent"');
   });
