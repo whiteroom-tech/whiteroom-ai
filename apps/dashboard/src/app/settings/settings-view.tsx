@@ -33,7 +33,7 @@ import { agentsIncluded, monthShareLine } from '@/lib/metric-display';
 import { getMonthSavings } from '@/lib/plan-savings';
 import { CLOSE_WINDOW_DAYS, isClosingOpen, SUPPORT_EMAIL, type ClosingState } from '@/lib/closing-shared';
 import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/components/AccountClosingBanner';
-import { plural, DAY_MS, HOUR_MS } from '@/lib/format';
+import { plural, DAY_MS } from '@/lib/format';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -305,10 +305,7 @@ function PlanSection({
   const contracted = plan === 'enterprise' || !!subscription?.planOverride;
   const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
   const trialEnd = shortDay(entitlement.trialEndsAt);
-  // ceil so an active trial never reads "0 days left". Two hours off first so a DST shift
-  // inside the window can't push a fresh trial to a day more than its length; never
-  // capped at TRIAL_DAYS, since an older account's free period is longer.
-  const trialDaysLeft = Math.max(1, Math.ceil((Date.parse(entitlement.trialEndsAt) - Date.now() - 2 * HOUR_MS) / DAY_MS));
+  const trialDaysLeft = freeDaysLeft(entitlement.trialEndsAt);
 
   return (
     <Section title="Plan" description="Limits apply to every fleet on the account">
@@ -710,4 +707,15 @@ export function DangerSection({ account, closing, pending }: { account: AccountO
       )}
     </Section>
   );
+}
+
+/**
+ * Days left in the free period, as calendar days from today to the end day in the viewer's
+ * zone: "Dec 30" is 63 days from Oct 28 whatever the hour. Rounded, so a DST day (23 or 25
+ * hours) doesn't tip it; at least 1 while it hasn't ended. Not capped: an older account's
+ * free period is longer than today's 30 days.
+ */
+export function freeDaysLeft(trialEndsAt: string, now: number = Date.now()): number {
+  const midnight = (ms: number) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  return Math.max(1, Math.round((midnight(Date.parse(trialEndsAt)) - midnight(now)) / DAY_MS));
 }

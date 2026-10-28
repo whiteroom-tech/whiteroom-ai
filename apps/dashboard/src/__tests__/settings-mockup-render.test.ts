@@ -16,7 +16,7 @@ vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) 
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
 vi.mock('@/components/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => children }));
 
-const { SettingsView } = await import('@/app/settings/settings-view');
+const { SettingsView, freeDaysLeft } = await import('@/app/settings/settings-view');
 const { limitsFor } = await import('@/lib/plans');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
@@ -87,6 +87,14 @@ describe('Settings plan: savings share and soft agent counts', () => {
     expect(t).not.toContain('This month:');
     // An older account's longer free period counts its real days, not 30.
     expect(view(1, { freeDays: 63 })).toContain('· 63 days left');
+  });
+
+  it('counts free days left by calendar day, whatever the hour', () => {
+    const now = new Date(2026, 9, 28, 23, 30).getTime();
+    expect(freeDaysLeft(new Date(2026, 11, 30, 0, 15).toISOString(), now)).toBe(63);
+    expect(freeDaysLeft(new Date(2026, 9, 30, 1, 0).toISOString(), now)).toBe(2);
+    // Ends later today: still 1, never 0.
+    expect(freeDaysLeft(new Date(2026, 9, 28, 23, 50).toISOString(), now)).toBe(1);
   });
 
   it('shows a dash for this month while it loads, once the free period is over', () => {
