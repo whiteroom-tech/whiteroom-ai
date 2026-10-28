@@ -292,7 +292,10 @@ function PlanSection({
   const subscribed = hasLiveSubscription(subscription);
   // On the free period, Starter is still worth offering: subscribing is how
   // they keep it once the free days are up.
-  const canBuy = (p: PlanId) => purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
+  // Never on a custom contract or a comped plan: a Checkout there would start
+  // a second, self-serve bill beside it.
+  const contracted = plan === 'enterprise' || !!subscription?.planOverride;
+  const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
   const trialEnd = shortDay(entitlement.trialEndsAt);
   // ceil so an active trial never reads "0 days left"; capped because a DST
   // shift inside the window can push a fresh trial to its length and an hour.

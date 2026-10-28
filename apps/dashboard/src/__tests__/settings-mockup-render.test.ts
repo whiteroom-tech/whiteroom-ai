@@ -20,7 +20,7 @@ const { SettingsView } = await import('@/app/settings/settings-view');
 const { limitsFor } = await import('@/lib/plans');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-type ViewOpts = { plan?: 'starter' | 'pro' | 'expired'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean };
+type ViewOpts = { plan?: 'starter' | 'pro' | 'expired' | 'enterprise'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean };
 const comp = { plan: 'none', status: 'active', planOverride: 'pro', stripeCustomerId: 'pending_u', stripeSubscriptionId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null };
 const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false }: ViewOpts = {}) => text(renderToStaticMarkup(h(SettingsView, {
   closing: null, billingResult: null, purchasablePlans: purchasable,
@@ -81,6 +81,12 @@ describe('Settings plan: savings share and soft agent counts', () => {
 
   it('shows no share on a comped plan: nothing is billed there', () => {
     expect(view(1, { plan: 'pro', onTrial: false, comped: true })).not.toContain('This month:');
+  });
+
+  it('offers no Subscribe or Switch on Enterprise or a comped plan', () => {
+    expect(view(1, { plan: 'enterprise', onTrial: false })).not.toMatch(/Subscribe|Switch to/);
+    expect(view(1, { plan: 'pro', onTrial: false, comped: true })).not.toMatch(/Subscribe|Switch to/);
+    expect(view(1, { plan: 'pro', onTrial: false })).toContain('Switch to Starter');
   });
 
   it('offers no Subscribe button until the share prices are set', () => {
