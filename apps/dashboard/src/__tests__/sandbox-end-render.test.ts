@@ -43,6 +43,8 @@ describe('End test', () => {
     expect(api.destroy).toHaveBeenCalledWith('sb-1');
     expect(m.el.textContent).not.toContain('End this test?');
     expect(m.el.querySelector('[role="alertdialog"]')).toBeNull();
+    // Back on the start screen, which says how long a test link lasts.
+    expect(m.el.textContent).toContain('Check your agent works through WhiteRoom before you use it for real. About 3 minutes; it doesn’t touch your live fleet. The test link lasts 30 minutes.');
     m.root.unmount();
   });
 

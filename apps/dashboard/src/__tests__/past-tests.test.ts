@@ -43,6 +43,19 @@ describe("Past tests", () => {
     for (const old of ["All checks passed", "Some checks passed", "Checks didn’t pass"]) expect(html).not.toContain(old);
   });
 
+  it("gives Didn't pass the warn tone and still lists an empty test that has tasks or a report as Not checked", () => {
+    const html = renderToStaticMarkup(createElement(PastTests, { preview: [
+      { sandboxId: "a", destroyedAt: "2026-10-14T10:00:00Z", overall: "pass", totalTasks: 3, isTrial: false },
+      { sandboxId: "b", destroyedAt: "2026-10-14T09:00:00Z", overall: "fail", totalTasks: 1, isTrial: false },
+      { sandboxId: "c", destroyedAt: "2026-10-14T08:00:00Z", overall: "empty", totalTasks: 0, isTrial: false, hasReport: true },
+      { sandboxId: "d", destroyedAt: "2026-10-14T07:00:00Z", overall: "empty", totalTasks: 2, isTrial: false },
+    ] }));
+    expect(html).toContain('wr-tag--brand">Passed<');
+    expect(html).toContain('wr-tag--warn">Didn&#x27;t pass<');
+    expect(html.match(/wr-tag--muted">Not checked</g)).toHaveLength(2);
+    expect(html).toContain('wr-panel__count">4<');
+  });
+
   it("makes rows openable from the keyboard", () => {
     const html = renderToStaticMarkup(createElement(PastTests, { preview: [
       { sandboxId: "s1", destroyedAt: "2026-10-12T10:00:00Z", overall: "pass", totalTasks: 3, isTrial: false },
