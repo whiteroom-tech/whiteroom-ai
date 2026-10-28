@@ -33,7 +33,7 @@ const text = (html: string) => { const el = new Window().document.createElement(
 describe("Home (mockup parity)", () => {
   it("opens with the fact line, not Needs you", () => {
     const t = text(home());
-    expect(t).toContain("No agents on hold · 0 flagged runs today · rules caught 0 calls today · Last 7 days →");
+    expect(t).toContain("No agents on hold · 0 flagged runs today · rules caught 0 times today · Last 7 days →");
     expect(t).not.toContain("Nothing needs you");
   });
 
@@ -45,7 +45,7 @@ describe("Home (mockup parity)", () => {
   });
 
   it("shows the quiet-day box with the last active day", () => {
-    expect(text(home())).toContain("Quiet so far today. Last activity Sat, Oct 24: 47 runs. This week: $3.17 spent, rules would have acted on 120 calls. View runs →");
+    expect(text(home())).toContain("Quiet so far today. Last activity Sat, Oct 24: 47 runs. This week: $3.17 spent, rules would have acted 120 times. View runs →");
   });
 
   it("an agent card has a score ring, a link to its last run, and its week", () => {
@@ -86,7 +86,7 @@ describe("Home (mockup parity)", () => {
     expect(weekRules(tally(2, 0))).toBe("rules blocked 2 calls");
     expect(weekRules(tally(0, 0))).toBe("no rule activity");
     // Spend and rules are said each when known.
-    expect(weekSentence({ ...WEEK, costUsd: null })).toBe("rules would have acted on 120 calls");
+    expect(weekSentence({ ...WEEK, costUsd: null })).toBe("rules would have acted 120 times");
     expect(weekSentence({ ...WEEK, rules: null })).toBe("$3.17 spent");
     expect(weekSentence({ ...WEEK, costUsd: null, rules: null })).toBe("");
     expect(weekRules({ blocks: 0, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 1 })).toBe("rules acted 3 times");
@@ -94,8 +94,8 @@ describe("Home (mockup parity)", () => {
 
   it("counts only calls as calls in the fact line", () => {
     const t = text(home({ todayRules: { blocks: 1, wouldBlocks: 4, paused: 2, stopped: 0, toldYou: 1 } }));
-    expect(t).toContain("rules caught 5 calls today, 1 blocked, and acted 3 other times");
-    expect(text(home({ todayRules: tally(0, 4) }))).toContain("rules caught 4 calls today, 0 blocked ·");
+    expect(t).toContain("rules caught 5 times today, 1 blocked, and acted 3 other times");
+    expect(text(home({ todayRules: tally(0, 4) }))).toContain("rules caught 4 times today, 0 blocked ·");
   });
 });
 
