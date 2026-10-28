@@ -85,13 +85,13 @@ export function fewerTokens(saved: number, used: number): string | null {
 
 /** Saved by WhiteRoom's caption: what the dollars stand for. */
 export function savedCaption(tokensSaved: number, cacheMicros: number): string {
-  // The tokens are Smaller context's card, beside this one: here, what the dollars are.
+  // The tokens are Less input sent's card, beside this one: here, what the dollars are.
   if (tokensSaved > 0) return `estimated, at your model prices${cacheMicros > 0 ? ' · includes cache reads' : ''}`;
   return cacheMicros > 0 ? 'from cache reads · estimated' : 'nothing saved in this range';
 }
 
 /**
- * Smaller context's card, for the range shown (as every Cost figure is): how much less went to
+ * Less input sent's card, for the range shown (as every Cost figure is): how much less went to
  * the models, the tokens and the energy. The same tokens as "Tokens: with WhiteRoom vs without".
  * `used` null: not known yet.
  */
@@ -122,8 +122,6 @@ export function modelShares(models: PerformanceModelSummary[]): Array<{ model: P
   if (total <= 0) return [];
   return [...models].sort((a, b) => b.costMicros - a.costMicros).map((model) => ({ model, share: model.costMicros / total }));
 }
-
-// -- Lead line ----------------------------------------------------------------
 
 // -- Control ------------------------------------------------------------------
 

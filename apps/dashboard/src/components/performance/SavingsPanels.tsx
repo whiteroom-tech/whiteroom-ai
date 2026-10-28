@@ -71,38 +71,38 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
         {/* By day is the 7 days: it shows whenever they have calls, even when the picked range has none. */}
         {max > 0 && (
           <div className="wr-tokens__byday">
-          <div className="wr-lbl" style={{ marginBottom: 8 }}>By day, last 7 days</div>
-          <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>
-            {dayRows.map((d) => {
-              const wo = d.used + d.saved;
-              return (
-                <div key={d.day} className="wr-tokens__day" title={wo ? `${weekdayLong(d.day)}: ${fmtTokens(d.used)} with WhiteRoom, est. ${fmtTokens(wo)} without` : undefined}>
-                  {wo ? (
-                    <>
-                      <div className="wr-tokens__col"><span className="wr-tokens__val">{fmtTokens(wo)}</span><div className="wr-tokens__vbar wr-tokens__bar--without" style={{ height: h(wo) }} /></div>
-                      <div className="wr-tokens__col"><span className="wr-tokens__val wr-tokens__val--with">{fmtTokens(d.used)}</span><div className="wr-tokens__vbar wr-tokens__bar--with" style={{ height: h(d.used) }} /></div>
-                    </>
-                  ) : <span className="wr-cap" style={{ paddingBottom: 4, color: 'var(--tx3)' }}>—</span>}
-                </div>
-              );
-            })}
-          </div>
-          <div className="wr-tokens__labels" aria-hidden="true">
-            {dayRows.map((d) => {
-              const usd = usdByDay?.[d.day];
-              return (
-                <div key={d.day}>
-                  <div className="wr-cap">{weekday(d.day)}</div>
-                  {d.saved > 0 && <div className="wr-cap wr-tokens__saved">{fmtTokens(d.saved)} saved</div>}
-                  {d.saved > 0 && usd != null && usd > 0 && <div className="wr-cap wr-tokens__usd">{fmtCost(usd)}</div>}
-                </div>
-              );
-            })}
-          </div>
-          <div className="wr-cap wr-tokens__legend">
-            <span><span className="wr-tokens__key wr-tokens__bar--without" />Without WhiteRoom, est.</span>
-            <span><span className="wr-tokens__key wr-tokens__bar--with" />With WhiteRoom</span>
-          </div>
+            <div className="wr-lbl" style={{ marginBottom: 8 }}>By day, last 7 days</div>
+            <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>
+              {dayRows.map((d) => {
+                const wo = d.used + d.saved;
+                return (
+                  <div key={d.day} className="wr-tokens__day" title={wo ? `${weekdayLong(d.day)}: ${fmtTokens(d.used)} with WhiteRoom, est. ${fmtTokens(wo)} without` : undefined}>
+                    {wo ? (
+                      <>
+                        <div className="wr-tokens__col"><span className="wr-tokens__val">{fmtTokens(wo)}</span><div className="wr-tokens__vbar wr-tokens__bar--without" style={{ height: h(wo) }} /></div>
+                        <div className="wr-tokens__col"><span className="wr-tokens__val wr-tokens__val--with">{fmtTokens(d.used)}</span><div className="wr-tokens__vbar wr-tokens__bar--with" style={{ height: h(d.used) }} /></div>
+                      </>
+                    ) : <span className="wr-cap" style={{ paddingBottom: 4, color: 'var(--tx3)' }}>—</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="wr-tokens__labels" aria-hidden="true">
+              {dayRows.map((d) => {
+                const usd = usdByDay?.[d.day];
+                return (
+                  <div key={d.day}>
+                    <div className="wr-cap">{weekday(d.day)}</div>
+                    {d.saved > 0 && <div className="wr-cap wr-tokens__saved">{fmtTokens(d.saved)} saved</div>}
+                    {d.saved > 0 && usd != null && usd > 0 && <div className="wr-cap wr-tokens__usd">{fmtCost(usd)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="wr-cap wr-tokens__legend">
+              <span><span className="wr-tokens__key wr-tokens__bar--without" />Without WhiteRoom, est.</span>
+              <span><span className="wr-tokens__key wr-tokens__bar--with" />With WhiteRoom</span>
+            </div>
           </div>
         )}
       </Disclosure>
