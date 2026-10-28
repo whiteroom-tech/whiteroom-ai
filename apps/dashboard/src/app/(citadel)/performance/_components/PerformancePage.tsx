@@ -9,6 +9,7 @@ import { syncQueryParams } from '@/lib/url';
 import { agentTotalsFromBuckets, dailySavingsFromBuckets, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { useViewerZone } from '@/hooks/useViewerZone';
 import { NO_EXTRAS, readSnapshot, saveSnapshot, updateSnapshot, type OverviewExtras } from '@/lib/performance-snapshot';
 import { FleetLogin } from '@/components/citadel/FleetLogin';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
@@ -253,13 +254,15 @@ export function PerformancePage({ retentionDays }: {
   // The Savings chart is 7 local calendar days: reload just after local
   // midnight so it moves to the new day even when nothing else refreshes.
   const [midnights, setMidnights] = useState(0);
+  // A new saved zone moves midnight, so the timer is re-armed for it.
+  const zone = useViewerZone();
   useEffect(() => {
     if (!authenticated || view !== 'index') return;
     const next = dayStart(addDays(localDay(), 1)).getTime() + 5_000;
     // Bumping `midnights` re-runs this effect, which arms the next midnight.
     const t = setTimeout(() => { fetchIndex(); setMidnights((n) => n + 1); }, next - Date.now());
     return () => clearTimeout(t);
-  }, [authenticated, view, fetchIndex, midnights]);
+  }, [authenticated, view, fetchIndex, midnights, zone]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
   async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> {

@@ -12,6 +12,8 @@ export async function savedTimeZone(userId: string | undefined): Promise<string 
     const { rows } = await db().query<{ timezone: string | null }>(`SELECT timezone FROM users WHERE id = $1`, [userId]);
     return rows[0]?.timezone ?? null;
   } catch {
+    // Logged so a broken read can be told from "nothing saved"; no details (they can hold connection info).
+    console.error('[saved-zone] reading the saved time zone failed; using the browser zone');
     return null;
   }
 }

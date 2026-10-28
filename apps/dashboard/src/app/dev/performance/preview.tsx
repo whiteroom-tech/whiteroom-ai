@@ -97,8 +97,9 @@ function Recs({ recs }: { recs: RecommendationDetail[] }) {
 
 // Tokens with vs without, one sample week shaped like the mockup's: busy midweek, a big Saturday, quiet days.
 const week = (rows: Array<[number, number]>): DaySavings[] => rows.map(([used, saved], i) => ({ day: addDays(localDay(), i - (rows.length - 1)), used, saved }));
-const WEEK = week([[0, 0], [50_100, 1_569_900], [19_600, 656_400], [0, 0], [1_670_000, 960_000], [0, 0], [0, 0]]);
-const USD_BY_DAY = Object.fromEntries(WEEK.filter((d) => d.saved).map((d) => [d.day, Math.round(d.saved * 0.8)]));
+// Built when rendered, not at import, so the days are in the saved zone (Providers sets it first).
+const sampleWeek = () => week([[0, 0], [50_100, 1_569_900], [19_600, 656_400], [0, 0], [1_670_000, 960_000], [0, 0], [0, 0]]);
+const usdByDay = (days: DaySavings[]) => Object.fromEntries(days.filter((d) => d.saved).map((d) => [d.day, Math.round(d.saved * 0.8)]));
 
 const MODELS: PerformanceModelSummary[] = [
   { provider: 'anthropic', model: 'claude-haiku-4-5', calls: 419, inputTokens: 1_590_000, outputTokens: 104_800, costMicros: 2_770_000 },
@@ -172,7 +173,7 @@ export function PerformancePreview() {
               <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
             </div>
           )}
-          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : WEEK} usdByDay={USD_BY_DAY} defaultOpen={sample === 'problem'} />
+          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'} />
           {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} defaultOpen />}
           {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend={`spend per call ↓21% vs ${prior}`} stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
         </section>

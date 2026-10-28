@@ -28,8 +28,13 @@ describe('savedTimeZone', () => {
   });
 
   it('is null (the browser’s zone) when the read fails, never an error page', async () => {
-    query.mockRejectedValue(new Error('db down'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    query.mockRejectedValue(new Error('db down at 10.0.0.1'));
     expect(await savedTimeZone('u1')).toBeNull();
+    // Logged, so a broken read isn't mistaken for "nothing saved"; without the error's details.
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0])).not.toContain('10.0.0.1');
+    log.mockRestore();
   });
 });
 
