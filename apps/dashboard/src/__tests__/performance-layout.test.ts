@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
 
 const { IndexView } = await import('@/app/(citadel)/performance/_components/IndexView');
-const { noCallsWhen } = await import('@/components/performance/SavingsPanels');
+const { inRange } = await import('@/lib/performance-overview');
 
 const DATA = {
   fleetId: 'f1',
@@ -158,11 +158,11 @@ describe('Less input sent card', () => {
 
 describe('Input tokens empty state', () => {
   it('reads the range naturally', () => {
-    expect(noCallsWhen('today')).toBe('today');
-    expect(noCallsWhen('last 7 days')).toBe('in the last 7 days');
-    expect(noCallsWhen('last 30 days')).toBe('in the last 30 days');
-    expect(noCallsWhen('Oct 1 – Oct 10')).toBe('between Oct 1 – Oct 10');
-    expect(noCallsWhen('Sat, Oct 24')).toBe('on Sat, Oct 24');
+    expect(inRange('today')).toBe('today');
+    expect(inRange('last 7 days')).toBe('in the last 7 days');
+    expect(inRange('last 30 days')).toBe('in the last 30 days');
+    expect(inRange('Oct 1 – Oct 10')).toBe('between Oct 1 – Oct 10');
+    expect(inRange('Sat, Oct 24')).toBe('on Sat, Oct 24');
   });
   it('says it in the panel when the range had no calls', async () => {
     const { TokensCompare } = await import('@/components/performance/SavingsPanels');

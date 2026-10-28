@@ -49,7 +49,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
   return (
     <section aria-labelledby="agent-health-heading" className={`wr-pcard wr-health${warn ? ' wr-health--warn' : ''}`}>
       <div className="wr-health__head">
-        <h3 id="agent-health-heading" className="wr-pcard__title" style={{ display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h3>
+        <h3 id="agent-health-heading" tabIndex={-1} className="wr-pcard__title" style={{ display: 'inline-flex', alignItems: 'center' }}>Agent health<Hint text={HINT} /></h3>
         {line && (
           <span aria-live="polite" className="wr-health__status wr-cap" style={{ color: line.error ? 'var(--bad)' : undefined }}>
             {line.busy && <span className="dx-spin" aria-hidden />}

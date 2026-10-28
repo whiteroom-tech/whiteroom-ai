@@ -4,7 +4,7 @@ import { useId, useState } from 'react';
 import type { DaySavings } from '@/lib/analytics-metrics';
 import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
 import { formatDayKey } from '@/lib/zone-time';
-import { fewerTokens, tokenTotals } from '@/lib/performance-overview';
+import { fewerTokens, inRange, tokenTotals } from '@/lib/performance-overview';
 import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 
 const PLOT_H = 100;
@@ -56,7 +56,7 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
           The input your agents sent to the models, {label}, with WhiteRoom and an estimate without it. Includes cached input; output isn’t counted.
         </p>
         {empty ? (
-          <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls {noCallsWhen(label)}.</p>
+          <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls {inRange(label)}.</p>
         ) : (
           <>
             <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
@@ -108,14 +108,4 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
       </Disclosure>
     </div>
   );
-}
-
-/**
- * The range as an empty state reads it: "today", "in the last 7 days", "on Sat, Oct 24" (one
- * day), "between Oct 1 – Oct 10" (a span: its label has an en dash).
- */
-export function noCallsWhen(label: string): string {
-  if (label === 'today') return 'today';
-  if (label.startsWith('last ')) return `in the ${label}`;
-  return label.includes('–') ? `between ${label}` : `on ${label}`;
 }

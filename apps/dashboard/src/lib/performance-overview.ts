@@ -36,6 +36,17 @@ export function priorLabel(rangeLabel: string, period?: { start: string; end: st
   return `prior ${Math.max(1, Math.round(ms / 3_600_000))} h`;
 }
 
+/**
+ * The range as a phrase inside a sentence ("No model calls …", "12 calls … came from"):
+ * "today", "in the last 7 days", "on Sat, Oct 24" (one day), "between Oct 1 – Oct 10" (a span:
+ * its label has an en dash).
+ */
+export function inRange(label: string): string {
+  if (label === 'today') return 'today';
+  if (label.startsWith('last ')) return `in the ${label}`;
+  return label.includes('–') ? `between ${label}` : `on ${label}`;
+}
+
 /** Whole-percent change from `before` to `now`; null when there's nothing to compare with. */
 export function pctChange(now: number, before: number | null | undefined): number | null {
   if (before == null || !(before > 0) || !Number.isFinite(now)) return null;

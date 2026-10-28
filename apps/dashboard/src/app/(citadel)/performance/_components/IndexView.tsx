@@ -8,13 +8,13 @@ import { flaggedRunCount, useFlaggedRuns } from '@/components/performance/Unusua
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
-import { noCallsWhen, TokensCompare } from '@/components/performance/SavingsPanels';
+import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost, fmtCount, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
-import { countTrend, latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, inputByLocalDay, inputTokensOf, rangeContextCard, savedCaption, trendText } from '@/lib/performance-overview';
+import { countTrend, inRange, latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, inputByLocalDay, inputTokensOf, rangeContextCard, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import type { WorkingHourRate } from '@/lib/performance-overview';
@@ -231,6 +231,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   }, [savingsDays, weekHourly]);
   const toHealth = () => {
     document.getElementById('agent-health-heading')?.scrollIntoView({ block: 'start' });
+    document.getElementById('agent-health-heading')?.focus({ preventScroll: true });
   };
   const toRecommendations = () => {
     document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
@@ -294,7 +295,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
         <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} fleetHourly={workingHour} {...(predictionApi && { api: predictionApi })} />
         {unnamed > 0 && (
           <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>
-            {fmtCount(unnamed)} {unnamed === 1 ? 'call' : 'calls'} {noCallsWhen(rangeLabel)} came from agents without a name: in these totals, but no agent’s.
+            {fmtCount(unnamed)} {unnamed === 1 ? 'call' : 'calls'} {inRange(rangeLabel)} came from agents without a name: in these totals, but no agent’s.
           </p>
         )}
       </section>
