@@ -587,6 +587,9 @@ export function WorkspacePanel({ tab, active, children }: { tab: WorkspaceTab; a
   );
 }
 
+/** What End test does: a demo has nothing to lose, so it ends at once; a live test asks first. */
+export const endTestAction = (isDemo: boolean): 'end' | 'confirm' => (isDemo ? 'end' : 'confirm');
+
 export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previewSeenSecondsAgo, previewPractice }: {
   /** /dev/sandbox only: render as this signed-in user without a real session. */
   previewUserId?: string;
@@ -1277,7 +1280,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
         {run && <div className={s.btnRow}>
           {!(allPassed && !isDemo && wsTab === 'results') && <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>}
           {/* A demo has nothing to lose, so End ends it at once; a live test asks first. */}
-          <button className={`${s.btn} ${s.btnGhost}`} disabled={isDemo && busy} onClick={() => (isDemo ? void end() : setConfirmEnd(true))}>End test</button>
+          <button className={`${s.btn} ${s.btnGhost}`} disabled={isDemo && busy} onClick={() => (endTestAction(isDemo) === 'end' ? void end() : setConfirmEnd(true))}>End test</button>
         </div>}
 
         {/* Footer */}

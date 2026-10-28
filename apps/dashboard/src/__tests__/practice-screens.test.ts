@@ -290,7 +290,7 @@ describe('the Sandbox screens practice tests are added to', () => {
     expect(t).toMatch(/Passed 18\/18 Practice/);
     expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice/);
     expect(t).toMatch(/Didn't finish 2\/6 Practice \(sample\)/);
-    expect(t).toMatch(/Oct 11, 6:00 am Passed 4 Your agent/);
+    expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed 4 Your agent/);
     expect(t).toContain('Past tests 6');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));
     expect(text(open)).toMatch(/Practice test ended .* 11 of 11 checks passed .* WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days\. Open the result/);

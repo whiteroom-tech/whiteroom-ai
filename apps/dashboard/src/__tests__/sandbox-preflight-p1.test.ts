@@ -13,7 +13,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { controlTypeLines, PRACTICE_SUMMARY } = await import('@/lib/sandbox/practice/model');
-const { TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
+const { TestRunFlow, endTestAction } = await import('@/components/sandbox/TestRunFlow');
 
 const rule = (id: string, label: string, mode: string | null, calls: number | null, note: string | null = null): PracticeControlCheck =>
   ({ id, label, mode, agents: 'all', checked: note === null, note, calls });
@@ -79,5 +79,12 @@ describe('loading skeleton', () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('Checking for a practice test…');
     expect(html.match(/aria-hidden="true"/g)).toHaveLength(3);
+  });
+});
+
+describe('End test', () => {
+  it('ends a demo at once and asks first on a live test', () => {
+    expect(endTestAction(true)).toBe('end');
+    expect(endTestAction(false)).toBe('confirm');
   });
 });
