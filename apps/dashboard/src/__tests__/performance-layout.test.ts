@@ -17,7 +17,7 @@ const DATA = {
 };
 
 const props = (data: object = DATA, rangeLabel = 'last 24 h') => ({
-  data, hourlyData: { hourly: [] }, auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: { spend_cap: { blocks: 2, wouldBlocks: 57 } } },
+  data, hourlyData: { hourly: [] }, auditFailed: false, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: {}, byRule: { spend_cap: { blocks: 2, wouldBlocks: 57 } } },
   savingsDays: null, agentIds: null, rangeLabel, fleetId: 'f1', authKey: 'k',
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
 });
@@ -82,7 +82,7 @@ describe('Performance overview, what it leaves out', () => {
   it('has no More detail toggle, Calls per hour chart or By agent table, but does show its sections', () => {
     const html = renderToStaticMarkup(h(IndexView, {
       data: DATA, hourlyData: { hourly: Array.from({ length: 48 }, (_, i) => ({ hour: new Date(Date.UTC(2026, 9, 25, i)).toISOString(), calls: 4, costMicros: 19_000, errors: 0 })) },
-      auditFailed: false, loadedAt: null, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: { 'lead-agent': { blocks: 2, wouldBlocks: 0 }, writer: { blocks: 0, wouldBlocks: 57 } }, byRule: {} },
+      auditFailed: false, govSavings: null, govCounts: { blocks: 2, wouldBlocks: 57, byAgent: { 'lead-agent': { blocks: 2, wouldBlocks: 0 }, writer: { blocks: 0, wouldBlocks: 57 } }, byRule: {} },
       savingsDays: null, agentIds: ['lead-agent', 'writer'], rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k',
       onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
     } as never));
@@ -95,7 +95,13 @@ describe('Performance overview, what it leaves out', () => {
 });
 
 describe('Smaller context card', () => {
-  it('shows the ratio over all time, nothing saved as —, and unknown as — never 0', () => {
-    // Smaller context follows the range, like every Cost figure (rangeContextCard is tested in performance-overview).
+  const text = (p: Record<string, unknown>) => renderToStaticMarkup(h(IndexView, { ...props(), ...p } as never)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  it('takes the range from the with-vs-without days when there are any', () => {
+    const t = text({ savingsDays: [{ day: '2026-10-26', used: 1_000_000, saved: 3_000_000 }, { day: '2026-10-27', used: 0, saved: 0 }], rangeUsedTokens: 999 });
+    expect(t).toMatch(/Smaller context 75% less sent to models · 3M fewer tokens/);
+  });
+  it('says it is unknown, never 0, when the tokens used are unknown, and why when the savings failed to load', () => {
+    expect(text({ savingsDays: null, rangeUsedTokens: null, govSavings: { tokensSaved: 5, costSaved: 0, partial: false } })).toMatch(/Smaller context — not available yet/);
+    expect(text({ auditFailed: true })).toMatch(/Smaller context — couldn’t load, retrying on the next refresh/);
   });
 });

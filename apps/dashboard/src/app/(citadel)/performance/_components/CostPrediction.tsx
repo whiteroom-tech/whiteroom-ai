@@ -160,7 +160,7 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
             <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="wr-pred__form">
               <div className="wr-pred__agent">
                 <SelectChip label="Agent" value={agent} onChange={(v) => setPicked(v)} height={30} options={agents.map((a) => ({ value: a.agentId, label: a.agentId }))} />
-                <span className="wr-cap"><span className="wr-lbl" style={{ marginRight: 6 }}>Hourly cost<Hint text={HELP.hourlySpend} size={12} /></span><span style={{ color: 'var(--tx)' }}>{cost ?? 'No priced calls yet to estimate from.'}</span></span>
+                <span className="wr-cap"><span className="wr-lbl" style={{ marginRight: 6 }}>{f?.burnRateUsdPerHour ? <>Hourly cost<Hint text={HELP.hourlySpend} size={12} /></> : 'Cost'}</span><span style={{ color: 'var(--tx)' }}>{cost ?? 'No priced calls yet to estimate from.'}</span></span>
               </div>
               <div className="wr-pred__fields">
                 <label className="wr-pred__field" htmlFor={usdId}>

@@ -296,7 +296,7 @@ export default function PerformancePage() {
           : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
         {loading && !indexData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} loadedAt={loadedAt} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
+        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
           workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} rangeUsedTokens={extra.rangeUsedTokens} usdByDay={extra.usdByDay}
           showUnnamedNote={Date.now() < UNNAMED_CALLS_NOTE_UNTIL}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}

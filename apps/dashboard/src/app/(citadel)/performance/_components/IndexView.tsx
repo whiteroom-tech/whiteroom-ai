@@ -42,8 +42,6 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** Savings and rule counts couldn't be read: show them as unknown. */
   auditFailed: boolean;
-  /** When this data arrived. */
-  loadedAt: number | null;
   govSavings: GovSavings | null; govCounts: GovernanceCounts | null; fleetId: string; authKey?: string;
   /** From the audit log; null when it couldn't be read. */
   savingsDays: DaySavings[] | null;
@@ -297,4 +295,3 @@ export function IndexView({ data, hourlyData, auditFailed, govSavings, govCounts
 function fmtPctShort(rate: number): string {
   return rate === 0 ? '0%' : `${(rate * 100).toFixed(1)}%`;
 }
-/** The Smaller context card's figure and line: unknown is "—", never 0; it covers all time, not the range. */
