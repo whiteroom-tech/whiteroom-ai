@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import { getTrialEndsAt } from '@/lib/entitlements';
 import { monthToDateSavingsCents } from '@/lib/savings-billing';
 
 /**
@@ -13,7 +14,7 @@ export async function getMonthSavings(): Promise<{ savedCents: number } | null> 
   const userId = session?.user?.id;
   if (!userId) return null;
   try {
-    const savedCents = await monthToDateSavingsCents(userId);
+    const savedCents = await monthToDateSavingsCents(userId, await getTrialEndsAt(userId));
     return savedCents === null ? null : { savedCents };
   } catch {
     return null;

@@ -310,11 +310,20 @@ export async function syncAccountBilling(
   return { ...reported, fee };
 }
 
-/** The account's billable savings this calendar month (UTC) so far, in cents. Null when it can't be read. */
-export async function monthToDateSavingsCents(userId: string, now: number = Date.now()): Promise<number | null> {
-  const byDay = await savingsByUtcDay(userId, `${utcDay(now).slice(0, 7)}-01`);
+/**
+ * The account's billable savings this calendar month (UTC) so far, in cents,
+ * counted as the sync bills them: only whole days after the free period, each
+ * day rounded down. Days with no subscription after the free period ran out
+ * have no agents running, so they add nothing. Null when it can't be read.
+ */
+export async function monthToDateSavingsCents(userId: string, trialEndsAt: string | null, now: number = Date.now()): Promise<number | null> {
+  const monthStart = `${utcDay(now).slice(0, 7)}-01`;
+  const firstBillable = firstWholeDay(Math.ceil(trialEndMs(trialEndsAt) / 1000));
+  const from = firstBillable > monthStart ? firstBillable : monthStart;
+  if (from > utcDay(now)) return 0;
+  const byDay = await savingsByUtcDay(userId, from);
   if (!byDay) return null;
-  let micros = 0;
-  for (const v of byDay.values()) micros += v;
-  return savingsCents(micros);
+  let cents = 0;
+  for (const [day, micros] of byDay) if (day >= from) cents += savingsCents(micros);
+  return cents;
 }

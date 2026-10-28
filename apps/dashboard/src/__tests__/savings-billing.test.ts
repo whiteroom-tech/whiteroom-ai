@@ -305,15 +305,31 @@ describe('reading an account\'s savings', () => {
     expect(await savingsByUtcDay('u1', '2026-10-26')).toBeNull();
   });
 
-  it('adds up the month so far in whole cents', async () => {
+  it('adds up the month so far as billed: whole cents per day', async () => {
     mocks.auditSummary.mockResolvedValue({
       savingsByDay: [
         { day: '2026-10-01', usdMicros: 1_005_000, tokens: 0, unpricedTokens: 0 },
         { day: '2026-10-02', usdMicros: 9_000, tokens: 0, unpricedTokens: 0 },
       ],
     });
-    expect(await monthToDateSavingsCents('u1', NOW)).toBe(202); // 2 fleets × 1.014 dollars
+    // 2 owned fleets: Oct 1 = 2.01 dollars (201 cents), Oct 2 = 18 000 micros (1 cent).
+    expect(await monthToDateSavingsCents('u1', '2026-08-01T00:00:00Z', NOW)).toBe(202);
     expect(mocks.auditSummary.mock.calls[0][1]).toEqual(new Date('2026-10-01T00:00:00Z'));
+  });
+
+  it('leaves out the free days in the month the free period ends', async () => {
+    mocks.auditSummary.mockResolvedValue({
+      savingsByDay: [
+        { day: '2026-10-10', usdMicros: 500_000, tokens: 0, unpricedTokens: 0 },
+        { day: '2026-10-11', usdMicros: 100_000, tokens: 0, unpricedTokens: 0 },
+      ],
+    });
+    // Free until mid-morning Oct 10: billing starts Oct 11.
+    expect(await monthToDateSavingsCents('u1', '2026-10-10T09:00:00Z', NOW)).toBe(20);
+    expect(mocks.auditSummary.mock.calls[0][1]).toEqual(new Date('2026-10-11T00:00:00Z'));
+    mocks.auditSummary.mockClear();
+    expect(await monthToDateSavingsCents('u1', '2026-11-20T00:00:00Z', NOW)).toBe(0);
+    expect(mocks.auditSummary).not.toHaveBeenCalled();
   });
 });
 
