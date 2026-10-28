@@ -104,6 +104,13 @@ describe("preflight", () => {
     t.write(`wrrt_x${String.fromCharCode(127)}y${esc}[200~-pasted${esc}[201~\r`);
     assert.equal(await p, "wrrt_y-pasted");
     assert.deepEqual(t.raw, [true, false]);
+    // A paste whose markers arrive split across reads.
+    for (const chunks of [[`${esc}[200`, `~wrrt_z${esc}[201~\r`], [esc, `[200~wrrt_z${esc}[201`, "~", "\r"]]) {
+      t = term();
+      p = hiddenPrompt("", t);
+      for (const c of chunks) t.write(c);
+      assert.equal(await p, "wrrt_z");
+    }
     t = term();
     p = hiddenPrompt("", t);
     t.write(String.fromCharCode(3));
