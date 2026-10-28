@@ -21,7 +21,7 @@ import { statusLine } from '@/lib/diagnosis/model';
 import type { AgentBudgetForecast, DiagnosisFinding, FleetDiagnosis, GovernanceRule, PerformanceModelSummary, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
 import { CostPredictionSection, type CostPredictionApi } from '@/app/(citadel)/performance/_components/CostPrediction';
-import { ControlSummary } from '@/app/(citadel)/performance/_components/ControlSummary';
+import { RulesSummary } from '@/app/(citadel)/performance/_components/RulesSummary';
 import { capRuleFor } from '@/lib/agent-budgets';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
@@ -173,7 +173,7 @@ export function PerformancePreview() {
             <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
               <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={trendText(pctChange(CARDS.spendMicros, CARDS.prevSpendMicros), prior)} />
               <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, 0)} />
-              <StatCard variant="card" label="Less input sent" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
+              <StatCard variant="card" label="Less input sent" hint={HELP.lessInputSent} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
             </div>
           )}
           <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'} />
@@ -186,7 +186,7 @@ export function PerformancePreview() {
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-control">
               <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage in Controls →</a></>} />
-              <ControlSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unavailable={false} />
+              <RulesSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unavailable={false} />
             </section>
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-performance">

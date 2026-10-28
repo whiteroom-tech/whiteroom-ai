@@ -15,7 +15,7 @@ import { fmtCount } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { Disclosure, ModeTag } from './primitives';
 
-export function ControlSummary({ counts, byRuleId, rules, unavailable }: {
+export function RulesSummary({ counts, byRuleId, rules, unavailable }: {
   /** Null while unknown. */
   counts: GovernanceCounts | null;
   /** Per rule id, from the same rows as the totals (newer engines). */

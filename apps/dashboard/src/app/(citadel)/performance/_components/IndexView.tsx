@@ -19,7 +19,7 @@ import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import type { WorkingHourRate } from '@/lib/performance-overview';
 import { CostPredictionSection, type CostPredictionApi } from './CostPrediction';
-import { ControlSummary } from './ControlSummary';
+import { RulesSummary } from './RulesSummary';
 import { RecommendationsCard } from './Recommendations';
 import { ALREADY_CHANGED_NOTICE, MARKED_FIXED_TOAST } from '@/lib/diagnosis/copy';
 import { useDiagnosis } from '@/lib/diagnosis/useDiagnosis';
@@ -278,7 +278,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
           <StatCard
             variant="card"
             label="Less input sent"
-            hint={HELP.smallerContext}
+            hint={HELP.lessInputSent}
             value={<span style={{ color: context.value !== '—' ? 'var(--ok)' : undefined }}>{context.value}</span>}
             sub={auditFailed ? UNAVAILABLE : context.sub}
           />
@@ -305,7 +305,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
 
       <section aria-labelledby="perf-rules">
         <SectionHeader id="perf-rules" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
-        <ControlSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unavailable={auditFailed} />
+        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unavailable={auditFailed} />
       </section>
 
       <hr className="wr-perf-rule" />

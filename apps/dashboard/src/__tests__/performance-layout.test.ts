@@ -170,3 +170,20 @@ describe('Input tokens empty state', () => {
     expect(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain('No model calls today.');
   });
 });
+
+describe('Rules line', () => {
+  // The Rules section only: Recommendations below has its own loading line.
+  const rules = (p: Record<string, unknown>) => {
+    const html = renderToStaticMarkup(h(IndexView, { ...props(), ...p } as never));
+    return html.slice(html.indexOf('id="perf-rules"'), html.indexOf('id="perf-reliability"')).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  };
+  it('says the counts couldn’t load after a failed read, and is loading before the first', () => {
+    expect(rules({ govCounts: null, auditFailed: true })).toMatch(/Rule activity couldn’t load, retrying on the next refresh/);
+    expect(rules({ govCounts: null, auditFailed: true })).not.toMatch(/Loading…/);
+    expect(rules({ govCounts: null, auditFailed: false })).toMatch(/Rules What your rules caught\. .*Loading…/);
+  });
+  it('says nothing was caught on the folded row when no rule acted', () => {
+    expect(rules({ govCounts: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } })).toMatch(/What your rules caught most nothing caught in this range/);
+  });
+});
+

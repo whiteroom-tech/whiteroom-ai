@@ -92,7 +92,7 @@ describe('savings and spend', () => {
   });
 });
 
-describe('Control', () => {
+describe('Rules', () => {
   it('counts the rules by mode', () => {
     expect(ruleModeCounts(RULES)).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
     expect(ruleModeCounts([...RULES, { ...RULES[0], id: 'gr_alert', mode: 'enforce', response: 'notify' }])).toBe('6 rules: 1 Enforce · 1 Alert only · 3 Watch · 1 Off');
