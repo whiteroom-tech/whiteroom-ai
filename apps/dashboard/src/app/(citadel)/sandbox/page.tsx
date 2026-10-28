@@ -1,7 +1,9 @@
 'use client';
 
-import { TestRunsContent } from '@/components/citadel/TestRunsContent';
+import { Suspense } from 'react';
+import { SandboxEntry } from '@/components/sandbox/SandboxEntry';
 
 export default function SandboxPage() {
-  return <TestRunsContent />;
+  // SandboxEntry reads the address (useSearchParams), so it renders on the client.
+  return <Suspense><SandboxEntry /></Suspense>;
 }

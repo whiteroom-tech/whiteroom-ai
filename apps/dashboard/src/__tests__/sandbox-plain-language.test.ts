@@ -80,7 +80,6 @@ describe('Sandbox plain language', () => {
     expect(eventLabel('policy_chain_verified')).toBe('Controls checked');
     expect(eventLabel('policy_enforcement_verified')).toBe('Control applied');
     expect(eventLabel('policy_decision')).toBe('Control check');
-    expect(eventLabel('demo_activity')).toBe('Demo step');
     expect(eventLabel('paired_handover')).toBe('Saved progress and kept going');
     expect(eventLabel('watch_start')).toBe('Started work');
     for (const label of Object.values(EVENT_LABELS)) expect(label).not.toMatch(JARGON);

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { ROUTES } from '@/lib/routes';
 import { DataTable, Hint, Panel, Tag, FONT_MONO } from '@whiteroom/ui';
 import { getHistory, getPastReport, type PastTest } from '@/lib/sandbox/api';
 import { pastTestReport, saveReportFile } from '@/lib/sandbox/report';
@@ -136,9 +138,8 @@ export function pastRows(tests: PastTest[], practice: PracticeRunRow[] = []): Ro
  * so when there are none yet. It mounts on the start step, so returning there
  * after a test reloads the list. Practice tests, when given, are rows too.
  */
-export function PastTests({ preview, onDemo, previewOpen, practice }: {
+export function PastTests({ preview, previewOpen, practice }: {
   preview?: PastTest[];
-  onDemo?: () => void;
   /** /dev/sandbox and tests: the test whose row starts open. */
   previewOpen?: string;
   /** The owner's practice tests; open ones aren't listed. */
@@ -162,7 +163,7 @@ export function PastTests({ preview, onDemo, previewOpen, practice }: {
       <div style={{ marginTop: 24 }}>
         <Panel title={<>Past tests<Hint text={HELP.pastTests} /></>}>
           <p className={s.pastEmpty}>
-            No tests yet. {onDemo ? <button type="button" className={s.linkBtn} onClick={onDemo}>Run the demo</button> : 'Run the demo'} to see what you’ll get.
+            No tests yet. <Link className={s.linkBtn} href={ROUTES.practiceDemo}>See a sample report</Link> to see what you’ll get.
           </p>
         </Panel>
       </div>

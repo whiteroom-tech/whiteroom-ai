@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// Sandbox › End test, wired end to end: a demo ends at once (no confirm, the
-// end call goes out); a live test asks first and calls nothing until confirmed.
+// Sandbox › End test, wired end to end: a live test asks first and calls
+// nothing until confirmed.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, createElement as h, type FC } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -34,19 +34,6 @@ async function mount(previewRun: RunStatusResult) {
 
 describe('End test', () => {
   beforeEach(() => { api.destroy.mockReset(); api.destroy.mockResolvedValue({ success: true }); document.body.innerHTML = ''; });
-
-  it('ends a demo at once, with no confirm', async () => {
-    const m = await mount(run({ mode: 'demo' }));
-    expect(m.endButton()).toBeTruthy();
-    await act(async () => { m.endButton()!.click(); });
-    await flush();
-    expect(api.destroy).toHaveBeenCalledWith('sb-1');
-    expect(m.el.textContent).not.toContain('End this test?');
-    expect(m.el.querySelector('[role="alertdialog"]')).toBeNull();
-    // Back on the start screen, which says how long a test link lasts.
-    expect(m.el.textContent).toContain('Check your agent works through WhiteRoom before you use it for real. About 3 minutes; it doesn’t touch your live fleet. The test link lasts 30 minutes.');
-    m.root.unmount();
-  });
 
   it('asks first on a live test, and ends nothing until confirmed', async () => {
     const m = await mount(run({}));

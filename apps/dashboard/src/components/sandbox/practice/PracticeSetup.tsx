@@ -5,18 +5,19 @@ import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, controlTypeLines, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
-  PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
+  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, costLine, defaultAgent, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
+  planRows, practiceBlock, PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, WILL_CHECK, ROW_STATUS_LABEL, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
-import { SettingsCard } from '@/components/settings/SettingsCard';
+import { RowGroups, type RowItem } from './PreflightRows';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 
-/** What setup needs to know about the fleet: its agents, from Controls (governance_list). */
+/** What setup needs to know about the fleet: its agents and when each was last active, from Controls (governance_list). */
 export interface SetupData {
   agents: string[];
+  lastActiveAt?: Record<string, string | null>;
 }
 
 /** "Set `ANTHROPIC_API_KEY` to the key your agent uses with prod-eu." / R7: "Run this where `AZURE_OPENAI_API_KEY` is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2)." */
@@ -25,31 +26,17 @@ function KeyLine({ choice, fleet, className }: { choice: PracticeKeyChoice | nul
   return <p className={className}>{l.before}<code>{l.keyVar}</code>{l.after}</p>;
 }
 
-/** The 7 agent checks by scenario, then the fleet's controls as the engine plans them: what the results will show, by the same names. */
-function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] | null }) {
-  const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
-  const lines = controls ? controlTypeLines(controls) : [];
-  return (
-    <div style={{ margin: '16px 0' }}>
-      <SettingsCard id="practice-checks-preview" title="What the test checks" level={3}>
-        <ol className={s.previewList}>
-          {scenarios.map((sc) => (
-            <li key={sc} className={s.previewItem}>
-              <span className={s.previewName}>{sc}</span>
-              <span className={s.previewText}>{CATALOG.checks.filter((c) => c.scenario === sc && c.label !== sc).map((c) => c.label).join(' · ')}</span>
-            </li>
-          ))}
-          <li className={s.previewItem}>
-            <span className={s.previewName}>{CATALOG.controls.scenario}</span>
-            {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
-              : lines.length ? <ul className={p.list}>{lines.map((l) => <li key={l.type}>{l.text}</li>)}</ul>
-              : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
-            {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
-          </li>
-        </ol>
-      </SettingsCard>
-    </div>
-  );
+/** Step 2's rows: what each of the seven will do, from the catalog and the engine's planned control checks (null: couldn't be read). */
+export function planItems(controls: PracticeControlCheck[] | null): RowItem[] {
+  return planRows(controls).map((x) => ({
+    row: x.row,
+    tone: 'muted',
+    label: x.status === 'will_check' ? WILL_CHECK : ROW_STATUS_LABEL[x.status],
+    reason: x.reason,
+    addInControls: x.addInControls,
+    detailsLabel: x.row.members.every((m) => m.startsWith('ctl.')) ? 'Which rules' : 'Which checks',
+    details: x.members.length ? <ul className={p.list}>{x.members.map((m, i) => <li key={i}>{m}</li>)}</ul> : undefined,
+  }));
 }
 
 const NO_KEYS = { keys: [], direct: true, initial: null };
@@ -81,7 +68,9 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
   const noAgents = data.agents.length === 0;
   const [sample, setSample] = useState(noAgents);
-  const [agent, setAgent] = useState(data.agents[0] ?? '');
+  // Step 1: the most recently active agent (§7), else the first by name.
+  const recent = defaultAgent(data.agents, data.lastActiveAt);
+  const [agent, setAgent] = useState(recent);
   const [runs, setRuns] = useState<1 | 3>(1);
   // What source-model says: the agent's latest model, where its calls go, the keys to pick from (undefined while loading).
   const [src, setSrc] = useState<PracticeSource | undefined>(preview);
@@ -123,10 +112,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   const ineligible = src?.providerKeys.filter((k) => !k.eligible) ?? [];
   // Why Start can't run here at all: an IAM-role fleet; a fleet with its own host, or a cloud agent, with no Fleet key key to pick.
   // (The sample agent calls with the fleet's own key, so a cloud agent's fleet can still run it.)
-  const blocked: 'role' | 'host' | 'cloud' | null = src?.blocked === 'bedrock_role' ? 'role'
-    : src?.provider === 'proxy-url' && !key ? 'host'
-    : src?.provider === 'cloud' && !sample && !key ? 'cloud'
-    : null;
+  const blocked = src ? practiceBlock(src, { sample, hasKey: !!key }) : null;
   // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
   const controls = src === undefined ? [] : src.controls?.checks ?? null;
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
@@ -152,41 +138,37 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
 
   return (
     <div className={p.wrap}>
-      <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Set up a practice test</h2>
-      <p className={s.pageSub}>{PRACTICE_SUMMARY}. You start it from your computer with one command.</p>
+      <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Pre-flight check</h2>
+      <p className={s.pageSub}>{PRACTICE_SUMMARY}. You start it from your computer with one command. <Link href={ROUTES.practiceDemo}>See a sample report</Link></p>
 
       {blocked && (
         <div className={s.notice} role="status">
-          {blocked === 'role' ? <>{KEY_REFUSALS.bedrock_role} Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>
+          {blocked === 'role' ? <>{KEY_REFUSALS.bedrock_role} Use the connection test instead: <Link href={ROUTES.connectionTest}>Test my agent →</Link></>
             : blocked === 'cloud' ? <>To test an agent that uses Azure OpenAI, Claude on Azure (Foundry) or AWS Bedrock, add its key on <Link href={ROUTES.fleetKey}>Fleet key</Link>, then come back and pick it here.</>
-            : <>{UNSUPPORTED_FLEET} Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}
+            : <>{UNSUPPORTED_FLEET} Use the connection test instead: <Link href={ROUTES.connectionTest}>Test my agent →</Link></>}
         </div>
       )}
 
       <div className={`${s.card} ${s.cardBrand}`}>
-        <fieldset className={s.choiceGroup}>
-          <legend className={s.formLabel}>Who runs the practice tasks</legend>
-          <div className={s.choices}>
-            {([
-              [true, 'Sample agent', 'No code, 1 run. Doesn’t test your agent.'],
-              [false, 'Your agent', noAgents ? 'Run your agent through WhiteRoom once first, so it shows up here.' : 'Needs a small adapter.'],
-            ] as const).map(([v, name, sub]) => (
-              <label key={name} className={`${s.choice} ${sample === v ? s.choiceOn : ''} ${!v && noAgents ? s.choiceOff : ''}`}>
-                <input type="radio" name="practice-who" checked={sample === v} disabled={!v && noAgents} onChange={() => pick(v)} className={s.choiceInput} />
-                <span className={s.choiceText}><span className={s.choiceName}>{name}</span><span className={s.choiceSub}>{sub}</span>
-                  {!v && !noAgents && <span className={s.choiceSub}>{ADAPTER_EXPLAINER} <a className={s.linkBtn} href={ADAPTER_HELP_URL} target="_blank" rel="noopener noreferrer">How it works</a></span>}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
+        <h3 className={s.sectionTitle}>1. Pick agent</h3>
         {data.agents.length > 0 && (
           <div className={s.formGroup}>
-            <label className={s.formLabel} htmlFor="practice-agent">Agent <span className={s.formLabelHint}>{sample ? '· the sample agent runs with its name and controls' : '· whose controls are checked'}</span></label>
+            <label className={s.formLabel} htmlFor="practice-agent">Agent {sample ? <span className={s.formLabelHint}>· the sample agent runs with its name and guardrails</span>
+              : agent === recent && data.lastActiveAt?.[agent] ? <span className={s.formLabelHint}>· active most recently</span> : null}</label>
             <select id="practice-agent" className={s.formInput} value={agent} onChange={(e) => setAgent(e.target.value)}>
               {data.agents.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
+        )}
+        {sample ? (
+          <p className={s.small}>
+            {noAgents ? 'No agent has called through WhiteRoom yet, so WhiteRoom’s sample agent runs the tasks.' : 'WhiteRoom’s sample agent runs the tasks: no code, 1 run.'} It checks your guardrails, not your own agent.
+            {!noAgents && <> <button type="button" className={s.linkBtn} onClick={() => pick(false)}>Use my agent</button></>}
+          </p>
+        ) : (
+          <p className={s.small}>
+            Your agent needs a small adapter. {ADAPTER_EXPLAINER} <a className={s.linkBtn} href={ADAPTER_HELP_URL} target="_blank" rel="noopener noreferrer">How it works</a>
+          </p>
         )}
 
         {options.keys.length > 0 && (
@@ -226,18 +208,20 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
             : <p className={s.small}>Looking up the model {agent} uses…</p>}
         </div>
 
-        <p className={s.small}>{costLine(est, sample ? 1 : runs)}</p>
-        {!blocked && <KeyLine choice={keyChoice} fleet={fleet} className={s.small} />}
+      </div>
 
+      <section className={s.card} aria-labelledby="practice-plan-title">
+        <h3 id="practice-plan-title" className={s.sectionTitle}>2. What we’ll test</h3>
+        <RowGroups items={planItems(controls)} />
+        <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample ? 1 : runs)}</p>
+        {!blocked && <KeyLine choice={keyChoice} fleet={fleet} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
-          <Link className={`${s.btn} ${s.btnGhost}`} href={ROUTES.sandbox}>Back</Link>
+          {!sample && <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => pick(true)}>No agent yet? Use our sample</button>}
         </div>
         {cloudField && !model && !blocked && <p className={`${s.small} ${p.desktopOnly}`}>{cloudField.missing}</p>}
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>
-      </div>
-
-      <PracticeCheckPreview controls={controls} />
+      </section>
       <p className={s.small}>{DISCLAIMER}</p>
     </div>
   );

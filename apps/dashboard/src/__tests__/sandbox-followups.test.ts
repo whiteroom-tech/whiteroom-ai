@@ -1,5 +1,4 @@
-// Sandbox follow-ups: the demo walkthrough and its checks tell the same story
-// as the engine's demo, a past test's details open under its own row, and the
+// Sandbox follow-ups: the checks' wording, a past test's details open under its own row, and the
 // Run your agent checklist doesn't claim the agent was seen before it called.
 
 import { describe, expect, it, vi } from 'vitest';
@@ -11,43 +10,13 @@ import type { RunStatusResult } from '@/lib/sandbox/api';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { DEMO_STORY, checkGuidance, callArrived, connectProgress, diagStepState, hasNoCalls, recognizedStep } = await import('@/components/sandbox/TestRunFlow');
+const { checkGuidance, callArrived, connectProgress, diagStepState, hasNoCalls, recognizedStep } = await import('@/components/sandbox/TestRunFlow');
 const { PastTests } = await import('@/components/sandbox/PastTests');
-const { SANDBOX_CHECKS } = await import('@/lib/sandbox/report');
 
-const JARGON = /hand(s|ed)?[ -]?over|\bshifts?\b|\bwatch(es)?\b|context|compress/i;
-
-describe('Demo walkthrough matches the demo', () => {
-  // The engine's demo: demo-agent works, then its work goes on in demo-agent-b.
-  const demo = {
-    sandboxId: 'd', mode: 'demo' as const,
-    agents: [{ agentId: 'demo-agent', totalTasks: 1 }, { agentId: 'demo-agent-b', totalTasks: 1 }],
-    auditLog: [{ id: '1', timestamp: '2026-10-12T10:00:00Z', type: 'handover', agentId: 'demo-agent' }],
-  } as unknown as RunStatusResult;
-
-  it('has one step per check', () => {
-    expect(DEMO_STORY.map((s) => s.title)).toEqual(SANDBOX_CHECKS.map((c) => c.label));
-  });
-
-  it('says the work kept going on the long task, in the step and in its check, never how', () => {
-    expect(DEMO_STORY[1].text).toBe('The demo task runs long, and the work keeps going without losing its place.');
-    const memory = checkGuidance('core.handoff', 'observed', demo, 'anthropic').detail;
-    expect(memory).toBe(DEMO_STORY[1].detail);
-    for (const words of [DEMO_STORY[1].text, memory]) expect(words).not.toMatch(/summary|second demo agent|memory/);
-  });
-
-  it('says the next call went through and finished the next task, in the step and in its check', () => {
-    const resume = checkGuidance('core.resume', 'observed', demo, 'anthropic').detail;
-    expect(resume).toBe(DEMO_STORY[2].detail);
-    for (const words of [DEMO_STORY[2].text, resume]) expect(words).toMatch(/next task/);
-  });
-
-  it('counts the demo calls like a live test', () => {
-    expect(checkGuidance('core.connect', 'observed', demo, 'anthropic').detail).toBe('2 calls went through WhiteRoom and got a normal reply.');
-  });
-
-  it('uses plain words', () => {
-    for (const s of DEMO_STORY) for (const words of [s.title, s.text, s.detail ?? '']) expect(words).not.toMatch(JARGON);
+describe('Check wording', () => {
+  it('counts the calls that went through', () => {
+    const run = { sandboxId: 'd', mode: 'connected' as const, agents: [{ agentId: 'a', totalTasks: 1 }, { agentId: 'b', totalTasks: 1 }], auditLog: [] } as unknown as RunStatusResult;
+    expect(checkGuidance('core.connect', 'observed', run, 'anthropic').detail).toBe('2 calls went through WhiteRoom and got a normal reply.');
   });
 
   it('leaves the live wording alone', () => {

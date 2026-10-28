@@ -3,7 +3,6 @@
 /* ── Badges ── */
 .badgeMode { font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:600; letter-spacing:.06em; padding:3px 8px; border-radius:4px; white-space:nowrap; }
 .badgeMode.live { background:var(--ok-bg); color:var(--ok); }
-.badgeMode.demo { background:var(--brand-dim); color:var(--brand); }
 
 /* ── Timer ── */
 .timer { margin-left:auto; font-family:var(--font-mono); font-size: var(--fs-sm); font-weight:500; display:flex; align-items:center; gap:5px; }

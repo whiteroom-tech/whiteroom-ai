@@ -194,10 +194,10 @@ describe('POST /api/sandbox/runs', () => {
     expect(engineBodies()[0]).not.toHaveProperty('endpoint');
   });
 
-  it('a demo never names a provider (the engine refuses one)', async () => {
+  it('refuses a demo: the Sandbox demo is the pre-flight sample report now, and starts no test', async () => {
     engineReplies({ body: { success: true, sandboxId: 'sb1' } });
-    await post({ mode: 'demo', provider: 'anthropic' });
-    expect(engineBodies()[0]).not.toHaveProperty('provider');
+    expect((await post({ mode: 'demo' })).status).toBe(400);
+    expect(engineBodies()).toEqual([]);
   });
 
   it.each([
