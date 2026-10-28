@@ -37,10 +37,11 @@ describe('Performance overview layout', () => {
     expect(text).toContain('Per-agent numbers and scores are on Home → Agents');
   });
 
-  it('puts spend, savings, the hourly cost and smaller context under Cost, and rule activity under Control', () => {
+  it('puts spend, savings and smaller context under Cost (hourly cost is in Cost prediction), and rule activity under Control', () => {
     const html = view();
     const cost = html.slice(html.indexOf('id="perf-cost"'), html.indexOf('id="perf-control"'));
-    for (const label of ['Spend', 'Saved by WhiteRoom', 'Hourly cost', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    for (const label of ['Spend', 'Saved by WhiteRoom', 'Smaller context']) expect(cost).toContain(`>${label}<`);
+    expect(cost).not.toContain('>Hourly cost<');
     expect(cost).not.toContain('Average per hour');
     expect(cost).toContain('$0.912');
     expect(cost).toContain('99 model calls');
@@ -54,13 +55,14 @@ describe('Performance overview layout', () => {
     for (const label of ['Failed calls', 'Typical response', 'Model calls']) expect(perf).toContain(`>${label}<`);
   });
 
-  it('works out the card figures: the working-hour rate, trends against the prior window, and the typical response', () => {
+  it('works out the figures: the fleet hourly cost, trends against the prior window, and the typical response', () => {
     const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     const withPrev = text(renderToStaticMarkup(h(IndexView, {
       ...props(), data: { ...DATA, previous: { period: { start: '', end: '' }, totalCalls: 33, totalCost: 456_000, pricedAttempts: 33, unpricedAttempts: 0, avgLatencyMs: 3800 } },
       workingHour: { usdPerHour: 0.354, lookbackHours: 336 }, rangeUsedTokens: 1_740_000, govSavings: { tokensSaved: 3_180_000, costSaved: 2.34, partial: false },
     } as never)));
-    expect(withPrev).toMatch(/Hourly cost .*\$0\.354 an hour while agents work · last 14 days/);
+    // The fleet's hourly cost sits on Cost prediction's folded row; each agent's own is inside it.
+    expect(withPrev).toMatch(/Cost prediction \$0\.354 an hour for all agents/);
     expect(withPrev).toMatch(/Model calls .*99 ↑ 200% vs prior 24 h/);
     expect(withPrev).toMatch(/Typical response .*1\.9s ↓ 50% faster vs prior 24 h/);
     expect(withPrev).toMatch(/3\.18M fewer tokens · about 65% less · estimated/);

@@ -22,6 +22,7 @@ import { fmtCost, fmtCount } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { usePoll } from '@/hooks/usePoll';
 import { Disclosure } from './primitives';
+import type { WorkingHourRate } from './IndexView';
 
 /** What the card reads and writes. The dev preview passes its own, so a sample fleet is never written to. */
 export interface CostPredictionApi {
@@ -39,11 +40,13 @@ export const liveCostPredictionApi: CostPredictionApi = {
   addCap: async (fleetId, agentId, usd, key) => (await governanceCreateRule(fleetId, capRuleFor(agentId, usd), key)).rule,
 };
 
-export function CostPredictionSection({ fleetId, authKey, agentIds, api = liveCostPredictionApi, defaultOpen = false }: {
+export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly, api = liveCostPredictionApi, defaultOpen = false }: {
   fleetId: string;
   authKey?: string;
   /** Agents with calls in the page's range: an older engine lists only agents with a budget. */
   agentIds: string[] | null;
+  /** The whole fleet's spend per working hour, for the folded note; absent or null when unknown. */
+  fleetHourly?: WorkingHourRate | null;
   api?: CostPredictionApi;
   /** Starts unfolded (dev preview). */
   defaultOpen?: boolean;
@@ -148,7 +151,7 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, api = liveCo
 
   return (
     <div className="wr-pcard" style={{ overflow: 'hidden', marginBottom: 16 }}>
-      <Disclosure label="Cost prediction" note={data ? budgetsNote(agents) : loadFailed ? 'couldn’t load, retrying' : undefined} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId} first>
+      <Disclosure label="Cost prediction" note={predictionNote(fleetHourly, data ? budgetsNote(agents) : loadFailed ? 'couldn’t load, retrying' : undefined)} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId} first>
         <div className="wr-pred">
           {agents.length === 0 ? (
             <p className="wr-cap" style={{ margin: 0 }}>{data ? 'Agents show up here once they’ve made calls.' : loadFailed ? 'Couldn’t load the cost prediction. Retrying…' : 'Loading…'}</p>
@@ -156,7 +159,7 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, api = liveCo
             <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="wr-pred__form">
               <div className="wr-pred__agent">
                 <SelectChip label="Agent" value={agent} onChange={(v) => setPicked(v)} height={30} options={agents.map((a) => ({ value: a.agentId, label: a.agentId }))} />
-                <span className="wr-cap">{cost ?? 'No priced calls yet to estimate from.'}</span>
+                <span className="wr-cap"><span className="wr-lbl" style={{ marginRight: 6 }}>Hourly cost</span><span style={{ color: 'var(--tx)' }}>{cost ?? 'No priced calls yet to estimate from.'}</span></span>
               </div>
               <div className="wr-pred__fields">
                 <label className="wr-pred__field" htmlFor={usdId}>
@@ -199,4 +202,10 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, api = liveCo
       )}
     </div>
   );
+}
+
+/** The folded row's note: the whole fleet's hourly cost first, when known ("$0.36 an hour for all agents"), then the budgets note. */
+export function predictionNote(fleetHourly: WorkingHourRate | null | undefined, rest: string | undefined): string | undefined {
+  const hourly = fleetHourly && !fleetHourly.unpriced && fleetHourly.usdPerHour > 0 ? `${fmtCost(Math.round(fleetHourly.usdPerHour * 1_000_000))} an hour for all agents` : '';
+  return [hourly, rest].filter(Boolean).join(' · ') || undefined;
 }

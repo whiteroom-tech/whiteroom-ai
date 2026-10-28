@@ -14,7 +14,7 @@ import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
 import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
 import { tallyTotal, type GovernanceCounts } from '@/lib/governance';
-import { latencyTrend, lookbackText, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
+import { latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, rulesCaughtText, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
 import { StatCard } from '@whiteroom/ui';
 import { CostPredictionSection, type CostPredictionApi } from './CostPrediction';
@@ -235,7 +235,8 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
 
       <section aria-labelledby="perf-cost">
         <SectionHeader id="perf-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={rangeLabel} />
-        <div className="wr-perf-strip" style={{ marginBottom: 16 }}>
+        {/* Hourly cost lives in Cost prediction, per agent (Rashad, Oct 27); the fleet figure is its folded note. */}
+        <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
           <StatCard
             variant="card"
             label="Spend"
@@ -257,14 +258,6 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
           />
           <StatCard
             variant="card"
-            label="Hourly cost"
-            hint={HELP.hourlySpend}
-            value={workingHour && !workingHour.unpriced ? fmtCost(Math.round(workingHour.usdPerHour * 1_000_000)) : '—'}
-            sub={!workingHour ? UNAVAILABLE : workingHour.unpriced ? 'recent calls have no price on file yet'
-              : ['an hour while agents work', lookbackText(workingHour.lookbackHours)].filter(Boolean).join(' · ')}
-          />
-          <StatCard
-            variant="card"
             label="Smaller context"
             hint={HELP.smallerContext}
             value={<span style={{ color: compression != null && compression > 0 ? 'var(--ok)' : undefined }}>{smallerContextCard(compression).value}</span>}
@@ -273,7 +266,7 @@ export function IndexView({ data, hourlyData, auditFailed, loadedAt, govSavings,
         </div>
         {/* Tokens with vs without, then Cost prediction (folded), then Spend by model (folded). */}
         {savingsDays && <TokensCompare days={savingsDays} usdByDay={usdByDay} />}
-        <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} {...(predictionApi && { api: predictionApi })} />
+        <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} fleetHourly={workingHour} {...(predictionApi && { api: predictionApi })} />
         {s.models.length > 0 && (
           <SpendByModel
             models={s.models}

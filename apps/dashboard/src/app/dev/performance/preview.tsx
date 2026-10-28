@@ -152,15 +152,14 @@ export function PerformancePreview() {
         <section aria-labelledby="pv-cost">
           <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta="last 7 days" />
           {!empty && (
-            <div className="wr-perf-strip" style={{ marginBottom: 16 }}>
+            <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
               <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={<>{CARDS.calls} model calls<span style={{ display: 'block', marginTop: 8, color: 'var(--tx3)' }}>Includes calls from agents without a name since Oct 19.</span></>} />
               <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, CARDS.usedTokens, 0)} />
-              <StatCard variant="card" label="Hourly cost" hint={HELP.hourlySpend} value={fmtCost(CARDS.perHourMicros)} sub="an hour while agents work · last 14 days" />
               <StatCard variant="card" label="Smaller context" hint={HELP.smallerContext} value={<span style={{ color: 'var(--ok)' }}>{smallerContextCard(CARDS.compression).value}</span>} sub={<>{smallerContextCard(CARDS.compression).sub}<span style={{ display: 'block', marginTop: 8 }}>≈{CARDS.kwh} kWh saved all time</span></>} />
             </div>
           )}
           <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : WEEK} usdByDay={USD_BY_DAY} defaultOpen={sample === 'problem'} />
-          {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} api={previewPredictionApi(sample === 'problem')} defaultOpen />}
+          {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} defaultOpen />}
           {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend="spend per call ↓21% vs prior 7 days" stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
         </section>
         {!empty && (
