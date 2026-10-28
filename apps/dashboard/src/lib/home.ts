@@ -8,6 +8,7 @@ import { deriveDisplayStatus } from '@/lib/fleet-helpers';
 import { fmtTime, fmtWhen, plural, HOUR_MS } from '@/lib/format';
 import { dayKey, startOfDay } from '@/lib/zone-time';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
+import { MODE_LABEL } from '@/lib/vocab';
 
 // ── Agents ───────────────────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   self_handover: { label: 'Smaller context', tone: 'ho' },
   agent_paused: { label: 'Paused', tone: 'warn' },
   governance_block: { label: 'Blocked', tone: 'block' },
-  governance_would_block: { label: 'Record only', tone: 'muted' },
+  governance_would_block: { label: MODE_LABEL.watch, tone: 'muted' },
   unnamed_call_refused: { label: 'Refused', tone: 'warn' },
   unclean_stop: { label: 'Gap', tone: 'warn' },
   possible_gap: { label: 'Gap', tone: 'warn' },

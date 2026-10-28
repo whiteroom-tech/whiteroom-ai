@@ -106,7 +106,7 @@ const MODELS: PerformanceModelSummary[] = [
   { provider: 'anthropic', model: 'claude-sonnet-4-5', calls: 60, inputTokens: 44_300, outputTokens: 9_100, costMicros: 400_000 },
 ];
 
-// Control: eight rules, one in Block; what they caught this week, per rule id.
+// Control: eight rules, one in Enforce; what they caught this week, per rule id.
 const rule = (id: string, ruleType: GovernanceRule['ruleType'], mode: GovernanceRule['mode'], params: object): GovernanceRule =>
   ({ id, fleetId: 'acme-claims-prod', ruleType, mode, response: 'block', params, appliesTo: 'all', version: 1, changedBy: 'preview', changedAt: '2026-10-20T12:00:00Z' }) as GovernanceRule;
 const RULES: GovernanceRule[] = [

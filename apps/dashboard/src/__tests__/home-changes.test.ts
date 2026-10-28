@@ -11,7 +11,7 @@ describe('Latest changes', () => {
   it('words rule changes with who made them and links to the rule', () => {
     expect(changeRow(rule('1', 'Loop breaker: Added new Loop breaker rule', '2026-10-27T10:30:00'), actors, NOW)).toEqual({ key: '1', time: '10:30 am', text: 'Loop breaker rule added by R Haque', href: '/controls?rule=gr_1' });
     expect(changeRow(rule('2', 'Loop breaker: Removed Loop breaker rule', '2026-10-25T09:00:00', 'api'), actors, NOW)!.text).toBe('Loop breaker rule removed through the API');
-    expect(changeRow(rule('3', 'Loop breaker: Watch → Enforce', '2026-10-25T09:00:00'), actors, NOW)!.text).toBe('Loop breaker: Record only → Block by R Haque');
+    expect(changeRow(rule('3', 'Loop breaker: Watch → Enforce', '2026-10-25T09:00:00'), actors, NOW)!.text).toBe('Loop breaker: Watch → Enforce by R Haque');
   });
 
   it('words agent changes and links to the agent', () => {

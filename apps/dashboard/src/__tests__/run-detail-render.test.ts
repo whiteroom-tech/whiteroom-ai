@@ -41,7 +41,7 @@ describe('run page', () => {
     const text = el.textContent ?? '';
     expect(el.querySelector('.wr-run-summary')?.textContent).toMatch(/· 2 model calls · \$0\.05 · 0 failed · 2 would have blocked · claude-sonnet-4-5$/);
     expect(text).toContain('Model allowlist would have blocked 2 calls: model not on the allowlist');
-    expect(text).toContain('These rules are Record only, so the calls went through.');
+    expect(text).toContain('These rules are in Watch, so the calls went through.');
     expect([...el.querySelectorAll('a')].find((a) => a.textContent?.startsWith('Open Model allowlist in Controls'))?.getAttribute('href')).toBe('/controls?rule=gr_allow');
     expect(el.querySelectorAll('.wr-timeline > li.is-shaded')).toHaveLength(2);
     expect(text).toContain('would have been blocked: model not on the allowlist');

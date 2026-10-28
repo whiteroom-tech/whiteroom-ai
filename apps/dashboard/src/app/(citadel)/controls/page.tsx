@@ -7,7 +7,7 @@
 
 import { HistoryLine } from "./_components/HistoryLine";
 import { undoFor, type Undo } from "@/lib/rule-history";
-import { DOES_TAG, MODE_LABEL } from '@/lib/vocab';
+import { MODE_LABEL, modeTagText, NOTIFY } from '@/lib/vocab';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -137,7 +137,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [alsoOpen, setAlsoOpen] = useState(false);
   /** Each agent's average daily spend (14 days), for a spend cap on specific agents; null: couldn't read. */
   const [agentSpend, setAgentSpend] = useState<Record<string, { perDay: number; days: number } | null>>({});
-  /** Each agent's calls since a rule's last change, for the Block confirm's "every call" warning. */
+  /** Each agent's calls since a rule's last change, for the Enforce confirm's "every call" warning. */
   const [agentCalls, setAgentCalls] = useState<Record<string, number>>({});
   // Opening a rule moves focus into the editor on a wide screen (a phone's sheet focuses ‹ Controls).
   const focusEditor = useRef(false);
@@ -336,7 +336,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       if (selected.appliesTo === "all" && next.appliesTo !== "all" && next.appliesTo.length > 0) {
         return ask({ kind: "narrow", rule: selected, next, reasons: weakenings(selected, { ...next, appliesTo: "all" }) });
       }
-      // Only stepping down from Block, nothing else weaker: "Stop blocking with this rule?"
+      // Only stepping down from Enforce, nothing else weaker: "Stop blocking with this rule?"
       if (selected.mode === "enforce" && next.mode !== "enforce" && !weakenings(selected, { ...next, mode: selected.mode }).length) {
         return ask({ kind: "downgrade", rule: selected, next });
       }
@@ -357,7 +357,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // ── Undo (lib/rule-history) ─────────────────────────────────────
   // Never edits the log: an update's old settings go into the editor and are
   // saved as a new change, through the checks above; a removed rule comes
-  // back as a new rule in Record only.
+  // back as a new rule in Watch.
   // Removals added back in this visit: hidden at once, before the reload brings the log's own "added" line.
   const [restored, setRestored] = useState<Set<string>>(() => new Set());
   const undoOf = (h: GovernanceHistoryEntry) => {
@@ -407,7 +407,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         const { rule: back } = await governanceUpdateRule(fleetId, r.id, { ...changes, ifVersion: saved.version, description: "Undid the last change" }, authKey);
         setRules((rs) => rs.map((x) => (x.id === back.id && back.version >= x.version ? back : x)));
         if (selectedRef.current === back.id) setDraft(draftFrom(back));
-        showToast(`Undone. ${RULE_LABELS[back.ruleType]} is back to how it was (${back.mode === "enforce" ? DOES_TAG[back.response ?? "block"] : MODE_LABEL[back.mode]}).`);
+        showToast(`Undone. ${RULE_LABELS[back.ruleType]} is back to how it was (${modeTagText(back)}).`);
       } catch (e) {
         if (e instanceof WhiteRoomApiError && e.status === 409) showToast("This rule changed again since, so Undo left it as it is.");
         else handleError(e, "undo the change");
@@ -424,7 +424,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const undoAdded = async (created: GovernanceRule) => {
     const ruleId = created.id;
     if (undoBusy.current) return;
-    // Changed since it was added (edited, switched to Block, a teammate): Undo leaves that work alone.
+    // Changed since it was added (edited, switched to Enforce, a teammate): Undo leaves that work alone.
     const now = rules.find((r) => r.id === ruleId);
     if (!now) { showToast("That rule isn’t here any more, so there’s nothing to undo."); return; }
     if (now.version !== created.version) { showToast("This rule changed again since, so Undo left it as it is."); return; }
@@ -464,7 +464,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       focusEditor.current = true;
       setSelectedId(created.id);
       setDraft(draftFrom(created));
-      showToast(`${RULE_LABELS[rule.ruleType]} is back, in Record only.${rule.mode === "enforce" ? " Turn on Block when you’re ready." : ""}`);
+      showToast(`${RULE_LABELS[rule.ruleType]} is back, in Watch.${rule.mode === "enforce" ? " Turn on Enforce when you’re ready." : ""}`);
       void fetchData();
     } catch (e) {
       handleError(e, "add the rule back");
@@ -509,7 +509,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => [...rs, created]);
       // The rest of the edit stays: only the narrowing is undone (the original keeps covering all agents).
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
-      showToast(`Added a ${RULE_LABELS[next.ruleType]} rule just for ${agentsPicked.join(", ")}, in Record only. Everyone else keeps the original.`, () => live.current.undoAdded(created));
+      showToast(`Added a ${RULE_LABELS[next.ruleType]} rule just for ${agentsPicked.join(", ")}, in Watch. Everyone else keeps the original.`, () => live.current.undoAdded(created));
       void fetchData();
     } catch (e) {
       if (fleetRef.current === forFleet) handleError(e, "add the copy");
@@ -532,7 +532,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
-      const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "blocking" : "on") : saved.mode === "watch" ? "record only" : "off";
+      const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "blocking" : "on") : saved.mode === "watch" ? "in Watch" : "off";
       showToast(`Saved. ${RULE_LABELS[saved.ruleType]} is ${how} for ${whoFor(saved.appliesTo)}.`, () => live.current.undoSaved(rule, saved));
       void fetchData();
     } catch (e) {
@@ -550,7 +550,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   };
 
   // Not optimistic: a failed delete keeps the rule, and the person's place, as they were.
-  // Any rule can go, the last of its type too: Add rule brings a type back. Undo adds it back in Record only.
+  // Any rule can go, the last of its type too: Add rule brings a type back. Undo adds it back in Watch.
   const remove = async (rule: GovernanceRule, message = `Removed the ${RULE_LABELS[rule.ruleType]} rule.`) => {
     setDialog(null);
     setError(null);
@@ -570,7 +570,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setAdding("busy");
     setError(null);
     try {
-      // New rules start in Record only; while viewing one agent, they start for that agent.
+      // New rules start in Watch; while viewing one agent, they start for that agent.
       const { rule } = await governanceCreateRule(fleetId, { ruleType, mode: "watch", ...(agentFilter && { appliesTo: [agentFilter] }) }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
@@ -584,7 +584,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     } catch (e) { setAdding("closed"); handleError(e, "add the rule"); void fetchData(); }
   };
 
-  // "Cover all agents": a copy of a Keywords rule for every agent, in Record only. The original stays.
+  // "Cover all agents": a copy of a Keywords rule for every agent, in Watch. The original stays.
   const coverAll = async (rule: GovernanceRule) => {
     setDialog(null);
     setSaving(true);
@@ -595,21 +595,21 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         description: `Added a copy of the ${RULE_LABELS.keyword} rule for all agents`,
       }, authKey);
       setRules((rs) => [...rs, created]);
-      showToast(`${keywordsShort(rule.params as KeywordParams)} rule now covers all agents (Record only).`, () => live.current.undoAdded(created));
+      showToast(`${keywordsShort(rule.params as KeywordParams)} rule now covers all agents (Watch).`, () => live.current.undoAdded(created));
     } catch (e) { handleError(e, "add the rule for all agents"); }
     finally { setSaving(false); void fetchData(); }
   };
 
   /**
    * The allowlist suggestion: the models go into the fleet-wide allowlist (a new
-   * one in Record only when there's none). Not for one agent only: the engine
+   * one in Watch when there's none). Not for one agent only: the engine
    * applies every allowlist that covers an agent, so a copy for one agent can't
    * let a model through, and narrowing the original would take the allowlist
    * away from agents added later.
    */
   const addSuggestedAllowlist = async (models: string[]) => {
     if (saving) return;
-    // An allowlist in Block would still refuse the models: a second one in Record only wouldn't help.
+    // An allowlist in Enforce would still refuse the models: a second one in Watch wouldn't help.
     // (The suggestion opens that one in the editor instead; this is for rules that changed meanwhile.)
     const blocking = rules.find((r) => r.ruleType === "model_allowlist" && r.mode === "enforce" && r.appliesTo === "all");
     if (blocking) { setDialog(null); openAllowlistWith(blocking, models); return; }
@@ -618,14 +618,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setAddingSuggestion(true);
     setError(null);
     setNotice(null);
-    const description = "Added Model allowlist in Record only (suggested)";
+    const description = "Added Model allowlist in Watch (suggested)";
     // A fleet-wide allowlist that isn't enforcing takes the models (and goes to Watch). Otherwise, a new rule.
     const target = suggestedAllowlistTarget(rules);
     try {
       if (!target) {
         const { rule: created } = await governanceCreateRule(fleetId, { ruleType: "model_allowlist", mode: "watch", params: { allowedModels: models }, description }, authKey);
         setRules((rs) => [...rs, created]);
-        showToast("Added a Model allowlist in Record only.", () => live.current.undoAdded(created));
+        showToast("Added a Model allowlist in Watch.", () => live.current.undoAdded(created));
       } else {
         const prev = (target.params as ModelAllowlistParams).allowedModels;
         const { rule: updated } = await governanceUpdateRule(fleetId, target.id, { mode: "watch", params: { allowedModels: [...models.filter((m) => !prev.includes(m)), ...prev] }, description, ifVersion: target.version }, authKey);
@@ -634,7 +634,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         // The rule's version moved: an open editor on it reopens from the saved rule.
         if (selectedRef.current === target.id) setDraft(null);
         // Undo goes the way every saved change's Undo does: same checks, only what this changed.
-        showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Record only.", () => live.current.undoSaved(target, updated));
+        showToast(added.length ? `${added.join(", ")} allowed for all agents.` : "Turned your Model allowlist on in Watch.", () => live.current.undoSaved(target, updated));
       }
     } catch (e) {
       // Nothing was saved, so an open editor on that allowlist keeps its edits.
@@ -645,7 +645,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     try { await fetchData(); } finally { setSaving(false); setAddingSuggestion(false); }
   };
 
-  // An allowlist in Block takes the models through the editor: Save says what it loosens and asks first.
+  // An allowlist in Enforce takes the models through the editor: Save says what it loosens and asks first.
   const openAllowlistWith = (target: GovernanceRule, models: string[]) => guard(() => {
     const prev = (target.params as ModelAllowlistParams).allowedModels;
     const missing = models.filter((m) => !prev.includes(m));
@@ -685,7 +685,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // One scope for every suggestion: the rules shown (all, or those covering the picked agent).
   const allowlistSuggestion = suggestions.onlyModels && !shown.some((r) => r.ruleType === "model_allowlist" && r.mode !== "off"
     && suggestions.onlyModels!.every((m) => (r.params as ModelAllowlistParams).allowedModels.includes(m))) ? suggestions.onlyModels : null;
-  // An allowlist in Block that leaves the models out is the one to change (in the editor); else one that isn't blocking.
+  // An allowlist in Enforce that leaves the models out is the one to change (in the editor); else one that isn't blocking.
   const allowlistBlocking = allowlistSuggestion ? shown.find((r) => r.ruleType === "model_allowlist" && r.mode === "enforce" && r.appliesTo === "all") : undefined;
   const allowlistTarget = allowlistSuggestion ? allowlistBlocking ?? suggestedAllowlistTarget(shown) : undefined;
   const allowlistMissing = allowlistTarget ? allowlistSuggestion!.filter((m) => !(allowlistTarget.params as ModelAllowlistParams).allowedModels.includes(m)) : [];
@@ -716,7 +716,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   }, [spendKey, fleetId, authKey]);
   useEffect(() => { spendAsked.current = new Set(); setAgentSpend({}); setAgentCalls({}); }, [fleetId]);
 
-  // Before Block on an allowlist: each caught agent's calls over the same time, to see if it would lose all of them.
+  // Before Enforce on an allowlist: each caught agent's calls over the same time, to see if it would lose all of them.
   const enforceRule = dialog?.kind === "enforce" ? dialog.rule : null;
   const enforceWould = enforceRule ? wouldOf(enforceRule) : null;
   useEffect(() => {
@@ -734,18 +734,16 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (notSetUp(r)) return <span className="ctl-mtag is-off">Not set up</span>;
     if (r.mode === "off") return <span className="ctl-mtag is-off">{MODE_LABEL.off}</span>;
     if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
-    const response = r.response ?? "block";
-    return <span className={`ctl-mtag${response === "notify" ? "" : " is-block"}`}>{response === "block" ? MODE_LABEL.enforce : DOES_TAG[response]}</span>;
+    return <span className={`ctl-mtag${r.response === "notify" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
   };
 
   const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {
     const c = ruleCondition(r);
     const count = rowCount(r, { byRuleId: actions?.byRuleId, byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldOf(r), agent: agentFilter, neverFirst: neverFirst(r) });
-    const response = r.response ?? "block";
     return (
       <button key={key} type="button" className={`ctl-row${r.id === selectedId ? " is-on" : ""}${r.mode === "enforce" ? " is-block" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-pressed={r.id === selectedId}>
         <span className="ctl-row__main">
-          <span className="ctl-cap">{RULE_LABELS[r.ruleType]}{response !== "block" && ` · ${RESPONSE_LABEL[response]}`}</span>
+          <span className="ctl-cap">{RULE_LABELS[r.ruleType]}</span>
           <span>{c.pre}{c.val && <span style={{ fontFamily: FONT_MONO }}>{c.val}</span>}{c.post}</span>
         </span>
         {showScope && <span className="ctl-cap">{r.appliesTo === "all" ? "All agents" : r.appliesTo.join(", ")}</span>}
@@ -860,9 +858,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 {rules.length > 0 && (
                   <div>
                     <p className="ctl-lead">
-                      {lead.total} {lead.total === 1 ? "rule" : "rules"} · <strong>{lead.enforce}</strong> Block{lead.alert > 0 && <> · <strong>{lead.alert}</strong> Alert only</>} · <strong>{lead.watch}</strong> Record only
-                      {lead.off > 0 && <> · <strong>{lead.off}</strong> Off</>}
-                      {counts && <> · <strong>{caught.toLocaleString("en-US")}</strong> caught this week, <strong>{blocked.toLocaleString("en-US")}</strong> blocked</>}
+                      {lead.total} {lead.total === 1 ? "rule" : "rules"} · <strong>{lead.enforce}</strong> {MODE_LABEL.enforce}{lead.alert > 0 && <> · <strong>{lead.alert}</strong> {NOTIFY.tag}</>} · <strong>{lead.watch}</strong> {MODE_LABEL.watch}
+                      {lead.off > 0 && <> · <strong>{lead.off}</strong> {MODE_LABEL.off}</>}
+                      {counts && <> · <strong>{caught.toLocaleString("en-US")}</strong> caught, <strong>{blocked.toLocaleString("en-US")}</strong> blocked this week</>}
                     </p>
                     {/* Only when some active rule doesn't stop calls: a fleet whose one rule stops calls is fine. */}
                     {canStop.length <= 1 && shown.some((r) => r.mode !== "off" && !canStop.includes(r)) && (
@@ -894,7 +892,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                         ? <>Your Model allowlist is off. It has every model your fleet used in the last 14 days.</>
                         : <>Your fleet used only {mono(allowlistSuggestion.join(", "))} in the last 14 days. An allowlist with {allowlistSuggestion.length === 1 ? "it" : "them"} would catch every other model.</>,
                       <Button busy={addingSuggestion} busyLabel="Adding…" disabled={saving} onClick={() => (allowlistBlocking ? openAllowlistWith(allowlistBlocking, allowlistSuggestion) : guard(() => setDialog({ kind: "allow", models: allowlistSuggestion })))}>
-                        {allowlistTarget && allowlistMissing.length ? "Add to allowlist…" : allowlistTarget ? "Turn on in Record only…" : "Add allowlist…"}
+                        {allowlistTarget && allowlistMissing.length ? "Add to allowlist…" : allowlistTarget ? "Turn on in Watch…" : "Add allowlist…"}
                       </Button>)}
                     {suggestions.noCaching && suggestion("cache", infoIcon,
                       <>None of your fleet’s input is cached, so agents pay full price for repeated context. Caching is turned on in your client.</>,
@@ -905,7 +903,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 {rules.length === 0 ? (
                   <section className="wr-panel ctl-card ctl-state">
                     <h2 className="wr-panel__title ctl-card__title">No rules yet</h2>
-                    <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start as Record only, so nothing is blocked until you say so.</p>
+                    <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start in Watch, so nothing is blocked until you say so.</p>
                     <Button variant="primary" onClick={() => guard(() => setAdding("open"))} style={{ alignSelf: "flex-start" }}>Add rule</Button>
                   </section>
                 ) : lists}
@@ -968,7 +966,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           ) : (
             <aside aria-label="Rule details" className="wr-panel ctl-editor is-empty">
               <h2 className="ctl-ed-title">Select a rule to edit it</h2>
-              <p className="ctl-cap" style={{ margin: "-8px 0 8px" }}>New rules start as Record only.</p>
+              <p className="ctl-cap" style={{ margin: "-8px 0 8px" }}>New rules start in Watch.</p>
               {recent.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <p className="gov-eyebrow">Recent changes</p>
@@ -995,7 +993,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         busy={saving}
         cancelLabel={null}
         choices={[
-          { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep recording only" : "Cancel", onClick: cancelDialog },
+          { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep watching" : "Cancel", onClick: cancelDialog },
           { label: dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].start : "", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
         ]}
         onCancel={cancelDialog}
@@ -1006,7 +1004,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
-            <p style={{ margin: 0 }}>{(dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Calls that match will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "WhiteRoom will still record them." : "Nothing will be recorded."} The change is recorded, and you can undo it.</p>
+            <p style={{ margin: 0 }}>{(dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
           </>
         ) : null}
         busy={saving}
@@ -1048,16 +1046,16 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 Calls to {mono(allowlistMissing.join(", "))} won’t be caught once {allowlistMissing.length === 1 ? "it’s" : "they’re"} allowed.
               </p>
               <p className="ctl-cap" style={{ margin: 0 }}>
-                Applies to all agents{allowlistTarget.mode === "off" ? ", in Record only" : ""}. An allowlist can’t make an exception for one agent yet.
+                Applies to all agents{allowlistTarget.mode === "off" ? ", in Watch" : ""}. An allowlist can’t make an exception for one agent yet.
               </p>
             </>
           ) : allowlistTarget
-            ? <p style={{ margin: 0 }}>It goes to Record only: it records calls to other models and blocks nothing.</p>
-            : <p style={{ margin: 0 }}>A Model allowlist with {mono(dialog.models.join(", "))}, in Record only: it records calls to other models and blocks nothing.</p>
+            ? <p style={{ margin: 0 }}>It goes to Watch: it records calls to other models and blocks nothing.</p>
+            : <p style={{ margin: 0 }}>A Model allowlist with {mono(dialog.models.join(", "))}, in Watch: it records calls to other models and blocks nothing.</p>
         ) : null}
         busy={saving}
         choices={dialog?.kind === "allow" ? [
-          { label: allowlistTarget && allowlistMissing.length ? "Allow for all agents" : allowlistTarget ? "Turn on in Record only" : "Add in Record only", tone: "primary" as const, onClick: () => void addSuggestedAllowlist(dialog.models) },
+          { label: allowlistTarget && allowlistMissing.length ? "Allow for all agents" : allowlistTarget ? "Turn on in Watch" : "Add in Watch", tone: "primary" as const, onClick: () => void addSuggestedAllowlist(dialog.models) },
         ] : []}
         onCancel={cancelDialog}
       />
@@ -1066,7 +1064,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         title={dialog?.kind === "kwall" ? `Cover all agents with the ${keywordsShort(dialog.rule.params as KeywordParams)} rule?` : ""}
         body={dialog?.kind === "kwall" ? (
           <>
-            <p style={{ margin: "0 0 8px" }}>It will apply to all {agents.length} agents, in <strong>Record only</strong>. Nothing is blocked until you switch it to Block.</p>
+            <p style={{ margin: "0 0 8px" }}>It will apply to all {agents.length} agents, in <strong>Watch</strong>. Nothing is blocked until you switch it to Enforce.</p>
             <p className="ctl-cap" style={{ margin: 0 }}>{dialog.rule.appliesTo === "all" ? "" : dialog.rule.appliesTo.join(", ")} {dialog.rule.appliesTo !== "all" && dialog.rule.appliesTo.length > 1 ? "keep their" : "keeps its"} own copy, so nothing changes for {dialog.rule.appliesTo !== "all" && dialog.rule.appliesTo.length > 1 ? "them" : "it"}.</p>
           </>
         ) : null}
@@ -1100,7 +1098,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "weaken" ? (
           <>
             <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>{dialog.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-            The change is recorded, and you can undo it.
+            You can undo it.
           </>
         ) : null}
         confirmLabel="Save the change"
@@ -1113,7 +1111,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "remove"}
         title={dialog?.kind === "remove" ? `Remove the ${RULE_LABELS[dialog.rule.ruleType]} rule?` : ""}
-        body={dialog?.kind === "remove" ? <>{ruleSentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops recording right away." : "It stops right away."} Its history stays in the audit chain.</> : null}
+        body={dialog?.kind === "remove" ? <>{ruleSentenceText(dialog.rule)} {dialog.rule.mode === "off" ? "It's off now, so nothing changes for your agents." : dialog.rule.mode === "watch" ? "It stops recording right away." : "It stops right away."} Its history is kept.</> : null}
         confirmLabel="Remove rule"
         cancelLabel="Keep rule"
         busy={saving}
@@ -1168,7 +1166,7 @@ const suggestedAllowlistTarget = (rules: GovernanceRule[]) =>
   rules.find((r) => r.ruleType === "model_allowlist" && r.mode !== "enforce" && r.appliesTo === "all");
 
 /**
- * What Block would have done: the last 7 days, and how long it has been
+ * What Enforce would have done: the last 7 days, and how long it has been
  * recording since its last change. An allowlist that caught every call an
  * agent made says so: that agent would stop working.
  */
@@ -1187,7 +1185,7 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
       <p className="ctl-cap" style={{ margin: "0 0 14px" }}>Applies to {whoFor(next.appliesTo)}</p>
       <div className="ctl-tiles">
         <div className="ctl-tile"><div className="ctl-tile__lbl">{ACT_WORDS[next.response ?? "block"].would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
-        <div className="ctl-tile"><div className="ctl-tile__lbl">Recording since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Record only first to see what it would do"}</div></div>
+        <div className="ctl-tile"><div className="ctl-tile__lbl">Watching since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Watch first to see what it would do"}</div></div>
       </div>
       {all.map(([a, c]) => (
         <p key={a} className="ctl-warnbox"><strong>This would block every call {a} makes.</strong> None of its {c.toLocaleString("en-US")} {c === 1 ? "call" : "calls"} since the last change used a model on this allowlist. Add its model first if {a} should keep working.</p>

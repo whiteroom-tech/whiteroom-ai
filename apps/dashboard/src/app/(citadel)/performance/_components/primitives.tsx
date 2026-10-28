@@ -3,6 +3,7 @@
  * components use the same badge and card. Badge also knows "resolved".
  */
 import type React from 'react';
+import { MODE_LABEL } from '@/lib/vocab';
 
 export const CARD: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 20, marginBottom: 24 };
 export const H3: React.CSSProperties = { fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--tx)', margin: 0 };
@@ -72,7 +73,7 @@ export function Disclosure({ label, note, open, onToggle, controls, first = fals
   );
 }
 
-/** A rule's mode, as Controls shows it: filled "Block", hollow-dot "Record only", dashed "Off". */
+/** A rule's mode, as Controls shows it: filled "Enforce", hollow-dot "Watch", dashed "Off". */
 export function ModeTag({ mode }: { mode: 'off' | 'watch' | 'enforce' }) {
-  return <span className={`wr-mtag${mode === 'enforce' ? ' wr-mtag--block' : mode === 'off' ? ' wr-mtag--off' : ''}`}>{mode === 'enforce' ? 'Block' : mode === 'watch' ? 'Record only' : 'Off'}</span>;
+  return <span className={`wr-mtag${mode === 'enforce' ? ' wr-mtag--block' : mode === 'off' ? ' wr-mtag--off' : ''}`}>{MODE_LABEL[mode]}</span>;
 }

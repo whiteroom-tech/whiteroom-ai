@@ -494,7 +494,7 @@ export function RunsTable({ preview, retentionDays }: {
   const exportShown = day || range === 'custom' || range === 'today' || show !== 'all'
     ? `${hour !== null && day ? `${hourLabel(hour)} · ` : ''}${spanLabel(view)}${show === 'flagged' ? ' · flagged' : show === 'rules' ? ' · rule activity' : ''}`
     : null;
-  const emptyText = `No ${flaggedOnly ? 'flagged runs' : rulesOnly ? 'runs with rule activity' : 'runs'} ${day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}${agent !== 'all' ? ` for ${agent}` : ''}.${flaggedOnly ? ' A run is flagged when it repeats the same call, or several calls fail in a row.' : rulesOnly ? ' A run shows here when a rule blocked a call or, in Record only, would have.' : ''}`;
+  const emptyText = `No ${flaggedOnly ? 'flagged runs' : rulesOnly ? 'runs with rule activity' : 'runs'} ${day ? (day === today ? 'today' : `on ${dayLabel(day, Date.now(), false)}`) : range === 'custom' ? `from ${dayLabel(span.fromDay, Date.now(), false)} to ${dayLabel(span.toDay, Date.now(), false)}` : range === 'today' ? 'today' : `in the last ${range === '7d' ? 7 : 30} days`}${agent !== 'all' ? ` for ${agent}` : ''}.${flaggedOnly ? ' A run is flagged when it repeats the same call, or several calls fail in a row.' : rulesOnly ? ' A run shows here when a rule blocked a call or, in Watch, would have.' : ''}`;
 
   return (
     <div className="wr-runs-page">

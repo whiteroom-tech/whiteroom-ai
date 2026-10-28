@@ -140,12 +140,12 @@ describe('segmented control keys', () => {
     const onChange = vi.fn();
     await render(h(SegmentedControl<'off' | 'watch' | 'enforce' | 'locked'>, {
       label: 'Mode', value: 'watch', onChange,
-      options: [{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Record only' }, { value: 'enforce', label: 'Block' }, { value: 'locked', label: 'Locked', disabled: true }],
+      options: [{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch' }, { value: 'enforce', label: 'Enforce' }, { value: 'locked', label: 'Locked', disabled: true }],
     }));
     const on = el.querySelector('[aria-checked="true"]') as HTMLButtonElement;
     await act(async () => { on.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })); });
     expect(onChange).toHaveBeenLastCalledWith('enforce');
-    expect(document.activeElement?.textContent).toBe('Block');
+    expect(document.activeElement?.textContent).toBe('Enforce');
     await act(async () => { on.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); });
     expect(onChange).toHaveBeenLastCalledWith('off');
     expect(document.activeElement?.textContent).toBe('Off');

@@ -352,7 +352,7 @@
 .wr-tag--warn { color: var(--warn); }
 .wr-tag--brand { color: var(--brand); }
 .wr-tag--muted { color: var(--tx2); }
-/* A rule in Block: the one filled tag, so rules that really act stand out. */
+/* A rule in Enforce: the one filled tag, so rules that really act stand out. */
 .wr-tag--block { color: var(--bad); background: var(--bad-bg); border-color: var(--bad-line); }
 
 .wr-banner { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); font-size: var(--fs-md); line-height: 1.5; }
@@ -774,16 +774,10 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
 .ctl-status { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--sunk); color: var(--tx); }
 .ctl-note { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line2); color: var(--tx); }
 .wr-btn.ctl-bad { border-color: var(--bad); color: var(--bad); background: transparent; }
+.wr-btn.ctl-remove { color: var(--bad); }
 /* The editor's three questions: When (a sentence + Change), Who, What happens (one choice). */
 .ctl-q { display: inline-flex; align-items: center; gap: 6px; }
 .ctl-when { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; overflow-wrap: anywhere; }
-.ctl-choices { display: flex; flex-direction: column; gap: 6px; }
-.ctl-choice { display: flex; align-items: flex-start; gap: 10px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: var(--fs-md); cursor: pointer; }
-.ctl-choice input { margin: 4px 0 0; accent-color: var(--brand); flex: none; }
-.ctl-choice.is-on { border-color: var(--brand); background: var(--brand-dim); }
-.ctl-choice.is-off { cursor: not-allowed; color: var(--tx2); }
-.ctl-choice__why { font-size: var(--fs-sm); }
-.ctl-choice:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
 .gov-scrim { display: none; }
 /* Dialogs */
 .ctl-dlg__title { margin: 0; font-family: var(--font-display); font-size: var(--fs-section); line-height: 1.3; font-weight: 600; color: var(--tx); text-wrap: balance; }

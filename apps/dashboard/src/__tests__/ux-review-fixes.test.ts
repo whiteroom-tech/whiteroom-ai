@@ -32,7 +32,7 @@ describe('Controls › Recent changes wording', () => {
   it('drops the rule name it already shows', () => {
     expect(historyText({ description: 'Removed Spend cap rule', ruleType: 'spend_cap' }, true)).toBe('Removed');
     expect(historyText({ description: 'Added new Keywords rule', ruleType: 'keyword' }, true)).toBe('Added');
-    expect(historyText({ description: 'Watch → Enforce', ruleType: 'loop_breaker' }, true)).toBe('Record only → Block');
+    expect(historyText({ description: 'Watch → Enforce', ruleType: 'loop_breaker' }, true)).toBe('Watch → Enforce');
     // A rule's own history has no name in front, so the text stays whole.
     expect(historyText({ description: 'Removed Spend cap rule', ruleType: 'spend_cap' })).toBe('Removed Spend cap rule');
   });
@@ -42,7 +42,7 @@ describe('Block is red everywhere it means a real block', () => {
   it('tags a blocked call and a block event with the block tone', () => {
     expect(timelineRow({ id: '1', kind: 'call', at: '2026-10-27T09:04:00Z', type: 'governance_blocked' }).tag).toEqual({ label: 'Blocked', tone: 'block' });
     expect(activityRow({ id: '2', type: 'governance_block', timestamp: '2026-10-27T09:04:00Z', agentId: 'a', ruleType: 'spend_cap' }).tag).toEqual({ label: 'Blocked', tone: 'block' });
-    // Failures stay amber; Record only stays neutral.
+    // Failures stay amber; Watch stays neutral.
     expect(timelineRow({ id: '3', kind: 'call', at: '2026-10-27T09:04:00Z', type: 'upstream_error' }).tag?.tone).toBe('warn');
     expect(activityRow({ id: '4', type: 'governance_would_block', timestamp: '2026-10-27T09:04:00Z', agentId: 'a' }).tag?.tone).toBe('muted');
   });

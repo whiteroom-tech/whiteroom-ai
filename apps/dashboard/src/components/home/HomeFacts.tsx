@@ -84,7 +84,7 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
       : <span key="flagged">{text}</span>);
   }
   if (todayRules) {
-    // "Caught" counts each time a rule matched a call (two rules on one call count twice), in Block or Record only (the mockup's word,
+    // "Caught" counts each time a rule matched a call (two rules on one call count twice), in Enforce or Watch (the mockup's word,
     // as on Controls: "120 caught this week, 0 blocked"); how many were really
     // blocked is said beside it. Pauses, stops and alerts are other actions.
     const calls = todayRules.blocks + todayRules.wouldBlocks;

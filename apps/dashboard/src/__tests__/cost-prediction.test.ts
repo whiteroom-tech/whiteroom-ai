@@ -146,7 +146,7 @@ describe('Cost prediction card', () => {
     m.root.unmount();
   });
 
-  it('saves the budget and token limit for that agent, and adds a Spend cap in Record only when asked', async () => {
+  it('saves the budget and token limit for that agent, and adds a Spend cap in Watch when asked', async () => {
     const api = fakeApi(res([agent('code-reviewer')]));
     const m = await mount(api);
     await act(async () => { m.button('Cost prediction').click(); });
@@ -159,7 +159,7 @@ describe('Cost prediction card', () => {
     await m.flush();
     expect(api.setBudget).toHaveBeenCalledWith('f1', 'code-reviewer', 20, undefined, 500_000);
     expect(api.addCap).toHaveBeenCalledWith('f1', 'code-reviewer', 20, undefined);
-    expect(m.text()).toContain('Saved for code-reviewer. Added a Spend cap at $20.00 a day, in Record only.');
+    expect(m.text()).toContain('Saved for code-reviewer. Added a Spend cap at $20.00 a day, in Watch.');
     m.root.unmount();
   });
 

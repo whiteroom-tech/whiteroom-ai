@@ -11,6 +11,7 @@ import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, ruleSentence } from '@/lib/controls-view';
 import { fmtCost, fmtCount, fmtEnergy, fmtTokens, plural } from '@/lib/format';
 import { dayKey, formatDayKey } from '@/lib/zone-time';
+import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 
 /** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
 export function lookbackText(hours: number | null | undefined): string | null {
@@ -124,11 +125,11 @@ export function rulesCaughtText(total: number, blocked: number): string {
 
 // -- Control ------------------------------------------------------------------
 
-/** "8 rules: 1 Block · 7 Record only · 0 Off" (and "· 1 Alert only" when a rule only alerts: it never blocks). */
+/** "8 rules: 1 Enforce · 7 Watch · 0 Off" (and "· 1 Alert only" when a rule only alerts: it never blocks). */
 export function ruleModeCounts(rules: GovernanceRule[]): string {
   const n = (m: GovernanceRule['mode']) => rules.filter((r) => r.mode === m).length;
   const alert = rules.filter(alertOnly).length;
-  return `${fmtCount(rules.length)} ${plural(rules.length, 'rule')}: ${n('enforce') - alert} Block${alert ? ` · ${alert} Alert only` : ''} · ${n('watch')} Record only · ${n('off')} Off`;
+  return `${fmtCount(rules.length)} ${plural(rules.length, 'rule')}: ${n('enforce') - alert} ${MODE_LABEL.enforce}${alert ? ` · ${alert} ${NOTIFY.tag}` : ''} · ${n('watch')} ${MODE_LABEL.watch} · ${n('off')} ${MODE_LABEL.off}`;
 }
 
 export interface CaughtRow {

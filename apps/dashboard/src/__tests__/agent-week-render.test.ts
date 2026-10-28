@@ -93,7 +93,7 @@ describe('Rules on this agent', () => {
     expect(html).not.toContain('rule=r3');
     expect(html).toContain('href="/controls?agent=a"');
     const t = text(html);
-    expect(t).toContain('Blocks');
+    expect(t).toContain('Enforce');
     expect(t).toContain('Over 60 calls a minute');
     expect(t).toContain('1 more rule is Off.');
   });

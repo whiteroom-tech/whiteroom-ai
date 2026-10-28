@@ -29,7 +29,7 @@ export const STOP_WATCH_HOURS = 24;
 // description says (Undo, copies and suggestions write their own). Older
 // entries without snapshots fall back to the engine's wording, "Off → Watch"
 // and "Added new …". If neither reads, Watch time is 0 and actions that need a
-// day in Record only stay unavailable (fails closed). The engine doesn't
+// day in Watch stay unavailable (fails closed). The engine doesn't
 // enforce this guard.
 const MODE_CHANGE = /^(Off|Watch|Enforce) → (Off|Watch|Enforce)$/;
 const MODE_WORD = { off: 'Off', watch: 'Watch', enforce: 'Enforce' } as const;
@@ -80,8 +80,8 @@ export function longestWatchHours(ruleId: string, history: GovernanceHistoryEntr
 }
 
 /**
- * When an action that needs a day in Record only first can be picked: null
- * when it already can; the time, while the rule is in Record only now;
+ * When an action that needs a day in Watch first can be picked: null
+ * when it already can; the time, while the rule is in Watch now;
  * 'record-first' when it isn't recording yet; 'unknown' when it is but the
  * history doesn't say since when (fails closed, like stopBlockedReason).
  */
@@ -97,7 +97,7 @@ export function stopBlockedReason(ruleId: string, history: GovernanceHistoryEntr
   const h = longestWatchHours(ruleId, history, currentMode, now);
   if (h >= STOP_WATCH_HOURS) return null;
   const ran = h < 1 ? 'less than an hour' : `${Math.floor(h)} ${plural(Math.floor(h), 'hour')}`;
-  return `Run this rule in Record only for ${STOP_WATCH_HOURS} hours before it can ${what}, so you can see what it would have done. It has run in Record only for ${ran}.`;
+  return `Run this rule in Watch for ${STOP_WATCH_HOURS} hours before it can ${what}, so you can see what it would have done. It has run in Watch for ${ran}.`;
 }
 
 /**

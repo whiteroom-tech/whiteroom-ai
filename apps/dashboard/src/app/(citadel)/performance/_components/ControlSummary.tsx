@@ -113,7 +113,7 @@ function AllRules({ counts }: { counts: GovernanceCounts }) {
           </tbody>
         </table>
       </div>
-      <p className="wr-cap" style={{ margin: 0, gridColumn: '1 / -1' }}>Blocked: a rule set to Block stopped the call. Would have blocked: a Record only rule matched and the call went through.</p>
+      <p className="wr-cap" style={{ margin: 0, gridColumn: '1 / -1' }}>Blocked: a rule set to Enforce stopped the call. Would have blocked: a rule in Watch matched and the call went through.</p>
     </div>
   );
 }

@@ -35,7 +35,7 @@ export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount
 
 /**
  * The rule as one sentence, split so the values can be set in mono. Only a
- * rule in Block does what it says; in Record only or Off it "would", so the
+ * rule in Enforce does what it says; in Watch or Off it "would", so the
  * sentence never claims a call is stopped when it isn't.
  */
 export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response' | 'alsoNotify'> & { mode?: GovernanceRule['mode'] }): { pre: string; val: string; post: string } {
@@ -106,12 +106,12 @@ const covers = (a: GovernanceScope, b: GovernanceScope) => a === 'all' || (b !==
 /**
  * Two spend caps that do the same thing (same unit, period, mode, response
  * and alert), where the lower one covers every agent the higher one does:
- * then the higher one never acts. A $190 Alert me and a $200 Block is a
+ * then the higher one never acts. A $190 Only alert me and a $200 Block is a
  * warning before a stop, not an overlap; nor is a fleet-wide $500 beside a
  * $190 cap for one agent.
  */
 export function spendOverlap(rules: readonly GovernanceRule[]): { never: GovernanceRule; first: GovernanceRule } | null {
-  // Only caps that block: in Record only neither acts, and an alert before a block is a warning, not an overlap.
+  // Only caps that block: in Watch neither acts, and an alert before a block is a warning, not an overlap.
   const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode === 'enforce' && (r.response ?? 'block') !== 'notify');
   for (let i = 0; i < caps.length; i++) {
     for (let j = i + 1; j < caps.length; j++) {
@@ -152,7 +152,7 @@ const REASON: Record<GovernanceRuleType, string> = {
   keyword: 'keyword_found',
 };
 
-/** The engine's 403 for this rule (blockResponseBody); nothing for Alert me. */
+/** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
   const response = rule.response ?? 'block';
   if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
@@ -259,12 +259,12 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
   return { ...d, number, params: { ...p, unit } };
 }
 
-/** Whether the rule, as drafted, sends an alert when it acts: Alert me, Pause, Stop, or Block with an alert. */
+/** Whether the rule, as drafted, sends an alert when it acts: Only alert me, Pause, Stop, or Block with an alert. */
 export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): boolean {
   return d.mode === 'enforce' && (d.response !== 'block' || d.alsoNotify);
 }
 
-/** A new response; "Also send me an alert" only applies to Block, so it's cleared otherwise. */
+/** A new response; "Also alert me" only applies to Block, so it's cleared otherwise. */
 export function changeResponse(d: RuleDraft, response: GovernanceResponse): RuleDraft {
   return { ...d, response, alsoNotify: response === 'block' ? d.alsoNotify : false };
 }
@@ -289,9 +289,9 @@ export function draftProblem(d: RuleDraft): string | null {
   const p = draftParams(d);
   if ('error' in p) return p.error;
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
-  if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you turn on Block.';
-  if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you turn on Block.';
-  if (d.mode === 'enforce' && d.ruleType === 'keyword' && keywordTotal(p.params as KeywordParams) === 0) return 'Pick at least one keyword before you turn on Block.';
+  if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you turn on Enforce.';
+  if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you turn on Enforce.';
+  if (d.mode === 'enforce' && d.ruleType === 'keyword' && keywordTotal(p.params as KeywordParams) === 0) return 'Pick at least one keyword before you turn on Enforce.';
   return null;
 }
 
@@ -309,7 +309,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
 
 // ── Groups: who a rule covers ───────────────────────────────────────
 
-/** Whether a rule can stop a call or an agent now: Block mode with a response other than Alert me, that has something to act on. */
+/** Whether a rule can stop a call or an agent now: Enforce with a response other than Only alert me, that has something to act on. */
 export function isStopping(r: GovernanceRule): boolean {
   return r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r);
 }
@@ -334,8 +334,8 @@ export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[]
   const out: string[] = [];
   if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_LABEL[prev.mode]} → ${MODE_LABEL[next.mode]}`);
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
-  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`Then: ${VERB[pr]} → ${VERB[nr]}`);
-  // Any lost alert, whatever the response: Pause, Stop and Alert me alert; Block does when asked to.
+  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`When enforced: ${VERB[pr]} → ${VERB[nr]}`);
+  // Any lost alert, whatever the response: Pause, Stop and Only alert me alert; Block does when asked to.
   const alerts = (r: GovernanceRule) => r.mode === 'enforce' && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
   if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
@@ -459,7 +459,7 @@ export const notSetUp = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'applie
 /**
  * The page's three cards: rules for all agents, rules for specific agents
  * (each agent's own, under its name; a rule for two agents shows under
- * both), and "Off and not set up". Block first within a group, then the
+ * both), and "Off and not set up". Enforce first within a group, then the
  * "Add a rule" order.
  */
 export function ruleGroups(rules: readonly GovernanceRule[]): {
@@ -477,14 +477,14 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
 }
 const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
 
-/** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Block. */
+/** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Enforce. */
 export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'>) => r.mode === 'enforce' && r.response === 'notify';
 
-/** A group's sub-line, worded like the lead line: "1 Block · 6 Record only" (and "· 1 Alert only" when there is one). */
+/** A group's sub-line, worded like the lead line: "1 Enforce · 6 Watch" (and "· 1 Alert only" when there is one). */
 export function modeCount(rules: readonly GovernanceRule[]): string {
   const a = rules.filter(alertOnly).length;
   const e = rules.filter((r) => r.mode === 'enforce').length - a, w = rules.filter((r) => r.mode === 'watch').length;
-  return `${e} Block${a ? ` · ${a} Alert only` : ''} · ${w} Record only`;
+  return `${e} ${MODE_LABEL.enforce}${a ? ` · ${a} ${NOTIFY.tag}` : ''} · ${w} ${MODE_LABEL.watch}`;
 }
 
 /** The page's lead line, counting only rules that are set up. */
@@ -513,8 +513,8 @@ export type RowCount = { text: string; tone: 'plain' | 'hot' | 'warn' };
  * The count at the right of a row: "60 caught · 7 days", "None since edit",
  * "Never triggers ($190 cap first)". Seven-day counts are per rule id
  * (rule_actions byRuleId); "since edit" comes from rule_would_act. Viewing
- * one agent, a Record only rule counts that agent's calls since its last
- * change, and a Block rule shows its count only when it covers just them.
+ * one agent, a Watch rule counts that agent's calls since its last
+ * change, and an Enforce rule shows its count only when it covers just them.
  */
 export function rowCount(rule: GovernanceRule, ctx: {
   byRuleId?: Record<string, RuleActionCounts>;
@@ -550,12 +550,16 @@ export function rowCount(rule: GovernanceRule, ctx: {
 const WOULD_VERB: Record<GovernanceResponse, (who: string) => string> = {
   block: (who) => `blocked ${who}`, pause: (who) => `paused ${who}`, stop: (who) => `stopped ${who}`, notify: (who) => `alerted you about ${who}`,
 };
-const DOING: Record<GovernanceResponse, string> = { block: 'Blocking', pause: 'Pausing agents', stop: 'Stopping agents', notify: 'Alerting you' };
+/** "6 blocked", "1 alert": an enforced rule's count, as the status line says it. */
+const DID: Record<GovernanceResponse, (n: number) => string> = {
+  block: (n) => `${fmtCount(n)} blocked`, pause: (n) => `${fmtCount(n)} paused`, stop: (n) => `${fmtCount(n)} stopped`, notify: (n) => `${fmtCount(n)} ${n === 1 ? 'alert' : 'alerts'}`,
+};
 
 /**
- * The editor's status sentence: what the rule is doing now, and what it
- * caught. "Would have blocked code-reviewer 44 times since it was last
- * changed 4 days ago." Never claims a count it doesn't have.
+ * The editor's status line: what the rule is doing now, and what it caught,
+ * in one short sentence. "Enforcing for all agents · 6 blocked in 7 days",
+ * "Would have blocked code-reviewer 44 times since its last change 4 days
+ * ago". Never claims a count it doesn't have.
  */
 export function ruleStatus(rule: GovernanceRule, ctx: {
   week?: RuleActionCounts;
@@ -565,28 +569,28 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
 }): string {
   const who = whoFor(rule.appliesTo);
   const response = rule.response ?? 'block';
-  if (rule.mode === 'off') return 'Off. Records nothing.';
+  if (rule.mode === 'off') return 'Off · records nothing';
   const nothingPicked = emptyPick(rule);
-  if (nothingPicked) return `Does nothing until you add ${nothingPicked}.`;
-  if (ctx.neverFirst) return `This cap never triggers. The ${ctx.neverFirst} cap covers the same agents and catches it first.`;
+  if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
+  if (ctx.neverFirst) return `Never triggers · the ${ctx.neverFirst} cap catches it first`;
   if (rule.mode === 'enforce') {
     const n = ctx.week ? ctx.week[TALLY[response]] : null;
-    const tail = n === null ? '' : n ? ` ${TALLY_WORD[response][0].toUpperCase()}${TALLY_WORD[response].slice(1)} ${times(n)} in the last 7 days.` : ' Nothing caught in the last 7 days.';
-    return `${DOING[response]} for ${who}.${tail}`;
+    const tail = n === null ? '' : n ? ` · ${DID[response](n)} in 7 days` : ' · nothing caught in 7 days';
+    return `${response === 'notify' ? 'Alerting you' : 'Enforcing'} for ${who}${tail}`;
   }
   const w = ctx.wouldAct;
   if (w && !w.unversioned && w.since) {
     const when = timeAgoShort(w.since, ctx.now);
     const hits = Object.entries(w.byAgent).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
-    if (!hits.length) return `Record only for ${who}. Nothing caught since it was last changed ${when}.`;
+    if (!hits.length) return `Watching ${who} · nothing caught since its last change ${when}`;
     const total = hits.reduce((s, [, n]) => s + n, 0);
     const whom = hits.length === 1 ? `${hits[0][0]} ${times(hits[0][1])}` : hits.length === 2 ? `${hits[0][0]} and ${hits[1][0]} ${times(total)} in all` : `${hits.length} agents ${times(total)} in all`;
-    return `Would have ${WOULD_VERB[response](whom)} since it was last changed ${when}.`;
+    return `Would have ${WOULD_VERB[response](whom)} since its last change ${when}`;
   }
   if (ctx.week) {
-    return ctx.week.wouldAct ? `Record only for ${who}. Would have acted ${times(ctx.week.wouldAct)} in the last 7 days.` : `Record only for ${who}. Nothing caught in the last 7 days.`;
+    return `Watching ${who} · ${ctx.week.wouldAct ? `would have acted ${times(ctx.week.wouldAct)} in 7 days` : 'nothing caught in 7 days'}`;
   }
-  return `Record only for ${who}.`;
+  return `Watching ${who}`;
 }
 
 function timeAgoShort(ts: string, now = Date.now()): string {
@@ -666,42 +670,49 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
   return ruleCondition(rule);
 }
 
-/** "What happens": one choice for mode and response. Off and Record only keep the response, so switching back restores it. */
-export type WhatHappens = 'off' | 'watch' | GovernanceResponse;
-
-export function whatHappens(d: Pick<RuleDraft, 'mode' | 'response'>): WhatHappens {
-  return d.mode === 'enforce' ? d.response : d.mode;
-}
+/** "What happens": Off · Watch · Enforce, in that order. */
+export const MODE_CHOICES: readonly GovernanceMode[] = ['off', 'watch', 'enforce'];
 
 /**
- * The draft with a new choice: Off → mode off; Record only → mode watch; an
- * action → Block mode with that response. Leaving an action for Off or Record
- * only puts back the saved rule's response and alert, so clicking through the
- * actions changes nothing; what Record only records is picked on its own
- * (recordAs).
+ * The draft with a new mode. Leaving Enforce puts back the saved rule's
+ * action and alert, so trying actions and stepping back changes nothing.
+ * Enforce keeps the draft's action when it can be picked now, else takes the
+ * first one that can (a day in Watch first holds some back).
  */
-export function chooseWhatHappens(d: RuleDraft, choice: WhatHappens, saved: Pick<GovernanceRule, 'response' | 'alsoNotify'>): RuleDraft {
-  if (choice === 'off' || choice === 'watch') {
-    return d.mode === 'enforce' ? { ...d, mode: choice, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode: choice };
+export function chooseMode(
+  d: RuleDraft, mode: GovernanceMode, saved: Pick<GovernanceRule, 'response' | 'alsoNotify'>,
+  actions: readonly GovernanceResponse[] = responseChoices(true), canPick: (r: GovernanceResponse) => boolean = () => true,
+): RuleDraft {
+  if (mode !== 'enforce') {
+    return d.mode === 'enforce' ? { ...d, mode, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode };
   }
-  return changeResponse({ ...d, mode: 'enforce' }, choice);
+  if (d.mode === 'enforce') return d;
+  const pick = [d.response, ...actions].find((r) => actions.includes(r) && canPick(r)) ?? d.response;
+  return pick === d.response ? { ...d, mode } : changeResponse({ ...d, mode }, pick);
 }
 
-/** What a rule in Record only (or Off) records: the action it would take. */
-export function recordAs(d: RuleDraft, response: GovernanceResponse): RuleDraft {
-  return changeResponse(d, response);
+/** The draft with a new "When enforced" action (Enforce mode). */
+export function chooseAction(d: RuleDraft, response: GovernanceResponse): RuleDraft {
+  return changeResponse({ ...d, mode: 'enforce' }, response);
 }
 
-/** The actions this fleet has: Pause and Stop only on Gov v1 fleets, but always the ones the rule uses. */
+/** The actions this fleet has, in the "When enforced" order: Pause and Stop only on Gov v1 fleets, but always the ones the rule uses. */
 export function responseChoices(govV1: boolean, ...keep: GovernanceResponse[]): GovernanceResponse[] {
   return (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || keep.includes(r));
 }
 
-/** The choices in order: Off · Record only · the actions (responseChoices). */
-export function whatHappensOptions(govV1: boolean, ...keep: GovernanceResponse[]): WhatHappens[] {
-  return ['off', 'watch', ...responseChoices(govV1, ...keep)];
-}
-
-export const WHAT_HAPPENS_LABEL: Record<WhatHappens, string> = {
-  off: 'Off', watch: 'Record only', block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent', notify: NOTIFY.option,
+/** What an enforced rule does, after "Enforce: ". */
+const ENFORCE_LINE: Record<GovernanceResponse, string> = {
+  block: 'blocks the call. The agent keeps going.',
+  pause: 'pauses the agent and alerts you. Its run ends until someone resumes it.',
+  stop: 'stops the agent and alerts you. It refuses every call until someone resumes it.',
+  notify: 'alerts you. The call goes through.',
 };
+
+/** The one plain line under What happens, for the pick. */
+export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): string {
+  if (d.mode === 'off') return 'Off: does nothing and records nothing.';
+  if (d.mode === 'watch') return 'Watch: records what it would do; every call goes through.';
+  if (d.response === 'block' && d.alsoNotify) return 'Enforce: blocks the call and alerts you. The agent keeps going.';
+  return `Enforce: ${ENFORCE_LINE[d.response]}`;
+}

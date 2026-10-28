@@ -1,8 +1,8 @@
 // Controls' change log: what a change did (old → new) and how to undo it.
 // Undo never edits the log. An update's undo loads the old settings into the
 // editor, and Save records them as a new change, through the same checks as
-// any edit (a Stop still needs its day in Record only). A removed rule comes
-// back as a new rule in Record only, like any new rule.
+// any edit (a Stop still needs its day in Watch). A removed rule comes
+// back as a new rule in Watch, like any new rule.
 
 import { ruleSentenceText } from '@/lib/controls-view';
 import { RULE_LABELS } from '@/lib/governance';
@@ -46,7 +46,7 @@ export type Undo =
 
 /**
  * How to undo this change, or null when it can't be done safely:
- * - a removal: the rule as it was, to add back (in Record only), only on
+ * - a removal: the rule as it was, to add back (in Watch), only on
  *   its newest removal and until the log shows the same rule added since;
  * - an update: only what this change touched, and only while the rule still
  *   looks exactly as the change left it (otherwise a later change would be

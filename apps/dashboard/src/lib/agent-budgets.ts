@@ -13,7 +13,7 @@ export function parseBudget(text: string): number | null {
   return n > 0 && n <= MAX_AGENT_BUDGET_USD ? n : null;
 }
 
-/** A Spend cap for one agent at this many dollars a day: what "Also add a Spend cap at this amount" adds, in Record only. */
+/** A Spend cap for one agent at this many dollars a day: what "Also add a Spend cap at this amount" adds, in Watch. */
 export function capRuleFor(agentId: string, usd: number) {
   const params: SpendCapParams = { dailyCap: usd, scope: 'day', unit: 'dollars' };
   return { ruleType: 'spend_cap' as const, mode: 'watch' as const, response: 'block' as const, params, appliesTo: [agentId] };
