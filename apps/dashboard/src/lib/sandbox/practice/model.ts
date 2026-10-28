@@ -348,7 +348,8 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
       if (!isGuardrail(row)) return out('passed', live[0].summary);
       if (row.id === PAUSE_STOP) return out('passed', 'Paused and stopped. Only a person could resume it.');
       const tested = row.id === 'spend_cap' ? ' Tested with a tiny limit.' : row.id === 'keyword' && live.some((c) => c.id.startsWith('ctl.keyword')) ? ' Keywords tested with a test word.' : '';
-      return out('passed', `${modeReason(live.map((c) => c.mode))}.${tested}`);
+      const mode = modeReason(live.map((c) => c.mode));
+      return out('passed', `${mode ? `${mode}.` : 'Your rules worked.'}${tested}`);
     }
     const open = live.find((c) => c.status !== 'passed')!;
     const why = open.status === 'unsupported' ? plainNote(open.summary) : open.summary || STATUS_LABEL[open.status];

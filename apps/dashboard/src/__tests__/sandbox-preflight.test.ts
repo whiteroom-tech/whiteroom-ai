@@ -88,6 +88,11 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
     expect(row(both, 'loop_breaker').reason).toBe('Enforce: blocked. Watch: would have blocked.');
   });
 
+  it('a passed guardrail with no Enforce or Watch mode on record still says something plain', () => {
+    expect(row(groupRows(report([check('ctl.loop_breaker.l1', { mode: null })])), 'loop_breaker')).toMatchObject({ status: 'passed', reason: 'Your rules worked.' });
+    expect(row(groupRows(report([check('ctl.spend_cap.s1', { mode: undefined })])), 'spend_cap').reason).toBe('Your rules worked. Tested with a tiny limit.');
+  });
+
   it('a failed check fails its row; anything else open is Not checked, with the first reason', () => {
     const r = groupRows({ ...report([]), checks: AGENT.map((c) => (c.id === 'c.timeout' ? { ...c, label: 'Saves once when a tool times out', status: 'failed' as const, summary: 'Passed in 2 of 3 runs.' } : c.id === 'b.result' ? { ...c, status: 'error' as const, testProblem: true, summary: 'Passed in 2 of 3 runs.' } : c)) });
     expect(row(r, 'fails_gracefully')).toMatchObject({ status: 'failed', reason: 'Saves once when a tool times out: Passed in 2 of 3 runs.' });

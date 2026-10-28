@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { SkeletonCard } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
@@ -66,6 +67,9 @@ const fail = (e: unknown, fallback: Refusal): Refusal => e instanceof PracticeEr
 const FIX_ON_FLEET_KEY = new Set(['engine_access_key', 'short_term_key', 'key_not_found']);
 const USE_CONNECTION_TEST = new Set(['unsupported', 'bedrock_role', 'other_host', 'unsupported_provider']);
 
+/** A run ID from the address: only a well-formed one goes into a request. */
+const validRun = (v: string | null | undefined) => (v && RUN_ID_RE.test(v) ? v : null);
+
 /** First load only: the fleet or its controls couldn't be read, so offer a reload. */
 const LOAD_FAILED: Refusal = { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
 const ACTION_FAILED: Refusal = { message: 'That didn’t work. Check your connection and try again.' };
@@ -80,8 +84,11 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [refusal, setRefusal] = useState<Refusal | null>(preview?.refusal ?? null);
   const [confirm, setConfirm] = useState<Confirm | null>(preview?.confirm ?? null);
   const [loading, setLoading] = useState(!preview);
-  // The sample report (§7 Demo): a fixed result, nothing runs.
-  const [demo, setDemo] = useState(!!preview?.demo);
+  // The address drives what's shown, so a link that changes only the query switches views:
+  // ?demo=1 the sample report (§7 Demo: a fixed result, nothing runs), ?run= one test.
+  const params = useSearchParams();
+  const demo = preview ? !!preview.demo : params?.get('demo') === '1';
+  const askedRun = preview ? null : validRun(params?.get('run'));
   // Past tests under setup (§8: moved here from the old start screen); the connection tests come with them.
   const [rows, setRows] = useState<PracticeRunRow[] | null>(preview?.rows ?? null);
   // Practice tests aren't on for this engine: a calm page instead of an error, and nothing is asked again.
@@ -115,11 +122,16 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     if (!isOpen(r.lifecycle)) history.replaceState(null, '', `${ROUTES.practiceTest}?run=${id}`);
   }, []);
 
-  // First load: the fleet, then the test in the address, the open one, or setup.
+  // First load (not for the sample report, which asks the engine nothing): the
+  // fleet, then the test in the address, the open one, or setup. Once only: the
+  // address changing later is handled below. Past tests' rows are best-effort,
+  // so a run named in the address opens even when the list can't be read.
+  const load = useRef<'idle' | 'loading' | 'done'>('idle');
+  const asked = useRef(askedRun);
+  asked.current = askedRun;
   useEffect(() => {
-    if (preview) return;
-    // The sample report needs no fleet and asks the engine nothing.
-    if (new URLSearchParams(location.search).get('demo') === '1') { setDemo(true); setLoading(false); return; }
+    if (preview || demo || load.current !== 'idle') return;
+    load.current = 'loading';
     let live = true;
     (async () => {
       const session = await fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
@@ -127,17 +139,43 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       if (!f) throw new PracticeError('Sign in and connect a fleet first: practice tests run on your fleet’s key and controls.', 401);
       if (!live) return;
       setFleet(f);
-      // Only a well-formed run ID goes into a request; anything else opens setup.
-      const asked = new URLSearchParams(location.search).get('run');
-      const valid = asked && RUN_ID_RE.test(asked) ? asked : null;
-      const listed = await listPracticeRuns(f);
-      if (live) setRows(listed);
-      const id = valid ?? listed.find((r) => isOpen(r.lifecycle))?.id;
+      // Practice tests off on this engine is the calm page; any other failure only leaves Past tests' practice rows out.
+      const listing = listPracticeRuns(f).catch((e) => { if (unavailable(e)) throw e; return null; });
+      const named = asked.current;
+      if (named) {
+        await showRun(f, named);
+        const listed = await listing;
+        if (live && listed) setRows(listed);
+        return;
+      }
+      const listed = await listing;
+      if (!live) return;
+      if (listed) setRows(listed);
+      const id = listed?.find((r) => isOpen(r.lifecycle))?.id;
       if (id) await showRun(f, id);
       else await loadSetup(f);
-    })().catch((e) => { if (!live) return; if (unavailable(e)) setOff(true); else setRefusal(fail(e, LOAD_FAILED)); }).finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
-  }, [preview, showRun, loadSetup]);
+    })().then(
+      () => { if (live) load.current = 'done'; },
+      (e) => { if (!live) return; load.current = 'done'; if (unavailable(e)) setOff(true); else setRefusal(fail(e, LOAD_FAILED)); },
+    ).finally(() => { if (live) setLoading(false); });
+    // Left before it finished (to the sample report): load again when back.
+    return () => { live = false; if (load.current === 'loading') load.current = 'idle'; };
+  }, [preview, demo, showRun, loadSetup]);
+
+  // After the first load, a link to another test (Past tests' Open the result) opens it, and a link
+  // back to setup (Start a new test) leaves a finished test's result. An open test stays: one at a time.
+  const shownAsk = useRef(askedRun);
+  useEffect(() => {
+    const was = shownAsk.current;
+    shownAsk.current = askedRun;
+    if (preview || demo || !fleet || load.current !== 'done' || was === askedRun) return;
+    if (askedRun) {
+      if (askedRun !== run?.id) void act(() => showRun(fleet, askedRun));
+    } else if (run && !isOpen(run.lifecycle)) {
+      setRun(null); setResult(null); setRefusal(null);
+      if (!setup) void act(() => loadSetup(fleet));
+    }
+  }, [askedRun, preview, demo, fleet, run, setup, showRun, loadSetup]);
 
   // While a test is open: a clock for the countdown, and polling for progress.
   useEffect(() => {
@@ -293,7 +331,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
-      {refusal && view !== 'unavailable' && (
+      {refusal && view !== 'unavailable' && view !== 'demo' && (
         <PracticeRefusal refusal={fleet ? refusal : { ...refusal, run: undefined }} busy={busy} onView={(id) => act(() => showRun(fleet!, id))}
           onCancel={(id) => act(async () => { if (!(await endRun(fleet!, id))) await showRun(fleet!, id); })} onEnd={(id) => setConfirm({ kind: 'end', id })} />
       )}

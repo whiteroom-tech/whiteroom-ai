@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SkeletonCard } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { governanceList } from '@/lib/whiteroom/client';
@@ -26,21 +26,24 @@ export async function sandboxDestination(fleet: string): Promise<'practice' | 'c
 
 export function SandboxEntry() {
   const router = useRouter();
+  // From the address, so a link that only changes the query decides again.
+  const connection = useSearchParams()?.get('connection') === '1';
   const [stay, setStay] = useState(false);
   useEffect(() => {
     let live = true;
+    if (connection) return;
+    setStay(false);
     (async () => {
-      if (new URLSearchParams(location.search).get('connection') === '1') return 'connection';
       const session = await fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
       const fleet: string | undefined = session?.fleetId;
       return fleet ? sandboxDestination(fleet) : 'connection';
     })().then(
-      (to) => { if (!live) return; if (to === 'practice') router.replace(ROUTES.practiceTest); else setStay(true); },
+      (to: 'practice' | 'connection') => { if (!live) return; if (to === 'practice') router.replace(ROUTES.practiceTest); else setStay(true); },
       () => { if (live) setStay(true); },
     );
     return () => { live = false; };
-  }, [router]);
-  if (stay) return <TestRunFlow />;
+  }, [router, connection]);
+  if (connection || stay) return <TestRunFlow />;
   return <>
     <PageHeader title="Sandbox" />
     <main className={s.content}><SkeletonCard label="Opening the Sandbox…" style={{ maxWidth: 480 }} /></main>
