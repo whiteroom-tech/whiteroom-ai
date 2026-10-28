@@ -164,7 +164,7 @@ export function PerformancePage({ retentionDays }: {
         rules,
         byRuleId: undefined,
         weekHourly: weekHourlyFrom(holdsWeek, hourlyShown, weekHourlyRead ? weekHourlyOwn : cachedWeek),
-        usdByDay: week?.savingsByDay ? Object.fromEntries(week.savingsByDay.map((d) => [d.day, d.usdMicros])) : null,
+        usdByDay: week?.savingsByDay ? savedByDay(week.savingsByDay, week.cacheByDay) : null,
         cacheSaved: audit?.cacheByDay ? {
           micros: audit.cacheByDay.reduce((n, d) => n + d.usdMicros, 0),
           unpricedReadTokens: audit.cacheByDay.reduce((n, d) => n + d.unpricedReadTokens, 0),
@@ -360,4 +360,11 @@ export function PerformancePage({ retentionDays }: {
 
     </div>
   );
+}
+
+/** Each day's "Saved by WhiteRoom" in micros: smaller context plus, from newer engines, the caching WhiteRoom added. */
+function savedByDay(context: Array<{ day: string; usdMicros: number }>, cache?: Array<{ day: string; usdMicros: number }>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const d of [...context, ...(cache ?? [])]) out[d.day] = (out[d.day] ?? 0) + d.usdMicros;
+  return out;
 }
