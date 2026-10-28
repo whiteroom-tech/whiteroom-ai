@@ -175,4 +175,20 @@ describe('Needs you', () => {
       unknown.root.unmount();
     }
   });
+
+  it('jumps to, and focuses, what each button names', async () => {
+    api.list.mockResolvedValue(reply(1));
+    flags.count = 2;
+    const m = await mount();
+    const scrolled: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this.id); };
+    const button = (text: string) => [...m.el.querySelectorAll('.wr-perf-lead button')].find((b) => b.textContent?.includes(text)) as HTMLButtonElement;
+    await act(async () => { button('recommendation').click(); });
+    expect(scrolled.at(-1)).toBe('recommendations');
+    expect(document.activeElement?.id).toBe('recommendations-heading');
+    await act(async () => { button('flagged').click(); });
+    expect(scrolled.at(-1)).toBe('agent-health-heading');
+    expect(document.activeElement?.id).toBe('agent-health-heading');
+    m.root.unmount();
+  });
 });
