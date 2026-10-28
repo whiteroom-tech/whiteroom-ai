@@ -82,7 +82,7 @@ function consequences(kind: RotationKind) {
       <li>Other WhiteRoom accounts that linked this fleet lose access. A Bedrock role connection is removed and has to be set up again.</li>
     </ul>
   ) : (
-    <p style={{ margin: 0 }}>Every proxy URL is replaced with a new one, with the same provider key behind it. Agents on the old URLs fail until you update them. Your fleet key stays the same.</p>
+    <p style={{ margin: 0 }}>Every proxy URL is replaced; the provider key behind each stays. Agents on old URLs fail until you update them. Your fleet key stays the same.</p>
   );
 }
 
@@ -140,7 +140,7 @@ export function RotateDialog({ kind, open, onClose, onDone, preview = false }: {
         title="Reissue keys that spend on WhiteRoom’s cloud account?"
         body={
           <div style={{ display: 'grid', gap: 10 }}>
-            <p style={{ margin: 0 }}>These keys call your model through WhiteRoom’s own cloud identity, so anyone holding one spends on that account. New ones are issued only if you confirm here.</p>
+            <p style={{ margin: 0 }}>These keys use WhiteRoom’s cloud identity, so anyone holding one spends on that account. New ones are issued only if you confirm here.</p>
             <ul style={{ margin: 0, paddingLeft: 18 }}>{cloudKeys?.map((k) => <li key={k.prefix}>{label(k)}</li>)}</ul>
             {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{error}</p>}
           </div>

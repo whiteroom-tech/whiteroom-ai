@@ -468,9 +468,9 @@ const RESPONSE_DONE: Record<string, string> = { pause: 'paused the agent', stop:
  */
 export function flagsNote(actions: RunRuleAction[] | undefined): string {
   const acted = (actions ?? []).filter((a) => a.mode === 'enforce');
-  if (acted.some((a) => a.response === 'block')) return 'Flags only point things out. Blocks are listed under Rule activity.';
-  if (acted.length) return 'Flags only point things out. What rules did is listed under Rule activity.';
-  return 'Flags only point things out; they don’t block anything.';
+  if (acted.some((a) => a.response === 'block')) return 'Flags don’t block. Blocks are under Rule activity.';
+  if (acted.length) return 'Flags don’t block. What rules did is under Rule activity.';
+  return 'Flags don’t block anything.';
 }
 
 /** A Rule activity row: "Model allowlist would have blocked |5| calls: model not on the allowlist" (count bold). */

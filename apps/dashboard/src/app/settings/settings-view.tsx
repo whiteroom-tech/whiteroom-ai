@@ -221,7 +221,7 @@ function ProfileSection({
       </div>
       {/* M15: dashboard dates follow the browser whatever is picked here; say exactly that. */}
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '10px 0 14px' }}>
-        Saved with your profile. For now the dashboard shows dates and day boundaries in this browser&apos;s time zone ({browserZone}).
+        Saved with your profile. For now, dates use this browser&apos;s time zone ({browserZone}).
       </p>
       {/* Applies at once and lives in this browser; Save profile doesn't change it. */}
       <div style={labelStyle}>Text size</div>
@@ -320,7 +320,7 @@ function PlanSection({
         <Stat label="History kept" value={`${limits.retentionDays} days`} />
       </div>
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '12px 0 16px' }}>
-        History covers call records and run history. The audit trail is kept for {AUDIT_KEPT}.
+        History means calls and runs. The audit trail is kept for {AUDIT_KEPT}.
       </p>
 
       {offers.length > 0 && (

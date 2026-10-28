@@ -184,10 +184,10 @@ describe('run detail rows', () => {
   });
   it('never says nothing was blocked when a rule blocked', () => {
     const act = (x: Partial<Parameters<typeof flagsNote>[0] extends (infer A)[] | undefined ? A : never>) => ({ at: '2026-10-27T09:04:00Z', ruleId: 'r1', ruleType: 'model_allowlist' as const, response: 'block' as const, mode: 'enforce' as const, occurrences: 1, ...x });
-    expect(flagsNote([act({})])).toBe('Flags only point things out. Blocks are listed under Rule activity.');
-    expect(flagsNote([act({ response: 'notify' })])).toBe('Flags only point things out. What rules did is listed under Rule activity.');
-    expect(flagsNote([act({ mode: 'watch' })])).toBe('Flags only point things out; they don’t block anything.');
-    expect(flagsNote(undefined)).toBe('Flags only point things out; they don’t block anything.');
+    expect(flagsNote([act({})])).toBe('Flags don’t block. Blocks are under Rule activity.');
+    expect(flagsNote([act({ response: 'notify' })])).toBe('Flags don’t block. What rules did is under Rule activity.');
+    expect(flagsNote([act({ mode: 'watch' })])).toBe('Flags don’t block anything.');
+    expect(flagsNote(undefined)).toBe('Flags don’t block anything.');
   });
   it('words Rule activity rows, footer and header link', () => {
     const a = { at: '2026-10-25T00:45:00Z', ruleId: 'gr_1', ruleType: 'model_allowlist' as const, response: 'block' as const, mode: 'watch' as const, occurrences: 5, reason: 'model_not_allowed' };
