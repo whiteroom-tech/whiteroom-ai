@@ -313,7 +313,10 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
           {history.slice(0, 10).map((h) => (
             <HistoryLine key={h.id} entry={h} actors={actors} undo={undoOf(h)} onUndo={onUndo} busy={saving} />
           ))}
-          <Button size={28} onClick={onAudit} style={{ alignSelf: 'flex-start' }}>Check audit trail</Button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+            <Button size={28} onClick={onAudit}>Check audit trail</Button>
+            <Link href={ROUTES.practiceTest} style={{ color: 'var(--brand)', fontWeight: 600, fontSize: 'var(--fs-sm)' }}>Test in Sandbox</Link>
+          </div>
         </div>
       </details>
     </div>

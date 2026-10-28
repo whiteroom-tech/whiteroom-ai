@@ -7,7 +7,7 @@ import contract from '@practice-contract/contract.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
 import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlLine, costLine, fixLine, headline,
+  billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, controlTypeLines, costLine, fixLine, headline,
   CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
   rerunKey, rerunScope, runKeyChoice, taskList,
 } from '@/lib/sandbox/practice/model';
@@ -70,7 +70,7 @@ describe('practice test setup: the agent’s model and where its calls go', () =
 
   it('renders the control checks as the engine planned them, and counts a rerun’s', () => {
     const checks = fixture<{ controls: { checks: PracticeControlCheck[] } }>('tasks.next.controls').controls.checks;
-    expect(checks.map(controlLine)).toEqual([
+    expect(controlTypeLines(checks).map((l) => l.text)).toEqual([
       'Pause and Stop · 1 extra call', 'Model allowlist · Enforce · no extra calls', 'Loop breaker · Enforce · 2 extra calls', 'Call rate · Watch · 6 extra calls',
       'Spend cap · Enforce · Not checked: it would need real spending.',
     ]);

@@ -6,6 +6,7 @@
 
 import CATALOG from '@practice-contract/catalog.json';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
+import { isEmptyKeywordRule, parseControlLabel, sameRuleKey } from './engine-labels';
 import { counted, fmtDay } from '@/lib/format';
 import type {
   PracticeCheck, PracticeControlCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource,
@@ -37,8 +38,17 @@ export function usualMinutes(runs: number): string {
   return `${lo * runs}–${hi * runs} min`;
 }
 
-/** What a practice test is, the one line every way into it uses: "5 practice tasks and a check of your rules · about 5–10 min for one run · around 50 model calls on your key". */
-export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)} for one run · around 50 model calls on your key`;
+/**
+ * What a practice test is, the one line every way into it uses: "5 practice
+ * tasks and a check of your rules · about 5–10 min for one run". The model
+ * calls are said once, by setup's cost line, worked out from the plan.
+ */
+export const PRACTICE_SUMMARY = `${PRACTICE_TASKS} practice tasks and a check of your rules · about ${usualMinutes(1)} for one run`;
+
+/** Where the CLI's README explains the adapter that connects your own agent. */
+export const ADAPTER_HELP_URL = 'https://www.npmjs.com/package/@whiteroom-ai/cli#connecting-your-own-agent';
+/** The one line that says what the adapter is, beside its link. */
+export const ADAPTER_EXPLAINER = 'A short script that passes each practice task to your agent. We give you a starter.';
 
 /** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
 export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
@@ -244,16 +254,67 @@ export function billedLine(r: Pick<PracticeReport, 'runs' | 'tested'>): string {
 
 // ── Control checks (§6): what setup says will be checked ─────────────────
 
-/** "Call rate · Watch · 5 extra calls" / "Spend cap · Enforce · Not checked: it would need real spending.": a row as the engine planned it (source-model). */
-export function controlLine(c: PracticeControlCheck): string {
-  const name = c.mode ? `${c.label} · ${c.mode}` : c.label;
-  if (!c.checked) return `${name} · ${c.note ?? 'Not checked.'}`;
-  return `${name} · ${c.calls ? counted(c.calls, 'extra call') : 'no extra calls'}`;
+/**
+ * The control checks the dashboard shows and counts: keyword rules with no
+ * keywords are left out, so the rule list and the cost line agree.
+ */
+export const shownControls = (checks: PracticeControlCheck[]) => checks.filter((c) => !isEmptyKeywordRule(c));
+/** "ctl.spend_cap.gr_1" → "spend_cap"; "ctl.pause_stop" is its own type. */
+const ruleType = (id: string) => id.split('.')[1] ?? id;
+const MODE_ORDER = ['Enforce', 'Watch', 'Off'];
+
+/** One line of setup's rule list: every rule of one type, as the engine planned them. */
+export interface ControlTypeLine {
+  type: string;
+  text: string;
 }
 
-/** The control checks' extra calls on the agent's key, only the rows a rerun covers when it names some. */
+/**
+ * Setup's rule list (pre-flight Phase 1): one line per rule type, from the
+ * check ids `ctl.<ruleType>.<ruleId>` (`ctl.pause_stop` stands alone). Each
+ * line says how many rules, their modes, the extra calls and, when some can't
+ * be checked, the shared reason. Rules with the same settings, mode and agents
+ * (read from the engine's label, see engine-labels.ts) are flagged as
+ * identical; keyword rules with no keywords are left out.
+ * "Spend cap · 7 rules · 5 identical spend caps · Enforce · Not checked: it would need real spending."
+ */
+export function controlTypeLines(checks: PracticeControlCheck[]): ControlTypeLine[] {
+  const byType = new Map<string, PracticeControlCheck[]>();
+  for (const c of shownControls(checks)) {
+    const t = ruleType(c.id);
+    byType.set(t, [...(byType.get(t) ?? []), c]);
+  }
+  return [...byType].map(([type, rules]) => {
+    const labels = CATALOG.controls.labels as Record<string, string>;
+    const name = labels[type] ?? parseControlLabel(rules[0].label).name;
+    const parts = [name];
+    if (rules.length > 1) parts.push(counted(rules.length, 'rule'));
+    // Identical: same settings (from the label), mode and agents. The biggest such set is flagged; labels without settings never are.
+    const same = new Map<string, number>();
+    for (const r of rules) { const k = sameRuleKey(r); if (k !== null) same.set(k, (same.get(k) ?? 0) + 1); }
+    const identical = Math.max(0, ...same.values());
+    if (identical > 1) {
+      const noun = name.toLowerCase();
+      parts.push(`${identical} identical ${noun.endsWith('s') ? noun : `${noun}s`}`);
+    }
+    const modes = MODE_ORDER.map((m) => [m, rules.filter((r) => r.mode === m).length] as const).filter(([, n]) => n > 0);
+    if (modes.length === 1) parts.push(modes[0][0]);
+    else if (modes.length > 1) parts.push(modes.map(([m, n]) => `${n} ${m}`).join(', '));
+    const checked = rules.filter((r) => r.checked);
+    const skipped = rules.filter((r) => !r.checked);
+    const calls = checked.reduce((n, r) => n + (r.calls ?? 0), 0);
+    if (checked.length) parts.push(calls ? counted(calls, 'extra call') : 'no extra calls');
+    if (skipped.length) {
+      const note = skipped[0].note ?? 'Not checked.';
+      parts.push(checked.length ? `${skipped.length} ${note.charAt(0).toLowerCase()}${note.slice(1)}` : note);
+    }
+    return { type, text: parts.join(' · ') };
+  });
+}
+
+/** The control checks' extra calls on the agent's key (shown checks only), only the rows a rerun covers when it names some. */
 export function controlCalls(checks: PracticeControlCheck[], scope: string[] | null = null): number {
-  return checks.filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
+  return shownControls(checks).filter((c) => !scope || scope.includes('ctl') || scope.includes(c.id)).reduce((n, c) => n + (c.calls ?? 0), 0);
 }
 
 // ── Results (§8) ─────────────────────────────────────────────────────────

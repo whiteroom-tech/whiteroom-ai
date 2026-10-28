@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlLine, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
+  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, controlTypeLines, costLine, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
   PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
@@ -28,6 +28,7 @@ function KeyLine({ choice, fleet, className }: { choice: PracticeKeyChoice | nul
 /** The 7 agent checks by scenario, then the fleet's controls as the engine plans them: what the results will show, by the same names. */
 function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] | null }) {
   const scenarios = [...new Set(CATALOG.checks.map((c) => c.scenario))];
+  const lines = controls ? controlTypeLines(controls) : [];
   return (
     <div style={{ margin: '16px 0' }}>
       <SettingsCard id="practice-checks-preview" title="What the test checks" level={3}>
@@ -41,7 +42,7 @@ function PracticeCheckPreview({ controls }: { controls: PracticeControlCheck[] |
           <li className={s.previewItem}>
             <span className={s.previewName}>{CATALOG.controls.scenario}</span>
             {!controls ? <span className={s.previewText}>Couldn’t read this fleet’s controls just now. The results show each one the test checks.</span>
-              : controls.length ? <ul className={p.list}>{controls.map((c) => <li key={c.id}>{controlLine(c)}</li>)}</ul>
+              : lines.length ? <ul className={p.list}>{lines.map((l) => <li key={l.type}>{l.text}</li>)}</ul>
               : <span className={s.previewText}>No controls set on this fleet yet, so only the agent checks run.</span>}
             {controls && !controls.some((c) => c.id === 'ctl.pause_stop') && <span className={s.previewText}>Pause and Stop: not checked on this fleet.</span>}
           </li>
@@ -131,7 +132,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
   const keyChoice = choice ?? directChoice(src);
   const est = callEstimate({
-    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? src.controls.calls : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
+    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
   });
   const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };
@@ -172,7 +173,8 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
             ] as const).map(([v, name, sub]) => (
               <label key={name} className={`${s.choice} ${sample === v ? s.choiceOn : ''} ${!v && noAgents ? s.choiceOff : ''}`}>
                 <input type="radio" name="practice-who" checked={sample === v} disabled={!v && noAgents} onChange={() => pick(v)} className={s.choiceInput} />
-                <span className={s.choiceText}><span className={s.choiceName}>{name}</span><span className={s.choiceSub}>{sub}</span></span>
+                <span className={s.choiceText}><span className={s.choiceName}>{name}</span><span className={s.choiceSub}>{sub}</span>
+                  {!v && !noAgents && <span className={s.choiceSub}>{ADAPTER_EXPLAINER} <a className={s.linkBtn} href={ADAPTER_HELP_URL} target="_blank" rel="noopener noreferrer">How it works</a></span>}</span>
               </label>
             ))}
           </div>

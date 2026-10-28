@@ -1624,6 +1624,14 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
+  it('beside Check audit trail, a plain link to test the rules in Sandbox', async () => {
+    const m = await mount();
+    await m.open('Only claude');
+    const link = [...m.el.querySelectorAll('a')].find((x) => x.textContent === 'Test in Sandbox');
+    expect(link?.getAttribute('href')).toBe('/sandbox/practice');
+    m.root.unmount();
+  });
+
   it('Check audit trail says when tracking hasn’t started, and when the check didn’t run', async () => {
     const client = await import('@/lib/whiteroom/client');
     const integrity = vi.spyOn(client, 'auditIntegrity');
