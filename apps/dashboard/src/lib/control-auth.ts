@@ -28,6 +28,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'rebind_fleet_key', 'rotate_proxy_keys', 'store_bedrock_role', 'delete_bedrock_role',
   // An agent's budget is its owner's to set, not the agent's.
   'agent_budget_set',
+  // A sandbox test's tool policy: the agent under test mustn't switch it off.
+  'create_policy', 'set_policy_mode',
 ]);
 
 /**
