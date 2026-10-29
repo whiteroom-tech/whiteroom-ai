@@ -126,6 +126,18 @@ export function keyHeader(p: Provider, key: string): Record<string, string> {
 /** A direct key's provider, by its shape: what an older WhiteRoom that names no provider means. */
 export const providerByShape = (key: string): Provider => (key.startsWith("sk-ant-") ? "anthropic" : "openai");
 
+/**
+ * What's wrong with a key's shape, before it's sent (uses no try), or null:
+ * pasted twice (a hidden prompt shows nothing, so a second paste is easy),
+ * or with spaces or line breaks inside.
+ */
+export function keyShapeProblem(key: string): "twice" | "spaces" | null {
+  const half = key.length / 2;
+  if (key.length >= 40 && Number.isInteger(half) && key.slice(0, half) === key.slice(half)) return "twice";
+  if (/\s/.test(key)) return "spaces";
+  return null;
+}
+
 /** Short-term Bedrock keys can expire during a test; WhiteRoom refuses them without using a try. */
 export const isShortTermBedrockKey = (key: string) => key.startsWith("bedrock-api-key-");
 

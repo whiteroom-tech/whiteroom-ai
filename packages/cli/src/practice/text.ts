@@ -65,6 +65,9 @@ export const copy = {
   noKey: (keyEnv?: string) => `Set the key your agent uses (${keyEnv ?? list(KEY_VARS, "or")}), then run the command again.`,
   badKeyEnv: (v: string) => `--key-env must name a provider key variable (${list(KEY_VARS, "or")}), not ${v}.`,
   shortTermKey: CATALOG.keyRefusals.short_term_key,
+  keyTwice: (from: string | null, length: number) =>
+    `${from ? `The key in ${from}` : "The key"} looks pasted twice (${length} characters, the same key two times). Nothing was sent. Set it again with a single paste.`,
+  keySpaces: (from: string | null) => `${from ? `The key in ${from}` : "The key"} has spaces or line breaks inside it. Nothing was sent. Copy it again in one piece.`,
   node: (v: string) => `Needs Node 20 or later (you have ${v}).`,
   windows: "Practice tests run on macOS and Linux for now. Run the command there, or in WSL.",
   badUrl: "--url must be a WhiteRoom address (https://….whiteroom.tech) or http://localhost for local testing.",
