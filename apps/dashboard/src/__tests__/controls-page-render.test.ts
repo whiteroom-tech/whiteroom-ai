@@ -65,6 +65,8 @@ const api = vi.hoisted(() => ({
   /** What Settings › Alerts has; null: an engine without alerts. */
   alerts: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null } | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string; before?: unknown; after?: unknown }>,
+  /** rule_actions' fleet-wide totals this week (default: 2 blocked, 5 would have acted). */
+  totals: null as { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number } | null,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
@@ -75,7 +77,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   performanceAgent: async (_f: string, agentId: string) => ({ fleetId: 'f1', agentId, hourly: [], totals: { calls: api.agentCalls[agentId] ?? 0, costMicros: 0 } }),
   auditIntegrity: async () => ({ fleetId: 'f1', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } }),
   verifyAudit: async () => ({ valid: true, eventsVerified: 2045, message: '' }),
-  ruleActions: async () => ({ fleetId: 'f1', totals: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
+  ruleActions: async () => ({ fleetId: 'f1', totals: api.totals ?? { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
   performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
   performanceFleetHourly: async () => { if (!api.models) throw new Error('no store'); return { hourly: api.hourly }; },
   governanceUpdateRule: api.update,
@@ -120,7 +122,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null;
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -809,6 +811,13 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect((m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement).value).toBe('150');
     expect(m.button('Save')!.disabled).toBe(true);
     expect(m.text()).not.toContain('From a Diagnosis suggestion');
+    m.root.unmount();
+  });
+
+  it('says blocked for blocked calls only, as Performance and Home do; pauses and stops are named apart', async () => {
+    api.totals = { blocked: 12, paused: 2, stopped: 1, toldYou: 3, wouldAct: 38 };
+    const m = await mount();
+    expect(m.el.querySelector('.ctl-lead')!.textContent).toBe('5 rules · 2 Enforce · 3 Watch · 56 caught, 12 blocked, 2 paused, 1 stopped this week');
     m.root.unmount();
   });
 
