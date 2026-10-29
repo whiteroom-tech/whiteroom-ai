@@ -188,7 +188,11 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
     expect(html).toContain('href="/controls"');
     expect(t).toContain('1. Pick agent');
     expect(t).toContain('2. What we’ll test');
-    expect(t).toContain('No agent yet? Use our sample');
+    // The guardrails test first: no code, any key, no Fleet key key to pick.
+    expect(t).toContain('Test my guardrails · no code Test my own agent');
+    expect(t).toContain('WhiteRoom’s sample agent runs the tasks with your rules');
+    expect(t).toContain('Set ANTHROPIC_API_KEY or OPENAI_API_KEY to any key of yours: it pays for the test’s calls.');
+    expect(t).not.toContain('Your agent needs a small adapter');
   });
 });
 
@@ -202,7 +206,7 @@ describe('step 1: the agent active most recently (§7, §9 lastActiveAt)', () =>
 
   it('setup selects it and says why', () => {
     const html = renderToStaticMarkup(createElement(PracticeSetup, {
-      fleet: 'prod-eu', data: { agents: ['alpha', 'beta'], lastActiveAt: { alpha: '2026-10-27T10:00:00Z', beta: '2026-10-28T09:00:00Z' } }, busy: false, onStart: () => {},
+      fleet: 'prod-eu', data: { agents: ['alpha', 'beta'], lastActiveAt: { alpha: '2026-10-27T10:00:00Z', beta: '2026-10-28T09:00:00Z' } }, busy: false, onStart: () => {}, ownAgent: true,
       preview: { model: 'claude-haiku-4-5', provider: 'direct-anthropic', directKey: true, blocked: null, providerKeys: [], controls: { checks: [], calls: 0 } },
     }));
     expect(html).toMatch(/<option value="beta" selected="">beta<\/option>/);
@@ -215,16 +219,17 @@ describe('/sandbox goes to the pre-flight, except for fleets it refuses (§7 Red
   const src = (o: Partial<PracticeSource>): PracticeSource => ({ model: null, provider: 'direct-anthropic', directKey: true, blocked: null, providerKeys: [], controls: null, ...o });
   const eligible = { displayPrefix: `sk-wr-${'1'.repeat(16)}`, provider: 'azure-openai', endpointHost: 'acme.openai.azure.com', region: null, keyHint: 'a1b2', createdAt: '2026-10-03T09:00:00Z', eligible: true, reason: null };
 
-  it('keeps the connection test for an IAM-role fleet, or its own host or a cloud agent with no usable key', () => {
+  it('keeps the connection test only for an IAM-role fleet: the guardrails test runs on any other', () => {
     expect(keepsConnectionTest(src({}))).toBe(false);
     expect(keepsConnectionTest(src({ blocked: 'bedrock_role', provider: 'cloud' }))).toBe(true);
-    expect(keepsConnectionTest(src({ provider: 'proxy-url', directKey: false }))).toBe(true);
-    expect(keepsConnectionTest(src({ provider: 'cloud', directKey: false }))).toBe(true);
-    expect(keepsConnectionTest(src({ provider: 'cloud', directKey: false, providerKeys: [{ ...eligible, eligible: false, reason: 'engine_access_key' }] }))).toBe(true);
-    expect(keepsConnectionTest(src({ provider: 'cloud', directKey: false, providerKeys: [eligible] }))).toBe(false);
-    // Setup refuses the same fleets; the sample agent still runs on a cloud agent's fleet.
+    expect(keepsConnectionTest(src({ provider: 'proxy-url', directKey: false }))).toBe(false);
+    expect(keepsConnectionTest(src({ provider: 'cloud', directKey: false }))).toBe(false);
+    expect(keepsConnectionTest(src({ provider: 'cloud', directKey: false, providerKeys: [{ ...eligible, eligible: false, reason: 'engine_access_key' }] }))).toBe(false);
+    // The own-agent test still needs a usable key for a proxy-URL or cloud agent; the guardrails test (any key) doesn't.
     expect(practiceBlock(src({ provider: 'cloud' }), { sample: true, hasKey: false })).toBeNull();
+    expect(practiceBlock(src({ provider: 'proxy-url' }), { sample: true, hasKey: false })).toBeNull();
     expect(practiceBlock(src({ provider: 'cloud' }), { sample: false, hasKey: false })).toBe('cloud');
+    expect(practiceBlock(src({ provider: 'proxy-url' }), { sample: false, hasKey: false })).toBe('host');
   });
 
   it('asks the engine about the most recently active agent, and sends refused fleets to the connection test', async () => {
@@ -240,7 +245,7 @@ describe('/sandbox goes to the pre-flight, except for fleets it refuses (§7 Red
     engine({ blocked: 'bedrock_role', provider: 'cloud' });
     expect(await sandboxDestination('prod-eu')).toBe('connection');
     engine({ provider: 'proxy-url', directKey: false });
-    expect(await sandboxDestination('prod-eu')).toBe('connection');
+    expect(await sandboxDestination('prod-eu')).toBe('practice');
   });
 });
 

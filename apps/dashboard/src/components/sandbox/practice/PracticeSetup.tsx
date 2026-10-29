@@ -21,8 +21,8 @@ export interface SetupData {
 }
 
 /** "Set `ANTHROPIC_API_KEY` to the key your agent uses with prod-eu." / R7: "Run this where `AZURE_OPENAI_API_KEY` is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2)." */
-function KeyLine({ choice, fleet, className }: { choice: PracticeKeyChoice | null; fleet: string; className: string }) {
-  const l = keyLine(choice, fleet);
+function KeyLine({ choice, fleet, sample, className }: { choice: PracticeKeyChoice | null; fleet: string; sample: boolean; className: string }) {
+  const l = keyLine(choice, fleet, sample);
   return <p className={className}>{l.before}<code>{l.keyVar}</code>{l.after}</p>;
 }
 
@@ -55,7 +55,7 @@ const cloudKey = (src: PracticeSource | undefined, prefix: string | null) => {
  * started from the computer the agent runs on, so on a phone the Start
  * button gives way to a note saying so.
  */
-export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart }: {
+export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgent = false, onStart }: {
   fleet: string;
   data: SetupData;
   busy: boolean;
@@ -63,11 +63,14 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   preview?: PracticeSource;
   /** Changes when the keys should be read again (Start said the picked one is gone). */
   refresh?: number;
+  /** /dev/practice: start on the own-agent test. */
+  ownAgent?: boolean;
   onStart: (start: PracticeStart, key: PracticeKeyChoice | null) => void;
 }) {
   // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
   const noAgents = data.agents.length === 0;
-  const [sample, setSample] = useState(noAgents);
+  // The guardrails test first: no code, and any key pays for it.
+  const [sample, setSample] = useState(!(ownAgent && !noAgents));
   // Step 1: the most recently active agent (§7), else the first by name.
   const recent = defaultAgent(data.agents, data.lastActiveAt);
   const [agent, setAgent] = useState(recent);
@@ -103,7 +106,8 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   useEffect(() => { if (src) pickKey(keyOptions(src).initial, src); }, [src]);
 
   const latest = src === undefined ? undefined : src.model;
-  const key = options.keys.find((k) => k.displayPrefix === picked) ?? null;
+  // A guardrails test takes any Anthropic or OpenAI key, so it never picks a Fleet key key.
+  const key = sample ? null : options.keys.find((k) => k.displayPrefix === picked) ?? null;
   const choice = key ? choiceOf(key) : null;
   const cloudField = choice ? CLOUD_MODEL_FIELD[choice.provider] : undefined;
   const chosen = typed.trim() || null;
@@ -116,7 +120,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
   // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
   const controls = src === undefined ? [] : src.controls?.checks ?? null;
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
-  const keyChoice = choice ?? directChoice(src);
+  const keyChoice = sample ? null : choice ?? directChoice(src);
   const est = callEstimate({
     runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
@@ -151,6 +155,10 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
 
       <div className={`${s.card} ${s.cardBrand}`}>
         <h3 className={s.sectionTitle}>1. Pick agent</h3>
+        <div className={s.formGroup}>
+          <SegmentedControl<'guardrails' | 'agent'> label="What to test" value={sample ? 'guardrails' : 'agent'} onChange={(v) => pick(v === 'guardrails')}
+            options={[{ value: 'guardrails', label: 'Test my guardrails · no code' }, { value: 'agent', label: 'Test my own agent', disabled: noAgents }]} />
+        </div>
         {data.agents.length > 0 && (
           <div className={s.formGroup}>
             <label className={s.formLabel} htmlFor="practice-agent">Agent {sample ? <span className={s.formLabelHint}>· the sample agent runs with its name and guardrails</span>
@@ -162,8 +170,8 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
         )}
         {sample ? (
           <p className={s.small}>
-            {noAgents ? 'No agent has called through WhiteRoom yet, so WhiteRoom’s sample agent runs the tasks.' : 'WhiteRoom’s sample agent runs the tasks: no code, 1 run.'} It checks your guardrails, not your own agent.
-            {!noAgents && <> <button type="button" className={s.linkBtn} onClick={() => pick(false)}>Use my agent</button></>}
+            WhiteRoom’s sample agent runs the tasks with your rules: no code, 1 run, about {usualMinutes(1)}. It checks your guardrails, not your own agent.
+            {noAgents && ' Testing your own agent opens once it has called through WhiteRoom.'}
           </p>
         ) : (
           <p className={s.small}>
@@ -171,7 +179,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
           </p>
         )}
 
-        {options.keys.length > 0 && (
+        {!sample && options.keys.length > 0 && (
           <div className={s.formGroup}>
             {keyChoices > 1 ? <>
               <label className={s.formLabel} htmlFor="practice-key">Key to test with <span className={s.formLabelHint}>· from Fleet key</span></label>
@@ -182,7 +190,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
             </> : key && <p className={s.small}>Key: {providerKeyLabel(key)}, from Fleet key</p>}
           </div>
         )}
-        {ineligible.length > 0 && (options.keys.length > 0 || blocked) && (
+        {!sample && ineligible.length > 0 && (options.keys.length > 0 || blocked) && (
           <div className={s.formGroup}>
             <span className={s.small}>Fleet key keys a practice test can’t use:</span>
             <ul className={p.list}>{ineligible.map((k) => <li key={k.displayPrefix}>{providerKeyLabel(k)}: {KEY_REFUSALS[k.reason ?? 'unsupported_provider']}</li>)}</ul>
@@ -214,10 +222,9 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, onStart
         <h3 id="practice-plan-title" className={s.sectionTitle}>2. What we’ll test</h3>
         <RowGroups items={planItems(controls)} />
         <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample ? 1 : runs)}</p>
-        {!blocked && <KeyLine choice={keyChoice} fleet={fleet} className={s.small} />}
+        {!blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
-          {!sample && <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => pick(true)}>No agent yet? Use our sample</button>}
         </div>
         {cloudField && !model && !blocked && <p className={`${s.small} ${p.desktopOnly}`}>{cloudField.missing}</p>}
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>

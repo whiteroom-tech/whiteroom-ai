@@ -37,14 +37,18 @@ describe('practice test screens', () => {
       'Model: claude-haiku-4-5, the one support-bot used most recently · Change', '2. What we’ll test', 'Never more than 130 calls, including control checks.',
       'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up',
       'Loop breaker + call rate Will be checked · 2 rules · Enforce and Watch · 8 extra calls', 'Spend cap Will be checked · Enforce · 1 extra call',
-      'Allowlists + keywords Will be checked · 1 of 2 rules · Enforce · no extra calls', 'Start test', 'No agent yet? Use our sample', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+      'Allowlists + keywords Will be checked · 1 of 2 rules · Enforce · no extra calls', 'Start test', 'Test my guardrails · no code Test my own agent', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+    // What a person sees first: the guardrails test, with any key.
+    const g = text(render('setup-guardrails'));
+    for (const s of ['Test my guardrails · no code', 'WhiteRoom’s sample agent runs the tasks with your rules: no code, 1 run', 'Set ANTHROPIC_API_KEY or OPENAI_API_KEY to any key of yours', 'Start test']) expect(g).toContain(s);
+    for (const s of ['Your agent needs a small adapter', '3 runs', 'from Fleet key']) expect(g).not.toContain(s);
     expect(render('setup')).toMatch(/<option value="support-bot" selected="">/);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
     // A fleet with no agents yet: the sample agent, since your agent needs to have called through WhiteRoom.
     const none = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, setup: { ...PRACTICE_STATES.setup.setup!, agents: [] } } }));
-    expect(text(none)).toContain('No agent has called through WhiteRoom yet, so WhiteRoom’s sample agent runs the tasks. It checks your guardrails, not your own agent.');
-    expect(text(none)).not.toContain('Use my agent');
-    expect(text(none)).not.toContain('No agent yet? Use our sample');
+    expect(text(none)).toContain('It checks your guardrails, not your own agent. Testing your own agent opens once it has called through WhiteRoom.');
+    // "Test my own agent" is shown but can't be picked yet.
+    expect(none).toMatch(/<button[^>]*disabled=""[^>]*>Test my own agent<\/button>/);
     expect(none).not.toContain('name="practice-who"');
     expect(text(render('setup-new-agent'))).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
@@ -75,11 +79,11 @@ describe('practice test screens', () => {
     expect(text(blocked('cloud'))).toContain('To test an agent that uses Azure OpenAI, Claude on Azure (Foundry) or AWS Bedrock, add its key on Fleet key , then come back and pick it here.');
     expect(blocked('cloud')).toMatch(/<a[^>]*href="\/fleet-key"[^>]*>Fleet key<\/a>/);
     for (const provider of ['proxy-url', 'cloud'] as const) expect(startButton(blocked(provider))).toContain('disabled=""');
-    // The sample agent calls the provider itself: a cloud fleet can still run it; a proxy-URL fleet can't.
+    // The guardrails test calls the provider itself with any key: a cloud or proxy-URL fleet can run it.
     const sampleOnly = (provider: 'cloud' | 'proxy-url') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider, setup: { ...PRACTICE_STATES['setup-blocked'].setup!, agents: [] } } }));
     expect(text(sampleOnly('cloud'))).not.toContain('provider yet');
     expect(startButton(sampleOnly('cloud'))).not.toContain('disabled=""');
-    expect(startButton(sampleOnly('proxy-url'))).toContain('disabled=""');
+    expect(startButton(sampleOnly('proxy-url'))).not.toContain('disabled=""');
     // Direct keys, or not yet known: Start stays open (its own checks still apply).
     for (const provider of ['direct-anthropic', 'direct-openai', 'unknown', undefined] as const) {
       const html = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, provider } }));
@@ -119,23 +123,29 @@ describe('practice test screens', () => {
     expect(elsewhere).not.toMatch(/View it|End it|Continue it|Cancel it/);
   });
 
-  it('the terminal steps: the command, then the run code, which is never part of a command', () => {
+  it('the terminal steps: set the key, then one command that carries the run code', () => {
     const html = render('code');
     const t = text(html);
-    expect(t.indexOf('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs"')).toBeLessThan(t.indexOf('Paste this run code'));
-    expect(t).toContain('Expires in 29:48');
+    const run = 'echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin';
+    expect(t.indexOf('read -s ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY')).toBeLessThan(t.indexOf(run));
+    expect(t).toContain('Paste your key once and press Enter: nothing shows');
+    expect(t).toContain('It includes your run code: expires in 29:48');
     expect(t).toContain('Get a new run code');
+    expect(t).not.toContain('Paste this run code');
     // On npm: no beta install step, no sha256 check.
     expect(t).not.toContain('Install the WhiteRoom CLI (beta)');
     expect(t).not.toContain('shasum');
     expect(t).toContain('Unknown command: practice');
     expect(t).toContain('End test');
-    const commands = [...html.matchAll(/<pre[^>]*>([^<]*)<\/pre>/g)].map((m) => m[1]);
-    expect(commands.some((c) => c.startsWith('wrrt_'))).toBe(true);
-    expect(commands.filter((c) => c.includes('practice')).every((c) => !c.includes('wrrt_'))).toBe(true);
-    expect(html).toContain('aria-label="Copy run code"');
-    expect(text(render('code-sample'))).not.toContain('starter adapter');
-    expect(text(render('code-gone'))).toContain('The run code is shown only once');
+    expect(html).toContain('aria-label="Copy the test command"');
+    expect(html).toContain('aria-label="Copy the key command"');
+    const sample = text(render('code-sample'));
+    expect(sample).not.toContain('starter adapter');
+    expect(sample).toContain('echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.0 practice run --code-stdin');
+    expect(sample).toContain('Any Anthropic or OpenAI key of yours works: it pays for the test’s calls. Using OpenAI? Put OPENAI_API_KEY in place of ANTHROPIC_API_KEY');
+    const gone = text(render('code-gone'));
+    expect(gone).toContain('The run code is shown only once, when it’s made. Get a new one to see the command.');
+    expect(gone).not.toContain('echo wrrt_');
   });
 
   it('running, lost contact and finishing', () => {
@@ -259,9 +269,10 @@ describe('practice tests on cloud providers (R7)', () => {
   });
 
   it('the terminal steps name the key variable and Fleet key key for each provider', () => {
-    expect(text(render('code-azure'))).toContain('Needs Node 20 or later. Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2). Keep');
+    expect(text(render('code-azure'))).toContain('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
+    expect(text(render('code-azure'))).toContain('read -s AZURE_OPENAI_API_KEY && export AZURE_OPENAI_API_KEY');
     // From the run's own fields, so any tab names the key; the command picks its variable, so other keys set on the computer don't matter.
-    expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --key-env AZURE_OPENAI_API_KEY');
+    expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin --key-env AZURE_OPENAI_API_KEY');
     expect(text(render('code'))).not.toContain('--key-env');
     expect(text(render('code-bedrock'))).toContain('AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d)');
     expect(text(render('code-foundry'))).toContain('ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f)');
