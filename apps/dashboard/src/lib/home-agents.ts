@@ -12,9 +12,7 @@ import { auditSummary, performanceAgent, performanceAgentScores, performanceFlee
 import type { AgentInfo, AgentPerformanceResult, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
-  /** Tokens the agent used in the last 7 days; absent when the audit read failed (shown as —, never 0). */
-  used?: number;
-  /** Tokens WhiteRoom saved it (smaller context), est.; absent with `used`. */
+  /** Input tokens WhiteRoom saved it (smaller context), est.; absent when the audit read failed (shown as —, never 0). */
   saved?: number;
   /** The same in dollars at its own price, when the engine prices it (E1b). */
   savedUsd?: number | null;
@@ -27,12 +25,12 @@ export interface AgentWeek {
   score?: AgentScore;
 }
 
-export type AgentSort = 'attention' | 'name' | 'used' | 'saved';
+export type AgentSort = 'attention' | 'name' | 'input' | 'saved';
 
 export const AGENT_SORTS: { value: AgentSort; label: string }[] = [
   { value: 'attention', label: 'Needs attention first' },
   { value: 'name', label: 'Name' },
-  { value: 'used', label: 'Most tokens' },
+  { value: 'input', label: 'Most input' },
   { value: 'saved', label: 'Most saved' },
 ];
 
@@ -48,7 +46,7 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   const base = sortAgents(agents.filter((a) => !q || a.agentId.toLowerCase().includes(q)));
   const week = (a: T) => weeks[a.agentId.toLowerCase()];
   if (sort === 'name') return [...base].sort((x, y) => x.agentId.localeCompare(y.agentId));
-  if (sort === 'used') return [...base].sort((x, y) => (week(y)?.used ?? 0) - (week(x)?.used ?? 0));
+  if (sort === 'input') return [...base].sort((x, y) => (week(y)?.input ?? 0) - (week(x)?.input ?? 0));
   if (sort === 'saved') return [...base].sort((x, y) => (week(y)?.saved ?? 0) - (week(x)?.saved ?? 0));
   // Needs attention (mockup): held and silent agents first, then agents with
   // rule activity this week whatever their state, then sortAgents' order
@@ -77,18 +75,55 @@ export const WEEK_POLL_MS = 5 * 60_000;
 /**
  * The reads behind the last 7 days, shared by Home and the agent page. Each
  * one that fails comes back null. `agentId` narrows rule activity to one
- * agent and adds its calls' input; `hourly` adds the fleet's calls and spend (Home only).
+ * agent and adds its calls' input; `hourly` adds the fleet's calls and spend, and
+ * `agentIds` each listed agent's input (Home only).
  */
-export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean } = {}) {
+export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean; agentIds?: string[] } = {}) {
   const { start, hours } = weekWindow();
-  const [audit, scores, rules, hourly, agentCalls] = await Promise.all([
+  const [audit, scores, rules, hourly, agentCalls, inputs] = await Promise.all([
     auditSummary(fleetId, start, authKey).catch(() => null),
     performanceAgentScores(fleetId, hours, authKey).catch(() => null),
     ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: localDay(), agentId: opts.agentId }, authKey).catch(() => null),
     opts.hourly ? performanceFleetHourly(fleetId, hours, authKey).catch(() => null) : null,
     opts.agentId ? performanceAgent(fleetId, opts.agentId, hours, authKey).catch(() => null) : null,
+    opts.agentIds ? agentInputs(fleetId, opts.agentIds, hours, authKey) : null,
   ]);
-  return { start, audit, scores, rules, hourly, agentCalls };
+  return { start, audit, scores, rules, hourly, agentCalls, inputs };
+}
+
+/** Per-agent input reads in flight at once on Home, so a big fleet doesn't send them all together. */
+const INPUT_READS_AT_ONCE = 6;
+
+/** Its calls' input (cached included), from performance_agent totals; undefined from an engine without them. */
+function callsInput(r: AgentPerformanceResult | null): number | undefined {
+  const t = r && !r.error ? r.totals : null;
+  return t && typeof t.inputTokens === 'number' ? inputTokensOf({ ...t, inputTokens: t.inputTokens }) : undefined;
+}
+
+/**
+ * Each agent's input over the week's hours, by lower-case id, read at most
+ * INPUT_READS_AT_ONCE at a time (a new read starts as each one ends). The engine matches
+ * agent_id exactly, so ids that differ only in case are separate calls: their input adds up,
+ * as their savings do. `failed`: the agents whose read failed, so Home keeps their last
+ * figures while the others move on.
+ */
+export async function agentInputs(fleetId: string, ids: string[], hours: number, authKey?: string): Promise<{ byAgent: Record<string, number>; failed: string[] }> {
+  const queue = [...new Set(ids)];
+  const byAgent: Record<string, number> = {};
+  const failed = new Set<string>();
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const r = await performanceAgent(fleetId, id, hours, authKey).catch(() => null);
+      const key = id.toLowerCase();
+      if (!r || r.error) { failed.add(key); continue; }
+      const n = callsInput(r);
+      if (n !== undefined) byAgent[key] = (byAgent[key] ?? 0) + n;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(INPUT_READS_AT_ONCE, queue.length) }, worker));
+  // An id that differs only in case and failed leaves that agent's sum short: none of it is new.
+  for (const id of failed) delete byAgent[id];
+  return { byAgent, failed: [...failed] };
 }
 
 /** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
@@ -109,6 +144,8 @@ export function homeWeek(
   hourly: Awaited<ReturnType<typeof performanceFleetHourly>> | null,
   /** Where the 7 days start (local midnight six days ago); hourly points before it are left out. */
   since = 0,
+  /** Each agent's input over the same days (agentInputs); null when not read. */
+  inputs: { byAgent: Record<string, number> } | null = null,
 ): HomeWeek {
   const agents: Record<string, AgentWeek> = {};
   const key = (id: string) => id.toLowerCase();
@@ -116,7 +153,7 @@ export function homeWeek(
     for (const t of agentTotalsFromBuckets(audit.savingsBuckets)) {
       if (!t.agent) continue;
       const micros = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
-      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
+      agents[key(t.agent)] = { saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
     }
   }
   const okRules = rules && !('unsupported' in rules) ? rules : null;
@@ -126,15 +163,20 @@ export function homeWeek(
     for (const [id, t] of Object.entries(merged)) if (id) (agents[id] ??= {}).rules = t;
   }
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
+  if (inputs) for (const [id, n] of Object.entries(inputs.byAgent)) (agents[id] ??= {}).input = n;
   const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / HOUR_MS) * HOUR_MS) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
 /** Which of the week's reads failed (null or an error); an engine that doesn't support a read hasn't failed. */
-export interface WeekFailures { audit: boolean; scores: boolean; rules: boolean; hourly: boolean }
+export interface WeekFailures {
+  audit: boolean; scores: boolean; rules: boolean; hourly: boolean;
+  /** The agents (lower-case ids) whose input read failed. */
+  inputs?: string[];
+}
 
-export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null }): WeekFailures {
-  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error };
+export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null; inputs?: { failed: string[] } | null }): WeekFailures {
+  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error, inputs: r.inputs?.failed ?? [] };
 }
 
 /**
@@ -150,10 +192,16 @@ export function keepLastGood(prev: HomeWeek | null, next: HomeWeek, failed: Week
     const p = prev.agents[id] ?? {};
     const n = next.agents[id] ?? {};
     const w: AgentWeek = {};
-    const from = failed.audit ? p : n;
-    if (from.used !== undefined) w.used = from.used;
-    if (from.saved !== undefined) w.saved = from.saved;
-    if (from.savedUsd !== undefined) w.savedUsd = from.savedUsd;
+    // Saved and input sit side by side, so once an agent has a pair they come from the same
+    // refresh: when either of its reads fails, its last pair stays. Before there's one, each
+    // moves on alone.
+    const inputFailed = !!failed.inputs?.includes(id);
+    const keepPair = (failed.audit || inputFailed) && p.input !== undefined;
+    const pair = keepPair || failed.audit ? p : n;
+    if (pair.saved !== undefined) w.saved = pair.saved;
+    if (pair.savedUsd !== undefined) w.savedUsd = pair.savedUsd;
+    const input = keepPair || inputFailed ? p.input : n.input;
+    if (input !== undefined) w.input = input;
     const rules = failed.rules ? p.rules : n.rules;
     if (rules) w.rules = rules;
     const score = failed.scores ? p.score : n.score;
@@ -186,10 +234,9 @@ export function agentWeekFrom(
   const w = homeWeek(audit, scores, rules, null).agents[agentId.toLowerCase()];
   const out: AgentWeek = {};
   // Its calls' input over the same hours; an engine that doesn't total it leaves it unknown.
-  const t = agentCalls && !agentCalls.error ? agentCalls.totals : null;
-  const input = t && typeof t.inputTokens === 'number' ? inputTokensOf({ ...t, inputTokens: t.inputTokens }) : undefined;
-  const fresh = { used: w?.used ?? 0, saved: w?.saved ?? 0, ...(w?.savedUsd !== undefined && { savedUsd: w.savedUsd }) };
-  const kept = { ...(prev?.used !== undefined && { used: prev.used, saved: prev.saved }), ...(prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd }) };
+  const input = callsInput(agentCalls);
+  const fresh = { saved: w?.saved ?? 0, ...(w?.savedUsd !== undefined && { savedUsd: w.savedUsd }) };
+  const kept = { ...(prev?.saved !== undefined && { saved: prev.saved }), ...(prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd }) };
   // Saved and input make one %, so they come from the same refresh: when one read fails, the
   // pair loaded before stays rather than a new saved against the last window's input.
   if (audit?.savingsBuckets && input !== undefined) Object.assign(out, fresh, { input });

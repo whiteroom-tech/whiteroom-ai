@@ -26,9 +26,9 @@ afterEach(() => { vi.useRealTimers(); for (const f of Object.values(api)) f.mock
 
 describe('agentWeekFrom', () => {
   it('reads the agent whatever its case, and a quiet agent as 0, not unknown', () => {
-    expect(agentWeekFrom(undefined, 'lead-agent', AUDIT as never, SCORES as never, RULES as never)).toMatchObject({ used: 1000, saved: 3000, rules: { blocks: 1, wouldBlocks: 2 }, score: { score: 10 } });
+    expect(agentWeekFrom(undefined, 'lead-agent', AUDIT as never, SCORES as never, RULES as never)).toMatchObject({ saved: 3000, rules: { blocks: 1, wouldBlocks: 2 }, score: { score: 10 } });
     const quiet = agentWeekFrom(undefined, 'writer', AUDIT as never, SCORES as never, QUIET_RULES as never);
-    expect(quiet).toEqual({ used: 0, saved: 0, rules: { blocks: 0, wouldBlocks: 0 } });
+    expect(quiet).toEqual({ saved: 0, rules: { blocks: 0, wouldBlocks: 0 } });
   });
 
   it('takes the input its calls sent, cached included, and leaves it unknown from an engine without it', () => {
