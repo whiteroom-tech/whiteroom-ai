@@ -197,6 +197,20 @@ describe("sandbox listen", () => {
     assert.match(r.stderr, /disconnected from the Sandbox page/);
   });
 
+  it("Azure OpenAI: base_url ends in /openai/v1", async () => {
+    writeFileSync(RECORD, "");
+    const st = await stub({ tasks: ["hi"], endAfter: "disconnected", provider: "azure-openai" });
+    const r = await listen(st, { env: testEnv({ AZURE_OPENAI_API_KEY: KEY, OPENAI_BASE_URL: `${st.url}/${SANDBOX_KEY}/openai/v1` }) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(JSON.parse(readFileSync(RECORD, "utf8").trim()).msg.base_url, `${st.url}/${SANDBOX_KEY}/openai/v1`);
+  });
+
+  it("WhiteRoom unreachable at claim: a setup problem (2), the code still unused", async () => {
+    const r = await listen(null, { extra: ["--url", "http://127.0.0.1:9"], env: testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: `http://127.0.0.1:9/${SANDBOX_KEY}` }) });
+    assert.equal(r.code, 2, r.stderr);
+    noSecrets(r.stdout + r.stderr);
+  });
+
   it("a crashed adapter is reported as not ok, and the helper keeps listening", async () => {
     const st = await stub({ tasks: ["a", "b"], endAfter: "replaced" });
     const r = await listen(st, { adapter: `node ${CRASH}` });

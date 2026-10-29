@@ -56,6 +56,7 @@ export const sandboxCopy = {
     lost_contact: `WhiteRoom didn't hear from this helper for a while, so its session ended. ${NEW_CODE}`,
   } as Record<string, string>,
   stopped: "Helper stopped. The Sandbox page shows it disconnected.",
+  cancelled: "Stopped before the helper connected. Your code still works until it expires.",
   task: (n: number, prompt: string) => `Task ${n}: ${prompt.replace(/\s+/g, " ").slice(0, 80)}${prompt.length > 80 ? "…" : ""}`,
   taskDone: (n: number) => `Task ${n} finished. The result is on the Sandbox page.`,
   taskFailed: (n: number, why: string) => `Task ${n} didn't finish: ${why}`,
@@ -103,7 +104,7 @@ export function taskResult(out: Outcome): { ok: boolean; summary: string } {
   }
 }
 
-const fail = (code: 2 | 3, line: string) => (warn(line), code);
+const fail = (code: 0 | 2 | 3, line: string) => (warn(line), code);
 
 /** A session refusal, in plain words. */
 const sessionOver = (r: Reply) => fail(3, sandboxCopy.sessionEnded[r.body?.reason] ?? sandboxCopy.sessionEnded.session_lost);
@@ -143,7 +144,8 @@ export async function listen(a: ListenArgs): Promise<number> {
       }
     }
   } catch (err) {
-    if (err instanceof Interrupted) return fail(3, sandboxCopy.stopped);
+    // Cancelled at the prompt: no session existed, so this is a plain stop (0), not an ended session (3).
+    if (err instanceof Interrupted) return fail(0, sandboxCopy.cancelled);
     throw err;
   }
   if (!HELPER_CODE.test(code)) return fail(2, sandboxCopy.badCode);
@@ -155,7 +157,8 @@ export async function listen(a: ListenArgs): Promise<number> {
   try {
     claim = await engine.post("/api/sandbox-helper/claim", { code, keyPrefix: sandbox.key.slice(0, 22), host: helperHost() });
   } catch (err) {
-    if (err instanceof Unreachable) return fail(3, sandboxCopy.unreachable);
+    // No session yet: a setup problem (2); the code is still unused.
+    if (err instanceof Unreachable) return fail(2, sandboxCopy.unreachable);
     throw err;
   }
   if (claim.status === 401 && claim.body?.reason === "key_mismatch") return fail(2, sandboxCopy.keyMismatch(Number(claim.body.triesLeft) || 0));
