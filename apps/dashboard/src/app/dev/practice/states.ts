@@ -5,7 +5,7 @@
 import type { PracticePreview } from '@/components/sandbox/practice/PracticeTest';
 import type { SetupData } from '@/components/sandbox/practice/PracticeSetup';
 import type { PracticeCheck, PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
-import { callEstimate, KEY_REFUSALS, rerunConfirm } from '@/lib/sandbox/practice/model';
+import { callEstimate, CLI_VERSION, KEY_REFUSALS, rerunConfirm } from '@/lib/sandbox/practice/model';
 import { DEMO_AGENT_CHECKS, demoCheck as check } from '@/lib/sandbox/practice/demo';
 
 const FLEET = 'prod-eu';
@@ -59,7 +59,7 @@ const REPORT: PracticeReport = {
   testVersion: 2, verdict: 'passed', runs: 3, sample: false, scope: null, checks: [...AGENT_CHECKS, ...CONTROL_CHECKS],
   how: { memoryLimitAdjusted: false },
   tested: {
-    fleet: FLEET, agent: 'support-bot', modelRequested: 'claude-haiku-4-5', modelsUsed: ['claude-haiku-4-5-20251001'], adapter: 'node wr-adapter.mjs', cli: '2.0.0',
+    fleet: FLEET, agent: 'support-bot', modelRequested: 'claude-haiku-4-5', modelsUsed: ['claude-haiku-4-5-20251001'], adapter: 'node wr-adapter.mjs', cli: CLI_VERSION,
     provider: 'anthropic', proxyKeyDisplayPrefix: null, keyHint: null,
   },
 };

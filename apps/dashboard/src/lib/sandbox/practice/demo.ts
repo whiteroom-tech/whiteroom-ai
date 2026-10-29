@@ -4,6 +4,7 @@
 // /dev/practice builds its states from the same checks.
 
 import type { PracticeCheck, PracticeReport, PracticeResult, PracticeRun } from './types';
+import { CLI_VERSION } from './model';
 
 /** A check as the engine reports it: passed in every run unless `extra` says otherwise. */
 export const demoCheck = (id: string, label: string, scenario: string, observer: PracticeCheck['observer'], extra: Partial<PracticeCheck> = {}): PracticeCheck => ({
@@ -41,7 +42,7 @@ export const DEMO_REPORT: PracticeReport = {
   ],
   how: { memoryLimitAdjusted: false },
   tested: {
-    fleet: DEMO_FLEET, agent: DEMO_AGENT, modelRequested: 'claude-haiku-4-5', modelsUsed: ['claude-haiku-4-5'], adapter: 'node wr-adapter.mjs', cli: '2.0.0',
+    fleet: DEMO_FLEET, agent: DEMO_AGENT, modelRequested: 'claude-haiku-4-5', modelsUsed: ['claude-haiku-4-5'], adapter: 'node wr-adapter.mjs', cli: CLI_VERSION,
     provider: 'anthropic', proxyKeyDisplayPrefix: null, keyHint: null,
   },
 };
