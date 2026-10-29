@@ -196,6 +196,16 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-unknown' });
   });
 
+  it('an unknown linked row whose token turns out to be a Sandbox fleet\'s is never adopted', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '2', fleet_token: 'ft-unknown', fleet_id: null, label: 'u', created_at: '' },
+    ]);
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-9' });
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(setCalls.filter((c) => c.name === 'wr_fleet_auth' && c.value)).toHaveLength(0);
+  });
+
   // A fresh browser deep-linking into a fleet page: the provisioned fleet
   // lives on users, not user_fleets, and must still be found (audit F10).
   it('adopts the account\'s own provisioned fleet ahead of linked ones', async () => {
@@ -224,6 +234,17 @@ describe('GET /api/fleet/session', () => {
     expect(await res.json()).toEqual({ fleetId: 'primary-1' });
     expect(setCalls.filter((c) => c.name === 'wr_fleet_auth').at(-1)).toMatchObject({ value: 'ft-primary' });
     expect(jar.get('wr_fleet_auth')).not.toBe('sk-ant-api-key');
+  });
+
+  it('drops a cookie holding a Sandbox fleet\'s token and falls back to the account\'s own fleet', async () => {
+    jar.set('wr_fleet_auth', 'ft-sandbox-cookie');
+    jar.set('wr_fleet_auth_owner', 'u-primary');
+    session.current = { user: { id: 'u-primary' } };
+    mockTokenLogin.mockResolvedValueOnce({ success: true, fleetId: 'sandbox-7' });
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: 'primary-1', fleet_token: 'ft-primary' }] });
+    const res = await GET();
+    expect(await res.json()).toEqual({ fleetId: 'primary-1' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-primary');
   });
 
   it('propagates 502 (session kept) when the cookie cannot be verified', async () => {

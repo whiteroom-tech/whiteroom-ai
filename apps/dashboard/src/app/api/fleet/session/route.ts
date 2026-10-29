@@ -9,7 +9,7 @@
 //   DELETE        -> clear the cookie (sign out)
 
 import { checkSameOrigin } from '@/lib/origin-check';
-import { SANDBOX_KEY_MESSAGE } from '@/lib/fleet-helpers';
+import { isSandboxFleetId, SANDBOX_KEY_MESSAGE } from '@/lib/fleet-helpers';
 import {
   clearFleetAuthCookie,
   getFleetAuthCookie,
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   const resolved = await resolveFleetId(fleetToken);
   if ('error' in resolved) return resolved.error;
   // A Sandbox fleet's token never opens the production pages: Sandbox data stays in Sandbox.
-  if (resolved.fleetId.startsWith('sandbox-')) {
+  if (isSandboxFleetId(resolved.fleetId)) {
     return Response.json({ error: SANDBOX_KEY_MESSAGE }, { status: 400 });
   }
 
@@ -80,10 +80,11 @@ export async function GET() {
   const cookieToken = await getFleetAuthCookie();
   if (cookieToken) {
     const resolved = await resolveFleetId(cookieToken);
-    if ('fleetId' in resolved) return Response.json({ fleetId: resolved.fleetId });
-    if (resolved.error.status === 502) return resolved.error;
-    // The cookie's token was rejected by the engine (revoked/rotated). Drop
-    // it and fall through: a signed-in user's linked fleets can self-heal.
+    if ('fleetId' in resolved && !isSandboxFleetId(resolved.fleetId)) return Response.json({ fleetId: resolved.fleetId });
+    if ('error' in resolved && resolved.error.status === 502) return resolved.error;
+    // The cookie's token was rejected by the engine (revoked/rotated), or is a
+    // Sandbox fleet's, which never opens the production pages. Drop it and fall
+    // through: a signed-in user's linked fleets can self-heal.
     await clearFleetAuthCookie();
   }
 
@@ -105,6 +106,9 @@ export async function GET() {
   // Row predates fleet ids being stored: resolve it from the engine.
   const resolved = await resolveFleetId(linked.token);
   if ('error' in resolved) return resolved.error;
+  if (isSandboxFleetId(resolved.fleetId)) {
+    return Response.json({ error: SANDBOX_KEY_MESSAGE, signedIn: true }, { status: 401 });
+  }
   await setFleetAuthCookie(linked.token);
   return Response.json({ fleetId: resolved.fleetId });
 }

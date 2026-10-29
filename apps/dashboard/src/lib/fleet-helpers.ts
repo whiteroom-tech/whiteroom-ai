@@ -25,6 +25,9 @@ export function buildCredentials(
   return { fleetId: resolvedFleetId, fleetToken: resolvedFleetToken };
 }
 
+/** A Sandbox fleet (sandbox-…): never a production page's fleet. */
+export const isSandboxFleetId = (fleetId: string) => fleetId.startsWith('sandbox-');
+
 /** What a Sandbox fleet's key or token gets on the production side: Sandbox data stays in Sandbox. */
 export const SANDBOX_KEY_MESSAGE = 'That’s a Sandbox key. Open it from Sandbox, not here.';
 
@@ -39,5 +42,5 @@ export function preferProductionFleet(
   fleets: Array<{ fleetId: string }>,
 ): Array<{ fleetId: string }> {
   // A Sandbox fleet is never a production page's fleet: none at all rather than a sandbox- one.
-  return fleets.filter((f) => !f.fleetId.startsWith('sandbox-'));
+  return fleets.filter((f) => !isSandboxFleetId(f.fleetId));
 }
