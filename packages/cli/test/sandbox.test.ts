@@ -78,14 +78,16 @@ interface Stub {
 /**
  * The engine's helper routes: claim checks the code and key prefix; `next`
  * hands out `tasks` in order (each once, unless `redeliver`), then answers idle
- * or (`endAfter`) the session's end.
+ * or (`endAfter`) the session's end, or (`next`) that reply. `result` scripts
+ * the result route's replies by call (null: the usual); a 3xx redirects.
  */
-async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: string; claim?: [number, unknown]; proxyUrl?: string; redeliver?: boolean; heartbeat?: [number, unknown]; failResults?: number } = {}): Promise<Stub> {
+async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: string; claim?: [number, unknown]; proxyUrl?: string; redeliver?: boolean; heartbeat?: [number, unknown]; failResults?: number; next?: [number, unknown]; result?: (call: number) => [number, unknown] | null } = {}): Promise<Stub> {
   const queue = [...(o.tasks ?? [])];
   const s = { claims: [] as any[], results: [] as any[], modelCalls: [] as Stub["modelCalls"], disconnects: 0, heartbeats: 0, resultFails: 0 };
   let origin = "";
   let n = 0;
   let last: any = null;
+  let resultCalls = 0;
   const reply = (req: IncomingMessage, path: string, body: any): [number, unknown] => {
     if (path === "/api/sandbox-helper/claim") {
       s.claims.push(body);
@@ -101,9 +103,12 @@ async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: st
         const prompt = queue.shift();
         if (prompt !== undefined) return (last = { taskId: `ht-${++n}`, kind: "prompt", prompt }), [200, { task: last }];
         if (o.endAfter) return [401, { reason: o.endAfter }];
+        if (o.next) return o.next;
         return [200, { idle: true }];
       }
       if (path.endsWith("/result")) {
+        const scripted = o.result?.(resultCalls++);
+        if (scripted) return s.resultFails++, scripted;
         if (s.resultFails < (o.failResults ?? 0)) return s.resultFails++, [400, { error: "Bad request." }];
         return s.results.push(body), [200, { recorded: true, duplicate: false }];
       }
@@ -128,7 +133,7 @@ async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: st
       // An idle long-poll answers after a short wait, as the engine's would after 25 s.
       const wait = path.endsWith("/next") && (json as any)?.idle ? 100 : 0;
       setTimeout(() => {
-        res.writeHead(status, { "content-type": "application/json" });
+        res.writeHead(status, { "content-type": "application/json", ...(status >= 300 && status < 400 && { location: "https://elsewhere.example/" }) });
         res.end(JSON.stringify(json));
       }, wait);
     });
@@ -297,6 +302,59 @@ describe("sandbox listen", () => {
     assert.equal(st.results.length, 1);
     assert.equal(st.modelCalls.length, 1);
     assert.equal(r.stdout.match(/Task 1 finished/g)?.length, 1);
+  });
+
+  it("WhiteRoom unreachable while listening or sending a result: plain words, exit 3, never a CLI error", async () => {
+    const offline = (st: Stub) => fast(st, { WHITEROOM_TEST_OFFLINE_MS: "300" });
+    // While waiting for a task.
+    let st = await stub({ next: [500, { error: "Internal error." }] });
+    let r = await listen(st, { env: offline(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom\. Check your connection, then start the helper again\./);
+    assert.doesNotMatch(r.stderr, /Something went wrong/);
+
+    // Sending a task's result.
+    st = await stub({ tasks: ["once"], result: () => [500, { error: "Internal error." }] });
+    r = await listen(st, { env: offline(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom\./);
+    assert.doesNotMatch(r.stdout + r.stderr, /Something went wrong|Task 1 finished/);
+
+    // Sending it again for a task handed out again: the task isn't run twice.
+    st = await stub({ tasks: ["once"], redeliver: true, result: (i) => (i === 0 ? [400, { error: "Bad request." }] : [500, { error: "Internal error." }]) });
+    r = await listen(st, { env: offline(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.modelCalls.length, 1);
+    assert.match(r.stderr, /Task 1 ran, but its result couldn't be sent/);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom\./);
+    assert.doesNotMatch(r.stderr, /Something went wrong/);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("a reply this CLI doesn't understand while listening (another status, a malformed task): update the CLI, exit 3", async () => {
+    for (const next of [[400, { error: "Bad request." }], [200, { task: { taskId: 7, kind: "prompt", prompt: "hi" } }], [200, { task: { taskId: "ht-9", kind: "script", prompt: "hi" } }], [200, "not an object"]] as Array<[number, unknown]>) {
+      const st = await stub({ next });
+      const r = await listen(st);
+      assert.equal(r.code, 3, `${JSON.stringify(next)}: ${r.stderr}`);
+      assert.match(r.stderr, /WhiteRoom sent something this CLI doesn't understand\. Update the CLI/);
+      assert.equal(st.modelCalls.length, 0);
+      assert.doesNotMatch(r.stderr, /Something went wrong/);
+    }
+  });
+
+  it("a redirect while listening or sending a result stops the helper with plain words (3), following nothing", async () => {
+    let st = await stub({ next: [302, {}] });
+    let r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /tried to send the helper to another address, so it stopped/);
+    assert.doesNotMatch(r.stderr, /Something went wrong/);
+
+    st = await stub({ tasks: ["once"], result: () => [307, {}] });
+    r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /tried to send the helper to another address/);
+    assert.doesNotMatch(r.stdout + r.stderr, /Something went wrong|Task 1 finished|couldn't be sent/);
+    noSecrets(r.stdout + r.stderr);
   });
 
   it("refusals at claim: wrong Sandbox key (tries left), used code, no key connected", async () => {

@@ -8,7 +8,7 @@
 import { hostname } from "node:os";
 import { runAdapter, type Launch, type Outcome } from "../practice/adapter.js";
 import { CATALOG } from "../practice/catalog.js";
-import { Engine, REDIRECTED, Stopped, Unreachable, type Reply } from "../practice/engine.js";
+import { Engine, OFFLINE_MS, REDIRECTED, Stopped, Unreachable, type Reply } from "../practice/engine.js";
 import { adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isProvider, nodeTooOld, targetOrigin } from "../practice/preflight.js";
 import { clean, hideSecret, say, warn } from "../practice/text.js";
 
@@ -19,7 +19,7 @@ const SANDBOX_URL = /^(https?:\/\/[^/\s?#@]+)\/(sk-wr-[0-9a-f]{40})(?:[/?#]\S*)?
 export const TASK_MS = 10 * 60_000;
 /** While a task runs the helper doesn't poll, so it tells WhiteRoom it's still there. */
 const HEARTBEAT_MS = 20_000;
-/** Tests shorten the task deadline and heartbeat (internal, not a user setting; WHITEROOM_* never reaches the adapter). */
+/** Tests shorten the task deadline, heartbeat and offline wait (internal, not a user setting; WHITEROOM_* never reaches the adapter). */
 const testMs = (name: string, fallback: number) => {
   const v = Number(process.env[name]);
   return Number.isInteger(v) && v > 0 ? v : fallback;
@@ -108,6 +108,9 @@ const fail = (code: 0 | 2 | 3, line: string) => (warn(line), code);
 
 /** A session refusal, in plain words. */
 const sessionOver = (r: Reply) => fail(3, sandboxCopy.sessionEnded[r.body?.reason] ?? sandboxCopy.sessionEnded.session_lost);
+/** A reply that ends listening: the session refused (401), or a redirect. */
+const ends = (r: Reply) => r.status === 401 || r.status === REDIRECTED;
+const endListening = (r: Reply) => (r.status === REDIRECTED ? fail(3, sandboxCopy.redirected) : sessionOver(r));
 
 export async function listen(a: ListenArgs): Promise<number> {
   // ── Preflight: nothing is sent until every check passes ──
@@ -152,7 +155,7 @@ export async function listen(a: ListenArgs): Promise<number> {
   hideSecret(code);
 
   // ── Claim: the code, and which Sandbox key this computer's agent uses (its non-secret prefix, never the key) ──
-  const engine = new Engine(origin);
+  const engine = new Engine(origin, testMs("WHITEROOM_TEST_OFFLINE_MS", OFFLINE_MS));
   let claim: Reply;
   try {
     claim = await engine.post("/api/sandbox-helper/claim", { code, keyPrefix: sandbox.key.slice(0, 22), host: helperHost() });
@@ -192,10 +195,10 @@ export async function listen(a: ListenArgs): Promise<number> {
   const taskMs = testMs("WHITEROOM_TEST_TASK_MS", TASK_MS);
   const heartbeatMs = testMs("WHITEROOM_TEST_HEARTBEAT_MS", HEARTBEAT_MS);
   let n = 0;
-  /** Posts a task's result; announces it only once WhiteRoom has it. */
+  /** Posts a task's result; announces it only once WhiteRoom has it. Returns a reply that ends listening, else null. */
   const sendResult = async (taskId: string, entry: { n: number; result: { ok: boolean; summary: string }; sent: boolean }) => {
     const r = await engine.post("/api/sandbox-helper/result", { taskId, ...entry.result }, { retryNetwork: true });
-    if (r.status === 401) return r;
+    if (ends(r)) return r;
     const ok = r.status >= 200 && r.status < 300;
     if (ok && !entry.sent) say(entry.result.ok ? sandboxCopy.taskDone(entry.n) : sandboxCopy.taskFailed(entry.n, clean(entry.result.summary)));
     else if (!ok) warn(sandboxCopy.resultNotSent(entry.n));
@@ -235,39 +238,23 @@ export async function listen(a: ListenArgs): Promise<number> {
 
   try {
     for (;;) {
-      let next: Reply;
+      // Every request to WhiteRoom in this loop ends the same way: Ctrl+C stops (0), unreachable ends (3).
       try {
-        next = await engine.post("/api/sandbox-helper/next", {}, { retryNetwork: true });
+        const next = await engine.post("/api/sandbox-helper/next", {}, { retryNetwork: true });
+        if (ends(next)) return endListening(next);
+        if (next.status !== 200) return fail(3, sandboxCopy.outdated);
+        if (next.body?.idle) continue;
+        const task = next.body?.task;
+        if (!task || typeof task.taskId !== "string" || task.kind !== "prompt" || typeof task.prompt !== "string") return fail(3, sandboxCopy.outdated);
+        // A task handed out again (WhiteRoom didn't get the result): send the result again, don't run it twice.
+        const sent = done.get(task.taskId);
+        const refused = sent ? await sendResult(task.taskId, sent) : await runTask(task);
+        if (refused) return endListening(refused);
       } catch (err) {
         if (err instanceof Stopped) break;
         if (err instanceof Unreachable) return fail(3, sandboxCopy.unreachable);
         throw err;
       }
-      if (next.status === 401) return sessionOver(next);
-      if (next.status === REDIRECTED) return fail(3, sandboxCopy.redirected);
-      if (next.status !== 200) return fail(3, sandboxCopy.outdated);
-      if (next.body?.idle) continue;
-      const task = next.body?.task;
-      if (!task || typeof task.taskId !== "string" || task.kind !== "prompt" || typeof task.prompt !== "string") return fail(3, sandboxCopy.outdated);
-      // A task handed out again (WhiteRoom didn't get the result): send the result again, don't run it twice.
-      const sent = done.get(task.taskId);
-      if (sent) {
-        const again = await sendResult(task.taskId, sent).catch((err) => {
-          if (err instanceof Stopped) return null;
-          throw err;
-        });
-        if (again?.status === 401) return sessionOver(again);
-        continue;
-      }
-      let refused: Reply | null;
-      try {
-        refused = await runTask(task);
-      } catch (err) {
-        if (err instanceof Stopped) break;
-        if (err instanceof Unreachable) return fail(3, sandboxCopy.unreachable);
-        throw err;
-      }
-      if (refused) return sessionOver(refused);
       if (ended) return sessionOver(ended);
       if (stop.signal.aborted) break;
     }
