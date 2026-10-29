@@ -152,8 +152,9 @@ describe('practice test screens', () => {
     const expired = text(render('code-expired'));
     expect(expired).toContain('This run code has expired. Get a new one to see the command.');
     expect(expired).not.toContain('echo wrrt_');
-    // An own-agent run names one key variable, without the guardrails test's OpenAI hint.
-    expect(text(render('code'))).not.toContain('Using OpenAI?');
+    // Provider not known yet: the key step offers OpenAI's variable too; a known provider names only its own.
+    expect(text(render('code'))).toContain('Using OpenAI? Put OPENAI_API_KEY in place of ANTHROPIC_API_KEY');
+    expect(text(render('code-azure'))).not.toContain('Using OpenAI?');
   });
 
   it('running, lost contact and finishing', () => {
@@ -280,6 +281,8 @@ describe('practice tests on cloud providers (R7)', () => {
   it('the terminal steps name the key variable and Fleet key key for each provider', () => {
     expect(text(render('code-azure'))).toContain('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
     expect(text(render('code-azure'))).toContain('read -s AZURE_OPENAI_API_KEY && export AZURE_OPENAI_API_KEY');
+    expect(text(render('code-bedrock'))).toContain('read -s AWS_BEARER_TOKEN_BEDROCK && export AWS_BEARER_TOKEN_BEDROCK');
+    expect(text(render('code-foundry'))).toContain('read -s ANTHROPIC_FOUNDRY_API_KEY && export ANTHROPIC_FOUNDRY_API_KEY');
     // From the run's own fields, so any tab names the key; the command picks its variable, so other keys set on the computer don't matter.
     expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin --key-env AZURE_OPENAI_API_KEY');
     expect(text(render('code'))).not.toContain('--key-env');

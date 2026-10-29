@@ -354,8 +354,6 @@ export interface RowResult {
   row: PreflightRow;
   status: RowStatus;
   reason: string;
-  /** Not set up: the way to add the rule is Controls. */
-  addInControls: boolean;
   members: PracticeCheck[];
   /** Not checked, but some of its rules passed: shown as "Partly checked". */
   partial: boolean;
@@ -375,16 +373,16 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
   return ROWS.map((row) => {
     const members = membersOf(row, r.checks);
     const noun = isGuardrail(row) && row.id !== PAUSE_STOP ? 'rule' : 'test';
-    const out = (status: RowStatus, reason: string, addInControls = false, partial = false): RowResult => ({ row, status, reason, addInControls, members, partial, noun });
+    const out = (status: RowStatus, reason: string, partial = false): RowResult => ({ row, status, reason, members, partial, noun });
     if (!members.length) {
       if (r.scope) return out('not_checked', 'Not part of this rerun.');
       if (row.id === PAUSE_STOP) return out('not_checked', 'Pause and Stop aren’t on for this fleet.');
-      return isGuardrail(row) ? out('not_set_up', 'No rule yet.', true) : out('not_checked', 'Didn’t run.');
+      return isGuardrail(row) ? out('not_set_up', 'No rule yet.') : out('not_checked', 'Didn’t run.');
     }
     const failed = members.find((c) => c.status === 'failed');
     if (failed) return out('failed', isGuardrail(row) ? failed.summary : `${failed.label}: ${failed.summary}`);
     const live = members.filter(setUp);
-    if (!live.length) return out('not_set_up', notSetUpReason(members), true);
+    if (!live.length) return out('not_set_up', notSetUpReason(members));
     if (live.every((c) => c.status === 'passed')) {
       if (!isGuardrail(row)) return out('passed', live[0].summary);
       if (row.id === PAUSE_STOP) return out('passed', 'Paused and stopped. Only a person could resume it.');
@@ -395,7 +393,7 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
     // Some rules passed and some weren't checked: say how many, each rule says why below.
     // Only when the rest couldn't be checked: a test problem keeps its own reason and "(not your agent)".
     const passed = live.filter((c) => c.status === 'passed').length;
-    if (noun === 'rule' && passed && live.every((c) => c.status === 'passed' || c.status === 'unsupported')) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, false, true);
+    if (noun === 'rule' && passed && live.every((c) => c.status === 'passed' || c.status === 'unsupported')) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, true);
     const open = live.find((c) => c.status !== 'passed')!;
     const why = open.status === 'unsupported' ? plainSkip(open.summary, open.id) : open.summary || STATUS_LABEL[open.status];
     return out('not_checked', `${why}${open.testProblem ? ' (not your agent)' : ''}`);
@@ -407,7 +405,6 @@ export interface RowPlan {
   row: PreflightRow;
   status: 'will_check' | 'not_set_up' | 'not_checked';
   reason: string;
-  addInControls: boolean;
   /** The checks or rules the row covers, by name. */
   members: string[];
 }
@@ -420,7 +417,7 @@ export const WILL_CHECK = 'Will be checked';
  */
 export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
   return ROWS.map((row) => {
-    const out = (status: RowPlan['status'], reason: string, members: string[], addInControls = false): RowPlan => ({ row, status, reason, addInControls, members });
+    const out = (status: RowPlan['status'], reason: string, members: string[]): RowPlan => ({ row, status, reason, members });
     if (!isGuardrail(row)) {
       const checks = membersOf(row, CATALOG.checks);
       return out('will_check', counted(checks.length, 'check'), checks.map((c) => c.label));
@@ -428,9 +425,9 @@ export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
     if (!controls) return out('not_checked', 'Couldn’t read this fleet’s controls just now.', []);
     const members = membersOf(row, controls);
     const names = members.map((c) => (c.mode ? `${c.label} · ${c.mode}` : c.label));
-    if (!members.length) return row.id === PAUSE_STOP ? out('not_checked', 'Pause and Stop aren’t on for this fleet.', []) : out('not_set_up', 'No rule yet.', [], true);
+    if (!members.length) return row.id === PAUSE_STOP ? out('not_checked', 'Pause and Stop aren’t on for this fleet.', []) : out('not_set_up', 'No rule yet.', []);
     const live = members.filter(setUp);
-    if (!live.length) return out('not_set_up', notSetUpReason(members), names, true);
+    if (!live.length) return out('not_set_up', notSetUpReason(members), names);
     const checked = live.filter((c) => c.checked);
     if (!checked.length) return out('not_checked', plainNote(live.find((c) => c.note)?.note ?? 'Not checked.'), names);
     const modes = [...new Set(checked.map((c) => c.mode).filter(Boolean))].join(' and ');

@@ -30,7 +30,7 @@ const AGENT = ['a.result', 'b.baseline', 'b.result', 'b.carries_on', 'b.no_redo'
 const report = (controls: PracticeCheck[], o: Partial<PracticeReport> = {}) => ({ checks: [...AGENT, ...controls], scope: null, ...o });
 const row = (r: ReturnType<typeof groupRows>, id: string) => {
   const x = r.find((y) => y.row.id === id)!;
-  return { status: x.status, reason: x.reason, addInControls: x.addInControls, members: x.members.map((c) => c.id) };
+  return { status: x.status, reason: x.reason, members: x.members.map((c) => c.id) };
 };
 
 describe('the catalog’s seven rows (engine E1)', () => {
@@ -50,24 +50,24 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
       check('ctl.tool_list.t1', { required: false, status: 'unsupported', summary: 'Not checked: your agent’s tools are named differently.' }),
       check('ctl.pause_stop', { mode: null }),
     ]));
-    expect(row(r, 'finishes_job')).toEqual({ status: 'passed', reason: 'Passed in 3 of 3 runs.', addInControls: false, members: ['a.result'] });
+    expect(row(r, 'finishes_job')).toEqual({ status: 'passed', reason: 'Passed in 3 of 3 runs.', members: ['a.result'] });
     expect(row(r, 'long_task').members).toEqual(['b.baseline', 'b.result', 'b.carries_on', 'b.no_redo']);
     expect(row(r, 'spend_cap')).toMatchObject({ status: 'failed', reason: 'Stopped a call it shouldn’t have.' });
     expect(row(r, 'loop_breaker')).toMatchObject({ status: 'passed', reason: 'Enforce: blocked.' });
-    expect(row(r, 'keyword')).toMatchObject({ status: 'not_checked', reason: 'Your agent’s tools are named differently.', addInControls: false });
+    expect(row(r, 'keyword')).toMatchObject({ status: 'not_checked', reason: 'Your agent’s tools are named differently.' });
     expect(row(r, 'pause_stop')).toMatchObject({ status: 'passed', reason: 'Paused and stopped. Only a person could resume it.' });
   });
 
-  it('a row with no rule is Not set up, with Add in Controls; never a failure (D2)', () => {
+  it('a row with no rule is Not set up; never a failure (D2)', () => {
     const r = groupRows(report([check('ctl.pause_stop', { mode: null })]));
-    for (const id of ['spend_cap', 'loop_breaker', 'keyword']) expect(row(r, id)).toEqual({ status: 'not_set_up', reason: 'No rule yet.', addInControls: true, members: [] });
+    for (const id of ['spend_cap', 'loop_breaker', 'keyword']) expect(row(r, id)).toEqual({ status: 'not_set_up', reason: 'No rule yet.', members: [] });
     // Pause and Stop need no rule: absent, they weren't on for the fleet.
-    expect(row(groupRows(report([])), 'pause_stop')).toMatchObject({ status: 'not_checked', addInControls: false });
+    expect(row(groupRows(report([])), 'pause_stop')).toMatchObject({ status: 'not_checked' });
   });
 
   it('a rule that doesn’t cover the agent is Not set up for it, even when its probe passed (§3b)', () => {
     const notCovered = check('ctl.loop_breaker.l1', { required: false, status: 'unsupported', setup: 'not_set_up', notCoveredAgent: 'support-bot', summary: 'Not set up for support-bot: the rule doesn’t cover it.' });
-    expect(row(groupRows(report([notCovered])), 'loop_breaker')).toMatchObject({ status: 'not_set_up', reason: 'Not set up for support-bot.', addInControls: true });
+    expect(row(groupRows(report([notCovered])), 'loop_breaker')).toMatchObject({ status: 'not_set_up', reason: 'Not set up for support-bot.' });
     // Engine rows stored before `setup` existed carry only notCoveredAgent: still not a pass.
     expect(row(groupRows(report([{ ...notCovered, setup: undefined, status: 'passed' }])), 'loop_breaker').status).toBe('not_set_up');
     // One rule covers it and passed: the row passes on that rule.
@@ -76,7 +76,7 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
 
   it('Off rules are Not set up (Off in Controls), and don’t stop the others passing', () => {
     const off = check('ctl.spend_cap.s1', { required: false, status: 'unsupported', mode: 'Off', setup: 'off', summary: 'Not checked: the rule is off.' });
-    expect(row(groupRows(report([off])), 'spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'Off in Controls.', addInControls: true });
+    expect(row(groupRows(report([off])), 'spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'Off in Controls.' });
     expect(row(groupRows(report([off, check('ctl.spend_cap.s2')])), 'spend_cap')).toMatchObject({ status: 'passed', reason: 'Enforce: blocked. Tested with a tiny limit.' });
   });
 
@@ -138,7 +138,7 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
   it('a rerun’s rows outside its scope weren’t part of it', () => {
     const r = groupRows({ checks: [check('c.timeout')], scope: ['c.timeout'] });
     expect(r.map((x) => x.status)).toEqual(['not_checked', 'not_checked', 'passed', 'not_checked', 'not_checked', 'not_checked', 'not_checked']);
-    expect(row(r, 'spend_cap')).toMatchObject({ reason: 'Not part of this rerun.', addInControls: false });
+    expect(row(r, 'spend_cap')).toMatchObject({ reason: 'Not part of this rerun.' });
   });
 
   it('headlines the failing rows by name', () => {
@@ -160,7 +160,7 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
     const by = (id: string) => plan.find((x) => x.row.id === id)!;
     expect(by('finishes_job')).toMatchObject({ status: 'will_check', reason: '1 check', members: ['Finishes a job correctly'] });
     expect(by('long_task')).toMatchObject({ status: 'will_check', reason: '4 checks' });
-    expect(by('spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'No rule yet.', addInControls: true });
+    expect(by('spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'No rule yet.' });
     expect(by('loop_breaker')).toMatchObject({ status: 'will_check', reason: '2 rules · Enforce and Watch · 8 extra calls', members: ['ctl.loop_breaker.l1 · Enforce', 'ctl.call_rate.c1 · Watch'] });
     expect(by('keyword')).toMatchObject({ status: 'not_checked', reason: 'Watch can’t see streamed replies, and your agent streams.' });
     expect(by('pause_stop')).toMatchObject({ status: 'will_check', reason: 'no extra calls' });
@@ -171,7 +171,7 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
       ctl('ctl.spend_cap.s1', { mode: 'Off', setup: 'off', checked: false, calls: null }),
       ctl('ctl.loop_breaker.l1', { setup: 'not_set_up', notCoveredAgent: 'billing-bot', checked: false }),
     ]);
-    expect(plan.find((x) => x.row.id === 'spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'Off in Controls.', addInControls: true });
+    expect(plan.find((x) => x.row.id === 'spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'Off in Controls.' });
     expect(plan.find((x) => x.row.id === 'loop_breaker')).toMatchObject({ status: 'not_set_up', reason: 'Not set up for billing-bot.' });
     expect(plan.find((x) => x.row.id === 'pause_stop')).toMatchObject({ status: 'not_checked', reason: 'Pause and Stop aren’t on for this fleet.' });
     expect(planRows(null).filter((x) => x.row.group === 'The guardrails').every((x) => x.status === 'not_checked' && x.reason.startsWith('Couldn’t read'))).toBe(true);
