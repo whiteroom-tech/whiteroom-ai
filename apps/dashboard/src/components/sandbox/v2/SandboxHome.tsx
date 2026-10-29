@@ -14,6 +14,7 @@ import {
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
+import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -25,6 +26,8 @@ export interface SandboxHomePreview {
   issued?: IssuedSandboxKey | null;
   error?: string;
   now?: number;
+  /** Step 3, once connected. */
+  rules?: SandboxRulesPreview;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
@@ -144,6 +147,16 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
               Lost it? Rotate the key to get a new one.
             </p>
           </Panel>
+        )}
+
+        {connected && !replacing && (
+          <SandboxRules
+            key={connected.sandboxFleetId}
+            fleet={fleet}
+            sandboxFleetId={connected.sandboxFleetId}
+            preview={preview ? preview.rules ?? { state: null, productionRules: 0, now } : undefined}
+            onStale={() => void load()}
+          />
         )}
 
         {connected && (

@@ -9,8 +9,28 @@
 .facts dd { margin:0; color:var(--tx); min-width:0; overflow-wrap:anywhere; }
 .mono { font-family:var(--font-mono); }
 .actions { display:flex; flex-wrap:wrap; gap:8px; }
+.formRow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .secondary { margin:0; font-size:var(--fs-sm); color:var(--tx2); }
 @media(max-width:560px) {
   .facts { grid-template-columns:minmax(0,1fr); gap:2px; }
   .facts dd { margin-bottom:8px; }
 }
+/* Step 3: Sandbox rules. */
+.source { display:grid; gap:4px; }
+.sourceText { margin:0; font-size:var(--fs-md); color:var(--tx); font-weight:600; }
+.linkButton { background:none; border:0; padding:0; font:inherit; font-weight:600; color:var(--brand); cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+.linkButton:disabled { opacity:.5; cursor:default; }
+.rules { list-style:none; margin:0; padding:0; display:grid; border-top:1px solid var(--line); }
+.rule { display:grid; gap:6px; padding:12px 0; border-bottom:1px solid var(--line); min-width:0; }
+.ruleHead { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:28px; }
+.ruleName { font-size:var(--fs-md); font-weight:600; color:var(--tx); }
+.push { margin-left:auto; }
+.editor { display:grid; gap:12px; padding:12px; margin-top:4px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
+.fields { border:0; padding:0; margin:0; min-width:0; display:grid; gap:8px; }
+.fields .label { margin-top:6px; }
+.fields .label:first-child { margin-top:0; }
+.sentence { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:var(--fs-md); color:var(--tx); min-width:0; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.segment { display:flex; max-width:100%; justify-self:start; }
+.check { display:inline-flex; align-items:center; gap:10px; font-size:var(--fs-sm); cursor:pointer; justify-self:start; min-height:32px; }
+.check input { width:16px; height:16px; margin:0; accent-color:var(--brand); }

@@ -150,10 +150,11 @@ export function keptUntilText(expiresAt: string | null, now = Date.now()): strin
 
 // ── Browser calls (through the BFF) ──
 
-async function call(action: SandboxFleetAction, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+/** POSTs to a Sandbox BFF route (`/api/sandbox/...`); its refusal as a SandboxFleetError. */
+export async function sandboxPost(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   let res: Response;
   try {
-    res = await fetch(`/api/sandbox/fleet/${action}`, {
+    res = await fetch(path, {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
@@ -170,6 +171,8 @@ async function call(action: SandboxFleetAction, body: Record<string, unknown>): 
   }
   return data;
 }
+
+const call = (action: SandboxFleetAction, body: Record<string, unknown>) => sandboxPost(`/api/sandbox/fleet/${action}`, body);
 
 function mustStatus(data: unknown): SandboxFleetStatus {
   const status = statusOf(data);
