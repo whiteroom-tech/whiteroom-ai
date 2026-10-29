@@ -12,8 +12,6 @@ import { auditSummary, performanceAgent, performanceAgentScores, performanceFlee
 import type { AgentInfo, AgentPerformanceResult, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
-  /** Tokens its tasks reported in the last 7 days; absent when the audit read failed. */
-  used?: number;
   /** Input tokens WhiteRoom saved it (smaller context), est.; absent when the audit read failed (shown as —, never 0). */
   saved?: number;
   /** The same in dollars at its own price, when the engine prices it (E1b). */
@@ -150,7 +148,7 @@ export function homeWeek(
     for (const t of agentTotalsFromBuckets(audit.savingsBuckets)) {
       if (!t.agent) continue;
       const micros = audit.savingsByAgent?.[key(t.agent)]?.usdMicros;
-      agents[key(t.agent)] = { used: t.used, saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
+      agents[key(t.agent)] = { saved: t.saved, ...(micros !== undefined && { savedUsd: micros === null ? null : micros / 1e6 }) };
     }
   }
   const okRules = rules && !('unsupported' in rules) ? rules : null;
@@ -194,9 +192,7 @@ export function keepLastGood(prev: HomeWeek | null, next: HomeWeek, failed: Week
     // moves on alone.
     const inputFailed = !!failed.inputs?.includes(id);
     const keepPair = (failed.audit || inputFailed) && p.input !== undefined;
-    const audit = failed.audit ? p : n;
-    if (audit.used !== undefined) w.used = audit.used;
-    const pair = keepPair ? p : audit;
+    const pair = keepPair || failed.audit ? p : n;
     if (pair.saved !== undefined) w.saved = pair.saved;
     if (pair.savedUsd !== undefined) w.savedUsd = pair.savedUsd;
     const input = keepPair || inputFailed ? p.input : n.input;
@@ -234,8 +230,8 @@ export function agentWeekFrom(
   const out: AgentWeek = {};
   // Its calls' input over the same hours; an engine that doesn't total it leaves it unknown.
   const input = callsInput(agentCalls);
-  const fresh = { used: w?.used ?? 0, saved: w?.saved ?? 0, ...(w?.savedUsd !== undefined && { savedUsd: w.savedUsd }) };
-  const kept = { ...(prev?.used !== undefined && { used: prev.used, saved: prev.saved }), ...(prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd }) };
+  const fresh = { saved: w?.saved ?? 0, ...(w?.savedUsd !== undefined && { savedUsd: w.savedUsd }) };
+  const kept = { ...(prev?.saved !== undefined && { saved: prev.saved }), ...(prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd }) };
   // Saved and input make one %, so they come from the same refresh: when one read fails, the
   // pair loaded before stays rather than a new saved against the last window's input.
   if (audit?.savingsBuckets && input !== undefined) Object.assign(out, fresh, { input });

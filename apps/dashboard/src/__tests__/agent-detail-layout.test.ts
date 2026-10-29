@@ -20,7 +20,7 @@ describe('agent page layout', () => {
       preview: {
         agent: { agentId: 'lead-agent', status: 'idle', govV1: true, currentShift: null, lastShift: { watchNumber: 2, tasksCompleted: 3, tokensUsed: 10, minutesWorked: 1 } },
         entries: [],
-        week: { used: 1_000, saved: 3_000, rules: { blocks: 1, wouldBlocks: 0 } },
+        week: { saved: 3_000, rules: { blocks: 1, wouldBlocks: 0 } },
         rules: [RULE],
       },
     }));

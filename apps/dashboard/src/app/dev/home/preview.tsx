@@ -63,27 +63,27 @@ const LIVE: AuditEntry[] = [
   { id: 'l2', type: 'task_complete', timestamp: t('14:16'), agentId: 'writer-agent', taskName: 'reply: Here is the Q3 claims summary.' },
 ];
 
-const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks, paused: 0, stopped: 0, toldYou: 0 });
+const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks, pastopped: 0, toldYou: 0 });
 const score = (agentId: string, s: number, speedScore: number | null) => ({ agentId, calls: 40, completeRate: 100, costDiligence: null, speedScore, score: s });
 const QUIET_WEEK = {
   calls: 1180, costUsd: 3.17, partial: false, rules: tally(0, 120),
   agents: {
-    'code-reviewer': { used: 53_400, input: 412_000, saved: 225_800, rules: tally(0, 60), score: score('code-reviewer', 8, 57) },
-    'contract-summarizer': { used: 300_600, input: 289_000, saved: 222_900, score: score('contract-summarizer', 10, 100) },
-    'invoice-reconciler': { used: 363_500, input: 371_000, saved: 147_200, score: score('invoice-reconciler', 10, 96) },
-    'lead-agent': { used: 69_700, input: 1_364_000, saved: 2_230_000, rules: tally(0, 59), score: score('lead-agent', 8, 61) },
-    'market-researcher': { used: 303_000, input: 296_000, saved: 227_200, score: score('market-researcher', 10, 100) },
-    'ops-scheduler': { used: 310_200, input: 318_000, saved: 28_300, score: score('ops-scheduler', 10, 92) },
-    'support-triage': { used: 337_800, input: 329_000, saved: 105_400, score: score('support-triage', 10, 99) },
+    'code-reviewer': { input: 412_000, saved: 225_800, rules: tally(0, 60), score: score('code-reviewer', 8, 57) },
+    'contract-summarizer': { input: 289_000, saved: 222_900, score: score('contract-summarizer', 10, 100) },
+    'invoice-reconciler': { input: 371_000, saved: 147_200, score: score('invoice-reconciler', 10, 96) },
+    'lead-agent': { input: 1_364_000, saved: 2_230_000, rules: tally(0, 59), score: score('lead-agent', 8, 61) },
+    'market-researcher': { input: 296_000, saved: 227_200, score: score('market-researcher', 10, 100) },
+    'ops-scheduler': { input: 318_000, saved: 28_300, score: score('ops-scheduler', 10, 92) },
+    'support-triage': { input: 329_000, saved: 105_400, score: score('support-triage', 10, 99) },
   },
 };
 const BUSY_WEEK = {
   calls: 1180, costUsd: 14.2, partial: false, rules: tally(2, 47),
   agents: {
-    'lead-agent': { used: 182_000, input: 1_364_000, saved: 61_000, rules: tally(2, 5), score: score('lead-agent', 9, 88) },
-    'writer-agent': { used: 94_000, saved: 30_500, score: score('writer-agent', 8, 70) },
-    'scout-agent': { used: 41_000, saved: 9_800, rules: tally(0, 42), score: score('scout-agent', 7, null) },
-    'archive-agent': { used: 6_100, saved: 0 },
+    'lead-agent': { input: 1_364_000, saved: 61_000, rules: tally(2, 5), score: score('lead-agent', 9, 88) },
+    'writer-agent': { saved: 30_500, score: score('writer-agent', 8, 70) },
+    'scout-agent': { saved: 9_800, rules: tally(0, 42), score: score('scout-agent', 7, null) },
+    'archive-agent': { saved: 0 },
   },
 };
 

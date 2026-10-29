@@ -20,7 +20,7 @@ const AGENT: AgentInfo = { agentId: "code-reviewer", status: "idle", currentShif
 const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks, paused: 0, stopped: 0, toldYou: 0 });
 const WEEK = {
   calls: 10, costUsd: 3.17, partial: false, rules: tally(0, 120),
-  agents: { "code-reviewer": { used: 53_400, input: 412_000, saved: 225_800, rules: tally(0, 60), score: { agentId: "code-reviewer", calls: 4, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 } } },
+  agents: { "code-reviewer": { input: 412_000, saved: 225_800, rules: tally(0, 60), score: { agentId: "code-reviewer", calls: 4, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 } } },
 };
 
 const home = (over: Partial<Parameters<typeof HomeView>[0]> = {}) => renderToStaticMarkup(createElement(HomeView, {

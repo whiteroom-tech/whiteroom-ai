@@ -15,7 +15,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '
 describe('Last 7 days on the agent page', () => {
   it('shows input without and with WhiteRoom, rule activity and the score with its parts', () => {
     const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
-      used: 53_400, input: 53_400, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
+      input: 53_400, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
       score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
     } })));
     expect(t).toContain('Input without WhiteRoom, est. 279K');
@@ -38,7 +38,7 @@ describe('Last 7 days on the agent page', () => {
   });
 
   it('still says what was saved when the input is unknown, with no %', () => {
-    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: { used: 81_800, saved: 1_876_009 } })));
+    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: { saved: 1_876_009 } })));
     expect(t).toContain('With WhiteRoom — 1.88M saved');
     expect(t).not.toContain('%');
   });
