@@ -93,6 +93,14 @@ describe('POST /api/fleet/session', () => {
     expect(setCalls).toHaveLength(0);
   });
 
+  it('refuses a Sandbox fleet token: Sandbox data never opens in the production pages', async () => {
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-0b1c' });
+    const res = await POST(postReq({ token: 'ft-sandbox' }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'That’s a Sandbox key. Open it from Sandbox, not here.' });
+    expect(setCalls).toHaveLength(0);
+  });
+
   it('sets the httpOnly cookie and returns only the fleet id on success', async () => {
     mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-1' });
     const res = await POST(postReq({ token: 'ft-123' }));
@@ -166,6 +174,15 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-prod' });
     // fleet_id was known from the DB row — no engine round-trip needed.
     expect(mockTokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('never adopts a Sandbox fleet, even when it is the only linked one', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-sandbox', fleet_id: 'sandbox-abc', label: 's', created_at: '' },
+    ]);
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(setCalls).toHaveLength(0);
   });
 
   // A fresh browser deep-linking into a fleet page: the provisioned fleet

@@ -98,9 +98,10 @@ export function firstBillableDay(sub: { start_date: number; trial_end?: number |
  */
 async function ownedFleetKeys(userId: string): Promise<Array<{ fleetId: string; token: string }> | null> {
   const { rows } = await db().query(
-    `SELECT 'users' AS "table", fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed FROM users WHERE id = $1 AND fleet_id IS NOT NULL
+    // A Sandbox fleet (sandbox-…) is never billed, even if one were ever linked.
+    `SELECT 'users' AS "table", fleet_id AS "fleetId", fleet_token AS plain, fleet_token_enc AS sealed FROM users WHERE id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE 'sandbox-%'
      UNION ALL
-     SELECT 'user_fleets', fleet_id, fleet_token, fleet_token_enc FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL`,
+     SELECT 'user_fleets', fleet_id, fleet_token, fleet_token_enc FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE 'sandbox-%'`,
     [userId],
   );
   const owners = await fleetOwners([...new Set(rows.map((r) => r.fleetId as string))]);

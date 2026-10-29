@@ -64,6 +64,10 @@ export async function POST(req: Request) {
 
   const resolved = await resolveFleetId(fleetToken);
   if ('error' in resolved) return resolved.error;
+  // A Sandbox fleet's token never opens the production pages: Sandbox data stays in Sandbox.
+  if (resolved.fleetId.startsWith('sandbox-')) {
+    return Response.json({ error: 'That’s a Sandbox key. Open it from Sandbox, not here.' }, { status: 400 });
+  }
 
   await setFleetAuthCookie(fleetToken);
   // Never echo the token back — the whole point is that page script can't

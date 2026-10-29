@@ -28,6 +28,6 @@ export function buildCredentials(
 export function preferProductionFleet(
   fleets: Array<{ fleetId: string }>,
 ): Array<{ fleetId: string }> {
-  const production = fleets.filter((f) => !f.fleetId.startsWith('sandbox-'));
-  return production.length > 0 ? production : fleets;
+  // A Sandbox fleet is never a production page's fleet: none at all rather than a sandbox- one.
+  return fleets.filter((f) => !f.fleetId.startsWith('sandbox-'));
 }

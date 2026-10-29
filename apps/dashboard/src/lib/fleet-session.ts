@@ -107,10 +107,11 @@ export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | nul
     return null;
   }
   if (!fleets.length) return null;
-  const production = fleets.filter(
-    (f) => f.fleet_id && !f.fleet_id.startsWith('sandbox-'),
-  );
-  const pick = (production.length ? production : fleets)[0];
+  // Never a Sandbox fleet; rows without a known fleet_id only when nothing better exists.
+  const usable = fleets.filter((f) => !f.fleet_id?.startsWith('sandbox-'));
+  const known = usable.filter((f) => f.fleet_id);
+  const pick = (known.length ? known : usable)[0];
+  if (!pick) return null;
   return { token: pick.fleet_token, fleetId: pick.fleet_id };
 }
 
