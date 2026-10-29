@@ -25,7 +25,6 @@ export function resultItems(r: Pick<PracticeReport, 'checks' | 'scope'>): RowIte
     tone: x.status === 'passed' ? 'pass' : x.status === 'failed' ? 'fail' : 'muted',
     label: x.partial ? 'Partly checked' : ROW_STATUS_LABEL[x.status],
     reason: x.reason,
-    addInControls: x.addInControls,
     detailsLabel: counted(x.members.length, x.noun),
     // A guardrail's rules show without a click: which rules were tested is the point.
     open: x.noun === 'rule',

@@ -115,6 +115,7 @@ export const PRACTICE_STATES = {
   'code-azure': preview({ run: { ...RUN, ...onKey(AZURE) }, code: CODE }),
   'code-bedrock': preview({ run: { ...RUN, ...onKey(BEDROCK) }, code: CODE }),
   'code-foundry': preview({ run: { ...RUN, ...onKey(FOUNDRY) }, code: CODE }),
+  'code-expired': preview({ run: RUN, code: { ...CODE, codeExpiresAt: ago(1) } }),
   'code-gone': preview({ run: { ...RUN, codeTriesLeft: 2 }, code: null }),
   running: preview({ run: { ...RUN, lifecycle: 'active', runs: 3, startedAt: ago(12), codeExpiresAt: null, codeTriesLeft: null, progress: { done: 4, total: 18, lastContactAt: ago(0.2) } } }),
   lost: preview({ run: { ...RUN, lifecycle: 'active', startedAt: ago(9), codeExpiresAt: null, codeTriesLeft: null, progress: { done: 2, total: 6, lastContactAt: ago(2) } } }),

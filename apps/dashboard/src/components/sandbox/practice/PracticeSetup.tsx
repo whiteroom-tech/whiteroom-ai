@@ -33,7 +33,6 @@ export function planItems(controls: PracticeControlCheck[] | null): RowItem[] {
     tone: 'muted',
     label: x.status === 'will_check' ? WILL_CHECK : ROW_STATUS_LABEL[x.status],
     reason: x.reason,
-    addInControls: x.addInControls,
     detailsLabel: x.row.members.every((m) => m.startsWith('ctl.')) ? 'Which rules' : 'Which tests',
     details: x.members.length ? <ul className={p.list}>{x.members.map((m, i) => <li key={i}>{m}</li>)}</ul> : undefined,
   }));

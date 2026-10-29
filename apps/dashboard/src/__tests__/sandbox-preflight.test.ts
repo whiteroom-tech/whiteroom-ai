@@ -177,15 +177,16 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
     expect(planRows(null).filter((x) => x.row.group === 'The guardrails').every((x) => x.status === 'not_checked' && x.reason.startsWith('Couldn’t read'))).toBe(true);
   });
 
-  it('setup shows the seven rows, with Add in Controls on a row with no rule', () => {
+  it('setup shows the seven rows; a row with no rule says so, with no link into production Controls', () => {
     const html = renderToStaticMarkup(createElement(PracticeSetup, {
       fleet: 'prod-eu', data: { agents: ['support-bot'] }, busy: false, onStart: () => {},
       preview: { model: 'claude-haiku-4-5', provider: 'direct-anthropic', directKey: true, blocked: null, providerKeys: [], controls: { checks: [ctl('ctl.loop_breaker.l1')], calls: 2 } },
     }));
     const t = text(html);
     for (const name of ROWS.map((r) => r.name)) expect(t).toContain(name);
-    expect(t).toContain('Spend cap Not set up · No rule yet. · Add in Controls');
-    expect(html).toContain('href="/controls"');
+    expect(t).toContain('Spend cap Not set up · No rule yet.');
+    expect(t).not.toContain('Add in Controls');
+    expect(html).not.toContain('href="/controls"');
     expect(t).toContain('1. Pick agent');
     expect(t).toContain('2. What we’ll test');
     // The guardrails test first: no code, any key, no Fleet key key to pick.
@@ -265,7 +266,8 @@ describe('the steps and the demo (§7)', () => {
     const t = text(html);
     expect(t).toContain('A sample report with made-up results');
     expect(t).toContain("Didn't pass · Fails gracefully");
-    expect(t).toContain('Spend cap Not set up · No rule yet. · Add in Controls');
+    expect(t).toContain('Spend cap Not set up · No rule yet.');
+    expect(t).not.toContain('Add in Controls');
     expect(t).toContain('Loop breaker + call rate Passed · Enforce: blocked. Watch: would have blocked.');
     expect(t).toContain('Allowlists + keywords Not checked · Your agent’s tools are named differently.');
     for (const gone of ['Download report', 'Rerun', 'Test demo', 'Expires in', 'Test ends in']) expect(t).not.toContain(gone);

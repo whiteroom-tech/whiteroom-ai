@@ -48,7 +48,8 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
   const key = keyLine(keyChoice, run.sourceFleetId, run.sample);
   // The key's variable: the run's provider when known, else Anthropic's (OpenAI's named beside it).
   const keyVar = CATALOG.providers[keyChoice?.provider ?? 'anthropic'].keyVar;
-  const other = !keyChoice ? CATALOG.providers.openai.keyVar : null;
+  // The guardrails test takes any key, so OpenAI's variable is offered beside Anthropic's; an own-agent test names its own.
+  const other = run.sample && !keyChoice ? CATALOG.providers.openai.keyVar : null;
   let n = 0;
   return <>
     {!CLI_ON_NPM && (

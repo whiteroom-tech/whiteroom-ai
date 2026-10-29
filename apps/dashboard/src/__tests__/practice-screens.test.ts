@@ -65,7 +65,9 @@ describe('practice test screens', () => {
     const setup = (controls: PracticeControlCheck[] | null) => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, controls } })));
     const pauseOnly = setup([{ id: 'ctl.pause_stop', label: 'Pause and Stop', mode: null, agents: [], checked: true, note: null, setup: 'ok', calls: 2 }]);
     expect(pauseOnly).toContain('Human pause/stop Will be checked · 2 extra calls');
-    for (const name of ['Spend cap', 'Loop breaker + call rate', 'Allowlists + keywords']) expect(pauseOnly).toContain(`${name} Not set up · No rule yet. · Add in Controls`);
+    for (const name of ['Spend cap', 'Loop breaker + call rate', 'Allowlists + keywords']) expect(pauseOnly).toContain(`${name} Not set up · No rule yet.`);
+    // The Sandbox never sends anyone into production Controls.
+    expect(pauseOnly).not.toContain('Add in Controls');
     const unknown = setup(null);
     expect(unknown.match(/Not checked · Couldn’t read this fleet’s controls just now\./g)).toHaveLength(4);
     expect(unknown).not.toContain('Add in Controls');
@@ -146,6 +148,12 @@ describe('practice test screens', () => {
     const gone = text(render('code-gone'));
     expect(gone).toContain('The run code is shown only once, when it’s made. Get a new one to see the command.');
     expect(gone).not.toContain('echo wrrt_');
+    // An expired code is never shown in a command.
+    const expired = text(render('code-expired'));
+    expect(expired).toContain('This run code has expired. Get a new one to see the command.');
+    expect(expired).not.toContain('echo wrrt_');
+    // An own-agent run names one key variable, without the guardrails test's OpenAI hint.
+    expect(text(render('code'))).not.toContain('Using OpenAI?');
   });
 
   it('running, lost contact and finishing', () => {
@@ -174,7 +182,8 @@ describe('practice test screens', () => {
     expect(failed).toMatch(/Didn't pass · Fails gracefully.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
     expect(failed).toContain("Fails gracefully Didn't pass · Saves once when a tool times out: Passed in 2 of 3 runs.");
     // A rule that doesn't cover the agent under test: Not set up for it, with the way to add it (§3b).
-    expect(text(render('not-set-up'))).toContain('Spend cap Not set up · Not set up for support-bot. · Add in Controls');
+    expect(text(render('not-set-up'))).toContain('Spend cap Not set up · Not set up for support-bot.');
+    expect(render('not-set-up')).not.toContain('href="/controls"');
     expect(failed).toContain('Rerun failed checks');
     const incomplete = text(render('incomplete'));
     expect(incomplete).toMatch(/What stopped the test.*Test problem \(not your agent\): Anthropic hit a rate limit or quota \(HTTP 429\)\./);
