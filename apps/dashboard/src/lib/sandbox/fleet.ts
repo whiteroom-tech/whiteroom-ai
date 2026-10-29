@@ -65,13 +65,12 @@ export const isUnavailable = (e: unknown) => e instanceof SandboxFleetError && e
 
 /**
  * The reason the BFF gives the engine's pin refusal (the page's
- * `sandboxFleetId` isn't the fleet's Sandbox any more). The engine sends that
- * 409 without a reason, so the BFF names it from its fixed text; every other
+ * `sandboxFleetId` isn't the fleet's Sandbox any more). The engine sends it as
+ * reason sandbox_changed (older engines sent only its fixed text); every other
  * 409 is a state conflict (a check already running, none running, nothing stopped…).
  */
 export const SANDBOX_CHANGED = 'sandbox_changed';
-/** The engine's pin refusal (routes/white-room.ts sandboxFleetAction), the only 409 that means "a different Sandbox". */
-/** Fallback only: the engine sends reason sandbox_changed for this 409 (engine PR 315); older engines send just this text. */
+/** The engine's pin refusal by its text: a fallback for engines that sent it without reason sandbox_changed. */
 export const isPinMismatch = (status: number, error: string) => status === 409 && /^That Sandbox doesn['’]t belong to this fleet\.?$/.test(error);
 
 /**

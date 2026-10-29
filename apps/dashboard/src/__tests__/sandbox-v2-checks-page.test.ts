@@ -127,6 +127,28 @@ describe('Check your agent', () => {
     expect(button('Resume')).toBeUndefined();
   });
 
+  it('polls every 30 seconds in a hidden tab, and reads at once when the tab comes back', async () => {
+    vi.useFakeTimers();
+    checks = checkAnswer({ stage: 'observe' });
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      await render(checksEl());
+      const reads = () => calls().filter((c) => c.url.endsWith('/checks/status')).length;
+      expect(reads()).toBe(1);
+      // Hidden: at most one read in 30 seconds after the first (visible would be six).
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      await flush();
+      const hiddenReads = reads();
+      expect(hiddenReads).toBeLessThanOrEqual(3);
+      hidden.mockReturnValue(false);
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      await flush();
+      expect(reads()).toBe(hiddenReads + 1);
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
   it('polls every 5 seconds while the window is open, and stops when it ends', async () => {
     vi.useFakeTimers();
     checks = checkAnswer({ stage: 'observe' });
