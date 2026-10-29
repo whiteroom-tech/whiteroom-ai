@@ -68,13 +68,13 @@ describe('Sandbox v2 page', () => {
     expect(links.some((href) => href?.startsWith('/controls'))).toBe(false);
   });
 
-  it('connect sends the typed key once, then shows the Sandbox URL and key once with the exact line', async () => {
+  it('connect sends the typed key once, then shows the Sandbox URL and key with the exact line', async () => {
     await render({ fleet: 'prod-eu' });
     const input = document.getElementById('sandbox-v2-key') as HTMLInputElement;
     await type(input, PROVIDER_KEY);
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
-    expect(text()).toContain('Your Sandbox key is shown only once');
+    expect(text()).toContain('We can’t show your Sandbox key again after that.');
     expect(text()).toContain(`export ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
     expect(text()).toContain(ISSUED.proxyKey);
     expect(document.querySelector('[aria-label="Copy the Sandbox key"]')).not.toBeNull();
@@ -86,10 +86,22 @@ describe('Sandbox v2 page', () => {
     expect(document.body.innerHTML).not.toContain(PROVIDER_KEY);
     expect(JSON.stringify({ ...localStorage })).not.toContain('sk-wr-placeholder');
     expect(JSON.stringify({ ...sessionStorage })).not.toContain('sk-wr-placeholder');
-    // Dismissed, the key is gone for good.
-    await click('I’ve copied it');
-    expect(text()).not.toContain(ISSUED.proxyKey);
-    expect(text()).toContain('Lost it? Rotate the key to get a new one.');
+    // It stays on screen for the visit: nothing to dismiss.
+    expect(button('I’ve copied it')).toBeUndefined();
+  });
+
+  it('connected, key not on screen: step 2 names the key and gets a new URL in place', async () => {
+    bff.mockImplementation(async (url: string) => url.endsWith('/rotate')
+      ? Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' })
+      : Response.json(STATUS));
+    await render({ fleet: 'prod-eu' });
+    expect(text()).toContain('starts with sk-wr-0123456789abcdef...');
+    await click('Get a new Sandbox URL');
+    expect(text()).toContain('Get a new Sandbox key?');
+    await click('Rotate key');
+    expect(calls().find((c) => c.url.endsWith('/rotate'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
+    expect(text()).toContain('https://proxy.whiteroom.tech/sk-wr-placeholder-rotated');
+    expect(button('Get a new Sandbox URL')).toBeUndefined();
   });
 
   it('refuses a mismatched key in the browser, before anything is sent', async () => {
@@ -147,6 +159,40 @@ describe('Sandbox v2 page', () => {
     await click(label);
     expect(text()).toContain('Your Sandbox changed since this page loaded.');
     expect(calls().filter((c) => c.url.endsWith('/status')).length).toBeGreaterThan(before);
+  });
+
+  it('a Sandbox changed elsewhere takes the key on screen with it', async () => {
+    let changed = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/rotate')) return Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' });
+      if (url.endsWith('/reset')) { changed = true; return Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: 409 }); }
+      return Response.json(changed ? { ...STATUS, sandboxFleetId: 'sandbox-11111111-1111-4111-8111-111111111111' } : STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    await click('Get a new Sandbox URL');
+    await click('Rotate key');
+    expect(text()).toContain('sk-wr-placeholder-rotated');
+    await click('Reset Sandbox');
+    await click('Reset Sandbox');
+    expect(text()).toContain('Your Sandbox changed since this page loaded.');
+    expect(text()).not.toContain('sk-wr-placeholder-rotated');
+  });
+
+  it('a step that finds the Sandbox changed (onStale) also takes the key on screen with it', async () => {
+    // Connected here, but the rules read finds this Sandbox gone: it was reconnected in another tab.
+    let connected = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/connect')) { connected = true; return Response.json({ ...STATUS, created: true, ...ISSUED }); }
+      if (url.endsWith('/status')) return Response.json(connected ? { ...STATUS, sandboxFleetId: 'sandbox-11111111-1111-4111-8111-111111111111' } : { success: true, exists: false });
+      if (url.endsWith('/rules/list')) return Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: 409 });
+      return Response.json(STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(calls().some((c) => c.url.endsWith('/rules/list'))).toBe(true);
+    expect(text()).not.toContain(ISSUED.proxyKey);
+    expect(button('Get a new Sandbox URL')).toBeDefined();
   });
 
   it('an unreadable status answer is an error with Try again, not the older destination', async () => {
