@@ -51,10 +51,12 @@ export function ProviderChoices({ value, unsupported, disabled, followsKey, last
   );
 }
 
-export function CloudEndpointField({ provider, value, error, onChange, onSubmit }: {
+export function CloudEndpointField({ provider, value, error, onChange, onSubmit, keyNote }: {
   provider: CloudProvider;
   value: string;
   error: string;
+  /** Replaces the provider's key note (Sandbox v2 takes the key, so it says so). */
+  keyNote?: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
 }) {
@@ -67,7 +69,7 @@ export function CloudEndpointField({ provider, value, error, onChange, onSubmit 
         onKeyDown={e => { if (e.key === 'Enter' && value.trim()) onSubmit(); }}
         placeholder={f.endpointPlaceholder} aria-invalid={error ? true : undefined} aria-describedby="sandbox-endpoint-hint" />
       <p id="sandbox-endpoint-hint" className={s.small} style={{ marginTop: 6 }} aria-live="polite">
-        {error ? <span style={{ color: 'var(--bad)' }}>{error}</span> : <>{f.endpointHelp} {f.keyNote}</>}
+        {error ? <span style={{ color: 'var(--bad)' }}>{error}</span> : <>{f.endpointHelp} {keyNote ?? f.keyNote}</>}
       </p>
     </div>
   );

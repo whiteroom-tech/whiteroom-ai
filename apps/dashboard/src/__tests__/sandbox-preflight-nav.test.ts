@@ -132,7 +132,13 @@ describe('the pre-flight follows the address', () => {
   });
 });
 
-describe('/sandbox: the pre-flight or the connection test', () => {
+describe('/sandbox: Sandbox v2, else the pre-flight or the connection test', () => {
+  // The session answers the fleet; the Sandbox v2 BFF answers `sandbox` (a status, or no v2 on this engine).
+  const routes = (sandbox: () => Response) => vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+    String(url).startsWith('/api/sandbox/fleet/') ? sandbox() : Response.json({ fleetId: 'prod-eu' })));
+  const noV2 = () => Response.json({ error: 'Sandbox isn’t available yet.', reason: 'sandbox_fleet_unavailable' }, { status: 404 });
+  const v2 = () => Response.json({ success: true, exists: false });
+
   it('?connection=1 stays on the connection test without asking anything', async () => {
     await go('connection=1', SandboxEntry);
     expect(text()).toContain('CONNECTION TEST');
@@ -140,21 +146,34 @@ describe('/sandbox: the pre-flight or the connection test', () => {
     expect(nav.replace).not.toHaveBeenCalled();
   });
 
-  it('shows a skeleton while deciding, then sends a fleet the pre-flight takes to it', async () => {
-    let answer!: (v: PracticeSource) => void;
-    engine.source.mockReturnValue(new Promise<PracticeSource>((r) => { answer = r; }));
+  it('shows a skeleton while deciding, then the signed-in fleet’s Sandbox (no redirect)', async () => {
+    let answer!: (r: Response) => void;
+    vi.stubGlobal('fetch', vi.fn((url: string) => String(url).startsWith('/api/sandbox/fleet/')
+      ? Promise.resolve(v2())
+      : new Promise<Response>((r) => { answer = r; })));
     await go('', SandboxEntry);
     expect(el.querySelector('[aria-busy="true"]')).not.toBeNull();
-    expect(text()).not.toContain('CONNECTION TEST');
-    await act(async () => { answer(SOURCE); });
+    await act(async () => { answer(Response.json({ fleetId: 'prod-eu' })); });
     await flush();
+    expect(text()).toContain('1. Connect your provider key');
+    expect(text()).not.toContain('CONNECTION TEST');
+    expect(nav.replace).not.toHaveBeenCalled();
+    expect(engine.source).not.toHaveBeenCalled();
+    const [url, init] = vi.mocked(fetch).mock.calls.find(([u]) => String(u).startsWith('/api/sandbox/fleet/'))!;
+    expect(url).toBe('/api/sandbox/fleet/status');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ fleet: 'prod-eu' });
+  });
+
+  it('with no Sandbox v2 on the engine, sends a fleet the pre-flight takes to it', async () => {
+    routes(noV2);
+    await go('', SandboxEntry);
     expect(nav.replace).toHaveBeenCalledWith(ROUTES.practiceTest);
   });
 
   it.each([
-    ['a refused fleet', () => { engine.source.mockResolvedValue({ ...SOURCE, provider: 'cloud', blocked: 'bedrock_role' }); }],
+    ['a refused fleet (Bedrock IAM role)', () => { routes(noV2); engine.source.mockResolvedValue({ ...SOURCE, provider: 'cloud', blocked: 'bedrock_role' }); }],
     ['no session', () => { vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 401 }))); }],
-    ['a failed lookup', () => { engine.source.mockRejectedValue(new PracticeError('off', 404, 'practice_unavailable')); }],
+    ['a failed lookup', () => { routes(noV2); engine.source.mockRejectedValue(new PracticeError('off', 404, 'practice_unavailable')); }],
   ])('keeps the connection test for %s', async (_, arrange) => {
     arrange();
     await go('', SandboxEntry);
@@ -163,6 +182,7 @@ describe('/sandbox: the pre-flight or the connection test', () => {
   });
 
   it('decides nothing once unmounted', async () => {
+    routes(noV2);
     let answer!: (v: PracticeSource) => void;
     engine.source.mockReturnValue(new Promise<PracticeSource>((r) => { answer = r; }));
     await go('', SandboxEntry);
