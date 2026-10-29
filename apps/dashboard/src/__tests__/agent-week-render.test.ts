@@ -13,12 +13,12 @@ const { outOfTen, scoreParts, scoreSummary, scoreWorking } = await import('@/lib
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 describe('Last 7 days on the agent page', () => {
-  it('shows tokens without and with WhiteRoom, rule activity and the score with its parts', () => {
+  it('shows input without and with WhiteRoom, rule activity and the score with its parts', () => {
     const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
-      used: 53_400, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
+      used: 53_400, input: 53_400, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
       score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
     } })));
-    expect(t).toContain('Tokens without WhiteRoom, est. 279K');
+    expect(t).toContain('Input without WhiteRoom, est. 279K');
     expect(t).toContain('With WhiteRoom 53.4K 226K less (81%)');
     expect(t).toContain('Rule activity 2 blocked · 58 would have acted');
     expect(t).toContain('Score 8 out of 10');
@@ -32,16 +32,26 @@ describe('Last 7 days on the agent page', () => {
 
   it('shows — when a read failed, never 0, and no score breakdown without a score', () => {
     const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {} })));
-    expect(t).toContain('Tokens without WhiteRoom, est. —');
+    expect(t).toContain('Input without WhiteRoom, est. —');
     expect(t).toContain('Rule activity —');
     expect(t).not.toContain('How is the score');
   });
 
-  it('works out the token figures, or none when usage is unknown', () => {
+  it('still says what was saved when the input is unknown, with no %', () => {
+    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: { used: 81_800, saved: 1_876_009 } })));
+    expect(t).toContain('With WhiteRoom — 1.88M saved');
+    expect(t).not.toContain('%');
+  });
+
+  it('works out the input figures from the input sent, or none when either read is unknown', () => {
     expect(weekTokens(undefined)).toBeNull();
     expect(weekTokens({ saved: 5 })).toBeNull();
-    expect(weekTokens({ used: 0 })).toEqual({ without: 0, used: 0, saved: 0, pct: 0 });
-    expect(weekTokens({ used: 25, saved: 75 })).toEqual({ without: 100, used: 25, saved: 75, pct: 75 });
+    expect(weekTokens({ input: 5 })).toBeNull();
+    expect(weekTokens({ input: 0, saved: 0 })).toEqual({ without: 0, used: 0, saved: 0, pct: 0 });
+    expect(weekTokens({ input: 25, saved: 75 })).toEqual({ without: 100, used: 25, saved: 75, pct: 75 });
+    // As prod's lead-agent: 1.36M input, mostly cached, against 1.88M saved is 58%, not
+    // the 96% the 81.8K tokens its tasks reported would give.
+    expect(weekTokens({ input: 1_363_960, saved: 1_876_009 })?.pct).toBe(58);
   });
 
   it('offers "Set a task type" on the Cost row when the agent has none', () => {

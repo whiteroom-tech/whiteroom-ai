@@ -15,7 +15,7 @@ const ENTRIES: AuditEntry[] = [
   { id: '5', type: 'task_complete', timestamp: iso(15), agentId: 'lead-agent', taskName: 'Look up carrier filing' },
 ];
 const WEEK: AgentWeek = {
-  used: 53_400, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
+  used: 53_400, input: 412_000, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
   score: { agentId: 'lead-agent', calls: 412, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
 };
 const ruleBase = { fleetId: 'acme-claims-prod', changedBy: 'preview', changedAt: iso(2_880), version: 1 };
