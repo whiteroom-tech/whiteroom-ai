@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 const { SandboxHome, SANDBOX_SEPARATE } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { connectCheck, keptUntilText, lastCallText, pointLine } = await import('@/lib/sandbox/fleet');
+const { connectCheck, keptUntilText, lastCallText, pointLine, rememberableCommand, runLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
 
 const PROVIDER_KEY = 'sk-ant-placeholder-not-a-real-key-WXYZ';
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
@@ -74,11 +74,21 @@ describe('Sandbox v2 page', () => {
     await type(input, PROVIDER_KEY);
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
-    expect(text()).toContain('Your Sandbox key is shown only once');
-    expect(text()).toContain(`export ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
+    expect(text()).toContain('Your Sandbox URL is shown only once');
+    // This computer: one line that runs the agent against the Sandbox, built from how it starts.
+    expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" <how you start your agent>`);
+    await type(document.getElementById('sandbox-start-command') as HTMLInputElement, 'python -m leadagent.cli run');
+    expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" python -m leadagent.cli run`);
+    expect(document.querySelector('[aria-label="Copy the run line"]')).not.toBeNull();
+    expect(localStorage.getItem('wr.sandbox.startCommand')).toBe('python -m leadagent.cli run');
+    // A server: the one setting; another tool: the URL.
+    await click('A server');
+    expect(text()).toContain(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
+    expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
+    await click('Another tool');
+    expect(document.querySelector('[aria-label="Copy the Sandbox URL"]')).not.toBeNull();
     expect(text()).toContain(ISSUED.proxyKey);
     expect(document.querySelector('[aria-label="Copy the Sandbox key"]')).not.toBeNull();
-    expect(document.querySelector('[aria-label="Copy the environment line"]')).not.toBeNull();
     // The status card, and the provider key nowhere on the page or in storage.
     expect(text()).toContain('key ending WXYZ');
     expect(text()).toContain('No calls yet');
@@ -89,7 +99,7 @@ describe('Sandbox v2 page', () => {
     // Dismissed, the key is gone for good.
     await click('I’ve copied it');
     expect(text()).not.toContain(ISSUED.proxyKey);
-    expect(text()).toContain('Lost it? Rotate the key to get a new one.');
+    expect(button('Get a new Sandbox URL')).toBeDefined();
   });
 
   it('refuses a mismatched key in the browser, before anything is sent', async () => {
@@ -120,8 +130,8 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('5 min ago');
     expect(text()).not.toContain('1. Connect your provider key');
     await click('Rotate key');
-    expect(text()).toContain('Get a new Sandbox key?');
-    await click('Rotate key');
+    expect(text()).toContain('Get a new Sandbox URL?');
+    await click('Get a new URL');
     const rotate = calls().find((c) => c.url.endsWith('/rotate'));
     expect(rotate?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
     expect(text()).toContain('sk-wr-placeholder-rotated');
@@ -137,14 +147,14 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('Sandbox reset.');
   });
 
-  it.each([['rotate', 'Rotate key', 409], ['reset', 'Reset Sandbox', 404]] as const)('a refused %s shows why and reads the Sandbox again', async (action, label, code) => {
+  it.each([['rotate', 'Rotate key', 'Get a new URL', 409], ['reset', 'Reset Sandbox', 'Reset Sandbox', 404]] as const)('a refused %s shows why and reads the Sandbox again', async (action, label, confirmLabel, code) => {
     bff.mockImplementation(async (url: string) => url.endsWith(`/${action}`)
       ? Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: code })
       : Response.json(STATUS));
     await render({ fleet: 'prod-eu' });
     const before = calls().filter((c) => c.url.endsWith('/status')).length;
     await click(label);
-    await click(label);
+    await click(confirmLabel);
     expect(text()).toContain('Your Sandbox changed since this page loaded.');
     expect(calls().filter((c) => c.url.endsWith('/status')).length).toBeGreaterThan(before);
   });
@@ -179,12 +189,21 @@ describe('Sandbox v2 page', () => {
   });
 
   it('/dev/sandbox-v2 openai shows the /v1 line', async () => {
+    localStorage.clear();
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES.openai });
-    expect(text()).toMatch(/export OPENAI_BASE_URL=https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1/);
+    expect(text()).toMatch(/OPENAI_BASE_URL="https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1" <how you start your agent>/);
   });
 });
 
 describe('Sandbox v2 wording and checks', () => {
+  it('the run line and setting for each provider; only a start command without a key is remembered', () => {
+    expect(runLine('anthropic', 'https://proxy.example/sk-wr-x/', ' node agent.js ')).toBe('ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x" node agent.js');
+    expect(runLine('openai', 'https://proxy.example/sk-wr-x', '')).toBe('OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1" <how you start your agent>');
+    expect(sandboxSetting('azure-openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'AZURE_OPENAI_ENDPOINT', value: 'https://proxy.example/sk-wr-x' });
+    expect(rememberableCommand('python -m leadagent.cli run --metro "Miami FL"')).toBe(true);
+    for (const c of ['', '   ', 'OPENAI_API_KEY=sk-abc python a.py', 'TOKEN=x node a.js', 'x'.repeat(301)]) expect(rememberableCommand(c)).toBe(false);
+  });
+
   it('points the agent the way production does', () => {
     expect(pointLine('anthropic', 'https://proxy.example/sk-wr-x/')).toBe('export ANTHROPIC_BASE_URL=https://proxy.example/sk-wr-x');
     expect(pointLine('openai', 'https://proxy.example/sk-wr-x')).toBe('export OPENAI_BASE_URL=https://proxy.example/sk-wr-x/v1');

@@ -165,6 +165,28 @@ export function pointLine(provider: string, proxyUrl: string): string {
   return issuedEnvHint(provider, proxyUrl.replace(/\/+$/, ''));
 }
 
+/** The one setting that points an agent at the Sandbox: its name and value, as pointLine sets it. */
+export function sandboxSetting(provider: string, proxyUrl: string): { name: string; value: string } {
+  const line = pointLine(provider, proxyUrl).replace(/^export /, '');
+  const at = line.indexOf('=');
+  return { name: line.slice(0, at), value: line.slice(at + 1) };
+}
+
+/** Shown in the run line until the user types how they start their agent. */
+export const START_COMMAND_HINT = '<how you start your agent>';
+
+/** One terminal line that runs the agent against the Sandbox for that run only (macOS and Linux shells). */
+export function runLine(provider: string, proxyUrl: string, command: string): string {
+  const { name, value } = sandboxSetting(provider, proxyUrl);
+  return `${name}="${value}" ${command.trim() || START_COMMAND_HINT}`;
+}
+
+/** A start command worth remembering in this browser: never one that looks like it holds a key or password. */
+export function rememberableCommand(command: string): boolean {
+  const c = command.trim();
+  return c.length > 0 && c.length <= 300 && !/sk-|wr_|key|token|secret|passw/i.test(c);
+}
+
 export function providerLabel(provider: string): string {
   return isSandboxProvider(provider) ? SANDBOX_PROVIDER_LABELS[provider] : provider;
 }
