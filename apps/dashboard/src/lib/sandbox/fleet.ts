@@ -190,7 +190,9 @@ export function runLinePowerShell(provider: string, proxyUrl: string, command: s
   const { name, value } = sandboxSetting(provider, proxyUrl);
   const cmd = command.trim();
   // finally puts back what was there (or nothing) however the agent ends, Ctrl+C included.
-  return cmd ? `$wrPrev=$env:${name}; try { $env:${name}="${value}"; ${cmd} } finally { $env:${name}=$wrPrev }` : `$env:${name}="${value}"`;
+  // A command that starts with a quoted path needs the call operator, or PowerShell just prints the string.
+  const run = /^["']/.test(cmd) ? `& ${cmd}` : cmd;
+  return cmd ? `$wrPrev=$env:${name}; try { $env:${name}="${value}"; ${run} } finally { $env:${name}=$wrPrev }` : `$env:${name}="${value}"`;
 }
 
 export function providerLabel(provider: string): string {
