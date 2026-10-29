@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, Panel, SkeletonCard } from '@whiteroom/ui';
+import { Banner, Button, Panel, SegmentedControl, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip } from '@/components/citadel/CopyChip';
@@ -10,7 +10,7 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
 import {
-  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, pointLine, providerLabel,
+  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, runLine, runLinePowerShell, sandboxSetting,
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
@@ -238,9 +238,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     <ConfirmDialog
       open={confirm === 'rotate'}
       tone="neutral"
-      title="Get a new Sandbox key?"
-      body="Your current Sandbox key stops working at once. Update your agent with the new one."
-      confirmLabel="Rotate key"
+      title="Get a new Sandbox URL?"
+      body="Your current Sandbox URL and key stop working at once. We’ll show the new ones, ready to copy."
+      confirmLabel="Get a new URL"
       busy={busy}
       onConfirm={() => void act('rotate')}
       onCancel={() => setConfirm(null)}
@@ -257,23 +257,74 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   </>;
 }
 
-/** Step 2 right after connect or rotate: the Sandbox URL and key, on screen until the page is left. */
+type RunsOn = 'computer' | 'server' | 'tool';
+const RUNS_ON: Array<{ value: RunsOn; label: string }> = [
+  { value: 'computer', label: 'This computer' },
+  { value: 'server', label: 'A server' },
+  { value: 'tool', label: 'Another tool' },
+];
+/** Step 2 right after connect or rotate: one line to copy for where the agent runs, on screen until the page is left. */
 export function PointPanel({ issued }: { issued: IssuedSandboxKey }) {
-  const line = pointLine(issued.provider, issued.proxyUrl);
+  const [runsOn, setRunsOn] = useState<RunsOn>('computer');
+  const [command, setCommand] = useState('');
+  const setting = sandboxSetting(issued.provider, issued.proxyUrl);
   return (
     <Panel title="2. Point your agent">
       <div className={v.stack}>
-        <Banner variant="warn">Copy these before you leave this page. We can’t show your Sandbox key again after that.</Banner>
-        <p className={v.label}>Set this where your agent runs</p>
-        <CopyChip text={line} label="Copy the environment line" />
-        <p className={v.label}>Sandbox URL</p>
-        <CopyChip text={issued.proxyUrl} label="Copy the Sandbox URL" />
-        <p className={v.label}>Sandbox key</p>
-        <CopyChip text={issued.proxyKey} label="Copy the Sandbox key" />
+        <Banner variant="warn">Copy this before you leave this page. We can’t show your Sandbox URL again after that.</Banner>
+        <p className={v.label} aria-hidden>Where does your agent run?</p>
+        <div className={v.segment}>
+          <SegmentedControl<RunsOn> label="Where does your agent run?" value={runsOn} onChange={setRunsOn} options={RUNS_ON} />
+        </div>
+        {runsOn === 'computer' && <>
+          <label className={v.label} htmlFor="sandbox-start-command">How do you start your agent?</label>
+          <input
+            id="sandbox-start-command"
+            className={s.formInput}
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            autoCapitalize="none"
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="python my_agent.py"
+          />
+          <p className={v.label}>Run this in your terminal</p>
+          <CopyChip text={runLine(issued.provider, issued.proxyUrl, command)} label="Copy the run line" />
+          <p className={v.text}>
+            {command.trim()
+              ? 'Your agent uses the Sandbox for this run only. Nothing in its settings changes.'
+              : 'Then start your agent in this terminal. Or type how you start it above to get one line.'}
+          </p>
+          <details>
+            <summary className={v.label}>On Windows (PowerShell)</summary>
+            <div className={`${v.stack} ${v.reveal}`}>
+              <CopyChip text={runLinePowerShell(issued.provider, issued.proxyUrl, command)} label="Copy the PowerShell line" />
+              <p className={v.text}>
+                {command.trim()
+                  ? 'Your earlier setting comes back when your agent finishes or you stop it.'
+                  : 'This sets it for that PowerShell window. Close the window when you’re done to stop using the Sandbox.'}
+              </p>
+            </div>
+          </details>
+        </>}
+        {runsOn === 'server' && <>
+          <p className={v.label}>Set this in a test or staging deploy of your agent</p>
+          <CopyChip text={`${setting.name}=${setting.value}`} label="Copy the setting" />
+          <p className={v.text}>Then run it as normal. Keep production as it is.</p>
+        </>}
+        {runsOn === 'tool' && <>
+          <p className={v.label}>Paste this as the tool’s base URL</p>
+          <CopyChip text={setting.value} label="Copy the Sandbox URL" />
+        </>}
         <p className={v.text}>
           {issued.keyHint ? <>Your agent keeps using its own key (ending {issued.keyHint}). </> : <>Your agent keeps using its own key. </>}
-          Then run it as normal.
+          Press Start checking in step 4 first, so its calls are checked.
         </p>
+        <details>
+          <summary className={v.label}>Sandbox key, if a tool asks for it</summary>
+          <div className={v.reveal}><CopyChip text={issued.proxyKey} label="Copy the Sandbox key" /></div>
+        </details>
         <AgentNaming {...agentNamingFor(issued.provider)} />
       </div>
     </Panel>
