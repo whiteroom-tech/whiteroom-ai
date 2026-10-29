@@ -91,10 +91,10 @@ export interface LinkedFleetCredential {
  * The account's own provisioned fleet (users.fleet_token) wins: it has no
  * user_fleets row, so a fresh browser deep-linking into a fleet page used to
  * be asked for a token it already owned (audit F10). After that, the
- * preferred fleet linked in user_fleets, mirroring the login-page preference
- * (see preferProductionFleet / commit 30ddc00): production fleets win over
- * sandbox-* ones; rows without a known fleet_id only when nothing better
- * exists. Returns null when there is no session or no fleet at all.
+ * preferred fleet linked in user_fleets, as the login page picks it
+ * (preferProductionFleet): a sandbox-* fleet is never picked, even when it's
+ * the only one; rows without a known fleet_id only when no known production
+ * fleet exists. Returns null when there is no session or no usable fleet.
  */
 export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | null> {
   const primary = await primaryFleet();

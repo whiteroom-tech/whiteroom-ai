@@ -185,6 +185,17 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls).toHaveLength(0);
   });
 
+  it('with a Sandbox row and a row of unknown fleet, picks the unknown one, never the Sandbox fleet', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-sandbox', fleet_id: 'sandbox-abc', label: 's', created_at: '' },
+      { id: '2', fleet_token: 'ft-unknown', fleet_id: null, label: 'u', created_at: '' },
+    ]);
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'prod-9' });
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-unknown' });
+  });
+
   // A fresh browser deep-linking into a fleet page: the provisioned fleet
   // lives on users, not user_fleets, and must still be found (audit F10).
   it('adopts the account\'s own provisioned fleet ahead of linked ones', async () => {

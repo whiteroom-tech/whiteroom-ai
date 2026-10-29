@@ -9,6 +9,7 @@
 //   DELETE        -> clear the cookie (sign out)
 
 import { checkSameOrigin } from '@/lib/origin-check';
+import { SANDBOX_KEY_MESSAGE } from '@/lib/fleet-helpers';
 import {
   clearFleetAuthCookie,
   getFleetAuthCookie,
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
   if ('error' in resolved) return resolved.error;
   // A Sandbox fleet's token never opens the production pages: Sandbox data stays in Sandbox.
   if (resolved.fleetId.startsWith('sandbox-')) {
-    return Response.json({ error: 'That’s a Sandbox key. Open it from Sandbox, not here.' }, { status: 400 });
+    return Response.json({ error: SANDBOX_KEY_MESSAGE }, { status: 400 });
   }
 
   await setFleetAuthCookie(fleetToken);
