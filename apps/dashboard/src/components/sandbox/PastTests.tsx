@@ -10,7 +10,7 @@ import { analytics } from '@/lib/analytics';
 import { HELP } from '@/lib/metric-definitions';
 import { fmtTime } from '@/lib/format';
 import { formatInZone } from '@/lib/zone-time';
-import { isOpen, pastKind, VERDICT_LABEL, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
+import { isOpen, pastKind as practiceKind, VERDICT_LABEL, pastResult as practiceResult, pastTasks } from '@/lib/sandbox/practice/model';
 import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { PracticePastDetail } from './practice/PracticePastDetail';
 import s from './guided.module.css';
@@ -110,8 +110,8 @@ export function PastTestDetail({ test, onClose, onDownload = downloadPastReport 
       </div>
       <dl className={s.pastDetailList}>
         <dt>Result</dt><dd><Tag tone={result?.tone ?? 'muted'}>{result?.label ?? test.overall}</Tag></dd>
-        <dt>Tasks</dt><dd>{test.totalTasks} <span className={s.small}>(calls that came back OK)</span></dd>
-        <dt>Kind</dt><dd>{test.isTrial ? 'Demo' : 'Your agent'}</dd>
+        <dt>Tasks</dt><dd>{testTasks(test)} <span className={s.small}>(calls that came back OK)</span></dd>
+        <dt>Kind</dt><dd>{testKind(test)}</dd>
         <dt>Test ID</dt><dd style={{ fontFamily: FONT_MONO, overflowWrap: 'anywhere' }}>{test.sandboxId}</dd>
       </dl>
       {test.hasReport ? <DownloadReport state={download} onClick={() => { void startDownload(download, () => onDownload(test), setDownload); }} /> : <p className={s.small} style={{ margin: '10px 0 0' }}>Each check’s result and the activity aren’t kept after a test ends. To keep them, download the report before you end a test.</p>}
@@ -121,6 +121,25 @@ export function PastTestDetail({ test, onClose, onDownload = downloadPastReport 
 
 /** A Past tests row: a Sandbox test, or a finished practice test (spec rev 5.6 §10). */
 type Row = { key: string; at: string; test: PastTest; practice?: undefined } | { key: string; at: string; test?: undefined; practice: PracticeRunRow };
+
+/** The Kind column, one label per kind of test. */
+export const testKind = (t: Pick<PastTest, 'isTrial'>) => (t.isTrial ? 'Connection test (demo)' : 'Connection test');
+export const rowKind = (r: Row) => (r.test ? testKind(r.test) : practiceKind(r.practice));
+
+/** A connection test's task count (calls that came back OK), or "—" when the record has none. */
+export const testTasks = (t: Pick<PastTest, 'totalTasks'>) => (Number.isFinite(t.totalTasks) ? String(t.totalTasks) : '—');
+
+/** The Tasks column: a connection test's count, or a practice test's "done/total"; "—" when unknown. Matches the detail. */
+export const rowTasks = (r: Row) => (r.practice ? pastTasks(r.practice) : testTasks(r.test));
+
+/**
+ * Rows Past tests hides until Show all: the older connection-test demos, and
+ * practice tests that never started (ended before any task finished).
+ */
+export function hiddenByDefault(r: Row): boolean {
+  if (r.test) return r.test.isTrial;
+  return r.practice.lifecycle !== 'finished' && r.practice.tasks.finished === 0;
+}
 
 /** Sandbox tests (empty ones left out) and finished practice tests together, newest first. */
 export function pastRows(tests: PastTest[], practice: PracticeRunRow[] = []): Row[] {
@@ -138,15 +157,18 @@ export function pastRows(tests: PastTest[], practice: PracticeRunRow[] = []): Ro
  * so when there are none yet. It mounts on the start step, so returning there
  * after a test reloads the list. Practice tests, when given, are rows too.
  */
-export function PastTests({ preview, previewOpen, practice }: {
+export function PastTests({ preview, previewOpen, previewShowAll, practice }: {
   preview?: PastTest[];
   /** /dev/sandbox and tests: the test whose row starts open. */
   previewOpen?: string;
+  /** Tests: start with every row shown. */
+  previewShowAll?: boolean;
   /** The owner's practice tests; open ones aren't listed. */
   practice?: PracticeRunRow[];
 }) {
   const [tests, setTests] = useState<PastTest[] | null>(preview ?? null);
   const [open, setOpen] = useState<string | null>(previewOpen ?? null);
+  const [showAll, setShowAll] = useState(!!previewShowAll);
   const table = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -157,8 +179,11 @@ export function PastTests({ preview, previewOpen, practice }: {
   }, [preview]);
 
   if (!tests) return null;
-  const rows = pastRows(tests, practice);
-  if (!rows.length) {
+  const all = pastRows(tests, practice);
+  const hidden = all.filter(hiddenByDefault).length;
+  // A row opened from the list stays shown.
+  const rows = showAll ? all : all.filter((r) => !hiddenByDefault(r) || r.key === open);
+  if (!all.length) {
     return (
       <div style={{ marginTop: 24 }}>
         <Panel title={<>Past tests<Hint text={HELP.pastTests} /></>}>
@@ -179,7 +204,8 @@ export function PastTests({ preview, previewOpen, practice }: {
     <div style={{ marginTop: 24 }}>
       <Panel title={<>Past tests<Hint text={HELP.pastTests} /></>} count={String(rows.length)} bodyPadding={0}>
         <div ref={table}>
-          <DataTable<Row>
+          {rows.length === 0 && <p className={s.pastEmpty} style={{ padding: '16px 18px' }}>Only demos and tests that never started so far.</p>}
+          {rows.length > 0 && <DataTable<Row>
             caption="Past tests, newest first. Open a row for what’s kept about that test."
             rows={rows}
             rowKey={(r) => r.key}
@@ -194,11 +220,17 @@ export function PastTests({ preview, previewOpen, practice }: {
                 const shown = r.test ? RESULT[pastResult(r.test)] : practiceResult(r.practice);
                 return <Tag tone={shown?.tone ?? 'muted'}>{shown?.label ?? r.test?.overall}</Tag>;
               } },
-              { key: 'calls', header: 'Tasks', width: '72px', numeric: true, render: (r) => (r.test ? String(r.test.totalTasks) : pastTasks(r.practice)) },
-              // Wider only when "Practice (sample)" can appear, so Sandbox-only lists look as before.
-              { key: 'kind', header: 'Kind', width: rows.some((r) => r.practice) ? '130px' : '90px', render: (r) => <span style={{ color: 'var(--tx2)' }}>{r.test ? (r.test.isTrial ? 'Demo' : 'Your agent') : pastKind(r.practice)}</span> },
+              { key: 'calls', header: 'Tasks', width: '72px', numeric: true, render: rowTasks },
+              { key: 'kind', header: 'Kind', width: '190px', render: (r) => <span style={{ color: 'var(--tx2)' }}>{rowKind(r)}</span> },
             ]}
-          />
+          />}
+          {hidden > 0 && (
+            <div className={s.pastMore}>
+              <button type="button" className={s.linkBtn} aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
+                {showAll ? 'Show fewer' : `Show all (${all.length})`}
+              </button>
+            </div>
+          )}
         </div>
       </Panel>
     </div>

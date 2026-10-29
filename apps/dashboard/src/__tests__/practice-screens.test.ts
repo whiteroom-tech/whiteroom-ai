@@ -305,23 +305,28 @@ describe('the Sandbox screens practice tests are added to', () => {
     { sandboxId: 's1', destroyedAt: '2026-10-10T10:00:00Z', overall: 'pass' as const, totalTasks: 6, isTrial: true },
   ];
 
-  it('Past tests without practice tests renders exactly as before', () => {
+  it('Past tests without practice tests renders the same with an empty practice list', () => {
     const before = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly }));
     expect(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: [] }))).toBe(before);
     expect(before).not.toContain('Practice');
-    expect(before).toContain('90px');
+    // Sandbox v2 phase 6: one Kind label per kind, and the old demo row waits behind Show all.
+    expect(before).toContain('>Connection test<');
+    expect(before).toContain('Show all (2)');
   });
 
   it('adds finished practice tests as rows, newest first; open ones stay on the card', () => {
     const rows = [...PRACTICE_ROWS, { ...PRACTICE_ROWS[0], id: 'r-00000000-0000-4000-8000-000000000000', lifecycle: 'active' as const, endedAt: null }];
-    const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows })));
-    expect(t).toMatch(/Passed 18\/18 Practice/);
+    const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewShowAll: true })));
+    expect(t).toMatch(/Passed 18\/18 Practice tasks/);
     // The failing row by name, from the engine's `failed` (no report fetched).
-    expect(t).toMatch(/Didn't pass · Fails gracefully 18\/18 Practice/);
-    expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice/);
-    expect(t).toMatch(/Didn't finish 2\/6 Practice \(sample\)/);
-    expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed 4 Your agent/);
+    expect(t).toMatch(/Didn't pass · Fails gracefully 18\/18 Practice tasks/);
+    expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice tasks/);
+    expect(t).toMatch(/Didn't finish 2\/6 Practice tasks \(sample\)/);
+    // A connection test shows its task count, as its detail does.
+    expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed 4 Connection test/);
+    expect(t).toMatch(/Passed 6 Connection test \(demo\)/);
     expect(t).toContain('Past tests 6');
+    expect(t).toContain('Show fewer');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));
     expect(text(open)).toMatch(/Practice test ended .* 12 of 12 checks passed .* WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days\. Open the result/);
   });

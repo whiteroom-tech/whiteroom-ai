@@ -630,7 +630,7 @@ export function pastTasks(row: PracticeRunRow): string {
   return total > 0 ? `${Math.min(finished, total)}/${total}` : '—';
 }
 
-export const pastKind = (row: Pick<PracticeRunRow, 'sample'>) => (row.sample ? 'Practice (sample)' : 'Practice');
+export const pastKind = (row: Pick<PracticeRunRow, 'sample'>) => (row.sample ? 'Practice tasks (sample)' : 'Practice tasks');
 
 export const RETENTION = 'WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days.';
 

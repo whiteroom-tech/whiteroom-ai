@@ -1,14 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Banner, Button, Icon, Panel, SkeletonCard, type IconName } from '@whiteroom/ui';
+import { ROUTES } from '@/lib/routes';
 import { RULE_LABELS } from '@/lib/governance';
 import { fmtWhen } from '@/lib/format';
 import { isStaleSandbox, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
-  checkAction, getCheckState, isOpen, passedLine, stageLine, STATUS_WORDS,
+  checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
+import { reportOf, reportSummary, RUN_PRACTICE, type ReportCard } from '@/lib/sandbox/check-report';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -173,16 +176,91 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
           <CheckList checks={state.checks} rules={state.rules} live />
         </>}
 
-        {state && w && ended && <>
-          <div className={v.report}>
-            <p className={v.reportHead}>{passedLine(state.checks)}</p>
-            <p className={v.text}>Checked {fmtWhen(w.startedAt, now)} · {w.calls === 1 ? '1 call' : `${w.calls.toLocaleString('en-US')} calls`}</p>
-          </div>
-          <CheckList checks={state.checks} rules={state.rules} live={false} />
-          {start('Check again')}
-        </>}
+        {state && w && ended && <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} again={start('Check again')} />}
       </div>
     </Panel>
+  );
+}
+
+type CopyState = 'idle' | 'copied' | 'failed';
+/** How long "Copied" or the copy error stays before the button resets. */
+export const COPY_RESET_MS = 2000;
+
+/** Puts text on the clipboard. Resolves false, never throws, when the browser has no clipboard or refuses. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The report once the window has ended (spec §2 step 5): "N of 7 passed",
+ * then one card per check — what we did, what your agent did, what to do
+ * next — with the rules it was judged on. Copy summary puts it on the
+ * clipboard as plain text, with keys, URLs and IDs hidden.
+ */
+export function ReportView({ state, checked, calls, again }: { state: CheckState; checked: string; calls: number; again: React.ReactNode }) {
+  const report = reportOf(state);
+  const [copied, setCopied] = useState<CopyState>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const attempt = useRef(0);
+  useEffect(() => () => { attempt.current += 1; clearTimeout(timer.current); }, []);
+  const copy = () => {
+    clearTimeout(timer.current);
+    const mine = ++attempt.current;
+    const show = (to: CopyState) => {
+      if (mine !== attempt.current) return; // a newer click, or unmounted
+      setCopied(to);
+      timer.current = setTimeout(() => setCopied('idle'), COPY_RESET_MS);
+    };
+    void copyText(reportSummary(report, { checked, calls })).then((ok) => show(ok ? 'copied' : 'failed'));
+  };
+  return <>
+    <div className={v.report}>
+      <p className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : ''}`} data-tone={report.tone}>{report.headline}</p>
+      <p className={v.text}>Checked {checked} · {calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`}</p>
+    </div>
+    <ul className={v.cards}>
+      {report.cards.map((c) => <ReportCardView key={c.id} card={c} />)}
+    </ul>
+    {again}
+    <div className={v.actions}>
+      <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
+      <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : ''}</span>
+    </div>
+  </>;
+}
+
+function ReportCardView({ card }: { card: ReportCard }) {
+  const mark = MARK[card.status];
+  const tone = mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : v.checkMuted;
+  return (
+    <li className={v.card} data-check={card.id} data-status={card.status}>
+      <div className={v.cardHead}>
+        <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={mark.icon} size={13} /></div>
+        <span className={s.checkName}>{card.label}</span>
+        <span className={v.cardStatus}>{STATUS_WORDS[card.status]}</span>
+      </div>
+      <dl className={v.cardFacts}>
+        <dt>What we did</dt>
+        <dd>{card.weDid}</dd>
+        <dt>What your agent did</dt>
+        <dd>{card.agentDid}</dd>
+        <dt>What to do next</dt>
+        <dd data-next>{card.next === RUN_PRACTICE
+          ? <><Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link> to check this.</>
+          : card.next}</dd>
+      </dl>
+      {card.rules.length > 0 && (
+        <ul className={v.cardRules}>
+          {card.rules.map((r, i) => <li key={i}>{r}</li>)}
+        </ul>
+      )}
+    </li>
   );
 }
 

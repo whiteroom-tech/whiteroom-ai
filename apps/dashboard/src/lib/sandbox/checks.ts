@@ -168,11 +168,6 @@ export const STATUS_WORDS: Record<CheckStatus, string> = {
   not_checked: 'Not checked',
 };
 
-/** "5 of 7 passed". */
-export function passedLine(checks: CheckResult[]): string {
-  return `${checks.filter((c) => c.status === 'passed').length} of ${checks.length} passed`;
-}
-
 /** The window is open: the page polls and shows the live list. */
 export const isOpen = (state: CheckState | null) => !!state?.window && !state.window.endedAt;
 

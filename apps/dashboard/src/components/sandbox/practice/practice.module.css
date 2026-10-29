@@ -43,3 +43,4 @@
 .member { padding:6px 0 0 12px; border-left:2px solid var(--line); margin:6px 0 0; }
 .memberName { color:var(--tx); font-weight:600; }
 .memberText { color:var(--tx2); line-height:1.5; }
+.intro { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; margin:0 0 20px; font-size:var(--fs-sm); }

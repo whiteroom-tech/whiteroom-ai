@@ -34,7 +34,7 @@ describe('Past tests open under the clicked row', () => {
   ];
 
   it('puts the details directly beneath the open row, linked by aria-controls', () => {
-    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests, previewOpen: 's1' }));
+    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests, previewOpen: 's1', previewShowAll: true }));
     const rows = [...html.matchAll(/<div role="row"[^>]*>/g)].map((m) => m[0]).slice(1);
     expect(rows).toHaveLength(4);
     // Row s2 closed, then s1 open, then its details, then s0.
@@ -56,7 +56,7 @@ describe('Past tests open under the clicked row', () => {
   });
 
   it('shows no details while every row is closed', () => {
-    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests }));
+    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests, previewShowAll: true }));
     expect(html).not.toContain('wr-table__expanded');
     expect(html).not.toContain('aria-controls');
     expect(html.match(/aria-expanded="false"/g)).toHaveLength(3);
