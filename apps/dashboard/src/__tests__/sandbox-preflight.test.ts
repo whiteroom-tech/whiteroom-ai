@@ -12,7 +12,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const {
-  CATALOG, defaultAgent, groupRows, headline, keepsConnectionTest, planRows, practiceBlock, PRACTICE_SUMMARY, preflightStep, ROW_GROUPS, ROWS,
+  CATALOG, defaultAgent, groupRows, headline, keepsConnectionTest, memberLine, passCaveat, planRows, plainSkip, practiceBlock, PRACTICE_SUMMARY, preflightStep, ROW_GROUPS, ROWS,
 } = await import('@/lib/sandbox/practice/model');
 const { DEMO_REPORT, DEMO_RESULT, DEMO_RUN } = await import('@/lib/sandbox/practice/demo');
 const { sandboxDestination } = await import('@/components/sandbox/SandboxEntry');
@@ -97,9 +97,30 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
     const r = groupRows({ ...report([]), checks: AGENT.map((c) => (c.id === 'c.timeout' ? { ...c, label: 'Saves once when a tool times out', status: 'failed' as const, summary: 'Passed in 2 of 3 runs.' } : c.id === 'b.result' ? { ...c, status: 'error' as const, testProblem: true, summary: 'Passed in 2 of 3 runs.' } : c)) });
     expect(row(r, 'fails_gracefully')).toMatchObject({ status: 'failed', reason: 'Saves once when a tool times out: Passed in 2 of 3 runs.' });
     expect(row(r, 'long_task')).toMatchObject({ status: 'not_checked', reason: 'Passed in 2 of 3 runs. (not your agent)' });
-    // One rule passed, another couldn't be checked: Not checked, never Passed.
+    // One rule passed, another couldn't be checked: Partly checked (Not checked underneath), never Passed.
     const mixed = groupRows(report([check('ctl.spend_cap.s1'), check('ctl.spend_cap.s2', { required: false, status: 'unsupported', summary: 'Not checked: too many calls to test cheaply.' })]));
-    expect(row(mixed, 'spend_cap')).toMatchObject({ status: 'not_checked', reason: 'Too many calls to test cheaply.' });
+    expect(row(mixed, 'spend_cap')).toMatchObject({ status: 'not_checked', reason: '1 of 2 rules passed · 1 not checked' });
+    expect(mixed.find((x) => x.row.id === 'spend_cap')).toMatchObject({ partial: true, noun: 'rule' });
+    // None checked: the first rule's reason, said plainly.
+    const none = groupRows(report([check('ctl.loop_breaker.l1', { required: false, status: 'unsupported', summary: 'Not checked: too many calls to test cheaply.' })]));
+    expect(row(none, 'loop_breaker')).toMatchObject({ status: 'not_checked', reason: 'It acts after more than 10 calls, too many to test cheaply. Rules that act within 10 are tested.' });
+  });
+
+  it('says why a rule wasn’t checked plainly, with what to do', () => {
+    expect(plainSkip('Not checked: checks use at most 3 agents.', 'ctl.spend_cap.s1')).toBe('One test uses up to 3 test agents, and earlier rules used them all.');
+    expect(plainSkip('Not checked: too many calls to test cheaply.', 'ctl.call_rate.c1')).toBe('It acts after more than 20 calls, too many to test cheaply. Rules that act within 20 are tested.');
+    expect(plainSkip('Not checked: no models are on the list yet.', 'ctl.model_allowlist.m1')).toBe('Its list is empty, so it doesn’t block anything yet. Add models in Controls.');
+    expect(plainSkip('Not checked: the sample agent only checks rules for all agents.', 'ctl.keyword.k1')).toBe('WhiteRoom’s sample agent only tests rules for all agents. Test your own agent to check this one.');
+    expect(plainSkip('Not checked: the rule is off.', 'ctl.keyword.k1')).toBe('The rule is off.');
+    expect(memberLine(check('ctl.tool_list.t1', { status: 'unsupported', summary: 'Not checked: no tools are on the list yet.' }))).toBe('Not checked · Its list is empty, so it doesn’t block anything yet. Add tools in Controls.');
+    expect(memberLine(check('ctl.keyword.k1', { status: 'unsupported', summary: 'Not set up for bot: the rule doesn’t cover it.' }))).toBe('Not set up for bot: the rule doesn’t cover it.');
+  });
+
+  it('a pass only claims the rows it fully checked', () => {
+    const skipped = (id: string) => check(id, { required: false, status: 'unsupported', summary: 'Not checked: too many calls to test cheaply.' });
+    const r = { ...DEMO_REPORT, verdict: 'passed' as const, scope: null, sample: true, runs: 1, checks: report([check('ctl.spend_cap.s1'), skipped('ctl.spend_cap.s2'), skipped('ctl.loop_breaker.l1'), check('ctl.pause_stop')]).checks };
+    expect(headline(r)).toBe('Passed · 4 of 6 fully checked · 1 run');
+    expect(passCaveat(r)).toBe('Not fully checked: Spend cap, Loop breaker + call rate. Each one below says why. This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.');
   });
 
   it('a rerun’s rows outside its scope weren’t part of it', () => {

@@ -104,7 +104,7 @@ describe('practice test setup: the agent’s model and where its calls go', () =
 describe('practice test results (§8)', () => {
   it('headlines each verdict', () => {
     const r = fullReport();
-    expect(headline(r)).toBe('Passed · all 12 checks · 3 runs');
+    expect(headline(r)).toBe('Passed · all 7 checks · 3 runs');
     expect(passCaveat(r)).toBeNull();
     expect(passCaveat({ ...r, runs: 1 })).toMatch(/Run it 3 times/);
     expect(passCaveat({ ...r, sample: true })).toMatch(/sample agent/);

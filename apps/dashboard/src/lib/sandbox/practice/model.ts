@@ -313,6 +313,31 @@ const plainNote = (note: string) => {
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 
+const SKIP_LIST: Record<string, string> = { model_allowlist: 'models', tool_list: 'tools', keyword: 'keywords' };
+/**
+ * Why a rule wasn't checked, from the engine's short note, said plainly with
+ * what to do: the limits are the catalog's. Notes it doesn't know stay as they are.
+ */
+export function plainSkip(note: string, checkId: string): string {
+  const t = plainNote(note);
+  const type = checkId.split('.')[1] ?? '';
+  const { limits, agentsMax } = CATALOG.controls;
+  if (/^Checks use at most \d+ agents/i.test(t)) return `One test uses up to ${agentsMax} test agents, and earlier rules used them all.`;
+  if (/^Too many calls to test cheaply/i.test(t)) {
+    const limit = (limits as Record<string, number>)[type];
+    return limit ? `It acts after more than ${limit} calls, too many to test cheaply. Rules that act within ${limit} are tested.` : 'Testing it would take too many calls.';
+  }
+  if (/^No (models|tools|keywords) are on the list yet/i.test(t)) return `Its list is empty, so it doesn’t block anything yet. Add ${SKIP_LIST[type] ?? 'items'} in Controls.`;
+  if (/^The sample agent only checks rules for all agents/i.test(t)) return 'WhiteRoom’s sample agent only tests rules for all agents. Test your own agent to check this one.';
+  return t;
+}
+
+/** A rule's line in a result: "Not checked · <why>" for a skipped one, else its status and what happened. */
+export function memberLine(c: PracticeCheck): string {
+  if (c.status === 'unsupported') return c.summary.startsWith('Not checked: ') ? `${STATUS_LABEL.unsupported} · ${plainSkip(c.summary, c.id)}` : c.summary;
+  return `${STATUS_LABEL[c.status]}${c.summary ? ` · ${c.summary}` : ''}`;
+}
+
 /** A row as a result shows it: one of four statuses, one plain reason, and the checks it was judged on. */
 export interface RowResult {
   row: PreflightRow;
@@ -321,6 +346,10 @@ export interface RowResult {
   /** Not set up: the way to add the rule is Controls. */
   addInControls: boolean;
   members: PracticeCheck[];
+  /** Not checked, but some of its rules passed: shown as "Partly checked". */
+  partial: boolean;
+  /** What its members are: a guardrail's are rules, the agent's and Pause/Stop's are checks. */
+  noun: 'rule' | 'check';
 }
 
 /**
@@ -334,7 +363,8 @@ export interface RowResult {
 export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResult[] {
   return ROWS.map((row) => {
     const members = membersOf(row, r.checks);
-    const out = (status: RowStatus, reason: string, addInControls = false): RowResult => ({ row, status, reason, addInControls, members });
+    const noun = isGuardrail(row) && row.id !== PAUSE_STOP ? 'rule' : 'check';
+    const out = (status: RowStatus, reason: string, addInControls = false, partial = false): RowResult => ({ row, status, reason, addInControls, members, partial, noun });
     if (!members.length) {
       if (r.scope) return out('not_checked', 'Not part of this rerun.');
       if (row.id === PAUSE_STOP) return out('not_checked', 'Pause and Stop aren’t on for this fleet.');
@@ -351,8 +381,11 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
       const mode = modeReason(live.map((c) => c.mode));
       return out('passed', `${mode ? `${mode}.` : 'Your rules worked.'}${tested}`);
     }
+    // Some rules passed and some weren't checked: say how many, each rule says why below.
+    const passed = live.filter((c) => c.status === 'passed').length;
+    if (noun === 'rule' && passed) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, false, true);
     const open = live.find((c) => c.status !== 'passed')!;
-    const why = open.status === 'unsupported' ? plainNote(open.summary) : open.summary || STATUS_LABEL[open.status];
+    const why = open.status === 'unsupported' ? plainSkip(open.summary, open.id) : open.summary || STATUS_LABEL[open.status];
     return out('not_checked', `${why}${open.testProblem ? ' (not your agent)' : ''}`);
   });
 }
@@ -390,7 +423,9 @@ export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
     if (!checked.length) return out('not_checked', plainNote(live.find((c) => c.note)?.note ?? 'Not checked.'), names);
     const modes = [...new Set(checked.map((c) => c.mode).filter(Boolean))].join(' and ');
     const calls = checked.reduce((n, c) => n + (c.calls ?? 0), 0);
-    return out('will_check', [members.length > 1 && counted(members.length, 'rule'), modes, calls ? counted(calls, 'extra call') : 'no extra calls'].filter(Boolean).join(' · '), names);
+    // Only the rules a test can check are promised: "3 of 7 rules" when the rest can't be.
+    const rules = checked.length < live.length ? `${checked.length} of ${counted(live.length, 'rule')}` : members.length > 1 && counted(members.length, 'rule');
+    return out('will_check', [rules, modes, calls ? counted(calls, 'extra call') : 'no extra calls'].filter(Boolean).join(' · '), names);
   });
 }
 
@@ -429,12 +464,23 @@ export function failedRowNames(failed: readonly string[]): string {
   return ROWS.filter((row) => failed.some((id) => rowOf(id) === row)).map((row) => row.name).join(', ');
 }
 
-/** "Passed · all 9 checks · 3 runs", "Didn't pass · Spend cap", "Didn't finish · 2 checks couldn't run (not your agent)". */
+/**
+ * The rows a passed test didn't fully check (partly or not at all), of those
+ * set up: a pass only claims the rows that passed (a rule not set up isn't a gap).
+ */
+export function notFullyChecked(r: PracticeReport): { names: string[]; of: number } {
+  const rows = groupRows(r).filter((x) => x.status !== 'not_set_up');
+  return { names: rows.filter((x) => x.status === 'not_checked').map((x) => x.row.name), of: rows.length };
+}
+
+/** "Passed · all 7 checks · 3 runs", "Passed · 4 of 7 fully checked · 1 run", "Didn't pass · Spend cap", "Didn't finish · 2 checks couldn't run (not your agent)". */
 export function headline(r: PracticeReport): string {
   const runs = counted(r.runs, 'run');
   if (r.verdict === 'passed') {
     const scope = r.scope && [...new Set(required(r).map((c) => c.scenario))].join(', ');
-    return `${VERDICT_LABEL.passed} · ${scope ? `${scope} only` : `all ${counted(required(r).length, 'check')}`} · ${runs}`;
+    if (scope) return `${VERDICT_LABEL.passed} · ${scope} only · ${runs}`;
+    const gaps = notFullyChecked(r);
+    return `${VERDICT_LABEL.passed} · ${gaps.names.length ? `${gaps.of - gaps.names.length} of ${gaps.of} fully checked` : `all ${counted(gaps.of, 'check')}`} · ${runs}`;
   }
   if (r.verdict === 'not_passed') return `${VERDICT_LABEL.not_passed} · ${failedRowNames(r.checks.filter((c) => c.status === 'failed').map((c) => c.id)) || `${counted(required(r).filter((c) => c.status === 'failed').length, 'check')} failed`}`;
   const open = openChecks(r);
@@ -445,9 +491,11 @@ export function headline(r: PracticeReport): string {
 /** What a passed result doesn't prove (Appendix D), or null. */
 export function passCaveat(r: PracticeReport): string | null {
   if (r.verdict !== 'passed') return null;
-  if (r.sample) return 'This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.';
-  if (r.runs === 1) return 'One run shows your agent can pass. Run it 3 times to see that it passes every time.';
-  return null;
+  const gaps = r.scope ? [] : notFullyChecked(r).names;
+  const notAll = gaps.length ? `Not fully checked: ${gaps.join(', ')}. Each one below says why. ` : '';
+  if (r.sample) return `${notAll}This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.`;
+  if (r.runs === 1) return `${notAll}One run shows your agent can pass. Run it 3 times to see that it passes every time.`;
+  return notAll.trim() || null;
 }
 
 /**

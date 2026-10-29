@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { CATALOG, ROW_GROUPS, STATUS_LABEL, type PreflightRow } from '@/lib/sandbox/practice/model';
+import { CATALOG, memberLine, ROW_GROUPS, type PreflightRow } from '@/lib/sandbox/practice/model';
 import type { PracticeCheck } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
@@ -30,8 +30,10 @@ export interface RowItem {
   addInControls?: boolean;
   /** What's under the row's <details>: its checks or rules. */
   details?: ReactNode;
-  /** The <details> summary: "3 checks". */
+  /** The <details> summary: "3 checks", "7 rules". */
   detailsLabel?: string;
+  /** Show the details without a click. */
+  open?: boolean;
 }
 
 function Row({ item }: { item: RowItem }) {
@@ -47,7 +49,7 @@ function Row({ item }: { item: RowItem }) {
           {item.addInControls && <> · <Link className={s.linkBtn} href={ROUTES.controls}>Add in Controls</Link></>}
         </div>
         {item.details && (
-          <details className={p.members}>
+          <details className={p.members} open={item.open}>
             <summary>{item.detailsLabel ?? 'Details'}</summary>
             {item.details}
           </details>
@@ -75,7 +77,7 @@ export function MemberCheck({ c }: { c: PracticeCheck }) {
   return (
     <div className={p.member}>
       <div className={p.memberName}>{c.mode ? `${c.label} · ${c.mode}` : c.label}</div>
-      <div className={p.memberText}>{c.status === 'unsupported' ? c.summary : `${STATUS_LABEL[c.status]}${c.summary ? ` · ${c.summary}` : ''}`}</div>
+      <div className={p.memberText}>{memberLine(c)}</div>
       {(c.status !== 'unsupported' || !control) && <div className={p.how}>How we know: {OBSERVERS[c.observer]}</div>}
     </div>
   );

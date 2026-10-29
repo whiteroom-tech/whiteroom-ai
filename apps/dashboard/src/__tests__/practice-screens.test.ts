@@ -37,7 +37,7 @@ describe('practice test screens', () => {
       'Model: claude-haiku-4-5, the one support-bot used most recently · Change', '2. What we’ll test', 'Never more than 130 calls, including control checks.',
       'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up',
       'Loop breaker + call rate Will be checked · 2 rules · Enforce and Watch · 8 extra calls', 'Spend cap Will be checked · Enforce · 1 extra call',
-      'Allowlists + keywords Will be checked · 2 rules · Enforce · no extra calls', 'Start test', 'No agent yet? Use our sample', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+      'Allowlists + keywords Will be checked · 1 of 2 rules · Enforce · no extra calls', 'Start test', 'No agent yet? Use our sample', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
     expect(render('setup')).toMatch(/<option value="support-bot" selected="">/);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
     // A fleet with no agents yet: the sample agent, since your agent needs to have called through WhiteRoom.
@@ -151,14 +151,14 @@ describe('practice test screens', () => {
 
   it('results: verdict, fixes, how we know, what was tested, next step, disclaimer and retention', () => {
     const passed = text(render('passed'));
-    for (const s of ['Passed · all 12 checks · 3 runs', 'The agent', 'The guardrails', 'Finishes the job correctly Passed · Passed in 3 of 3 runs.',
+    for (const s of ['Passed · all 7 checks · 3 runs', 'The agent', 'The guardrails', 'Finishes the job correctly Passed · Passed in 3 of 3 runs.',
       'Loop breaker + call rate Passed · Enforce: blocked. Watch: would have blocked.', 'Spend cap Passed · Enforce: blocked. Tested with a tiny limit.', "How we know: Checked against the test tools' records", 'How we know: Seen by WhiteRoom',
       'Call rate · Watch', 'Download report', 'What was tested', '(sent by the CLI, not verified)', 'Adapter (reported by the CLI)', DISCLAIMER,
       'Full details kept until', 'Test r-7f3a']) expect(passed).toContain(s);
     expect(text(render('passed-1run'))).toContain('Run it 3 times');
     const sample = text(render('passed-sample'));
     expect(sample).toContain('WhiteRoom’s sample agent, as support-bot');
-    expect(sample).toContain('Reports come from a test of your own agent.');
+    expect(sample).toContain('Download needs a test of your own agent.');
     expect(sample).not.toContain('Download report');
     const failed = text(render('failed'));
     expect(failed).toMatch(/Didn't pass · Fails gracefully.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
