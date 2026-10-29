@@ -288,7 +288,11 @@ export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDon
             <summary className={v.label}>On Windows (PowerShell)</summary>
             <div className={`${v.stack} ${v.reveal}`}>
               <CopyChip text={runLinePowerShell(issued.provider, issued.proxyUrl, command)} label="Copy the PowerShell line" />
-              <p className={v.text}>This sets it for that PowerShell window. Close the window when you’re done to stop using the Sandbox.</p>
+              <p className={v.text}>
+                {command.trim()
+                  ? 'The setting is cleared when your agent finishes.'
+                  : 'This sets it for that PowerShell window. Close the window when you’re done to stop using the Sandbox.'}
+              </p>
             </div>
           </details>
         </>}

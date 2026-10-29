@@ -185,11 +185,11 @@ export function runLine(provider: string, proxyUrl: string, command: string): st
   return /&&|\|\||[;|&\n]/.test(cmd) ? `(export ${name}="${value}"; ${cmd})` : `${name}="${value}" ${cmd}`;
 }
 
-/** The same for Windows PowerShell; the setting holds for that PowerShell window. */
+/** The same for Windows PowerShell: with a start command, the setting is cleared when it finishes; without one, it holds for that window. */
 export function runLinePowerShell(provider: string, proxyUrl: string, command: string): string {
   const { name, value } = sandboxSetting(provider, proxyUrl);
   const cmd = command.trim();
-  return cmd ? `$env:${name}="${value}"; ${cmd}` : `$env:${name}="${value}"`;
+  return cmd ? `$env:${name}="${value}"; ${cmd}; Remove-Item Env:${name}` : `$env:${name}="${value}"`;
 }
 
 export function providerLabel(provider: string): string {
