@@ -11,6 +11,7 @@
 // (lib/sandbox/fleet-server.ts). Only the engine's Sandbox rule actions are
 // called; production rules are read on Controls' own path, never written here.
 
+import { auth } from '@/auth';
 import { checkSameOrigin } from '@/lib/origin-check';
 import { readJsonBody, sandboxFleetOwner } from '@/lib/sandbox/fleet-server';
 import { isSandboxRulesAction } from '@/lib/sandbox/rules';
@@ -28,6 +29,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
   const { action } = await params;
   if (!isSandboxRulesAction(action)) return Response.json({ error: 'Not found.' }, { status: 404 });
 
+  // The cheap signed-in check before the body is read; the owner check needs the body's fleet.
+  if (!(await auth().catch(() => null))?.user?.id) return Response.json({ error: 'Sign in to use the Sandbox.' }, { status: 401 });
   const read = await readJsonBody(req, MAX_BODY_BYTES);
   if ('error' in read) return read.error;
 
