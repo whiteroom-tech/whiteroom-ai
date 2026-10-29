@@ -162,10 +162,12 @@ describe('Sandbox v2 page', () => {
   });
 
   it('a Sandbox changed elsewhere takes the key on screen with it', async () => {
-    bff.mockImplementation(async (url: string) => url.endsWith('/rotate')
-      ? Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' })
-      : url.endsWith('/reset') ? Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: 409 })
-      : Response.json(STATUS));
+    let changed = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/rotate')) return Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' });
+      if (url.endsWith('/reset')) { changed = true; return Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: 409 }); }
+      return Response.json(changed ? { ...STATUS, sandboxFleetId: 'sandbox-11111111-1111-4111-8111-111111111111' } : STATUS);
+    });
     await render({ fleet: 'prod-eu' });
     await click('Get a new Sandbox URL');
     await click('Rotate key');

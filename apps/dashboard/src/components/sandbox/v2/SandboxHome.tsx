@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, Panel, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
@@ -41,6 +41,9 @@ type Confirm = 'rotate' | 'reset' | null;
 /** /dev/sandbox-v2: a helper that isn't connected. */
 const NO_HELPER = { connected: false, host: null, connectedAt: null, lastSeenAt: null, queued: 0, running: false, recent: [], code: null, tasksThisHour: 0, tasksPerHour: 30 };
 
+/** Which Sandbox and key a status names; null when there's no key. */
+const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
+
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
 /**
@@ -61,12 +64,19 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [replacing, setReplacing] = useState(false);
   const [notice, setNotice] = useState('');
   const now = preview?.now ?? Date.now();
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   /** Reads the Sandbox again; `keepError` keeps the message of the action that prompted it. */
   const load = useCallback(async (keepError = false) => {
     setLoading(true);
     try {
-      setStatus(await getSandboxFleetStatus(fleet));
+      const next = await getSandboxFleetStatus(fleet);
+      // A different Sandbox or key than before (expired, reconnected elsewhere):
+      // the key on screen no longer works, so it goes.
+      const before = statusRef.current;
+      if (before && keyOf(before) !== keyOf(next)) setIssued(null);
+      setStatus(next);
       if (!keepError) setError('');
     } catch (e) {
       if (isUnavailable(e) && onUnavailable) { onUnavailable(); return; }
@@ -122,8 +132,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     } catch (e) {
       setError(message(e));
       // 404 / 409: the Sandbox changed under the page (expired, reconnected elsewhere).
-      // The key on screen belongs to that old Sandbox, so it goes too.
-      if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) { setIssued(null); void load(true); }
+      if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) void load(true);
     } finally {
       setBusy(false);
     }
