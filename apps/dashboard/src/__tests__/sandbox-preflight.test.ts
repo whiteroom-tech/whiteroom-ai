@@ -125,6 +125,10 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
     const r = { ...DEMO_REPORT, verdict: 'passed' as const, scope: null, sample: true, runs: 1, checks: report([check('ctl.spend_cap.s1'), skipped('ctl.spend_cap.s2'), skipped('ctl.loop_breaker.l1'), check('ctl.pause_stop')]).checks };
     expect(headline(r)).toBe('Passed · 4 of 6 fully checked · 1 run');
     expect(passCaveat(r)).toBe('Not fully checked: Spend cap, Loop breaker + call rate. Each one below says why. This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.');
+    // Pause and Stop off for the fleet: nothing to test, so no gap.
+    const allPassed = { ...r, checks: report([check('ctl.spend_cap.s1')]).checks };
+    expect(headline(allPassed)).toBe('Passed · all 4 checks · 1 run');
+    expect(passCaveat(allPassed)).toBe('This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.');
   });
 
   it('a rerun’s rows outside its scope weren’t part of it', () => {

@@ -470,7 +470,8 @@ export function failedRowNames(failed: readonly string[]): string {
  * set up: a pass only claims the rows that passed (a rule not set up isn't a gap).
  */
 export function notFullyChecked(r: PracticeReport): { names: string[]; of: number } {
-  const rows = groupRows(r).filter((x) => x.status !== 'not_set_up');
+  // A row with nothing to test (Pause and Stop off for the fleet) isn't a gap either.
+  const rows = groupRows(r).filter((x) => x.status !== 'not_set_up' && x.members.length);
   return { names: rows.filter((x) => x.status === 'not_checked').map((x) => x.row.name), of: rows.length };
 }
 
