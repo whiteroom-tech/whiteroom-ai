@@ -59,22 +59,25 @@ describe('Home agents: one list', () => {
 
 describe('Home agents: input', () => {
   const week = (agents: Record<string, object>) => ({ agents, calls: null, costUsd: null, partial: false, rules: null });
-  const ok = { audit: false, scores: false, rules: false, hourly: false, inputs: false };
+  const ok = { audit: false, scores: false, rules: false, hourly: false, inputs: [] as string[] };
 
   it('puts each agent’s input beside its week, by lower-case id', () => {
     const w = homeWeek(null, null, null, null, 0, { byAgent: { 'lead-agent': 1_364_000 } });
     expect(w.agents['lead-agent']).toEqual({ input: 1_364_000 });
   });
 
-  it('keeps saved and input from the same refresh when either read fails', () => {
-    const prev = week({ a: { used: 1, saved: 10, input: 100 } });
-    const next = week({ a: { used: 2, saved: 20, input: 200 } });
-    const noInput = week({ a: { used: 2, saved: 20 } });
+  it('keeps saved and input from the same refresh when either read fails, agent by agent', () => {
+    const prev = week({ a: { used: 1, saved: 10, input: 100 }, b: { used: 1, saved: 1, input: 1 } });
+    const next = week({ a: { used: 2, saved: 20, input: 200 }, b: { used: 2, saved: 2, input: 2 } });
+    const noInput = week({ a: { used: 2, saved: 20 }, b: { used: 2, saved: 2, input: 2 } });
     expect(keepLastGood(prev, next, ok).agents.a).toMatchObject({ saved: 20, input: 200 });
-    expect(keepLastGood(prev, noInput, { ...ok, inputs: true }).agents.a).toMatchObject({ saved: 10, input: 100 });
-    expect(keepLastGood(prev, next, { ...ok, audit: true }).agents.a).toMatchObject({ saved: 10, input: 100 });
+    // a's input read failed: its last pair stays; b's worked, so b moves on.
+    const one = keepLastGood(prev, noInput, { ...ok, inputs: ['a'] }).agents;
+    expect(one.a).toEqual({ used: 2, saved: 10, input: 100 });
+    expect(one.b).toEqual({ used: 2, saved: 2, input: 2 });
+    expect(keepLastGood(prev, next, { ...ok, audit: true }).agents.a).toEqual({ used: 1, saved: 10, input: 100 });
     // No pair yet: each moves on alone, so a failed audit read doesn't hide fresh input.
-    expect(keepLastGood(week({ a: { saved: 10 } }), noInput, { ...ok, inputs: true }).agents.a).toMatchObject({ saved: 20 });
+    expect(keepLastGood(week({ a: { saved: 10 } }), noInput, { ...ok, inputs: ['a'] }).agents.a).toMatchObject({ saved: 20 });
     expect(keepLastGood(week({ a: { saved: 10 } }), week({ a: { input: 200 } }), { ...ok, audit: true }).agents.a).toEqual({ saved: 10, input: 200 });
     expect(keepLastGood(week({}), week({ b: { input: 50 } }), { ...ok, audit: true }).agents.b).toEqual({ input: 50 });
   });

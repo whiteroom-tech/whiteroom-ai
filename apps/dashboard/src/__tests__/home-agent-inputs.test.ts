@@ -20,24 +20,25 @@ describe('agentInputs', () => {
     expect(api.agent).toHaveBeenCalledTimes(14);
     expect(api.agent.mock.calls[0]).toEqual(['f', 'agent-0', 170, 'k']);
     expect(most).toBe(6);
-    expect(out.failed).toBe(false);
+    expect(out.failed).toEqual([]);
     expect(Object.keys(out.byAgent)).toHaveLength(14);
     expect(out.byAgent['agent-13']).toBe(150);
   });
 
-  it('adds up ids that differ only in case, and flags a failed or refused read', async () => {
+  it('adds up ids that differ only in case, and names each agent whose read failed or was refused', async () => {
     api.agent.mockImplementation(async (_f: string, id: string) => {
-      if (id === 'down') throw new Error('down');
+      if (id === 'Down' || id === 'writer') throw new Error('down');
       if (id === 'refused') return { error: 'no' };
       return calls(id === 'Lead-Agent' ? 300 : 200);
     });
-    const out = await agentInputs('f', ['lead-agent', 'Lead-Agent', 'down', 'refused'], 24);
+    const out = await agentInputs('f', ['lead-agent', 'Lead-Agent', 'Down', 'refused', 'writer', 'WRITER'], 24);
+    // writer's other case read fine, but half a sum isn't its input: none, and it's named failed.
     expect(out.byAgent).toEqual({ 'lead-agent': 500 });
-    expect(out.failed).toBe(true);
+    expect(out.failed.sort()).toEqual(['down', 'refused', 'writer']);
   });
 
   it('leaves an agent out when the engine sends no input totals', async () => {
     api.agent.mockResolvedValue({ ...calls(0), totals: { calls: 1, costMicros: 0 } });
-    expect(await agentInputs('f', ['a'], 24)).toEqual({ byAgent: {}, failed: false });
+    expect(await agentInputs('f', ['a'], 24)).toEqual({ byAgent: {}, failed: [] });
   });
 });

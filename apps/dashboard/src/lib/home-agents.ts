@@ -103,22 +103,24 @@ function callsInput(r: AgentPerformanceResult | null): number | undefined {
 }
 
 /**
- * Each agent's input over the week's hours, by lower-case id. `failed` when any read failed,
- * so Home keeps the last figures rather than show some agents' input from another refresh.
+ * Each agent's input over the week's hours, by lower-case id. `failed`: the agents whose read
+ * failed, so Home keeps their last figures while the others move on.
  */
-export async function agentInputs(fleetId: string, ids: string[], hours: number, authKey?: string): Promise<{ byAgent: Record<string, number>; failed: boolean }> {
+export async function agentInputs(fleetId: string, ids: string[], hours: number, authKey?: string): Promise<{ byAgent: Record<string, number>; failed: string[] }> {
   const byAgent: Record<string, number> = {};
-  let failed = false;
+  const failed = new Set<string>();
   for (let i = 0; i < ids.length; i += INPUT_READS_AT_ONCE) {
     const batch = ids.slice(i, i + INPUT_READS_AT_ONCE);
     const reads = await Promise.all(batch.map((id) => performanceAgent(fleetId, id, hours, authKey).catch(() => null)));
     reads.forEach((r, j) => {
-      if (!r || r.error) { failed = true; return; }
+      if (!r || r.error) { failed.add(batch[j].toLowerCase()); return; }
       const n = callsInput(r);
       if (n !== undefined) byAgent[batch[j].toLowerCase()] = (byAgent[batch[j].toLowerCase()] ?? 0) + n;
     });
   }
-  return { byAgent, failed };
+  // An id that differs only in case and failed leaves that agent's sum short: none of it is new.
+  for (const id of failed) delete byAgent[id];
+  return { byAgent, failed: [...failed] };
 }
 
 /** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
@@ -164,10 +166,14 @@ export function homeWeek(
 }
 
 /** Which of the week's reads failed (null or an error); an engine that doesn't support a read hasn't failed. */
-export interface WeekFailures { audit: boolean; scores: boolean; rules: boolean; hourly: boolean; inputs?: boolean }
+export interface WeekFailures {
+  audit: boolean; scores: boolean; rules: boolean; hourly: boolean;
+  /** The agents (lower-case ids) whose input read failed. */
+  inputs?: string[];
+}
 
-export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null; inputs?: { failed: boolean } | null }): WeekFailures {
-  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error, inputs: !!r.inputs?.failed };
+export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null; inputs?: { failed: string[] } | null }): WeekFailures {
+  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error, inputs: r.inputs?.failed ?? [] };
 }
 
 /**
@@ -183,14 +189,17 @@ export function keepLastGood(prev: HomeWeek | null, next: HomeWeek, failed: Week
     const p = prev.agents[id] ?? {};
     const n = next.agents[id] ?? {};
     const w: AgentWeek = {};
-    // Saved and input sit side by side, so once there's a pair they come from the same refresh:
-    // when either read fails, the last pair stays. Before there's one, each moves on alone.
-    const keepPair = (failed.audit || failed.inputs) && p.input !== undefined;
-    const from = keepPair || failed.audit ? p : n;
-    if (from.used !== undefined) w.used = from.used;
-    if (from.saved !== undefined) w.saved = from.saved;
-    if (from.savedUsd !== undefined) w.savedUsd = from.savedUsd;
-    const input = keepPair || failed.inputs ? p.input : n.input;
+    // Saved and input sit side by side, so once an agent has a pair they come from the same
+    // refresh: when either of its reads fails, its last pair stays. Before there's one, each
+    // moves on alone.
+    const inputFailed = !!failed.inputs?.includes(id);
+    const keepPair = (failed.audit || inputFailed) && p.input !== undefined;
+    const audit = failed.audit ? p : n;
+    if (audit.used !== undefined) w.used = audit.used;
+    const pair = keepPair ? p : audit;
+    if (pair.saved !== undefined) w.saved = pair.saved;
+    if (pair.savedUsd !== undefined) w.savedUsd = pair.savedUsd;
+    const input = keepPair || inputFailed ? p.input : n.input;
     if (input !== undefined) w.input = input;
     const rules = failed.rules ? p.rules : n.rules;
     if (rules) w.rules = rules;
