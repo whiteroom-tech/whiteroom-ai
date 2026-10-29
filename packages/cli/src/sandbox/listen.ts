@@ -92,15 +92,25 @@ export function helperHost(name = hostname()): string {
   return name.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 64) || "computer";
 }
 
-/** What a task's adapter run reports back: ok and a summary of at most 2,000 characters. */
-export function taskResult(out: Outcome): { ok: boolean; summary: string } {
-  const cut = (s: string) => s.slice(0, SUMMARY_MAX);
+/** How long a deadline is, in plain words ("10 minutes", "1 second"). */
+const duration = (ms: number) => {
+  const [n, unit] = ms >= 60_000 && ms % 60_000 === 0 ? [ms / 60_000, "minute"] : [Math.max(1, Math.round(ms / 1000)), "second"];
+  return `${n} ${unit}${n === 1 ? "" : "s"}`;
+};
+
+/**
+ * What a task's adapter run reports back: ok and a summary of at most 2,000
+ * characters. Everything sent to WhiteRoom goes through clean(), so a provider
+ * key, the Sandbox key, the helper code or session the adapter echoes is never sent.
+ */
+export function taskResult(out: Outcome, taskMs = TASK_MS): { ok: boolean; summary: string } {
+  const cut = (s: string) => clean(s).slice(0, SUMMARY_MAX);
   switch (out.kind) {
     case "final": return { ok: true, summary: cut(out.output) };
     case "exited": return { ok: false, summary: cut(`Your adapter exited (${out.how}) before finishing.${out.tail.length ? ` Last output: ${out.tail.join(" / ")}` : ""}`) };
     case "broke": return { ok: false, summary: cut(`Your adapter ${out.why}.`) };
-    case "deadline": return { ok: false, summary: `Your agent didn't finish within ${TASK_MS / 60_000} minutes, so it was stopped.` };
-    default: return { ok: false, summary: "Stopped on the helper's computer." };
+    case "deadline": return { ok: false, summary: cut(`Your agent didn't finish within ${duration(taskMs)}, so it was stopped.`) };
+    default: return { ok: false, summary: cut("Stopped on the helper's computer.") };
   }
 }
 
@@ -231,7 +241,7 @@ export async function listen(a: ListenArgs): Promise<number> {
     }
     // Stopped here: disconnecting closes the task on the Sandbox page.
     if (out.kind === "stopped" || ended) return null;
-    const entry = { n, result: taskResult(out), sent: false };
+    const entry = { n, result: taskResult(out, taskMs), sent: false };
     done.set(task.taskId, entry);
     return sendResult(task.taskId, entry);
   };

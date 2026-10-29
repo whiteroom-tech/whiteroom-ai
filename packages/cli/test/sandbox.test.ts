@@ -41,6 +41,8 @@ for await (const line of rl) {
   break;
 }
 `);
+/** Answers with the secrets it can see: the provider key and its Sandbox URL (with the Sandbox key). */
+const ECHO = script("echo.mjs", `process.stdin.once("data", () => process.stdout.write(JSON.stringify({ type: "final", output: "key " + process.env.ANTHROPIC_API_KEY + " url " + process.env.ANTHROPIC_BASE_URL }) + "\\n"));`);
 const CRASH = script("crash.mjs", `process.stdin.once("data", () => { console.error("boom"); process.exit(4); });`);
 /** Records its pid, then answers after 400 ms (SLOW) or never (HANG). */
 const PID = join(dir, "pid");
@@ -247,6 +249,38 @@ describe("sandbox listen", () => {
     assert.match(r.stdout, /Helper stopped\. The Sandbox page shows it disconnected\./);
   });
 
+  for (const sig of ["SIGTERM", "SIGHUP"] as const) {
+    it(`${sig} disconnects and exits 0, like Ctrl+C`, async () => {
+      const st = await stub();
+      const r = await listen(st, {
+        during: (pid, out) => void waitFor(() => /Helper connected/.test(out())).then(() => process.kill(pid, sig)),
+      });
+      assert.equal(r.code, 0, r.stderr);
+      assert.equal(st.disconnects, 1);
+      assert.match(r.stdout, /Helper stopped\./);
+    });
+  }
+
+  it("a result post refused (401) ends listening with plain words (3), nothing announced", async () => {
+    const st = await stub({ tasks: ["once"], result: () => [401, { reason: "replaced" }] });
+    const r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /Another helper connected to this Sandbox, so this one stopped\./);
+    assert.doesNotMatch(r.stdout + r.stderr, /Task 1 finished|couldn't be sent|Something went wrong/);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("a final answer that echoes the provider key or Sandbox key is posted redacted", async () => {
+    const st = await stub({ tasks: ["echo"], endAfter: "session_lost" });
+    const r = await listen(st, { adapter: `node ${ECHO}` });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 1);
+    const posted = JSON.stringify(st.results);
+    for (const secret of [KEY, SANDBOX_KEY, HELPER_CODE, HELPER_SESSION]) assert.ok(!posted.includes(secret), `posted a secret: ${secret.slice(0, 8)}…`);
+    assert.equal(st.results[0].summary, `key [hidden] url ${st.url}/[hidden]`);
+    noSecrets(r.stdout + r.stderr);
+  });
+
   it("sends heartbeats while a task runs", async () => {
     const st = await stub({ tasks: ["slow"], endAfter: "session_lost" });
     const r = await listen(st, { adapter: `node ${SLOW}`, env: fast(st) });
@@ -269,8 +303,8 @@ describe("sandbox listen", () => {
     const st = await stub({ tasks: ["hang"], endAfter: "session_lost" });
     const r = await listen(st, { adapter: `node ${HANG}`, env: fast(st, { WHITEROOM_TEST_TASK_MS: "500" }) });
     assert.equal(r.code, 3, r.stderr);
-    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: false, summary: "Your agent didn't finish within 10 minutes, so it was stopped." }]);
-    assert.match(r.stdout, /Task 1 didn't finish: Your agent didn't finish within 10 minutes, so it was stopped\./);
+    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: false, summary: "Your agent didn't finish within 1 second, so it was stopped." }]);
+    assert.match(r.stdout, /Task 1 didn't finish: Your agent didn't finish within 1 second, so it was stopped\./);
     await adapterGone();
   });
 
@@ -368,6 +402,12 @@ describe("sandbox listen", () => {
     assert.equal(r.code, 2);
     assert.match(r.stderr, /This helper code doesn't work any more\./);
 
+    const unknown = await stub({ claim: [401, { reason: "something_new" }] });
+    r = await listen(unknown);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Update the CLI/);
+    assert.equal(unknown.disconnects, 0);
+
     const noKey = await stub({ claim: [409, { reason: "not_connected" }] });
     r = await listen(noKey);
     assert.equal(r.code, 2);
@@ -430,7 +470,8 @@ describe("sandbox listen units", () => {
 
   it("taskResult: ok only for a final answer, summaries capped at 2,000", () => {
     assert.deepEqual(taskResult({ kind: "final", output: "y".repeat(3000) }), { ok: true, summary: "y".repeat(2000) });
-    assert.equal(taskResult({ kind: "deadline" }).ok, false);
+    assert.equal(taskResult({ kind: "deadline" }).summary, "Your agent didn't finish within 10 minutes, so it was stopped.");
+    assert.match(taskResult({ kind: "deadline" }, 90_000).summary, /within 90 seconds/);
     assert.match(taskResult({ kind: "broke", why: "sent a line longer than 1 MiB" }).summary, /^Your adapter sent a line/);
   });
 });
