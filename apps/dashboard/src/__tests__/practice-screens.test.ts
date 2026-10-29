@@ -128,7 +128,7 @@ describe('practice test screens', () => {
   it('the terminal steps: set the key, then one command that carries the run code', () => {
     const html = render('code');
     const t = text(html);
-    const run = 'echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin';
+    const run = 'echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.1 practice run --adapter "node wr-adapter.mjs" --code-stdin';
     expect(t.indexOf('read -s ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY')).toBeLessThan(t.indexOf(run));
     // The commands are bash/zsh, as the CLI runs on macOS and Linux (WSL on Windows).
     expect(t).toContain('In a macOS or Linux terminal (on Windows, use WSL): paste your key once and press Enter. Nothing shows');
@@ -144,7 +144,7 @@ describe('practice test screens', () => {
     expect(html).toContain('aria-label="Copy the key command"');
     const sample = text(render('code-sample'));
     expect(sample).not.toContain('starter adapter');
-    expect(sample).toContain('echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.0 practice run --code-stdin');
+    expect(sample).toContain('echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.1 practice run --code-stdin');
     expect(sample).toContain('Any Anthropic or OpenAI key of yours works: it pays for the test’s calls. Using OpenAI? Put OPENAI_API_KEY in place of ANTHROPIC_API_KEY');
     const gone = text(render('code-gone'));
     expect(gone).toContain('The run code is shown only once, when it’s made. Get a new one to see the command.');
@@ -285,7 +285,7 @@ describe('practice tests on cloud providers (R7)', () => {
     expect(text(render('code-bedrock'))).toContain('read -s AWS_BEARER_TOKEN_BEDROCK && export AWS_BEARER_TOKEN_BEDROCK');
     expect(text(render('code-foundry'))).toContain('read -s ANTHROPIC_FOUNDRY_API_KEY && export ANTHROPIC_FOUNDRY_API_KEY');
     // From the run's own fields, so any tab names the key; the command picks its variable, so other keys set on the computer don't matter.
-    expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin --key-env AZURE_OPENAI_API_KEY');
+    expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.1 practice run --adapter "node wr-adapter.mjs" --code-stdin --key-env AZURE_OPENAI_API_KEY');
     expect(text(render('code'))).not.toContain('--key-env');
     expect(text(render('code-bedrock'))).toContain('AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d)');
     expect(text(render('code-foundry'))).toContain('ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f)');
