@@ -23,7 +23,7 @@ export interface SandboxChecksPreview {
 }
 
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
-export const RUN_NOW = 'Run your agent now — through the Sandbox URL — or use Run agent below.';
+export const RUN_NOW = 'Run your agent as you normally do. Checks start on its first call.';
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
@@ -44,7 +44,6 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   const [loading, setLoading] = useState(!preview);
   const [error, setError] = useState(preview?.error ?? '');
   const [busy, setBusy] = useState(false);
-  const [injectErrors, setInjectErrors] = useState(true);
   const now = preview?.now ?? Date.now();
   // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
   const staleRef = useRef(onStale);
@@ -79,12 +78,14 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
     void load();
   }, [load, preview]);
 
-  // While a window is open: read it every 5 seconds (30 when the tab is hidden), one read at a time.
-  // A state conflict or a failed read keeps polling; only a Sandbox that changed under the page stops it.
+  // Read the checks every 5 seconds (30 when the tab is hidden), one read at a time: a check starts
+  // on the agent's first call, so the page watches for one too. A state conflict or a failed read
+  // keeps polling; only a Sandbox that changed under the page stops it.
   const open = isOpen(state);
+  const loaded = state !== null;
   const windowId = state?.window?.id;
   useEffect(() => {
-    if (preview || !open) return;
+    if (preview || !loaded) return;
     let live = true;
     let pending = false;
     let stopped = false;
@@ -112,15 +113,15 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
     const onVisible = () => { if (!document.hidden && !pending) { clearTimeout(timer); void poll(); } };
     document.addEventListener('visibilitychange', onVisible);
     return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [preview, open, windowId, fleet, sandboxFleetId]);
+  }, [preview, loaded, windowId, fleet, sandboxFleetId]);
 
   async function act(action: 'start' | 'stop' | 'resume') {
-    if (preview) { setState((st) => previewStep(action, st, injectErrors, now)); return; }
+    if (preview) { setState((st) => previewStep(action, st, now)); return; }
     const req = ++latest.current;
     acting.current = true;
     setBusy(true); setError('');
     try {
-      const next = await checkAction(action, fleet, sandboxFleetId, action === 'start' ? injectErrors : undefined);
+      const next = await checkAction(action, fleet, sandboxFleetId);
       if (req === latest.current) setState(next);
     } catch (e) {
       setError(message(e));
@@ -137,15 +138,9 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   const w = state?.window ?? null;
   const ended = !!w?.endedAt;
 
-  const start = (label: string) => (
-    <div className={v.stack}>
-      <label className={v.check}>
-        <input type="checkbox" checked={injectErrors} onChange={(e) => setInjectErrors(e.target.checked)} disabled={busy} />
-        Test how my agent handles provider errors
-      </label>
-      <div className={v.actions}>
-        <Button size={36} variant="primary" onClick={() => void act('start')} busy={busy} busyLabel="Starting…">{label}</Button>
-      </div>
+  const again = (
+    <div className={v.actions}>
+      <Button size={32} onClick={() => void act('start')} busy={busy} busyLabel="Starting…">Check again</Button>
     </div>
   );
 
@@ -159,10 +154,12 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
         {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
 
         {state && !w && <>
+          <div className={v.stage} role="status" aria-live="polite">
+            <p className={v.stageText}>Waiting for your agent’s first call…</p>
+          </div>
           <p className={v.text}>
-            We watch your agent’s calls, then test each rule, a pause, a stop and a provider error. Your live agents aren’t touched.
+            {RUN_NOW} We watch its calls, then test each rule, a pause, a stop and a provider error. Your live agents aren’t touched.
           </p>
-          {start('Start checking')}
         </>}
 
         {state && w && !ended && <>
@@ -176,7 +173,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
           <CheckList checks={state.checks} rules={state.rules} live />
         </>}
 
-        {state && w && ended && <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} again={start('Check again')} />}
+        {state && w && ended && <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} again={again} />}
       </div>
     </Panel>
   );
@@ -316,11 +313,11 @@ function ruleWords(r: CheckRule, live: boolean): string {
 }
 
 /** /dev/sandbox-v2 only: what Start, Stop and Resume would show next. */
-function previewStep(action: 'start' | 'stop' | 'resume', st: CheckState | null, injectErrors: boolean, now: number): CheckState | null {
+function previewStep(action: 'start' | 'stop' | 'resume', st: CheckState | null, now: number): CheckState | null {
   if (!st) return st;
   if (action === 'start') {
     return {
-      window: { id: 'chk_preview', startedAt: new Date(now).toISOString(), endedAt: null, stage: 'observe', injectErrors, calls: 0 },
+      window: { id: 'chk_preview', startedAt: new Date(now).toISOString(), endedAt: null, stage: 'observe', injectErrors: true, calls: 0 },
       checks: st.checks.map((c) => ({ ...c, status: 'pending', detail: '' })),
       rules: [],
     };

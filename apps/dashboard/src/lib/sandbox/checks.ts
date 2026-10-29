@@ -154,7 +154,7 @@ export function stageLine(state: CheckState): string {
       return now ? `Testing ${now.label}…` : 'Testing your rules one at a time…';
     }
     case 'pause': return 'Paused your agent for 10 seconds…';
-    case 'stop': return 'Your agent is stopped. Press Resume to show a person can bring it back.';
+    case 'stop': return 'Your agent is stopped for 15 seconds, then it can call again. Resume lets it go now.';
     case 'errors': return 'Sending a provider error…';
     case 'done': return 'Done. Stop checking to see your report.';
   }
@@ -186,7 +186,8 @@ export async function getCheckState(fleet: string, sandboxFleetId: string): Prom
 }
 
 /** Start, Stop or Resume; then the current state (the answer's own, or a fresh read). */
-export async function checkAction(action: Exclude<SandboxChecksAction, 'status'>, fleet: string, sandboxFleetId: string, injectErrors?: boolean): Promise<CheckState> {
-  const data = await call(action, { fleet, sandboxFleetId, ...(action === 'start' && injectErrors !== undefined && { injectErrors }) });
+/** Start (Check again, provider-error test on), Stop or Resume. */
+export async function checkAction(action: Exclude<SandboxChecksAction, 'status'>, fleet: string, sandboxFleetId: string): Promise<CheckState> {
+  const data = await call(action, { fleet, sandboxFleetId });
   return checkStateOf(data) ?? getCheckState(fleet, sandboxFleetId);
 }

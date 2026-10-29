@@ -69,23 +69,18 @@ const checksEl = () => h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SAND
 const row = (id: string) => document.querySelector(`[data-check="${id}"]`);
 
 describe('Check your agent', () => {
-  it('no check yet: Start checking sends the provider-error toggle, on by default', async () => {
+  it('no check yet: no button; it waits for the first call and picks the check up when one starts', async () => {
+    vi.useFakeTimers();
     await render(checksEl());
-    expect(text()).toContain('Test how my agent handles provider errors');
-    const box = document.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    expect(box.checked).toBe(true);
-    checks = checkAnswer({ stage: 'observe', calls: 0 });
-    await click('Start checking');
-    expect(calls().find((c) => c.url.endsWith('/checks/start'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, injectErrors: true });
-    expect(text()).toContain('Watching your agent’s calls…');
+    expect(text()).toContain('Waiting for your agent’s first call…');
     expect(text()).toContain(RUN_NOW);
-  });
-
-  it('turning the toggle off sends injectErrors: false', async () => {
-    await render(checksEl());
-    await act(async () => { (document.querySelector('input[type="checkbox"]') as HTMLInputElement).click(); });
-    await click('Start checking');
-    expect(calls().find((c) => c.url.endsWith('/checks/start'))?.body.injectErrors).toBe(false);
+    expect(button('Start checking')).toBeUndefined();
+    expect(document.querySelector('input[type="checkbox"]')).toBeNull();
+    checks = checkAnswer({ stage: 'observe', calls: 1 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await flush();
+    expect(text()).toContain('Watching your agent’s calls…');
+    expect(calls().some((c) => c.url.endsWith('/checks/start'))).toBe(false);
   });
 
   it('renders each check with its status and detail, and the rules under it', async () => {
@@ -119,7 +114,7 @@ describe('Check your agent', () => {
     root = createRoot(document.body.appendChild(document.createElement('div')));
     checks = checkAnswer({ stage: 'stop' });
     await render(checksEl());
-    expect(text()).toContain('Your agent is stopped. Press Resume to show a person can bring it back.');
+    expect(text()).toContain('Your agent is stopped for 15 seconds, then it can call again. Resume lets it go now.');
     checks = checkAnswer({ stage: 'errors' }, { pause_stop: 'passed' });
     await click('Resume');
     expect(calls().find((c) => c.url.endsWith('/checks/resume'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
@@ -149,7 +144,7 @@ describe('Check your agent', () => {
     }
   });
 
-  it('polls every 5 seconds while the window is open, and stops when it ends', async () => {
+  it('polls every 5 seconds, and keeps watching after a check ends (a later call starts the next)', async () => {
     vi.useFakeTimers();
     checks = checkAnswer({ stage: 'observe' });
     await render(checksEl());
@@ -162,9 +157,9 @@ describe('Check your agent', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(reads()).toBe(3);
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
-    expect(reads()).toBe(3);
+    expect(reads()).toBe(4);
     // The report: N of 7 passed, a check never reached reads Not checked, and Check again.
     expect(text()).toContain('2 of 7 passed');
     expect(row('long_task')?.textContent).toContain('Not checked');
@@ -181,10 +176,22 @@ describe('Check your agent', () => {
     expect(text()).toContain('1 of 7 passed');
   });
 
-  it('a refused Start shows why and reads the checks again', async () => {
+  it('Check again after a report starts a new check and shows it live', async () => {
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
+    await render(checksEl());
+    expect(text()).toContain('1 of 7 passed');
+    checks = checkAnswer({ stage: 'observe', calls: 0 });
+    await click('Check again');
+    expect(calls().find((c) => c.url.endsWith('/checks/start'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
+    expect(text()).toContain('Watching your agent’s calls…');
+    expect(button('Stop checking')).toBeDefined();
+  });
+
+  it('a refused Check again shows why and reads the checks again', async () => {
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
     bff.mockImplementationOnce(async () => Response.json({ error: 'A check is already running.' }, { status: 409 }));
-    await click('Start checking');
+    await click('Check again');
     expect(text()).toContain('A check is already running.');
     expect(calls().filter((c) => c.url.endsWith('/checks/status')).length).toBe(2);
   });
@@ -348,12 +355,14 @@ describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-ren
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(statusReads()).toBe(1);
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await act(async () => { answer(); });
     await flush();
     expect(text()).toContain('1 of 7 passed');
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    // Polling carries on after the action, and the report stays.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
-    expect(statusReads()).toBe(1);
+    expect(statusReads()).toBe(2);
     expect(text()).toContain('1 of 7 passed');
   });
 
@@ -480,11 +489,12 @@ describe('Sandbox page', () => {
     await render(h(SandboxHome, { fleet: 'prod-eu' }));
     expect(text()).toContain('Your agent called the Sandbox 42 times outside a check in the last day. Sandbox rules only watch then, so nothing was blocked.');
     expect(text()).toContain('4. Check your agent');
-    expect(text()).toContain('Run agent');
+    // Like production: no Run agent helper on the page.
+    expect(text()).not.toContain('Run agent');
     expect(document.body.innerHTML).not.toContain('href="/controls');
   });
 
-  it.each(Object.keys(SANDBOX_V2_STATES).filter((k) => k.startsWith('checks-') || k.startsWith('helper-') || k === 'outside-window') as (keyof typeof SANDBOX_V2_STATES)[])(
+  it.each(Object.keys(SANDBOX_V2_STATES).filter((k) => k.startsWith('checks-') || k === 'outside-window') as (keyof typeof SANDBOX_V2_STATES)[])(
     '/dev/sandbox-v2 %s renders without fetching or linking to Controls',
     async (state) => {
       await render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES[state] }));

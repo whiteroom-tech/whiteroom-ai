@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, Panel, SegmentedControl, SkeletonCard } from '@whiteroom/ui';
+import { Banner, Button, Panel, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip } from '@/components/citadel/CopyChip';
@@ -10,13 +10,12 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
 import {
-  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, runLine, runLinePowerShell, sandboxSetting,
+  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, sandboxSetting,
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
 import { checkStateOf } from '@/lib/sandbox/checks';
 import { SandboxChecks, type SandboxChecksPreview } from './SandboxChecks';
-import { SandboxHelper, type SandboxHelperPreview } from './SandboxHelper';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -31,15 +30,11 @@ export interface SandboxHomePreview {
   now?: number;
   /** Step 3, once connected. */
   rules?: SandboxRulesPreview;
-  /** Step 4 and Run agent, once connected. */
+  /** Step 4, once connected. */
   checks?: SandboxChecksPreview;
-  helper?: SandboxHelperPreview;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
-
-/** /dev/sandbox-v2: a helper that isn't connected. */
-const NO_HELPER = { connected: false, host: null, connectedAt: null, lastSeenAt: null, queued: 0, running: false, recent: [], code: null, tasksThisHour: 0, tasksPerHour: 30 };
 
 /** Which Sandbox and key a status names; null when there's no key. */
 const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
@@ -196,13 +191,6 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
             onStale={reload}
           />
-          <SandboxHelper
-            key={`helper-${connected.sandboxFleetId}`}
-            fleet={fleet}
-            sandboxFleetId={connected.sandboxFleetId}
-            preview={preview ? preview.helper ?? { status: { ...NO_HELPER }, now } : undefined}
-            onStale={reload}
-          />
         </>}
 
         {connected && (
@@ -257,73 +245,25 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   </>;
 }
 
-type RunsOn = 'computer' | 'server' | 'tool';
-const RUNS_ON: Array<{ value: RunsOn; label: string }> = [
-  { value: 'computer', label: 'This computer' },
-  { value: 'server', label: 'A server' },
-  { value: 'tool', label: 'Another tool' },
-];
-/** Step 2 right after connect or rotate: one line to copy for where the agent runs, on screen until the page is left. */
+/** Step 2 right after connect or rotate: the line for the agent's settings, on screen until the page is left. */
 export function PointPanel({ issued }: { issued: IssuedSandboxKey }) {
-  const [runsOn, setRunsOn] = useState<RunsOn>('computer');
-  const [command, setCommand] = useState('');
   const setting = sandboxSetting(issued.provider, issued.proxyUrl);
   return (
     <Panel title="2. Point your agent">
       <div className={v.stack}>
         <Banner variant="warn">Copy this before you leave this page. We can’t show your Sandbox URL again after that.</Banner>
-        <p className={v.label} aria-hidden>Where does your agent run?</p>
-        <div className={v.segment}>
-          <SegmentedControl<RunsOn> label="Where does your agent run?" value={runsOn} onChange={setRunsOn} options={RUNS_ON} />
-        </div>
-        {runsOn === 'computer' && <>
-          <label className={v.label} htmlFor="sandbox-start-command">How do you start your agent?</label>
-          <input
-            id="sandbox-start-command"
-            className={s.formInput}
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            autoCapitalize="none"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            placeholder="python my_agent.py"
-          />
-          <p className={v.label}>Run this in your terminal</p>
-          <CopyChip text={runLine(issued.provider, issued.proxyUrl, command)} label="Copy the run line" />
-          <p className={v.text}>
-            {command.trim()
-              ? 'Your agent uses the Sandbox for this run only. Nothing in its settings changes.'
-              : 'Then start your agent in this terminal. Or type how you start it above to get one line.'}
-          </p>
-          <details>
-            <summary className={v.label}>On Windows (PowerShell)</summary>
-            <div className={`${v.stack} ${v.reveal}`}>
-              <CopyChip text={runLinePowerShell(issued.provider, issued.proxyUrl, command)} label="Copy the PowerShell line" />
-              <p className={v.text}>
-                {command.trim()
-                  ? 'Your earlier setting comes back when your agent finishes or you stop it.'
-                  : 'This sets it for that PowerShell window. Close the window when you’re done to stop using the Sandbox.'}
-              </p>
-            </div>
-          </details>
-        </>}
-        {runsOn === 'server' && <>
-          <p className={v.label}>Set this in a test or staging deploy of your agent</p>
-          <CopyChip text={`${setting.name}=${setting.value}`} label="Copy the setting" />
-          <p className={v.text}>Then run it as normal. Keep production as it is.</p>
-        </>}
-        {runsOn === 'tool' && <>
-          <p className={v.label}>Paste this as the tool’s base URL</p>
-          <CopyChip text={setting.value} label="Copy the Sandbox URL" />
-        </>}
+        <p className={v.label}>Put this in your agent’s .env (or wherever it reads its settings)</p>
+        <CopyChip text={`${setting.name}=${setting.value}`} label="Copy the setting" />
         <p className={v.text}>
           {issued.keyHint ? <>Your agent keeps using its own key (ending {issued.keyHint}). </> : <>Your agent keeps using its own key. </>}
-          Press Start checking in step 4 first, so its calls are checked.
+          Then run your agent as normal. Checks start on its first call.
         </p>
         <details>
-          <summary className={v.label}>Sandbox key, if a tool asks for it</summary>
-          <div className={v.reveal}><CopyChip text={issued.proxyKey} label="Copy the Sandbox key" /></div>
+          <summary className={v.label}>Sandbox URL and key, if a tool asks for them</summary>
+          <div className={`${v.stack} ${v.reveal}`}>
+            <CopyChip text={setting.value} label="Copy the Sandbox URL" />
+            <CopyChip text={issued.proxyKey} label="Copy the Sandbox key" />
+          </div>
         </details>
         <AgentNaming {...agentNamingFor(issued.provider)} />
       </div>

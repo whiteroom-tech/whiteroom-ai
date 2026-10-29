@@ -1,9 +1,7 @@
 import type { SandboxHomePreview } from '@/components/sandbox/v2/SandboxHome';
 import type { SandboxRulesPreview } from '@/components/sandbox/v2/SandboxRules';
 import type { SandboxChecksPreview } from '@/components/sandbox/v2/SandboxChecks';
-import type { SandboxHelperPreview } from '@/components/sandbox/v2/SandboxHelper';
 import { CHECK_IDS, CHECK_NAMES, type CheckId, type CheckRule, type CheckStage, type CheckStatus } from '@/lib/sandbox/checks';
-import type { HelperStatus } from '@/lib/sandbox/helper';
 import { previewReadyMade } from '@/lib/sandbox/rules';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -77,21 +75,6 @@ const PAUSED: Results = { ...ENFORCED };
 const RESUMED: Results = { ...ENFORCED, pause_stop: ['passed', 'Carried on after a 10-second pause, and came back when you pressed Resume.'] };
 const FINISHED: Results = { ...RESUMED, provider_errors: ['failed', 'Your agent retried 6 times in 4 seconds after a provider error. Add a back-off.'] };
 
-// Run agent: the helper.
-const helper = (over: Partial<HelperStatus> = {}, extra: Partial<SandboxHelperPreview> = {}): SandboxHelperPreview => ({
-  status: { connected: false, host: null, connectedAt: null, lastSeenAt: null, queued: 0, running: false, recent: [], code: null, tasksThisHour: 0, tasksPerHour: 30, ...over },
-  now: NOW,
-  ...extra,
-});
-const HELPER_ON: Partial<HelperStatus> = {
-  connected: true, host: 'dev-laptop.local', connectedAt: new Date(NOW - 20 * 60_000).toISOString(), lastSeenAt: new Date(NOW - 10_000).toISOString(),
-  tasksThisHour: 3,
-  recent: [
-    { id: 'task_preview_3', prompt: 'Summarize the three newest support tickets.', ok: null, summary: '', at: new Date(NOW - 30_000).toISOString() },
-    { id: 'task_preview_2', prompt: 'Draft a reply to ticket 4821.', ok: true, summary: 'Finished in 41 s · 12 calls.', at: new Date(NOW - 9 * 60_000).toISOString() },
-    { id: 'task_preview_1', prompt: 'Close stale tickets older than 30 days.', ok: false, summary: 'Your agent exited with code 1 after 3 calls.', at: new Date(NOW - 18 * 60_000).toISOString() },
-  ],
-};
 const live = (extra: Partial<SandboxHomePreview>): SandboxHomePreview => ({ status: connected(new Date(NOW - 60_000).toISOString()), rules: rules({}), now: NOW, ...extra });
 
 export const SANDBOX_V2_STATES = {
@@ -121,10 +104,10 @@ export const SANDBOX_V2_STATES = {
   'rules-editing': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString() }, { editing: 'gr_preview_copy_models' }), now: NOW },
   /** Step 3: the rules couldn't be read. */
   'rules-error': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules(null, { error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }), now: NOW },
-  /** Step 4: no check yet, Start checking with the provider-error toggle. */
+  /** Step 4: no check yet, waiting for the agent's first call. */
   'checks-ready': live({ checks: checkState(null, {}) }),
   /** Step 4: just started, no calls yet. */
-  'checks-waiting': live({ checks: checkState('observe', {}, { calls: 0 }), helper: helper({}) }),
+  'checks-waiting': live({ checks: checkState('observe', {}, { calls: 0 }) }),
   /** Step 4: watching the agent's calls. */
   'checks-observe': live({ checks: checkState('observe', OBSERVED, { calls: 6 }) }),
   /** Step 4: enforcing one rule at a time (spend cap passed, allowlist next). */
@@ -141,14 +124,6 @@ export const SANDBOX_V2_STATES = {
   'checks-report': live({ checks: checkState('done', FINISHED, { ended: true, rules: RULES, calls: 31 }) }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
-  /** Run agent: no helper, no code yet. */
-  'helper-not-connected': live({ helper: helper() }),
-  /** Run agent: a code just handed out, shown once. */
-  'helper-code': live({ helper: helper({ code: { expiresAt: new Date(NOW + 10 * 60_000).toISOString(), triesLeft: 3 } }, { code: { code: 'ABCD-1234', codeExpiresAt: new Date(NOW + 10 * 60_000).toISOString() } }) }),
-  /** Run agent: connected, a task running and two finished. */
-  'helper-connected': live({ checks: checkState('observe', OBSERVED, { calls: 6 }), helper: helper({ ...HELPER_ON, running: true, queued: 1 }, { prompt: 'Summarize the three newest support tickets.' }) }),
-  /** Run agent: the hourly limit. */
-  'helper-limit': live({ helper: helper({ ...HELPER_ON, tasksThisHour: 30 }, { error: 'That’s the limit for this hour. Try again in 12 min.' }) }),
   /** The Sandbox card: an agent called outside a check. */
   'outside-window': live({ status: { ...connected(new Date(NOW - 60_000).toISOString()), callsOutsideWindow24h: 42, lastCallOutsideWindowAt: new Date(NOW - 60_000).toISOString() } }),
 } satisfies Record<string, SandboxHomePreview>;
