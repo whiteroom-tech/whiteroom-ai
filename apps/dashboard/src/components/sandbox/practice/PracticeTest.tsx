@@ -36,6 +36,8 @@ type Confirm = { kind: 'end'; id: string } | { kind: 'rerun'; start: PracticeSta
 export interface PracticePreview {
   fleet: string;
   setup?: SetupData;
+  /** Which test setup starts on: the guardrails test unless a state shows the own-agent one. */
+  test?: 'guardrails' | 'agent';
   model?: string | null;
   /** Where the agent's calls go (source-model); unknown when left out. */
   provider?: PracticeSourceProvider;
@@ -343,7 +345,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
           <StepsRail steps={PREFLIGHT_STEPS} current={preflightStep(view, run)} label="Pre-flight steps" />
           <div className={s.body}>
             {view === 'setup' && fleet && setup && <>
-              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
+              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} ownAgent={preview?.test === 'agent'} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
               <PastTests preview={preview ? [] : undefined} practice={rows ?? undefined} />
             </>}
             {view === 'run' && run && (

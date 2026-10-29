@@ -3,7 +3,7 @@
 import { type RefObject, useState } from 'react';
 import { CopyButton, FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, BETA_INSTALL, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, liveRows, lostContact, progressLine, type PracticeKeyChoice, type StarterLang,
+  ADAPTER_EXPLAINER, ADAPTER_HELP_URL, BETA_INSTALL, CATALOG, cliCommands, CLI_ON_NPM, codeCountdown, keyLine, liveRows, lostContact, progressLine, setKeyCommand, type PracticeKeyChoice, type StarterLang,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
@@ -29,8 +29,8 @@ function Command({ text, label }: { text: string; label: string }) {
 
 /**
  * The terminal steps (Appendix D): install (beta), the starter adapter (own
- * agent), the exact command, then the run code it asks for. The run code is
- * never part of a command and is shown only from this page's memory.
+ * agent), the key, then one command that carries the run code. The code is
+ * shown only from this page's memory.
  */
 function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
   run: PracticeRun;
@@ -42,10 +42,14 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
 }) {
   const [lang, setLang] = useState<StarterLang>('js');
   // --key-env only for a provider the engine named, or a Fleet key key: setup's guess for the fleet's own key could be wrong.
-  const cmd = cliCommands(run.sample, lang, run.provider || keyChoice?.fleetKey ? keyChoice?.provider : null);
   const left = code ? codeCountdown(code.codeExpiresAt, now) : null;
+  const cmd = cliCommands(run.sample, lang, run.provider || keyChoice?.fleetKey ? keyChoice?.provider : null, code && left ? code.code : null);
   const tries = run.codeTriesLeft;
-  const key = keyLine(keyChoice, run.sourceFleetId);
+  const key = keyLine(keyChoice, run.sourceFleetId, run.sample);
+  // The key's variable: the run's provider when known, else Anthropic's (OpenAI's named beside it).
+  const keyVar = CATALOG.providers[keyChoice?.provider ?? 'anthropic'].keyVar;
+  // Provider not known (any key for the guardrails test, or an own-agent run whose provider isn't known yet): OpenAI's variable is offered beside Anthropic's.
+  const other = !keyChoice ? CATALOG.providers.openai.keyVar : null;
   let n = 0;
   return <>
     {!CLI_ON_NPM && (
@@ -69,19 +73,24 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
       </div>
     )}
     <div className={p.step}>
-      <p className={p.stepTitle}>{++n}. Run the test</p>
-      <Command text={cmd.run} label="Copy the test command" />
-      <p className={p.meta}>Needs Node 20 or later. {key.before}<code>{key.keyVar}</code>{key.after} Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.</p>
-      <p className={p.meta}>If the terminal says <code>Unknown command: practice</code>, an older WhiteRoom CLI ran instead: {CLI_ON_NPM ? 'copy the command again, it names the right version.' : 'install the beta above, then run the command again.'}</p>
+      <p className={p.stepTitle}>{++n}. Set your key in the terminal</p>
+      <Command text={setKeyCommand(keyVar)} label="Copy the key command" />
+      <p className={p.meta}>
+        In a macOS or Linux terminal (on Windows, use WSL): paste your key once and press Enter. Nothing shows, and it isn’t kept in your shell history.{' '}
+        {run.sample ? 'Any Anthropic or OpenAI key of yours works: it pays for the test’s calls.' : <>{key.before}<code>{key.keyVar}</code>{key.after}</>}
+        {other && <> Using OpenAI? Put <code>{other}</code> in place of <code>{keyVar}</code>.</>} Skip this if it’s already set in this terminal.
+      </p>
     </div>
     <div className={p.step}>
-      <p className={p.stepTitle}>{++n}. Paste this run code when it asks</p>
+      <p className={p.stepTitle}>{++n}. Run the test</p>
       {code && left ? <>
-        <Command text={code.code} label="Copy run code" />
+        <Command text={cmd.run} label="Copy the test command" />
         <p className={p.meta}>
-          Expires in {left}{tries !== null && tries < 5 ? <> · <span className={p.warnText}>{tries} {plural(tries, 'try', 'tries')} left with the wrong key</span></> : null} · Works once.
+          It includes your run code: expires in {left}{tries !== null && tries < 5 ? <> · <span className={p.warnText}>{tries} {plural(tries, 'try', 'tries')} left with the wrong key</span></> : null} · works once.
+          {' '}Needs Node 20 or later. Keep the terminal open and your computer awake. If calls are refused by a network limit, run it from another network.
         </p>
-      </> : <p className={p.meta}>{code ? 'This run code has expired.' : 'The run code is shown only once, when it’s made. Get a new one to see it here.'}</p>}
+        <p className={p.meta}>If the terminal says <code>Unknown command: practice</code>, an older WhiteRoom CLI ran instead: {CLI_ON_NPM ? 'copy the command again, it names the right version.' : 'install the beta above, then run the command again.'}</p>
+      </> : <p className={p.meta}>{code ? 'This run code has expired.' : 'The run code is shown only once, when it’s made.'} Get a new one to see the command.</p>}
       <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={onNewCode} style={{ marginTop: 8, fontSize: 'var(--fs-sm)' }}>Get a new run code</button>
     </div>
   </>;

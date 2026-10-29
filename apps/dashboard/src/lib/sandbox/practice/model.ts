@@ -73,17 +73,25 @@ const STARTER_RUN: Record<StarterLang, string> = { js: 'node wr-adapter.mjs', py
 export const BETA_INSTALL = CLI_ON_NPM ? [] : [`shasum -a 256 ${BETA_TGZ}`, `npm install -g ./${BETA_TGZ}`];
 
 /**
- * The commands the terminal steps show. The run code is never part of one
- * (§10 CLI): the CLI asks for it. With the run's provider known, `--key-env`
- * names its key's variable, so a computer with several keys set isn't refused.
+ * The commands the terminal steps show. With the run's provider known,
+ * `--key-env` names its key's variable, so a computer with several keys set
+ * isn't refused. With a run code, the run command carries it on stdin
+ * (`--code-stdin`) so the whole test is one paste: owner decision (Oct 28),
+ * as a hidden paste failed in practice. The code works once and expires in
+ * 30 minutes, so its copy in shell history is spent.
  */
-export function cliCommands(sample: boolean, lang: StarterLang, provider: PracticeProvider | null = null): { starter: string | null; run: string } {
+export function cliCommands(sample: boolean, lang: StarterLang, provider: PracticeProvider | null = null, code: string | null = null): { starter: string | null; run: string } {
   const keyEnv = provider ? ` --key-env ${CATALOG.providers[provider].keyVar}` : '';
+  const pipe = code ? `echo ${code} | ` : '';
+  const stdin = code ? ' --code-stdin' : '';
   return {
     starter: sample ? null : `${CLI} practice adapter --lang ${lang} > ${STARTER_FILE[lang]}`,
-    run: sample ? `${CLI} practice run${keyEnv}` : `${CLI} practice run --adapter "${STARTER_RUN[lang]}"${keyEnv}`,
+    run: sample ? `${pipe}${CLI} practice run${stdin}${keyEnv}` : `${pipe}${CLI} practice run --adapter "${STARTER_RUN[lang]}"${stdin}${keyEnv}`,
   };
 }
+
+/** Sets a key in the terminal without showing it or keeping it in shell history: paste once, then Enter. */
+export const setKeyCommand = (keyVar: string) => `read -s ${keyVar} && export ${keyVar}`;
 
 /** The models the sample agent uses unless setup names one (the JS starter's own choice, by key). */
 export const SAMPLE_MODELS = { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' } as const;
@@ -164,13 +172,14 @@ export function keyOptions(src: PracticeSource): { keys: PracticeProviderKey[]; 
  */
 export function practiceBlock(src: PracticeSource, o: { sample: boolean; hasKey: boolean }): 'role' | 'host' | 'cloud' | null {
   if (src.blocked === 'bedrock_role') return 'role';
-  if (src.provider === 'proxy-url' && !o.hasKey) return 'host';
+  // The guardrails test calls Anthropic or OpenAI with any key, so the fleet's own host doesn't matter to it.
+  if (src.provider === 'proxy-url' && !o.sample && !o.hasKey) return 'host';
   if (src.provider === 'cloud' && !o.sample && !o.hasKey) return 'cloud';
   return null;
 }
 
 /** /sandbox: fleets the practice test refuses keep the connection test; every other fleet goes to the pre-flight. */
-export const keepsConnectionTest = (src: PracticeSource) => practiceBlock(src, { sample: false, hasKey: keyOptions(src).keys.length > 0 }) !== null;
+export const keepsConnectionTest = (src: PracticeSource) => practiceBlock(src, { sample: true, hasKey: keyOptions(src).keys.length > 0 }) !== null;
 
 /** The agent setup starts on (§7 step 1): the most recently active, else the first by name. */
 export function defaultAgent(agents: readonly string[], lastActiveAt: Record<string, string | null> = {}): string {
@@ -179,8 +188,10 @@ export function defaultAgent(agents: readonly string[], lastActiveAt: Record<str
 }
 
 /** The key line: which variable to set, to which key (§10 fixed copy; R7 names the Fleet key key). Both direct variables while the provider isn't known. */
-export function keyLine(choice: PracticeKeyChoice | null, fleet: string): { before: string; keyVar: string; after: string } {
+export function keyLine(choice: PracticeKeyChoice | null, fleet: string, sample = false): { before: string; keyVar: string; after: string } {
   const own = ` to the key your agent uses with ${fleet}.`;
+  // The guardrails test (sample agent) takes any Anthropic or OpenAI key: it only pays for the calls.
+  if (sample) return { before: 'Set ', keyVar: `${CATALOG.providers.anthropic.keyVar} or ${CATALOG.providers.openai.keyVar}`, after: ' to any key of yours: it pays for the test’s calls.' };
   if (!choice) return { before: 'Set ', keyVar: `${CATALOG.providers.anthropic.keyVar} or ${CATALOG.providers.openai.keyVar}`, after: own };
   const keyVar = CATALOG.providers[choice.provider].keyVar;
   if (!choice.fleetKey) return { before: 'Set ', keyVar, after: own };
@@ -343,8 +354,6 @@ export interface RowResult {
   row: PreflightRow;
   status: RowStatus;
   reason: string;
-  /** Not set up: the way to add the rule is Controls. */
-  addInControls: boolean;
   members: PracticeCheck[];
   /** Not checked, but some of its rules passed: shown as "Partly checked". */
   partial: boolean;
@@ -364,16 +373,16 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
   return ROWS.map((row) => {
     const members = membersOf(row, r.checks);
     const noun = isGuardrail(row) && row.id !== PAUSE_STOP ? 'rule' : 'test';
-    const out = (status: RowStatus, reason: string, addInControls = false, partial = false): RowResult => ({ row, status, reason, addInControls, members, partial, noun });
+    const out = (status: RowStatus, reason: string, partial = false): RowResult => ({ row, status, reason, members, partial, noun });
     if (!members.length) {
       if (r.scope) return out('not_checked', 'Not part of this rerun.');
       if (row.id === PAUSE_STOP) return out('not_checked', 'Pause and Stop aren’t on for this fleet.');
-      return isGuardrail(row) ? out('not_set_up', 'No rule yet.', true) : out('not_checked', 'Didn’t run.');
+      return isGuardrail(row) ? out('not_set_up', 'No rule yet.') : out('not_checked', 'Didn’t run.');
     }
     const failed = members.find((c) => c.status === 'failed');
     if (failed) return out('failed', isGuardrail(row) ? failed.summary : `${failed.label}: ${failed.summary}`);
     const live = members.filter(setUp);
-    if (!live.length) return out('not_set_up', notSetUpReason(members), true);
+    if (!live.length) return out('not_set_up', notSetUpReason(members));
     if (live.every((c) => c.status === 'passed')) {
       if (!isGuardrail(row)) return out('passed', live[0].summary);
       if (row.id === PAUSE_STOP) return out('passed', 'Paused and stopped. Only a person could resume it.');
@@ -384,7 +393,7 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
     // Some rules passed and some weren't checked: say how many, each rule says why below.
     // Only when the rest couldn't be checked: a test problem keeps its own reason and "(not your agent)".
     const passed = live.filter((c) => c.status === 'passed').length;
-    if (noun === 'rule' && passed && live.every((c) => c.status === 'passed' || c.status === 'unsupported')) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, false, true);
+    if (noun === 'rule' && passed && live.every((c) => c.status === 'passed' || c.status === 'unsupported')) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, true);
     const open = live.find((c) => c.status !== 'passed')!;
     const why = open.status === 'unsupported' ? plainSkip(open.summary, open.id) : open.summary || STATUS_LABEL[open.status];
     return out('not_checked', `${why}${open.testProblem ? ' (not your agent)' : ''}`);
@@ -396,7 +405,6 @@ export interface RowPlan {
   row: PreflightRow;
   status: 'will_check' | 'not_set_up' | 'not_checked';
   reason: string;
-  addInControls: boolean;
   /** The checks or rules the row covers, by name. */
   members: string[];
 }
@@ -409,7 +417,7 @@ export const WILL_CHECK = 'Will be checked';
  */
 export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
   return ROWS.map((row) => {
-    const out = (status: RowPlan['status'], reason: string, members: string[], addInControls = false): RowPlan => ({ row, status, reason, addInControls, members });
+    const out = (status: RowPlan['status'], reason: string, members: string[]): RowPlan => ({ row, status, reason, members });
     if (!isGuardrail(row)) {
       const checks = membersOf(row, CATALOG.checks);
       return out('will_check', counted(checks.length, 'check'), checks.map((c) => c.label));
@@ -417,9 +425,9 @@ export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
     if (!controls) return out('not_checked', 'Couldn’t read this fleet’s controls just now.', []);
     const members = membersOf(row, controls);
     const names = members.map((c) => (c.mode ? `${c.label} · ${c.mode}` : c.label));
-    if (!members.length) return row.id === PAUSE_STOP ? out('not_checked', 'Pause and Stop aren’t on for this fleet.', []) : out('not_set_up', 'No rule yet.', [], true);
+    if (!members.length) return row.id === PAUSE_STOP ? out('not_checked', 'Pause and Stop aren’t on for this fleet.', []) : out('not_set_up', 'No rule yet.', []);
     const live = members.filter(setUp);
-    if (!live.length) return out('not_set_up', notSetUpReason(members), names, true);
+    if (!live.length) return out('not_set_up', notSetUpReason(members), names);
     const checked = live.filter((c) => c.checked);
     if (!checked.length) return out('not_checked', plainNote(live.find((c) => c.note)?.note ?? 'Not checked.'), names);
     const modes = [...new Set(checked.map((c) => c.mode).filter(Boolean))].join(' and ');

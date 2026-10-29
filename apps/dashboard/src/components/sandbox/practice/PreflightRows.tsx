@@ -1,10 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
 import { CATALOG, memberLine, ROW_GROUPS, type PreflightRow } from '@/lib/sandbox/practice/model';
 import type { PracticeCheck } from '@/lib/sandbox/practice/types';
-import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 
@@ -27,7 +25,6 @@ export interface RowItem {
   /** "Passed", "Not set up", "Will be checked"… */
   label: string;
   reason?: string;
-  addInControls?: boolean;
   /** What's under the row's <details>: its checks or rules. */
   details?: ReactNode;
   /** The <details> summary: "3 checks", "7 rules". */
@@ -46,7 +43,6 @@ function Row({ item }: { item: RowItem }) {
         <div className={s.checkName}>{item.row.name}</div>
         <div className={`${s.checkDetail} ${item.tone === 'pass' ? s.checkDetailPass : ''}`}>
           <strong>{item.label}</strong>{item.reason ? ` · ${item.reason}` : ''}
-          {item.addInControls && <> · <Link className={s.linkBtn} href={ROUTES.controls}>Add in Controls</Link></>}
         </div>
         {item.details && (
           <details className={p.members} open={item.open}>
