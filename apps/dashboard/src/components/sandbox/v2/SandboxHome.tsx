@@ -30,7 +30,7 @@ export interface SandboxHomePreview {
   now?: number;
   /** Step 3, once connected. */
   rules?: SandboxRulesPreview;
-  /** Step 4 and Run agent, once connected. */
+  /** Step 4, once connected. */
   checks?: SandboxChecksPreview;
 }
 

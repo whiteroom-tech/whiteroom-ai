@@ -104,7 +104,7 @@ export const SANDBOX_V2_STATES = {
   'rules-editing': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString() }, { editing: 'gr_preview_copy_models' }), now: NOW },
   /** Step 3: the rules couldn't be read. */
   'rules-error': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules(null, { error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }), now: NOW },
-  /** Step 4: no check yet, Start checking with the provider-error toggle. */
+  /** Step 4: no check yet, waiting for the agent's first call. */
   'checks-ready': live({ checks: checkState(null, {}) }),
   /** Step 4: just started, no calls yet. */
   'checks-waiting': live({ checks: checkState('observe', {}, { calls: 0 }) }),

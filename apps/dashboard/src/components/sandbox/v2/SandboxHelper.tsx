@@ -1,5 +1,9 @@
 'use client';
 
+// Run agent. Not on the Sandbox page since the Sandbox works like production (paste the
+// setting, run your agent); kept, with its tests and the engine's helper routes, for an
+// optional Run agent later.
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, Panel, SkeletonCard, Tag } from '@whiteroom/ui';
 import { CopyChip } from '@/components/citadel/CopyChip';
