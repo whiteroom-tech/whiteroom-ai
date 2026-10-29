@@ -329,6 +329,18 @@ console.log(JSON.stringify({ type: "final", output: "done" }));`);
     assert.ok(r.stderr.includes(CATALOG.keyRefusals.short_term_key), r.stderr);
   });
 
+  it("a key pasted twice, or with spaces inside: says so, sends nothing and uses no try (exit 2)", async () => {
+    const s = await stub();
+    let r = await run(s, [], { env: testEnv({ ANTHROPIC_API_KEY: KEY + KEY }) });
+    assert.equal(r.code, 2);
+    assert.ok(r.stderr.includes(`The key in ANTHROPIC_API_KEY looks pasted twice (${KEY.length * 2} characters, the same key two times). Nothing was sent. Set it again with a single paste.`), r.stderr);
+    assert.ok(!r.stderr.includes(KEY), "the key itself is never printed");
+    r = await run(s, [], { env: testEnv({ ANTHROPIC_API_KEY: `${KEY.slice(0, 20)} ${KEY.slice(20)}` }) });
+    assert.equal(r.code, 2);
+    assert.ok(r.stderr.includes("The key in ANTHROPIC_API_KEY has spaces or line breaks inside it. Nothing was sent. Copy it again in one piece."), r.stderr);
+    assert.equal(s.seen.length, 0);
+  });
+
   it("several provider variables set: names them and sends nothing; --key-env picks one, as the dashboard's command does", async () => {
     const s = await stub({ cloud: "foundry" });
     const all = testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_FOUNDRY_API_KEY: CLOUD.foundry.key, AWS_BEARER_TOKEN_BEDROCK: CLOUD["bedrock-mantle"].key });
