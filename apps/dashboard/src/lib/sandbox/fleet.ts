@@ -189,7 +189,8 @@ export function runLine(provider: string, proxyUrl: string, command: string): st
 export function runLinePowerShell(provider: string, proxyUrl: string, command: string): string {
   const { name, value } = sandboxSetting(provider, proxyUrl);
   const cmd = command.trim();
-  return cmd ? `$env:${name}="${value}"; ${cmd}; Remove-Item Env:${name}` : `$env:${name}="${value}"`;
+  // finally clears it however the agent ends (Ctrl+C included), whatever the command holds.
+  return cmd ? `try { $env:${name}="${value}"; ${cmd} } finally { Remove-Item Env:${name} }` : `$env:${name}="${value}"`;
 }
 
 export function providerLabel(provider: string): string {

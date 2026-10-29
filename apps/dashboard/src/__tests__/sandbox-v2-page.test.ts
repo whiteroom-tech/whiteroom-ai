@@ -82,7 +82,7 @@ describe('Sandbox v2 page', () => {
     await type(document.getElementById('sandbox-start-command') as HTMLInputElement, 'python -m leadagent.cli run');
     expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" python -m leadagent.cli run`);
     expect(document.querySelector('[aria-label="Copy the run line"]')).not.toBeNull();
-    expect(text()).toContain(`$env:ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}"; python -m leadagent.cli run; Remove-Item Env:ANTHROPIC_BASE_URL`);
+    expect(text()).toContain(`try { $env:ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}"; python -m leadagent.cli run } finally { Remove-Item Env:ANTHROPIC_BASE_URL }`);
     // What was typed stays on this page only.
     expect(JSON.stringify({ ...localStorage })).not.toContain('leadagent');
     // A server: the one setting; another tool: the URL.
@@ -207,7 +207,8 @@ describe('Sandbox v2 wording and checks', () => {
     expect(runLine('anthropic', 'https://proxy.example/sk-wr-x', 'source venv/bin/activate; python run.py')).toBe('(export ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; source venv/bin/activate; python run.py)');
     expect(runLinePowerShell('openai', 'https://proxy.example/sk-wr-x', '')).toBe('$env:OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
     expect(sandboxSetting('azure-openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'AZURE_OPENAI_ENDPOINT', value: 'https://proxy.example/sk-wr-x' });
-    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'python a.py')).toBe('$env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; python a.py; Remove-Item Env:ANTHROPIC_BASE_URL');
+    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'python a.py')).toBe('try { $env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; python a.py } finally { Remove-Item Env:ANTHROPIC_BASE_URL }');
+    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'cd agent; python a.py')).toBe('try { $env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; cd agent; python a.py } finally { Remove-Item Env:ANTHROPIC_BASE_URL }');
   });
 
   it('points the agent the way production does', () => {
