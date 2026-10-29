@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { findSandboxUrl, helperEnv, helperHost, taskResult } from "../src/sandbox/listen.js";
-import { KEY, PKG, testEnv, waitFor } from "./stub.js";
+import { alive, KEY, PKG, testEnv, waitFor } from "./stub.js";
 
 const HELPER_CODE = `wrhc_${"H".repeat(43)}`;
 const HELPER_SESSION = `wrhs_${"S".repeat(43)}`;
@@ -42,6 +42,27 @@ for await (const line of rl) {
 }
 `);
 const CRASH = script("crash.mjs", `process.stdin.once("data", () => { console.error("boom"); process.exit(4); });`);
+/** Records its pid, then answers after 400 ms (SLOW) or never (HANG). */
+const PID = join(dir, "pid");
+const SLOW = script("slow.mjs", `
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(PID)}, String(process.pid));
+process.stdin.once("data", () => setTimeout(() => process.stdout.write(JSON.stringify({ type: "final", output: "slow done" }) + "\\n"), 400));
+`);
+const HANG = script("hang.mjs", `
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(PID)}, String(process.pid));
+process.stdin.resume();
+setInterval(() => {}, 1000);
+`);
+/** The adapter (pid from PID) is gone once the CLI has exited. */
+const adapterGone = async () => {
+  const pid = Number(readFileSync(PID, "utf8"));
+  assert.ok(pid > 0);
+  await waitFor(() => !alive(pid), 5_000);
+};
+/** Short heartbeats and task deadline (internal test settings). */
+const fast = (st: Stub, extra: Record<string, string> = {}) => testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: `${st.url}/${SANDBOX_KEY}`, WHITEROOM_TEST_HEARTBEAT_MS: "50", ...extra });
 
 interface Stub {
   url: string;
@@ -50,6 +71,7 @@ interface Stub {
   modelCalls: Array<{ path: string; key: string | undefined }>;
   disconnects: number;
   heartbeats: number;
+  resultFails: number;
   close: () => Promise<void>;
 }
 
@@ -58,9 +80,9 @@ interface Stub {
  * hands out `tasks` in order (each once, unless `redeliver`), then answers idle
  * or (`endAfter`) the session's end.
  */
-async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: string; claim?: [number, unknown]; proxyUrl?: string; redeliver?: boolean } = {}): Promise<Stub> {
+async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: string; claim?: [number, unknown]; proxyUrl?: string; redeliver?: boolean; heartbeat?: [number, unknown]; failResults?: number } = {}): Promise<Stub> {
   const queue = [...(o.tasks ?? [])];
-  const s = { claims: [] as any[], results: [] as any[], modelCalls: [] as Stub["modelCalls"], disconnects: 0, heartbeats: 0 };
+  const s = { claims: [] as any[], results: [] as any[], modelCalls: [] as Stub["modelCalls"], disconnects: 0, heartbeats: 0, resultFails: 0 };
   let origin = "";
   let n = 0;
   let last: any = null;
@@ -75,14 +97,17 @@ async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: st
     if (path.startsWith("/api/sandbox-helper/")) {
       if (req.headers.authorization !== `Bearer ${HELPER_SESSION}`) return [401, { reason: "session_lost" }];
       if (path.endsWith("/next")) {
-        if (o.redeliver && last && s.results.length === 1 && n === 1) return n++, [200, { task: last }];
+        if (o.redeliver && last && s.results.length + s.resultFails === 1 && n === 1) return n++, [200, { task: last }];
         const prompt = queue.shift();
         if (prompt !== undefined) return (last = { taskId: `ht-${++n}`, kind: "prompt", prompt }), [200, { task: last }];
         if (o.endAfter) return [401, { reason: o.endAfter }];
         return [200, { idle: true }];
       }
-      if (path.endsWith("/result")) return s.results.push(body), [200, { recorded: true, duplicate: false }];
-      if (path.endsWith("/heartbeat")) return s.heartbeats++, [200, { ok: true }];
+      if (path.endsWith("/result")) {
+        if (s.resultFails < (o.failResults ?? 0)) return s.resultFails++, [400, { error: "Bad request." }];
+        return s.results.push(body), [200, { recorded: true, duplicate: false }];
+      }
+      if (path.endsWith("/heartbeat")) return s.heartbeats++, o.heartbeat ?? [200, { ok: true }];
       if (path.endsWith("/disconnect")) return s.disconnects++, [200, { connected: false }];
     }
     if (path === `/${SANDBOX_KEY}/v1/messages`) {
@@ -201,6 +226,63 @@ describe("sandbox listen", () => {
     assert.equal(r.code, 0, r.stderr);
     assert.equal(st.disconnects, 1);
     assert.match(r.stdout, /Helper stopped\. The Sandbox page shows it disconnected\./);
+  });
+
+  it("sends heartbeats while a task runs", async () => {
+    const st = await stub({ tasks: ["slow"], endAfter: "session_lost" });
+    const r = await listen(st, { adapter: `node ${SLOW}`, env: fast(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.ok(st.heartbeats >= 2, `heartbeats: ${st.heartbeats}`);
+    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: true, summary: "slow done" }]);
+  });
+
+  it("a heartbeat refused (401) stops the adapter, posts no result, and exits 3", async () => {
+    const st = await stub({ tasks: ["hang"], heartbeat: [401, { reason: "lost_contact" }] });
+    const r = await listen(st, { adapter: `node ${HANG}`, env: fast(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 0);
+    assert.match(r.stderr, /WhiteRoom didn't hear from this helper for a while/);
+    assert.doesNotMatch(r.stdout, /Task 1 (finished|didn't finish)/);
+    await adapterGone();
+  });
+
+  it("a task past its deadline: the adapter is stopped and the result says so plainly", async () => {
+    const st = await stub({ tasks: ["hang"], endAfter: "session_lost" });
+    const r = await listen(st, { adapter: `node ${HANG}`, env: fast(st, { WHITEROOM_TEST_TASK_MS: "500" }) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: false, summary: "Your agent didn't finish within 10 minutes, so it was stopped." }]);
+    assert.match(r.stdout, /Task 1 didn't finish: Your agent didn't finish within 10 minutes, so it was stopped\./);
+    await adapterGone();
+  });
+
+  it("Ctrl+C while a task runs stops the adapter, posts no result, and disconnects", async () => {
+    writeFileSync(PID, "");
+    const st = await stub({ tasks: ["hang"] });
+    const r = await listen(st, {
+      adapter: `node ${HANG}`,
+      during: (pid, out) => void waitFor(() => /Task 1:/.test(out()) && readFileSync(PID, "utf8") !== "").then(() => process.kill(pid, "SIGINT")),
+    });
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(st.results.length, 0);
+    assert.equal(st.disconnects, 1);
+    assert.match(r.stdout, /Helper stopped\./);
+    await adapterGone();
+  });
+
+  it("a result WhiteRoom didn't take is not announced; a task handed out again sends it then", async () => {
+    let st = await stub({ tasks: ["once"], endAfter: "session_lost", failResults: 1 });
+    let r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 0);
+    assert.doesNotMatch(r.stdout, /Task 1 finished/);
+    assert.match(r.stderr, /Task 1 ran, but its result couldn't be sent to WhiteRoom\./);
+
+    st = await stub({ tasks: ["once"], endAfter: "session_lost", failResults: 1, redeliver: true });
+    r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 1);
+    assert.equal(st.modelCalls.length, 1);
+    assert.equal(r.stdout.match(/Task 1 finished/g)?.length, 1);
   });
 
   it("refusals at claim: wrong Sandbox key (tries left), used code, no key connected", async () => {

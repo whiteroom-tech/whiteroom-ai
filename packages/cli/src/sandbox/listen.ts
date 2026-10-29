@@ -19,6 +19,11 @@ const SANDBOX_URL = /^(https?:\/\/[^/\s?#@]+)\/(sk-wr-[0-9a-f]{40})(?:[/?#]\S*)?
 export const TASK_MS = 10 * 60_000;
 /** While a task runs the helper doesn't poll, so it tells WhiteRoom it's still there. */
 const HEARTBEAT_MS = 20_000;
+/** Tests shorten the task deadline and heartbeat (internal, not a user setting; WHITEROOM_* never reaches the adapter). */
+const testMs = (name: string, fallback: number) => {
+  const v = Number(process.env[name]);
+  return Number.isInteger(v) && v > 0 ? v : fallback;
+};
 const SUMMARY_MAX = 2000;
 const SANDBOX_PAGE = "https://app.whiteroom.tech/sandbox";
 const NEW_CODE = `In the Sandbox page (${SANDBOX_PAGE}), click Run agent to get a new code, then start the helper again.`;
@@ -54,6 +59,7 @@ export const sandboxCopy = {
   task: (n: number, prompt: string) => `Task ${n}: ${prompt.replace(/\s+/g, " ").slice(0, 80)}${prompt.length > 80 ? "…" : ""}`,
   taskDone: (n: number) => `Task ${n} finished. The result is on the Sandbox page.`,
   taskFailed: (n: number, why: string) => `Task ${n} didn't finish: ${why}`,
+  resultNotSent: (n: number) => `Task ${n} ran, but its result couldn't be sent to WhiteRoom. If the Sandbox page hands it out again, the helper sends it again.`,
   noTools: "No tools are available in Sandbox tasks.",
 };
 
@@ -178,9 +184,21 @@ export async function listen(a: ListenArgs): Promise<number> {
   process.on("SIGINT", onStop);
   process.on("SIGTERM", onStop);
   process.on("SIGHUP", onStop);
-  /** Results sent, by task: a task handed out again gets its result again, not a second run. */
-  const done = new Map<string, { ok: boolean; summary: string }>();
+  /** Results by task: a task handed out again gets its result (re)sent, not a second run. */
+  const done = new Map<string, { n: number; result: { ok: boolean; summary: string }; sent: boolean }>();
+  const taskMs = testMs("WHITEROOM_TEST_TASK_MS", TASK_MS);
+  const heartbeatMs = testMs("WHITEROOM_TEST_HEARTBEAT_MS", HEARTBEAT_MS);
   let n = 0;
+  /** Posts a task's result; announces it only once WhiteRoom has it. */
+  const sendResult = async (taskId: string, entry: { n: number; result: { ok: boolean; summary: string }; sent: boolean }) => {
+    const r = await engine.post("/api/sandbox-helper/result", { taskId, ...entry.result }, { retryNetwork: true });
+    if (r.status === 401) return r;
+    const ok = r.status >= 200 && r.status < 300;
+    if (ok && !entry.sent) say(entry.result.ok ? sandboxCopy.taskDone(entry.n) : sandboxCopy.taskFailed(entry.n, clean(entry.result.summary)));
+    else if (!ok) warn(sandboxCopy.resultNotSent(entry.n));
+    entry.sent ||= ok;
+    return null;
+  };
   let ended: Reply | null = null;
 
   const runTask = async (task: { taskId: string; prompt: string }) => {
@@ -192,12 +210,12 @@ export async function listen(a: ListenArgs): Promise<number> {
       void engine.once("/api/sandbox-helper/heartbeat", {}).then((r) => {
         if (r?.status === 401) (ended = r), taskStop.abort();
       });
-    }, HEARTBEAT_MS);
+    }, heartbeatMs);
     beat.unref();
     let out: Outcome;
     try {
       out = await runAdapter({
-        launch, env: helperEnv(process.env), deadline: Date.now() + TASK_MS, signal: taskStop.signal,
+        launch, env: helperEnv(process.env), deadline: Date.now() + taskMs, signal: taskStop.signal,
         message: { type: "task", task: task.prompt, tools: [], headers: {}, model: null, base_url: baseUrl },
         tool: async () => ({ result: { error: sandboxCopy.noTools } }),
       });
@@ -207,12 +225,9 @@ export async function listen(a: ListenArgs): Promise<number> {
     }
     // Stopped here: disconnecting closes the task on the Sandbox page.
     if (out.kind === "stopped" || ended) return null;
-    const result = taskResult(out);
-    const r = await engine.post("/api/sandbox-helper/result", { taskId: task.taskId, ...result }, { retryNetwork: true });
-    if (r.status === 401) return r;
-    done.set(task.taskId, result);
-    say(result.ok ? sandboxCopy.taskDone(n) : sandboxCopy.taskFailed(n, clean(result.summary)));
-    return null;
+    const entry = { n, result: taskResult(out), sent: false };
+    done.set(task.taskId, entry);
+    return sendResult(task.taskId, entry);
   };
 
   try {
@@ -234,7 +249,7 @@ export async function listen(a: ListenArgs): Promise<number> {
       // A task handed out again (WhiteRoom didn't get the result): send the result again, don't run it twice.
       const sent = done.get(task.taskId);
       if (sent) {
-        const again = await engine.post("/api/sandbox-helper/result", { taskId: task.taskId, ...sent }, { retryNetwork: true }).catch((err) => {
+        const again = await sendResult(task.taskId, sent).catch((err) => {
           if (err instanceof Stopped) return null;
           throw err;
         });
