@@ -88,6 +88,12 @@ describe('report: what to do next', () => {
 });
 
 describe('Copy summary', () => {
+  it('keeps ordinary hyphenated words like key-value or tok-limit', () => {
+    const st = stateOf({ spend_cap: ['failed', 'Wrote to a key-value store and hit the tok-limit; key_rotation pending.'] });
+    const text = reportSummary(reportOf(st), { checked: '1 min ago', calls: 3 });
+    for (const w of ['key-value', 'tok-limit', 'key_rotation']) expect(text).toContain(w);
+  });
+
   it('is plain text with every card, and no keys, URLs or fleet IDs', () => {
     const st = stateOf(
       { spend_cap: ['failed', `Called with ${PLACEHOLDER_KEY} on ${SANDBOX_ID}`] },

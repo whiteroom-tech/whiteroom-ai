@@ -145,7 +145,10 @@ export function reportOf(state: Pick<CheckState, 'checks' | 'rules'> & { window:
 const SECRETS: RegExp[] = [
   /\bhttps?:\/\/[^\s<>"'`]+/gi,
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
-  /\b(?:sk|wr|whk|rk|pk|key|tok)[-_][A-Za-z0-9_-]{6,}/g,
+  // Key prefixes no word starts with: always hidden.
+  /\b(?:sk|wr|whk|rk)[-_][A-Za-z0-9_-]{6,}/g,
+  // Generic ones (pk, key, tok) only with a digit in the tail, so words like "key-value" stay.
+  /\b(?:pk|key|tok)[-_](?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{6,}/g,
   /\bAKIA[0-9A-Z]{12,}/g,
   /\beyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]+)*/g,
   /\b(?:sandbox|fleet|sbx|agent|run)[-_](?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{4,}/gi,
