@@ -76,8 +76,6 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
     try {
       // Production's rules are only counted (read-only, Controls' own read); a failed read hides Copy.
       const [listed, gov] = await Promise.all([listSandboxRules(fleet, sandboxFleetId), governanceList(fleet).catch(() => null)]);
-      setProductionRules(gov?.rules?.length ?? 0);
-      setAgents(gov?.agents ?? []);
       let next = listed;
       if (listed.source === null && autoApplied.current !== sandboxFleetId) {
         // Marked before the call so a second load can't apply it twice; cleared if it fails so Try again re-applies.
@@ -89,10 +87,14 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
           throw e;
         }
       }
-      if (req === refreshReq.current) setState(next);
+      // A load overtaken by a newer load or a replace sets nothing: its rules, Copy and agents would be out of date.
+      if (req !== refreshReq.current) return;
+      setProductionRules(gov?.rules?.length ?? 0);
+      setAgents(gov?.agents ?? []);
+      setState(next);
       setError('');
     } catch (e) {
-      failed(e);
+      if (req === refreshReq.current) failed(e);
     } finally {
       setLoading(false);
     }
