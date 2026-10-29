@@ -4,7 +4,7 @@ import type { RefObject } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, groupRows, headline, isPracticeProvider, notFullyChecked, openChecks, passCaveat, practiceAgent, rerunScope, ROW_STATUS_LABEL, shortId,
+  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, groupRows, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, ROW_STATUS_LABEL, shortId, summaryTone,
 } from '@/lib/sandbox/practice/model';
 import { canDownload } from '@/lib/sandbox/practice/report';
 import type { PracticeReport, PracticeResult, PracticeRun } from '@/lib/sandbox/practice/types';
@@ -54,8 +54,8 @@ export function PracticeResults({ run, result, busy, heading, demo = false, onAc
   const r = result?.report ?? null;
   const ended = run.lifecycle !== 'finished';
   const head = r ? headline(r) : 'Didn’t finish';
-  // Green only for a pass that checked every row set up; a partial pass reads neutral.
-  const tone = r?.verdict === 'passed' ? (r.scope || !notFullyChecked(r).names.length ? s.summaryPass : '') : r?.verdict === 'not_passed' ? s.summaryFail : '';
+  const t = r ? summaryTone(r) : 'neutral';
+  const tone = t === 'pass' ? s.summaryPass : t === 'fail' ? s.summaryFail : '';
   const scope = r ? rerunScope(r) : null;
   const caveat = r ? passCaveat(r) : null;
   const open = r ? openChecks(r).filter((c) => c.status !== 'passed') : [];

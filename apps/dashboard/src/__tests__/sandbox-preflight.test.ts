@@ -12,7 +12,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const {
-  CATALOG, defaultAgent, groupRows, headline, keepsConnectionTest, memberLine, passCaveat, planRows, plainSkip, practiceBlock, PRACTICE_SUMMARY, preflightStep, ROW_GROUPS, ROWS,
+  CATALOG, defaultAgent, groupRows, headline, keepsConnectionTest, memberLine, passCaveat, summaryTone, planRows, plainSkip, practiceBlock, PRACTICE_SUMMARY, preflightStep, ROW_GROUPS, ROWS,
 } = await import('@/lib/sandbox/practice/model');
 const { DEMO_REPORT, DEMO_RESULT, DEMO_RUN } = await import('@/lib/sandbox/practice/demo');
 const { sandboxDestination } = await import('@/components/sandbox/SandboxEntry');
@@ -125,9 +125,13 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
     const r = { ...DEMO_REPORT, verdict: 'passed' as const, scope: null, sample: true, runs: 1, checks: report([check('ctl.spend_cap.s1'), skipped('ctl.spend_cap.s2'), skipped('ctl.loop_breaker.l1'), check('ctl.pause_stop')]).checks };
     expect(headline(r)).toBe('Passed · 4 of 6 fully checked · 1 run');
     expect(passCaveat(r)).toBe('Not fully checked: Spend cap, Loop breaker + call rate. Each one below says why. This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.');
+    expect(summaryTone(r)).toBe('neutral');
+    expect(summaryTone({ ...r, scope: ['ctl.spend_cap.s1'] })).toBe('pass');
+    expect(summaryTone({ ...r, verdict: 'not_passed' })).toBe('fail');
     // Pause and Stop off for the fleet: nothing to test, so no gap.
     const allPassed = { ...r, checks: report([check('ctl.spend_cap.s1')]).checks };
     expect(headline(allPassed)).toBe('Passed · all 4 checks · 1 run');
+    expect(summaryTone(allPassed)).toBe('pass');
     expect(passCaveat(allPassed)).toBe('This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.');
   });
 

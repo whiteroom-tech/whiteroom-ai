@@ -475,6 +475,12 @@ export function notFullyChecked(r: PracticeReport): { names: string[]; of: numbe
   return { names: rows.filter((x) => x.status === 'not_checked').map((x) => x.row.name), of: rows.length };
 }
 
+/** How a result's summary reads: green only for a pass that fully checked every row set up (or a rerun's own scope), red for a fail, else neutral. */
+export function summaryTone(r: PracticeReport): 'pass' | 'fail' | 'neutral' {
+  if (r.verdict === 'passed') return r.scope || !notFullyChecked(r).names.length ? 'pass' : 'neutral';
+  return r.verdict === 'not_passed' ? 'fail' : 'neutral';
+}
+
 /** "Passed · all 7 checks · 3 runs", "Passed · 4 of 7 fully checked · 1 run", "Didn't pass · Spend cap", "Didn't finish · 2 checks couldn't run (not your agent)". */
 export function headline(r: PracticeReport): string {
   const runs = counted(r.runs, 'run');
