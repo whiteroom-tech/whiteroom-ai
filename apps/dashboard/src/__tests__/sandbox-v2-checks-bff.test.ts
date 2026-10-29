@@ -28,7 +28,7 @@ const CHECKS = CHECK_IDS.map((id) => ({ id, label: id, status: 'pending', detail
 const STATE = { success: true, window: WINDOW, checks: CHECKS, rules: [{ ruleId: 'gr_1', ruleType: 'spend_cap', check: 'spend_cap', wouldAct: true, acted: false, status: 'pending', detail: 'Would block at $0.02.', raw: 'no' }] };
 const HELPER = {
   connected: true, host: 'dev-laptop.local', connectedAt: '2026-10-29T10:00:00.000Z', lastSeenAt: '2026-10-29T10:05:00.000Z', queued: 0, running: false,
-  recent: [{ id: 'task_1', promptPreview: 'Summarize tickets', ok: true, summary: 'Done in 40 s.', finishedAt: '2026-10-29T10:04:00.000Z', adapter: 'node agent.js' }],
+  recent: [{ taskId: 'task_1', promptPreview: 'Summarize tickets', ok: true, summary: 'Done in 40 s.', finishedAt: '2026-10-29T10:04:00.000Z', adapter: 'node agent.js' }],
   code: null, tasksThisHour: 2, tasksPerHour: 30, sessionToken: 'wr_placeholder_session_token',
 };
 

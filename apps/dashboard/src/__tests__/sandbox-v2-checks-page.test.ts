@@ -231,7 +231,7 @@ describe('Run agent', () => {
   });
 
   it('recent tasks show their result, and Disconnect sends disconnect', async () => {
-    helper = { ...HELPER_ON, recent: [{ id: 't1', promptPreview: 'Draft a reply', ok: false, summary: 'Exited with code 1.', finishedAt: '2026-10-29T10:00:00.000Z' }] };
+    helper = { ...HELPER_ON, recent: [{ taskId: 't1', promptPreview: 'Draft a reply', ok: false, summary: 'Exited with code 1.', finishedAt: '2026-10-29T10:00:00.000Z' }] };
     await render(helperEl());
     expect(text()).toContain('Draft a reply');
     expect(text()).toContain('Failed');

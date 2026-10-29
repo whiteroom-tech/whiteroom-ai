@@ -68,10 +68,12 @@ const CODE_RE = /^[A-Za-z0-9-]{4,64}$/;
 const TASK_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 function taskOf(v: unknown): HelperTask | null {
-  if (!isObj(v) || !str(v.id, 128) || !TASK_ID_RE.test(v.id)) return null;
+  // The engine names it taskId (phase 5); id is accepted too.
+  const id = isObj(v) ? (str(v.taskId, 128) ? v.taskId : str(v.id, 128) ? v.id : null) : null;
+  if (!isObj(v) || typeof id !== 'string' || !TASK_ID_RE.test(id)) return null;
   const prompt = typeof v.promptPreview === 'string' ? v.promptPreview : typeof v.prompt === 'string' ? v.prompt : '';
   return {
-    id: v.id,
+    id,
     prompt: prompt.slice(0, 200),
     ok: typeof v.ok === 'boolean' ? v.ok : null,
     summary: typeof v.summary === 'string' ? v.summary.slice(0, 500) : '',
