@@ -39,6 +39,8 @@ export interface SandboxRulesState {
   copiedAt?: string;
   /** Production rule changes since that copy. */
   productionChanged: number;
+  /** Rules the engine returned that this page can't show yet: they still count as rules, so nothing replaces them. */
+  unshown?: number;
 }
 
 /** The one line on Sandbox and in the confirm dialogs. */
@@ -79,19 +81,25 @@ export function ruleOf(v: unknown): GovernanceRule | null {
 /** The rules answer (list, ready-made, copy), or null when it isn't one. */
 export function rulesStateOf(data: unknown): SandboxRulesState | null {
   if (!isObj(data) || !str(data.sandboxFleetId, 128) || !Array.isArray(data.rules)) return null;
-  const source = data.source === null || data.source === undefined ? null : SOURCES.includes(data.source as Exclude<SandboxRulesSource, null>) ? (data.source as SandboxRulesSource) : null;
+  // Only a missing source means "none set up yet"; one this page doesn't know is treated as the user's own, never replaced.
+  const source = data.source === null || data.source === undefined ? null : SOURCES.includes(data.source as Exclude<SandboxRulesSource, null>) ? (data.source as SandboxRulesSource) : 'custom';
   const changed = typeof data.productionChanged === 'number' && Number.isInteger(data.productionChanged) && data.productionChanged > 0 ? data.productionChanged : 0;
+  const rules = data.rules.map(ruleOf).filter((r): r is GovernanceRule => r !== null);
+  // The BFF passes on the count it couldn't read; the browser adds any it can't read itself.
+  const passed = typeof data.unshown === 'number' && Number.isInteger(data.unshown) && data.unshown > 0 ? data.unshown : 0;
+  const unshown = passed + data.rules.length - rules.length;
   return {
     sandboxFleetId: data.sandboxFleetId,
-    rules: data.rules.map(ruleOf).filter((r): r is GovernanceRule => r !== null),
+    rules,
     source,
     ...(str(data.copiedAt, 64) && { copiedAt: data.copiedAt }),
     productionChanged: changed,
+    ...(unshown > 0 && { unshown }),
   };
 }
 
 /** What the source line says, and whether to offer Copy again. */
-export function sourceLine(state: Pick<SandboxRulesState, 'source' | 'copiedAt' | 'productionChanged'>, now = Date.now()): { text: string; changed: string | null } {
+export function sourceLine(state: Pick<SandboxRulesState, 'source' | 'copiedAt' | 'productionChanged'> & Partial<Pick<SandboxRulesState, 'rules' | 'unshown'>>, now = Date.now()): { text: string; changed: string | null } {
   if (state.source === 'ready_made') return { text: 'Ready-made set — easy to trip on a short run. All start in Watch.', changed: null };
   if (state.source === 'production_copy') {
     const day = state.copiedAt ? fmtDay(state.copiedAt, now) : '';
@@ -102,6 +110,8 @@ export function sourceLine(state: Pick<SandboxRulesState, 'source' | 'copiedAt' 
     };
   }
   if (state.source === 'custom') return { text: 'Your own Sandbox rules.', changed: null };
+  // No known source, but rules are there (e.g. the source couldn't be stored): never "no rules".
+  if ((state.rules?.length ?? 0) + (state.unshown ?? 0) > 0) return { text: 'Your Sandbox rules.', changed: null };
   return { text: 'No Sandbox rules yet.', changed: null };
 }
 
@@ -136,6 +146,7 @@ function ruleFields(b: Record<string, unknown>): RuleCheck {
   if (b.mode !== undefined) { if (!MODES.includes(b.mode as GovernanceMode)) return { ok: false, error: 'Invalid request.' }; out.mode = b.mode; }
   if (b.response !== undefined) { if (!RESPONSES.includes(b.response as GovernanceResponse)) return { ok: false, error: 'Invalid request.' }; out.response = b.response; }
   if (b.alsoNotify !== undefined) { if (typeof b.alsoNotify !== 'boolean') return { ok: false, error: 'Invalid request.' }; out.also_notify = b.alsoNotify; }
+  // A rule's settings differ by type; the engine checks them with Controls' own validation (governance buildRule), as it does for production rules.
   if (b.params !== undefined) { if (!isObj(b.params)) return { ok: false, error: 'Invalid request.' }; out.params = b.params; }
   if (b.appliesTo !== undefined) { if (!isScope(b.appliesTo)) return { ok: false, error: 'Invalid request.' }; out.applies_to = b.appliesTo; }
   if (b.description !== undefined) { if (!str(b.description, 200)) return { ok: false, error: 'Invalid request.' }; out.description = b.description; }
@@ -155,6 +166,8 @@ export function ruleUpdateCheck(b: Record<string, unknown>): RuleCheck {
   if (b.ifVersion !== undefined && !(typeof b.ifVersion === 'number' && Number.isInteger(b.ifVersion) && b.ifVersion >= 0)) return { ok: false, error: 'Invalid request.' };
   const f = ruleFields(b);
   if (!f.ok) return f;
+  // An update that changes nothing isn't sent.
+  if (!Object.keys(f.request).length) return { ok: false, error: 'Nothing to change.' };
   return { ok: true, request: { rule_id: b.ruleId, ...(b.ifVersion !== undefined && { if_version: b.ifVersion }), ...f.request } };
 }
 

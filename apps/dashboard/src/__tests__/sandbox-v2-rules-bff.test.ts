@@ -52,6 +52,11 @@ describe('Sandbox rules BFF: who may ask', () => {
     expect((await post('list', { fleet: 'prod-eu' })).status).toBe(403);
     auth.mockResolvedValueOnce(null);
     expect((await post('list', { fleet: 'prod-eu' })).status).toBe(401);
+    // Signed out: refused before the body is even parsed.
+    auth.mockResolvedValueOnce(null);
+    expect((await post('list', 'not json')).status).toBe(401);
+    // An update that changes nothing isn't sent.
+    expect((await post('update', { fleet: 'prod-eu', ruleId: 'r1' })).status).toBe(400);
     access.mockResolvedValueOnce({ status: 403, error: 'Only this fleet’s owner can change its controls and settings.' });
     expect((await post('create', { fleet: 'prod-eu', ruleType: 'spend_cap' })).status).toBe(403);
     expect(access).toHaveBeenCalledWith('prod-eu', FLEET_TOKEN);
