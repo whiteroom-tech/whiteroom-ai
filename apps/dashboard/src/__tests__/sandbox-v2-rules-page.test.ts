@@ -29,6 +29,11 @@ const render = async (el: ReturnType<typeof h>) => { await act(async () => { roo
 /** BFF + Controls' governance_list read. */
 let listAnswer: Record<string, unknown>;
 let productionRules: unknown[];
+/** Route suffix → a refusal status (e.g. '/rules/update' → 409); `once` clears it after the first. */
+let refuse: Record<string, { status: number; once?: boolean }>;
+let govFails: boolean;
+/** While set, /rules/list waits for it (an in-flight quiet re-read). */
+let listGate: Promise<void> | null;
 const bff = vi.fn();
 const calls = () => bff.mock.calls.map(([url, init]) => ({ url: String(url), body: JSON.parse(String((init as RequestInit).body)) }));
 
@@ -38,13 +43,27 @@ beforeEach(() => {
   root = createRoot(el);
   listAnswer = state();
   productionRules = [];
+  refuse = {};
+  govFails = false;
+  listGate = null;
   bff.mockReset().mockImplementation(async (url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     if (!url.startsWith('/api/sandbox/')) {
       expect(body.action).toBe('governance_list');
+      if (govFails) return Response.json({ error: 'down' }, { status: 500 });
       return Response.json({ fleetId: 'prod-eu', rules: productionRules, history: [], agents: ['support-triage'] });
     }
-    if (url.endsWith('/rules/list')) return Response.json(listAnswer);
+    const hit = Object.keys(refuse).find((k) => url.endsWith(k));
+    if (hit) {
+      const { status, once } = refuse[hit];
+      if (once) delete refuse[hit];
+      return Response.json({ error: `Refused ${status}.` }, { status });
+    }
+    if (url.endsWith('/rules/list')) {
+      const answer = listAnswer;
+      if (listGate) await listGate;
+      return Response.json(answer);
+    }
     if (url.endsWith('/rules/ready-made')) return Response.json(state());
     if (url.endsWith('/rules/copy-production')) return Response.json(state({ source: 'production_copy', copiedAt: '2026-10-29T10:00:00.000Z' }));
     if (url.endsWith('/rules/create')) return Response.json({ success: true, rule: { ...READY[2], id: 'gr_new', ruleType: body.ruleType, params: { blockedTools: [] } } });
@@ -126,6 +145,109 @@ describe('Sandbox rules', () => {
     await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
     expect(text()).toContain(SANDBOX_RULES_ONLY);
     expect([...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.includes('/controls'))).toBe(false);
+  });
+});
+
+describe('Sandbox rules: failures and races', () => {
+  const editSpendCap = async () => {
+    await act(async () => { (document.querySelector('button[aria-label="Edit Spend cap"]') as HTMLButtonElement).click(); });
+    await flush();
+    await act(async () => { ([...document.querySelectorAll('[role=radio]')].find((r) => r.textContent === 'Enforce') as HTMLElement).click(); });
+    await flush();
+  };
+  const count = (suffix: string) => calls().filter((c) => c.url.endsWith(suffix)).length;
+
+  for (const status of [404, 409]) {
+    it(`reloads the Sandbox status when list, create, update or delete answers ${status}`, async () => {
+      // list
+      refuse = { '/rules/list': { status } };
+      const onStale = vi.fn();
+      await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+      expect(onStale).toHaveBeenCalledTimes(1);
+      expect(text()).toContain(`Refused ${status}.`);
+
+      // create
+      refuse = {};
+      act(() => root.unmount());
+      root = createRoot(document.body.appendChild(document.createElement('div')));
+      onStale.mockClear();
+      await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+      refuse = { '/rules/create': { status } };
+      await click('Add a rule');
+      await act(async () => { ([...document.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')) as HTMLButtonElement).click(); });
+      await flush();
+      expect(onStale).toHaveBeenCalledTimes(1);
+
+      // delete
+      onStale.mockClear();
+      refuse = { '/rules/delete': { status } };
+      await act(async () => { (document.querySelector('button[aria-label="Edit Spend cap"]') as HTMLButtonElement).click(); });
+      await flush();
+      await click('Remove rule');
+      await click('Remove rule');
+      expect(onStale).toHaveBeenCalledTimes(1);
+
+      // update: the rules are re-read; when the Sandbox itself is gone that read reloads the status.
+      onStale.mockClear();
+      refuse = { '/rules/update': { status }, '/rules/list': { status } };
+      await click('Cancel');
+      await editSpendCap();
+      await click('Save');
+      expect(onStale).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('shows the editor error and reloads the rules when an update conflicts', async () => {
+    const onStale = vi.fn();
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+    const lists = count('/rules/list');
+    refuse = { '/rules/update': { status: 409 } };
+    // Changed elsewhere: the engine now has Spend cap at version 2, in Enforce.
+    listAnswer = state({ rules: READY.map((r, i) => (i === 0 ? { ...r, mode: 'enforce', version: 2 } : r)), source: 'custom' });
+    await editSpendCap();
+    await click('Save');
+    expect(text()).toContain('Refused 409.');
+    expect(count('/rules/list')).toBe(lists + 1);
+    expect(text()).not.toContain('Ready-made set');
+    expect(onStale).not.toHaveBeenCalled();
+  });
+
+  it('applies the ready-made set on Try again after the first apply failed', async () => {
+    listAnswer = state({ rules: [], source: null });
+    refuse = { '/rules/ready-made': { status: 500, once: true } };
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    expect(text()).toContain('Refused 500.');
+    expect(text()).not.toContain('No rules in your Sandbox');
+    await click('Try again');
+    expect(count('/rules/ready-made')).toBe(2);
+    expect(text()).toContain('Ready-made set — easy to trip on a short run.');
+    expect(text()).toContain('Spend cap');
+  });
+
+  it('hides Copy my production rules when production’s rules can’t be read', async () => {
+    productionRules = [READY[0]];
+    govFails = true;
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    expect(button('Use the ready-made set')).toBeDefined();
+    expect(button('Copy my production rules')).toBeUndefined();
+  });
+
+  it('doesn’t let an older quiet re-read overwrite a newer replace', async () => {
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    // The save's quiet re-read is held; it would answer "custom, no rules".
+    let release!: () => void;
+    listGate = new Promise<void>((r) => { release = r; });
+    listAnswer = state({ rules: [], source: 'custom' });
+    await editSpendCap();
+    await click('Save');
+    await click('Use the ready-made set');
+    await click('Use the ready-made set');
+    expect(count('/rules/ready-made')).toBe(1);
+    expect(text()).toContain('Ready-made set — easy to trip on a short run.');
+    await act(async () => { release(); });
+    await flush();
+    expect(text()).toContain('Ready-made set — easy to trip on a short run.');
+    expect(text()).not.toContain('No rules in your Sandbox');
   });
 });
 

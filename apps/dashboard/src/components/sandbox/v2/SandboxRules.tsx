@@ -61,7 +61,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
   const [removing, setRemoving] = useState<GovernanceRule | null>(null);
   // The ready-made set is applied once per Sandbox, on its first rules load with none set up.
   const autoApplied = useRef<string | null>(null);
-  // Only the newest quiet re-read may land: an older one finishing last would undo a later edit.
+  // Only the newest rules read (load, replace or quiet re-read) may land: an older one finishing last would undo a later change.
   const refreshReq = useRef(0);
   const now = preview?.now ?? Date.now();
 
@@ -72,6 +72,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const req = ++refreshReq.current;
     try {
       // Production's rules are only counted (read-only, Controls' own read); a failed read hides Copy.
       const [listed, gov] = await Promise.all([listSandboxRules(fleet, sandboxFleetId), governanceList(fleet).catch(() => null)]);
@@ -79,10 +80,16 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
       setAgents(gov?.agents ?? []);
       let next = listed;
       if (listed.source === null && autoApplied.current !== sandboxFleetId) {
+        // Marked before the call so a second load can't apply it twice; cleared if it fails so Try again re-applies.
         autoApplied.current = sandboxFleetId;
-        next = await applyReadyMadeRules(fleet, sandboxFleetId);
+        try {
+          next = await applyReadyMadeRules(fleet, sandboxFleetId);
+        } catch (e) {
+          autoApplied.current = null;
+          throw e;
+        }
       }
-      setState(next);
+      if (req === refreshReq.current) setState(next);
       setError('');
     } catch (e) {
       failed(e);
@@ -115,7 +122,11 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
         : { sandboxFleetId, rules: s?.rules ?? [], source: 'production_copy', copiedAt: new Date(now).toISOString(), productionChanged: 0 }));
       return;
     }
-    void run(() => (kind === 'ready-made' ? applyReadyMadeRules(fleet, sandboxFleetId) : copyProductionRules(fleet, sandboxFleetId)), setState);
+    // Newer than any quiet re-read still in flight: that older list mustn't overwrite this one.
+    const req = ++refreshReq.current;
+    void run(() => (kind === 'ready-made' ? applyReadyMadeRules(fleet, sandboxFleetId) : copyProductionRules(fleet, sandboxFleetId)), (next) => {
+      if (req === refreshReq.current) setState(next);
+    });
   }
 
   // After an edit: the rules at once, then the engine's own source line (quietly; a failed read keeps the page as is).
