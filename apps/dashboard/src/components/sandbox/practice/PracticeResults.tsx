@@ -4,7 +4,7 @@ import type { RefObject } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, groupRows, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, ROW_STATUS_LABEL, shortId,
+  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, groupRows, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, ROW_STATUS_LABEL, shortId, summaryTone,
 } from '@/lib/sandbox/practice/model';
 import { canDownload } from '@/lib/sandbox/practice/report';
 import type { PracticeReport, PracticeResult, PracticeRun } from '@/lib/sandbox/practice/types';
@@ -23,10 +23,12 @@ export function resultItems(r: Pick<PracticeReport, 'checks' | 'scope'>): RowIte
   return groupRows(r).map((x) => ({
     row: x.row,
     tone: x.status === 'passed' ? 'pass' : x.status === 'failed' ? 'fail' : 'muted',
-    label: ROW_STATUS_LABEL[x.status],
+    label: x.partial ? 'Partly checked' : ROW_STATUS_LABEL[x.status],
     reason: x.reason,
     addInControls: x.addInControls,
-    detailsLabel: counted(x.members.length, 'check'),
+    detailsLabel: counted(x.members.length, x.noun),
+    // A guardrail's rules show without a click: which rules were tested is the point.
+    open: x.noun === 'rule',
     details: x.members.length ? x.members.map((c) => <MemberCheck key={c.id} c={c} />) : undefined,
   }));
 }
@@ -52,7 +54,8 @@ export function PracticeResults({ run, result, busy, heading, demo = false, onAc
   const r = result?.report ?? null;
   const ended = run.lifecycle !== 'finished';
   const head = r ? headline(r) : 'Didn’t finish';
-  const tone = r?.verdict === 'passed' ? s.summaryPass : r?.verdict === 'not_passed' ? s.summaryFail : '';
+  const t = r ? summaryTone(r) : 'neutral';
+  const tone = t === 'pass' ? s.summaryPass : t === 'fail' ? s.summaryFail : '';
   const scope = r ? rerunScope(r) : null;
   const caveat = r ? passCaveat(r) : null;
   const open = r ? openChecks(r).filter((c) => c.status !== 'passed') : [];
@@ -103,7 +106,7 @@ export function PracticeResults({ run, result, busy, heading, demo = false, onAc
           </button>}
           {r.verdict === 'passed' && !r.sample && r.runs === 1 && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'three' })}>Run it 3 times</button>}
           {canDownload(r) ? <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={onDownload}>Download report</button>
-            : <span className={s.small} style={{ alignSelf: 'center' }}>{r.sample ? 'Reports come from a test of your own agent.' : 'Reports come from a full test.'}</span>}
+            : <span className={s.small} style={{ alignSelf: 'center' }}>{r.sample ? 'Download needs a test of your own agent.' : 'Download needs a full test, not a rerun.'}</span>}
         </div>}
 
         <section className={s.card} aria-label="Checks">
