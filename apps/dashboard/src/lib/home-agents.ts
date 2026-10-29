@@ -7,8 +7,9 @@ import { ruleActionsByAgent, tallyFromRuleActions, tallyTotal, type GovernanceTa
 import { agentTotalsFromBuckets } from '@/lib/analytics-metrics';
 import { HOUR_MS } from '@/lib/format';
 import { addDays, dayStart, localDay } from '@/lib/runs';
-import { auditSummary, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
-import type { AgentInfo, AgentScore } from '@/lib/whiteroom/types';
+import { inputTokensOf } from '@/lib/performance-overview';
+import { auditSummary, performanceAgent, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
+import type { AgentInfo, AgentPerformanceResult, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
   /** Tokens the agent used in the last 7 days; absent when the audit read failed (shown as —, never 0). */
@@ -17,6 +18,11 @@ export interface AgentWeek {
   saved?: number;
   /** The same in dollars at its own price, when the engine prices it (E1b). */
   savedUsd?: number | null;
+  /**
+   * Input it sent to the models through WhiteRoom, cached input included (agent page): what
+   * smaller context is measured against, as Performance's Less input sent. Absent when unknown.
+   */
+  input?: number;
   rules?: GovernanceTally;
   score?: AgentScore;
 }
@@ -71,17 +77,18 @@ export const WEEK_POLL_MS = 5 * 60_000;
 /**
  * The reads behind the last 7 days, shared by Home and the agent page. Each
  * one that fails comes back null. `agentId` narrows rule activity to one
- * agent; `hourly` adds the fleet's calls and spend (Home only).
+ * agent and adds its calls' input; `hourly` adds the fleet's calls and spend (Home only).
  */
 export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean } = {}) {
   const { start, hours } = weekWindow();
-  const [audit, scores, rules, hourly] = await Promise.all([
+  const [audit, scores, rules, hourly, agentCalls] = await Promise.all([
     auditSummary(fleetId, start, authKey).catch(() => null),
     performanceAgentScores(fleetId, hours, authKey).catch(() => null),
     ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: localDay(), agentId: opts.agentId }, authKey).catch(() => null),
     opts.hourly ? performanceFleetHourly(fleetId, hours, authKey).catch(() => null) : null,
+    opts.agentId ? performanceAgent(fleetId, opts.agentId, hours, authKey).catch(() => null) : null,
   ]);
-  return { start, audit, scores, rules, hourly };
+  return { start, audit, scores, rules, hourly, agentCalls };
 }
 
 /** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
@@ -174,11 +181,16 @@ export function agentWeekFrom(
   audit: Parameters<typeof homeWeek>[0],
   scores: Parameters<typeof homeWeek>[1],
   rules: Parameters<typeof homeWeek>[2],
+  agentCalls: AgentPerformanceResult | null = null,
 ): AgentWeek {
   const w = homeWeek(audit, scores, rules, null).agents[agentId.toLowerCase()];
   const out: AgentWeek = {};
   if (audit?.savingsBuckets) Object.assign(out, { used: w?.used ?? 0, saved: w?.saved ?? 0 }, w?.savedUsd !== undefined && { savedUsd: w.savedUsd });
   else Object.assign(out, prev?.used !== undefined && { used: prev.used, saved: prev.saved }, prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd });
+  // Its calls' input over the same hours; an engine that doesn't total it leaves it unknown.
+  const t = agentCalls && !agentCalls.error ? agentCalls.totals : null;
+  if (t && typeof t.inputTokens === 'number') out.input = inputTokensOf({ ...t, inputTokens: t.inputTokens });
+  else if (prev?.input !== undefined) out.input = prev.input;
   const rulesOk = rules && !('unsupported' in rules);
   const tally = rulesOk ? (w?.rules ?? { blocks: 0, wouldBlocks: 0 }) : prev?.rules;
   if (tally) out.rules = tally;

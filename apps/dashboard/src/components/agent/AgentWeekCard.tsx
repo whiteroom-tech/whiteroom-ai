@@ -14,7 +14,7 @@ const cap = { fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' } a
 const figure = { fontSize: 'var(--fs-md)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' } as const;
 
 /**
- * One agent's last 7 days: tokens with and without
+ * One agent's last 7 days: input with and without
  * WhiteRoom, rule activity and score, with how the score is worked out. The
  * same reads as Home's agent list. A part that has never loaded shows "—",
  * never 0; a refresh that fails keeps the last figures.
@@ -33,10 +33,10 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
   const [week, setWeek] = useState<AgentWeek | undefined>(preview);
   const [loaded, setLoaded] = useState(!!preview);
   const load = useCallback(async (stale: () => boolean) => {
-    const { audit, scores, rules } = await loadWeekReads(fleetId, authKey, { agentId });
+    const { audit, scores, rules, agentCalls } = await loadWeekReads(fleetId, authKey, { agentId });
     if (stale()) return;
     // A read that failed keeps what loaded before; one that worked and doesn't mention the agent is none.
-    setWeek((prev) => agentWeekFrom(prev, agentId, audit, scores, rules));
+    setWeek((prev) => agentWeekFrom(prev, agentId, audit, scores, rules, agentCalls));
     setLoaded(true);
   }, [fleetId, authKey, agentId]);
   usePoll(load, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !preview });
@@ -55,7 +55,7 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
     <section className="wr-panel wr-agent-week" aria-labelledby="agent-week">
       <div className="wr-agent-week__row">
         <h2 id="agent-week" className="wr-panel__title" style={{ margin: 0 }}>Last 7 days</h2>
-        <span><span style={label}>Tokens without WhiteRoom, est.</span><br /><strong style={figure}>{tokens ? fmtTokens(tokens.without) : dash}</strong></span>
+        <span><span style={label}>Input without WhiteRoom, est.</span><br /><strong style={figure}>{tokens ? fmtTokens(tokens.without) : dash}</strong></span>
         <span>
           <span style={label}>With WhiteRoom</span><br />
           <strong style={figure}>{tokens ? fmtTokens(tokens.used) : dash}</strong>

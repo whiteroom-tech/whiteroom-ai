@@ -8,16 +8,17 @@ import { createRoot } from 'react-dom/client';
 import { agentWeekFrom } from '@/lib/home-agents';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn() }));
+const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), agent: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  auditSummary: api.audit, performanceAgentScores: api.scores, ruleActions: api.rules,
+  auditSummary: api.audit, performanceAgentScores: api.scores, ruleActions: api.rules, performanceAgent: api.agent,
 }));
 const { AgentWeekCard } = await import('@/components/agent/AgentWeekCard');
 
 const AUDIT = { fleetId: 'f', savingsBuckets: [{ day: '2026-10-26', agent: 'Lead-Agent', used: 1000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 3000 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } };
 const SCORES = { fleetId: 'f', period: { start: '', end: '' }, agents: [{ agentId: 'lead-agent', calls: 3, completeRate: 100, costDiligence: null, speedScore: 90, score: 10 }] };
 const RULES = { fleetId: 'f', totals: { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 }, byAgent: { 'LEAD-agent': { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 } } };
+const CALLS = { fleetId: 'f', agentId: 'Lead-Agent', period: { start: '', end: '' }, hourly: [], totals: { calls: 3, costMicros: 0, inputTokens: 200, cacheReadTokens: 700, cacheWriteTokens: 100 } };
 const QUIET_RULES = { fleetId: 'f', totals: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: {} };
 const flush = () => act(async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); });
 
@@ -28,6 +29,14 @@ describe('agentWeekFrom', () => {
     expect(agentWeekFrom(undefined, 'lead-agent', AUDIT as never, SCORES as never, RULES as never)).toMatchObject({ used: 1000, saved: 3000, rules: { blocks: 1, wouldBlocks: 2 }, score: { score: 10 } });
     const quiet = agentWeekFrom(undefined, 'writer', AUDIT as never, SCORES as never, QUIET_RULES as never);
     expect(quiet).toEqual({ used: 0, saved: 0, rules: { blocks: 0, wouldBlocks: 0 } });
+  });
+
+  it('takes the input its calls sent, cached included, and leaves it unknown from an engine without it', () => {
+    expect(agentWeekFrom(undefined, 'lead-agent', AUDIT as never, null, null, CALLS as never).input).toBe(1000);
+    const old = { ...CALLS, totals: { calls: 3, costMicros: 0 } };
+    expect(agentWeekFrom(undefined, 'lead-agent', AUDIT as never, null, null, old as never)).not.toHaveProperty('input');
+    const prev = agentWeekFrom(undefined, 'lead-agent', AUDIT as never, null, null, CALLS as never);
+    expect(agentWeekFrom(prev, 'lead-agent', null, null, null, { error: 'x' } as never).input).toBe(1000);
   });
 
   it('keeps what it had for a read that failed, and leaves unknown absent', () => {
@@ -44,6 +53,7 @@ describe('Last 7 days card, loading', () => {
     api.audit.mockResolvedValue(AUDIT);
     api.scores.mockResolvedValue(SCORES);
     api.rules.mockResolvedValue(QUIET_RULES);
+    api.agent.mockResolvedValue(CALLS);
     const el = document.createElement('div');
     document.body.appendChild(el);
     const root = createRoot(el);
@@ -57,13 +67,18 @@ describe('Last 7 days card, loading', () => {
     expect(hours).toBeLessThanOrEqual(7 * 24 + 2);
     // Rule activity for this agent only, not the whole fleet.
     expect(api.rules.mock.calls[0][1]).toMatchObject({ agentId: 'Lead-Agent' });
+    // Its calls' input over the same hours as the scores.
+    expect(api.agent.mock.calls[0].slice(1, 3)).toEqual(['Lead-Agent', hours]);
     const text = () => (el.textContent ?? '').replace(/\s+/g, ' ');
-    expect(text()).toContain('Tokens without WhiteRoom, est.4K');
+    // 1,000 input sent plus 3,000 saved: 75% less.
+    expect(text()).toContain('Input without WhiteRoom, est.4K');
+    expect(text()).toContain('3K less (75%)');
     expect(text()).toContain('Rule activity0');
     // Every read fails on the next refresh: the figures stay.
     api.audit.mockRejectedValue(new Error('down'));
     api.scores.mockRejectedValue(new Error('down'));
     api.rules.mockRejectedValue(new Error('down'));
+    api.agent.mockRejectedValue(new Error('down'));
     // The week is reread every 5 minutes, not every minute.
     await act(async () => { vi.advanceTimersByTime(60_000); });
     await flush();
@@ -71,7 +86,7 @@ describe('Last 7 days card, loading', () => {
     await act(async () => { vi.advanceTimersByTime(4 * 60_000); });
     await flush();
     expect(api.audit).toHaveBeenCalledTimes(2);
-    expect(text()).toContain('Tokens without WhiteRoom, est.4K');
+    expect(text()).toContain('Input without WhiteRoom, est.4K');
     expect(text()).toContain('How is the score worked out?');
     root.unmount();
   });

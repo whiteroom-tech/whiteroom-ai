@@ -306,7 +306,8 @@ export interface AgentPerformanceResult {
   agentId: string;
   period: { start: string; end: string };
   hourly: HourlyDataPoint[];
-  totals: { calls: number; costMicros: number };
+  /** Input totals (cached input included) are absent from older engines. */
+  totals: { calls: number; costMicros: number; inputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number };
   error?: string;
 }
 
