@@ -92,20 +92,20 @@ describe('what Connect sends', () => {
 
   it('names no agent when the field is empty or blank', () => {
     for (const agent of ['', '   ']) {
-      const check = keyFormRequest('anthropic', form(agent));
+      const check = keyFormRequest('direct', form(agent));
       expect(check.ok && check.request.boundAgent).toBeFalsy();
     }
   });
 
   it('sends the trimmed agent name', () => {
-    const check = keyFormRequest('anthropic', form('  billing agent '));
+    const check = keyFormRequest('direct', form('  billing agent '));
     expect(check).toMatchObject({ ok: true, request: { boundAgent: 'billing agent' } });
   });
 
   it('refuses a name the engine would, before anything is sent', () => {
     for (const bad of ['__proto__', 'a'.repeat(129), 'tab\tname', 'evil\u202eagent']) {
       expect(boundAgentError(bad), bad).not.toBeNull();
-      expect(keyFormRequest('anthropic', form(bad)).ok, bad).toBe(false);
+      expect(keyFormRequest('direct', form(bad)).ok, bad).toBe(false);
     }
     expect(boundAgentError('Research Agent')).toBeNull();
   });
