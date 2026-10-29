@@ -110,9 +110,11 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     }
   }
 
+  const [resets, setResets] = useState(0);
+
   async function act(kind: 'rotate' | 'reset') {
     setConfirm(null);
-    if (preview) { setNotice(kind === 'reset' ? 'Sandbox reset. Its calls and rules are cleared.' : ''); return; }
+    if (preview) { setNotice(kind === 'reset' ? 'Sandbox reset. Its calls, rules and check results are cleared.' : ''); return; }
     const id = status?.exists ? status.sandboxFleetId : undefined;
     setBusy(true); setNotice(''); setError('');
     try {
@@ -122,7 +124,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setIssued(done.issued);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
-        setNotice('Sandbox reset. Its calls and rules are cleared.');
+        // Step 4 starts over: its old report is gone too.
+        setResets((n) => n + 1);
+        setNotice('Sandbox reset. Its calls, rules and check results are cleared.');
       }
     } catch (e) {
       setError(message(e));
@@ -185,7 +189,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
 
         {connected && !replacing && <>
           <SandboxChecks
-            key={`checks-${connected.sandboxFleetId}`}
+            key={`checks-${connected.sandboxFleetId}-${resets}`}
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
@@ -236,7 +240,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     <ConfirmDialog
       open={confirm === 'reset'}
       title="Reset your Sandbox?"
-      body="This clears its calls and rules. Your key stays the same, so your agent keeps working."
+      body="This clears its calls, rules and check results. Your key stays the same, so your agent keeps working."
       confirmLabel="Reset Sandbox"
       busy={busy}
       onConfirm={() => void act('reset')}

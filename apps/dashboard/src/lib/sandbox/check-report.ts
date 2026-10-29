@@ -11,10 +11,10 @@ export const endedStatus = (s: CheckStatus): Exclude<CheckStatus, 'pending'> => 
 
 /** What the Sandbox did for each check. */
 export const WHAT_WE_DID: Record<CheckId, string> = {
-  spend_cap: 'Set a small spend cap, then blocked a call once it was reached.',
-  loop_rate: 'Watched for the same call repeated and for too many calls a minute, then blocked one.',
-  allowlists_keywords: 'Blocked a call that used a model or words your rules don’t allow.',
-  pause_stop: 'Paused your agent for 10 seconds, then stopped it until you pressed Resume.',
+  spend_cap: 'Watched your spend cap, and blocked a call with it if it was the first rule to act.',
+  loop_rate: 'Watched for the same call repeated and for too many calls a minute.',
+  allowlists_keywords: 'Watched for a model or words your rules don’t allow.',
+  pause_stop: 'Paused your agent for 5 seconds, then stopped it for 5 seconds.',
   long_task: 'Handed the task over when it ran long.',
   provider_errors: 'Sent back a provider error (529) on one call.',
   finishes_correctly: 'Gave your agent scripted tasks with known answers and checked its answers.',
