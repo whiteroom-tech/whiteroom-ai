@@ -185,12 +185,17 @@ export function agentWeekFrom(
 ): AgentWeek {
   const w = homeWeek(audit, scores, rules, null).agents[agentId.toLowerCase()];
   const out: AgentWeek = {};
-  if (audit?.savingsBuckets) Object.assign(out, { used: w?.used ?? 0, saved: w?.saved ?? 0 }, w?.savedUsd !== undefined && { savedUsd: w.savedUsd });
-  else Object.assign(out, prev?.used !== undefined && { used: prev.used, saved: prev.saved }, prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd });
   // Its calls' input over the same hours; an engine that doesn't total it leaves it unknown.
   const t = agentCalls && !agentCalls.error ? agentCalls.totals : null;
-  if (t && typeof t.inputTokens === 'number') out.input = inputTokensOf({ ...t, inputTokens: t.inputTokens });
-  else if (prev?.input !== undefined) out.input = prev.input;
+  const input = t && typeof t.inputTokens === 'number' ? inputTokensOf({ ...t, inputTokens: t.inputTokens }) : undefined;
+  const fresh = { used: w?.used ?? 0, saved: w?.saved ?? 0, ...(w?.savedUsd !== undefined && { savedUsd: w.savedUsd }) };
+  const kept = { ...(prev?.used !== undefined && { used: prev.used, saved: prev.saved }), ...(prev?.savedUsd !== undefined && { savedUsd: prev.savedUsd }) };
+  // Saved and input make one %, so they come from the same refresh: when one read fails, the
+  // pair loaded before stays rather than a new saved against the last window's input.
+  if (audit?.savingsBuckets && input !== undefined) Object.assign(out, fresh, { input });
+  else if (prev?.input !== undefined) Object.assign(out, kept, { input: prev.input });
+  else if (audit?.savingsBuckets) Object.assign(out, fresh);
+  else Object.assign(out, kept);
   const rulesOk = rules && !('unsupported' in rules);
   const tally = rulesOk ? (w?.rules ?? { blocks: 0, wouldBlocks: 0 }) : prev?.rules;
   if (tally) out.rules = tally;

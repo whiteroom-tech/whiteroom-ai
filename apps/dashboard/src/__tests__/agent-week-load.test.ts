@@ -39,6 +39,21 @@ describe('agentWeekFrom', () => {
     expect(agentWeekFrom(prev, 'lead-agent', null, null, null, { error: 'x' } as never).input).toBe(1000);
   });
 
+  it('keeps saved and input from the same refresh when only one of their reads fails', () => {
+    const prev = agentWeekFrom(undefined, 'lead-agent', AUDIT as never, null, null, CALLS as never);
+    const newer = { ...AUDIT, savingsBuckets: [{ ...AUDIT.savingsBuckets[0], used: 5000, offloadSaved: 9000 }] };
+    const moreCalls = { ...CALLS, totals: { ...CALLS.totals, inputTokens: 4200 } };
+    const pair = (w: { input?: number; saved?: number }) => [w.input, w.saved];
+    // Calls read fails: the last pair, not the new saved against the old input.
+    expect(pair(agentWeekFrom(prev, 'lead-agent', newer as never, null, null, null))).toEqual([1000, 3000]);
+    // Audit read fails: the same.
+    expect(pair(agentWeekFrom(prev, 'lead-agent', null, null, null, moreCalls as never))).toEqual([1000, 3000]);
+    // Both load: both move on.
+    expect(pair(agentWeekFrom(prev, 'lead-agent', newer as never, null, null, moreCalls as never))).toEqual([5000, 9000]);
+    // Never had input (older engine): saved still refreshes on its own.
+    expect(agentWeekFrom(undefined, 'lead-agent', newer as never, null, null, null)).toMatchObject({ saved: 9000 });
+  });
+
   it('keeps what it had for a read that failed, and leaves unknown absent', () => {
     const prev = agentWeekFrom(undefined, 'lead-agent', AUDIT as never, SCORES as never, RULES as never);
     expect(agentWeekFrom(prev, 'lead-agent', null, null, null)).toEqual(prev);
