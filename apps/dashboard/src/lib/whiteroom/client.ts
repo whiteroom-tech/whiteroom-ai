@@ -391,6 +391,8 @@ export function storeProviderKey(
   providerKey: string,
   endpoint?: string,
   provider?: string,
+  /** A key for one agent only: the engine treats every call on it as that agent's. */
+  boundAgent?: string,
 ): Promise<StoreKeyResult> {
   return keyCall<StoreKeyResult>(auth, {
     action: 'store_key',
@@ -399,6 +401,7 @@ export function storeProviderKey(
     // Azure keys are opaque, so the engine can't infer the provider from the
     // key's prefix the way it does for sk-ant- / sk- keys — it has to be named.
     ...(provider && { provider }),
+    ...(boundAgent && { bound_agent: boundAgent }),
   });
 }
 

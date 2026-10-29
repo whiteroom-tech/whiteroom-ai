@@ -160,6 +160,9 @@ export const BEDROCK_ROLE_SUPPORT = [
 /** Shown when someone turns on Pause, Stop or a Stop rule in Enforce. */
 export const UNNAMED_CALLS_REFUSED = 'Calls WhiteRoom can’t tie to an agent are refused across this fleet while this is on.';
 
+/** On the Stop confirmation: a shared key lets a stopped agent call under another name; a key made for it alone doesn’t (engine: proxy keys with an agent). */
+export const SHARED_KEY_STOP_NOTE = 'If this agent shares a key with others, it can keep calling under a new name. A key made only for it, on the Fleet key page, makes Stop stick.';
+
 /** The ⓘ beside a rule in Enforce. */
 export const UNNAMED_CALLS_ENFORCE = 'Calls from agents WhiteRoom can’t identify are refused fleet-wide while a rule in Enforce blocks, pauses or stops calls.';
 
