@@ -218,6 +218,27 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls.filter((c) => c.name === 'wr_fleet_auth' && c.value)).toHaveLength(0);
   });
 
+  it('never adopts the account\'s own row when it names a Sandbox fleet; a linked production fleet wins', async () => {
+    session.current = { user: { id: 'u-sbx' } };
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: 'sandbox-own', fleet_token: 'ft-own-sandbox' }] });
+    mockGetUserFleets.mockResolvedValue([
+      { id: '2', fleet_token: 'ft-prod', fleet_id: 'prod-1', label: 'p', created_at: '' },
+    ]);
+    const res = await GET();
+    expect(await res.json()).toEqual({ fleetId: 'prod-1' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-prod');
+  });
+
+  it('the account\'s own row of unknown fleet that resolves to a Sandbox fleet is not adopted', async () => {
+    session.current = { user: { id: 'u-sbx2' } };
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: null, fleet_token: 'ft-own-unknown' }] });
+    mockGetUserFleets.mockResolvedValue([]);
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-x' });
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(jar.get('wr_fleet_auth')).toBeUndefined();
+  });
+
   // A fresh browser deep-linking into a fleet page: the provisioned fleet
   // lives on users, not user_fleets, and must still be found (audit F10).
   it('adopts the account\'s own provisioned fleet ahead of linked ones', async () => {

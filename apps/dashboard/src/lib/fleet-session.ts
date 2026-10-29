@@ -125,6 +125,8 @@ async function primaryFleet(): Promise<LinkedFleetCredential | null> {
       [session.user.id],
     );
     const row = rows[0];
+    // A Sandbox fleet is never the account's production fleet (an unknown id is resolved and checked by the caller).
+    if (typeof row?.fleet_id === 'string' && row.fleet_id.startsWith('sandbox-')) return null;
     const token = readCred('users.fleet_token', session.user.id, row?.fleet_token ?? null, row?.fleet_token_enc ?? null);
     return token ? { token, fleetId: row.fleet_id ?? null } : null;
   } catch {
