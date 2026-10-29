@@ -82,7 +82,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
       const [listed, gov] = await Promise.all([listSandboxRules(fleet, sandboxFleetId), governanceList(fleet).catch(() => null)]);
       let next = listed;
       // Only a Sandbox with nothing set up gets the ready-made set: never over rules that are there.
-      if (listed.source === null && listed.rules.length === 0 && autoApplied.current !== sandboxFleetId) {
+      if (listed.source === null && listed.rules.length === 0 && !listed.unshown && autoApplied.current !== sandboxFleetId) {
         // Marked before the call so a second load can't apply it twice; cleared if it fails so Try again re-applies.
         autoApplied.current = sandboxFleetId;
         try {
@@ -224,7 +224,8 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
           </div>
         )}
 
-        {state && rules.length === 0 && <p className={v.text}>No rules in your Sandbox. Add one, or use the ready-made set.</p>}
+        {!!state?.unshown && <p className={v.text}>{state.unshown} {state.unshown === 1 ? 'rule' : 'rules'} this page can’t show yet.</p>}
+        {state && rules.length === 0 && !state.unshown && <p className={v.text}>No rules in your Sandbox. Add one, or use the ready-made set.</p>}
         {rules.length > 0 && (
           <ul className={v.rules}>
             {rules.map((r) => (

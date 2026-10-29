@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 const { SandboxRules } = await import('@/components/sandbox/v2/SandboxRules');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { SANDBOX_RULES_ONLY, sourceLine, previewReadyMade } = await import('@/lib/sandbox/rules');
+const { SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf } = await import('@/lib/sandbox/rules');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
 const READY = previewReadyMade(SANDBOX_ID);
@@ -109,6 +109,21 @@ describe('Sandbox rules', () => {
     await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
     expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
     expect(text()).toContain('Spend cap');
+  });
+
+  it('never applies the ready-made set over rules this page can’t read, and says they are there', async () => {
+    listAnswer = state({ source: null, rules: [{ id: 'gr_future', ruleType: 'some_future_type', mode: 'watch', params: {}, version: 1 }] });
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
+    expect(text()).toContain('1 rule this page can’t show yet.');
+    expect(text()).not.toContain('No rules in your Sandbox');
+  });
+
+  it('keeps the count of unreadable rules across the BFF and the browser', () => {
+    const fromEngine = rulesStateOf({ sandboxFleetId: SANDBOX_ID, source: null, rules: [READY[0], { id: 'x' }, 'junk'] });
+    expect(fromEngine).toMatchObject({ rules: [READY[0]], unshown: 2 });
+    expect(rulesStateOf(JSON.parse(JSON.stringify(fromEngine)))).toMatchObject({ rules: [READY[0]], unshown: 2 });
+    expect(rulesStateOf({ sandboxFleetId: SANDBOX_ID, source: null, rules: [] })?.unshown).toBeUndefined();
   });
 
   it('hides Copy my production rules when production has no rules, shows it when it has', async () => {

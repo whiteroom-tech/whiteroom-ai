@@ -39,6 +39,8 @@ export interface SandboxRulesState {
   copiedAt?: string;
   /** Production rule changes since that copy. */
   productionChanged: number;
+  /** Rules the engine returned that this page can't show yet: they still count as rules, so nothing replaces them. */
+  unshown?: number;
 }
 
 /** The one line on Sandbox and in the confirm dialogs. */
@@ -82,12 +84,17 @@ export function rulesStateOf(data: unknown): SandboxRulesState | null {
   // Only a missing source means "none set up yet"; one this page doesn't know is treated as the user's own, never replaced.
   const source = data.source === null || data.source === undefined ? null : SOURCES.includes(data.source as Exclude<SandboxRulesSource, null>) ? (data.source as SandboxRulesSource) : 'custom';
   const changed = typeof data.productionChanged === 'number' && Number.isInteger(data.productionChanged) && data.productionChanged > 0 ? data.productionChanged : 0;
+  const rules = data.rules.map(ruleOf).filter((r): r is GovernanceRule => r !== null);
+  // The BFF passes on the count it couldn't read; the browser adds any it can't read itself.
+  const passed = typeof data.unshown === 'number' && Number.isInteger(data.unshown) && data.unshown > 0 ? data.unshown : 0;
+  const unshown = passed + data.rules.length - rules.length;
   return {
     sandboxFleetId: data.sandboxFleetId,
-    rules: data.rules.map(ruleOf).filter((r): r is GovernanceRule => r !== null),
+    rules,
     source,
     ...(str(data.copiedAt, 64) && { copiedAt: data.copiedAt }),
     productionChanged: changed,
+    ...(unshown > 0 && { unshown }),
   };
 }
 
