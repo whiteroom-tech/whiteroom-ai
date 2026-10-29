@@ -189,10 +189,10 @@ export function stageLine(state: CheckState): string {
     case 'observe': return 'Watching your agent’s calls…';
     case 'enforce': {
       const now = ENFORCE_ORDER.map((id) => state.checks.find((c) => c.id === id)).find((c) => c?.status === 'pending');
-      return now ? `Testing ${now.label}…` : 'Testing your rules one at a time…';
+      return now ? `Testing ${now.label}…` : 'Testing your rules…';
     }
-    case 'pause': return 'Paused your agent for 10 seconds…';
-    case 'stop': return 'Your agent is stopped for 15 seconds, then it can call again. Resume lets it go now.';
+    case 'pause': return 'Paused your agent for 5 seconds…';
+    case 'stop': return 'Your agent is stopped for 5 seconds, then it can call again. Resume lets it go now.';
     case 'errors': return 'Sending a provider error…';
     case 'done': return 'Done. Stop checking to see your report.';
   }

@@ -143,14 +143,18 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('sk-wr-placeholder-rotated');
   });
 
-  it('connected: Reset confirms, clears calls and rules, and keeps the key', async () => {
+  it('connected: Reset confirms, clears calls, rules and check results, and keeps the key', async () => {
     bff.mockImplementation(async () => Response.json(STATUS));
     await render({ fleet: 'prod-eu' });
+    const checkReads = () => calls().filter((c) => c.url.endsWith('/checks/status')).length;
+    const before = checkReads();
     await click('Reset Sandbox');
-    expect(text()).toContain('This clears its calls and rules. Your key stays the same');
+    expect(text()).toContain('This clears its calls, rules and check results. Your key stays the same');
     await click('Reset Sandbox');
     expect(calls().find((c) => c.url.endsWith('/reset'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
-    expect(text()).toContain('Sandbox reset.');
+    expect(text()).toContain('Sandbox reset. Its calls, rules and check results are cleared.');
+    // Step 4 starts over at once: its checks are read again, not left showing the old report.
+    expect(checkReads()).toBeGreaterThan(before);
   });
 
   it.each([['rotate', 'Rotate key', 'Get a new URL', 409], ['reset', 'Reset Sandbox', 'Reset Sandbox', 404]] as const)('a refused %s shows why and reads the Sandbox again', async (action, label, confirmLabel, code) => {

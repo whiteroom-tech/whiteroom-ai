@@ -135,13 +135,13 @@ describe('Check your agent', () => {
     }
     checks = checkAnswer({ stage: 'pause' });
     await render(checksEl());
-    expect(text()).toContain('Paused your agent for 10 seconds…');
+    expect(text()).toContain('Paused your agent for 5 seconds…');
     expect(button('Resume')).toBeUndefined();
     act(() => root.unmount());
     root = createRoot(document.body.appendChild(document.createElement('div')));
     checks = checkAnswer({ stage: 'stop' });
     await render(checksEl());
-    expect(text()).toContain('Your agent is stopped for 15 seconds, then it can call again. Resume lets it go now.');
+    expect(text()).toContain('Your agent is stopped for 5 seconds, then it can call again. Resume lets it go now.');
     checks = checkAnswer({ stage: 'errors' }, { pause_stop: 'passed' });
     await click('Resume');
     expect(calls().find((c) => c.url.endsWith('/checks/resume'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
