@@ -81,7 +81,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
           </ul>
           {rest && (
             <p style={{ margin: 0, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-              Also {rest.charAt(0).toLowerCase()}{rest.slice(1)}
+              Also {rest}
             </p>
           )}
         </>

@@ -6,7 +6,7 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }), useSearchParams: () => new URLSearchParams() }));
 const { AgentWeekCard } = await import('@/components/agent/AgentWeekCard');
-const { RulesOnAgent } = await import('@/components/agent/RulesOnAgent');
+const { RulesOnAgent, restLine } = await import('@/components/agent/RulesOnAgent');
 const { weekTokens } = await import('@/lib/agent-detail');
 const { outOfTen, scoreParts, scoreSummary, scoreWorking } = await import('@/lib/agent-scores');
 
@@ -111,6 +111,16 @@ describe('Rules on this agent', () => {
     expect(t).toContain('Over 60 calls a minute');
     expect(t).toContain('Rules on this agent 2');
     expect(t).toContain('Also 1 rule is Off. 2 aren’t set up yet.');
+  });
+
+  it('words the rules it doesn’t list, one or many of each', () => {
+    expect(restLine(0, 0)).toBe('');
+    expect(restLine(1, 0)).toBe('1 rule is Off.');
+    expect(restLine(3, 0)).toBe('3 rules are Off.');
+    expect(restLine(0, 1)).toBe('1 rule isn’t set up yet.');
+    expect(restLine(0, 7)).toBe('7 rules aren’t set up yet.');
+    expect(restLine(1, 1)).toBe('1 rule is Off. 1 isn’t set up yet.');
+    expect(restLine(2, 7)).toBe('2 rules are Off. 7 aren’t set up yet.');
   });
 
   it('says so when none are on', () => {
