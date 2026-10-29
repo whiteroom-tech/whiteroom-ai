@@ -183,6 +183,8 @@ export interface ProviderKey {
   keyHint: string;
   createdAt: string;
   endpoint?: string;
+  /** Set when the key is for one agent only: its calls are that agent's, whatever name they send. */
+  agentId?: string;
 }
 
 export interface ListKeysResult {
@@ -198,6 +200,8 @@ export interface StoreKeyResult {
   provider?: string;
   keyHint?: string;
   proxyUrl?: string;
+  /** The agent the key is for, when one was named. */
+  agentId?: string;
   error?: string;
 }
 

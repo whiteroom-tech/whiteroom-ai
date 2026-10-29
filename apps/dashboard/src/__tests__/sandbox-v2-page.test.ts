@@ -137,6 +137,26 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('Sandbox reset.');
   });
 
+  it.each([['rotate', 'Rotate key', 409], ['reset', 'Reset Sandbox', 404]] as const)('a refused %s shows why and reads the Sandbox again', async (action, label, code) => {
+    bff.mockImplementation(async (url: string) => url.endsWith(`/${action}`)
+      ? Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: code })
+      : Response.json(STATUS));
+    await render({ fleet: 'prod-eu' });
+    const before = calls().filter((c) => c.url.endsWith('/status')).length;
+    await click(label);
+    await click(label);
+    expect(text()).toContain('Your Sandbox changed since this page loaded.');
+    expect(calls().filter((c) => c.url.endsWith('/status')).length).toBeGreaterThan(before);
+  });
+
+  it('an unreadable status answer is an error with Try again, not the older destination', async () => {
+    bff.mockImplementation(async () => Response.json({ success: true, nonsense: 1 }));
+    const onUnavailable = vi.fn();
+    await render({ fleet: 'prod-eu', onUnavailable });
+    expect(onUnavailable).not.toHaveBeenCalled();
+    expect(button('Try again')).toBeDefined();
+  });
+
   it('no Sandbox v2 on the engine: hands back to /sandbox’s older destination', async () => {
     bff.mockImplementation(async () => Response.json({ error: 'Sandbox isn’t available yet.', reason: 'sandbox_fleet_unavailable' }, { status: 404 }));
     const onUnavailable = vi.fn();
