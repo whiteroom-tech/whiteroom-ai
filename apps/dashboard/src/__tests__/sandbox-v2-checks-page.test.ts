@@ -95,8 +95,19 @@ describe('Check your agent', () => {
     expect(activityLine(st('enforce', false, at(5 * 60_000)), now)).toEqual({ calling: false, text: 'Your agent stopped calling · last call 5 min ago · 12 calls checked. The check carries on when it calls again.' });
     expect(activityLine(st('done', true, at(3_000)), now)?.text).toBe('Your agent is calling the Sandbox · last call 3 s ago. This check has finished; its next run starts a new one.');
     expect(activityLine(st('done', true, at(10 * 60_000)), now)?.text).toBe('Your agent’s last call 10 min ago. A new check starts on its next run.');
+    expect(activityLine(st('observe', false, at(59_900)), now)?.text).toContain('last call 59 s ago');
+    expect(activityLine(st('enforce', false, at(60_000)), now)?.text).toContain('last call 1 min ago');
     // An older engine sends no activity: no line.
     expect(checkStateOf(checkAnswer({ stage: 'observe' }))!.activity).toBeUndefined();
+    // Odd values from the engine are dropped, not shown.
+    expect(checkStateOf({ ...checkAnswer({ stage: 'observe' }), activity: { lastCallAt: 'yesterday', callsOutsideWindow24h: -3 } })!.activity).toEqual({ lastCallAt: null, callsOutsideWindow24h: 0 });
+    expect(checkStateOf({ ...checkAnswer({ stage: 'observe' }), activity: 'x' })!.activity).toBeUndefined();
+  });
+
+  it('shows the live line on the page while the agent calls', async () => {
+    checks = { ...checkAnswer({ stage: 'observe', calls: 3 }), activity: { lastCallAt: new Date(Date.now() - 2_000).toISOString(), callsOutsideWindow24h: 0 } };
+    await render(checksEl());
+    expect(text()).toMatch(/Your agent is calling the Sandbox · last call \d+ s ago · 3 calls checked/);
   });
 
   it('renders each check with its status and detail, and the rules under it', async () => {

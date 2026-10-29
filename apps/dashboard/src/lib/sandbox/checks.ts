@@ -139,7 +139,10 @@ export function checkStateOf(data: unknown): CheckState | null {
 /** A call this recent means the agent is calling now. */
 export const CALLING_MS = 60_000;
 
-const ago = (ms: number) => (ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))} s ago` : timeAgo(Date.now() - ms, Date.now()));
+const ago = (ms: number, now: number) => {
+  const s = Math.floor(ms / 1000);
+  return s < 60 ? `${Math.max(1, s)} s ago` : timeAgo(now - ms, now);
+};
 
 /**
  * Step 4's live line: is the agent calling, and is this run being checked? Null before the
@@ -151,7 +154,7 @@ export function activityLine(state: CheckState, now = Date.now()): { calling: bo
   const since = Math.max(0, now - Date.parse(a.lastCallAt));
   const calling = since < CALLING_MS;
   const w = state.window;
-  const last = `last call ${ago(since)}`;
+  const last = `last call ${ago(since, now)}`;
   if (w && !w.endedAt) {
     const checked = `${w.calls} ${w.calls === 1 ? 'call' : 'calls'} checked`;
     return calling

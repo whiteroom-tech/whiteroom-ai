@@ -152,7 +152,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
       <div className={v.stack}>
         {state && (() => {
           const live = activityLine(state, now);
-          return live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`} role="status" aria-live="polite">{live.text}</p>;
+          // Not a live region: it changes on every read, and the stage box below announces what matters.
+          return live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>;
         })()}
         {loading && !state && <SkeletonCard label="Loading your checks…" lines={['60%', '45%']} heights={[12, 12]} />}
         {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
