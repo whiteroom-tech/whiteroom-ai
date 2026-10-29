@@ -115,3 +115,25 @@ export function agentNamingFor(provider: string): { provider: 'anthropic' | 'ope
 export function canSubmitKey(state: KeyFormState): boolean {
   return state.status !== 'saving';
 }
+
+/**
+ * Why an "Only for agent" name can't be used, or null. The engine's rules
+ * (concepts/safe-key.ts agentNameError), so a bad name is caught here
+ * rather than as an error after Connect.
+ */
+export function boundAgentError(name: string): string | null {
+  if (['__proto__', 'constructor', 'prototype'].includes(name)) return 'That agent name is reserved. Pick another.';
+  if (name.length > 128) return 'Agent names can be up to 128 characters.';
+  if (/[\p{Cc}\u2028\u2029\u202a-\u202e\u2066-\u2069]/u.test(name)) return 'Agent names can’t contain control characters.';
+  return null;
+}
+
+/** What Connect sends for this form: the key check, plus the agent when one is named. */
+export function keyFormRequest(tab: ProviderTab, form: Pick<KeyFormState, 'value' | 'endpoint' | 'agent'>): ProviderKeyCheck {
+  const check = providerKeyRequest(tab, form.value, form.endpoint);
+  if (!check.ok) return check;
+  const boundAgent = form.agent.trim();
+  if (!boundAgent) return check;
+  const error = boundAgentError(boundAgent);
+  return error ? { ok: false, error } : { ok: true, request: { ...check.request, boundAgent } };
+}

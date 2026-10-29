@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, providerKeyRequest } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest } from '@/lib/provider-key-form';
 import type { ProviderKeyRequest, ProviderTab } from '@/lib/provider-key-form';
 import { EMPTY_ROLE_FORM, bedrockRoleRequest, canSubmitRoleForm, generateExternalId, roleFormReducer } from '@/lib/bedrock-role-form';
 import type { BedrockRoleRequest } from '@/lib/bedrock-role-form';
@@ -202,13 +202,12 @@ function KeyForm({ tab, onConnect, onCancel }: {
 
   async function submit() {
     if (inFlight.current || !canSubmitKey(form)) return;
-    const check = providerKeyRequest(tab, value, endpoint);
+    const check = keyFormRequest(tab, form);
     if (!check.ok) { dispatch({ type: 'error', msg: check.error }); return; }
     inFlight.current = true;
     dispatch({ type: 'saving' });
     try {
-      const boundAgent = agent.trim();
-      const error = await onConnect(boundAgent ? { ...check.request, boundAgent } : check.request);
+      const error = await onConnect(check.request);
       dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
     } finally {
       inFlight.current = false;
@@ -230,6 +229,18 @@ function KeyForm({ tab, onConnect, onCancel }: {
           className="wr-input"
         />
       )}
+      <input
+        type="text"
+        aria-label="Only for agent (optional)"
+        value={agent}
+        onChange={(e) => dispatch({ type: 'edit', field: 'agent', text: e.target.value })}
+        placeholder="Only for agent (optional)"
+        autoCapitalize="none"
+        spellCheck={false}
+        readOnly={saving}
+        maxLength={128}
+        className="wr-input"
+      />
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="password"
@@ -245,18 +256,6 @@ function KeyForm({ tab, onConnect, onCancel }: {
         <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
         {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
-      <input
-        type="text"
-        aria-label="Only for agent (optional)"
-        value={agent}
-        onChange={(e) => dispatch({ type: 'edit', field: 'agent', text: e.target.value })}
-        placeholder="Only for agent (optional)"
-        autoCapitalize="none"
-        spellCheck={false}
-        readOnly={saving}
-        maxLength={128}
-        className="wr-input"
-      />
       {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{msg}</p>}
     </div>
   );

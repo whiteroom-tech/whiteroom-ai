@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
-import { EMPTY_KEY_FORM, agentNamingFor, canSubmitKey, keyFormReducer } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, agentNamingFor, boundAgentError, canSubmitKey, keyFormReducer, keyFormRequest } from '@/lib/provider-key-form';
 import type { KeyFormAction, KeyFormState } from '@/lib/provider-key-form';
 
 const run = (actions: KeyFormAction[], from: KeyFormState = EMPTY_KEY_FORM) => actions.reduce(keyFormReducer, from);
@@ -84,5 +84,29 @@ describe('Claude Code naming line', () => {
   it('defaults to shown when the flag is not passed', () => {
     expect(renderToStaticMarkup(h(AgentNaming, {}))).toContain(claudeCodeLine);
     expect(renderToStaticMarkup(h(AgentNaming, { provider: 'anthropic' }))).toContain(claudeCodeLine);
+  });
+});
+
+describe('what Connect sends', () => {
+  const form = (agent: string) => ({ value: 'sk-ant-api03-example-key-1234', endpoint: '', agent });
+
+  it('names no agent when the field is empty or blank', () => {
+    for (const agent of ['', '   ']) {
+      const check = keyFormRequest('anthropic', form(agent));
+      expect(check.ok && check.request.boundAgent).toBeFalsy();
+    }
+  });
+
+  it('sends the trimmed agent name', () => {
+    const check = keyFormRequest('anthropic', form('  billing agent '));
+    expect(check).toMatchObject({ ok: true, request: { boundAgent: 'billing agent' } });
+  });
+
+  it('refuses a name the engine would, before anything is sent', () => {
+    for (const bad of ['__proto__', 'a'.repeat(129), 'tab\tname', 'evil\u202eagent']) {
+      expect(boundAgentError(bad), bad).not.toBeNull();
+      expect(keyFormRequest('anthropic', form(bad)).ok, bad).toBe(false);
+    }
+    expect(boundAgentError('Research Agent')).toBeNull();
   });
 });
