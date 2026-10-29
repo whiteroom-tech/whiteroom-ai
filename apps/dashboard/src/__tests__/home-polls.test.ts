@@ -11,8 +11,9 @@ import { createRoot } from 'react-dom/client';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 vi.mock('@/components/home/LiveFeedPanel', () => ({ LiveFeedPanel: () => null }));
 
+const calls = (inputTokens: number) => ({ fleetId: 'f1', agentId: 'lead-agent', period: { start: '', end: '' }, hourly: [], totals: { calls: 1, costMicros: 0, inputTokens, cacheReadTokens: 0, cacheWriteTokens: 0 } });
 const counts = (blocked: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 });
-const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), runs: vi.fn(), days: vi.fn() }));
+const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), runs: vi.fn(), days: vi.fn(), agent: vi.fn() }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
 // The ⋯ stand-in reports an act straight away, as a successful Pause would.
 vi.mock('@/components/home/AgentActions', () => ({ AgentActions: ({ onChanged }: { onChanged: () => void }) => h('button', { type: 'button', onClick: onChanged }, 'acted') }));
@@ -33,6 +34,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   performanceAgentScores: api.scores,
   performanceFleetHourly: api.hourly,
   ruleActions: api.rules,
+  performanceAgent: api.agent,
 }));
 const { HomeContent } = await import('@/components/home/HomeContent');
 
@@ -53,6 +55,7 @@ async function mount() {
 async function mountWith() {
   api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [{ day: '2026-10-26', agent: 'lead-agent', used: 1000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 0 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
   api.scores.mockResolvedValue({ fleetId: 'f1', agents: [] });
+  api.agent.mockResolvedValue(calls(1000));
   if (!api.log.getMockImplementation()) api.log.mockImplementation(async ({ type }: { type?: string }) => ({ entries: type === 'governance_rule_changed' ? [{ id: 'g1', type, timestamp: new Date().toISOString(), ruleId: 'gr_1', ruleType: 'spend_cap', message: 'Spend cap: Added new Spend cap rule', by: 'api' }] : [] }));
   if (!api.runs.getMockImplementation()) api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1', flags: [] }], total: 3, cursor: null });
   if (!api.days.getMockImplementation()) api.days.mockResolvedValue({ fleetId: 'f1', days: [{ day: '2026-10-24', runs: 47 }] });
@@ -80,6 +83,9 @@ describe('Home polls', () => {
     await m.advance(4 * 60_000);
     expect(weekRuleReads()).toBe(2);
     expect(api.audit).toHaveBeenCalledTimes(2);
+    // Each agent's input with the week, not on its own clock.
+    expect(api.agent).toHaveBeenCalledTimes(2);
+    expect(api.agent.mock.calls[0].slice(0, 2)).toEqual(['f1', 'lead-agent']);
     expect(api.hourly.mock.calls.length).toBeGreaterThanOrEqual(2);
     m.root.unmount();
   });
@@ -96,7 +102,7 @@ describe('Home polls', () => {
   it('a failed today read keeps today’s rule activity; an engine without rule actions clears it', async () => {
     const m = await mount();
     expect(m.text()).toContain('Rule activity2');
-    expect(m.text()).toContain('1K tokens · 5 blocked');
+    expect(m.text()).toContain('1K input sent · 5 blocked');
     api.rules.mockImplementation(async (_f: string, q: { fromDay: string; toDay: string }) => {
       if (isToday(q)) throw new Error('down');
       return { fleetId: 'f1', totals: counts(5), byAgent: { 'lead-agent': counts(5) } };
@@ -108,21 +114,26 @@ describe('Home polls', () => {
       : { fleetId: 'f1', totals: counts(5), byAgent: { 'lead-agent': counts(5) } }));
     await m.advance(60_000);
     expect(m.text()).toContain('Rule activity—not available yet');
-    expect(m.text()).toContain('1K tokens · 5 blocked');
+    expect(m.text()).toContain('1K input sent · 5 blocked');
     m.root.unmount();
   });
 
   it('a failed week read keeps its own figures and lets the others refresh', async () => {
     const m = await mount();
-    expect(m.text()).toContain('1K tokens · 5 blocked');
-    // Rules fail; tokens move on.
+    expect(m.text()).toContain('1K input sent · 5 blocked');
+    // Rules fail; input moves on.
     api.rules.mockImplementation(async (_f: string, q: { fromDay: string; toDay: string }) => {
       if (!isToday(q)) throw new Error('down');
       return { fleetId: 'f1', totals: counts(2), byAgent: { 'lead-agent': counts(2) } };
     });
     api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [{ day: '2026-10-26', agent: 'lead-agent', used: 3000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 0 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
+    api.agent.mockResolvedValue(calls(3000));
     await m.advance(5 * 60_000);
-    expect(m.text()).toContain('3K tokens · 5 blocked');
+    expect(m.text()).toContain('3K input sent · 5 blocked');
+    // The input read fails: the last input stays, beside the saved figure from the same read.
+    api.agent.mockRejectedValue(new Error('down'));
+    await m.advance(5 * 60_000);
+    expect(m.text()).toContain('3K input sent · 5 blocked');
     m.root.unmount();
   });
 });

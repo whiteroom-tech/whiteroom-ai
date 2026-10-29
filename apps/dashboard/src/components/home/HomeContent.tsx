@@ -112,13 +112,25 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
   // activity are extra: a failure hides them rather than failing the page. The week changes
   // slowly, so it's reread every 5 minutes; today's rule activity once a minute.
+  // Each agent's input needs the agent list, so the week waits for the first report and
+  // rereads when the agents change.
+  const agentIds = agents.map((a) => a.agentId);
+  const agentIdsRef = useRef(agentIds);
+  agentIdsRef.current = agentIds;
+  const agentsKey = idsKey(agentIds);
+  // The agents the last week read asked about; null before the first.
+  const weekAgents = useRef<string | null>(null);
   const { refresh: refreshWeek } = usePoll(async (stale) => {
-    const { start, audit, scores, rules, hourly } = await loadWeekReads(fleetId, authKey, { hourly: true });
+    weekAgents.current = idsKey(agentIdsRef.current);
+    const { start, audit, scores, rules, hourly, inputs } = await loadWeekReads(fleetId, authKey, { hourly: true, agentIds: agentIdsRef.current });
     if (stale()) return;
     // A read that failed keeps its last good figures; the others refresh.
-    const next = homeWeek(audit, scores, rules, hourly, start.getTime());
-    setWeek((prev) => keepLastGood(prev, next, weekFailures({ audit, scores, rules, hourly })));
-  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty });
+    const next = homeWeek(audit, scores, rules, hourly, start.getTime(), inputs);
+    setWeek((prev) => keepLastGood(prev, next, weekFailures({ audit, scores, rules, hourly, inputs })));
+  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty && report !== null });
+  useEffect(() => {
+    if (weekAgents.current !== null && weekAgents.current !== agentsKey) refreshWeek();
+  }, [agentsKey, refreshWeek]);
 
   const { refresh: refreshTodayRules } = usePoll(async (stale) => {
     const day = localDay();
@@ -378,7 +390,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                 <thead>
                   <tr>
                     <th scope="col">Agent</th><th scope="col">Status</th><th scope="col">Last run</th>
-                    <th scope="col" className="is-num">Tokens used</th><th scope="col" className="is-num">Saved, est.</th>
+                    <th scope="col" className="is-num">Input sent</th><th scope="col" className="is-num">Input saved, est.</th>
                     <th scope="col">{RULE_ACTIVITY}</th><th scope="col">Score</th><th scope="col"><span className="wr-sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -394,7 +406,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                         <td><Link href={agentHref(a.agentId)} className="wr-home-table__name">{a.agentId}</Link></td>
                         <td><StatusPill state={agentState(a)} /></td>
                         <td>{line.tasks ? <>{line.run !== null && <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> </>}<span className="wr-home-table__cap">{line.run !== null ? '· ' : ''}{line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
-                        <td className="is-num">{w?.used !== undefined ? fmtTokens(w.used) : '—'}</td>
+                        <td className="is-num">{w?.input !== undefined ? fmtTokens(w.input) : '—'}</td>
                         <td className="is-num" style={{ color: w?.saved ? 'var(--ok)' : undefined }} title={w ? savedTitle(w) : undefined}>{w?.saved ? fmtTokens(w.saved) : '—'}</td>
                         <td className="wr-home-table__cap" style={{ color: outcomes ? 'var(--tx)' : undefined }}>{outcomes || '—'}</td>
                         <td>{w?.score?.score != null ? <span className="wr-home-table__score"><ScoreRing score={w.score.score} />{speed != null && <span className="wr-home-table__cap">Speed {(speed / 10).toFixed(1).replace(/\.0$/, '')}</span>}</span> : <span className="wr-home-muted">—</span>}</td>
@@ -440,12 +452,15 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
   );
 }
 
-/** "53.4K tokens · 225.8K saved · 60 would have acted": only the parts that are known. */
+/** The agent list as one value, so a new agent rereads the week but a reorder doesn't. */
+const idsKey = (ids: string[]) => [...ids].sort().join('\n');
+
+/** "412K input sent · 225.8K input saved · 60 would have acted": only the parts that are known. */
 function WeekLine({ w }: { w: AgentWeek }) {
   const outcomes = w.rules ? ruleOutcomes(w.rules) : '';
   const bits: React.ReactNode[] = [];
-  if (w.used !== undefined) bits.push(<span key="u">{fmtTokens(w.used)} tokens</span>);
-  if (w.saved) bits.push(<span key="s" style={{ color: 'var(--ok)' }} title={savedTitle(w)}>{fmtTokens(w.saved)} saved</span>);
+  if (w.input !== undefined) bits.push(<span key="u">{fmtTokens(w.input)} input sent</span>);
+  if (w.saved) bits.push(<span key="s" style={{ color: 'var(--ok)' }} title={savedTitle(w)}>{fmtTokens(w.saved)} input saved</span>);
   if (outcomes) bits.push(<span key="r">{outcomes}</span>);
   if (bits.length === 0) return null;
   return <div className="wr-agent-card__week">{bits.map((b, i) => <span key={i}>{i > 0 && ' · '}{b}</span>)}</div>;
@@ -453,7 +468,7 @@ function WeekLine({ w }: { w: AgentWeek }) {
 
 /** The saved figure's tooltip: what the tokens are worth at the agent's own prices, when the engine prices them. */
 function savedTitle(w: AgentWeek): string | undefined {
-  return w.saved && w.savedUsd != null ? `${fmtTokens(w.saved)} tokens saved, about ${usd(w.savedUsd)} at this agent's prices (est.)` : undefined;
+  return w.saved && w.savedUsd != null ? `${fmtTokens(w.saved)} input tokens saved, about ${usd(w.savedUsd)} at this agent's prices (est.)` : undefined;
 }
 
 /** "$3.17 spent, rules would have acted 120 times": the spend and the rules each when known; '' when neither is. */

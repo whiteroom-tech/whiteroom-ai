@@ -8,7 +8,7 @@ const textOf = (html: string) => { const el = new Window().document.createElemen
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
 import { HomeView } from '@/components/home/HomeContent';
-import { homeWeek, shownAgents, TABLE_FROM } from '@/lib/home-agents';
+import { homeWeek, keepLastGood, shownAgents, TABLE_FROM } from '@/lib/home-agents';
 import type { AgentInfo, FleetReport } from '@/lib/whiteroom/types';
 
 const agent = (agentId: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo =>
@@ -23,9 +23,9 @@ const REPORT = (n: number): FleetReport => ({
 const tally = (x: Partial<{ blocks: number; wouldBlocks: number }>) => ({ blocks: 0, wouldBlocks: 0, paused: 0, stopped: 0, toldYou: 0, ...x });
 
 describe('Home agents: one list', () => {
-  it('finds by name, and sorts by tokens or savings from the last 7 days', () => {
+  it('finds by name, and sorts by input or savings from the last 7 days', () => {
     const agents = [agent('lead-agent', 'working'), agent('writer', 'idle'), agent('code-reviewer', 'idle')];
-    const weeks = { 'lead-agent': { used: 100, saved: 5 }, writer: { used: 900, saved: 1 }, 'code-reviewer': { used: 500, saved: 50 } };
+    const weeks = { 'lead-agent': { used: 900, input: 100, saved: 5 }, writer: { used: 100, input: 900, saved: 1 }, 'code-reviewer': { used: 500, input: 500, saved: 50 } };
     expect(shownAgents(agents, weeks, 'WRI', 'attention').map((a) => a.agentId)).toEqual(['writer']);
     expect(shownAgents(agents, weeks, '', 'used').map((a) => a.agentId)).toEqual(['writer', 'code-reviewer', 'lead-agent']);
     expect(shownAgents(agents, weeks, '', 'saved').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
@@ -54,6 +54,27 @@ describe('Home agents: one list', () => {
     // Ids that differ only in case are one agent: counts add up.
     const mixed = homeWeek(null, null, { fleetId: 'f', totals: { blocked: 3, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: { 'Lead-Agent': { blocked: 1, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, 'lead-agent': { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } } as never, null);
     expect(mixed.agents['lead-agent'].rules?.blocks).toBe(3);
+  });
+});
+
+describe('Home agents: input', () => {
+  const week = (agents: Record<string, object>) => ({ agents, calls: null, costUsd: null, partial: false, rules: null });
+  const ok = { audit: false, scores: false, rules: false, hourly: false, inputs: false };
+
+  it('puts each agent’s input beside its week, by lower-case id', () => {
+    const w = homeWeek(null, null, null, null, 0, { byAgent: { 'lead-agent': 1_364_000 } });
+    expect(w.agents['lead-agent']).toEqual({ input: 1_364_000 });
+  });
+
+  it('keeps saved and input from the same refresh when either read fails', () => {
+    const prev = week({ a: { used: 1, saved: 10, input: 100 } });
+    const next = week({ a: { used: 2, saved: 20, input: 200 } });
+    const noInput = week({ a: { used: 2, saved: 20 } });
+    expect(keepLastGood(prev, next, ok).agents.a).toMatchObject({ saved: 20, input: 200 });
+    expect(keepLastGood(prev, noInput, { ...ok, inputs: true }).agents.a).toMatchObject({ saved: 10, input: 100 });
+    expect(keepLastGood(prev, next, { ...ok, audit: true }).agents.a).toMatchObject({ saved: 10, input: 100 });
+    // No input yet to pair with: saved still moves on.
+    expect(keepLastGood(week({ a: { saved: 10 } }), noInput, { ...ok, inputs: true }).agents.a).toMatchObject({ saved: 20 });
   });
 });
 
@@ -98,12 +119,12 @@ describe('Home view', () => {
   });
 
   it('never cuts a name off, and shows each agent’s last 7 days', () => {
-    const html = view({ week: { agents: { 'lead-agent': { used: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
+    const html = view({ week: { agents: { 'lead-agent': { used: 120_000, input: 120_000, saved: 40_000, savedUsd: 1.2, rules: tally({ blocks: 2 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).toContain('a-very-long-agent-name-that-must-not-be-cut-off');
     expect(html).toContain('class="wr-agent-card__name"');
-    expect(textOf(html)).toContain('120K tokens · 40K saved · 2 blocked');
+    expect(textOf(html)).toContain('120K input sent · 40K input saved · 2 blocked');
     // The dollar estimate is kept as the saved figure's tooltip.
-    expect(html).toContain('title="40K tokens saved, about $1.20 at this agent&#x27;s prices (est.)"');
+    expect(html).toContain('title="40K input tokens saved, about $1.20 at this agent&#x27;s prices (est.)"');
   });
 
   it('opens on the table for a big fleet unless the viewer picked cards, with search and sort', () => {
@@ -120,5 +141,14 @@ describe('Home view', () => {
     const html = view({ view: 'table', week: { agents: { 'lead-agent': { rules: tally({ blocks: 1 }) } }, calls: null, costUsd: null, partial: false, rules: null } });
     expect(html).not.toMatch(/>0 tokens/);
     expect(html).toContain('1 blocked');
+  });
+
+  it('names both table columns as input: what was sent, and what was saved', () => {
+    const html = view({ view: 'table', week: { agents: { 'lead-agent': { used: 81_800, input: 1_364_000, saved: 1_876_000 } }, calls: null, costUsd: null, partial: false, rules: null } });
+    expect(textOf(html)).toContain('Input sent');
+    expect(textOf(html)).toContain('Input saved, est.');
+    expect(textOf(html)).toContain('1.36M');
+    // Not the 81.8K its tasks reported: that mixes in output.
+    expect(textOf(html)).not.toContain('81.8K');
   });
 });

@@ -12,9 +12,9 @@ import { auditSummary, performanceAgent, performanceAgentScores, performanceFlee
 import type { AgentInfo, AgentPerformanceResult, AgentScore } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
-  /** Tokens the agent used in the last 7 days; absent when the audit read failed (shown as —, never 0). */
+  /** Tokens its tasks reported in the last 7 days; absent when the audit read failed. */
   used?: number;
-  /** Tokens WhiteRoom saved it (smaller context), est.; absent with `used`. */
+  /** Input tokens WhiteRoom saved it (smaller context), est.; absent when the audit read failed (shown as —, never 0). */
   saved?: number;
   /** The same in dollars at its own price, when the engine prices it (E1b). */
   savedUsd?: number | null;
@@ -32,7 +32,7 @@ export type AgentSort = 'attention' | 'name' | 'used' | 'saved';
 export const AGENT_SORTS: { value: AgentSort; label: string }[] = [
   { value: 'attention', label: 'Needs attention first' },
   { value: 'name', label: 'Name' },
-  { value: 'used', label: 'Most tokens' },
+  { value: 'used', label: 'Most input' },
   { value: 'saved', label: 'Most saved' },
 ];
 
@@ -48,7 +48,7 @@ export function shownAgents<T extends AgentInfo>(agents: T[], weeks: Record<stri
   const base = sortAgents(agents.filter((a) => !q || a.agentId.toLowerCase().includes(q)));
   const week = (a: T) => weeks[a.agentId.toLowerCase()];
   if (sort === 'name') return [...base].sort((x, y) => x.agentId.localeCompare(y.agentId));
-  if (sort === 'used') return [...base].sort((x, y) => (week(y)?.used ?? 0) - (week(x)?.used ?? 0));
+  if (sort === 'used') return [...base].sort((x, y) => (week(y)?.input ?? 0) - (week(x)?.input ?? 0));
   if (sort === 'saved') return [...base].sort((x, y) => (week(y)?.saved ?? 0) - (week(x)?.saved ?? 0));
   // Needs attention (mockup): held and silent agents first, then agents with
   // rule activity this week whatever their state, then sortAgents' order
@@ -77,9 +77,10 @@ export const WEEK_POLL_MS = 5 * 60_000;
 /**
  * The reads behind the last 7 days, shared by Home and the agent page. Each
  * one that fails comes back null. `agentId` narrows rule activity to one
- * agent and adds its calls' input; `hourly` adds the fleet's calls and spend (Home only).
+ * agent and adds its calls' input; `hourly` adds the fleet's calls and spend, and
+ * `agentIds` each listed agent's input (Home only).
  */
-export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean } = {}) {
+export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean; agentIds?: string[] } = {}) {
   const { start, hours } = weekWindow();
   const [audit, scores, rules, hourly, agentCalls] = await Promise.all([
     auditSummary(fleetId, start, authKey).catch(() => null),
@@ -88,7 +89,36 @@ export async function loadWeekReads(fleetId: string, authKey: string | undefined
     opts.hourly ? performanceFleetHourly(fleetId, hours, authKey).catch(() => null) : null,
     opts.agentId ? performanceAgent(fleetId, opts.agentId, hours, authKey).catch(() => null) : null,
   ]);
-  return { start, audit, scores, rules, hourly, agentCalls };
+  const inputs = opts.agentIds ? await agentInputs(fleetId, opts.agentIds, hours, authKey) : null;
+  return { start, audit, scores, rules, hourly, agentCalls, inputs };
+}
+
+/** Per-agent input reads in flight at once on Home, so a big fleet doesn't send them all together. */
+const INPUT_READS_AT_ONCE = 6;
+
+/** Its calls' input (cached included), from performance_agent totals; undefined from an engine without them. */
+function callsInput(r: AgentPerformanceResult | null): number | undefined {
+  const t = r && !r.error ? r.totals : null;
+  return t && typeof t.inputTokens === 'number' ? inputTokensOf({ ...t, inputTokens: t.inputTokens }) : undefined;
+}
+
+/**
+ * Each agent's input over the week's hours, by lower-case id. `failed` when any read failed,
+ * so Home keeps the last figures rather than show some agents' input from another refresh.
+ */
+export async function agentInputs(fleetId: string, ids: string[], hours: number, authKey?: string): Promise<{ byAgent: Record<string, number>; failed: boolean }> {
+  const byAgent: Record<string, number> = {};
+  let failed = false;
+  for (let i = 0; i < ids.length; i += INPUT_READS_AT_ONCE) {
+    const batch = ids.slice(i, i + INPUT_READS_AT_ONCE);
+    const reads = await Promise.all(batch.map((id) => performanceAgent(fleetId, id, hours, authKey).catch(() => null)));
+    reads.forEach((r, j) => {
+      if (!r || r.error) { failed = true; return; }
+      const n = callsInput(r);
+      if (n !== undefined) byAgent[batch[j].toLowerCase()] = (byAgent[batch[j].toLowerCase()] ?? 0) + n;
+    });
+  }
+  return { byAgent, failed };
 }
 
 /** Home's last 7 days: per agent, plus the fleet's calls, spend and rule activity. */
@@ -109,6 +139,8 @@ export function homeWeek(
   hourly: Awaited<ReturnType<typeof performanceFleetHourly>> | null,
   /** Where the 7 days start (local midnight six days ago); hourly points before it are left out. */
   since = 0,
+  /** Each agent's input over the same days (agentInputs); null when not read. */
+  inputs: { byAgent: Record<string, number> } | null = null,
 ): HomeWeek {
   const agents: Record<string, AgentWeek> = {};
   const key = (id: string) => id.toLowerCase();
@@ -126,15 +158,16 @@ export function homeWeek(
     for (const [id, t] of Object.entries(merged)) if (id) (agents[id] ??= {}).rules = t;
   }
   if (scores && !scores.error) for (const s of scores.agents) (agents[key(s.agentId)] ??= {}).score = s;
+  if (inputs) for (const [id, n] of Object.entries(inputs.byAgent)) (agents[id] ??= {}).input = n;
   const totals = hourly && !hourly.error && Array.isArray(hourly.hourly) ? hourTotals(hourly.hourly, Math.floor(since / HOUR_MS) * HOUR_MS) : null;
   return { agents, calls: totals?.calls ?? null, costUsd: totals?.costUsd ?? null, partial: totals?.partial ?? false, rules: okRules ? tallyFromRuleActions(okRules.totals) : null };
 }
 
 /** Which of the week's reads failed (null or an error); an engine that doesn't support a read hasn't failed. */
-export interface WeekFailures { audit: boolean; scores: boolean; rules: boolean; hourly: boolean }
+export interface WeekFailures { audit: boolean; scores: boolean; rules: boolean; hourly: boolean; inputs?: boolean }
 
-export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null }): WeekFailures {
-  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error };
+export function weekFailures(r: { audit: unknown; scores: { error?: string } | null; rules: unknown; hourly: { error?: string } | null; inputs?: { failed: boolean } | null }): WeekFailures {
+  return { audit: !r.audit, scores: !r.scores || !!r.scores.error, rules: !r.rules, hourly: !r.hourly || !!r.hourly.error, inputs: !!r.inputs?.failed };
 }
 
 /**
@@ -150,10 +183,13 @@ export function keepLastGood(prev: HomeWeek | null, next: HomeWeek, failed: Week
     const p = prev.agents[id] ?? {};
     const n = next.agents[id] ?? {};
     const w: AgentWeek = {};
-    const from = failed.audit ? p : n;
+    // Saved and input sit side by side, so they come from the same refresh: when either read
+    // fails, the last pair stays (saved alone moves on while there's no input yet to pair).
+    const from = failed.audit || (failed.inputs && p.input !== undefined) ? p : n;
     if (from.used !== undefined) w.used = from.used;
     if (from.saved !== undefined) w.saved = from.saved;
     if (from.savedUsd !== undefined) w.savedUsd = from.savedUsd;
+    if (from.input !== undefined) w.input = from.input;
     const rules = failed.rules ? p.rules : n.rules;
     if (rules) w.rules = rules;
     const score = failed.scores ? p.score : n.score;
