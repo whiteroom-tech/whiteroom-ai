@@ -116,12 +116,12 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   }, [preview, loaded, windowId, fleet, sandboxFleetId]);
 
   async function act(action: 'start' | 'stop' | 'resume') {
-    if (preview) { setState((st) => previewStep(action, st, true, now)); return; }
+    if (preview) { setState((st) => previewStep(action, st, now)); return; }
     const req = ++latest.current;
     acting.current = true;
     setBusy(true); setError('');
     try {
-      const next = await checkAction(action, fleet, sandboxFleetId, action === 'start' ? true : undefined);
+      const next = await checkAction(action, fleet, sandboxFleetId);
       if (req === latest.current) setState(next);
     } catch (e) {
       setError(message(e));
@@ -313,11 +313,11 @@ function ruleWords(r: CheckRule, live: boolean): string {
 }
 
 /** /dev/sandbox-v2 only: what Start, Stop and Resume would show next. */
-function previewStep(action: 'start' | 'stop' | 'resume', st: CheckState | null, injectErrors: boolean, now: number): CheckState | null {
+function previewStep(action: 'start' | 'stop' | 'resume', st: CheckState | null, now: number): CheckState | null {
   if (!st) return st;
   if (action === 'start') {
     return {
-      window: { id: 'chk_preview', startedAt: new Date(now).toISOString(), endedAt: null, stage: 'observe', injectErrors, calls: 0 },
+      window: { id: 'chk_preview', startedAt: new Date(now).toISOString(), endedAt: null, stage: 'observe', injectErrors: true, calls: 0 },
       checks: st.checks.map((c) => ({ ...c, status: 'pending', detail: '' })),
       rules: [],
     };

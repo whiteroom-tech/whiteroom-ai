@@ -176,6 +176,17 @@ describe('Check your agent', () => {
     expect(text()).toContain('1 of 7 passed');
   });
 
+  it('Check again after a report starts a new check and shows it live', async () => {
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
+    await render(checksEl());
+    expect(text()).toContain('1 of 7 passed');
+    checks = checkAnswer({ stage: 'observe', calls: 0 });
+    await click('Check again');
+    expect(calls().find((c) => c.url.endsWith('/checks/start'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
+    expect(text()).toContain('Watching your agent’s calls…');
+    expect(button('Stop checking')).toBeDefined();
+  });
+
   it('a refused Check again shows why and reads the checks again', async () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
@@ -483,7 +494,7 @@ describe('Sandbox page', () => {
     expect(document.body.innerHTML).not.toContain('href="/controls');
   });
 
-  it.each(Object.keys(SANDBOX_V2_STATES).filter((k) => k.startsWith('checks-') || k.startsWith('helper-') || k === 'outside-window') as (keyof typeof SANDBOX_V2_STATES)[])(
+  it.each(Object.keys(SANDBOX_V2_STATES).filter((k) => k.startsWith('checks-') || k === 'outside-window') as (keyof typeof SANDBOX_V2_STATES)[])(
     '/dev/sandbox-v2 %s renders without fetching or linking to Controls',
     async (state) => {
       await render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES[state] }));

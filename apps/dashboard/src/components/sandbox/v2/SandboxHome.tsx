@@ -16,7 +16,6 @@ import {
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
 import { checkStateOf } from '@/lib/sandbox/checks';
 import { SandboxChecks, type SandboxChecksPreview } from './SandboxChecks';
-import type { SandboxHelperPreview } from './SandboxHelper';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -33,12 +32,9 @@ export interface SandboxHomePreview {
   rules?: SandboxRulesPreview;
   /** Step 4 and Run agent, once connected. */
   checks?: SandboxChecksPreview;
-  helper?: SandboxHelperPreview;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
-
-/** /dev/sandbox-v2: a helper that isn't connected. */
 
 /** Which Sandbox and key a status names; null when there's no key. */
 const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
