@@ -8,7 +8,7 @@ import { childEnv, runAdapter, type Launch, type ToolAnswer } from "./adapter.js
 import { Engine, pace, REDIRECTED, sleep, Stopped, Unreachable, type Reply } from "./engine.js";
 import { CATALOG } from "./catalog.js";
 import {
-  adapterLabel, adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isKeyVar, isProvider, isShortTermBedrockKey, keyFromEnv, keyHeader,
+  adapterLabel, adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isKeyVar, isProvider, isShortTermBedrockKey, keyFromEnv, keyHeader, keyShapeProblem,
   keyVarOf, nodeTooOld, providerByShape, RUN_CODE, targetOrigin, type KeyChoice, type Provider,
 } from "./preflight.js";
 import { copy, ending, hideSecret, results, say, warn, type Ending } from "./text.js";
@@ -146,6 +146,8 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   hideSecret(code);
   // WhiteRoom refuses these without using a try; saying so here sends nothing.
   if (isShortTermBedrockKey(key)) return fail(ending(2, copy.shortTermKey));
+  const shape = keyShapeProblem(key);
+  if (shape) return fail(ending(2, shape === "twice" ? copy.keyTwice(from, key.length) : copy.keySpaces(from)));
   if (from) say(copy.keyInUse(from, key));
   say(copy.host(new URL(origin).host));
 

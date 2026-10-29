@@ -10,7 +10,7 @@ import { parseArgs } from "../src/legacy-args.js";
 import { Engine, REDIRECTED, Unreachable } from "../src/practice/engine.js";
 import { PassThrough } from "node:stream";
 import {
-  adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, keyFromEnv, keyHeader, keyVarOf, nodeTooOld, providerByShape, targetOrigin, words,
+  adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, keyFromEnv, keyHeader, keyShapeProblem, keyVarOf, nodeTooOld, providerByShape, targetOrigin, words,
 } from "../src/practice/preflight.js";
 import { finalText } from "../src/practice/run.js";
 import { clean, copy, hideSecret, parseRequire, results, type Report } from "../src/practice/text.js";
@@ -116,6 +116,14 @@ describe("preflight", () => {
     t.write(String.fromCharCode(3));
     await assert.rejects(p, Interrupted);
     assert.deepEqual(t.raw, [true, false]);
+  });
+
+  it("catches a key pasted twice or broken by spaces, before anything is sent", () => {
+    const key = "sk-ant-api03-" + "x".repeat(40);
+    assert.equal(keyShapeProblem(key), null);
+    assert.equal(keyShapeProblem(key + key), "twice");
+    assert.equal(keyShapeProblem("sk-ant-api03-abc def-0123456789012345678901234"), "spaces");
+    assert.equal(keyShapeProblem("abab"), null);
   });
 
   it("needs Node 20", () => {
