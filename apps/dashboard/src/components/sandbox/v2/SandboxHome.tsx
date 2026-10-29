@@ -128,6 +128,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   }
 
   const connected = status?.exists === true && status.key !== null ? status : null;
+  const outside = connected ? outsideWindowText(connected) : null;
   const showForm = !loading && status !== null && (!connected || replacing);
 
   return <>
@@ -203,7 +204,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
                 <dd>{lastCallText(connected.lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
-              {outsideWindowText(connected) && <Banner variant="warn">{outsideWindowText(connected)}</Banner>}
+              {outside && <Banner variant="warn">{outside}</Banner>}
               <div className={v.actions}>
                 <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Rotate key</Button>
                 <Button size={32} variant="danger" onClick={() => setConfirm('reset')} disabled={busy}>Reset Sandbox</Button>

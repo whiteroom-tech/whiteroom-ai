@@ -71,6 +71,7 @@ export const isUnavailable = (e: unknown) => e instanceof SandboxFleetError && e
  */
 export const SANDBOX_CHANGED = 'sandbox_changed';
 /** The engine's pin refusal (routes/white-room.ts sandboxFleetAction), the only 409 that means "a different Sandbox". */
+/** Fallback only: the engine sends reason sandbox_changed for this 409 (engine #315); older engines send just this text. */
 export const isPinMismatch = (status: number, error: string) => status === 409 && /^That Sandbox doesn['’]t belong to this fleet\.?$/.test(error);
 
 /**
