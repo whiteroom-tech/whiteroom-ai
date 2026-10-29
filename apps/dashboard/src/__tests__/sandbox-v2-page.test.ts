@@ -76,7 +76,9 @@ describe('Sandbox v2 page', () => {
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
     expect(text()).toContain('Your Sandbox URL is shown only once');
     // This computer: one line that runs the agent against the Sandbox, built from how it starts.
-    expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" <how you start your agent>`);
+    // Nothing typed yet: a line that still runs as copied.
+    expect(text()).toContain(`export ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}"`);
+    expect(text()).toContain('Then start your agent in this terminal.');
     await type(document.getElementById('sandbox-start-command') as HTMLInputElement, 'python -m leadagent.cli run');
     expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" python -m leadagent.cli run`);
     expect(document.querySelector('[aria-label="Copy the run line"]')).not.toBeNull();
@@ -192,14 +194,15 @@ describe('Sandbox v2 page', () => {
 
   it('/dev/sandbox-v2 openai shows the /v1 line', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES.openai });
-    expect(text()).toMatch(/OPENAI_BASE_URL="https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1" <how you start your agent>/);
+    expect(text()).toMatch(/export OPENAI_BASE_URL="https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1"/);
   });
 });
 
 describe('Sandbox v2 wording and checks', () => {
   it('the run lines and setting for each provider', () => {
     expect(runLine('anthropic', 'https://proxy.example/sk-wr-x/', ' node agent.js ')).toBe('ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x" node agent.js');
-    expect(runLine('openai', 'https://proxy.example/sk-wr-x', '')).toBe('OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1" <how you start your agent>');
+    expect(runLine('openai', 'https://proxy.example/sk-wr-x', '  ')).toBe('export OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
+    expect(runLinePowerShell('openai', 'https://proxy.example/sk-wr-x', '')).toBe('$env:OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
     expect(sandboxSetting('azure-openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'AZURE_OPENAI_ENDPOINT', value: 'https://proxy.example/sk-wr-x' });
     expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'python a.py')).toBe('$env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; python a.py');
   });

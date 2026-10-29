@@ -279,10 +279,17 @@ export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDon
           />
           <p className={v.label}>Run this in your terminal</p>
           <CopyChip text={runLine(issued.provider, issued.proxyUrl, command)} label="Copy the run line" />
-          <p className={v.text}>Your agent uses the Sandbox for this run only. Nothing in its settings changes.</p>
+          <p className={v.text}>
+            {command.trim()
+              ? 'Your agent uses the Sandbox for this run only. Nothing in its settings changes.'
+              : 'Then start your agent in this terminal. Or type how you start it above to get one line.'}
+          </p>
           <details>
             <summary className={v.label}>On Windows (PowerShell)</summary>
-            <div className={v.reveal}><CopyChip text={runLinePowerShell(issued.provider, issued.proxyUrl, command)} label="Copy the PowerShell line" /></div>
+            <div className={`${v.stack} ${v.reveal}`}>
+              <CopyChip text={runLinePowerShell(issued.provider, issued.proxyUrl, command)} label="Copy the PowerShell line" />
+              <p className={v.text}>This sets it for that PowerShell window. Close the window when you’re done to stop using the Sandbox.</p>
+            </div>
           </details>
         </>}
         {runsOn === 'server' && <>

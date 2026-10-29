@@ -172,19 +172,22 @@ export function sandboxSetting(provider: string, proxyUrl: string): { name: stri
   return { name: line.slice(0, at), value: line.slice(at + 1) };
 }
 
-/** Shown in the run line until the user types how they start their agent. */
-export const START_COMMAND_HINT = '<how you start your agent>';
-
-/** One terminal line that runs the agent against the Sandbox for that run only (macOS and Linux shells). */
+/**
+ * What to run in a terminal (macOS and Linux shells): with a start command, one
+ * line that runs the agent against the Sandbox for that run only; without one,
+ * the setting for this terminal, so what's copied always runs.
+ */
 export function runLine(provider: string, proxyUrl: string, command: string): string {
   const { name, value } = sandboxSetting(provider, proxyUrl);
-  return `${name}="${value}" ${command.trim() || START_COMMAND_HINT}`;
+  const cmd = command.trim();
+  return cmd ? `${name}="${value}" ${cmd}` : `export ${name}="${value}"`;
 }
 
-/** The same for Windows PowerShell: the setting holds for that PowerShell window. */
+/** The same for Windows PowerShell; the setting holds for that PowerShell window. */
 export function runLinePowerShell(provider: string, proxyUrl: string, command: string): string {
   const { name, value } = sandboxSetting(provider, proxyUrl);
-  return `$env:${name}="${value}"; ${command.trim() || START_COMMAND_HINT}`;
+  const cmd = command.trim();
+  return cmd ? `$env:${name}="${value}"; ${cmd}` : `$env:${name}="${value}"`;
 }
 
 export function providerLabel(provider: string): string {
