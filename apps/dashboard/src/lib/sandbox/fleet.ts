@@ -182,15 +182,15 @@ export function runLine(provider: string, proxyUrl: string, command: string): st
   const cmd = command.trim();
   if (!cmd) return `export ${name}="${value}"`;
   // A prefix reaches only the first command: a compound one (cd … && …) runs in a subshell that has the setting.
-  return /&&|\|\||[;|&\n]/.test(cmd) ? `(export ${name}="${value}"; ${cmd})` : `${name}="${value}" ${cmd}`;
+  return /[;|&\n]/.test(cmd) ? `(export ${name}="${value}"; ${cmd})` : `${name}="${value}" ${cmd}`;
 }
 
 /** The same for Windows PowerShell: with a start command, the setting is cleared when it finishes; without one, it holds for that window. */
 export function runLinePowerShell(provider: string, proxyUrl: string, command: string): string {
   const { name, value } = sandboxSetting(provider, proxyUrl);
   const cmd = command.trim();
-  // finally clears it however the agent ends (Ctrl+C included), whatever the command holds.
-  return cmd ? `try { $env:${name}="${value}"; ${cmd} } finally { Remove-Item Env:${name} }` : `$env:${name}="${value}"`;
+  // finally puts back what was there (or nothing) however the agent ends, Ctrl+C included.
+  return cmd ? `$wrPrev=$env:${name}; try { $env:${name}="${value}"; ${cmd} } finally { $env:${name}=$wrPrev }` : `$env:${name}="${value}"`;
 }
 
 export function providerLabel(provider: string): string {
