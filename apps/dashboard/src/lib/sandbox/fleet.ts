@@ -37,6 +37,9 @@ export type SandboxFleetStatus =
     lastCallAt: string | null;
     expiresAt: string | null;
     key: SandboxFleetKey | null;
+    /** Calls in the last day that came outside a check (spec §8.3): a forgotten agent. */
+    callsOutsideWindow24h?: number;
+    lastCallOutsideWindowAt?: string | null;
   };
 
 /** A Sandbox key handed out by connect or rotate. Shown once; never stored. */
@@ -51,7 +54,8 @@ export interface IssuedSandboxKey {
 export const SANDBOX_FLEET_UNAVAILABLE = 'sandbox_fleet_unavailable';
 
 export class SandboxFleetError extends Error {
-  constructor(message: string, readonly status: number, readonly reason?: string) {
+  /** `retryAfter`: seconds to wait, from a 429. */
+  constructor(message: string, readonly status: number, readonly reason?: string, readonly retryAfter?: number) {
     super(message);
     this.name = 'SandboxFleetError';
   }
@@ -86,7 +90,18 @@ export function statusOf(data: unknown): SandboxFleetStatus | null {
     lastCallAt: strOrNull(d.lastCallAt),
     expiresAt: strOrNull(d.expiresAt),
     key,
+    ...(typeof d.callsOutsideWindow24h === 'number' && Number.isInteger(d.callsOutsideWindow24h) && d.callsOutsideWindow24h >= 0 && {
+      callsOutsideWindow24h: d.callsOutsideWindow24h,
+      lastCallOutsideWindowAt: strOrNull(d.lastCallOutsideWindowAt),
+    }),
   };
+}
+
+/** The Sandbox card's notice when an agent called outside a check (spec §8.3), or null. */
+export function outsideWindowText(status: SandboxFleetStatus): string | null {
+  const n = status.exists ? status.callsOutsideWindow24h ?? 0 : 0;
+  if (n <= 0) return null;
+  return `Your agent called the Sandbox ${n === 1 ? 'once' : `${n.toLocaleString('en-US')} times`} outside a check in the last day. Sandbox rules only watch then, so nothing was blocked.`;
 }
 
 /** The once-shown key of a connect or rotate answer, or null when there isn't one. */
@@ -167,7 +182,8 @@ export async function sandboxPost(path: string, body: Record<string, unknown>): 
   const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   if (!res.ok || !data) {
     const message = data && typeof data.error === 'string' ? data.error : 'That didn’t work. Try again.';
-    throw new SandboxFleetError(message, res.status, data && typeof data.reason === 'string' ? data.reason : undefined);
+    const wait = data && typeof data.retryAfter === 'number' ? data.retryAfter : undefined;
+    throw new SandboxFleetError(message, res.status, data && typeof data.reason === 'string' ? data.reason : undefined, wait);
   }
   return data;
 }

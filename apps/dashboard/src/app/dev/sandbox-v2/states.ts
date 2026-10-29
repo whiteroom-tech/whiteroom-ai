@@ -1,5 +1,9 @@
 import type { SandboxHomePreview } from '@/components/sandbox/v2/SandboxHome';
 import type { SandboxRulesPreview } from '@/components/sandbox/v2/SandboxRules';
+import type { SandboxChecksPreview } from '@/components/sandbox/v2/SandboxChecks';
+import type { SandboxHelperPreview } from '@/components/sandbox/v2/SandboxHelper';
+import { CHECK_IDS, CHECK_NAMES, type CheckId, type CheckRule, type CheckStage, type CheckStatus } from '@/lib/sandbox/checks';
+import type { HelperStatus } from '@/lib/sandbox/helper';
 import { previewReadyMade } from '@/lib/sandbox/rules';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -39,6 +43,57 @@ const COPIED: GovernanceRule[] = [
   { ...READY[4], id: 'gr_preview_copy_keywords', mode: 'watch', appliesTo: ['support-triage'], params: { keywords: ['password', 'ssn'], where: 'incoming', wholeWord: true } },
 ];
 
+// Step 4: checks. Each check's status and detail, as the engine would send them.
+type Results = Partial<Record<CheckId, [CheckStatus, string]>>;
+const checkState = (stage: CheckStage | null, results: Results, opts: { calls?: number; ended?: boolean; rules?: CheckRule[] } = {}): SandboxChecksPreview => ({
+  state: {
+    window: stage && {
+      id: 'chk_preview_1', startedAt: new Date(NOW - 6 * 60_000).toISOString(), endedAt: opts.ended ? new Date(NOW - 60_000).toISOString() : null,
+      stage, injectErrors: true, calls: opts.calls ?? 14,
+    },
+    checks: CHECK_IDS.map((id) => ({ id, label: CHECK_NAMES[id], status: results[id]?.[0] ?? 'pending', detail: results[id]?.[1] ?? '' })),
+    rules: opts.rules ?? [],
+  },
+  now: NOW,
+});
+const OBSERVED: Results = {
+  long_task: ['passed', 'A hand-over happened and your agent carried on.'],
+  finishes_correctly: ['not_checked', 'Run practice tasks to check this.'],
+};
+const RULES: CheckRule[] = [
+  { ruleId: READY[0].id, ruleType: 'spend_cap', check: 'spend_cap', wouldAct: true, acted: true, status: 'passed', detail: 'Blocked at $0.02. Your agent stopped calling.' },
+  { ruleId: READY[3].id, ruleType: 'model_allowlist', check: 'allowlists_keywords', wouldAct: true, acted: true, status: 'passed', detail: 'Refused claude-sonnet-4-5. Your agent backed off.' },
+  { ruleId: READY[4].id, ruleType: 'keyword', check: 'allowlists_keywords', wouldAct: false, acted: false, status: 'not_triggered', detail: 'No secrets in this run. Try a prompt that mentions a password.' },
+  { ruleId: READY[1].id, ruleType: 'loop_breaker', check: 'loop_rate', wouldAct: false, acted: false, status: 'not_triggered', detail: 'Needs the same call 3 times in a row.' },
+  { ruleId: READY[2].id, ruleType: 'call_rate', check: 'loop_rate', wouldAct: false, acted: false, status: 'not_triggered', detail: 'Stayed under 10 calls a minute.' },
+];
+const ENFORCED: Results = {
+  ...OBSERVED,
+  spend_cap: ['passed', 'Blocked at $0.02, and your agent stopped calling.'],
+  allowlists_keywords: ['passed', 'The model allowlist refused a call, and your agent backed off.'],
+  loop_rate: ['not_triggered', 'Your agent didn’t repeat a call. The loop breaker needs the same call 3 times.'],
+};
+const PAUSED: Results = { ...ENFORCED };
+const RESUMED: Results = { ...ENFORCED, pause_stop: ['passed', 'Carried on after a 10-second pause, and came back when you pressed Resume.'] };
+const FINISHED: Results = { ...RESUMED, provider_errors: ['failed', 'Your agent retried 6 times in 4 seconds after a provider error. Add a back-off.'] };
+
+// Run agent: the helper.
+const helper = (over: Partial<HelperStatus> = {}, extra: Partial<SandboxHelperPreview> = {}): SandboxHelperPreview => ({
+  status: { connected: false, host: null, connectedAt: null, lastSeenAt: null, queued: 0, running: false, recent: [], code: null, tasksThisHour: 0, tasksPerHour: 30, ...over },
+  now: NOW,
+  ...extra,
+});
+const HELPER_ON: Partial<HelperStatus> = {
+  connected: true, host: 'dev-laptop.local', connectedAt: new Date(NOW - 20 * 60_000).toISOString(), lastSeenAt: new Date(NOW - 10_000).toISOString(),
+  tasksThisHour: 3,
+  recent: [
+    { id: 'task_preview_3', prompt: 'Summarize the three newest support tickets.', ok: null, summary: '', at: new Date(NOW - 30_000).toISOString() },
+    { id: 'task_preview_2', prompt: 'Draft a reply to ticket 4821.', ok: true, summary: 'Finished in 41 s · 12 calls.', at: new Date(NOW - 9 * 60_000).toISOString() },
+    { id: 'task_preview_1', prompt: 'Close stale tickets older than 30 days.', ok: false, summary: 'Your agent exited with code 1 after 3 calls.', at: new Date(NOW - 18 * 60_000).toISOString() },
+  ],
+};
+const live = (extra: Partial<SandboxHomePreview>): SandboxHomePreview => ({ status: connected(new Date(NOW - 60_000).toISOString()), rules: rules({}), now: NOW, ...extra });
+
 export const SANDBOX_V2_STATES = {
   /** No Sandbox yet: step 1. */
   'not-connected': { status: { exists: false }, now: NOW },
@@ -66,6 +121,36 @@ export const SANDBOX_V2_STATES = {
   'rules-editing': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString() }, { editing: 'gr_preview_copy_models' }), now: NOW },
   /** Step 3: the rules couldn't be read. */
   'rules-error': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules(null, { error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }), now: NOW },
+  /** Step 4: no check yet, Start checking with the provider-error toggle. */
+  'checks-ready': live({ checks: checkState(null, {}) }),
+  /** Step 4: just started, no calls yet. */
+  'checks-waiting': live({ checks: checkState('observe', {}, { calls: 0 }), helper: helper({}) }),
+  /** Step 4: watching the agent's calls. */
+  'checks-observe': live({ checks: checkState('observe', OBSERVED, { calls: 6 }) }),
+  /** Step 4: enforcing one rule at a time (spend cap passed, allowlist next). */
+  'checks-enforce': live({ checks: checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { rules: RULES.slice(0, 1) }) }),
+  /** Step 4: the 10-second pause. */
+  'checks-pause': live({ checks: checkState('pause', PAUSED, { rules: RULES }) }),
+  /** Step 4: stopped, waiting for Resume. */
+  'checks-stopped': live({ checks: checkState('stop', PAUSED, { rules: RULES }) }),
+  /** Step 4: the provider error. */
+  'checks-errors': live({ checks: checkState('errors', RESUMED, { rules: RULES }) }),
+  /** Step 4: every stage done, the window still open. */
+  'checks-done': live({ checks: checkState('done', FINISHED, { rules: RULES }) }),
+  /** The report: the window ended. */
+  'checks-report': live({ checks: checkState('done', FINISHED, { ended: true, rules: RULES, calls: 31 }) }),
+  /** Step 4: the checks couldn't be read. */
+  'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
+  /** Run agent: no helper, no code yet. */
+  'helper-not-connected': live({ helper: helper() }),
+  /** Run agent: a code just handed out, shown once. */
+  'helper-code': live({ helper: helper({ code: { expiresAt: new Date(NOW + 10 * 60_000).toISOString(), triesLeft: 3 } }, { code: { code: 'ABCD-1234', codeExpiresAt: new Date(NOW + 10 * 60_000).toISOString() } }) }),
+  /** Run agent: connected, a task running and two finished. */
+  'helper-connected': live({ checks: checkState('observe', OBSERVED, { calls: 6 }), helper: helper({ ...HELPER_ON, running: true, queued: 1 }, { prompt: 'Summarize the three newest support tickets.' }) }),
+  /** Run agent: the hourly limit. */
+  'helper-limit': live({ helper: helper({ ...HELPER_ON, tasksThisHour: 30 }, { error: 'That’s the limit for this hour. Try again in 12 min.' }) }),
+  /** The Sandbox card: an agent called outside a check. */
+  'outside-window': live({ status: { ...connected(new Date(NOW - 60_000).toISOString()), callsOutsideWindow24h: 42, lastCallOutsideWindowAt: new Date(NOW - 60_000).toISOString() } }),
 } satisfies Record<string, SandboxHomePreview>;
 
 export type SandboxV2State = keyof typeof SANDBOX_V2_STATES;

@@ -19,9 +19,10 @@ import { connectCheck, issuedOf, SANDBOX_FLEET_UNAVAILABLE, statusOf, type Sandb
 
 const FLEET_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const SANDBOX_ID_RE = /^sandbox-[A-Za-z0-9-]{1,120}$/;
+const REASON_RE = /^[a-z][a-z_]{0,63}$/;
 
-export const json = (status: number, body: Record<string, unknown>) =>
-  Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+export const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+  Response.json(body, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
 export const fail = (status: number, error: string, reason?: string) => json(status, reason ? { error, reason } : { error });
 const unavailable = () => fail(404, 'Sandbox isn’t available yet.', SANDBOX_FLEET_UNAVAILABLE);
 
@@ -124,8 +125,14 @@ export async function postEngine(owner: SandboxFleetOwner, body: Record<string, 
     if (res.status >= 500 || typeof error !== 'string' || !error) {
       return { error: fail(res.status >= 500 ? res.status : 502, 'The Sandbox couldn’t do that right now. Try again in a moment.') };
     }
-    // The engine's own words: short refusals that never carry a key.
-    return { error: fail(res.status, error.slice(0, 300)) };
+    // The engine's own words: short refusals that never carry a key. Its
+    // machine reason (no_helper, tasks_per_hour…) and a 429's wait go along.
+    const raw = (data as { reason?: unknown }).reason;
+    const reason = typeof raw === 'string' && REASON_RE.test(raw) ? raw : undefined;
+    const refused = fail(res.status, error.slice(0, 300), reason);
+    const wait = Number(res.headers.get('retry-after'));
+    if (res.status !== 429 || !Number.isInteger(wait) || wait <= 0 || wait > 86_400) return { error: refused };
+    return { error: json(429, { ...(await refused.json()), retryAfter: wait }, { 'Retry-After': String(wait) }) };
   }
   return { data };
 }
