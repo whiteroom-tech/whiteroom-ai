@@ -202,6 +202,9 @@ describe('Sandbox v2 wording and checks', () => {
   it('the run lines and setting for each provider', () => {
     expect(runLine('anthropic', 'https://proxy.example/sk-wr-x/', ' node agent.js ')).toBe('ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x" node agent.js');
     expect(runLine('openai', 'https://proxy.example/sk-wr-x', '  ')).toBe('export OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
+    // A compound command: every part gets the setting, still only for that run.
+    expect(runLine('anthropic', 'https://proxy.example/sk-wr-x', 'cd ~/agent && python run.py')).toBe('(export ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; cd ~/agent && python run.py)');
+    expect(runLine('anthropic', 'https://proxy.example/sk-wr-x', 'source venv/bin/activate; python run.py')).toBe('(export ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; source venv/bin/activate; python run.py)');
     expect(runLinePowerShell('openai', 'https://proxy.example/sk-wr-x', '')).toBe('$env:OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
     expect(sandboxSetting('azure-openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'AZURE_OPENAI_ENDPOINT', value: 'https://proxy.example/sk-wr-x' });
     expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'python a.py')).toBe('$env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; python a.py');

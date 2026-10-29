@@ -180,7 +180,9 @@ export function sandboxSetting(provider: string, proxyUrl: string): { name: stri
 export function runLine(provider: string, proxyUrl: string, command: string): string {
   const { name, value } = sandboxSetting(provider, proxyUrl);
   const cmd = command.trim();
-  return cmd ? `${name}="${value}" ${cmd}` : `export ${name}="${value}"`;
+  if (!cmd) return `export ${name}="${value}"`;
+  // A prefix reaches only the first command: a compound one (cd … && …) runs in a subshell that has the setting.
+  return /&&|\|\||[;|&\n]/.test(cmd) ? `(export ${name}="${value}"; ${cmd})` : `${name}="${value}" ${cmd}`;
 }
 
 /** The same for Windows PowerShell; the setting holds for that PowerShell window. */
